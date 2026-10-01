@@ -156,6 +156,46 @@ impl TerminalView {
         )
     }
 
+    /// Settings ▸ Text ▸ Cursor style: the focused-window Underline and
+    /// Vertical Bar shapes, drawn as a small overlay instead of the Block
+    /// shape's inline cell-colour swap in `render_rows` (`show_cursor`
+    /// already covers DECTCEM, scrollback and the running-shell checks, and
+    /// `blink_visible` the blink phase; both are mirrored here).
+    pub(super) fn render_active_cursor_overlay(&self) -> Option<Div> {
+        if self.cursor_style == CursorStyle::Block
+            || !self.window_active
+            || !self.blink_visible
+            || !self.tabs[self.active].accepts_input()
+        {
+            return None;
+        }
+        {
+            let term = self.tabs[self.active].term.lock().ok()?;
+            if term.grid().display_offset() != 0 || !term.mode().contains(TermMode::SHOW_CURSOR) {
+                return None;
+            }
+        }
+        let (row, column) = self.active_cursor_viewport_cell()?;
+        let left = PAD_X + column as f32 * self.cell_w;
+        let top = PAD_TOP + row as f32 * self.line_h;
+        let shape = match self.cursor_style {
+            CursorStyle::Block => return None,
+            CursorStyle::Underline => div()
+                .absolute()
+                .left(px(left))
+                .top(px(top + self.line_h - 2.0))
+                .w(px(self.cell_w))
+                .h(px(2.0)),
+            CursorStyle::Bar => div()
+                .absolute()
+                .left(px(left))
+                .top(px(top))
+                .w(px(2.0))
+                .h(px(self.line_h)),
+        };
+        Some(shape.bg(hsla(active().cursor)))
+    }
+
     pub(super) fn render_rows(&self, query: &str) -> Vec<gpui::AnyElement> {
         let Ok(term) = self.tabs[self.active].term.lock() else {
             return Vec::new();
@@ -205,6 +245,8 @@ impl TerminalView {
                 }
                 if show_cursor
                     && self.window_active
+                    && self.cursor_style == CursorStyle::Block
+                    && self.blink_visible
                     && line_index == cursor_line
                     && column == cursor_column
                 {

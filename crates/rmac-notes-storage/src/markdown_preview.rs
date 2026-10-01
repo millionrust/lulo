@@ -69,6 +69,13 @@ pub struct MarkdownPreviewBlock {
     kind: MarkdownPreviewBlockKind,
     text: String,
     runs: Vec<MarkdownPreviewRun>,
+    /// For a checklist/list item, the byte range of the *entire item* in the
+    /// original Markdown source (its `- [ ] `/`- [x] ` marker included), so a
+    /// click on the rendered checkbox can flip the marker back in the stored
+    /// body without re-parsing or guessing at line numbers. `None` for every
+    /// other block kind, and for list items the source parser could not
+    /// place (never expected in practice).
+    source_range: Option<Range<usize>>,
 }
 
 impl MarkdownPreviewBlock {
@@ -83,6 +90,11 @@ impl MarkdownPreviewBlock {
     pub fn runs(&self) -> &[MarkdownPreviewRun] {
         &self.runs
     }
+
+    /// The byte range of this list item in the Markdown source, when known.
+    pub fn source_range(&self) -> Option<Range<usize>> {
+        self.source_range.clone()
+    }
 }
 
 impl fmt::Debug for MarkdownPreviewBlock {
@@ -92,6 +104,7 @@ impl fmt::Debug for MarkdownPreviewBlock {
             .field("kind", &self.kind)
             .field("text_bytes", &self.text.len())
             .field("runs", &self.runs.len())
+            .field("source_range", &self.source_range)
             .finish()
     }
 }
@@ -167,8 +180,22 @@ enum BlockContext {
         depth: u8,
         ordered_index: Option<u32>,
         checked: Option<bool>,
+        /// The whole item's byte range in the source, as a `(start, end)`
+        /// pair so the context stays `Copy` (unlike `Range<usize>`).
+        source_range: Option<(usize, usize)>,
     },
     Footnote,
+}
+
+/// The current list item's source byte range, if `context` is inside one.
+fn list_item_source_range(context: BlockContext) -> Option<Range<usize>> {
+    match context {
+        BlockContext::ListItem {
+            source_range: Some((start, end)),
+            ..
+        } => Some(start..end),
+        _ => None,
+    }
 }
 
 struct PreviewBuilder {
@@ -214,13 +241,17 @@ impl PreviewBuilder {
         }
         match node {
             Node::Root(root) => self.render_nodes(&root.children, context, depth + 1),
-            Node::Paragraph(paragraph) => {
-                self.push_inline_block(context_kind(context), &paragraph.children, depth + 1)
-            }
+            Node::Paragraph(paragraph) => self.push_inline_block(
+                context_kind(context),
+                &paragraph.children,
+                depth + 1,
+                list_item_source_range(context),
+            ),
             Node::Heading(heading) => self.push_inline_block(
                 MarkdownPreviewBlockKind::Heading(heading.depth),
                 &heading.children,
                 depth + 1,
+                None,
             ),
             Node::Blockquote(quote) => {
                 self.render_nodes(&quote.children, BlockContext::BlockQuote, depth + 1)
@@ -279,7 +310,12 @@ impl PreviewBuilder {
                 self.push_block(BlockBuilder::new(MarkdownPreviewBlockKind::ThematicBreak))
             }
             Node::Definition(_) => {}
-            _ => self.push_inline_block(context_kind(context), std::slice::from_ref(node), depth),
+            _ => self.push_inline_block(
+                context_kind(context),
+                std::slice::from_ref(node),
+                depth,
+                list_item_source_range(context),
+            ),
         }
     }
 
@@ -306,6 +342,10 @@ impl PreviewBuilder {
             depth: list_depth,
             ordered_index,
             checked: item.checked,
+            source_range: item
+                .position
+                .as_ref()
+                .map(|position| (position.start.offset, position.end.offset)),
         };
         for child in &item.children {
             match child {
@@ -325,8 +365,14 @@ impl PreviewBuilder {
         }
     }
 
-    fn push_inline_block(&mut self, kind: MarkdownPreviewBlockKind, nodes: &[Node], depth: usize) {
-        let mut block = BlockBuilder::new(kind);
+    fn push_inline_block(
+        &mut self,
+        kind: MarkdownPreviewBlockKind,
+        nodes: &[Node],
+        depth: usize,
+        source_range: Option<Range<usize>>,
+    ) {
+        let mut block = BlockBuilder::new(kind).with_source_range(source_range);
         render_inline_nodes(
             nodes,
             &mut block,
@@ -376,6 +422,7 @@ fn context_kind(context: BlockContext) -> MarkdownPreviewBlockKind {
             depth,
             ordered_index,
             checked,
+            ..
         } => MarkdownPreviewBlockKind::ListItem {
             depth,
             ordered_index,
@@ -549,6 +596,7 @@ struct BlockBuilder {
     text: String,
     runs: Vec<MarkdownPreviewRun>,
     truncated: bool,
+    source_range: Option<Range<usize>>,
 }
 
 impl BlockBuilder {
@@ -558,6 +606,7 @@ impl BlockBuilder {
             text: String::new(),
             runs: Vec::new(),
             truncated: false,
+            source_range: None,
         }
     }
 
@@ -599,11 +648,17 @@ impl BlockBuilder {
         self.runs.push(MarkdownPreviewRun { range, style });
     }
 
+    fn with_source_range(mut self, source_range: Option<Range<usize>>) -> Self {
+        self.source_range = source_range;
+        self
+    }
+
     fn finish(self) -> MarkdownPreviewBlock {
         MarkdownPreviewBlock {
             kind: self.kind,
             text: self.text,
             runs: self.runs,
+            source_range: self.source_range,
         }
     }
 }
@@ -642,6 +697,80 @@ mod tests {
         let debug = format!("{document:?}");
         assert!(!debug.contains("private"));
         assert!(!debug.contains("Heading"));
+    }
+
+    #[test]
+    fn checklist_items_report_a_source_range_covering_their_marker() {
+        let source = "- [ ] Buy milk\n- [x] Walk the dog\n- Not a checklist\n";
+        let document = parse_inert_markdown_preview(source).unwrap();
+        let checklist_blocks: Vec<_> = document
+            .blocks()
+            .iter()
+            .filter(|block| {
+                matches!(
+                    block.kind(),
+                    MarkdownPreviewBlockKind::ListItem {
+                        checked: Some(_),
+                        ..
+                    }
+                )
+            })
+            .collect();
+        assert_eq!(checklist_blocks.len(), 2);
+
+        let unchecked = checklist_blocks[0];
+        assert_eq!(unchecked.text(), "Buy milk");
+        let range = unchecked
+            .source_range()
+            .expect("unchecked item has a source range");
+        // The parser's reported end offset may or may not include the
+        // item's trailing newline; only the marker's position matters here.
+        assert_eq!(
+            source[range.clone()].trim_end_matches('\n'),
+            "- [ ] Buy milk"
+        );
+
+        // Flipping just the marker inside the reported range reproduces the
+        // toggle the checkbox click handler (`toggle_checklist_range`)
+        // performs on the stored body: no other byte offset moves.
+        let mut toggled = source.to_string();
+        let marker_at = range.start + toggled[range.clone()].find("[ ]").unwrap();
+        toggled.replace_range(marker_at..marker_at + 3, "[x]");
+        assert_eq!(
+            toggled,
+            "- [x] Buy milk\n- [x] Walk the dog\n- Not a checklist\n"
+        );
+
+        let checked = checklist_blocks[1];
+        assert_eq!(checked.text(), "Walk the dog");
+        let range = checked
+            .source_range()
+            .expect("checked item has a source range");
+        assert_eq!(source[range].trim_end_matches('\n'), "- [x] Walk the dog");
+
+        let plain_item = document
+            .blocks()
+            .iter()
+            .find(|block| block.text() == "Not a checklist")
+            .expect("plain list item is present");
+        assert!(matches!(
+            plain_item.kind(),
+            MarkdownPreviewBlockKind::ListItem { checked: None, .. }
+        ));
+        // A plain (non-checklist) bullet still reports its range — it is
+        // simply unused by the click handler since `checked` is `None`.
+        assert!(plain_item.source_range().is_some());
+
+        // Headings and paragraphs outside any list never carry a range.
+        assert_eq!(
+            parse_inert_markdown_preview("# Heading\n\nParagraph.\n")
+                .unwrap()
+                .blocks()
+                .iter()
+                .filter(|block| block.source_range().is_some())
+                .count(),
+            0
+        );
     }
 
     #[test]

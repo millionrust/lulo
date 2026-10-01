@@ -317,6 +317,9 @@ impl TerminalView {
             .when_some(self.render_inactive_cursor(), |body, cursor| {
                 body.child(cursor)
             })
+            .when_some(self.render_active_cursor_overlay(), |body, cursor| {
+                body.child(cursor)
+            })
             .when_some(ime_preedit, |body, preedit| body.child(preedit))
             .child(input_bridge)
     }

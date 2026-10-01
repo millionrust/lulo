@@ -122,6 +122,9 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &InsertChecklist, window, cx| {
                 this.insert_checklist(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ToggleChecklistDone, window, cx| {
+                this.toggle_checklist_line(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &ToggleBold, window, cx| this.toggle_bold(window, cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleItalic, window, cx| this.toggle_italic(window, cx)),

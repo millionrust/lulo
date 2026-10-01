@@ -51,6 +51,11 @@ impl TerminalView {
         }
         // Failures land in `operation_error`, which this render shows.
         self.report_active_focus(active);
+        if active {
+            self.start_cursor_blink(window, cx);
+        } else {
+            self.blink_visible = true;
+        }
         // The cursor changes between a filled block and an outline.
         cx.notify();
     }

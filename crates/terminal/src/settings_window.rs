@@ -1,11 +1,18 @@
-//! Terminal ▸ Settings… (⌘,): a minimal preferences window with the profile
-//! list (the same rows the ⇧⌘P picker shows) and the default font size new
-//! windows open with.
+//! Terminal ▸ Settings… (⌘,): Profile, Font, Text (cursor style/blink),
+//! Window (size), Shell (when it exits), General (new-window working
+//! directory) and Keyboard, as one scrolling page — mocked in
+//! `design-lab/terminal-settings.html`. TERM-17 tracks the Mac's own
+//! 667×628 tabbed Profiles/General window; this keeps the single-page
+//! layout the app already shipped and just adds sections to it.
 //!
-//! Both choices persist for windows opened *after* this one closes; an
-//! already-open Terminal window keeps its own live profile (⇧⌘P) and font
-//! size (⌘+ / ⌘− / ⌘0) — this mirrors "Use Settings as Default" rather than
-//! reaching into every other window, which keeps the feature small.
+//! Every choice here persists for windows/tabs opened *after* this one
+//! closes; an already-open Terminal window keeps its own live profile
+//! (⇧⌘P), font size (⌘+ / ⌘− / ⌘0) and cursor — this mirrors "Use Settings
+//! as Default" rather than reaching into every other window, which keeps
+//! the feature small. The one exception is Shell ▸ "when the shell exits",
+//! which is re-read from disk the moment any open window's shell actually
+//! exits (`controller/tab_lifecycle.rs`), so it does apply to windows
+//! already open.
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
@@ -16,9 +23,10 @@ use rmac_ui::{Root, StyledExt as _};
 
 use crate::controller::FONT_SIZE;
 use crate::profiles::{self, PROFILES};
+use crate::settings::{self, CursorStyle, NewWindowWorkingDirectory, ShellExitBehavior};
 
 const WIDTH: f32 = 320.0;
-const HEIGHT: f32 = 420.0;
+const HEIGHT: f32 = 620.0;
 const MIN_FONT_SIZE: f32 = 8.0;
 const MAX_FONT_SIZE: f32 = 32.0;
 
@@ -52,13 +60,26 @@ pub(crate) fn show(cx: &mut App) {
 struct SettingsView {
     focus: FocusHandle,
     font_size: f32,
+    /// The six non-profile, non-font values this window edits, kept in one
+    /// place so a single failed save shows one message instead of six.
+    settings: settings::Settings,
+    save_error: Option<SharedString>,
 }
 
 impl SettingsView {
     fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let (settings, save_error) = match settings::load() {
+            Ok(settings) => (settings, None),
+            Err(failure) => (
+                settings::Settings::default(),
+                Some(SharedString::from(failure.to_string())),
+            ),
+        };
         Self {
             focus: cx.focus_handle(),
             font_size: profiles::load_font_size().unwrap_or(FONT_SIZE),
+            settings,
+            save_error,
         }
     }
 
@@ -79,6 +100,53 @@ impl SettingsView {
         let _ = profiles::save_option_as_meta(enabled);
         cx.notify();
     }
+
+    fn save_settings(&mut self, cx: &mut Context<Self>) {
+        self.save_error = settings::save(&self.settings)
+            .err()
+            .map(|failure| SharedString::from(failure.to_string()));
+        cx.notify();
+    }
+
+    fn set_cursor_style(&mut self, style: CursorStyle, cx: &mut Context<Self>) {
+        self.settings.cursor_style = style;
+        self.save_settings(cx);
+    }
+
+    fn toggle_cursor_blink(&mut self, cx: &mut Context<Self>) {
+        self.settings.cursor_blink = !self.settings.cursor_blink;
+        self.save_settings(cx);
+    }
+
+    fn nudge_columns(&mut self, delta: i32, cx: &mut Context<Self>) {
+        let next = i32::from(self.settings.columns) + delta;
+        self.settings.columns = next.clamp(
+            i32::from(settings::MIN_COLUMNS),
+            i32::from(settings::MAX_COLUMNS),
+        ) as u16;
+        self.save_settings(cx);
+    }
+
+    fn nudge_rows(&mut self, delta: i32, cx: &mut Context<Self>) {
+        let next = i32::from(self.settings.rows) + delta;
+        self.settings.rows =
+            next.clamp(i32::from(settings::MIN_ROWS), i32::from(settings::MAX_ROWS)) as u16;
+        self.save_settings(cx);
+    }
+
+    fn set_shell_exit_behavior(&mut self, behavior: ShellExitBehavior, cx: &mut Context<Self>) {
+        self.settings.when_shell_exits = behavior;
+        self.save_settings(cx);
+    }
+
+    fn set_new_window_directory(
+        &mut self,
+        directory: NewWindowWorkingDirectory,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings.new_window_directory = directory;
+        self.save_settings(cx);
+    }
 }
 
 fn section_label(text: &'static str) -> impl IntoElement {
@@ -90,6 +158,48 @@ fn section_label(text: &'static str) -> impl IntoElement {
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rmac_ui::mac::text_secondary())
         .child(text)
+}
+
+/// One row of an exclusive-choice list (Profile, Cursor style, Shell exit
+/// behaviour, New-window directory): a label, a leading swatch when given
+/// one, and a trailing ✓ on the selected row.
+fn choice_row(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    selected: bool,
+    first: bool,
+    swatch: Option<u32>,
+    on_click: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_2()
+        .h(px(30.0))
+        .px_2()
+        .text_size(px(12.0))
+        .text_color(rmac_ui::mac::text())
+        .when(!first, |row| {
+            row.border_t_1().border_color(rmac_ui::mac::separator())
+        })
+        .hover(|hovered| hovered.bg(rmac_ui::mac::hover()))
+        .when_some(swatch, |row, color| {
+            row.child(
+                div()
+                    .w(px(14.0))
+                    .h(px(14.0))
+                    .rounded(px(rmac_ui::mac::radius_menu_item()))
+                    .border_1()
+                    .border_color(rmac_ui::mac::separator())
+                    .bg(gpui::rgb(color)),
+            )
+        })
+        .child(div().flex_1().child(label.into()))
+        .when(selected, |row| {
+            row.child(div().text_color(rmac_ui::mac::accent()).child("✓"))
+        })
+        .on_click(on_click)
 }
 
 impl Render for SettingsView {
@@ -128,38 +238,16 @@ impl Render for SettingsView {
                                 .overflow_hidden()
                                 .children(PROFILES.iter().enumerate().map(|(index, _)| {
                                     let profile = profiles::resolved(index);
-                                    let is_default = index == default_profile;
-                                    div()
-                                        .id(("settings-profile", index))
-                                        .flex()
-                                        .items_center()
-                                        .gap_2()
-                                        .h(px(30.0))
-                                        .px_2()
-                                        .text_size(px(12.0))
-                                        .text_color(rmac_ui::mac::text())
-                                        .when(index > 0, |row| {
-                                            row.border_t_1().border_color(rmac_ui::mac::separator())
-                                        })
-                                        .hover(|hovered| hovered.bg(rmac_ui::mac::hover()))
-                                        .child(
-                                            div()
-                                                .w(px(14.0))
-                                                .h(px(14.0))
-                                                .rounded(px(rmac_ui::mac::radius_menu_item()))
-                                                .border_1()
-                                                .border_color(rmac_ui::mac::separator())
-                                                .bg(gpui::rgb(profile.bg)),
-                                        )
-                                        .child(div().flex_1().child(profile.name))
-                                        .when(is_default, |row| {
-                                            row.child(
-                                                div().text_color(rmac_ui::mac::accent()).child("✓"),
-                                            )
-                                        })
-                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                    choice_row(
+                                        ("settings-profile", index),
+                                        profile.name,
+                                        index == default_profile,
+                                        index == 0,
+                                        Some(profile.bg),
+                                        cx.listener(move |this, _, _, cx| {
                                             this.set_default_profile(index, cx);
-                                        }))
+                                        }),
+                                    )
                                 })),
                         ),
                     )
@@ -167,6 +255,7 @@ impl Render for SettingsView {
                     .child(
                         div()
                             .px_3()
+                            .pb_3()
                             .flex()
                             .items_center()
                             .gap_3()
@@ -192,6 +281,158 @@ impl Render for SettingsView {
                                     ),
                             ),
                     )
+                    .child(section_label("Text"))
+                    .child(
+                        div().px_3().v_flex().child(
+                            div()
+                                .rounded(px(rmac_ui::mac::radius_control()))
+                                .border_1()
+                                .border_color(rmac_ui::mac::separator())
+                                .overflow_hidden()
+                                .children(CursorStyle::ALL.into_iter().enumerate().map(
+                                    |(index, style)| {
+                                        choice_row(
+                                            ("settings-cursor-style", index),
+                                            format!("Cursor: {}", style.label()),
+                                            style == self.settings.cursor_style,
+                                            index == 0,
+                                            None,
+                                            cx.listener(move |this, _, _, cx| {
+                                                this.set_cursor_style(style, cx);
+                                            }),
+                                        )
+                                    },
+                                )),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .id("settings-cursor-blink")
+                            .px_3()
+                            .pb_3()
+                            .mt_2()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .text_size(px(12.0))
+                            .text_color(rmac_ui::mac::text())
+                            .child("Blink Cursor")
+                            .child(if self.settings.cursor_blink {
+                                "On"
+                            } else {
+                                "Off"
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_cursor_blink(cx))),
+                    )
+                    .child(section_label("Window"))
+                    .child(
+                        div()
+                            .px_3()
+                            .pb_3()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .text_size(px(12.0))
+                            .text_color(rmac_ui::mac::text())
+                            .child("Size")
+                            .child(
+                                rmac_ui::Button::new("settings-cols-smaller", "−")
+                                    .small()
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.nudge_columns(-1, cx)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .w(px(32.0))
+                                    .text_center()
+                                    .child(SharedString::from(self.settings.columns.to_string())),
+                            )
+                            .child(
+                                rmac_ui::Button::new("settings-cols-bigger", "+")
+                                    .small()
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.nudge_columns(1, cx)),
+                                    ),
+                            )
+                            .child(div().text_color(rmac_ui::mac::text_tertiary()).child("×"))
+                            .child(
+                                rmac_ui::Button::new("settings-rows-smaller", "−")
+                                    .small()
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.nudge_rows(-1, cx)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .w(px(32.0))
+                                    .text_center()
+                                    .child(SharedString::from(self.settings.rows.to_string())),
+                            )
+                            .child(
+                                rmac_ui::Button::new("settings-rows-bigger", "+")
+                                    .small()
+                                    .on_click(cx.listener(|this, _, _, cx| this.nudge_rows(1, cx))),
+                            )
+                            .child(
+                                div()
+                                    .text_color(rmac_ui::mac::text_tertiary())
+                                    .child("cols × rows"),
+                            ),
+                    )
+                    .child(section_label("Shell"))
+                    .child(
+                        div().px_3().v_flex().child(
+                            div()
+                                .rounded(px(rmac_ui::mac::radius_control()))
+                                .border_1()
+                                .border_color(rmac_ui::mac::separator())
+                                .overflow_hidden()
+                                .children(ShellExitBehavior::ALL.into_iter().enumerate().map(
+                                    |(index, behavior)| {
+                                        choice_row(
+                                            ("settings-shell-exit", index),
+                                            behavior.label(),
+                                            behavior == self.settings.when_shell_exits,
+                                            index == 0,
+                                            None,
+                                            cx.listener(move |this, _, _, cx| {
+                                                this.set_shell_exit_behavior(behavior, cx);
+                                            }),
+                                        )
+                                    },
+                                )),
+                        ),
+                    )
+                    .child(section_label("General"))
+                    .child(
+                        div().px_3().v_flex().child(
+                            div()
+                                .rounded(px(rmac_ui::mac::radius_control()))
+                                .border_1()
+                                .border_color(rmac_ui::mac::separator())
+                                .overflow_hidden()
+                                .children(
+                                    NewWindowWorkingDirectory::ALL.into_iter().enumerate().map(
+                                        |(index, directory)| {
+                                            choice_row(
+                                                ("settings-new-window-dir", index),
+                                                format!(
+                                                    "New windows open with: {}",
+                                                    directory.label()
+                                                ),
+                                                directory == self.settings.new_window_directory,
+                                                index == 0,
+                                                None,
+                                                cx.listener(move |this, _, _, cx| {
+                                                    this.set_new_window_directory(directory, cx);
+                                                }),
+                                            )
+                                        },
+                                    ),
+                                ),
+                        ),
+                    )
                     .child(section_label("Keyboard"))
                     .child(
                         div()
@@ -206,7 +447,17 @@ impl Render for SettingsView {
                             .child("Use Option as Meta Key")
                             .child(if option_as_meta { "On" } else { "Off" })
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_option_as_meta(cx))),
-                    ),
+                    )
+                    .when_some(self.save_error.clone(), |scroll, error| {
+                        scroll.child(
+                            div()
+                                .px_3()
+                                .pb_3()
+                                .text_size(px(11.0))
+                                .text_color(rmac_ui::mac::danger())
+                                .child(error),
+                        )
+                    }),
             )
     }
 }

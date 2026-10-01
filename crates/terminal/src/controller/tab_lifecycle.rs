@@ -167,6 +167,35 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Settings ▸ Shell ▸ "When the shell exits": close a tab whose shell
+    /// exited cleanly (status 0, no signal), if the setting asks for it.
+    /// Checked every redraw — including right after a shell exits, since
+    /// that transition itself wakes a redraw — so the setting applies
+    /// immediately to every open window, unlike the other Settings fields
+    /// this crate caches per-window at creation. The cheap in-memory check
+    /// (`exited_cleanly`) almost always short-circuits before the rare,
+    /// one-time Settings file read.
+    pub(super) fn auto_close_exited_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending_close.is_some() || !self.tabs.iter().any(Session::exited_cleanly) {
+            return;
+        }
+        if settings::load().unwrap_or_default().when_shell_exits
+            != settings::ShellExitBehavior::CloseIfCleanExit
+        {
+            return;
+        }
+        let mut index = self.tabs.len();
+        while index > 0 {
+            index -= 1;
+            if self.tabs[index].exited_cleanly() {
+                self.request_close_tab(index, window, cx);
+                if self.pending_close.is_some() || self.tabs.is_empty() {
+                    return;
+                }
+            }
+        }
+    }
+
     fn terminate_all(&mut self) -> Result<(), SessionControlError> {
         let mut failed = false;
         for session in &mut self.tabs {

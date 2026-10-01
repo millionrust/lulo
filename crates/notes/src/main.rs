@@ -103,6 +103,7 @@ actions!(
         RenameSelectedFolder,
         DeleteSelectedFolder,
         InsertChecklist,
+        ToggleChecklistDone,
         ToggleBold,
         ToggleItalic,
         SetStyleTitle,

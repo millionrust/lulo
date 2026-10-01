@@ -306,7 +306,7 @@ impl NotesView {
                         ),
                 )
                 .into_any_element(),
-            MarkdownPreviewState::Ready { document, .. } => render_markdown_document(document),
+            MarkdownPreviewState::Ready { document, .. } => render_markdown_document(document, cx),
         }
     }
 }

@@ -33,6 +33,7 @@ impl NotesView {
                 Some("Notes"),
             ),
             KeyBinding::new("cmd-shift-l", InsertChecklist, Some("Notes")),
+            KeyBinding::new("cmd-shift-u", ToggleChecklistDone, Some("Notes")),
             KeyBinding::new("cmd-b", ToggleBold, Some("Notes")),
             KeyBinding::new("cmd-i", ToggleItalic, Some("Notes")),
             // ⌘W closes the window through the same review as the red

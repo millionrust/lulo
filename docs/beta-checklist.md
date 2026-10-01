@@ -160,17 +160,22 @@ for those.
 9. **TE-18 (P1, M)** — Saving a new Untitled document mostly works (direct
    Save is fixed, TE-22) but the full Save-sheet parity has remaining gaps.
    Plan: small follow-up once TE-22's current state is confirmed live.
-10. **NOTES-02 (P1, M)** — Checklist items aren't clickable to tick; ⇧⌘L
-    just inserts text. Plan: already investigated — needs a source-range
-    field added to `MarkdownPreviewBlock` before click-to-tick can work;
-    medium-sized, self-contained.
+10. **NOTES-02 (P1, M)** — Fixed `65477bc9`: clicking a checklist circle in
+    Markdown Preview, or ⇧⌘U on the current line, now flips `- [ ]`/`- [x]`
+    in the saved body (undoable, AT-SPI `CheckBox` role/state). Laptop unit
+    tests/clippy/fmt pass. Plan: still needs the extended
+    `tests/parallel/06-notes.json` checklist steps run in a nested session
+    before closing out; "Tick All" and the Mac's move-checked-to-bottom
+    setting remain unimplemented follow-ups.
 11. **FILES-05 / FILES-35 (P1, M/M)** — Files has no Tags sidebar section
     (macOS-only `cfg` gate left it out of the Linux build) and no
     Finder-equivalent Settings… pane. Plan: FILES-05 is a one-line `cfg`
     fix plus wiring; FILES-35 is a new preferences pane, medium effort.
-12. **TERM-03 (P1, M)** — Terminal's ⌘, opens only a profile-picker dropdown,
-    no real settings window (font, cursor, default shell are not
-    customisable). Plan: medium, self-contained new window.
+12. **TERM-03 (P1, M)** — Fixed `c894f1dd`: Settings… now has Text (cursor
+    style/blink), Window (size), Shell (when it exits) and General
+    (new-window directory) sections on top of Profile/Font. Plan: needs a
+    live Linux-build check before closing out; still one scrolling page,
+    not the Mac's tabbed window (TERM-17 follow-up).
 13. **BAR-01 (P1, S)** — The no-focus/desktop menu-bar fallback (Files
     menus) landed in source but hasn't been live-validated. Plan: small,
     just needs the reinstall-and-recheck pass.

@@ -700,6 +700,21 @@ impl Session {
         self.lifecycle().is_running() && !self.write_failed.load(Ordering::Acquire)
     }
 
+    /// Settings ▸ Shell ▸ "Close if the shell exited cleanly": true only
+    /// once the shell itself has exited with status 0 and no signal — never
+    /// true for a still-running shell, a non-zero exit, a signal, or a
+    /// `WaitFailed`/`StartFailed` session, which keep today's "stay open and
+    /// show a status message" behaviour regardless of the setting.
+    pub(super) fn exited_cleanly(&self) -> bool {
+        matches!(
+            self.lifecycle(),
+            SessionLifecycle::Exited {
+                exit_code: 0,
+                signal: None,
+            }
+        )
+    }
+
     pub(super) fn tab_state_label(&self) -> Option<String> {
         if self.lifecycle().is_running() && self.write_failed.load(Ordering::Acquire) {
             Some("Unavailable".into())

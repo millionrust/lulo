@@ -21,6 +21,8 @@ alacritty_terminal = "0.25"
 anyhow = "1"
 portable-pty = "0.9"
 rmac-storage.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 unicode-width = "=0.2.2"
 url.workspace = true
 vte = "0.15"

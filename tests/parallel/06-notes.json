@@ -18,6 +18,36 @@
     },
     {
       "shot": "note-typed"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "shot": "note-newline"
+    },
+    {
+      "type": "- [ ] Buy milk"
+    },
+    {
+      "shot": "checklist-typed"
+    },
+    {
+      "click": "More"
+    },
+    {
+      "shot": "more-menu-open"
+    },
+    {
+      "click": "Show Markdown Preview"
+    },
+    {
+      "shot": "checklist-preview"
+    },
+    {
+      "click": "Not done"
+    },
+    {
+      "shot": "checklist-ticked"
     }
   ],
   "mac": "unsafe",

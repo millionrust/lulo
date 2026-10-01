@@ -7,6 +7,27 @@ use url::Url;
 pub(crate) const MAX_URI_BYTES: usize = 768;
 const ROOT_LABEL: &str = "/";
 
+thread_local! {
+    /// The most recently *focused* window's active tab's working directory,
+    /// for Settings ▸ General ▸ "New windows open with: Same Working
+    /// Directory" (⌘N). Updated only while a window is the active one (see
+    /// `renderer.rs`'s `render`), mirroring Terminal's own "whichever window
+    /// was frontmost" rule. A single, process-wide cell is correct because
+    /// Terminal keeps every window on the one GPUI main thread.
+    static LAST_FRONT_DIRECTORY: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Record the focused window's current directory, for the next ⌘N.
+pub(crate) fn set_last_front_directory(path: PathBuf) {
+    LAST_FRONT_DIRECTORY.with(|cell| *cell.borrow_mut() = Some(path));
+}
+
+/// The last focused window's directory, if any terminal has reported one.
+pub(crate) fn last_front_directory() -> Option<PathBuf> {
+    LAST_FRONT_DIRECTORY.with(|cell| cell.borrow().clone())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct DirectoryContext {
     label: String,

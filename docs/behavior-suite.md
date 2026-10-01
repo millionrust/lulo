@@ -299,3 +299,10 @@ a second close plus Terminate closes the window and ends the job.
 python3 scripts/behavior/run_terminal_close.py --niri ~/rmac-niri-build/target/release/niri \
   --bin-dir $CARGO_TARGET_DIR/iterate
 ```
+
+Pending, unrecorded scenarios live in `docs/behavior-pending/` until a Mac
+recording exists: `settings/storage-refresh.json` and
+`text-editor/save-with-find-focus.json` (record them with
+`scripts/behavior/record_mac.py`), and `settings/hardware-touchscreen.json`,
+which is Lulo-only because no Mac has a touchscreen. Run it with
+`run_lulo.py --explore`.

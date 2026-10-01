@@ -17,7 +17,7 @@ use crate::{
     document, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, ExportPdf,
     FindNext, FindPrev, IncreaseFont, NewFile, OpenFile, OpenRecent0, OpenRecent1, OpenRecent2,
     OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8, OpenRecent9,
-    PrintFile, SaveFile, SaveFileAs, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8,
+    PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8,
     SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ToggleFind,
     ToggleMono, ToggleReplace,
 };
@@ -129,7 +129,13 @@ impl Render for EditorView {
             )
             .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_next(cx)))
             .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
-                eprintln!("DEBUG_FIND_PREV save={}", matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))));
+                if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {
+                    this.open_save_goto(window, cx);
+                } else {
+                    this.find_prev(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SaveGoToFolder, window, cx| {
                 if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {
                     this.open_save_goto(window, cx);
                 } else {

@@ -66,7 +66,6 @@ impl EditorView {
                     .aria_label("Go to Folder")
                     .accessible_text_input(&self.save_goto_input, cx)
                     .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                        eprintln!("DEBUG_SAVE_NAME_KEY {}", event.keystroke.key);
                         match event.keystroke.key.as_str() {
                             "escape" => {
                                 cx.stop_propagation();
@@ -160,6 +159,9 @@ impl EditorView {
             .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
                 this.open_save_goto(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &SaveGoToFolder, window, cx| {
+                this.open_save_goto(window, cx)
+            }))
             .w(px(458.0))
             .h(px(367.0))
             .px(px(26.0))
@@ -200,15 +202,6 @@ impl EditorView {
                     .role(Role::TextInput)
                     .aria_label("Save As:")
                     .accessible_text_input(&self.save_name_input, cx)
-                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                        if event.keystroke.key.eq_ignore_ascii_case("g")
-                            && event.keystroke.modifiers.platform
-                            && event.keystroke.modifiers.shift
-                        {
-                            cx.stop_propagation();
-                            this.open_save_goto(window, cx);
-                        }
-                    }))
                     .child(TextField::new(&self.save_name_input)),
             ))
             .child(row("Where:", where_popup))
@@ -264,7 +257,6 @@ impl EditorView {
             ))
             .attached()
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                eprintln!("DEBUG_SAVE_DIALOG_KEY {}", event.keystroke.key);
                 match event.keystroke.key.as_str() {
                     "escape" if this.save_goto_open => {
                         cx.stop_propagation();

@@ -522,6 +522,8 @@ impl Render for FinderView {
                         compress_label,
                         self.selection_count(),
                         can_open_with,
+                        self.open_with_menu.as_ref().and_then(|(path, association)|
+                            (self.selected_paths().first() == Some(path)).then_some(association)),
                         can_paste,
                         self.trash_view,
                         self.applications_view,

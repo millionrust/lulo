@@ -1,6 +1,42 @@
 use super::*;
 
 impl FinderView {
+    pub(super) fn load_open_with_menu(&mut self, cx: &mut Context<Self>) {
+        self.open_with_menu = None;
+        let Some(path) = self.selected_entry().filter(|entry| !entry.is_dir && self.selection_count() == 1)
+            .map(|entry| entry.path.clone()) else { return; };
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = rmac_app_launch::file_association(path.clone()).await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if this.selected_paths().first() == Some(&path) {
+                    if let Ok(association) = result {
+                        this.open_with_menu = Some((path, association));
+                        cx.notify();
+                    }
+                }
+            });
+        }).detach();
+    }
+
+    pub(super) fn open_with_menu_handler(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some((path, association)) = self.open_with_menu.as_ref() else { return; };
+        let Some(handler) = association.handlers.get(index) else { return; };
+        let path = path.clone();
+        let mime_type = association.mime_type.clone();
+        let application_id = handler.id.clone();
+        let application_name = handler.name.clone();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = rmac_app_launch::open_file_with(path, mime_type, application_id, false, false).await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                match result {
+                    Ok(()) => this.operation_notice = Some(format!("Opened with {application_name}").into()),
+                    Err(error) => this.operation_error = Some(format!("Could not open file: {error}").into()),
+                }
+                cx.notify();
+            });
+        }).detach();
+    }
+
     pub(super) fn request_open_with(&mut self, cx: &mut Context<Self>) {
         if self.applications_view {
             self.operation_error = Some("Applications open directly".into());

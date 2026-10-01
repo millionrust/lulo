@@ -204,6 +204,12 @@ struct DraggedPaths(Vec<PathBuf>);
 /// A sidebar shortcut drag. It never carries a filesystem move request.
 struct DraggedSidebarItem(PathBuf);
 
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = finder, no_json)]
+struct OpenWithHandlerAction {
+    index: usize,
+}
+
 /// The little pill shown under the cursor while dragging.
 struct DragPreview {
     count: usize,
@@ -323,6 +329,7 @@ struct FinderView {
     menu_purpose: MenuPurpose,
     sidebar_context_path: Option<PathBuf>,
     sidebar_context_is_favourite: bool,
+    open_with_menu: Option<(PathBuf, rmac_apps::FileAssociation)>,
     missing_favourite: Option<PathBuf>,
     help_open: bool,
     renaming: Option<(PathBuf, gpui::Entity<InputState>)>,

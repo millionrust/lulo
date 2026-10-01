@@ -187,6 +187,7 @@ impl FinderView {
             menu_purpose: MenuPurpose::Context,
             sidebar_context_path: None,
             sidebar_context_is_favourite: false,
+            open_with_menu: None,
             missing_favourite: None,
             help_open: false,
             anchor: None,

@@ -16,6 +16,7 @@ impl FinderView {
                 self.anchor = None;
             }
         }
+        self.load_open_with_menu(cx);
         self.menu_purpose = MenuPurpose::Context;
         self.menu_at = Some(rmac_ui::ContextMenuState::open(
             position,
@@ -822,6 +823,9 @@ impl FinderView {
                 this.add_paths_to_dock(this.selected_paths(), cx)
             }))
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
+            .on_action(cx.listener(|this, action: &OpenWithHandlerAction, _, cx| {
+                this.open_with_menu_handler(action.index, cx)
+            }))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
             .on_action(cx.listener(|this, _: &Compress, _, cx| this.compress_selection(cx)))

@@ -54,6 +54,7 @@ impl FinderView {
         compress_label: Option<String>,
         selection_count: usize,
         can_open_with: bool,
+        open_with_association: Option<&rmac_apps::FileAssociation>,
         _can_paste: bool,
         trash_view: bool,
         applications_view: bool,
@@ -125,11 +126,15 @@ impl FinderView {
             if selection_count > 1 {
                 m = m.item("New Folder with Selection", Box::new(NewFolderWithSelection));
             }
-            // The picker loads type handlers asynchronously and owns the
-            // default-app controls, so this row opens it instead of building
-            // a submenu from data that is not available to this menu builder.
             if can_open_with {
-                m = m.item("Open With", Box::new(OpenWith));
+                let mut submenu = rmac_ui::ContextMenu::new(pos);
+                if let Some(association) = open_with_association {
+                    for (index, handler) in association.handlers.iter().take(16).enumerate() {
+                        submenu = submenu.item(handler.name.clone(), Box::new(OpenWithHandlerAction { index }));
+                    }
+                    submenu = submenu.separator();
+                }
+                m = m.submenu("Open With", submenu.item("Other…", Box::new(OpenWith)));
             }
             m = m
                 .separator()

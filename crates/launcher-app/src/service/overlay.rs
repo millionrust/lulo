@@ -2,6 +2,43 @@
 
 use super::*;
 
+#[cfg(target_os = "linux")]
+struct RendererWarmup;
+
+#[cfg(target_os = "linux")]
+impl gpui::Render for RendererWarmup {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        _cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        gpui::div().child("Search")
+    }
+}
+
+/// GPUI initializes the Wayland renderer when it opens its first window.
+/// Do that once at login, before the shortcut endpoint becomes ready. This
+/// tiny, pointer-transparent surface never asks the compositor for focus.
+#[cfg(target_os = "linux")]
+pub(super) fn warm_renderer(cx: &mut App) {
+    use gpui::layer_shell::KeyboardInteractivity;
+
+    let mut options = overlay_options(
+        WindowBounds::Windowed(Bounds::new(point(px(0.0), px(0.0)), size(px(1.0), px(1.0)))),
+        0.0,
+    );
+    options.focus = false;
+    if let WindowKind::LayerShell(layer) = &mut options.kind {
+        layer.keyboard_interactivity = KeyboardInteractivity::None;
+    }
+    if let Err(error) = cx.open_window(options, |window, cx| {
+        window.set_input_region(Some(&[]));
+        cx.new(|_| RendererWarmup)
+    }) {
+        eprintln!("Launcher renderer warmup failed: {error}");
+    }
+}
+
 pub(crate) fn release(token: u64, cx: &mut App) {
     if cx.has_global::<LauncherService>() {
         cx.update_global::<LauncherService, _>(|service, _| {

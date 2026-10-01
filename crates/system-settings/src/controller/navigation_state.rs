@@ -285,8 +285,17 @@ impl Settings {
         self.select_category(category, window, cx);
         if let Some((subpage_category, page)) = requested_subpage {
             if self.current().name == subpage_category {
+                let measure_storage = matches!(page, SubPage::Storage);
                 self.nav = vec![page];
                 self.forward.clear();
+                // `push()` kicks off the Storage scan when it lands on the
+                // pane; this deep-link/second-launch path (SET-57's
+                // `NavigateToPane`) skipped the same call, so Storage never
+                // measured and stuck on "0.0 GB everywhere in System Data"
+                // when reached this way.
+                if measure_storage {
+                    self.measure_storage_categories(false, cx);
+                }
             }
         }
         self.sync_wifi_pane_scan_on_navigation(cx);

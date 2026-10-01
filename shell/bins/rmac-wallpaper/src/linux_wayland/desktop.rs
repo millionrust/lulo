@@ -1406,6 +1406,12 @@ impl Wallpaper {
                     .text_size(px(options.text_size))
                     .line_height(px(options.label_line()))
                     .text_center()
+                    // Same fix as Finder's icon view: wrap onto two lines and
+                    // middle-ellipsize what still overflows, rather than
+                    // `line_clamp` alone hard-cropping with no ellipsis
+                    // affix, which left a left-clipped fragment on screen.
+                    .whitespace_normal()
+                    .text_ellipsis_middle()
                     .line_clamp(2)
                     .text_color(rgba(0xFFFFFFFF))
                     .when(selected, |label| {

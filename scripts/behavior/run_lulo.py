@@ -1245,6 +1245,94 @@ def check_files_tag_swatches(nested: Nested, bins: list[Path], settle: float) ->
         run.stop()
 
 
+def check_storage_deep_link(nested: Nested, bins: list[Path], settle: float) -> None:
+    """A second `--pane storage` launch (the deep-link/relaunch path a system
+    launcher or `--pane storage` capture uses, dispatched through SET-57's
+    single-window reuse as `NavigateToPane`) must measure Storage categories
+    the same way clicking "Storage" in the sidebar already does. Regression
+    coverage for a bug where `navigate_to_pane()` set the pane's nav stack
+    directly but never called `measure_storage_categories()`, leaving every
+    category stuck at "0.0 GB" forever when Settings was reached this way."""
+    scenario = {"app": "settings", "launch": {}, "steps": []}
+    run = LuloRun(nested, "private/storage-deep-link", scenario, bins, settle, None)
+    try:
+        run.setup()
+        run.launch()
+
+        def refresh_y() -> Optional[int]:
+            frame = run.active_frame()
+            if frame is None:
+                return None
+            refresh = next((node for node in descendants(frame, limit=3000) if name(node) == "Refresh"), None)
+            box = extents(refresh) if refresh is not None else None
+            return box[1] if box else None
+
+        second = subprocess.Popen(
+            [str(run.binary()), "--pane", "storage"], env=run.env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, close_fds=True,
+        )
+        try:
+            second.wait(10)
+        except subprocess.TimeoutExpired:
+            second.kill()
+            second.wait(5)
+        if second.returncode not in (0, None):
+            raise StepFailed(f"second `--pane storage` launch exited {second.returncode}")
+
+        def on_storage_pane() -> bool:
+            frame = run.active_frame()
+            return frame is not None and "Storage" in name(frame)
+
+        reached_storage = False
+        reach_deadline = time.monotonic() + 10.0
+        while time.monotonic() < reach_deadline:
+            if on_storage_pane():
+                reached_storage = True
+                break
+            time.sleep(0.1)
+        if not reached_storage:
+            raise StepFailed(
+                "the second launch's --pane storage deep link never reached "
+                "the Storage pane at all (navigate_to_pane/SET-57 dispatch itself "
+                "is broken, not just the measurement)"
+            )
+
+        # Once on Storage, `categories` is `None` (unmeasured) until
+        # `measure_storage_categories()` runs; only then does the render add
+        # a second card (System Data's own row, plus any non-empty category)
+        # below the usage bar, pushing Refresh down from where it sits right
+        # under the bar alone. AT-SPI exposes no text for the GB figures
+        # themselves (`icon_row`/`storage_legend` are plain, unnamed divs),
+        # so this geometry shift -- confirmed by hand against a fixed build,
+        # where the categories card puts Refresh at y=263 -- is the only
+        # available signal that a scan actually completed.
+        deadline = time.monotonic() + 15
+        measured = False
+        while time.monotonic() < deadline:
+            y = refresh_y()
+            if y is not None and y >= 220:
+                measured = True
+                break
+            time.sleep(0.1)
+        if not measured:
+            frame = run.active_frame()
+            names = [f"{role(n)} {name(n)!r}" for n in descendants(frame, limit=400)] if frame else []
+            shot = nested.work / "debug-storage-deep-link.png"
+            subprocess.run(["grim", str(shot)], env=run.env, check=False)
+            raise StepFailed(
+                "Storage never measured categories after a --pane storage deep link "
+                "(the sidebar-click path already works; this one regressed); "
+                f"refresh_y={refresh_y()}, screenshot={shot}, tree={names}"
+            )
+        print(
+            "PASS  a --pane storage deep link (second launch, SET-57 reuse) "
+            "measures Storage categories, not just a sidebar click",
+            flush=True,
+        )
+    finally:
+        run.stop()
+
+
 def inner(args: argparse.Namespace) -> int:
     work = Path(args.inner)
     nested = Nested(work)
@@ -1259,6 +1347,9 @@ def inner(args: argparse.Namespace) -> int:
             return 0
         if args.check_file_tag_swatches:
             check_files_tag_swatches(nested, bins, args.settle)
+            return 0
+        if args.check_storage_deep_link:
+            check_storage_deep_link(nested, bins, args.settle)
             return 0
         for path in sc.scenario_paths(only=args.scenarios):
             sid = sc.scenario_id(path)
@@ -1429,6 +1520,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--explore-steps", type=int, default=0, help="with --explore: play this many steps first")
     parser.add_argument("--check-context-submenus", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check-file-tag-swatches", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--check-storage-deep-link", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--benchmark-storage", type=int, metavar="FILES", help="measure Storage against a synthetic home")
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -1462,6 +1554,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt.append("--check-context-submenus")
     if args.check_file_tag_swatches:
         rebuilt.append("--check-file-tag-swatches")
+    if args.check_storage_deep_link:
+        rebuilt.append("--check-storage-deep-link")
     if args.benchmark_storage:
         rebuilt += ["--benchmark-storage", str(args.benchmark_storage)]
     return outer(args, rebuilt)

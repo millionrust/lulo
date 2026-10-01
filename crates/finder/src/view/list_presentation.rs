@@ -436,6 +436,15 @@ impl FinderView {
                         .text_size(rmac_ui::text_px(f32::from(options.text_size)))
                         .line_height(px(15.0))
                         .text_center()
+                        // Mac wraps a long name onto two lines and only
+                        // middle-ellipsizes what still doesn't fit
+                        // ("Screenshot 2026-09-…8.26.03 PM"), never clipping
+                        // from the left. `line_clamp` alone just crops
+                        // overflow with no ellipsis affix at all, which left
+                        // a left-clipped fragment ("9-30 at 8.26.03") on
+                        // screen instead.
+                        .whitespace_normal()
+                        .text_ellipsis_middle()
                         .line_clamp(2)
                         .text_color(if selected {
                             selected_text(window_active)

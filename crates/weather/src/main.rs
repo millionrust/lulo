@@ -14,7 +14,14 @@ use crate::view::WeatherView;
 
 gpui::actions!(
     weather,
-    [Refresh, FindCity, UseCelsius, UseFahrenheit, CloseWindow]
+    [
+        Refresh,
+        FindCity,
+        UseCelsius,
+        UseFahrenheit,
+        ToggleSidebar,
+        CloseWindow
+    ]
 );
 
 #[derive(rust_embed::RustEmbed)]
@@ -54,6 +61,8 @@ fn main() {
                 KeyBinding::new("cmd-r", Refresh, context),
                 KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, FindCity, context),
                 KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
+                KeyBinding::new("alt-cmd-w", CloseWindow, context),
+                KeyBinding::new("ctrl-cmd-s", ToggleSidebar, context),
             ]);
             rmac_ui::install_app_menu(WEATHER, cx);
             let (width, height) = metrics::WINDOW;

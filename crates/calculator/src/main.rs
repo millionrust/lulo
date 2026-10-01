@@ -72,6 +72,7 @@ fn main() {
                     CloseWindow,
                     Some("Calculator"),
                 ),
+                KeyBinding::new("alt-cmd-w", CloseWindow, Some("Calculator")),
             ]);
             rmac_ui::install_app_menu(CALCULATOR, cx);
             // Basic is the only mode, so View ▸ Basic is always the ticked one.

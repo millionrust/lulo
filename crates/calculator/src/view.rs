@@ -156,6 +156,8 @@ impl CalculatorView {
                 .restore_value(self.calculator.current_value()),
         }
         self.mode = mode;
+        rmac_ui::set_menu_checked("calculator::ShowBasic", mode == Mode::Basic, cx);
+        rmac_ui::set_menu_checked("calculator::ShowScientific", mode == Mode::Scientific, cx);
         let (width, height) = match mode {
             Mode::Basic => (keypad::WINDOW_WIDTH, keypad::WINDOW_HEIGHT),
             Mode::Scientific => (
@@ -170,11 +172,13 @@ impl CalculatorView {
     fn toggle_mode_menu(&mut self, cx: &mut Context<Self>) {
         self.mode_menu_open = !self.mode_menu_open;
         self.history_open = false;
+        rmac_ui::set_menu_checked("calculator::ShowHistory", false, cx);
         cx.notify();
     }
 
     fn toggle_history(&mut self, cx: &mut Context<Self>) {
         self.history_open = !self.history_open;
+        rmac_ui::set_menu_checked("calculator::ShowHistory", self.history_open, cx);
         self.mode_menu_open = false;
         cx.notify();
     }
@@ -195,6 +199,7 @@ impl CalculatorView {
             }
         }
         self.history_open = false;
+        rmac_ui::set_menu_checked("calculator::ShowHistory", false, cx);
         cx.notify();
     }
 

@@ -851,18 +851,30 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Edit",
         items: &[
+            item!("Undo", "input::Undo", "⌘Z"),
+            item!("Redo", "input::Redo", "⇧⌘Z"),
+            item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "calculator::Copy", "⌘C"),
             item!("Paste", "calculator::Paste", "⌘V"),
+            item!("Delete", "input::Delete", ""),
+            item!("Select All", "input::SelectAll", "⌘A"),
         ],
     },
     MenuSpec {
         label: "View",
-        items: &[item!("Basic", "calculator::ShowBasic", "⌘1")],
+        items: &[
+            item!("Basic", "calculator::ShowBasic", "⌘1"),
+            item!("Scientific", "calculator::ShowScientific", "⌘2"),
+            item!("Show History", "calculator::ShowHistory", "⌃⌘S", separator),
+        ],
     },
     MenuSpec {
         // Calculator has no File menu; Close is in its Window menu.
         label: WINDOW_MENU,
-        items: &[item!("Close", "calculator::CloseWindow", "⌘W")],
+        items: &[
+            item!("Close", "calculator::CloseWindow", "⌘W"),
+            item!("Close All", "calculator::CloseWindow", "⌥⌘W"),
+        ],
     },
 ];
 
@@ -982,6 +994,7 @@ const CLOCK_MENUS: &[MenuSpec] = &[
         items: &[
             item!("New", "clock::NewItem", "⌘N"),
             item!("Close", "clock::CloseWindow", "⌘W", separator),
+            item!("Close All", "clock::CloseWindow", "⌥⌘W"),
         ],
     },
     MenuSpec {
@@ -992,6 +1005,7 @@ const CLOCK_MENUS: &[MenuSpec] = &[
             item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "input::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
+            item!("Delete", "input::Delete", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
         ],
     },
@@ -1011,11 +1025,24 @@ const CLOCK_MENUS: &[MenuSpec] = &[
 const WEATHER_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "File",
-        items: &[item!("Close Window", "weather::CloseWindow", "⌘W")],
+        items: &[
+            item!("Close", "weather::CloseWindow", "⌘W"),
+            item!("Close All", "weather::CloseWindow", "⌥⌘W"),
+        ],
     },
     MenuSpec {
         label: "Edit",
-        items: &[item!("Find", "weather::FindCity", "⌘F")],
+        items: &[
+            item!("Undo", "input::Undo", "⌘Z"),
+            item!("Redo", "input::Redo", "⇧⌘Z"),
+            item!("Cut", "input::Cut", "⌘X", separator),
+            item!("Copy", "input::Copy", "⌘C"),
+            item!("Paste", "input::Paste", "⌘V"),
+            item!("Paste and Match Style", "input::Paste", "⌥⇧⌘V"),
+            item!("Delete", "input::Delete", ""),
+            item!("Select All", "input::SelectAll", "⌘A"),
+            item!("Search", "weather::FindCity", "⌘F", separator),
+        ],
     },
     MenuSpec {
         label: "View",
@@ -1023,6 +1050,7 @@ const WEATHER_MENUS: &[MenuSpec] = &[
             item!("Celsius", "weather::UseCelsius", ""),
             item!("Fahrenheit", "weather::UseFahrenheit", ""),
             item!("Refresh", "weather::Refresh", "⌘R", separator),
+            item!("Hide Sidebar", "weather::ToggleSidebar", "⌃⌘S"),
         ],
     },
 ];

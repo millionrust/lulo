@@ -7,7 +7,7 @@ use std::time::Duration;
 use gpui::{
     div, linear_color_stop, linear_gradient, prelude::FluentBuilder as _, px, rgb, rgba, svg,
     AnyElement, AppContext as _, ClickEvent, Context, Entity, FocusHandle, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
 use rmac_ui::{mac, InputEvent, InputState, SearchField};
@@ -18,7 +18,7 @@ use rmac_weather::metrics as m;
 use rmac_weather::store::{self, Cached, Settings};
 use rmac_weather::summary::{self, Column, Unit};
 
-use crate::{CloseWindow, FindCity, Refresh, UseCelsius, UseFahrenheit};
+use crate::{CloseWindow, FindCity, Refresh, ToggleSidebar, UseCelsius, UseFahrenheit};
 
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
 const REFRESH_EVERY: Duration = Duration::from_secs(60 * 60);
@@ -53,6 +53,7 @@ pub(crate) struct WeatherView {
     settings_error: Option<SharedString>,
     timer_generation: u64,
     timers_running: bool,
+    sidebar_visible: bool,
 }
 
 fn now_seconds() -> i64 {
@@ -103,6 +104,7 @@ impl WeatherView {
             results: Vec::new(),
             search_generation: 0,
             search_failed: false,
+            sidebar_visible: true,
             settings_error,
             timer_generation: 0,
             timers_running: false,
@@ -315,8 +317,24 @@ impl WeatherView {
 
     fn set_unit(&mut self, unit: Unit, cx: &mut Context<Self>) {
         self.unit = unit;
+        rmac_ui::set_menu_checked("weather::UseCelsius", unit == Unit::Celsius, cx);
+        rmac_ui::set_menu_checked("weather::UseFahrenheit", unit == Unit::Fahrenheit, cx);
         self.settings.fahrenheit = Some(unit == Unit::Fahrenheit);
         self.save(cx);
+        cx.notify();
+    }
+
+    fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.sidebar_visible = !self.sidebar_visible;
+        rmac_ui::set_menu_label(
+            "weather::ToggleSidebar",
+            if self.sidebar_visible {
+                "Hide Sidebar"
+            } else {
+                "Show Sidebar"
+            },
+            cx,
+        );
         cx.notify();
     }
 
@@ -635,7 +653,11 @@ impl WeatherView {
     }
 
     fn render_main(&self, width: f32, now: i64) -> impl IntoElement {
-        let left = m::SIDEBAR_WIDTH;
+        let left = if self.sidebar_visible {
+            m::SIDEBAR_WIDTH
+        } else {
+            0.0
+        };
         let place = self.settings.current().cloned();
         let key = place.as_ref().map(Place::key).unwrap_or_default();
         let loaded = self.loaded.get(&key);
@@ -1110,6 +1132,8 @@ fn range_bar(from: f32, to: f32, dot: Option<f32>) -> impl IntoElement {
 
 impl Render for WeatherView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        rmac_ui::set_menu_checked("weather::UseCelsius", self.unit == Unit::Celsius, cx);
+        rmac_ui::set_menu_checked("weather::UseFahrenheit", self.unit == Unit::Fahrenheit, cx);
         let width = f32::from(window.viewport_size().width);
         let now = now_seconds();
         let (light_x, light_y) = m::TRAFFIC_LIGHT_CENTER;
@@ -1119,7 +1143,9 @@ impl Render for WeatherView {
             div()
                 .size_full()
                 .child(self.render_main(width, now))
-                .child(self.render_sidebar(now, cx))
+                .when(self.sidebar_visible, |body| {
+                    body.child(self.render_sidebar(now, cx))
+                })
                 .into_any_element()
         };
         let error = self.settings_error.clone();
@@ -1129,8 +1155,12 @@ impl Render for WeatherView {
             .key_context("Weather")
             .on_action(cx.listener(|this, _: &Refresh, _, cx| this.refresh_all(true, cx)))
             .on_action(cx.listener(|this, _: &FindCity, window, cx| {
+                if !this.sidebar_visible {
+                    this.toggle_sidebar(cx);
+                }
                 this.search.update(cx, |state, cx| state.focus(window, cx));
             }))
+            .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
             .on_action(cx.listener(|this, _: &UseCelsius, _, cx| this.set_unit(Unit::Celsius, cx)))
             .on_action(
                 cx.listener(|this, _: &UseFahrenheit, _, cx| this.set_unit(Unit::Fahrenheit, cx)),
@@ -1167,6 +1197,24 @@ impl Render for WeatherView {
                     .left(px(light_x - mac::traffic_light_hit_width() / 2.0))
                     .top(px(light_y - mac::traffic_light_hit_height() / 2.0))
                     .child(rmac_ui::traffic_lights_active(window.is_window_active())),
+            )
+            .child(
+                div()
+                    .id("weather-sidebar-toggle")
+                    .role(Role::Button)
+                    .aria_label("Sidebar")
+                    .absolute()
+                    .left(px(78.0))
+                    .top(px(10.0))
+                    .size(px(32.0))
+                    .rounded(px(mac::radius_menu_item()))
+                    .bg(mac::control_fill())
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(mac::text())
+                    .child("▥")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_sidebar(cx))),
             )
             .children(error.map(|message| {
                 div()

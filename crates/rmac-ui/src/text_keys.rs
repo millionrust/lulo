@@ -47,6 +47,9 @@ fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-c", Copy, CONTEXT),
         KeyBinding::new("cmd-x", Cut, CONTEXT),
         KeyBinding::new("cmd-v", Paste, CONTEXT),
+        // InputState stores unstyled text, so paste already matches the
+        // destination's style. Share this equivalent across every field.
+        KeyBinding::new("alt-shift-cmd-v", Paste, CONTEXT),
         KeyBinding::new("ctrl-a", MoveHome, CONTEXT),
         KeyBinding::new("cmd-left", MoveHome, CONTEXT),
         KeyBinding::new("ctrl-e", MoveEnd, CONTEXT),

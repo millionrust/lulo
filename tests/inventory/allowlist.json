@@ -73,6 +73,11 @@
     },
     {
       "app": "Finder",
+      "label": "Store your Desktop & Documents folders in iCloud Drive and access them from your other devices.",
+      "reason": "This setting moves local folders into Apple Account iCloud storage."
+    },
+    {
+      "app": "Finder",
       "label": "Import from iPhone",
       "reason": "Continuity import requires Apple's iPhone device services."
     },

@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_677 gaps across 10 apps; 89 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_673 gaps across 10 apps; 90 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Coverage notes
 
@@ -251,10 +251,6 @@ To finish this run once the Mac is free: `python3 scripts/inventory/mac_inventor
 | FIL-MENU-066 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | FIL-MENU-086 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⌃⇥ | shortcut differs |
 | FIL-MENU-085 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⌃⇧⇥ | shortcut differs |
-| FIL-SETTINGS-001 | missing settings control | Finder Settings | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-002 | missing settings control | Store your Desktop & Documents folders in iCloud Drive and access them from your other devices. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-003 | missing settings control | heading | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-004 | missing settings control | tickbox | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | FIL-CONTEXT-004 | Lulo-only (not on the Mac) | <handler.name.clone()> | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
 | FIL-CONTEXT-005 | Lulo-only (not on the Mac) | Blue | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
 | FIL-CONTEXT-006 | Lulo-only (not on the Mac) | Gray | context menu ▸ file |  |  | present in Lulo but not found on the Mac |

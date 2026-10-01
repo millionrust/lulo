@@ -72,6 +72,19 @@ class NormalizeShortcutTests(unittest.TestCase):
         self.assertEqual(norm.normalize_shortcut("⌘"), "⌘↑")
 
 
+class SettingsCaptureTests(unittest.TestCase):
+    def test_unnamed_ax_roles_and_window_title_are_not_controls(self):
+        controls = [
+            {"role": "AXHeading", "label": "heading"},
+            {"role": "AXCheckBox", "label": "tickbox"},
+            {"role": "AXStaticText", "label": "Finder Settings"},
+            {"role": "AXCheckBox", "label": "Show all filename extensions"},
+        ]
+        self.assertEqual(
+            d._labels_from_mac_controls(controls), {"Show all filename extensions"}
+        )
+
+
 class SystemSettingsSidebarTests(unittest.TestCase):
     def test_general_subpages_are_not_reported_as_sidebar_rows(self):
         labels = {row["label"] for row in li.read_settings_sidebar()}

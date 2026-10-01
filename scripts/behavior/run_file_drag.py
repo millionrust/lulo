@@ -266,7 +266,7 @@ def inner(args: argparse.Namespace) -> int:
         check_move(run, desktop_to_files, source_dir / desktop_to_files.name,
                    "Desktop → Files moves file into open folder")
         # The new folder sorts into the first Desktop grid slot after the
-        source file moves into Files, so desktop_icon still points at it.
+        # source file moves into Files, so desktop_icon still points at it.
         desktop_favourite = desktop_destination.parent / "A Sidebar Desktop Folder"
         desktop_favourite.mkdir()
         time.sleep(.8)

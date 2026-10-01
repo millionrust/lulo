@@ -50,6 +50,8 @@ pub(crate) struct LauncherView {
     /// the selected row turns from the grey top-hit plate to blue.
     keyboard_selection: bool,
     window_handle: AnyWindowHandle,
+    /// Set only by the private timing runner; normal result updates never
+    /// build a snapshot solely to measure latency.
     input_probe: Option<InputProbe>,
 }
 
@@ -263,8 +265,10 @@ impl LauncherView {
                     if this
                         .update(cx, |this, cx| {
                             if this.coordinator.apply(batch) {
-                                if !this.coordinator.snapshot().rows.is_empty() {
-                                    if let Some(probe) = &mut this.input_probe {
+                                if let Some(probe) = &mut this.input_probe {
+                                    if probe.pending.is_some()
+                                        && !this.coordinator.snapshot().rows.is_empty()
+                                    {
                                         if let Some((sequence, started)) = probe.pending.take() {
                                             let path = probe
                                                 .directory

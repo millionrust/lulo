@@ -1,5 +1,26 @@
 # Behaviour-parity suite
 
+## Spotlight latency
+
+`scripts/behavior/run_cold_surfaces.py` is the private nested-niri Spotlight
+performance scenario. It starts one resident launcher before dispatching
+through niri and `rmac-shortcut-dispatch`, checks the first and later GPUI
+frames against a 150 ms limit, and types `cal` through the nested virtual
+keyboard. The echoed field and cached results must reach a frame within
+50 ms of the input-change event. It also verifies the launcher stays resident
+after dismissal and records its five-second memory sample. Other shell
+surfaces retain their lifecycle checks.
+
+```sh
+python3 scripts/behavior/run_cold_surfaces.py \
+  --bin-dir ~/rmac-wt/target/iterate \
+  --output /tmp/lulo-cold-surfaces.json --resident-settle 5
+```
+
+The cross-platform JSON scenario harness has no Spotlight app target, and
+its Mac recorder marks Spotlight input unsafe for the owner's live session;
+this private runner covers the interaction and timing on Lulo.
+
 ## Cross-app file drag
 
 `scripts/behavior/run_file_drag.py` starts the shipped Dock and wallpaper in

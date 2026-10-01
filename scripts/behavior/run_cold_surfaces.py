@@ -145,16 +145,20 @@ def inner(args: argparse.Namespace) -> int:
                 time.sleep(1.2)
                 run.check(f"{action} remains resident after dismissal", process.poll() is None)
                 if action == "launcher":
-                    reopened_at = time.monotonic()
-                    reopened = dispatch(run, bins, action, bool(chord))
-                    run.check("Spotlight later dispatch accepted", reopened)
-                    if reopened:
-                        later_ready = wait_for_frame(run.work / "show-2.ready", process)
+                    later_frames = []
+                    for show_number in range(2, 5):
+                        reopened_at = time.monotonic()
+                        reopened = dispatch(run, bins, action, bool(chord))
+                        run.check(f"Spotlight show {show_number} dispatch accepted", reopened)
+                        if not reopened:
+                            break
+                        later_ready = wait_for_frame(run.work / f"show-{show_number}.ready", process)
                         later_ms = round((time.monotonic() - reopened_at) * 1000, 1)
-                        run.check("Spotlight later frame within 150 ms",
+                        run.check(f"Spotlight show {show_number} frame within 150 ms",
                                   later_ready and later_ms <= 150, f"{later_ms} ms")
-                        results[action]["later_frame_ms"] = later_ms if later_ready else None
+                        later_frames.append(later_ms if later_ready else None)
                         dispatch(run, bins, action, bool(chord))
+                    results[action]["later_frames_ms"] = later_frames
             else:
                 time.sleep(1.2)
                 run.check(f"{action} stays alive during idle grace", process.poll() is None)

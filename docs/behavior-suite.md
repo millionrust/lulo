@@ -1,5 +1,17 @@
 # Behaviour-parity suite
 
+## Terminal profiles
+
+`docs/behavior-pending/terminal/profile-settings.json` describes the Settings
+shortcut. It remains pending until a real Mac recording can provide its
+`.mac.json` expectation. On Lulo, the private nested-compositor check opens
+Settings, checks all 12 Mac profile names in the accessibility tree, then
+selects Clear Dark and checks that the choice was saved:
+
+```sh
+python3 scripts/behavior/run_lulo.py --bin-dir ~/rmac-wt/target/iterate --check-terminal-profiles
+```
+
 ## Spotlight latency
 
 `scripts/behavior/run_cold_surfaces.py` is the private nested-niri Spotlight

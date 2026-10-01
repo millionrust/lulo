@@ -21,7 +21,7 @@ FORMAT = 1
 REPO = Path(__file__).resolve().parents[2]
 SCENARIO_ROOT = REPO / "tests" / "behavior"
 
-APPS = {"files", "text-editor", "settings", "calculator", "desktop", "preview"}
+APPS = {"files", "text-editor", "settings", "calculator", "desktop", "preview", "terminal"}
 STEP_KINDS = {
     "key",
     "type",

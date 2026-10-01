@@ -51,6 +51,7 @@ APP_BINARIES = {
     "calculator": ["rmac-calculator"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
     "preview": ["rmac-preview"],
+    "terminal": ["rmac-terminal"],
 }
 KEEP_ENV = {"PATH", "LANG", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DIR", "RUST_BACKTRACE", "RUST_LOG"}
 TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
@@ -1399,6 +1400,9 @@ def inner(args: argparse.Namespace) -> int:
         if args.check_storage_deep_link:
             check_storage_deep_link(nested, bins, args.settle)
             return 0
+        if args.check_terminal_profiles:
+            check_terminal_profiles(nested, bins, args.settle)
+            return 0
         if args.preview_markup_capture:
             capture_preview_markup(nested, bins, args.settle, Path(args.preview_markup_capture))
             return 0
@@ -1446,6 +1450,39 @@ def inner(args: argparse.Namespace) -> int:
     passed = sum(r["status"] == "pass" for r in results)
     print(f"\n{passed}/{len(results)} scenarios match the Mac")
     return 0 if passed == len(results) else 1
+
+
+def check_terminal_profiles(nested: Nested, bins: list[Path], settle: float) -> None:
+    """Exercise Terminal's Settings shortcut and profile persistence in nested niri."""
+    scenario = sc.load(sc.REPO / "docs" / "behavior-pending" / "terminal" / "profile-settings.json")
+    run = LuloRun(nested, "private/terminal-profiles", scenario, bins, settle, None)
+    try:
+        run.setup()
+        run.launch()
+        run.run_steps()
+        windows = [w for w in nested.windows() if w.get("pid") == run.process.pid]
+        if len(windows) != 2:
+            raise StepFailed(f"⌘, should open one Settings window; found {len(windows)} windows")
+        print("PASS  ⌘, opens one Terminal Settings window", flush=True)
+
+        names = {name(node) for frame in run.frames() for node in descendants(frame, limit=6000)}
+        profiles = {
+            "Basic", "Clear Dark", "Clear Light", "Grass", "Homebrew",
+            "Man Page", "Novel", "Ocean", "Pro", "Red Sands",
+            "Silver Aerogel", "Solid Colors",
+        }
+        missing = profiles - names
+        if missing:
+            raise StepFailed(f"Settings does not expose profile rows: {sorted(missing)}")
+        print("PASS  all 12 Mac profile names are exposed in Settings", flush=True)
+
+        run.click_item("Clear Dark", "left")
+        path = Path(run.env["XDG_CONFIG_HOME"]) / "rmac-terminal" / "profile.txt"
+        if not path.exists() or path.read_text().strip() != "Clear Dark":
+            raise StepFailed("choosing Clear Dark did not persist the selected profile")
+        print("PASS  choosing Clear Dark persists the profile", flush=True)
+    finally:
+        run.stop()
 
 
 def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
@@ -1572,6 +1609,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--check-context-submenus", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check-file-tag-swatches", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check-storage-deep-link", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--check-terminal-profiles", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--benchmark-storage", type=int, metavar="FILES", help="measure Storage against a synthetic home")
     parser.add_argument("--preview-markup-capture", help=argparse.SUPPRESS)
     parser.add_argument("--inner", help=argparse.SUPPRESS)
@@ -1608,6 +1646,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt.append("--check-file-tag-swatches")
     if args.check_storage_deep_link:
         rebuilt.append("--check-storage-deep-link")
+    if args.check_terminal_profiles:
+        rebuilt.append("--check-terminal-profiles")
     if args.benchmark_storage:
         rebuilt += ["--benchmark-storage", str(args.benchmark_storage)]
     if args.preview_markup_capture:

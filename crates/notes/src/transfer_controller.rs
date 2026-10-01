@@ -3,6 +3,21 @@
 use super::*;
 
 impl NotesView {
+    pub(super) fn export_note_markdown(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() || self.latest_local_generation.is_some() {
+            return;
+        }
+        let Some(note) = self.session.selected_note().filter(|note| !note.deleted) else {
+            return;
+        };
+        let scope = ExportScope::Note {
+            note_id: note.id,
+            expected_note_revision: note.revision,
+        };
+        self.set_export_scope(scope, cx);
+        self.choose_export_destination(ExportFormat::Markdown, cx);
+    }
+
     pub(super) fn choose_image_attachment(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;

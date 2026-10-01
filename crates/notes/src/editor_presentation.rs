@@ -139,6 +139,10 @@ impl NotesView {
         };
         let editable =
             self.is_interactive_ready() && !note.deleted && !self.markdown_preview_visible;
+        let body_size = BODY_SIZE + f32::from(self.note_zoom);
+        let body_line = BODY_LINE + f32::from(self.note_zoom);
+        let title_size = TITLE_SIZE + f32::from(self.note_zoom);
+        let title_line = TITLE_LINE + f32::from(self.note_zoom);
         let attachments = self.render_attachments(note, cx);
         let body = if self.markdown_preview_visible {
             self.render_markdown_preview(cx)
@@ -157,16 +161,16 @@ impl NotesView {
                 .min_h(px(0.0))
                 .px(px(EDITOR_INSET))
                 .pb_4()
-                .text_size(rmac_ui::text_px(BODY_SIZE))
-                .line_height(px(BODY_LINE))
+                .text_size(rmac_ui::text_px(body_size))
+                .line_height(px(body_line))
                 .text_color(editor_text())
                 .child(
                     TextField::new(&self.body)
                         .h_full()
                         .appearance(false)
                         .disabled(!editable)
-                        .text_size(rmac_ui::text_px(BODY_SIZE))
-                        .line_height(px(BODY_LINE))
+                        .text_size(rmac_ui::text_px(body_size))
+                        .line_height(px(body_line))
                         .px_0()
                         .py_0(),
                 )
@@ -208,17 +212,17 @@ impl NotesView {
                     .flex_none()
                     .px(px(EDITOR_INSET))
                     .pt(px(TITLE_TOP))
-                    .text_size(rmac_ui::text_px(TITLE_SIZE))
-                    .line_height(px(TITLE_LINE))
+                    .text_size(rmac_ui::text_px(title_size))
+                    .line_height(px(title_line))
                     .font_weight(mac::BOLD)
                     .text_color(editor_text())
                     .child(
                         TextField::new(&self.title)
                             .appearance(false)
                             .disabled(!editable)
-                            .text_size(rmac_ui::text_px(TITLE_SIZE))
-                            .line_height(px(TITLE_LINE))
-                            .h(px(TITLE_LINE))
+                            .text_size(rmac_ui::text_px(title_size))
+                            .line_height(px(title_line))
+                            .h(px(title_line))
                             .px_0()
                             .py_0(),
                     ),

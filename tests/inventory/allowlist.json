@@ -66,6 +66,67 @@
       "label": "Send to Keka",
       "match": "exact",
       "reason": "See \"Compress using Keka\": the Keka Finder Sync extension, not stock Finder."
+    },
+    {
+      "app": "Notes",
+      "label": "Accounts…",
+      "reason": "Opens macOS Internet Accounts for Apple Account and iCloud Notes; Lulo stores notes locally."
+    },
+    {
+      "app": "Notes",
+      "label": "<<Import From Device - unlocalized>>",
+      "reason": "Continuity import from a nearby iPhone or iPad requires Apple's device services."
+    },
+    {
+      "app": "Notes",
+      "label": "Open in Pages",
+      "reason": "Hands the note to Apple's Pages app, which is unavailable on Linux."
+    },
+    {
+      "app": "Notes",
+      "label": "Share",
+      "reason": "Opens the macOS share sheet for AirDrop, iCloud collaboration and Apple apps."
+    },
+    {
+      "app": "Notes",
+      "label": "Note “",
+      "match": "prefix",
+      "reason": "Share submenu targets are private notes in the reference Mac's iCloud library, not stock app commands."
+    },
+    {
+      "app": "Notes",
+      "label": "AutoFill",
+      "reason": "macOS contact and credential AutoFill uses Apple system data providers."
+    },
+    {
+      "app": "Notes",
+      "label": "Contact…",
+      "reason": "The macOS AutoFill contact card is provided by Apple Contacts."
+    },
+    {
+      "app": "Notes",
+      "label": "Passwords…",
+      "reason": "The macOS AutoFill password picker uses Apple Passwords and Keychain."
+    },
+    {
+      "app": "Notes",
+      "label": "Credit Card…",
+      "reason": "The macOS AutoFill card picker uses Apple Wallet and Keychain."
+    },
+    {
+      "app": "Notes",
+      "label": "Show Note Activity",
+      "reason": "Shows iCloud collaboration events for a shared note."
+    },
+    {
+      "app": "Notes",
+      "label": "Show Folder Activity",
+      "reason": "Shows iCloud collaboration events for a shared folder."
+    },
+    {
+      "app": "Notes",
+      "label": "Photo Browser",
+      "reason": "Opens the Apple Photos library browser, which is unavailable on Linux."
     }
   ]
 }

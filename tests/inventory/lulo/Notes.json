@@ -81,8 +81,8 @@
           "children": []
         },
         {
-          "label": "Import Notes Bundle…",
-          "action": "notes::ImportNotesBundle",
+          "label": "Import Markdown...",
+          "action": "notes::ImportMarkdown",
           "shortcut": "",
           "separator_before": false,
           "children": []
@@ -99,15 +99,15 @@
               "shortcut": "",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Markdown",
+              "action": "notes::ExportNoteMarkdown",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
-        },
-        {
-          "label": "Export Notes…",
-          "action": "notes::ExportNotes",
-          "shortcut": "⇧⌘E",
-          "separator_before": false,
-          "children": []
         },
         {
           "label": "Unpin Note",
@@ -192,10 +192,10 @@
           "children": []
         },
         {
-          "label": "Add Photo…",
-          "action": "notes::AddPhoto",
-          "shortcut": "",
-          "separator_before": true,
+          "label": "Add Link…",
+          "action": "notes::InsertLink",
+          "shortcut": "⌘K",
+          "separator_before": false,
           "children": []
         },
         {
@@ -215,6 +215,13 @@
               "label": "Note List Search…",
               "action": "notes::FocusSearch",
               "shortcut": "⌥⌘F",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find and Replace…",
+              "action": "notes::FindAndReplace",
+              "shortcut": "⇧⌘F",
               "separator_before": false,
               "children": []
             },
@@ -351,6 +358,28 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Indentation",
+          "action": "notes::IndentationMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Increase",
+              "action": "notes::IncreaseIndent",
+              "shortcut": "⌘]",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Decrease",
+              "action": "notes::DecreaseIndent",
+              "shortcut": "⌘[",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         }
       ]
     },
@@ -358,39 +387,31 @@
       "label": "View",
       "items": [
         {
-          "label": "Sort By",
-          "action": "notes::SortByMenu",
-          "shortcut": "",
+          "label": "Hide Folders",
+          "action": "notes::ToggleFolders",
+          "shortcut": "⌃⌘S",
           "separator_before": false,
-          "children": [
-            {
-              "label": "Date Edited",
-              "action": "notes::SortByEdited",
-              "shortcut": "",
-              "separator_before": false,
-              "children": []
-            },
-            {
-              "label": "Date Created",
-              "action": "notes::SortByCreated",
-              "shortcut": "",
-              "separator_before": false,
-              "children": []
-            },
-            {
-              "label": "Title",
-              "action": "notes::SortByTitle",
-              "shortcut": "",
-              "separator_before": false,
-              "children": []
-            }
-          ]
+          "children": []
         },
         {
-          "label": "Markdown Preview",
-          "action": "notes::ToggleMarkdownPreview",
-          "shortcut": "",
-          "separator_before": true,
+          "label": "Zoom In",
+          "action": "notes::ZoomIn",
+          "shortcut": "⇧⌘.",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom Out",
+          "action": "notes::ZoomOut",
+          "shortcut": "⇧⌘,",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Actual Size",
+          "action": "notes::ZoomReset",
+          "shortcut": "⇧⌘0",
+          "separator_before": false,
           "children": []
         }
       ]

@@ -169,6 +169,42 @@ impl NotesView {
         });
     }
 
+    pub(super) fn change_indent(
+        &mut self,
+        increase: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.apply_to_current_line(window, cx, |line| {
+            if increase {
+                format!("  {line}")
+            } else if let Some(rest) = line.strip_prefix("  ") {
+                rest.to_string()
+            } else if let Some(rest) = line.strip_prefix(' ') {
+                rest.to_string()
+            } else {
+                line.to_string()
+            }
+        });
+    }
+
+    pub(super) fn insert_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        self.body.update(cx, |state, cx| {
+            let selection = state.selected_range();
+            let text = state.value().get(selection).unwrap_or_default().to_string();
+            let label = if text.is_empty() { "Link" } else { &text };
+            let markdown = format!("[{label}](https://)");
+            state.replace(markdown, window, cx);
+            let end = state.cursor();
+            state.set_selected_range(end - "https://".len() - 1..end - 1, cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+    }
+
     pub(super) fn paste_plain_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.body_format_editable() {
             return;

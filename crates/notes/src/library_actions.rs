@@ -494,6 +494,9 @@ impl NotesView {
             "notes::InsertDashedList",
             "notes::InsertNumberedList",
             "notes::InsertBlockQuote",
+            "notes::InsertLink",
+            "notes::IncreaseIndent",
+            "notes::DecreaseIndent",
             "notes::PastePlainText",
         ] {
             rmac_ui::set_menu_enabled(action, body_editable, cx);
@@ -504,8 +507,19 @@ impl NotesView {
         rmac_ui::set_menu_enabled("notes::UseSelectionForFind", body_editable, cx);
         rmac_ui::set_menu_enabled("notes::JumpToSelection", body_editable, cx);
         rmac_ui::set_menu_enabled("notes::FindInNote", ready && has_note, cx);
+        rmac_ui::set_menu_enabled("notes::FindAndReplace", body_editable, cx);
         rmac_ui::set_menu_enabled("notes::PrintNote", has_note, cx);
         rmac_ui::set_menu_enabled("notes::ExportNotePdf", has_note, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::ExportNoteMarkdown",
+            ready
+                && !pending
+                && self
+                    .session
+                    .selected_note()
+                    .is_some_and(|note| !note.deleted && note.attachments.is_empty()),
+            cx,
+        );
         rmac_ui::set_menu_enabled(
             "notes::ExportNotes",
             self.session.snapshot().is_some() && !pending,
@@ -517,6 +531,18 @@ impl NotesView {
             self.markdown_preview_visible,
             cx,
         );
+        rmac_ui::set_menu_label(
+            "notes::ToggleFolders",
+            if self.folders_visible {
+                "Hide Folders"
+            } else {
+                "Show Folders"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_enabled("notes::ZoomIn", self.note_zoom < 12, cx);
+        rmac_ui::set_menu_enabled("notes::ZoomOut", self.note_zoom > -5, cx);
+        rmac_ui::set_menu_enabled("notes::ZoomReset", self.note_zoom != 0, cx);
     }
 
     pub(super) fn set_sort(&mut self, sort_order: SortOrder, cx: &mut Context<Self>) {

@@ -21,16 +21,61 @@ fn note_find_offsets(hay: &str, needle: &str) -> Vec<usize> {
 }
 
 impl NotesView {
+    pub(super) fn open_note_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready()
+            || self.markdown_preview_visible
+            || self.session.selected_note().is_none_or(|note| note.deleted)
+        {
+            return;
+        }
+        self.note_find_open = true;
+        self.note_replace_open = true;
+        self.recompute_note_find_matches(cx);
+        self.note_find_input
+            .update(cx, |state, cx| state.focus(window, cx));
+        cx.notify();
+    }
+
+    pub(super) fn replace_current_note_match(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.note_replace_open || self.note_find_matches.is_empty() {
+            return;
+        }
+        let Some(&offset) = self.note_find_matches.get(self.note_find_current) else {
+            return;
+        };
+        let query_len = self.note_find_input.read(cx).value().len();
+        let replacement = self.note_replace_input.read(cx).value().to_string();
+        self.body.update(cx, |state, cx| {
+            state.set_selected_range(offset..offset + query_len, cx);
+            state.replace(replacement, window, cx);
+        });
+        self.schedule_current_edit(cx);
+        self.recompute_note_find_matches(cx);
+        cx.notify();
+    }
+
     pub(super) fn use_selection_for_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let selection = self.body.read(cx).selected_range();
-        let text = self.body.read(cx).value().get(selection).unwrap_or_default().to_string();
+        let text = self
+            .body
+            .read(cx)
+            .value()
+            .get(selection)
+            .unwrap_or_default()
+            .to_string();
         if text.is_empty() {
             return;
         }
-        self.note_find_input.update(cx, |state, cx| state.set_value(text, window, cx));
+        self.note_find_input
+            .update(cx, |state, cx| state.set_value(text, window, cx));
         self.note_find_open = true;
         self.recompute_note_find_matches(cx);
-        self.note_find_input.update(cx, |state, cx| state.focus(window, cx));
+        self.note_find_input
+            .update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
     }
 
@@ -56,6 +101,7 @@ impl NotesView {
 
     pub(super) fn close_note_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.note_find_open = false;
+        self.note_replace_open = false;
         self.note_find_matches.clear();
         self.body.update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
@@ -137,6 +183,22 @@ impl NotesView {
                     .w(px(220.0))
                     .child(rmac_ui::SearchField::new(&self.note_find_input).appearance(true)),
             )
+            .when(self.note_replace_open, |element| {
+                element
+                    .child(
+                        div()
+                            .w(px(180.0))
+                            .child(TextField::new(&self.note_replace_input)),
+                    )
+                    .child(
+                        Button::new("replace-current", "Replace")
+                            .xsmall()
+                            .disabled(self.note_find_matches.is_empty())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.replace_current_note_match(window, cx)
+                            })),
+                    )
+            })
             .child(accessible_icon_button(
                 "note-find-prev",
                 "Previous match",

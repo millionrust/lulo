@@ -442,14 +442,16 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("New Folder", "notes::CreateFolder", "⇧⌘N"),
             item!("Close", "rmac_ui::RequestClose", "⌘W", separator),
             item!("Import to Notes…", "notes::ImportNote", "", separator),
-            item!("Import Notes Bundle…", "notes::ImportNotesBundle", ""),
+            item!("Import Markdown...", "notes::ImportMarkdown", ""),
             submenu!(
                 "Export as",
                 "notes::ExportAsMenu",
-                [item!("PDF", "notes::ExportNotePdf", "")],
+                [
+                    item!("PDF", "notes::ExportNotePdf", ""),
+                    item!("Markdown", "notes::ExportNoteMarkdown", ""),
+                ],
                 separator
             ),
-            item!("Export Notes…", "notes::ExportNotes", "⇧⌘E"),
             item!("Unpin Note", "notes::TogglePin", "", separator),
             item!("Duplicate Note", "notes::DuplicateNote", "⌘D"),
             item!("Print…", "notes::PrintNote", "⌘P", separator),
@@ -466,13 +468,14 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("Paste and Match Style", "notes::PastePlainText", "⌥⇧⌘V"),
             item!("Delete Note", "notes::DeleteSelectedNote", "⌫", separator),
             item!("Select All", "input::SelectAll", "⌘A"),
-            item!("Add Photo…", "notes::AddPhoto", "", separator),
+            item!("Add Link…", "notes::InsertLink", "⌘K"),
             submenu!(
                 "Find",
                 "notes::FindMenu",
                 [
                     item!("Find…", "notes::FindInNote", "⌘F"),
                     item!("Note List Search…", "notes::FocusSearch", "⌥⌘F"),
+                    item!("Find and Replace…", "notes::FindAndReplace", "⇧⌘F"),
                     item!("Find Next", "notes::FindInNoteNext", "⌘G"),
                     item!("Find Previous", "notes::FindInNotePrevious", "⇧⌘G"),
                     item!("Use Selection for Find", "notes::UseSelectionForFind", "⌘E"),
@@ -490,7 +493,12 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("Subheading", "notes::SetStyleSubheading", "⇧⌘J"),
             item!("Body", "notes::SetStyleBody", "⇧⌘B"),
             item!("Monostyled", "notes::SetStyleMonospaced", "⇧⌘M"),
-            item!("Bulleted List", "notes::InsertBulletedList", "⇧⌘7", separator),
+            item!(
+                "Bulleted List",
+                "notes::InsertBulletedList",
+                "⇧⌘7",
+                separator
+            ),
             item!("Dashed List", "notes::InsertDashedList", "⇧⌘8"),
             item!("Numbered List", "notes::InsertNumberedList", "⇧⌘9"),
             item!("Block Quote", "notes::InsertBlockQuote", "⌘'"),
@@ -505,26 +513,23 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
+            submenu!(
+                "Indentation",
+                "notes::IndentationMenu",
+                [
+                    item!("Increase", "notes::IncreaseIndent", "⌘]"),
+                    item!("Decrease", "notes::DecreaseIndent", "⌘["),
+                ]
+            ),
         ],
     },
     MenuSpec {
         label: "View",
         items: &[
-            submenu!(
-                "Sort By",
-                "notes::SortByMenu",
-                [
-                    item!("Date Edited", "notes::SortByEdited", ""),
-                    item!("Date Created", "notes::SortByCreated", ""),
-                    item!("Title", "notes::SortByTitle", ""),
-                ]
-            ),
-            item!(
-                "Markdown Preview",
-                "notes::ToggleMarkdownPreview",
-                "",
-                separator
-            ),
+            item!("Hide Folders", "notes::ToggleFolders", "⌃⌘S"),
+            item!("Zoom In", "notes::ZoomIn", "⇧⌘."),
+            item!("Zoom Out", "notes::ZoomOut", "⇧⌘,"),
+            item!("Actual Size", "notes::ZoomReset", "⇧⌘0"),
         ],
     },
 ];
@@ -2035,6 +2040,32 @@ mod tests {
         .unwrap();
         // The hint matches the ⌘⌫ binding instead of the word "Delete".
         assert_eq!(hints(&monitor)["activity_monitor::QuitProcess"], "⌘⌫");
+    }
+
+    #[test]
+    fn notes_menu_shortcuts_reach_their_format_and_find_commands() {
+        let menus = definition(rmac_apps::identity::NOTES, &spec_actions(NOTES_MENUS)).unwrap();
+        let shortcuts = hints(&menus);
+        for (action, shortcut) in [
+            ("notes::FindAndReplace", "⇧⌘F"),
+            ("notes::FindInNoteNext", "⌘G"),
+            ("notes::UseSelectionForFind", "⌘E"),
+            ("notes::SetStyleTitle", "⇧⌘T"),
+            ("notes::InsertBulletedList", "⇧⌘7"),
+            ("notes::InsertBlockQuote", "⌘'"),
+            ("notes::ToggleFolders", "⌃⌘S"),
+            ("notes::ZoomReset", "⇧⌘0"),
+        ] {
+            assert_eq!(shortcuts[action], shortcut, "{action}");
+        }
+        let format = menus.iter().find(|menu| menu.label == "Format").unwrap();
+        assert!(format.items.iter().any(|item| item.label == "Title"));
+        let font = format
+            .items
+            .iter()
+            .find(|item| item.label == "Font")
+            .unwrap();
+        assert!(font.children.iter().any(|item| item.label == "Bold"));
     }
 
     #[test]

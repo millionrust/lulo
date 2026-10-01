@@ -55,7 +55,9 @@ impl NotesView {
                     .size_full()
                     .flex()
                     .bg(window_frame())
-                    .child(self.render_sidebar(cx))
+                    .when(self.folders_visible, |element| {
+                        element.child(self.render_sidebar(cx))
+                    })
                     .child(self.render_note_list(list_focused, window, cx))
                     .child(div().w(px(1.0)).h_full().flex_none().bg(column_rule()))
                     .child(
@@ -108,6 +110,9 @@ impl NotesView {
             .on_action(
                 cx.listener(|this, _: &FindInNote, window, cx| this.toggle_note_find(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &FindAndReplace, window, cx| {
+                this.open_note_replace(window, cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &FindInNoteNext, window, cx| this.note_find_next(window, cx)),
             )
@@ -120,13 +125,18 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &JumpToSelection, window, cx| {
                 this.jump_to_selection(window, cx)
             }))
-            .on_action(cx.listener(|this, _: &PastePlainText, window, cx| {
-                this.paste_plain_text(window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &PastePlainText, window, cx| {
+                    this.paste_plain_text(window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &ExportNotes, _, cx| this.begin_export(cx)))
             .on_action(cx.listener(|this, _: &PrintNote, window, cx| this.print_note(window, cx)))
             .on_action(
                 cx.listener(|this, _: &ExportNotePdf, window, cx| this.export_note_pdf(window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ExportNoteMarkdown, _, cx| this.export_note_markdown(cx)),
             )
             .on_action(cx.listener(|this, _: &InsertChecklist, window, cx| {
                 this.insert_checklist(window, cx)
@@ -165,6 +175,13 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &InsertBlockQuote, window, cx| {
                 this.insert_block_quote(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &InsertLink, window, cx| this.insert_link(window, cx)))
+            .on_action(cx.listener(|this, _: &IncreaseIndent, window, cx| {
+                this.change_indent(true, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DecreaseIndent, window, cx| {
+                this.change_indent(false, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &RenameSelectedFolder, window, cx| {
                 this.begin_folder_rename(window, cx)
             }))
@@ -181,7 +198,26 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &ToggleMarkdownPreview, _, cx| {
                 this.toggle_markdown_preview(cx)
             }))
+            .on_action(cx.listener(|this, _: &ToggleFolders, _, cx| {
+                this.folders_visible = !this.folders_visible;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| {
+                this.note_zoom = (this.note_zoom + 1).min(12);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| {
+                this.note_zoom = (this.note_zoom - 1).max(-5);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ZoomReset, _, cx| {
+                this.note_zoom = 0;
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &ImportNote, _, cx| this.choose_text_note_import(cx)))
+            .on_action(
+                cx.listener(|this, _: &ImportMarkdown, _, cx| this.choose_text_note_import(cx)),
+            )
             .on_action(
                 cx.listener(|this, _: &ImportNotesBundle, _, cx| this.choose_bundle_import(cx)),
             )

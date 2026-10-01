@@ -97,6 +97,7 @@ actions!(
         SortByTitle,
         FocusSearch,
         FindInNote,
+        FindAndReplace,
         FindInNoteNext,
         FindInNotePrevious,
         UseSelectionForFind,
@@ -118,15 +119,24 @@ actions!(
         InsertNumberedList,
         InsertDashedList,
         InsertBlockQuote,
+        InsertLink,
+        IncreaseIndent,
+        DecreaseIndent,
         MoveSelectedNote,
         DeleteNotePermanently,
         EmptyRecentlyDeleted,
         ToggleMarkdownPreview,
+        ToggleFolders,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
         ImportNote,
+        ImportMarkdown,
         ImportNotesBundle,
         AddPhoto,
         PrintNote,
-        ExportNotePdf
+        ExportNotePdf,
+        ExportNoteMarkdown
     ]
 );
 
@@ -140,6 +150,8 @@ struct NotesView {
     preview: NotesPreviewSession,
     markdown_preview: NotesMarkdownPreviewSession,
     markdown_preview_visible: bool,
+    folders_visible: bool,
+    note_zoom: i8,
     preview_image: Option<Arc<RenderImage>>,
     selected_attachment: Option<AttachmentId>,
     search_query: Entity<InputState>,
@@ -190,7 +202,9 @@ struct NotesView {
     dragging: Option<gpui::Point<gpui::Pixels>>,
     /// In-note Find (⌘F), separate from the note list's search (⌥⌘F).
     note_find_open: bool,
+    note_replace_open: bool,
     note_find_input: Entity<InputState>,
+    note_replace_input: Entity<InputState>,
     /// Byte offsets of every case-insensitive match of the query in the
     /// selected note's body.
     note_find_matches: Vec<usize>,
@@ -213,6 +227,8 @@ impl NotesView {
             preview: NotesPreviewSession::new(),
             markdown_preview: NotesMarkdownPreviewSession::new(),
             markdown_preview_visible: false,
+            folders_visible: true,
+            note_zoom: 0,
             preview_image: None,
             selected_attachment: None,
             search_query: inputs.search_query,
@@ -257,7 +273,9 @@ impl NotesView {
             print_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             dragging: None,
             note_find_open: false,
+            note_replace_open: false,
             note_find_input: inputs.note_find,
+            note_replace_input: inputs.note_replace,
             note_find_matches: Vec::new(),
             note_find_current: 0,
             pending_undo_trash: None,

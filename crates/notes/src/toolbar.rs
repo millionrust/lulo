@@ -122,7 +122,11 @@ impl NotesView {
         // The search field narrows with the editor column, up to the Mac's
         // 326 pt at full width.
         let editor_width = f32::from(rmac_ui::window_content_size(window).width)
-            - SIDEBAR_WIDTH
+            - if self.folders_visible {
+                SIDEBAR_WIDTH
+            } else {
+                0.0
+            }
             - LIST_WIDTH
             - 1.0;
         let search_width = (editor_width - 280.0).clamp(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH);

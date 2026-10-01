@@ -26,10 +26,7 @@ impl FinderView {
 
         // User-added Favourites (drag a folder onto the Favourites header),
         // shared by every window and pruned to folders that still exist.
-        let favourite_extras: Vec<PathBuf> = sidebar_favourites::load_sidebar_favourites()
-            .into_iter()
-            .filter(|path| path.is_dir())
-            .collect();
+        let favourite_extras: Vec<PathBuf> = sidebar_favourites::load_sidebar_favourites();
         // Built from `favourite_extras`/`mounts`/the Settings window's
         // Sidebar and Tags tabs below, right after `view` exists.
         let sections = Vec::new();
@@ -207,6 +204,7 @@ impl FinderView {
             file_words,
             sections,
             favourite_extras,
+            sidebar_drop_index: None,
             info_windows: Vec::new(),
             go_to: None,
             pending_select: None,

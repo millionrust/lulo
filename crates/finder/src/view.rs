@@ -168,6 +168,7 @@ actions!(
         EmptyTrash,
         Find,
         CopyAsPathname,
+        AddToSidebar,
         MoveItemHere,
         GoDesktop,
         GoDocuments,
@@ -339,6 +340,7 @@ struct FinderView {
     /// User-added Favourites, over and above the built-in ones — the same
     /// list `sidebar_favourites` persists and every window shares.
     favourite_extras: Vec<PathBuf>,
+    sidebar_drop_index: Option<usize>,
     /// Separate Get Info windows opened from this Finder window.
     info_windows: Vec<gpui::WindowHandle<Root>>,
     /// Go ▸ Go to Folder…, while its sheet is open.

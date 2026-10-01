@@ -24,7 +24,7 @@ fn place_is_selected(
 }
 
 impl FinderView {
-    fn render_place(&self, p: &Place, cx: &Context<Self>) -> impl IntoElement {
+    fn render_place(&self, p: &Place, is_favourite: bool, cx: &Context<Self>) -> impl IntoElement {
         let is_tag = p.kind == PlaceKind::Tag;
         let selected = place_is_selected(
             p.kind,
@@ -68,6 +68,7 @@ impl FinderView {
         let a11y_path = p.path.clone();
         let a11y_name = p.name.clone();
         let entity = cx.entity();
+        let removable = self.is_removable_favourite(&p.path);
         let main = div()
             .id(SharedString::from(format!("placemain-{key}")))
             .flex_1()
@@ -88,6 +89,11 @@ impl FinderView {
                     .child(p.name.clone()),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
+                if this.is_removable_favourite(&np) && !np.exists() {
+                    this.operation_error = Some("The item can't be found. Remove it from the Sidebar? Use the × button or right-click the item.".into());
+                    cx.notify();
+                    return;
+                }
                 this.activate_place(kind, tag_name.clone(), np.clone(), cx)
             }));
 
@@ -112,10 +118,46 @@ impl FinderView {
             .rounded(px(SIDEBAR_ROW_RADIUS))
             // Tahoe: a neutral grey fill, never the accent, and no hover wash.
             .when(selected, |el: Stateful<Div>| el.bg(sidebar_selection()))
+            .when(removable && !p.path.exists(), |el: Stateful<Div>| el.opacity(0.5))
             .child(main);
 
         // Dropping onto a folder place moves the items there, as in Finder.
-        if matches!(p.kind, PlaceKind::Item | PlaceKind::Volume) {
+        if is_favourite {
+            let slot = self.favourite_extras.iter().position(|path| path == &p.path);
+            let before = slot.unwrap_or(0);
+            let after = slot.map_or(0, |index| index + 1);
+            row = row
+                .when(self.sidebar_drop_index == Some(before) && slot.is_some(), |el: Stateful<Div>| {
+                    el.border_t_2().border_color(accent())
+                })
+                .when(self.sidebar_drop_index == Some(after) && after == self.favourite_extras.len() && slot.is_some(), |el: Stateful<Div>| {
+                    el.border_b_2().border_color(accent())
+                })
+                .drag_over::<DraggedPaths>(|style, _, _, _| style)
+                .on_drag_move(cx.listener(move |this, event: &gpui::DragMoveEvent<DraggedPaths>, _, cx| {
+                    let lower = event.event.position.y > event.bounds.center().y;
+                    this.sidebar_drop_index = Some(if lower { after } else { before });
+                    cx.notify();
+                }))
+                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
+                    let index = this.sidebar_drop_index.take().unwrap_or(before);
+                    for path in paths.0.iter().cloned().rev() {
+                        this.insert_sidebar_favourite(path, index, cx);
+                    }
+                }))
+                .drag_over::<ExternalPaths>(|style, _, _, _| style)
+                .on_drag_move(cx.listener(move |this, event: &gpui::DragMoveEvent<ExternalPaths>, _, cx| {
+                    let lower = event.event.position.y > event.bounds.center().y;
+                    this.sidebar_drop_index = Some(if lower { after } else { before });
+                    cx.notify();
+                }))
+                .on_drop(cx.listener(move |this, paths: &ExternalPaths, _, cx| {
+                    let index = this.sidebar_drop_index.take().unwrap_or(before);
+                    for path in paths.paths().iter().cloned().rev() {
+                        this.insert_sidebar_favourite(path, index, cx);
+                    }
+                }));
+        } else if matches!(p.kind, PlaceKind::Item | PlaceKind::Volume) {
             let destination = p.path.clone();
             row = row
                 .drag_over::<DraggedPaths>(|style, _, _, _| style.bg(sidebar_selection()))
@@ -149,7 +191,13 @@ impl FinderView {
         // small remove button, in place of Finder's right-click "Remove
         // from Sidebar" — Finder's row itself already owns right-click for
         // its own context menu here.
-        if self.is_removable_favourite(&p.path) {
+        if removable {
+            let dragged = p.path.clone();
+            row = row.on_drag(DraggedPaths(vec![dragged.clone()]), move |_, _, _, cx| {
+                #[cfg(target_os = "linux")]
+                gpui_linux::stage_external_file_drag(vec![dragged.clone()]);
+                cx.new(|_| DragPreview { count: 1 })
+            });
             let removed = p.path.clone();
             row = row.child(
                 div()
@@ -290,17 +338,27 @@ impl FinderView {
                 // items there), so the header is the add target.
                 if is_favourites {
                     header = header
+                        .when(self.sidebar_drop_index == Some(0), |el: Stateful<Div>| el.border_b_2().border_color(accent()))
                         .drag_over::<DraggedPaths>(|style, _, _, _| style.bg(sidebar_selection()))
                         .on_drop(cx.listener(|this, paths: &DraggedPaths, _, cx| {
-                            if let Some(path) = paths.0.first().cloned() {
-                                this.add_sidebar_favourite(path, cx);
+                            this.sidebar_drop_index = None;
+                            for path in paths.0.iter().cloned().rev() {
+                                this.insert_sidebar_favourite(path, 0, cx);
+                            }
+                        }))
+                        .drag_over::<ExternalPaths>(|style, _, _, _| style.bg(sidebar_selection()))
+                        .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
+                            this.sidebar_drop_index = None;
+                            for path in paths.paths().iter().cloned().rev() {
+                                this.insert_sidebar_favourite(path, 0, cx);
                             }
                         }));
                 }
                 contents = contents.child(header);
             }
             for p in &section.places {
-                contents = contents.child(self.render_place(p, cx));
+                let is_favourite = section.title.as_ref() == self.file_words.favourites();
+                contents = contents.child(self.render_place(p, is_favourite, cx));
             }
         }
 

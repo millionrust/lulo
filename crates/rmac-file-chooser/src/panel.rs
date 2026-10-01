@@ -168,38 +168,54 @@ fn home_directory() -> PathBuf {
 
 fn sidebar_sections(home: &Path) -> Vec<SidebarSection> {
     let words = rmac_locale::FileVocabulary::from_environment();
+    let visibility = rmac_finder::places::sidebar_visibility();
     let place = |spec: rmac_finder::places::PlaceSpec| SidebarPlace {
         name: spec.name.into(),
         location: Location::Folder(spec.path),
         icon: spec.icon,
     };
-    let mut first = vec![SidebarPlace {
-        name: "Recents".into(),
-        location: Location::Recents,
-        icon: "icons/clock.svg",
-    }];
+    let mut first = Vec::new();
+    if visibility.recents {
+        first.push(SidebarPlace {
+            name: "Recents".into(),
+            location: Location::Recents,
+            icon: "icons/clock.svg",
+        });
+    }
     first.extend(rmac_finder::places::shared_folder(home).map(place));
     // The Mac's Favourites opens with Applications, then the user's folders.
     let favourites = rmac_finder::places::applications_folder()
         .into_iter()
-        .chain(
-            rmac_finder::places::favourite_folders(home)
-                .into_iter()
-                .filter(|spec| spec.path.is_dir()),
-        )
+        .filter(|_| visibility.applications)
+        .chain(rmac_finder::places::favourite_folders(home).into_iter().filter(|spec| {
+            spec.path.is_dir() && match spec.name.as_str() {
+                "Desktop" => visibility.desktop,
+                "Documents" => visibility.documents,
+                "Downloads" => visibility.downloads,
+                _ => true,
+            }
+        }))
         .map(place)
+        .chain(rmac_finder::sidebar_favourites::load().into_iter().map(|path| SidebarPlace {
+            name: rmac_finder::sidebar_favourites::label(&path).into(),
+            icon: if path.is_dir() { "icons/folder.svg" } else { "icons/file.svg" },
+            location: Location::Folder(path),
+        }))
         .collect();
     let mut locations: Vec<SidebarPlace> = rmac_finder::places::standard_locations(home)
         .into_iter()
         .map(place)
         .collect();
     if let Ok(mounts) = rmac_mounts::discover() {
-        locations.extend(mounts.into_iter().map(|mount| SidebarPlace {
+        locations.extend(mounts.into_iter().filter(|mount| {
+            if mount.ejectable { visibility.external_disks } else { visibility.hard_disks }
+        }).map(|mount| SidebarPlace {
             name: mount.name.into(),
             location: Location::Folder(mount.path),
             icon: "icons/hard-drive.svg",
         }));
     }
+    locations.retain(|place| visibility.home || place.location != Location::Folder(home.to_path_buf()));
     let media = rmac_finder::places::media_folders(home)
         .into_iter()
         .map(place)
@@ -290,6 +306,17 @@ impl Panel {
         }
 
         let focus = cx.focus_handle();
+        cx.observe_window_activation(window, |this, window, cx| {
+            if window.is_window_active() {
+                let sections = sidebar_sections(&this.home);
+                if !this.sections.iter().flat_map(|s| &s.places).map(|p| (&p.name, &p.location)).eq(
+                    sections.iter().flat_map(|s| &s.places).map(|p| (&p.name, &p.location))
+                ) {
+                    this.sections = sections;
+                    cx.notify();
+                }
+            }
+        }).detach();
         match &name {
             Some(name) => {
                 let name_focus = name.read(cx).focus_handle(cx);

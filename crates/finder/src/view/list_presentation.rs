@@ -790,6 +790,11 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &MoveItemHere, _, cx| this.move_item_here(cx)))
             .on_action(cx.listener(|this, _: &GoTrash, _, cx| this.trash_click(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
+            .on_action(cx.listener(|this, _: &AddToSidebar, _, cx| {
+                for path in this.selected_paths() {
+                    this.add_sidebar_favourite(path, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))

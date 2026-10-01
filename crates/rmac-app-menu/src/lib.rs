@@ -547,6 +547,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Rename", "finder::RenameItem", ""),
             item!("Compress", "finder::Compress", ""),
             item!("Duplicate", "finder::Duplicate", "⌘D"),
+            item!("Add to Sidebar", "finder::AddToSidebar", "⌃⌘T"),
             item!("Move to Trash", "finder::MoveToTrash", "⌘⌫", separator),
             // The Mac shows this as Move to Bin's ⌥ alternate; the menu bar
             // has no alternates yet, so it is listed after it.

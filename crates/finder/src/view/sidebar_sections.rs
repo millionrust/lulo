@@ -101,12 +101,10 @@ pub(super) fn build_sections(
             })
             .map(from_spec),
     );
-    // User-added Favourites (drag a folder onto the Favourites header),
-    // shared by every window and pruned to folders that still exist.
+    // Keep missing targets visible so a click can explain the problem.
     favorites.extend(
         favourite_extras
             .iter()
-            .filter(|path| path.is_dir())
             .map(|path| sidebar_favourites::extra_favourite_place(path)),
     );
     if cfg!(target_os = "linux") && settings.sidebar.show_bin {

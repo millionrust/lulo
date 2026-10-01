@@ -377,7 +377,7 @@ pub(super) fn register_window(weak: WeakEntity<FinderView>, cx: &mut App) {
     windows.push(weak);
 }
 
-fn broadcast(cx: &mut App) {
+pub(super) fn broadcast(cx: &mut App) {
     let Some(windows) = cx.try_global::<OpenFinderWindows>() else {
         return;
     };

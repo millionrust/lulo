@@ -945,7 +945,7 @@ class LuloRun:
         ]
         for candidate in frames:
             for node in descendants(candidate, limit=4000):
-                if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button", "combo box", "menu item"}:
+                if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button", "combo box", "menu item", "radio button"}:
                     frame, target = candidate, node
                     break
             if target is not None:

@@ -16,7 +16,7 @@
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
 use rmac_ui::{Root, StyledExt as _};
@@ -171,8 +171,12 @@ fn choice_row(
     swatch: Option<u32>,
     on_click: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
+    let label = label.into();
     div()
         .id(id)
+        .role(Role::RadioButton)
+        .aria_label(label.clone())
+        .aria_selected(selected)
         .flex()
         .items_center()
         .gap_2()
@@ -195,7 +199,7 @@ fn choice_row(
                     .bg(gpui::rgb(color)),
             )
         })
-        .child(div().flex_1().child(label.into()))
+        .child(div().flex_1().child(label))
         .when(selected, |row| {
             row.child(div().text_color(rmac_ui::mac::accent()).child("✓"))
         })

@@ -274,21 +274,21 @@ def run_step(
             timed_out = True
             try:
                 os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
                 pass
             try:
                 process.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
+                except (ProcessLookupError, PermissionError):
                     pass
                 process.wait(timeout=5)
             # A child may outlive the runner after it exits; all suite children
             # share this private process group, so close it before the next phase.
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
                 pass
             exit_code = 124
         else:
@@ -297,12 +297,12 @@ def run_step(
             # so those helpers cannot overlap it or outlive the suite.
             try:
                 os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
                 pass
             time.sleep(0.1)
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
                 pass
     elapsed = round(time.monotonic() - started, 2)
     return {

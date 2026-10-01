@@ -1132,6 +1132,49 @@ def check_files_context_submenus(nested: Nested, bins: list[Path], settle: float
         run.stop()
 
 
+def capture_preview_markup(nested: Nested, bins: list[Path], settle: float, destination: Path) -> None:
+    """Draw and save an annotation in private Sway, then capture its overlay."""
+    scenario = sc.load(sc.REPO / "docs" / "behavior-pending" / "preview" / "markup-toggle.json")
+    run = LuloRun(nested, "private/preview-markup", scenario, bins, settle, None)
+    try:
+        run.setup()
+        run.launch()
+        nested.input.key("shift-cmd-a")
+        time.sleep(settle)
+        run.click_item("Rectangle", "left")
+        x, y = run.window_origin()
+        nested.input.drag((x + 300, y + 260), (x + 480, y + 370), OUTPUT_W, OUTPUT_H)
+        run.click_item("Line", "left")
+        nested.input.drag((x + 540, y + 260), (x + 700, y + 350), OUTPUT_W, OUTPUT_H)
+        run.click_item("Sketch", "left")
+        nested.input.drag((x + 300, y + 430), (x + 450, y + 480), OUTPUT_W, OUTPUT_H)
+        run.click_item("Text", "left")
+        nested.input.click(x + 540, y + 430, OUTPUT_W, OUTPUT_H)
+        time.sleep(settle)
+        nested.input.key("cmd-a")
+        nested.input.type_text("Review")
+        run.click_item("Sign", "left")
+        nested.input.drag((x + 540, y + 500), (x + 700, y + 550), OUTPUT_W, OUTPUT_H)
+        time.sleep(settle)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["grim", str(destination)], env=run.env, check=True)
+        nested.input.key("cmd-s")
+        time.sleep(max(settle, 1.0))
+        pdf = (run.sandbox / "guide.pdf").read_bytes()
+        if any(kind not in pdf for kind in (b"/Annots", b"/Square", b"/Line", b"/Ink", b"/FreeText")):
+            raise StepFailed("saved PDF lacks a drawn or text annotation")
+        if pdf.count(b"/Subtype/Ink") != 2:
+            raise StepFailed("saved PDF lacks sketch and signature annotations")
+        if b"/Contents/Review" not in pdf:
+            raise StepFailed("text box edit was not saved")
+        saved_pdf = destination.with_suffix(".pdf")
+        saved_pdf.write_bytes(pdf)
+        print(json.dumps({"capture": str(destination), "saved_pdf": str(saved_pdf),
+                          "pdf_annotation": True}), flush=True)
+    finally:
+        run.stop()
+
+
 def check_files_tag_swatches(nested: Nested, bins: list[Path], settle: float) -> None:
     """Verify the tag dots, stable accessible names, and real tag toggling."""
     filename = "tag-swatch.txt"
@@ -1356,6 +1399,9 @@ def inner(args: argparse.Namespace) -> int:
         if args.check_storage_deep_link:
             check_storage_deep_link(nested, bins, args.settle)
             return 0
+        if args.preview_markup_capture:
+            capture_preview_markup(nested, bins, args.settle, Path(args.preview_markup_capture))
+            return 0
         for path in sc.scenario_paths(only=args.scenarios):
             sid = sc.scenario_id(path)
             scenario = sc.load(path)
@@ -1527,6 +1573,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--check-file-tag-swatches", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check-storage-deep-link", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--benchmark-storage", type=int, metavar="FILES", help="measure Storage against a synthetic home")
+    parser.add_argument("--preview-markup-capture", help=argparse.SUPPRESS)
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
@@ -1563,6 +1610,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt.append("--check-storage-deep-link")
     if args.benchmark_storage:
         rebuilt += ["--benchmark-storage", str(args.benchmark_storage)]
+    if args.preview_markup_capture:
+        rebuilt += ["--preview-markup-capture", str(Path(args.preview_markup_capture).resolve())]
     return outer(args, rebuilt)
 
 

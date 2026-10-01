@@ -265,7 +265,8 @@ impl NotesView {
         let mut changed = false;
         self.body.update(cx, |state, cx| {
             let selected = state.selected_range();
-            let Some(text) = state.value().get(selected) else {
+            let value = state.value();
+            let Some(text) = value.get(selected) else {
                 return;
             };
             if text.is_empty() {

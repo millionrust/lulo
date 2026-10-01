@@ -362,6 +362,7 @@ def compare(scenario: dict[str, Any], expected: dict[str, Any], actual: dict[str
     """Every field that differs. Fields the Mac did not report are skipped."""
 
     tolerance = scenario.get("tolerance", {})
+    omitted = set(scenario.get("omit", []))
     mismatches = []
     if "error" in actual:
         mismatches.append({"observation": "*", "fact": "*", "field": "error",
@@ -376,10 +377,14 @@ def compare(scenario: dict[str, Any], expected: dict[str, Any], actual: dict[str
                                "rule": "exact"})
             continue
         for fact, fields in facts.items():
+            if f"{name}.{fact}" in omitted or f"*.{fact}" in omitted:
+                continue
             other = got.get(fact)
             if not isinstance(fields, dict):
                 continue
             for field, value in fields.items():
+                if f"{name}.{fact}.{field}" in omitted or f"*.{fact}.{field}" in omitted:
+                    continue
                 rule = rule_for(tolerance, name, fact, field)
                 if rule not in RULES:
                     raise ScenarioError(f"unknown tolerance rule {rule!r}")

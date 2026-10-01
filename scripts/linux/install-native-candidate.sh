@@ -205,7 +205,10 @@ fi
 sudo -v
 python3 "$repo_root/scripts/linux/archive-development-install.py" --execute
 sudo rm -- "$marker"
-apt_options=(install --yes --no-remove)
+# An explicitly chosen, verified set may replace a build whose version sorts
+# higher (e.g. a "+iterate" candidate followed by a release-profile build of a
+# newer commit), so allow the version to move in either direction.
+apt_options=(install --yes --no-remove --allow-downgrades)
 if [[ "$reinstall" == true ]]; then
   apt_options+=(--reinstall)
 fi

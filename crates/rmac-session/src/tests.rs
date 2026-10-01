@@ -541,10 +541,11 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     let safe_target = include_str!("../units/rmac-safe-mode.target");
     assert!(normal_target
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
+    for surface in ["rmac-launcher.service", "rmac-quick-settings.service"] {
+        assert!(normal_target.contains(surface));
+    }
     for surface in [
-        "rmac-launcher.service",
         "rmac-app-drawer.service",
-        "rmac-quick-settings.service",
         "rmac-notification-center-panel.service",
     ] {
         assert!(!normal_target.contains(surface));

@@ -65,14 +65,16 @@ fixed `rmac-lock.service` directly and waits for the lock readiness transaction,
 so shell availability cannot turn a security action into a dropped event. No
 shortcut is converted into a shell command.
 
-The launcher, Apps, Quick Settings, and Notification Center panel are stopped
-at login. When their action-scoped socket is absent, the dispatcher queues a
+Spotlight and Quick Settings start at login and keep their shortcut endpoints
+resident. Apps and the Notification Center panel start on first use. When an
+action-scoped socket is absent, the dispatcher queues a
 nonblocking start of the matching systemd user unit and retries the datagram
 until its endpoint binds. It starts a unit only once per invocation; a stale
 socket during an idle exit gets the same retry treatment. Each process keeps
-at most one GPUI surface, treats repeated activation as dismissal, and exits
-after five minutes without a window (configurable with
-`RMAC_SURFACE_IDLE_SECONDS`, 1–3600). Apps retains a separate standalone mode.
+at most one GPUI surface and treats repeated activation as dismissal. Apps and
+the Notification Center panel exit after 30 minutes without a window
+(configurable with `RMAC_SURFACE_IDLE_SECONDS`, 1–86400). Apps retains a
+separate standalone mode.
 The notification daemon remains a separate D-Bus authority and cannot consume
 the panel shortcut. The file chooser is activated by D-Bus.
 

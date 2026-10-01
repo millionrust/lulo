@@ -38,10 +38,7 @@ SHELL = (
     ("rmac-notification-center-panel", ()), ("rmac-osd", ("--service",)),
     ("screenshot", ("--service",)),
 )
-COLD_SURFACES = {
-    "rmac-launcher", "rmac-app-drawer", "rmac-quick-settings",
-    "rmac-notification-center-panel",
-}
+ON_DEMAND_SURFACES = {"rmac-app-drawer", "rmac-notification-center-panel"}
 
 
 def sample(pid: int) -> dict:
@@ -83,7 +80,7 @@ def inner(args: argparse.Namespace) -> int:
         }
     try:
         for name, flags in SHELL:
-            if args.cold_surfaces and name in COLD_SURFACES:
+            if args.cold_surfaces and name in ON_DEMAND_SURFACES:
                 continue
             binary = bins / ({"rmac-osd": "osd"}.get(name, name))
             if not binary.is_file():
@@ -175,7 +172,7 @@ def main() -> int:
     parser.add_argument("--settle", type=float, default=5)
     parser.add_argument("--exercise-osd", action="store_true")
     parser.add_argument("--cold-surfaces", action="store_true",
-                        help="leave shortcut surfaces stopped, as at login")
+                        help="leave Apps and the notification panel stopped, as at login")
     parser.add_argument("--output", required=True)
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

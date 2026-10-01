@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise cold shell surfaces and fallback shortcuts in a private nested niri."""
+"""Measure first opens and shortcut-surface lifecycles in private nested niri."""
 
 from __future__ import annotations
 
@@ -38,6 +38,15 @@ def wait_for_socket(path: Path, process: subprocess.Popen, timeout: float = 8) -
     return False
 
 
+def wait_for_frame(path: Path, process: subprocess.Popen, timeout: float = 5) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and process.poll() is None:
+        if path.is_file():
+            return True
+        time.sleep(0.002)
+    return False
+
+
 def changed(before, after) -> bool:
     return ImageChops.difference(before, after).getbbox() is not None
 
@@ -66,9 +75,11 @@ def inner(args: argparse.Namespace) -> int:
         for action, binary, flags, chord in SURFACES:
             resident = action in RESIDENT
             before = None if resident else run.capture(f"{action}-before")
+            frame_marker = run.work / f"{action}-first-frame.ready"
             started = time.monotonic()
             process = run.spawn([str(bins / binary), *flags], action,
                                 {"RMAC_SURFACE_IDLE_SECONDS": "3",
+                                 "RMAC_BENCHMARK_READY_FILE": str(frame_marker),
                                  "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/intel_hasvk_icd.json"})
             endpoint = run.runtime / "rmac" / f"shortcut-{action}.sock"
             bound = wait_for_socket(endpoint, process)
@@ -76,12 +87,17 @@ def inner(args: argparse.Namespace) -> int:
             if not bound:
                 continue
             if resident:
+                time.sleep(args.resident_settle)
                 before = run.capture(f"{action}-before")
                 started = time.monotonic()
-            sent = dispatch(run, bins, action, bool(chord))
+            first_via_niri = bool(chord) and not (resident and args.resident_direct)
+            sent = dispatch(run, bins, action, first_via_niri)
             run.check(f"{action} first dispatch accepted", sent)
             if not sent:
                 continue
+            frame_ready = wait_for_frame(frame_marker, process)
+            frame_ms = round((time.monotonic() - started) * 1000, 1)
+            run.check(f"{action} first frame completed", frame_ready, f"{frame_ms} ms")
             appeared = False
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
@@ -92,9 +108,11 @@ def inner(args: argparse.Namespace) -> int:
                 time.sleep(0.02)
             elapsed_ms = round((time.monotonic() - started) * 1000, 1)
             timing = "resident first-open" if resident else "cold spawn-to-paint"
-            run.check(f"{action} first request painted", appeared, f"{timing} upper bound {elapsed_ms} ms")
-            results[action] = {"painted": appeared, "first_open_upper_bound_ms": elapsed_ms if appeared else None,
-                               "resident_at_login": resident, "via_niri_spawn": bool(chord)}
+            run.check(f"{action} first request painted", appeared, f"{timing} screenshot upper bound {elapsed_ms} ms")
+            results[action] = {"painted": appeared, "first_frame_ms": frame_ms if frame_ready else None,
+                               "screenshot_upper_bound_ms": elapsed_ms if appeared else None,
+                               "resident_at_login": resident, "via_niri_spawn": first_via_niri,
+                               "resident_settle_seconds": args.resident_settle if resident else 0}
             if not appeared:
                 print((run.logs / f"{action}.log").read_text()[-1200:], flush=True)
             dispatch(run, bins, action, bool(chord))
@@ -131,6 +149,8 @@ def outer(args: argparse.Namespace) -> int:
                 "dbus-run-session", "--", sys.executable, str(Path(__file__).resolve()),
                 "--inner", str(work), "--bin-dir", args.bin_dir, "--niri", args.niri,
                 "--output", args.output,
+                "--resident-settle", str(args.resident_settle),
+                *(["--resident-direct"] if args.resident_direct else []),
             ], env=env)
         finally:
             run_lulo.reap(Path(env["XDG_RUNTIME_DIR"]))
@@ -142,6 +162,10 @@ def main() -> int:
     parser.add_argument("--bin-dir", required=True)
     parser.add_argument("--niri", default="/usr/bin/niri")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--resident-settle", type=float, default=0,
+                        help="wait after resident endpoint readiness before first dispatch")
+    parser.add_argument("--resident-direct", action="store_true",
+                        help="diagnose resident dispatch without niri Spawn IPC")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     return inner(args) if args.inner else outer(args)

@@ -1,5 +1,8 @@
 # Reference laptop memory diet, round 2 (2026-10-01)
 
+The follow-up section below supersedes this round's shortcut-surface startup
+policy and login memory sample.
+
 This is a short idle comparison, not an eight-hour leak test. The same Intel
 HD Graphics 5500 client path, private HOME/XDG and D-Bus, headless Sway and
 nested niri as [round 1](reference-laptop-2026-10-01-memory-diet.md) were used.
@@ -74,3 +77,59 @@ power controls. The local Python behavior-harness tests passed 36/36.
 
 An eight-hour soak, a release-profile rerun, an installed systemd activation
 measurement, and a reliable physical-chord latency measurement remain open.
+
+## Follow-up: keep the primary shortcuts resident
+
+The round-2 cold-start trade-off was too slow for the primary shortcuts.
+`e43ec0df` restores Spotlight and Quick Settings to the login target with
+`Restart=on-failure`, and removes their idle-exit hook. Apps and the
+Notification Center panel still start on first use. Their idle exit now defaults
+to 1,800 seconds after the last window closes; `RMAC_SURFACE_IDLE_SECONDS` can
+set 1–86,400 seconds. App Drawer's catalog watcher and recents read, and both
+panels' application catalog scans, start only after the first presented frame.
+The scans and App Drawer's macOS icon extraction run off the UI thread.
+
+The same private nested Intel path and `--profile iterate` binaries were used.
+The first-frame numbers below come from `prepare_surface_window`'s benchmark
+marker, observed by the runner; they include endpoint dispatch and, for Apps
+and Notification Center, process startup. The screenshot numbers are upper
+bounds that also include `grim` capture. The old round-2 numbers used only
+screenshots, so compare them with the new screenshot column, not the marker.
+
+| Surface | Login policy | Round-2 screenshot upper bound | Follow-up first frame | Follow-up screenshot upper bound |
+|---|---|---:|---:|---:|
+| Spotlight | Resident | 742.6 ms | 402.2 ms | 655.8 ms |
+| Apps | On demand | 650.7 ms | 142.7 ms | 643.5 ms |
+| Quick Settings | Resident | 1026.3 ms | 119.0 ms | 993.4 ms |
+| Notification Center panel | On demand | 452.1 ms | 165.6 ms | 469.3 ms |
+
+These are the final run's values. A preceding run on the same production code
+recorded first frames of 352.1, 136.0, 118.8 and 136.4 ms respectively, so
+the timing varies and Notification Center did not stay below 150 ms. Spotlight
+is still well above the desired 150 ms first-frame target. A settled,
+direct-dispatch diagnostic was 315.6 ms; instrumentation found approximately
+300 ms inside GPUI's first `open_window` call, before the application view was
+constructed. Deferring its provider work and changing layer-shell keyboard
+interactivity did not reduce that time, so neither experiment was retained.
+The screenshot upper bounds remain high because capture itself is slow. This
+test did not measure a physical ⌘Space chord or installed systemd activation.
+
+At five seconds idle, the corrected login sample contains 10 shell processes:
+499.85 MiB RSS, 329.40 MiB PSS and 134.38 MiB private dirty, with zero SwapPss.
+Spotlight accounts for 23.62 MiB RSS / 20.55 MiB PSS / 3.97 MiB private dirty;
+Quick Settings accounts for 20.37 / 17.29 / 3.14 MiB. Compared with the
+round-2 eight-process sample this is +39.23 MiB RSS, +36.03 MiB PSS and
++5.91 MiB private dirty. The proposed 320 MiB shell PSS budget is exceeded by
+9.40 MiB. The memory harness now excludes only Apps and the Notification Center
+panel when sampling a login state.
+
+The cold-surface runner passed 27/27 checks, including first-frame markers,
+visible first paint, resident survival after dismissal, same-process warm
+reopen for the two on-demand panels, and exit after a three-second test idle
+interval. The six affected root packages passed 146 tests with zero failures
+and two ignored doctests. Package-scoped clippy with `-D warnings` and the root
+and shell formatting checks passed. The full app behavior suite matched
+111/111 scenarios; nested window movement passed 19/19, frame and wallpaper
+repaint 15/15, power dialogs 51/51, and shutdown 38/38. The power and shutdown
+runners used fake `systemctl` paths and did not operate the laptop's real power
+controls. The default 30-minute interval was not waited out in a real login.

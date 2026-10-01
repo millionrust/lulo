@@ -8,10 +8,52 @@
       "reason": "The system Apple menu is OS chrome (About This Mac, System Settings…, Sleep/Restart/Shut Down, Recent Items, App Store updates), not part of any app's own menu bar. Lulo's shell has no per-app equivalent slot for it."
     },
     {
+      "app": "Terminal",
+      "label": "SF Mono Regular 11",
+      "match": "exact",
+      "reason": "SF Mono is an Apple font; Lulo uses its bundled monospace font and exposes the font size separately."
+    },
+    {
       "app": "*",
       "label": "Services",
       "match": "exact",
       "reason": "Services is populated system-wide from every installed app's Info.plist; Lulo has no Services architecture and nothing to port."
+    },
+    {
+      "app": "System Monitor",
+      "label": "AutoFill",
+      "match": "exact",
+      "reason": "AppKit's AutoFill submenu belongs to macOS's system Contacts and Passwords services, which System Monitor cannot access on Linux."
+    },
+    {
+      "app": "System Monitor",
+      "label": "Contact…",
+      "match": "exact",
+      "reason": "Opens a macOS Contacts AutoFill picker tied to the user's Apple Contacts data."
+    },
+    {
+      "app": "System Monitor",
+      "label": "Passwords…",
+      "match": "exact",
+      "reason": "Opens the macOS Passwords AutoFill picker backed by Apple Passwords and iCloud Keychain."
+    },
+    {
+      "app": "System Monitor",
+      "label": "Credit Card…",
+      "match": "exact",
+      "reason": "Opens macOS's protected payment-card AutoFill picker backed by Apple Wallet or Safari data."
+    },
+    {
+      "app": "System Monitor",
+      "label": "Run Spindump",
+      "match": "exact",
+      "reason": "Runs Apple's macOS spindump utility and produces a .spin report, neither of which exists on Linux."
+    },
+    {
+      "app": "System Monitor",
+      "label": "Run System Diagnostics…",
+      "match": "exact",
+      "reason": "Invokes Apple's macOS sysdiagnose collection and its proprietary report format."
     },
     {
       "app": "*",

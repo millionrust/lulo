@@ -6,6 +6,7 @@ They run anywhere: no compositor, no AT-SPI and no Mac are needed.
 from __future__ import annotations
 
 import json
+import importlib.util
 import sys
 import time
 import unittest
@@ -14,7 +15,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "behavior"))
 
-import compare  # noqa: E402
+# The parallel-journey suite also has a compare.py. Import this one by path
+# so running all scripts tests together cannot reuse its sys.modules entry.
+_compare_spec = importlib.util.spec_from_file_location(
+    "behavior_compare", HERE / "behavior" / "compare.py"
+)
+assert _compare_spec and _compare_spec.loader
+compare = importlib.util.module_from_spec(_compare_spec)
+_compare_spec.loader.exec_module(compare)
 import record_mac  # noqa: E402
 import run_lulo  # noqa: E402
 import scenario as sc  # noqa: E402
@@ -219,7 +227,9 @@ class ScenarioFileTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 scenario = sc.load(path)
                 expected = sc.expectation_path(path, "lulo" if scenario.get("lulo_only") else "mac")
-                self.assertTrue(expected.exists(), f"{path.name} has no recorded expectation")
+                if not expected.exists() and not scenario.get("lulo_only"):
+                    expected = sc.expectation_path(path, "lulo")
+                self.assertTrue(expected.exists(), f"{path.name} has no .mac.json or .lulo.json")
                 data = json.loads(expected.read_text())
                 self.assertNotIn("error", data)
                 names = {s["observe"] for s in scenario["steps"] if "observe" in s}

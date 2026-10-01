@@ -378,5 +378,12 @@ impl Render for EditorView {
             .when_some(self.alert.clone(), |d, alert| {
                 d.child(self.render_alert(alert, cx))
             })
+            .when(self.save_goto_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-save-goto", self.render_save_goto(cx))
+                        .aria_label("Go to Folder")
+                        .attached(),
+                )
+            })
     }
 }

@@ -35,12 +35,9 @@ fn encoding_label(encoding: document::TextEncoding) -> &'static str {
 }
 
 impl EditorView {
-    fn render_save_goto(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_save_goto(&self, cx: &mut Context<Self>) -> AnyElement {
         div()
             .id("save-goto-sheet")
-            .absolute()
-            .left(px(-1.0))
-            .top(px(76.0))
             .w(px(460.0))
             .h(px(183.0))
             .p(px(20.0))
@@ -244,7 +241,6 @@ impl EditorView {
                         ),
                     ),
             )
-            .when(self.save_goto_open, |card| card.child(self.render_save_goto(cx)))
             .with_animation(
                 "text-editor-save-sheet-slide",
                 Animation::new(Duration::from_millis(180)),

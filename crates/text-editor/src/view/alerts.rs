@@ -1,7 +1,6 @@
 //! Text Editor dirty-close, recovery, conflict, and error alert state machine.
 
 use super::*;
-use gpui::Focusable as _;
 
 impl EditorView {
     /// If the buffer is dirty, ask before discarding; otherwise act immediately.
@@ -147,11 +146,6 @@ impl EditorView {
             input.set_value("", window, cx);
             input.focus(window, cx);
         });
-        // The field is added by the next render. The dialog's focus trap
-        // checks the last painted tree, so it would return focus to Save As
-        // until the new field has been painted.
-        let goto_focus = self.save_goto_input.read(cx).focus_handle(cx);
-        window.on_next_frame(move |window, cx| window.focus(&goto_focus, cx));
         self.save_goto_open = true;
         self.save_goto_error = false;
         cx.notify();

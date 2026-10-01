@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_1011 gaps across 10 apps; 51 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_1013 gaps across 10 apps; 49 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Calculator
 
@@ -792,38 +792,40 @@ _1011 gaps across 10 apps; 51 Mac-only items were allowlisted (see `tests/invent
 
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
-| SET-MENU-022 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| SET-MENU-021 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| SET-MENU-016 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| SET-MENU-015 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| SET-MENU-017 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| SET-MENU-018 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| SET-MENU-019 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| SET-MENU-020 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| SET-MENU-023 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| SET-MENU-022 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| SET-MENU-017 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| SET-MENU-016 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| SET-MENU-018 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| SET-MENU-019 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| SET-MENU-020 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| SET-MENU-021 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
 | SET-MENU-001 | missing menu item | Internet Accounts | View ▸ Internet Accounts |  |  | missing from Lulo's menu bar |
 | SET-MENU-002 | missing menu item | Printers & Scanners | View ▸ Printers & Scanners |  |  | missing from Lulo's menu bar |
 | SET-MENU-003 | missing menu item | Startup Disk | View ▸ Startup Disk |  |  | missing from Lulo's menu bar |
 | SET-MENU-004 | missing menu item | Time Machine | View ▸ Time Machine |  |  | missing from Lulo's menu bar |
-| SET-MENU-005 | missing menu item | Transfer or Reset | View ▸ Transfer or Reset |  |  | missing from Lulo's menu bar |
-| SET-MENU-006 | missing menu item | Users & Groups | View ▸ Users & Groups |  |  | missing from Lulo's menu bar |
-| SET-MENU-026 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| SET-MENU-024 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| SET-MENU-014 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| SET-MENU-025 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
-| SET-MENU-007 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
-| SET-MENU-009 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
-| SET-MENU-008 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| SET-MENU-013 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| SET-MENU-010 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| SET-MENU-023 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| SET-MENU-011 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| SET-MENU-012 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| SET-MENU-005 | missing menu item | Touch ID & Password | View ▸ Touch ID & Password |  |  | missing from Lulo's menu bar |
+| SET-MENU-006 | missing menu item | Transfer or Reset | View ▸ Transfer or Reset |  |  | missing from Lulo's menu bar |
+| SET-MENU-007 | missing menu item | Users & Groups | View ▸ Users & Groups |  |  | missing from Lulo's menu bar |
+| SET-MENU-027 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| SET-MENU-025 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| SET-MENU-015 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| SET-MENU-026 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| SET-MENU-008 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
+| SET-MENU-010 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
+| SET-MENU-009 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
+| SET-MENU-014 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| SET-MENU-011 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| SET-MENU-024 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| SET-MENU-012 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| SET-MENU-013 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | SET-SIDEBAR-001 | missing sidebar pane | Internet Accounts | sidebar |  |  | missing from Lulo's System Settings sidebar |
 | SET-SIDEBAR-002 | missing sidebar pane | Printers & Scanners | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-003 | missing sidebar pane | Users & Groups | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-004 | Lulo-only (not on the Mac) | Mouse | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-005 | Lulo-only (not on the Mac) | Touchscreen | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-006 | Lulo-only (not on the Mac) | VPN | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-SIDEBAR-003 | missing sidebar pane | Touch ID & Password | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-004 | missing sidebar pane | Users & Groups | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-005 | Lulo-only (not on the Mac) | Mouse | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-SIDEBAR-006 | Lulo-only (not on the Mac) | Touchscreen | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-SIDEBAR-007 | Lulo-only (not on the Mac) | VPN | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
 
 ## Terminal
 

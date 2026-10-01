@@ -117,12 +117,6 @@
     },
     {
       "app": "System Settings",
-      "label": "Touch ID & Password",
-      "match": "exact",
-      "reason": "Touch ID is an Apple biometric hardware feature."
-    },
-    {
-      "app": "System Settings",
       "label": "Wallet & Apple Pay",
       "match": "exact",
       "reason": "Wallet and Apple Pay require Apple payment services and hardware."

@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "scenario": "files/sidebar-favourites",
+  "platform": "Lulo local contract",
+  "observations": {
+    "added": {
+      "files": {
+        "entries": ["Pinned One/", "Pinned Two/"]
+      }
+    }
+  }
+}

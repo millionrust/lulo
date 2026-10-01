@@ -74,6 +74,13 @@
           "children": []
         },
         {
+          "label": "New Folder with Selection",
+          "action": "finder::NewFolderWithSelection",
+          "shortcut": "⌃⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "New Tab",
           "action": "finder::NewTab",
           "shortcut": "⌘T",
@@ -119,6 +126,34 @@
           "label": "Duplicate",
           "action": "finder::Duplicate",
           "shortcut": "⌘D",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Make Alias",
+          "action": "finder::MakeAlias",
+          "shortcut": "⌘L",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Original",
+          "action": "finder::ShowOriginal",
+          "shortcut": "⌘R",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Add to Sidebar",
+          "action": "finder::AddToSidebar",
+          "shortcut": "⌃⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Add to Dock",
+          "action": "finder::AddToDock",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
@@ -292,6 +327,13 @@
           "shortcut": "⌥⌘P",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Show Status Bar",
+          "action": "finder::ToggleStatusBar",
+          "shortcut": "⌘/",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -365,6 +407,13 @@
           "label": "Applications",
           "action": "finder::GoApplications",
           "shortcut": "⇧⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Utilities",
+          "action": "finder::GoUtilities",
+          "shortcut": "⇧⌘U",
           "separator_before": false,
           "children": []
         },
@@ -686,7 +735,22 @@
       },
       {
         "type": "item",
+        "label": "New Folder with Selection"
+      },
+      {
+        "type": "item",
+        "label": "<handler.name.clone()>"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "submenu",
         "label": "Open With"
+      },
+      {
+        "type": "item",
+        "label": "Other…"
       },
       {
         "type": "separator"
@@ -783,7 +847,22 @@
       },
       {
         "type": "item",
+        "label": "New Folder with Selection"
+      },
+      {
+        "type": "item",
+        "label": "<handler.name.clone()>"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "submenu",
         "label": "Open With"
+      },
+      {
+        "type": "item",
+        "label": "Other…"
       },
       {
         "type": "separator"

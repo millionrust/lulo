@@ -1,13 +1,22 @@
 {
-  "title": "Sidebar favourites can be added, reordered, and removed without changing the targets",
+  "title": "Add to Sidebar keeps the selected folder in place",
   "app": "files",
-  "setup": {"folders": ["Pinned One", "Pinned Two"]},
+  "setup": {
+    "folders": ["Pinned One", "Pinned Two"],
+    "files": {"Pinned One/": null, "Pinned Two/": null}
+  },
+  "launch": {"folder": "."},
   "steps": [
+    {"select": "Pinned One"},
+    {"key": "ctrl-cmd-t"},
+    {"observe": "added", "facts": ["files"]}
+  ],
+  "drag_steps": [
     {"drag": "Pinned One", "to": "Favourites"},
     {"drag": "Pinned Two", "to": "Favourites"},
     {"drag": "Pinned One", "from": "Sidebar", "to": "Favourites"},
     {"context": "Pinned One", "choose": "Remove from Sidebar"},
     {"drag": "Pinned Two", "from": "Sidebar", "to": "Content"},
-    {"drag": "Sidebar Desktop Folder", "from": "Desktop", "to": "Favourites"}
+    {"drag": "A Sidebar Desktop Folder", "from": "Desktop", "to": "Favourites"}
   ]
 }

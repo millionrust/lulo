@@ -1686,6 +1686,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt.append("--check-file-tag-swatches")
     if args.check_storage_deep_link:
         rebuilt.append("--check-storage-deep-link")
+    if args.check_settings_view_menu:
+        rebuilt.append("--check-settings-view-menu")
     if args.check_terminal_profiles:
         rebuilt.append("--check-terminal-profiles")
     if args.benchmark_storage:

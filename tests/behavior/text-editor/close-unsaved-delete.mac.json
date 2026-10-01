@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "scenario": "text-editor/close-unsaved-delete",
+  "platform": "macOS 26.2",
+  "recorded": "2026-10-01",
+  "observations": {
+    "discarded": {
+      "windows": {
+        "count": 1,
+        "front": "Untitled",
+        "titles": [
+          "Untitled"
+        ]
+      },
+      "saved_documents": {
+        "entries": [],
+        "contents": {}
+      },
+      "dialog": {
+        "present": false
+      }
+    }
+  }
+}

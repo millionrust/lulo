@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "scenario": "text-editor/open-panel-desktop",
+  "platform": "macOS 26.2",
+  "recorded": "2026-10-01",
+  "observations": {
+    "open": {
+      "dialog": {
+        "present": false
+      }
+    },
+    "desktop": {
+      "dialog": {
+        "present": false
+      },
+      "selection": {
+        "items": [
+          "Desktop"
+        ]
+      }
+    },
+    "cancelled": {
+      "dialog": {
+        "present": false
+      }
+    }
+  }
+}

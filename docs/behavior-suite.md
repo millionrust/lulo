@@ -352,17 +352,45 @@ python3 scripts/behavior/run_terminal_close.py --niri ~/rmac-niri-build/target/r
 ```
 
 Pending, unrecorded scenarios live in `docs/behavior-pending/` until a Mac
-recording exists: `settings/storage-refresh.json` and
-`text-editor/save-with-find-focus.json` (record them with
-`scripts/behavior/record_mac.py`), and `settings/hardware-touchscreen.json`,
-which is Lulo-only because no Mac has a touchscreen. Run it with
-`run_lulo.py --explore`.
+recording exists: `settings/hardware-touchscreen.json`, which is Lulo-only
+because no Mac has a touchscreen (run it with `run_lulo.py --explore`), and:
 
-Scenarios whose expected results are hand-written task contracts, not Mac
-recordings, are kept out of `tests/behavior/` so that every enforced
-expectation comes from a real Mac. They are in `docs/behavior-pending/`:
-`text-editor/close-unsaved-*`, `save-untitled-other`, `save-panel-desktop`,
-`open-panel-desktop` and `save-go-to-folder` (each with a `.contract.json`),
-and `files/drag-to-dock-and-desktop.json`, which
-`scripts/behavior/run_file_drag.py` runs directly. To promote one, record it
-with `scripts/behavior/record_mac.py` and move it back.
+- `settings/storage-refresh.json`: System Settings nests Storage under
+  General, not at the sidebar's top level, and the 2026-10-01 recording
+  attempt found that General's own row list ("About", "Storage", …) exposes
+  no AX-discoverable name at all through System Events on macOS 26.2 (no
+  `AXTitle`, no `AXDescription`, no reachable `AXStaticText` child) — only
+  measured pixel offsets would find "Storage", which this suite's
+  accessible-name click (`record_mac.py`'s `select`) deliberately never
+  does. Record it once a reliable accessible path to that row is found.
+- `text-editor/save-untitled-other.json` and `save-panel-desktop.json`: both
+  assume the Save sheet's "Where" pop-up has a "Documents" entry and an
+  "Other…" item that opens the full browser (which is also what Lulo's
+  `save_sheet.rs` implements, per `docs/parity.md` TE-18/OTHER-01). The
+  2026-10-01 recording attempt found that real macOS 26.2's "Where" pop-up
+  has neither: it lists a breadcrumb-style set of quick locations (Desktop,
+  Documents, iCloud Drive, Favourites, …) with no "Other…" row, and reaches
+  the full browser through a disclosure triangle instead (`AXDescription`
+  "show more options", not "Show Details"). There is now no one step
+  sequence that is valid on both platforms, so recording either scenario as
+  written would not test the same interaction Lulo implements; recording it
+  against the disclosure triangle instead would ask `run_lulo.py` to click a
+  control Lulo doesn't have. This is itself a parity gap (Lulo's "Other…"
+  item models an older Save-panel design); resolve which side changes
+  before recording.
+- `files/drag-to-dock-and-desktop.json`: `scripts/behavior/record_mac.py`
+  and `mac_click.py` only ever post a click (mouse-down immediately followed
+  by mouse-up); neither has a drag primitive (mouse-down, several
+  mouse-dragged moves, mouse-up), so this scenario cannot be recorded until
+  one is added. Driving a real drag-and-drop blind on the owner's live Mac
+  (Dock bin, Desktop) without that primitive is not attempted here.
+
+Scenarios whose expected results were hand-written task contracts, not Mac
+recordings, were kept out of `tests/behavior/` so that every enforced
+expectation comes from a real Mac. `text-editor/close-unsaved-delete`,
+`close-unsaved-save`, `open-panel-desktop`, `save-go-to-folder` and
+`save-with-find-focus` are now recorded (their `.contract.json` files are
+gone); `save-untitled-other` and `save-panel-desktop` remain in
+`docs/behavior-pending/` with their `.contract.json`, for the reason above.
+To promote a pending scenario, record it with
+`scripts/behavior/record_mac.py` and move it back.

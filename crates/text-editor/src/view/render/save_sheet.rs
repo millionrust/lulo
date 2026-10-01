@@ -246,7 +246,11 @@ impl EditorView {
                 Animation::new(Duration::from_millis(180)),
                 |sheet, progress| sheet.top(px(-32.0 * (1.0 - progress))),
             );
-        rmac_ui::dialog("text-editor-save-sheet", card)
+        let mut dialog = rmac_ui::dialog("text-editor-save-sheet", card);
+        if self.save_goto_open {
+            dialog = dialog.passive();
+        }
+        dialog
             .aria_label(format!(
                 "Do you want to keep this new document “{}”?",
                 self.filename()

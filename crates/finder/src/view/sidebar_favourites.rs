@@ -40,7 +40,8 @@ impl FinderView {
                     this.rebuild_sidebar_sections(cx);
                 }
             });
-        }).detach();
+        })
+        .detach();
     }
 
     fn visible_favourite_keys(&self) -> Vec<FavouriteKey> {

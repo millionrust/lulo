@@ -287,6 +287,10 @@ SETTINGS_FILES = {
         "crates/terminal/src/settings.rs",
         "crates/terminal/src/profiles.rs",
     ],
+    "Text Editor": [
+        "crates/text-editor/src/settings_window.rs",
+        "crates/text-editor/src/settings.rs",
+    ],
 }
 
 

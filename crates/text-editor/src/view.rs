@@ -39,7 +39,8 @@ use crate::PrintFile;
 use crate::{document, long_lines, recovery, rtf, storage};
 use crate::{
     CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont,
-    NewFile, OpenFile, SaveFile, SaveFileAs, SaveGoToFolder, ToggleFind, ToggleMono, ToggleReplace,
+    NewFile, OpenFile, SaveFile, SaveFileAs, SaveGoToFolder, ShowSettings, ToggleFind, ToggleMono,
+    ToggleReplace,
 };
 
 use document_io::{
@@ -202,6 +203,8 @@ struct EditorView {
     // Format
     mono: bool,
     font_size: f32,
+    wrap_to_page: bool,
+    page_width_chars: u16,
 
     /// When an `.rtf` is opened, its parsed styled runs for the formatted
     /// preview. `Some` puts the editor in read-only RTF-viewer mode.

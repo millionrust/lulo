@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_726 gaps across 10 apps; 77 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_756 gaps across 10 apps; 77 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Coverage notes
 
@@ -735,7 +735,37 @@ To finish this run once the Mac is free: `python3 scripts/inventory/mac_inventor
 
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
-| TXT-SETTINGS-001 | missing settings control | Settings window | settings |  |  | the Mac has a Settings window for this app; Lulo has none yet |
+| TXT-SETTINGS-001 | missing settings control | 30 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-002 | missing settings control | 96 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-003 | missing settings control | Author: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-004 | missing settings control | Change… | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-005 | missing settings control | Check and correct spelling in rich text documents only | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-006 | missing settings control | Check grammar with spelling | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-007 | missing settings control | Check spelling as you type | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-008 | missing settings control | Copyright: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-009 | missing settings control | Correct spelling automatically | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-010 | missing settings control | Data detectors | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-011 | missing settings control | Document properties are saved only with rich text files. Choose File > Show Properties to change the properties for an open document. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-012 | missing settings control | Helvetica 12 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-013 | missing settings control | Menlo Regular 11 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-014 | missing settings control | Organisation: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-015 | missing settings control | Plain text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-016 | missing settings control | Plain text font: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-017 | missing settings control | Properties | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-018 | missing settings control | Rich text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-019 | missing settings control | Rich text font: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-020 | missing settings control | Settings | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-021 | missing settings control | Show ruler | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-022 | missing settings control | Smart copy/paste | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-023 | missing settings control | Smart dashes | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-024 | missing settings control | Smart links | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-025 | missing settings control | Smart quotes | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-026 | missing settings control | Smart quotes and dashes in rich text documents only | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-027 | missing settings control | Text replacement | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-028 | missing settings control | Use the Format menu to choose settings for an open document. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-029 | missing settings control | characters | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-030 | missing settings control | lines | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-031 | missing settings control | text field | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 
 ## Weather
 

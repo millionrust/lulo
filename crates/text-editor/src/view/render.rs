@@ -19,7 +19,7 @@ use crate::{
     OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8, OpenRecent9,
     PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SetEncodingUtf16Be, SetEncodingUtf16Le,
     SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf,
-    ToggleFind, ToggleMono, ToggleReplace,
+    ShowSettings, ToggleFind, ToggleMono, ToggleReplace,
 };
 
 use super::{
@@ -72,6 +72,8 @@ impl Render for EditorView {
         };
         let size = self.font_size;
         let line_height = (size * PLAIN_LINE_RATIO).round();
+        let page_width = f32::from(self.page_width_chars) * size * 0.596 + TEXT_INSET_X * 2.0;
+        let wrap_to_page = self.wrap_to_page;
         let recovery_loading = self.recovery_loading;
         let recovery_error = self.recovery_error.clone();
         let status_notice = self.status_notice.clone();
@@ -101,6 +103,9 @@ impl Render for EditorView {
             .key_context(CTX)
             .on_action(cx.listener(|this, _: &NewFile, window, cx| this.new_file(window, cx)))
             .on_action(cx.listener(|this, _: &OpenFile, window, cx| this.open(window, cx)))
+            .on_action(cx.listener(|_, _: &ShowSettings, _, cx| {
+                crate::settings_window::show(cx);
+            }))
             .on_action(cx.listener(|this, _: &OpenRecent0, window, cx| this.open_recent(0, window, cx)))
             .on_action(cx.listener(|this, _: &OpenRecent1, window, cx| this.open_recent(1, window, cx)))
             .on_action(cx.listener(|this, _: &OpenRecent2, window, cx| this.open_recent(2, window, cx)))
@@ -361,7 +366,8 @@ impl Render for EditorView {
                             .pl(px(TEXT_INSET_X))
                             .pr(px(TEXT_INSET_X))
                             .pt(px(0.0))
-                            .pb(px(0.0)),
+                            .pb(px(0.0))
+                            .when(wrap_to_page, |field| field.max_w(px(page_width)).mx_auto()),
                     )
                     .when(editable, |body| {
                         body.on_a11y_action(

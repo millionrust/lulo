@@ -4,9 +4,15 @@ use super::*;
 
 /// TextEdit's plain-text window: 90 Menlo 11 columns by 30 lines plus the
 /// 32 pt title bar, 656 × 422 (measured, design-lab/apps.html).
-const WINDOW_WIDTH: f32 = 656.0;
-const WINDOW_HEIGHT: f32 = 422.0;
 const MAX_STARTUP_DOCUMENTS: usize = 32;
+
+fn document_window_size() -> (f32, f32) {
+    let settings = crate::settings::current();
+    (
+        f32::from(settings.width_chars) * 6.56 + 26.0,
+        f32::from(settings.height_lines) * f32::from(settings.font_size) * 13.0 / 11.0 + 32.0,
+    )
+}
 
 #[derive(Debug, Eq, PartialEq)]
 struct StartupRequest {
@@ -55,12 +61,8 @@ fn parse_startup_request(
 }
 
 pub(super) fn open_editor_window(cx: &mut App, initial_path: Option<PathBuf>) -> Result<(), ()> {
-    let options = rmac_ui::window_options_for_app(
-        rmac_ui::app_id::TEXT_EDITOR,
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
-        cx,
-    );
+    let (width, height) = document_window_size();
+    let options = rmac_ui::window_options_for_app(rmac_ui::app_id::TEXT_EDITOR, width, height, cx);
     cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| {
@@ -80,12 +82,8 @@ pub(super) fn open_duplicate_window(
     cx: &mut App,
     content: super::DuplicateContent,
 ) -> Result<(), ()> {
-    let options = rmac_ui::window_options_for_app(
-        rmac_ui::app_id::TEXT_EDITOR,
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
-        cx,
-    );
+    let (width, height) = document_window_size();
+    let options = rmac_ui::window_options_for_app(rmac_ui::app_id::TEXT_EDITOR, width, height, cx);
     cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| {
@@ -132,6 +130,7 @@ fn open_requested_windows(request: StartupRequest, cx: &mut App) {
 }
 
 pub(crate) fn run() {
+    crate::settings::initialize();
     let request = match parse_startup_request(std::env::args_os().skip(1)) {
         Ok(request) => request,
         Err(message) => {

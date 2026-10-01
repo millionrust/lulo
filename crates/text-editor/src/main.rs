@@ -4,6 +4,8 @@ mod document;
 mod long_lines;
 mod recovery;
 mod rtf;
+mod settings;
+mod settings_window;
 mod storage;
 #[cfg(test)]
 mod test_alloc;
@@ -13,6 +15,7 @@ gpui::actions!(
     text_editor,
     [
         NewFile,
+        ShowSettings,
         OpenFile,
         SaveFile,
         SaveFileAs,

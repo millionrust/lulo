@@ -1028,14 +1028,15 @@ class LuloRun:
 
 
 def explore(run: LuloRun) -> None:
-    """Print the app's accessible tree (for writing new scenarios)."""
+    """Print the app and portal helper trees (for writing new scenarios)."""
 
     pyatspi = atspi()
     app = run.application()
+    frames = run.frames() + run.helper_frames()
     print(f"== {run.sid}: application {name(app) if app is not None else None!r}, "
-          f"{len(run.frames())} top-level nodes, sway windows "
+          f"{len(frames)} top-level nodes, sway windows "
           f"{[(w.get('name'), w.get('focused')) for w in run.nested.windows()]}")
-    for frame in run.frames():
+    for frame in frames:
         for node in descendants(frame, limit=1500):
             depth = 0
             parent = node

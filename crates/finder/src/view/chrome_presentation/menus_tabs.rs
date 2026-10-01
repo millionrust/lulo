@@ -1,6 +1,16 @@
 use super::*;
 
 impl FinderView {
+    pub(in crate::view) fn build_title_path_menu(&self, pos: Point<Pixels>) -> rmac_ui::ContextMenu {
+        let mut menu = rmac_ui::ContextMenu::new(pos);
+        for ancestor in self.cwd.ancestors() {
+            let name = ancestor.file_name().map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| rmac_finder::places::root_volume_name().to_owned());
+            menu = menu.item(name, Box::new(GoToTitlePathAction { path: ancestor.to_path_buf() }));
+        }
+        menu
+    }
+
     pub(in crate::view) fn build_sidebar_menu(
         pos: Point<Pixels>,
         removable: bool,

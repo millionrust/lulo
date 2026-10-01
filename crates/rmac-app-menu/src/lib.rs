@@ -613,6 +613,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Home", "finder::GoHome", "⇧⌘H"),
             item!("Computer", "finder::GoComputer", "⇧⌘C"),
             item!("Applications", "finder::GoApplications", "⇧⌘A"),
+            item!("Utilities", "finder::GoUtilities", "⇧⌘U"),
             item!("Trash", "finder::GoTrash", ""),
             item!("Go to Folder…", "finder::GoToFolder", "⇧⌘G", separator),
         ],

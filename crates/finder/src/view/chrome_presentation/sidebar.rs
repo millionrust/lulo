@@ -12,7 +12,7 @@ fn place_is_selected(
 ) -> bool {
     match kind {
         PlaceKind::Trash => trash_view,
-        PlaceKind::Applications => applications_view,
+        PlaceKind::Applications => applications_view && result_title == Some("Applications"),
         PlaceKind::Recents => !trash_view && !applications_view && result_title == Some("Recents"),
         PlaceKind::Tag => {
             !trash_view
@@ -416,12 +416,20 @@ impl FinderView {
     }
 
     pub(in crate::view) fn applications_click(&mut self, cx: &mut Context<Self>) {
+        self.application_catalog_click(false, cx);
+    }
+
+    pub(in crate::view) fn utilities_click(&mut self, cx: &mut Context<Self>) {
+        self.application_catalog_click(true, cx);
+    }
+
+    fn application_catalog_click(&mut self, utilities: bool, cx: &mut Context<Self>) {
         self.trash_view = false;
         self.applications_view = true;
         self.cancel_search();
-        self.result_title = Some("Applications".into());
+        self.result_title = Some(if utilities { "Utilities" } else { "Applications" }.into());
         self.operation_error = None;
-        self.search_summary = Some("Loading applications…".into());
+        self.search_summary = Some(if utilities { "Loading utilities…" } else { "Loading applications…" }.into());
         self.search_relevance_order = false;
         self.entries.clear();
         self.selected.clear();
@@ -441,6 +449,7 @@ impl FinderView {
             let result = blocking::unblock(move || {
                 let mut entries = suppress_replaced_applications(rmac_apps::discover()?)
                     .into_iter()
+                    .filter(|application| !utilities || application.categories.iter().any(|category| category.eq_ignore_ascii_case("Utility")))
                     .map(entry_for_application)
                     .collect::<Vec<_>>();
                 sort_entries(&mut entries, key, asc);
@@ -694,7 +703,16 @@ mod selection_tests {
             home,
             false,
             true,
-            None,
+            Some("Applications"),
+        ));
+        assert!(!place_is_selected(
+            PlaceKind::Applications,
+            "Applications",
+            Path::new(""),
+            home,
+            false,
+            true,
+            Some("Utilities"),
         ));
     }
 }

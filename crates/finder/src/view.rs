@@ -141,6 +141,7 @@ actions!(
         GoUp,
         GoHome,
         GoApplications,
+        GoUtilities,
         GoDownloads,
         GoTrash,
         ToggleHidden,
@@ -208,6 +209,12 @@ struct DraggedSidebarItem(PathBuf);
 #[action(namespace = finder, no_json)]
 struct OpenWithHandlerAction {
     index: usize,
+}
+
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = finder, no_json)]
+struct GoToTitlePathAction {
+    path: PathBuf,
 }
 
 /// The little pill shown under the cursor while dragging.
@@ -285,6 +292,7 @@ enum MenuPurpose {
     Context,
     Sort,
     Sidebar,
+    TitlePath,
 }
 
 /// One browser tab — its own directory and navigation history.

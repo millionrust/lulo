@@ -542,6 +542,7 @@ impl Render for FinderView {
                             .as_ref()
                             .is_some_and(|path| path.as_os_str().is_empty()),
                     ),
+                    MenuPurpose::TitlePath => self.build_title_path_menu(state.position()),
                 };
                 el.child(menu.render(&state))
             })

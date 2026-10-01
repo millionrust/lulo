@@ -794,6 +794,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
             .on_action(cx.listener(|this, _: &GoHome, _, cx| this.go_home(cx)))
             .on_action(cx.listener(|this, _: &GoApplications, _, cx| this.applications_click(cx)))
+            .on_action(cx.listener(|this, _: &GoUtilities, _, cx| this.utilities_click(cx)))
             .on_action(cx.listener(|this, _: &GoDownloads, _, cx| this.go_downloads(cx)))
             .on_action(cx.listener(|this, _: &GoDesktop, _, cx| this.go_desktop(cx)))
             .on_action(cx.listener(|this, _: &GoDocuments, _, cx| this.go_documents(cx)))
@@ -837,6 +838,9 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
             .on_action(cx.listener(|this, action: &OpenWithHandlerAction, _, cx| {
                 this.open_with_menu_handler(action.index, cx)
+            }))
+            .on_action(cx.listener(|this, action: &GoToTitlePathAction, _, cx| {
+                this.navigate(action.path.clone(), cx)
             }))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
@@ -1266,9 +1270,13 @@ impl FinderView {
                                         .on_mouse_down(MouseButton::Left, |_, _, cx| {
                                             cx.stop_propagation()
                                         })
-                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                                             cx.stop_propagation();
-                                            this.toggle_list_folder(path.clone(), cx);
+                                            if event.modifiers().alt {
+                                                this.toggle_list_folder_tree(path.clone(), cx);
+                                            } else {
+                                                this.toggle_list_folder(path.clone(), cx);
+                                            }
                                         }))
                                         .on_a11y_action(
                                             AccessibleAction::Click,

@@ -1477,6 +1477,7 @@ def check_terminal_profiles(nested: Nested, bins: list[Path], settle: float) -> 
         print("PASS  all 12 Mac profile names are exposed in Settings", flush=True)
 
         run.click_item("Clear Dark", "left")
+        time.sleep(settle)
         path = Path(run.env["XDG_CONFIG_HOME"]) / "rmac-terminal" / "profile.txt"
         if not path.exists() or path.read_text().strip() != "Clear Dark":
             raise StepFailed("choosing Clear Dark did not persist the selected profile")

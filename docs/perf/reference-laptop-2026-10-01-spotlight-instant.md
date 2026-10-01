@@ -17,9 +17,9 @@ blocking pool. No timer or periodic wakeup was added to the idle launcher.
 
 `scripts/behavior/run_cold_surfaces.py` ran in private nested Sway/niri with
 temporary XDG directories and the laptop's Intel Vulkan driver. All shortcut
-requests used niri Spawn and `rmac-shortcut-dispatch`. GPUI frame callbacks
-write the benchmark markers. Captures include `grim` overhead and are only
-upper bounds, not dispatch-to-frame timings.
+requests in the main runs used niri Spawn and `rmac-shortcut-dispatch`. GPUI
+frame callbacks write the benchmark markers. Captures include `grim` overhead
+and are only upper bounds, not dispatch-to-frame timings.
 
 | Run | Resident settle | First dispatch to frame | Later dispatch to frame | Query echo to frame | Cached result to frame | Checks |
 |---|---:|---:|---:|---:|---:|---:|
@@ -27,6 +27,14 @@ upper bounds, not dispatch-to-frame timings.
 | Warmup window retained | 5 s | 72.8 ms | 50.1 ms | 19.9 ms | 19.9 ms | 32/32 |
 | Warmup window closed | 5 s | 65.1 ms | 62.8 ms | 22.7 ms | 22.8 ms | 32/32 |
 | Warmup closed; freed pages trimmed | 5 s | 61.0 ms | 55.7 ms | 23.6 ms | 23.7 ms | 32/32 |
+| Four-show run | 5 s | 79.0 ms | 64.2, 90.3, 89.5 ms | 22.6 ms | 22.6 ms | 36/36 |
+| Final code (`9fd3a3fa`) | 5 s | 85.2 ms | 52.7, 84.4, 86.0 ms | 16.6 ms | 16.6 ms | 36/36 |
+
+A separate direct-dispatch diagnostic bypassed niri Spawn for the first show:
+65.5 ms to first frame, with later niri-dispatched shows at 55.1, 88.4 and
+88.6 ms (36/36 checks). The 13.5 ms difference between that first show and
+the 79.0 ms four-show run is indicative because they were separate nested
+sessions.
 
 The typing probe enters `cal` through the nested compositor's virtual
 keyboard. The displayed numbers run from the launcher's input-change event to
@@ -37,13 +45,28 @@ scheduling noise; the measured shows above met the stricter 100 ms product
 target. These measurements do not cover the physical keyboard or an installed
 systemd login.
 
-The speed costs substantial idle memory on this GPU stack. At five seconds
-after endpoint readiness, the final launcher used 111.88 MiB RSS, 69.93 MiB
-PSS and 44.44 MiB private dirty. The earlier uninitialized resident launcher
-sample was 23.62 / 20.55 / 3.97 MiB respectively; the measurements came from
-different nested sessions, so their PSS figures are indicative. Closing the
-warmup surface reduced private dirty in an intermediate run, but WGPU's shared
-device and Vulkan mappings remain resident. A one-time allocator trim reduced
-the measured RSS/PSS by about 4 MiB. This exceeds the few-MiB allowance
-suggested for keeping a surface ready and worsens the shell login-memory
-budget. The follow-up memory budget must account for this tradeoff.
+The speed costs substantial idle memory on this GPU stack. A separate
+five-second login sample with all ten Intel shell processes running measured
+Spotlight at 104.64 MiB RSS / 46.15 MiB PSS / 21.92 MiB private dirty. The
+earlier uninitialized resident launcher sample was 23.62 / 20.55 / 3.97 MiB.
+The whole shell measured 575.98 MiB RSS / 325.96 MiB PSS / 153.08 MiB private
+dirty, versus 499.85 / 329.40 / 134.38 MiB in the earlier report. RSS and
+private dirty grew; PSS fell slightly across these separate runs as mapped
+Vulkan pages were shared differently. The shell still exceeds its proposed
+256 MiB RSS and 320 MiB PSS limits. An isolated launcher run measured 111.88
+MiB RSS / 69.93 MiB PSS; that PSS overstates its share at a full login.
+Closing the warmup surface reduced private dirty in an intermediate run, but
+WGPU's shared device and Vulkan mappings remain resident. A one-time allocator
+trim reduced isolated RSS/PSS by about 4 MiB. The incremental launcher memory
+exceeds the few-MiB allowance suggested for keeping a surface ready; MEM-01
+continues to track the budget.
+
+Final-code validation: `rmac-launcher-app` unit tests 11/11, package-scoped
+clippy with `-D warnings`, root and shell `cargo fmt --all -- --check`, and the
+GPUI import and design-token guards passed. The private app behavior suite
+matched 111/111 Mac scenarios on a quiet rerun; an earlier run under build
+load matched 110/111 and its lone Files window-count case passed 1/1 alone.
+Nested window movement/zoom passed 29/29 on rerun after an initial 27/29;
+frame/repaint passed 15/15, power dialogs 51/51, and shutdown 38/38. The power
+and shutdown runners used fake
+`systemctl` paths and never operated the laptop's real power controls.

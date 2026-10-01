@@ -1270,14 +1270,16 @@ impl FinderView {
                                         .on_mouse_down(MouseButton::Left, |_, _, cx| {
                                             cx.stop_propagation()
                                         })
-                                        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                                            cx.stop_propagation();
-                                            if event.modifiers().alt {
-                                                this.toggle_list_folder_tree(path.clone(), cx);
-                                            } else {
-                                                this.toggle_list_folder(path.clone(), cx);
-                                            }
-                                        }))
+                                        .on_click(cx.listener(
+                                            move |this, event: &ClickEvent, _, cx| {
+                                                cx.stop_propagation();
+                                                if event.modifiers().alt {
+                                                    this.toggle_list_folder_tree(path.clone(), cx);
+                                                } else {
+                                                    this.toggle_list_folder(path.clone(), cx);
+                                                }
+                                            },
+                                        ))
                                         .on_a11y_action(
                                             AccessibleAction::Click,
                                             move |_, _, cx| {

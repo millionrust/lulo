@@ -5,9 +5,12 @@ impl FinderView {
     /// The scan is bounded for a low-end machine and never runs on the UI thread.
     pub(super) fn toggle_list_folder_tree(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if self.expanded.contains(&path) {
-            let descendants = self.expanded.iter()
+            let descendants = self
+                .expanded
+                .iter()
                 .filter(|expanded| expanded.starts_with(&path))
-                .cloned().collect::<Vec<_>>();
+                .cloned()
+                .collect::<Vec<_>>();
             for descendant in descendants {
                 self.expanded.remove(&descendant);
                 if self.watched_children.remove(&descendant) {
@@ -33,21 +36,27 @@ impl FinderView {
                 let mut pending = vec![root];
                 let mut children = HashMap::new();
                 while let Some(folder) = pending.pop() {
-                    if children.len() >= 256 { break; }
-                    let Ok((_, mut entries)) = read_entries_checked(&folder, show_hidden, None) else {
+                    if children.len() >= 256 {
+                        break;
+                    }
+                    let Ok((_, mut entries)) = read_entries_checked(&folder, show_hidden, None)
+                    else {
                         continue;
                     };
                     sort_entries(&mut entries, key, asc);
                     for entry in &entries {
-                        if entry.is_dir && std::fs::symlink_metadata(&entry.path)
-                            .is_ok_and(|metadata| !metadata.file_type().is_symlink()) {
+                        if entry.is_dir
+                            && std::fs::symlink_metadata(&entry.path)
+                                .is_ok_and(|metadata| !metadata.file_type().is_symlink())
+                        {
                             pending.push(entry.path.clone());
                         }
                     }
                     children.insert(folder, entries);
                 }
                 children
-            }).await;
+            })
+            .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 if this.directory_generation != generation || !this.expanded.contains(&path) {
                     return;
@@ -64,7 +73,8 @@ impl FinderView {
                 this.rebuild_list_entries();
                 cx.notify();
             });
-        }).detach();
+        })
+        .detach();
     }
 
     pub(super) fn scroll_list_row_into_view(&self, position: usize) {

@@ -427,9 +427,23 @@ impl FinderView {
         self.trash_view = false;
         self.applications_view = true;
         self.cancel_search();
-        self.result_title = Some(if utilities { "Utilities" } else { "Applications" }.into());
+        self.result_title = Some(
+            if utilities {
+                "Utilities"
+            } else {
+                "Applications"
+            }
+            .into(),
+        );
         self.operation_error = None;
-        self.search_summary = Some(if utilities { "Loading utilities…" } else { "Loading applications…" }.into());
+        self.search_summary = Some(
+            if utilities {
+                "Loading utilities…"
+            } else {
+                "Loading applications…"
+            }
+            .into(),
+        );
         self.search_relevance_order = false;
         self.entries.clear();
         self.selected.clear();
@@ -449,7 +463,13 @@ impl FinderView {
             let result = blocking::unblock(move || {
                 let mut entries = suppress_replaced_applications(rmac_apps::discover()?)
                     .into_iter()
-                    .filter(|application| !utilities || application.categories.iter().any(|category| category.eq_ignore_ascii_case("Utility")))
+                    .filter(|application| {
+                        !utilities
+                            || application
+                                .categories
+                                .iter()
+                                .any(|category| category.eq_ignore_ascii_case("Utility"))
+                    })
                     .map(entry_for_application)
                     .collect::<Vec<_>>();
                 sort_entries(&mut entries, key, asc);

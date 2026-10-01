@@ -8,6 +8,12 @@
       "reason": "The system Apple menu is OS chrome (About This Mac, System Settings…, Sleep/Restart/Shut Down, Recent Items, App Store updates), not part of any app's own menu bar. Lulo's shell has no per-app equivalent slot for it."
     },
     {
+      "app": "Terminal",
+      "label": "SF Mono Regular 11",
+      "match": "exact",
+      "reason": "SF Mono is an Apple font; Lulo uses its bundled monospace font and exposes the font size separately."
+    },
+    {
       "app": "*",
       "label": "Services",
       "match": "exact",

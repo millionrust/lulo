@@ -355,6 +355,10 @@
       },
       {
         "kind": "section",
+        "label": "Cursor"
+      },
+      {
+        "kind": "section",
         "label": "Window"
       },
       {
@@ -378,16 +382,24 @@
         "label": "+"
       },
       {
-        "kind": "tab",
-        "label": "Block"
+        "kind": "control",
+        "label": "Blink cursor"
+      },
+      {
+        "kind": "control",
+        "label": "Use Option as Meta Key"
       },
       {
         "kind": "tab",
-        "label": "Underline"
+        "label": "▊ Block"
       },
       {
         "kind": "tab",
-        "label": "Vertical bar"
+        "label": "▁ Underline"
+      },
+      {
+        "kind": "tab",
+        "label": "┃ Vertical Bar"
       },
       {
         "kind": "tab",
@@ -404,6 +416,58 @@
       {
         "kind": "tab",
         "label": "Same working directory"
+      },
+      {
+        "kind": "profile",
+        "label": "Lulo OS Dark"
+      },
+      {
+        "kind": "profile",
+        "label": "Basic"
+      },
+      {
+        "kind": "profile",
+        "label": "Pro"
+      },
+      {
+        "kind": "profile",
+        "label": "Homebrew"
+      },
+      {
+        "kind": "profile",
+        "label": "Grass"
+      },
+      {
+        "kind": "profile",
+        "label": "Man Page"
+      },
+      {
+        "kind": "profile",
+        "label": "Novel"
+      },
+      {
+        "kind": "profile",
+        "label": "Ocean"
+      },
+      {
+        "kind": "profile",
+        "label": "Red Sands"
+      },
+      {
+        "kind": "profile",
+        "label": "Clear Dark"
+      },
+      {
+        "kind": "profile",
+        "label": "Clear Light"
+      },
+      {
+        "kind": "profile",
+        "label": "Silver Aerogel"
+      },
+      {
+        "kind": "profile",
+        "label": "Solid Colors"
       }
     ]
   },

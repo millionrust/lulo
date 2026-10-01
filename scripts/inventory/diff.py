@@ -299,6 +299,22 @@ def diff_context_menus(
 def _labels_from_mac_controls(controls: list[dict]) -> set[str]:
     out = set()
     for c in controls:
+        # These are AX tree scaffolding or window chrome, not settings that
+        # someone can configure. Their fallback labels are generated from
+        # the role when the node has no accessible name.
+        if c.get("role") in {
+            "AXGroup", "AXTabGroup", "AXRadioGroup", "AXScrollArea",
+            "AXScrollBar", "AXTable", "AXRow", "AXColumn", "AXToolbar",
+            "AXValueIndicator",
+        }:
+            continue
+        if c.get("label") in {
+            "close button", "minimise button", "zoom button",
+            "increment arrow button", "decrement arrow button",
+            "increment page button", "decrement page button",
+            "action", "text",
+        }:
+            continue
         label = c.get("label")
         norm_label = norm.normalize_label(label) if label else None
         if norm_label:
@@ -434,9 +450,15 @@ def diff_app(mac_app_name: str, lulo_app_name: str) -> tuple[list[Gap], list[str
         return [], notes
 
     gaps: list[Gap] = []
-    gaps += diff_menu_bars(
-        lulo_app_name, mac_data.get("menu_bar", []), lulo_data.get("menu_bar", []), mac_app_name
-    )
+    if "menu_bar" in mac_data:
+        gaps += diff_menu_bars(
+            lulo_app_name, mac_data["menu_bar"], lulo_data.get("menu_bar", []), mac_app_name
+        )
+    else:
+        notes.append(
+            f"Mac menu bar for {mac_app_name} was not captured: "
+            f"{mac_data.get('menu_bar_error', 'no menu data')}; menu diff skipped"
+        )
     if "context_menus" in mac_data and "context_menus" in lulo_data:
         mac_context = mac_data.get("context_menus", {})
         if _is_contaminated_background_capture(mac_context.get("background", [])):

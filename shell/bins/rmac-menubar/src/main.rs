@@ -4683,7 +4683,7 @@ mod linux_wayland {
             return;
         }
         if action == menu_model::APP_HELP_ACTION {
-            open_app_help(&app_id, cx);
+            open_app_help(&app_id);
             return;
         }
         if action.starts_with("help::") {
@@ -4925,7 +4925,7 @@ mod linux_wayland {
     /// markdown embedded at compile time, written to a temp file and opened
     /// in the desktop's default viewer, the same way other first-party
     /// documents open (§FD-8: a real page, not a dead menu row).
-    fn open_app_help(app_id: &str, cx: &mut App) {
+    fn open_app_help(app_id: &str) {
         let Some(markdown) = app_help_markdown(app_id) else {
             eprintln!("no bundled help for {app_id}");
             return;

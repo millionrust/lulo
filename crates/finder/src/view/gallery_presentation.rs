@@ -319,7 +319,9 @@ impl FinderView {
                         window.focus(&this.focus, cx);
                     }))
                     .when(!self.trash_view && !self.applications_view, |element| {
-                        element.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
+                        element.on_drag(DraggedPaths(drag_paths.clone()), move |_, _, _, cx| {
+                            #[cfg(target_os = "linux")]
+                            gpui_linux::stage_external_file_drag(drag_paths.clone());
                             cx.new(|_| DragPreview { count: drag_count })
                         })
                     })

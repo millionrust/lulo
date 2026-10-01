@@ -15,6 +15,18 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    #[cfg(target_os = "linux")]
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "--trash-drop")
+    {
+        let result = trash_drop(&arguments[1..]);
+        if let Err(error) = result {
+            eprintln!("rmac-files: could not move dropped items to Trash: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let current_dir = std::env::current_dir().ok();
     let windows = match StartupDestination::parse_launch(arguments, current_dir.as_deref()) {
         Ok((windows, skipped)) => {
@@ -38,8 +50,26 @@ fn main() {
     );
 }
 
-const USAGE: &str =
-    "usage: rmac-files [--trash | --path DIRECTORY | --reveal PATH | --search QUERY | PATH-OR-FILE-URI…]";
+#[cfg(target_os = "linux")]
+fn trash_drop(paths: &[String]) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    use std::sync::atomic::AtomicBool;
+
+    if paths.is_empty() || paths.iter().any(|path| !Path::new(path).is_absolute()) {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "absolute paths required",
+        ));
+    }
+    let store = trash_store::TrashStore::open_default()?;
+    let cancel = AtomicBool::new(false);
+    for path in paths {
+        store.trash(Path::new(path), &cancel)?;
+    }
+    Ok(())
+}
+
+const USAGE: &str = "usage: rmac-files [--trash | --path DIRECTORY | --reveal PATH | --search QUERY | PATH-OR-FILE-URI…]";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 enum StartupDestination {

@@ -1,5 +1,18 @@
 # Behaviour-parity suite
 
+## Cross-app file drag
+
+`scripts/behavior/run_file_drag.py` starts the shipped Dock and wallpaper in
+private nested niri, opens one Files window, and drags two fixture files with
+the virtual pointer: one to the Dock Bin and one to the Desktop. It checks
+that each source disappeared and the corresponding Trash or Desktop item
+appeared. The runner holds `/tmp/lulo-journey.lock` and uses disposable XDG
+directories.
+
+```sh
+python3 scripts/behavior/run_file_drag.py --bin-dir ~/rmac-wt/target/iterate
+```
+
 ## Parallel visual journeys
 
 `tests/parallel/` contains ten first-hour journeys that use the same JSON

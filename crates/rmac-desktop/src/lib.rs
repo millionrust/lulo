@@ -419,6 +419,12 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
     .map_err(io::Error::from)
 }
 
+/// Move an item without replacing one that appeared at the destination.
+/// Used by Desktop drops as well as same-directory renames.
+pub fn move_item_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    rename_noreplace(source, destination)
+}
+
 /// Without an atomic no-replace rename, refuse rather than risk replacing
 /// an item that appeared after the check.
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]

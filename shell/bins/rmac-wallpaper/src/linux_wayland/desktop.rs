@@ -15,6 +15,63 @@ use rmac_desktop::{Item, ItemKind, RenameError};
 use rmac_shell_ui::text_field::{TextField, TextFieldEvent, TextFieldStyle};
 use std::sync::atomic::AtomicBool;
 
+fn copy_drop_item(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    let metadata = fs::symlink_metadata(source)?;
+    if metadata.file_type().is_symlink() {
+        std::os::unix::fs::symlink(fs::read_link(source)?, destination)?;
+    } else if metadata.is_dir() {
+        fs::create_dir(destination)?;
+        let result: std::io::Result<()> = (|| {
+            for entry in fs::read_dir(source)? {
+                let entry = entry?;
+                copy_drop_item(&entry.path(), &destination.join(entry.file_name()))?;
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_dir_all(destination);
+        }
+        result?;
+    } else {
+        rmac_storage::copy_no_clobber(source, destination)?;
+    }
+    Ok(())
+}
+
+fn transfer_drop_item(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+    copy: bool,
+) -> std::io::Result<()> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    if fs::symlink_metadata(destination).is_ok() {
+        return Err(std::io::ErrorKind::AlreadyExists.into());
+    }
+    let source_device = fs::symlink_metadata(source)?.dev();
+    let destination_device = fs::metadata(
+        destination
+            .parent()
+            .ok_or(std::io::ErrorKind::InvalidInput)?,
+    )?
+    .dev();
+    if copy || source_device != destination_device {
+        return copy_drop_item(source, destination);
+    }
+    match rmac_desktop::move_item_no_replace(source, destination) {
+        Ok(()) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {
+            copy_drop_item(source, destination)?;
+            if fs::symlink_metadata(source)?.is_dir() {
+                fs::remove_dir_all(source)
+            } else {
+                fs::remove_file(source)
+            }
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// A press that moves further than this starts a drag.
 const DRAG_THRESHOLD: f32 = 3.0;
 /// Selected icon backdrop (S): 4 outside the icon box, radius 6.
@@ -118,6 +175,7 @@ pub(crate) enum Drag {
         start: Point<Pixels>,
         current: Point<Pixels>,
         moved: bool,
+        external_started: bool,
         pressed: PathBuf,
         additive: bool,
         /// A plain click on the label of the only selected icon: renaming
@@ -318,6 +376,47 @@ fn panel_card(width: f32) -> gpui::Div {
 }
 
 impl Wallpaper {
+    pub(crate) fn drop_external_files(
+        &mut self,
+        paths: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let position = window.mouse_position();
+        let layout = self.desk_layout(window, cx);
+        let directory = layout
+            .hit(f32::from(position.x), f32::from(position.y))
+            .and_then(|index| layout.item(&layout.placed[index]))
+            .filter(|item| item.kind == ItemKind::Directory)
+            .map(|item| item.path.clone())
+            .or_else(|| rmac_desktop::directory_from_environment().ok());
+        let Some(directory) = directory else { return };
+        let copy = gpui_linux::file_drop_should_copy();
+        cx.spawn(async move |this, cx| {
+            let result = blocking::unblock(move || {
+                for source in paths {
+                    let Some(name) = source.file_name() else {
+                        continue;
+                    };
+                    let destination = directory.join(name);
+                    if source == destination {
+                        continue;
+                    }
+                    transfer_drop_item(&source, &destination, copy)?;
+                }
+                std::io::Result::Ok(())
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                if result.is_err() {
+                    this.action_error = Some("Some items could not be dropped here".into());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn desk_layout(&self, window: &Window, cx: &App) -> DeskLayout {
         let size = window.viewport_size();
         let status = self.status.read(cx);
@@ -365,6 +464,34 @@ impl Wallpaper {
             items,
             placed,
         }
+    }
+
+    fn near_external_drop_target(
+        &self,
+        position: Point<Pixels>,
+        window: &Window,
+        cx: &App,
+    ) -> bool {
+        let x = f32::from(position.x) as f64;
+        let y = f32::from(position.y) as f64;
+        if y >= f32::from(window.viewport_size().height) as f64 - 150.0 {
+            return true; // Dock tiles occupy the bottom of the output.
+        }
+        const APPROACH: f64 = 64.0;
+        let status = self.status.read(cx);
+        status.compositor.windows.values().any(|target| {
+            let Some(origin) = target.layout.tile_position_in_view else {
+                return false;
+            };
+            let left = origin.x + target.layout.window_offset_in_tile.x;
+            let top = origin.y + target.layout.window_offset_in_tile.y;
+            let width = target.layout.tile_size.width;
+            let height = target.layout.tile_size.height;
+            x >= left - APPROACH
+                && x <= left + width + APPROACH
+                && y >= top - APPROACH
+                && y <= top + height + APPROACH
+        })
     }
 
     fn open_context_menu(
@@ -507,6 +634,7 @@ impl Wallpaper {
                     start: event.position,
                     current: event.position,
                     moved: false,
+                    external_started: false,
                     pressed: path,
                     additive,
                     rename_on_release,
@@ -599,6 +727,19 @@ impl Wallpaper {
         if let Some((control, track_left)) = slider {
             self.set_slider(control, f32::from(event.position.x) - track_left, cx);
         }
+        let near_target = self.near_external_drop_target(event.position, window, cx);
+        if let Some(Drag::Icons {
+            moved: true,
+            external_started,
+            ..
+        }) = &mut self.desk.drag
+        {
+            if !*external_started && near_target {
+                *external_started = gpui_linux::begin_external_file_drag(
+                    self.desk.selection.iter().cloned().collect(),
+                );
+            }
+        }
         cx.notify();
     }
 
@@ -615,12 +756,16 @@ impl Wallpaper {
             Drag::Icons {
                 start,
                 moved,
+                external_started,
                 pressed,
                 additive,
                 rename_on_release,
                 ..
             } => {
-                if !moved {
+                if external_started || gpui_linux::external_file_drag_active() {
+                    // Wayland's target owns the drop. The source receives a
+                    // synthetic release when the compositor ends the drag.
+                } else if !moved {
                     if rename_on_release {
                         self.schedule_rename(pressed.clone(), window, cx);
                     }
@@ -2053,6 +2198,35 @@ impl Wallpaper {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_drop_copies_directories_without_clobbering() {
+        let root = std::env::temp_dir().join(format!(
+            "rmac-desktop-drop-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source = root.join("source");
+        let destination = root.join("destination");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::write(source.join("nested/file.txt"), b"dragged").unwrap();
+        transfer_drop_item(&source, &destination, true).unwrap();
+        assert_eq!(
+            fs::read(destination.join("nested/file.txt")).unwrap(),
+            b"dragged"
+        );
+        assert!(source.join("nested/file.txt").exists());
+        assert_eq!(
+            transfer_drop_item(&source, &destination, false)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn sizes_read_like_finder() {

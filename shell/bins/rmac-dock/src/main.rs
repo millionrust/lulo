@@ -1034,8 +1034,20 @@ mod linux_wayland {
             }
             cx.background_executor()
                 .spawn(async move {
-                    if let Err(error) = trash::delete_all(&paths) {
-                        eprintln!("could not move the dropped items to the Trash: {error}");
+                    let result = blocking::unblock(move || {
+                        let files = std::env::current_exe()
+                            .ok()
+                            .and_then(|exe| exe.parent().map(|dir| dir.join("rmac-files")))
+                            .filter(|path| path.is_file())
+                            .unwrap_or_else(|| PathBuf::from("rmac-files"));
+                        std::process::Command::new(files)
+                            .arg("--trash-drop")
+                            .args(paths)
+                            .status()
+                    })
+                    .await;
+                    if !result.is_ok_and(|status| status.success()) {
+                        eprintln!("could not move the dropped items to the Trash");
                     }
                 })
                 .detach();

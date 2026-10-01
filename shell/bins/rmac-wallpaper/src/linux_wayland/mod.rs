@@ -22,10 +22,11 @@ use std::time::Duration;
 use futures_util::FutureExt as _;
 use gpui::{
     div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, svg,
-    AnyElement, AnyWindowHandle, App, AssetSource, Bounds, Context, DisplayId, Entity, FocusHandle,
-    FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
-    PlatformDisplay, Point, QuitMode, RenderImage, Role, SharedString, Size, Task, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+    AnyElement, AnyWindowHandle, App, AssetSource, Bounds, Context, DisplayId, Entity,
+    ExternalPaths, FocusHandle, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, Pixels, PlatformDisplay, Point, QuitMode, RenderImage, Role,
+    SharedString, Size, Task, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
+    WindowOptions,
 };
 use gpui_platform::application;
 use rmac_desktop::settings::{Arrangement, DesktopSettings, GalleryTarget};
@@ -465,6 +466,10 @@ impl Render for Wallpaper {
                     this.pointer_released(event, window, cx);
                 }),
             )
+            .drag_over::<ExternalPaths>(|style, _, _, _| style)
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                this.drop_external_files(paths.paths().to_vec(), window, cx);
+            }))
             .overflow_hidden()
             .bg(linear_gradient(
                 145.0,

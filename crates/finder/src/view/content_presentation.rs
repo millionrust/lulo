@@ -748,13 +748,37 @@ impl FinderView {
         self.start_transfer_with_conflicts("Moving", tasks, false, true, cx);
     }
 
-    /// Files dropped from another app (Finder, etc.) → copy into the current dir.
+    /// External file drops follow the compositor's selected action. A move
+    /// across filesystems becomes a copy, as in Finder.
     pub(super) fn drop_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         let mut tasks = Vec::new();
+        #[cfg(target_os = "linux")]
+        let copy_requested = gpui_linux::file_drop_should_copy();
+        #[cfg(not(target_os = "linux"))]
+        let copy_requested = true;
+        #[cfg(unix)]
+        let destination_device = std::fs::metadata(&self.cwd).ok().map(|metadata| {
+            use std::os::unix::fs::MetadataExt as _;
+            metadata.dev()
+        });
         for src in paths {
             if let Some(name) = src.file_name().map(|name| name.to_owned()) {
+                #[cfg(unix)]
+                let same_device = std::fs::symlink_metadata(&src)
+                    .ok()
+                    .zip(destination_device)
+                    .is_some_and(|(metadata, device)| {
+                        use std::os::unix::fs::MetadataExt as _;
+                        metadata.dev() == device
+                    });
+                #[cfg(not(unix))]
+                let same_device = false;
                 tasks.push(file_ops::TransferTask {
-                    kind: file_ops::TransferKind::Copy,
+                    kind: if copy_requested || !same_device {
+                        file_ops::TransferKind::Copy
+                    } else {
+                        file_ops::TransferKind::Move
+                    },
                     source: src,
                     destination: self.cwd.join(name),
                 });

@@ -528,7 +528,11 @@ impl NotesView {
         rmac_ui::set_menu_enabled("notes::FindInNoteNext", ready && has_note, cx);
         rmac_ui::set_menu_enabled("notes::FindInNotePrevious", ready && has_note, cx);
         rmac_ui::set_menu_enabled("notes::UseSelectionForFind", body_editable, cx);
-        rmac_ui::set_menu_enabled("notes::JumpToSelection", body_editable, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::JumpToSelection",
+            body_editable && body_has_selection,
+            cx,
+        );
         rmac_ui::set_menu_enabled("notes::FindInNote", ready && has_note, cx);
         for action in [
             "notes::MakeUppercase",

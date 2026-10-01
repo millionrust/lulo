@@ -576,6 +576,7 @@ const FILES_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Settings…", "finder::ShowSettings", "⌘,", separator),
             item!("Empty Trash…", "finder::EmptyTrash", "⇧⌘⌫"),
+            item!("Empty Trash", "finder::EmptyTrashImmediately", "⌥⇧⌘⌫"),
         ],
     },
     MenuSpec {
@@ -590,7 +591,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             ),
             item!("New Tab", "finder::NewTab", "⌘T"),
             item!("Open", "finder::OpenItems", "⌘O"),
-            item!("Close Tab", "finder::CloseTab", "⌘W"),
+            item!("Close Window", "finder::CloseTab", "⌘W"),
             item!("Get Info", "finder::GetInfo", "⌘I", separator),
             item!("Rename", "finder::RenameItem", ""),
             item!("Compress", "finder::Compress", ""),
@@ -614,9 +615,11 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Copy", "finder::CopyItems", "⌘C"),
             // ⌥ alternates of Copy and Paste on the Mac.
             item!("Copy as Pathname", "finder::CopyAsPathname", "⌥⌘C"),
+            item!("Copy as Link", "finder::CopyAsLink", "⌃⌥⌘C"),
             item!("Paste", "finder::PasteItems", "⌘V"),
             item!("Move Item Here", "finder::MoveItemHere", "⌥⌘V"),
             item!("Select All", "finder::SelectAll", "⌘A"),
+            item!("Deselect All", "finder::DeselectAll", "⌥⌘A"),
         ],
     },
     MenuSpec {
@@ -1223,6 +1226,7 @@ fn resolve_items(
                 "finder::MoveToTrash" => format!("Move to {}", file_words.bin()),
                 "finder::GoTrash" => file_words.bin().to_owned(),
                 "finder::EmptyTrash" => format!("Empty {}…", file_words.bin()),
+                "finder::EmptyTrashImmediately" => format!("Empty {}", file_words.bin()),
                 _ => spec.label.to_owned(),
             },
             action: spec.action.to_owned(),

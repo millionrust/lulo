@@ -1,0 +1,19 @@
+{
+  "title": "Option-Command-A clears the Finder selection",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {
+    "files": {
+      "a.txt": "A\n",
+      "b.txt": "B\n"
+    }
+  },
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-a"},
+    {"observe": "selected", "facts": ["selection"]},
+    {"key": "alt-cmd-a"},
+    {"observe": "cleared", "facts": ["selection"]}
+  ]
+}

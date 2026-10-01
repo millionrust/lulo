@@ -75,6 +75,7 @@ LABEL_OVERRIDES = {
     "finder::MoveToTrash": "Move to Bin",
     "finder::GoTrash": "Bin",
     "finder::EmptyTrash": "Empty Bin…",
+    "finder::EmptyTrashImmediately": "Empty Bin",
 }
 
 ABOUT_ACTION = "rmac::ShowAboutPanel"

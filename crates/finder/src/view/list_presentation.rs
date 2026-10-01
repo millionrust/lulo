@@ -789,6 +789,7 @@ impl FinderView {
                 this.menu_unavailable("No iPhone is available to import from", cx)
             }))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &DeselectAll, _, cx| this.deselect_all(cx)))
             .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
             .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
@@ -801,6 +802,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoRecents, _, cx| this.recents_click(cx)))
             .on_action(cx.listener(|this, _: &Find, window, cx| this.open_search(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAsPathname, _, cx| this.copy_as_pathname(cx)))
+            .on_action(cx.listener(|this, _: &CopyAsLink, _, cx| this.copy_as_link(cx)))
             .on_action(cx.listener(|this, _: &MoveItemHere, _, cx| this.move_item_here(cx)))
             .on_action(cx.listener(|this, _: &GoTrash, _, cx| this.trash_click(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
@@ -891,6 +893,9 @@ impl FinderView {
                 cx.listener(|this, _: &GoToFolder, window, cx| this.open_go_to_folder(window, cx)),
             )
             .on_action(cx.listener(|this, _: &EmptyTrash, _, cx| this.request_empty_trash(cx)))
+            .on_action(cx.listener(|this, _: &EmptyTrashImmediately, _, cx| {
+                this.request_empty_trash_immediately(cx)
+            }))
             .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
             .on_action(cx.listener(|this, _: &ShowHelp, _, cx| {
                 this.help_open = true;

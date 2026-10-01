@@ -134,6 +134,13 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         ),
         KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, Find, Some("Finder")),
         KeyBinding::new("alt-cmd-c", CopyAsPathname, Some("Finder")),
+        KeyBinding::new("ctrl-alt-cmd-c", CopyAsLink, Some("Finder")),
+        KeyBinding::new("alt-cmd-a", DeselectAll, Some("Finder")),
+        KeyBinding::new(
+            "alt-shift-cmd-backspace",
+            EmptyTrashImmediately,
+            Some("Finder"),
+        ),
         KeyBinding::new("ctrl-cmd-t", AddToSidebar, Some("Finder")),
         KeyBinding::new("alt-cmd-v", MoveItemHere, Some("Finder")),
         KeyBinding::new("cmd-shift-d", GoDesktop, Some("Finder")),

@@ -573,6 +573,31 @@ impl FinderView {
         let compress_label = archive_controller::compress_menu_label(&selection);
         rmac_ui::set_menu_label("finder::CopyItems", &labels.copy, cx);
         rmac_ui::set_menu_label("finder::CopyAsPathname", &labels.copy_as_pathname, cx);
+        let has_selection = !selection.is_empty();
+        for action in [
+            "finder::CopyAsPathname",
+            "finder::CopyAsLink",
+            "finder::DeselectAll",
+        ] {
+            rmac_ui::set_menu_enabled(action, has_selection, cx);
+        }
+        rmac_ui::set_menu_label(
+            "finder::UndoOperation",
+            self.undo_available
+                .as_ref()
+                .map_or("Undo", |available| available.label.as_str()),
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "finder::UndoOperation",
+            self.undo_available.is_some() && self.undo_operation.is_none(),
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "finder::EmptyTrashImmediately",
+            self.trash_store.is_some() && self.trash_operation.is_none(),
+            cx,
+        );
         rmac_ui::set_menu_label(
             "finder::Compress",
             compress_label.as_deref().unwrap_or("Compress"),

@@ -27,6 +27,13 @@
           "children": []
         },
         {
+          "label": "Empty Bin",
+          "action": "finder::EmptyTrashImmediately",
+          "shortcut": "⌥⇧⌘⌫",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Services",
           "action": "app::services",
           "shortcut": "",
@@ -95,7 +102,7 @@
           "children": []
         },
         {
-          "label": "Close Tab",
+          "label": "Close Window",
           "action": "finder::CloseTab",
           "shortcut": "⌘W",
           "separator_before": false,
@@ -212,6 +219,13 @@
           "children": []
         },
         {
+          "label": "Copy as Link",
+          "action": "finder::CopyAsLink",
+          "shortcut": "⌃⌥⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Paste",
           "action": "finder::PasteItems",
           "shortcut": "⌘V",
@@ -229,6 +243,13 @@
           "label": "Select All",
           "action": "finder::SelectAll",
           "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Deselect All",
+          "action": "finder::DeselectAll",
+          "shortcut": "⌥⌘A",
           "separator_before": false,
           "children": []
         }

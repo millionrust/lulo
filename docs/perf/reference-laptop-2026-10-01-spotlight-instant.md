@@ -68,5 +68,5 @@ matched 111/111 Mac scenarios on a quiet rerun; an earlier run under build
 load matched 110/111 and its lone Files window-count case passed 1/1 alone.
 Nested window movement/zoom passed 29/29 on rerun after an initial 27/29;
 frame/repaint passed 15/15, power dialogs 51/51, and shutdown 38/38. The power
-and shutdown runners used fake
-`systemctl` paths and never operated the laptop's real power controls.
+and shutdown runners used fake `systemctl` paths and never operated the
+laptop's real power controls.

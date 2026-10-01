@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "scenario": "preview/quit-keep-windows",
+  "observations": {
+    "restored": {
+      "windows": {
+        "count": 1,
+        "front": "guide.pdf – 1 page",
+        "titles": ["guide.pdf – 1 page"]
+      }
+    }
+  }
+}

@@ -108,6 +108,60 @@
       "label": "Send to Keka",
       "match": "exact",
       "reason": "See \"Compress using Keka\": the Keka Finder Sync extension, not stock Finder."
+    },
+    {
+      "app": "Preview",
+      "label": "MSI G241",
+      "match": "exact",
+      "reason": "This soft-proof ICC profile belongs to the reference Mac's attached MSI monitor; it is machine-specific, not a Preview feature."
+    },
+    {
+      "app": "Preview",
+      "label": "Colour LCD",
+      "match": "exact",
+      "reason": "This soft-proof ICC profile belongs to Apple's built-in laptop display and does not exist on Lulo hardware."
+    },
+    {
+      "app": "Preview",
+      "label": "Share",
+      "match": "exact",
+      "reason": "This is macOS's system Share sheet for AirDrop, Mail, Messages, and share extensions; Lulo has no Apple Share service."
+    },
+    {
+      "app": "Preview",
+      "label": "No Document",
+      "match": "exact",
+      "reason": "AppKit inserts this disabled placeholder in empty Revert To and Share submenus; it is not a command."
+    },
+    {
+      "app": "Preview",
+      "label": "<<Import From Device - unlocalized>>",
+      "match": "exact",
+      "reason": "This unlocalized Image Capture framework placeholder belongs to macOS's device-import service, not a Preview command."
+    },
+    {
+      "app": "Preview",
+      "label": "AutoFill",
+      "match": "exact",
+      "reason": "This submenu is provided by Apple's system Contacts and Passwords AutoFill services, which Lulo does not have."
+    },
+    {
+      "app": "Preview",
+      "label": "Contact…",
+      "match": "exact",
+      "reason": "This inserts a macOS Contacts card through Apple's system AutoFill service."
+    },
+    {
+      "app": "Preview",
+      "label": "Passwords…",
+      "match": "exact",
+      "reason": "This opens Apple's Passwords/Keychain AutoFill service, unavailable on Linux."
+    },
+    {
+      "app": "Preview",
+      "label": "Credit Card…",
+      "match": "exact",
+      "reason": "This uses Apple's saved payment-card AutoFill service, unavailable on Linux."
     }
   ]
 }

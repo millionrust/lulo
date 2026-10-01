@@ -123,6 +123,12 @@ def _synthesize_app_menu(
     Others/Show All, then Quit (Files/Finder is never quit)."""
     menu_name = "Activity Monitor" if app_display_name == "System Monitor" else app_display_name
     items = [_item(f"About {menu_name}", ABOUT_ACTION)]
+    keep_windows = next(
+        (item for item in exported_items if item.label == "Quit and Keep Windows"),
+        None,
+    )
+    if keep_windows is not None:
+        exported_items.remove(keep_windows)
     if exported_items:
         exported_items[0].separator_before = True
         items.extend(exported_items)
@@ -138,6 +144,8 @@ def _synthesize_app_menu(
         items.append(
             _item(f"Quit {menu_name}", "app::quit", "⌘Q", separator_before=True)
         )
+        if keep_windows is not None:
+            items.append(keep_windows)
     return rmp.Menu(APPLICATION_MENU, items)
 
 

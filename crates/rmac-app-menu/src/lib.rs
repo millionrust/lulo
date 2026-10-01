@@ -774,6 +774,14 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
 
 const PREVIEW_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!(
+            "Quit and Keep Windows",
+            "preview::QuitAndKeepWindows",
+            "⌥⌘Q"
+        )],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             item!("Open…", "preview::OpenFile", "⌘O"),
@@ -786,10 +794,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 [item!("Clear Menu", "preview::ClearRecentMenu", "")]
             ),
             item!("Close Window", "preview::CloseWindow", "⌘W", separator),
+            item!("Close All", "preview::CloseAll", "⌥⌘W"),
+            item!("Close Selected", "preview::CloseSelected", "⇧⌘W"),
             item!("Save", "preview::SaveMarkup", "⌘S"),
             item!("Revert to Original", "preview::RevertMarkup", "", separator),
             // PREV-15: the Mac's File menu also has New from Clipboard,
-            // Close All, Save As…, Duplicate, Rename…, Move To…,
+            // Save As…, Duplicate, Rename…, Move To…,
             // Enter Password…, Edit Permissions…, Import from
             // Camera/Scanner, Take Screenshot ▸, Export…, Share ▸ — none of
             // those has a working implementation to wire up yet, so none is
@@ -809,6 +819,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Copy", "preview::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
             item!("Select All", "preview::SelectAll", "⌘A"),
+            item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(
                 "Find",
                 "preview::FindMenu",
@@ -816,6 +827,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                     item!("Find…", "preview::Find", "⌘F"),
                     item!("Find Next", "preview::FindNext", "⌘G"),
                     item!("Find Previous", "preview::FindPrevious", "⇧⌘G"),
+                    item!(
+                        "Use Selection for Find",
+                        "preview::UseSelectionForFind",
+                        "⌘E"
+                    ),
+                    item!("Jump to Selection", "preview::JumpToSelection", "⌘J"),
                 ],
                 separator
             ),
@@ -827,23 +844,37 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Hide Sidebar", "preview::HideSidebar", "⌥⌘1"),
             item!("Thumbnails", "preview::ShowThumbnails", "⌥⌘2"),
             item!("Actual Size", "preview::ActualSize", "⌘0", separator),
+            item!("Actual Size on All", "preview::ActualSizeOnAll", "⌥⌘0"),
             item!("Zoom to Fit", "preview::ZoomToFit", "⌘9"),
+            item!("Zoom All to Fit", "preview::ZoomAllToFit", "⌥⌘9"),
             item!("Zoom In", "preview::ZoomIn", "⌘+"),
+            item!("Zoom All In", "preview::ZoomAllIn", "⌥⌘+"),
             item!("Zoom Out", "preview::ZoomOut", "⌘−"),
+            item!("Zoom All Out", "preview::ZoomAllOut", "⌥⌘−"),
+            item!(
+                "Show Markup Toolbar",
+                "preview::ToggleMarkup",
+                "⇧⌘A",
+                separator
+            ),
+            item!("Enter Full Screen", "preview::EnterFullScreen", "F"),
         ],
     },
     MenuSpec {
         label: "Go",
         items: &[
-            item!("Previous Item", "preview::PreviousItem", "⌥↑"),
-            item!("Next Item", "preview::NextItem", "⌥↓"),
+            item!("Up", "preview::PageUp", ""),
+            item!("Previous Document", "preview::PreviousDocument", "⌥"),
+            item!("Down", "preview::PageDown", ""),
+            item!("Next Document", "preview::NextDocument", "⌥"),
+            item!("Previous Item", "preview::PreviousItem", "⌥"),
+            item!("Next Item", "preview::NextItem", "⌥"),
             item!("Go to Page…", "preview::GoToPage", "⌥⌘G", separator),
         ],
     },
     MenuSpec {
         label: "Tools",
         items: &[
-            item!("Show Markup Toolbar", "preview::ToggleMarkup", "⇧⌘A"),
             item!("Show Inspector", "preview::ShowInspector", "⌘I"),
             item!("Rotate Left", "preview::RotateLeft", "⌘L", separator),
             item!("Rotate Right", "preview::RotateRight", "⌘R"),
@@ -2153,7 +2184,7 @@ mod tests {
                 .iter()
                 .map(|menu| menu.label.as_str())
                 .collect::<Vec<_>>(),
-            ["File", "Edit", "View", "Go", "Tools"]
+            ["Application", "File", "Edit", "View", "Go", "Tools"]
         );
         let shortcut = |label: &str| {
             menus
@@ -2163,9 +2194,15 @@ mod tests {
                 .map(|item| item.shortcut.clone())
         };
         assert_eq!(shortcut("Hide Sidebar").as_deref(), Some("⌥⌘1"));
+        assert_eq!(shortcut("Quit and Keep Windows").as_deref(), Some("⌥⌘Q"));
+        assert_eq!(shortcut("Close All").as_deref(), Some("⌥⌘W"));
+        assert_eq!(shortcut("Close Selected").as_deref(), Some("⇧⌘W"));
+        assert_eq!(shortcut("Move to Bin").as_deref(), Some("⌘⌫"));
         assert_eq!(shortcut("Actual Size").as_deref(), Some("⌘0"));
         assert_eq!(shortcut("Rotate Right").as_deref(), Some("⌘R"));
-        assert_eq!(shortcut("Next Item").as_deref(), Some("⌥↓"));
+        assert_eq!(shortcut("Next Item").as_deref(), Some("⌥"));
+        assert_eq!(shortcut("Zoom All to Fit").as_deref(), Some("⌥⌘9"));
+        assert_eq!(shortcut("Show Markup Toolbar").as_deref(), Some("⇧⌘A"));
         assert!(validate_menus(&menus).is_ok());
     }
 

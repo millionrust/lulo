@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "preview/fullscreen",
+  "observations": {
+    "fullscreen": {"windows": {"fullscreen": true}},
+    "windowed": {"windows": {"fullscreen": false}}
+  }
+}

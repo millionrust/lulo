@@ -6454,6 +6454,8 @@ dependencies = [
  "rmac-recent-documents",
  "rmac-ui",
  "rust-embed",
+ "serde_json",
+ "trash",
 ]
 
 [[package]]

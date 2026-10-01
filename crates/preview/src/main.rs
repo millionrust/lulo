@@ -5,9 +5,12 @@ mod view;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use gpui::{App, AppContext as _, AssetSource, KeyBinding, QuitMode, Result, SharedString};
+use gpui::{
+    App, AppContext as _, AssetSource, KeyBinding, QuitMode, Result, SharedString, WeakEntity,
+};
 use gpui_component::Root;
 use rmac_preview::document::{self, Kind};
+use rmac_preview::markup;
 use rmac_preview::metrics;
 use rmac_preview::render;
 use rmac_ui::app_id::PREVIEW;
@@ -18,19 +21,33 @@ gpui::actions!(
     preview,
     [
         OpenFile,
+        QuitAndKeepWindows,
         CloseWindow,
+        CloseAll,
+        CloseSelected,
         Copy,
+        MoveToTrash,
         Find,
         FindNext,
         FindPrevious,
+        UseSelectionForFind,
+        JumpToSelection,
         HideSidebar,
         ShowThumbnails,
         ActualSize,
         ZoomToFit,
         ZoomIn,
         ZoomOut,
+        ActualSizeOnAll,
+        ZoomAllToFit,
+        ZoomAllIn,
+        ZoomAllOut,
         PreviousItem,
         NextItem,
+        PreviousDocument,
+        NextDocument,
+        PageUp,
+        PageDown,
         ShowInspector,
         RotateLeft,
         RotateRight,
@@ -39,6 +56,7 @@ gpui::actions!(
         PrintDocument,
         ExportAsPdf,
         ToggleMarkup,
+        EnterFullScreen,
         SaveMarkup,
         RevertMarkup,
         UndoMarkup,
@@ -66,6 +84,13 @@ struct PreviewAssets;
 
 struct CombinedAssets;
 
+thread_local! {
+    /// Weak references keep closed document windows out of a saved session.
+    static OPEN_VIEWS: std::cell::RefCell<Vec<WeakEntity<PreviewView>>> = const {
+        std::cell::RefCell::new(Vec::new())
+    };
+}
+
 impl AssetSource for CombinedAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         if let Some(asset) = PreviewAssets::get(path) {
@@ -91,8 +116,12 @@ fn bind_keys(cx: &mut App) {
     use rmac_ui::shortcuts;
     cx.bind_keys([
         KeyBinding::new(shortcuts::OPEN.keystroke, OpenFile, None),
+        KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, None),
         KeyBinding::new(shortcuts::CLOSE.keystroke, CloseWindow, context),
+        KeyBinding::new("alt-cmd-w", CloseAll, None),
+        KeyBinding::new("shift-cmd-w", CloseSelected, context),
         KeyBinding::new(shortcuts::COPY.keystroke, Copy, context),
+        KeyBinding::new("cmd-backspace", MoveToTrash, context),
         KeyBinding::new(shortcuts::SELECT_ALL.keystroke, SelectAll, context),
         KeyBinding::new("alt-cmd-g", GoToPage, context),
         KeyBinding::new(shortcuts::PRINT.keystroke, PrintDocument, context),
@@ -103,15 +132,25 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new(shortcuts::FIND.keystroke, Find, context),
         KeyBinding::new(shortcuts::FIND_NEXT.keystroke, FindNext, context),
         KeyBinding::new(shortcuts::FIND_PREVIOUS.keystroke, FindPrevious, context),
+        KeyBinding::new("cmd-e", UseSelectionForFind, context),
+        KeyBinding::new("cmd-j", JumpToSelection, context),
         KeyBinding::new("alt-cmd-1", HideSidebar, context),
         KeyBinding::new("alt-cmd-2", ShowThumbnails, context),
         KeyBinding::new(shortcuts::ZOOM_RESET.keystroke, ActualSize, context),
         KeyBinding::new("cmd-9", ZoomToFit, context),
+        KeyBinding::new("alt-cmd-0", ActualSizeOnAll, context),
+        KeyBinding::new("alt-cmd-9", ZoomAllToFit, context),
+        KeyBinding::new("alt-cmd-+", ZoomAllIn, context),
+        KeyBinding::new("alt-cmd--", ZoomAllOut, context),
         KeyBinding::new(shortcuts::ZOOM_IN.keystroke, ZoomIn, context),
         KeyBinding::new(shortcuts::ZOOM_IN_ALTERNATE.keystroke, ZoomIn, context),
         KeyBinding::new(shortcuts::ZOOM_OUT.keystroke, ZoomOut, context),
         KeyBinding::new("alt-up", PreviousItem, context),
         KeyBinding::new("alt-down", NextItem, context),
+        KeyBinding::new("alt-pageup", PreviousDocument, context),
+        KeyBinding::new("alt-pagedown", NextDocument, context),
+        KeyBinding::new("pageup", PageUp, context),
+        KeyBinding::new("pagedown", PageDown, context),
         KeyBinding::new(shortcuts::INFO.keystroke, ShowInspector, context),
         KeyBinding::new("cmd-l", RotateLeft, context),
         KeyBinding::new("cmd-r", RotateRight, context),
@@ -150,6 +189,11 @@ pub(crate) fn open_window(paths: Vec<PathBuf>, cx: &mut App) {
             PreviewView::new(paths, window, cx)
         });
         let focus = view.read(cx).focus.clone();
+        OPEN_VIEWS.with(|views| {
+            let mut views = views.borrow_mut();
+            views.retain(|weak| weak.upgrade().is_some());
+            views.push(view.downgrade());
+        });
         window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
     });
@@ -157,6 +201,127 @@ pub(crate) fn open_window(paths: Vec<PathBuf>, cx: &mut App) {
         eprintln!("rmac-preview: could not open a window: {error}");
     }
     cx.activate(true);
+}
+
+fn saved_windows_path() -> PathBuf {
+    let state = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+        .unwrap_or_else(std::env::temp_dir);
+    state.join("rmac-preview/saved-windows.json")
+}
+
+/// App ▸ Quit and Keep Windows: persist just the documents in each live
+/// window, then quit after the write finishes. The state lives in XDG state
+/// so the next launch can reopen the same window groups once.
+fn quit_and_keep_windows(cx: &mut App) {
+    let (windows, jobs) = OPEN_VIEWS.with(|views| {
+        let open = views.borrow();
+        let mut windows = Vec::new();
+        let mut jobs = Vec::new();
+        for view in open.iter().filter_map(WeakEntity::upgrade) {
+            let view = view.read(cx);
+            let paths = view.open_paths();
+            if !paths.is_empty() {
+                windows.push(paths);
+                jobs.extend(view.pending_markup());
+            }
+        }
+        (windows, jobs)
+    });
+    cx.spawn(async move |cx| {
+        let result = blocking::unblock(move || -> std::io::Result<()> {
+            for (source, original, items) in jobs {
+                let base = original.unwrap_or_else(|| source.clone());
+                let temporary =
+                    source.with_extension(format!("lulo-quitting-{}.pdf", std::process::id()));
+                markup::write_pdf(&base, &temporary, &items).map_err(std::io::Error::other)?;
+                std::fs::rename(&temporary, &source)?;
+            }
+            let path = saved_windows_path();
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let bytes = serde_json::to_vec(&windows).map_err(std::io::Error::other)?;
+            let temporary = path.with_extension("tmp");
+            std::fs::write(&temporary, bytes)?;
+            std::fs::rename(temporary, path)
+        })
+        .await;
+        if let Err(error) = result {
+            eprintln!("rmac-preview: could not keep windows: {error}");
+            return;
+        }
+        cx.update(|cx| cx.quit());
+    })
+    .detach();
+}
+
+/// Close every Preview window after saving any dirty PDF annotations. Keep
+/// the writes off the UI thread, then close the windows that existed when
+/// the command was invoked.
+fn close_all(cx: &mut App) {
+    let windows = cx.windows();
+    let jobs = OPEN_VIEWS.with(|views| {
+        views
+            .borrow()
+            .iter()
+            .filter_map(WeakEntity::upgrade)
+            .flat_map(|view| view.read(cx).pending_markup())
+            .collect::<Vec<_>>()
+    });
+    cx.spawn(async move |cx| {
+        let result = blocking::unblock(move || -> std::io::Result<()> {
+            for (source, original, items) in jobs {
+                let base = original.unwrap_or_else(|| source.clone());
+                let temporary =
+                    source.with_extension(format!("lulo-closing-{}.pdf", std::process::id()));
+                markup::write_pdf(&base, &temporary, &items).map_err(std::io::Error::other)?;
+                std::fs::rename(temporary, source)?;
+            }
+            Ok(())
+        })
+        .await;
+        match result {
+            Ok(()) => cx.update(|cx| {
+                for handle in windows {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                }
+            }),
+            Err(error) => eprintln!("rmac-preview: save on close all failed: {error}"),
+        }
+    })
+    .detach();
+}
+
+/// Consume the saved session once. Reading and removing the file stays off
+/// the UI thread, including when a home directory is slow.
+fn restore_kept_windows(initial_paths: Vec<PathBuf>, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let restored = blocking::unblock(move || {
+            let path = saved_windows_path();
+            let bytes = std::fs::read(&path).ok()?;
+            let _ = std::fs::remove_file(path);
+            serde_json::from_slice::<Vec<Vec<PathBuf>>>(&bytes).ok()
+        })
+        .await
+        .unwrap_or_default();
+        cx.update(|cx| {
+            for paths in restored {
+                if !paths.is_empty() {
+                    open_window(paths, cx);
+                }
+            }
+            if initial_paths.is_empty() {
+                if cx.windows().is_empty() {
+                    choose_and_open(true, cx);
+                }
+            } else {
+                open_window(initial_paths, cx);
+            }
+        });
+    })
+    .detach();
 }
 
 /// File ▸ Open Recent ▸ (PREV-08/PREV-15): opens the document at `index` in
@@ -269,6 +434,15 @@ fn main() {
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
             bind_keys(cx);
+            cx.on_window_closed(|cx, _| {
+                let has_document_window = OPEN_VIEWS
+                    .with(|views| views.borrow().iter().any(|view| view.upgrade().is_some()));
+                if !has_document_window {
+                    view::disable_document_menu(cx);
+                }
+            })
+            .detach();
+            cx.on_action(|_: &QuitAndKeepWindows, cx| quit_and_keep_windows(cx));
             cx.on_action(|_: &OpenFile, cx| choose_and_open(false, cx));
             cx.on_action(|_: &OpenRecent0, cx| open_recent_menu_entry(0, cx));
             cx.on_action(|_: &OpenRecent1, cx| open_recent_menu_entry(1, cx));
@@ -304,11 +478,7 @@ fn main() {
             // undercut the hand-off above, which needs the process alive
             // to open a later document in a new window rather than
             // relaunching.
-            if paths.is_empty() {
-                choose_and_open(true, cx);
-            } else {
-                open_window(paths, cx);
-            }
+            restore_kept_windows(paths, cx);
         });
 }
 

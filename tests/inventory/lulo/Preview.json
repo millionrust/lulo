@@ -46,6 +46,13 @@
           "shortcut": "⌘Q",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "action": "preview::QuitAndKeepWindows",
+          "shortcut": "⌥⌘Q",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -79,6 +86,20 @@
           "action": "preview::CloseWindow",
           "shortcut": "⌘W",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "action": "preview::CloseAll",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close Selected",
+          "action": "preview::CloseSelected",
+          "shortcut": "⇧⌘W",
+          "separator_before": false,
           "children": []
         },
         {
@@ -157,6 +178,13 @@
           "children": []
         },
         {
+          "label": "Move to Bin",
+          "action": "preview::MoveToTrash",
+          "shortcut": "⌘⌫",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Find",
           "action": "preview::FindMenu",
           "shortcut": "",
@@ -180,6 +208,20 @@
               "label": "Find Previous",
               "action": "preview::FindPrevious",
               "shortcut": "⇧⌘G",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Use Selection for Find",
+              "action": "preview::UseSelectionForFind",
+              "shortcut": "⌘E",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Selection",
+              "action": "preview::JumpToSelection",
+              "shortcut": "⌘J",
               "separator_before": false,
               "children": []
             }
@@ -212,9 +254,23 @@
           "children": []
         },
         {
+          "label": "Actual Size on All",
+          "action": "preview::ActualSizeOnAll",
+          "shortcut": "⌥⌘0",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Zoom to Fit",
           "action": "preview::ZoomToFit",
           "shortcut": "⌘9",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All to Fit",
+          "action": "preview::ZoomAllToFit",
+          "shortcut": "⌥⌘9",
           "separator_before": false,
           "children": []
         },
@@ -226,9 +282,37 @@
           "children": []
         },
         {
+          "label": "Zoom All In",
+          "action": "preview::ZoomAllIn",
+          "shortcut": "⌥⌘+",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Zoom Out",
           "action": "preview::ZoomOut",
           "shortcut": "⌘−",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All Out",
+          "action": "preview::ZoomAllOut",
+          "shortcut": "⌥⌘−",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Markup Toolbar",
+          "action": "preview::ToggleMarkup",
+          "shortcut": "⇧⌘A",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "preview::EnterFullScreen",
+          "shortcut": "F",
           "separator_before": false,
           "children": []
         }
@@ -238,16 +322,44 @@
       "label": "Go",
       "items": [
         {
+          "label": "Up",
+          "action": "preview::PageUp",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Previous Document",
+          "action": "preview::PreviousDocument",
+          "shortcut": "⌥",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Down",
+          "action": "preview::PageDown",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Next Document",
+          "action": "preview::NextDocument",
+          "shortcut": "⌥",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Previous Item",
           "action": "preview::PreviousItem",
-          "shortcut": "⌥↑",
+          "shortcut": "⌥",
           "separator_before": false,
           "children": []
         },
         {
           "label": "Next Item",
           "action": "preview::NextItem",
-          "shortcut": "⌥↓",
+          "shortcut": "⌥",
           "separator_before": false,
           "children": []
         },
@@ -263,13 +375,6 @@
     {
       "label": "Tools",
       "items": [
-        {
-          "label": "Show Markup Toolbar",
-          "action": "preview::ToggleMarkup",
-          "shortcut": "⇧⌘A",
-          "separator_before": false,
-          "children": []
-        },
         {
           "label": "Show Inspector",
           "action": "preview::ShowInspector",

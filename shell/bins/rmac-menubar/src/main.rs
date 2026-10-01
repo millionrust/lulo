@@ -4495,6 +4495,12 @@ mod linux_wayland {
             .iter()
             .position(|item| item.action == rmac_app_menu::ABOUT_ACTION)
             .map(|index| application_items.remove(index));
+        // AppKit puts this quit variant immediately after Quit, rather than
+        // with Settings and other app-provided commands below About.
+        let keep_windows = application_items
+            .iter()
+            .position(|item| item.label == "Quit and Keep Windows")
+            .map(|index| application_items.remove(index));
         let mut items = vec![match about {
             Some(_) => Item::new(format!("About {app_name}"), rmac_app_menu::ABOUT_ACTION, ""),
             // An app that serves no About panel (a third-party app, or an
@@ -4523,6 +4529,9 @@ mod linux_wayland {
                     .enabled(known)
                     .separated(),
             );
+            if let Some(item) = keep_windows {
+                items.push(item);
+            }
         }
         rmac_app_menu::Menu {
             label: app_name.to_owned(),

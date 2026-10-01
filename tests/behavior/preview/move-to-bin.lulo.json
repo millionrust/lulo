@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "preview/move-to-bin",
+  "observations": {
+    "trashed": {
+      "windows": {"count": 0},
+      "files": {"entries": [], "trash_entries": ["guide.pdf"]}
+    }
+  }
+}

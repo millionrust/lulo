@@ -170,9 +170,11 @@ for those.
     (macOS-only `cfg` gate left it out of the Linux build) and no
     Finder-equivalent Settings… pane. Plan: FILES-05 is a one-line `cfg`
     fix plus wiring; FILES-35 is a new preferences pane, medium effort.
-12. **TERM-03 (P1, M)** — Terminal's ⌘, opens only a profile-picker dropdown,
-    no real settings window (font, cursor, default shell are not
-    customisable). Plan: medium, self-contained new window.
+12. **TERM-03 (P1, M)** — Fixed `c894f1dd`: Settings… now has Text (cursor
+    style/blink), Window (size), Shell (when it exits) and General
+    (new-window directory) sections on top of Profile/Font. Plan: needs a
+    live Linux-build check before closing out; still one scrolling page,
+    not the Mac's tabbed window (TERM-17 follow-up).
 13. **BAR-01 (P1, S)** — The no-focus/desktop menu-bar fallback (Files
     menus) landed in source but hasn't been live-validated. Plan: small,
     just needs the reinstall-and-recheck pass.

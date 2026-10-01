@@ -191,19 +191,23 @@ pub enum WindowCommand {
     Zoom,
     Fill,
     Centre,
-    Tile(Half),
+    Tile(WindowRegion),
     ReturnToPreviousSize,
     BringAllToFront,
     Focus(rmac_compositor::WindowId),
 }
 
-/// The halves of the screen Move & Resize offers.
+/// The halves and quarters of the screen Move & Resize offers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Half {
+pub enum WindowRegion {
     Left,
     Right,
     Top,
     Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
 }
 
 const WINDOW_ACTION_PREFIX: &str = "window::";
@@ -217,10 +221,14 @@ impl WindowCommand {
             Self::Centre => "centre",
             Self::ReturnToPreviousSize => "restore-size",
             Self::BringAllToFront => "bring-all-to-front",
-            Self::Tile(Half::Left) => "tile-left",
-            Self::Tile(Half::Right) => "tile-right",
-            Self::Tile(Half::Top) => "tile-top",
-            Self::Tile(Half::Bottom) => "tile-bottom",
+            Self::Tile(WindowRegion::Left) => "tile-left",
+            Self::Tile(WindowRegion::Right) => "tile-right",
+            Self::Tile(WindowRegion::Top) => "tile-top",
+            Self::Tile(WindowRegion::Bottom) => "tile-bottom",
+            Self::Tile(WindowRegion::TopLeft) => "tile-top-left",
+            Self::Tile(WindowRegion::TopRight) => "tile-top-right",
+            Self::Tile(WindowRegion::BottomLeft) => "tile-bottom-left",
+            Self::Tile(WindowRegion::BottomRight) => "tile-bottom-right",
             Self::Focus(window) => return format!("{WINDOW_ACTION_PREFIX}focus.{}", window.0),
         };
         format!("{WINDOW_ACTION_PREFIX}{name}")
@@ -241,10 +249,14 @@ impl WindowCommand {
             "centre" => Self::Centre,
             "restore-size" => Self::ReturnToPreviousSize,
             "bring-all-to-front" => Self::BringAllToFront,
-            "tile-left" => Self::Tile(Half::Left),
-            "tile-right" => Self::Tile(Half::Right),
-            "tile-top" => Self::Tile(Half::Top),
-            "tile-bottom" => Self::Tile(Half::Bottom),
+            "tile-left" => Self::Tile(WindowRegion::Left),
+            "tile-right" => Self::Tile(WindowRegion::Right),
+            "tile-top" => Self::Tile(WindowRegion::Top),
+            "tile-bottom" => Self::Tile(WindowRegion::Bottom),
+            "tile-top-left" => Self::Tile(WindowRegion::TopLeft),
+            "tile-top-right" => Self::Tile(WindowRegion::TopRight),
+            "tile-bottom-left" => Self::Tile(WindowRegion::BottomLeft),
+            "tile-bottom-right" => Self::Tile(WindowRegion::BottomRight),
             _ => return None,
         })
     }
@@ -257,10 +269,14 @@ impl WindowCommand {
             Self::Zoom | Self::Fill => "fill",
             Self::Centre => "centre",
             Self::ReturnToPreviousSize => "restore-size",
-            Self::Tile(Half::Left) => "tile-left",
-            Self::Tile(Half::Right) => "tile-right",
-            Self::Tile(Half::Top) => "tile-top",
-            Self::Tile(Half::Bottom) => "tile-bottom",
+            Self::Tile(WindowRegion::Left) => "tile-left",
+            Self::Tile(WindowRegion::Right) => "tile-right",
+            Self::Tile(WindowRegion::Top) => "tile-top",
+            Self::Tile(WindowRegion::Bottom) => "tile-bottom",
+            Self::Tile(WindowRegion::TopLeft) => "tile-top-left",
+            Self::Tile(WindowRegion::TopRight) => "tile-top-right",
+            Self::Tile(WindowRegion::BottomLeft) => "tile-bottom-left",
+            Self::Tile(WindowRegion::BottomRight) => "tile-bottom-right",
             Self::Minimise | Self::BringAllToFront | Self::Focus(_) => return None,
         })
     }
@@ -271,8 +287,8 @@ impl WindowCommand {
 /// and the app's windows with a check on the current one.
 ///
 /// The hints are the session's keys for the same commands (niri binds
-/// them; a PC has no Globe key, so the Mac's fn⌃ is ⌃⌘ here). The quarter
-/// tiles, Full-Screen Tile and Arrange have no command yet and are left out.
+/// them; a PC has no Globe key, so the Mac's fn⌃ is ⌃⌘ here). Full-Screen
+/// Tile and multi-window Arrange have no command yet and are left out.
 pub fn window_menu(
     windows: &[MenuWindow],
     focused: Option<rmac_compositor::WindowId>,
@@ -295,10 +311,18 @@ pub fn window_menu(
             "Move & Resize",
             "window::move-and-resize",
             vec![
-                tile("Left", Half::Left, "⌃⌘←"),
-                tile("Right", Half::Right, "⌃⌘→"),
-                tile("Top", Half::Top, "⌃⌘↑"),
-                tile("Bottom", Half::Bottom, "⌃⌘↓"),
+                Item::new("Halves", "window::heading-halves", "").enabled(false),
+                tile("Left", WindowRegion::Left, "⌃⌘←"),
+                tile("Right", WindowRegion::Right, "⌃⌘→"),
+                tile("Top", WindowRegion::Top, "⌃⌘↑"),
+                tile("Bottom", WindowRegion::Bottom, "⌃⌘↓"),
+                Item::new("Quarters", "window::heading-quarters", "")
+                    .enabled(false)
+                    .separated(),
+                tile("Top Left", WindowRegion::TopLeft, ""),
+                tile("Top Right", WindowRegion::TopRight, ""),
+                tile("Bottom Left", WindowRegion::BottomLeft, ""),
+                tile("Bottom Right", WindowRegion::BottomRight, ""),
                 command(
                     "Return to Previous Size",
                     WindowCommand::ReturnToPreviousSize,
@@ -1811,9 +1835,12 @@ mod tests {
         assert_eq!(menu.items[3].shortcut, "⌃⇧⌘F");
         assert_eq!(menu.items[4].shortcut, "⌃⌘C");
         assert!(menu.items[5].is_submenu());
-        assert_eq!(menu.items[5].children[0].shortcut, "⌃⌘←");
+        assert!(!menu.items[5].children[0].enabled);
+        assert_eq!(menu.items[5].children[1].shortcut, "⌃⌘←");
+        assert_eq!(menu.items[5].children[6].label, "Top Left");
+        assert_eq!(menu.items[5].children[6].action, "window::tile-top-left");
         assert_eq!(
-            WindowCommand::parse(&menu.items[5].children[4].action),
+            WindowCommand::parse(&menu.items[5].children[10].action),
             Some(WindowCommand::ReturnToPreviousSize)
         );
         assert!(menu.items[6].separator_before);
@@ -1842,14 +1869,16 @@ mod tests {
             WindowCommand::Centre,
             WindowCommand::ReturnToPreviousSize,
             WindowCommand::BringAllToFront,
-            WindowCommand::Tile(Half::Bottom),
+            WindowCommand::Tile(WindowRegion::Bottom),
+            WindowCommand::Tile(WindowRegion::TopLeft),
+            WindowCommand::Tile(WindowRegion::BottomRight),
             WindowCommand::Focus(rmac_compositor::WindowId(42)),
         ] {
             assert_eq!(WindowCommand::parse(&command.action()), Some(command));
         }
         // Sizing goes through Mission Control's own command words.
         assert_eq!(
-            WindowCommand::Tile(Half::Left).mission_control_command(),
+            WindowCommand::Tile(WindowRegion::Left).mission_control_command(),
             Some("tile-left")
         );
         assert_eq!(WindowCommand::Zoom.mission_control_command(), Some("fill"));

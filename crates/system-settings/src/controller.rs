@@ -201,6 +201,7 @@ actions!(
         ShowTrackpad,
         ShowWallpaper,
         ShowWifi,
+        EnterFullScreen,
         SelectAlert,
         SelectErrorAlert,
         SelectNotificationAlert,

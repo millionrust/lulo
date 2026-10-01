@@ -1542,6 +1542,10 @@ mod linux_wayland {
             | Command::TileRight
             | Command::TileTop
             | Command::TileBottom
+            | Command::TileTopLeft
+            | Command::TileTopRight
+            | Command::TileBottomLeft
+            | Command::TileBottomRight
             | Command::RestoreSize
             | Command::Zoom => {
                 close_overlay(service, cx);
@@ -1613,6 +1617,22 @@ mod linux_wayland {
             Command::TileBottom => Action::TileWindow {
                 window,
                 region: TileRegion::Bottom,
+            },
+            Command::TileTopLeft => Action::TileWindow {
+                window,
+                region: TileRegion::TopLeft,
+            },
+            Command::TileTopRight => Action::TileWindow {
+                window,
+                region: TileRegion::TopRight,
+            },
+            Command::TileBottomLeft => Action::TileWindow {
+                window,
+                region: TileRegion::BottomLeft,
+            },
+            Command::TileBottomRight => Action::TileWindow {
+                window,
+                region: TileRegion::BottomRight,
             },
             other => unreachable!("tile_focused_window called with {other:?}"),
         };

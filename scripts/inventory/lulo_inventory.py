@@ -137,6 +137,8 @@ def _synthesize_app_menu(
         items.append(
             _item(f"Quit {app_display_name}", "app::quit", "⌘Q", separator_before=True)
         )
+    if app_display_name == "System Settings":
+        items.append(_item("Quit and Keep Windows", "app::quit-keep-windows", "⌥⌘Q"))
     return rmp.Menu(APPLICATION_MENU, items)
 
 
@@ -153,10 +155,16 @@ def _synthesize_window_menu(exported_items: list[rmp.MenuItem]) -> rmp.Menu:
         shortcut="",
         separator_before=True,
         children=[
+            _item("Halves", "window::heading-halves"),
             _item("Left", "window::tile-left", "⌃⌘←"),
             _item("Right", "window::tile-right", "⌃⌘→"),
             _item("Top", "window::tile-top", "⌃⌘↑"),
             _item("Bottom", "window::tile-bottom", "⌃⌘↓"),
+            _item("Quarters", "window::heading-quarters", separator_before=True),
+            _item("Top Left", "window::tile-top-left"),
+            _item("Top Right", "window::tile-top-right"),
+            _item("Bottom Left", "window::tile-bottom-left"),
+            _item("Bottom Right", "window::tile-bottom-right"),
             _item(
                 "Return to Previous Size",
                 "window::restore-size",
@@ -222,6 +230,14 @@ def read_menu_bar(app_display_name: str, table_name: str) -> list[dict]:
 
 def read_settings_sidebar() -> list[dict]:
     source = NAV_SRC.read_text()
+    # PANE_ROUTES also contains destinations nested under General. The
+    # renderer omits those from the sidebar via category_parent().
+    parent_rule = re.search(
+        r"fn category_parent\(.*?matches!\(\s*name,\s*(.*?)\)\s*\.then_some",
+        source,
+        re.S,
+    )
+    nested = set(re.findall(r'"([^"]+)"', parent_rule.group(1))) if parent_rule else set()
     m = re.search(
         r"PANE_ROUTES:\s*\[\(&str,\s*&str\);\s*\d+\]\s*=\s*\[(.*?)\];",
         source,
@@ -241,6 +257,8 @@ def read_settings_sidebar() -> list[dict]:
             continue
         slug = parts[0].strip().strip('"')
         name = parts[1].strip().strip('"')
+        if name in nested:
+            continue
         rows.append({"id": slug, "label": name})
     return rows
 

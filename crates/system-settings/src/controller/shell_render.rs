@@ -5,6 +5,7 @@ impl Render for Settings {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         rmac_ui::set_menu_enabled("system_settings::GoBack", self.can_go_back(), cx);
         rmac_ui::set_menu_enabled("system_settings::GoForward", self.can_go_forward(), cx);
+        rmac_ui::set_menu_enabled("system_settings::EnterFullScreen", false, cx);
         for (action, pane) in [
             ("system_settings::ShowBattery", "Battery"),
             ("system_settings::ShowBluetooth", "Bluetooth"),

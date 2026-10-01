@@ -716,6 +716,12 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
             item!("Trackpad", "system_settings::ShowTrackpad", ""),
             item!("Wallpaper", "system_settings::ShowWallpaper", ""),
             item!("Wi-Fi", "system_settings::ShowWifi", ""),
+            item!(
+                "Enter Full Screen",
+                "system_settings::EnterFullScreen",
+                "F",
+                separator
+            ),
         ],
     },
 ];

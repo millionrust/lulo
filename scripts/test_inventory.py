@@ -63,6 +63,16 @@ class NormalizeShortcutTests(unittest.TestCase):
         self.assertEqual(norm.normalize_shortcut(None), "")
 
 
+class SystemSettingsSidebarTests(unittest.TestCase):
+    def test_general_subpages_are_not_reported_as_sidebar_rows(self):
+        labels = {row["label"] for row in li.read_settings_sidebar()}
+        self.assertIn("General", labels)
+        self.assertNotIn("Date & Time", labels)
+        self.assertNotIn("Language & Region", labels)
+        self.assertNotIn("Login Items", labels)
+        self.assertNotIn("Sharing", labels)
+
+
 class RustMenuParserTests(unittest.TestCase):
     def test_parses_a_simple_item(self):
         item = rmp.parse_macro_call('item!("New", "app::New", "⌘N")')
@@ -370,7 +380,11 @@ class SynthesizedStandardMenusTests(unittest.TestCase):
         move_and_resize = by_label["Move & Resize"]
         self.assertEqual(
             [child.label for child in move_and_resize.children],
-            ["Left", "Right", "Top", "Bottom", "Return to Previous Size"],
+            [
+                "Halves", "Left", "Right", "Top", "Bottom", "Quarters",
+                "Top Left", "Top Right", "Bottom Left", "Bottom Right",
+                "Return to Previous Size",
+            ],
         )
 
     def test_window_menu_keeps_the_apps_own_window_items(self):

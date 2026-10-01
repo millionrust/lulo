@@ -11,20 +11,46 @@ minimum_kib=$((15 * 1024 * 1024))
 build_minimum_kib=$((25 * 1024 * 1024))
 cargo_jobs=${CARGO_BUILD_JOBS:-1}
 
+profile=release
+
 usage() {
-  echo "usage: $0 --output /absolute/new/directory" >&2
+  echo "usage: $0 --output /absolute/new/directory [--profile release|iterate]" >&2
 }
 
-if [[ $# -ne 2 || "$1" != --output ]]; then
-  usage
-  exit 2
-fi
-output=$2
+output=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      output=$2
+      shift 2
+      ;;
+    --profile)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      profile=$2
+      shift 2
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+done
+[[ -n "$output" ]] || { usage; exit 2; }
 
 fail() {
   echo "native input build refused: $*" >&2
   exit 1
 }
+
+# Cargo's output directory for a profile is the profile's own name (the
+# built-in "release" profile is the only case matching its own name by
+# coincidence). Only known profiles are accepted so a typo never silently
+# reads stale binaries from the wrong target subdirectory.
+case "$profile" in
+  release|iterate) ;;
+  *) fail "unsupported cargo profile: $profile (see [profile.iterate] in Cargo.toml)" ;;
+esac
 
 [[ "$cargo_jobs" =~ ^[1-9][0-9]*$ ]] \
   || fail "CARGO_BUILD_JOBS must be a positive decimal integer"
@@ -48,6 +74,13 @@ require_space() {
 command -v cargo >/dev/null 2>&1 || fail "cargo is required"
 command -v dpkg >/dev/null 2>&1 || fail "dpkg is required"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+# [profile.iterate] (Cargo.toml) leaves `strip = false` so a plain
+# `cargo build --profile iterate` keeps debug symbols for relinking and
+# debugging on the reference PC. A candidate's *staged copy* is stripped
+# below instead, right before packaging, so the shared target directory's
+# binaries (and anyone debugging them directly) are never touched.
+[[ "$profile" == release ]] || command -v strip >/dev/null 2>&1 \
+  || fail "strip is required to stage a $profile candidate build"
 [[ "$output" == /* && "$output" != / ]] \
   || fail "output must be an absolute non-root path"
 [[ ! -e "$output" && ! -L "$output" ]] || fail "output must not already exist"
@@ -58,7 +91,7 @@ output_parent="$(dirname "$output")"
 architecture="$(dpkg --print-architecture)"
 [[ "$architecture" == amd64 || "$architecture" == arm64 ]] \
   || fail "only native amd64 and arm64 builders are supported"
-require_space "$build_minimum_kib" "release build"
+require_space "$build_minimum_kib" "$profile build"
 
 inventory="$(python3 -I -c '
 import sys
@@ -88,7 +121,7 @@ else
 fi
 (
   cd "$repo_root"
-  cargo build --locked --release --jobs "$cargo_jobs" \
+  cargo build --locked --profile "$profile" --jobs "$cargo_jobs" \
     -p rmac-app-drawer --bin rmac-app-drawer \
     -p rmac-archive-utility --bin rmac-archive-utility \
     -p rmac-calculator --bin rmac-calculator \
@@ -125,7 +158,7 @@ fi
 )
 (
   cd "$lab_dir"
-  CARGO_TARGET_DIR="$lab_target_dir" cargo build --locked --release \
+  CARGO_TARGET_DIR="$lab_target_dir" cargo build --locked --profile "$profile" \
     --jobs "$cargo_jobs" \
     --features wayland --bin wallpaper --bin top-bar --bin dock --bin osd \
     --bin app-switcher --bin screenshot --bin mission-control
@@ -133,18 +166,18 @@ fi
 
 binary_source() {
   case "$1" in
-    rmac-wallpaper) printf '%s\n' "$lab_target_dir/release/wallpaper" ;;
-    rmac-top-bar) printf '%s\n' "$lab_target_dir/release/top-bar" ;;
-    rmac-dock) printf '%s\n' "$lab_target_dir/release/dock" ;;
-    rmac-osd) printf '%s\n' "$lab_target_dir/release/osd" ;;
-    rmac-app-switcher) printf '%s\n' "$lab_target_dir/release/app-switcher" ;;
-    rmac-screenshot) printf '%s\n' "$lab_target_dir/release/screenshot" ;;
-    rmac-mission-control) printf '%s\n' "$lab_target_dir/release/mission-control" ;;
-    *) printf '%s\n' "$target_dir/release/$1" ;;
+    rmac-wallpaper) printf '%s\n' "$lab_target_dir/$profile/wallpaper" ;;
+    rmac-top-bar) printf '%s\n' "$lab_target_dir/$profile/top-bar" ;;
+    rmac-dock) printf '%s\n' "$lab_target_dir/$profile/dock" ;;
+    rmac-osd) printf '%s\n' "$lab_target_dir/$profile/osd" ;;
+    rmac-app-switcher) printf '%s\n' "$lab_target_dir/$profile/app-switcher" ;;
+    rmac-screenshot) printf '%s\n' "$lab_target_dir/$profile/screenshot" ;;
+    rmac-mission-control) printf '%s\n' "$lab_target_dir/$profile/mission-control" ;;
+    *) printf '%s\n' "$target_dir/$profile/$1" ;;
   esac
 }
 
-require_space "$minimum_kib" "completed release build"
+require_space "$minimum_kib" "completed $profile build"
 total_kib=0
 for name in "${binary_names[@]}"; do
   source_path="$(binary_source "$name")"
@@ -165,6 +198,11 @@ staging="$(mktemp -d "$output_parent/.rmac-native-inputs.XXXXXX")"
 trap 'rm -rf "${staging:-}"' EXIT HUP INT TERM
 for name in "${binary_names[@]}"; do
   install -m 0755 "$(binary_source "$name")" "$staging/$name"
+  # Strip only the staged copy (never the shared target directory's own
+  # binary), so a candidate's installed package is close to release size
+  # even though [profile.iterate] itself keeps debug symbols for ordinary
+  # relinking and debugging.
+  [[ "$profile" == release ]] || strip --strip-all "$staging/$name"
 done
 
 for name in "${binary_names[@]}"; do
@@ -179,5 +217,9 @@ mv "$staging" "$output"
 trap - EXIT HUP INT TERM
 require_space "$minimum_kib" "completed native input staging"
 
-echo "Prepared ${#binary_names[@]} native $architecture package inputs."
-echo "Next: python3 scripts/linux/build-native-packages.py --binary-dir \"$output\" --output /absolute/empty/output --architecture $architecture"
+echo "Prepared ${#binary_names[@]} native $architecture package inputs ($profile profile)."
+if [[ "$profile" == release ]]; then
+  echo "Next: python3 scripts/linux/build-native-packages.py --binary-dir \"$output\" --output /absolute/empty/output --architecture $architecture"
+else
+  echo "Next (candidate build, not for Beta/stable release): python3 scripts/linux/build-native-packages.py --binary-dir \"$output\" --output /absolute/empty/output --architecture $architecture --build-metadata $profile"
+fi

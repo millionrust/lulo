@@ -235,6 +235,12 @@ ALL_BINARIES = tuple(
 
 _SEMVER_PATTERN = r"[0-9]+(?:\.[0-9]+){2}(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?"
 
+# A candidate build's cargo profile name (e.g. "iterate"), folded into the
+# Debian upstream version as build metadata so a fast owner-testing package
+# never collides with, or is mistaken for, a real release built with
+# --profile release. See docs/release-process.md "Candidate builds".
+BUILD_METADATA_PATTERN = r"[a-z][a-z0-9]*"
+
 
 def workspace_version(repo_root: Path) -> str:
     """Read the single workspace package version without a TOML dependency.
@@ -276,8 +282,24 @@ def debian_upstream_version(version: str) -> str:
     return version.replace("-", "~", 1)
 
 
-def native_version(repo_root: Path) -> str:
-    return f"{debian_upstream_version(workspace_version(repo_root))}-{DEBIAN_REVISION}"
+def native_version(repo_root: Path, *, build_metadata: str | None = None) -> str:
+    """The native package version, optionally tagged with candidate build metadata.
+
+    ``build_metadata`` names the cargo profile a candidate build used (e.g.
+    "iterate"); it is folded into the Debian upstream version as
+    ``+<build_metadata>`` so `rmac-apps` and `rmac-session` (the "version
+    pair", see verify_directory's inventory check) still carry one matching
+    version and `dpkg` still orders it correctly, while native-packages.json
+    and the .deb filenames stay visibly distinct from a `--profile release`
+    build. A real Beta/stable release passes ``None`` and gets the exact
+    version it always has.
+    """
+    upstream = debian_upstream_version(workspace_version(repo_root))
+    if build_metadata is not None:
+        if not re.fullmatch(BUILD_METADATA_PATTERN, build_metadata):
+            raise ContractError("build metadata is invalid")
+        upstream = f"{upstream}+{build_metadata}"
+    return f"{upstream}-{DEBIAN_REVISION}"
 
 
 def source_date_epoch(value: object) -> int:
@@ -512,7 +534,8 @@ def control_bytes(
     if architecture not in ARCHITECTURES:
         raise ContractError("unsupported Debian architecture")
     if not re.fullmatch(
-        r"[0-9]+(?:\.[0-9]+){2}(?:~[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?-[1-9][0-9]*",
+        r"[0-9]+(?:\.[0-9]+){2}(?:~[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?"
+        rf"(?:\+{BUILD_METADATA_PATTERN})?-[1-9][0-9]*",
         version,
     ):
         raise ContractError("native package version is invalid")

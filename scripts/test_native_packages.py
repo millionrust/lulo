@@ -135,6 +135,115 @@ class NativePackageContractTests(unittest.TestCase):
             b"\x1f--remap-path-prefix=/build/cargo=/cargo",
         )
 
+    def test_native_build_accepts_release_and_iterate_profiles_only(self):
+        script = LINUX_SCRIPTS / "build-native-inputs.sh"
+        with tempfile.TemporaryDirectory() as temporary:
+            # An unknown profile is refused immediately, before any
+            # environment check (Linux, cargo, dpkg...) or destructive
+            # operation, on every host this test might run on.
+            rejected = subprocess.run(
+                [
+                    "bash",
+                    str(script),
+                    "--output",
+                    f"{temporary}/fresh",
+                    "--profile",
+                    "bogus",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(rejected.returncode, 1)
+            self.assertIn("unsupported cargo profile: bogus", rejected.stderr)
+
+            # A known profile clears that gate. Point --output at a directory
+            # that already exists so the script's own "must not already
+            # exist" refusal stops it deterministically, on any host,
+            # strictly before the real `cargo build` invocation -- this test
+            # must never trigger an actual compile.
+            existing = Path(temporary) / "already-there"
+            existing.mkdir()
+            for profile in ("release", "iterate"):
+                with self.subTest(profile=profile):
+                    accepted = subprocess.run(
+                        [
+                            "bash",
+                            str(script),
+                            "--output",
+                            str(existing),
+                            "--profile",
+                            profile,
+                        ],
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertNotEqual(accepted.returncode, 0)
+                    self.assertNotIn("unsupported cargo profile", accepted.stderr)
+
+            # The default (no --profile) behaves exactly like --profile release.
+            defaulted = subprocess.run(
+                ["bash", str(script), "--output", str(existing)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotIn("unsupported cargo profile", defaulted.stderr)
+
+    def test_native_build_strips_only_the_staged_copy_for_a_candidate_profile(self):
+        # Extracted straight from the script: the staging loop that copies
+        # each binary and, only for a non-release profile, strips the staged
+        # copy (never the shared target directory's own binary -- see
+        # test_native_build_remaps_checkout_and_cargo_home_paths for the same
+        # text-extraction approach).
+        script = (LINUX_SCRIPTS / "build-native-inputs.sh").read_text(
+            encoding="utf-8"
+        )
+        anchor = 'install -m 0755 "$(binary_source "$name")" "$staging/$name"'
+        loop_body = anchor + script.split(anchor, 1)[1].split("\ndone\n", 1)[0]
+        snippet = f'for name in "${{binary_names[@]}}"; do\n  {loop_body}\ndone\n'
+
+        with tempfile.TemporaryDirectory() as temporary:
+            bin_dir = Path(temporary) / "bin"
+            bin_dir.mkdir()
+            source_dir = Path(temporary) / "source"
+            source_dir.mkdir()
+            staging = Path(temporary) / "staging"
+            staging.mkdir()
+            (source_dir / "rmac-files").write_bytes(b"not really an elf")
+
+            strip_log = Path(temporary) / "strip.log"
+            fake_strip = bin_dir / "strip"
+            fake_strip.write_text(
+                "#!/bin/sh\n"
+                f'printf \'%s\\n\' "$*" >> "{strip_log}"\n'
+            )
+            fake_strip.chmod(0o755)
+
+            for profile, should_strip in (("release", False), ("iterate", True)):
+                with self.subTest(profile=profile):
+                    strip_log.unlink(missing_ok=True)
+                    script_text = (
+                        f'binary_names=(rmac-files)\n'
+                        f'profile={profile}\n'
+                        f'staging="{staging}"\n'
+                        f'binary_source() {{ printf \'%s\\n\' "{source_dir}/rmac-files"; }}\n'
+                        f"{snippet}"
+                    )
+                    result = subprocess.run(
+                        ["bash", "-c", script_text],
+                        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertTrue((staging / "rmac-files").exists())
+                    if should_strip:
+                        self.assertEqual(
+                            strip_log.read_text(),
+                            f"--strip-all {staging}/rmac-files\n",
+                        )
+                    else:
+                        self.assertFalse(strip_log.exists())
+
     def test_shipping_shell_hosts_are_explicit_and_runtime_backed(self):
         self.assertEqual(
             set(contract.SHIPPING_SHELL_SOURCES),
@@ -294,6 +403,43 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertEqual(contract.debian_upstream_version("0.9.0-beta.1"), "0.9.0~beta.1")
         self.assertEqual(contract.debian_upstream_version("0.9.0"), "0.9.0")
 
+    def test_candidate_build_metadata_tags_the_version_without_disturbing_a_release(self):
+        # A real Beta/stable release (no build_metadata) is byte-for-byte what
+        # it always was.
+        self.assertEqual(contract.native_version(builder.REPO_ROOT), "0.9.0~beta.1-38")
+        # A candidate build's cargo profile name becomes "+<profile>" build
+        # metadata ahead of the Debian revision, so the rmac-apps/rmac-session
+        # version pair still matches each other and dpkg still orders the
+        # version, while the filename and manifest are visibly a candidate.
+        self.assertEqual(
+            contract.native_version(builder.REPO_ROOT, build_metadata="iterate"),
+            "0.9.0~beta.1+iterate-38",
+        )
+        for invalid in ("", "Iterate", "iterate-1", "iter ate", "iter+ate", "ÿterate"):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(contract.ContractError, "build metadata"):
+                    contract.native_version(builder.REPO_ROOT, build_metadata=invalid)
+
+    def test_control_bytes_accepts_candidate_build_metadata_versions(self):
+        spec = contract.PACKAGE_SPECS[1]
+        version = "0.9.0~beta.1+iterate-38"
+        combined = contract.combined_dependencies(spec, version, ())
+        self.assertIn("rmac-apps (= 0.9.0~beta.1+iterate-38)", combined)
+        control = contract.control_bytes(
+            spec,
+            version=version,
+            architecture="amd64",
+            dependencies=combined,
+        ).decode("utf-8")
+        self.assertIn(f"Version: {version}\n", control)
+        with self.assertRaisesRegex(contract.ContractError, "version is invalid"):
+            contract.control_bytes(
+                spec,
+                version="0.9.0~beta.1+Iterate-38",
+                architecture="amd64",
+                dependencies=combined,
+            )
+
     def test_shlibdeps_is_argument_separated_and_uses_clean_native_context(self):
         with tempfile.TemporaryDirectory() as temporary:
             working = Path(temporary) / "analysis"
@@ -367,6 +513,105 @@ class NativePackageContractTests(unittest.TestCase):
                                 working=Path(temporary) / "analysis",
                                 base_environment={},
                             )
+
+    def test_build_cli_threads_build_metadata_into_the_package_build(self):
+        captured = {}
+
+        def fake_build(**kwargs):
+            captured.update(kwargs)
+
+        with mock.patch.object(builder, "build", side_effect=fake_build):
+            with mock.patch(
+                "sys.argv",
+                [
+                    "build-native-packages.py",
+                    "--binary-dir",
+                    "/tmp/binaries",
+                    "--output",
+                    "/tmp/output",
+                    "--architecture",
+                    "amd64",
+                    "--source-date-epoch",
+                    "0",
+                    "--build-metadata",
+                    "iterate",
+                ],
+            ):
+                self.assertEqual(builder.main(), 0)
+        self.assertEqual(captured["build_metadata"], "iterate")
+
+        captured.clear()
+        with mock.patch.object(builder, "build", side_effect=fake_build):
+            with mock.patch(
+                "sys.argv",
+                [
+                    "build-native-packages.py",
+                    "--binary-dir",
+                    "/tmp/binaries",
+                    "--output",
+                    "/tmp/output",
+                    "--architecture",
+                    "amd64",
+                    "--source-date-epoch",
+                    "0",
+                ],
+            ):
+                self.assertEqual(builder.main(), 0)
+        self.assertIsNone(captured["build_metadata"])
+
+    def test_verify_cli_derives_the_candidate_version_from_build_metadata(self):
+        captured = {}
+
+        def fake_verify_directory(directory, **kwargs):
+            captured.update(kwargs)
+
+        with mock.patch.object(
+            package_verifier, "verify_directory", side_effect=fake_verify_directory
+        ):
+            with mock.patch(
+                "sys.argv",
+                [
+                    "verify-native-packages.py",
+                    "--directory",
+                    "/tmp/output",
+                    "--architecture",
+                    "amd64",
+                    "--build-metadata",
+                    "iterate",
+                ],
+            ):
+                with mock.patch.object(
+                    package_verifier, "_require_dpkg_deb", return_value="/usr/bin/dpkg-deb"
+                ):
+                    self.assertEqual(package_verifier.main(), 0)
+        self.assertEqual(
+            captured["expected_version"], "0.9.0~beta.1+iterate-38"
+        )
+
+        # An explicit --version still wins over --build-metadata.
+        captured.clear()
+        with mock.patch.object(
+            package_verifier, "verify_directory", side_effect=fake_verify_directory
+        ):
+            with mock.patch(
+                "sys.argv",
+                [
+                    "verify-native-packages.py",
+                    "--directory",
+                    "/tmp/output",
+                    "--architecture",
+                    "amd64",
+                    "--build-metadata",
+                    "iterate",
+                    "--version",
+                    "9.9.9-1",
+                ],
+            ):
+                with mock.patch.object(
+                    package_verifier, "_require_dpkg_deb", return_value="/usr/bin/dpkg-deb"
+                ):
+                    self.assertEqual(package_verifier.main(), 0)
+        self.assertEqual(captured["expected_version"], "9.9.9-1")
 
 
 

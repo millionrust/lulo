@@ -276,13 +276,14 @@ def build(
     output_directory: Path,
     architecture: str,
     epoch: int,
+    build_metadata: str | None = None,
 ) -> None:
     if architecture not in ARCHITECTURES:
         raise PackageBuildError("unsupported Debian architecture")
     _validate_output(output_directory)
     try:
         records = validate_binary_directory(binary_directory, architecture)
-        version = native_version(REPO_ROOT)
+        version = native_version(REPO_ROOT, build_metadata=build_metadata)
         epoch = source_date_epoch(epoch)
     except ContractError as error:
         raise PackageBuildError(str(error)) from error
@@ -527,6 +528,15 @@ def main() -> int:
         default=os.environ.get("SOURCE_DATE_EPOCH"),
         help="canonical decimal reproducible-build timestamp",
     )
+    parser.add_argument(
+        "--build-metadata",
+        default=None,
+        help=(
+            "candidate build tag (e.g. 'iterate', matching "
+            "build-native-inputs.sh --profile) folded into the Debian "
+            "version as +<tag>; omit for a real Beta/stable release"
+        ),
+    )
     arguments = parser.parse_args()
     try:
         if arguments.source_date_epoch is None:
@@ -536,6 +546,7 @@ def main() -> int:
             output_directory=arguments.output,
             architecture=arguments.architecture,
             epoch=source_date_epoch(arguments.source_date_epoch),
+            build_metadata=arguments.build_metadata,
         )
     except (ContractError, PackageBuildError) as error:
         parser.exit(3, f"build-native-packages: {error}\n")

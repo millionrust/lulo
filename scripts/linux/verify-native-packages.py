@@ -617,9 +617,19 @@ def main() -> int:
         "--version",
         help="expected Debian version (defaults to the workspace version)",
     )
+    parser.add_argument(
+        "--build-metadata",
+        default=None,
+        help=(
+            "candidate build tag (e.g. 'iterate') the expected version was "
+            "built with; ignored when --version is given explicitly"
+        ),
+    )
     arguments = parser.parse_args()
     try:
-        expected_version = arguments.version or native_version(REPO_ROOT)
+        expected_version = arguments.version or native_version(
+            REPO_ROOT, build_metadata=arguments.build_metadata
+        )
         verify_directory(
             arguments.directory,
             architecture=arguments.architecture,

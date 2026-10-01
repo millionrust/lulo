@@ -1,6 +1,7 @@
 //! Text Editor dirty-close, recovery, conflict, and error alert state machine.
 
 use super::*;
+use gpui::Focusable as _;
 
 impl EditorView {
     /// If the buffer is dirty, ask before discarding; otherwise act immediately.

@@ -300,6 +300,7 @@ def read_settings_window(app_display_name: str) -> dict:
 TOOLBAR_FILES = {
     "Finder": ["crates/finder/src/view/chrome_presentation/toolbar.rs"],
     "Notes": ["crates/notes/src/toolbar.rs"],
+    "System Monitor": ["crates/activity-monitor/src/view/render/chrome.rs"],
 }
 
 

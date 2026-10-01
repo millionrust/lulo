@@ -196,7 +196,29 @@ impl MonitorView {
     pub(super) fn publish_menu_state(&self, cx: &mut Context<Self>) {
         let has_selection = self.selected_proc(cx).is_some();
         rmac_ui::set_menu_enabled("activity_monitor::QuitProcess", has_selection, cx);
-        rmac_ui::set_menu_enabled("activity_monitor::ForceQuitProcess", has_selection, cx);
+        rmac_ui::set_menu_enabled("activity_monitor::InspectProcess", has_selection, cx);
+        let has_matches = !self.search.read(cx).value().is_empty()
+            && !self.table.read(cx).delegate().rows.is_empty();
+        rmac_ui::set_menu_enabled("activity_monitor::FindNext", has_matches, cx);
+        rmac_ui::set_menu_enabled("activity_monitor::FindPrevious", has_matches, cx);
+        for (action, filter) in [
+            ("activity_monitor::ShowAllProcesses", ViewFilter::All),
+            ("activity_monitor::ShowMyProcesses", ViewFilter::MyProcesses),
+            (
+                "activity_monitor::ShowSystemProcesses",
+                ViewFilter::SystemProcesses,
+            ),
+            (
+                "activity_monitor::ShowOtherUsersProcesses",
+                ViewFilter::OtherUsersProcesses,
+            ),
+            (
+                "activity_monitor::ShowActiveProcesses",
+                ViewFilter::ActiveProcesses,
+            ),
+        ] {
+            rmac_ui::set_menu_checked(action, self.view_filter(cx) == filter, cx);
+        }
     }
 
     fn selected_proc(&self, cx: &Context<Self>) -> Option<process_action::ProcessIdentity> {
@@ -382,6 +404,34 @@ impl MonitorView {
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_open = true;
         self.search.update(cx, |s, cx| s.focus(window, cx));
+        cx.notify();
+    }
+
+    fn find_match(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if self.search.read(cx).value().is_empty() {
+            return;
+        }
+        self.table.update(cx, |state, cx| {
+            let len = state.delegate().rows.len();
+            if len == 0 {
+                return;
+            }
+            let next = match state.selected_row() {
+                Some(index) if forward => (index + 1) % len,
+                Some(index) => (index + len - 1) % len,
+                None if forward => 0,
+                None => len - 1,
+            };
+            let pid = state.delegate().rows[next].pid;
+            state.delegate_mut().set_selected_pid(Some(pid));
+            state.set_selected_row(next, cx);
+        });
+        cx.notify();
+    }
+
+    fn clear_cpu_history(&mut self, cx: &mut Context<Self>) {
+        self.sampler.history.cpu_user.clear();
+        self.sampler.history.cpu_system.clear();
         cx.notify();
     }
 

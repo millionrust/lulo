@@ -50,6 +50,25 @@
       ]
     },
     {
+      "label": "File",
+      "items": [
+        {
+          "label": "Close",
+          "action": "activity_monitor::Close",
+          "shortcut": "⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "action": "activity_monitor::CloseAll",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
       "label": "Edit",
       "items": [
         {
@@ -106,6 +125,20 @@
               "shortcut": "⌘F",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Find Next",
+              "action": "activity_monitor::FindNext",
+              "shortcut": "⌘G",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find Previous",
+              "action": "activity_monitor::FindPrevious",
+              "shortcut": "⇧⌘G",
+              "separator_before": false,
+              "children": []
             }
           ]
         }
@@ -115,17 +148,66 @@
       "label": "View",
       "items": [
         {
-          "label": "Quit Process",
-          "action": "activity_monitor::QuitProcess",
-          "shortcut": "⌘⌫",
+          "label": "All Processes",
+          "action": "activity_monitor::ShowAllProcesses",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
         {
-          "label": "Force Quit Process…",
-          "action": "activity_monitor::ForceQuitProcess",
-          "shortcut": "⇧⌘⌫",
+          "label": "My Processes",
+          "action": "activity_monitor::ShowMyProcesses",
+          "shortcut": "",
           "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "System Processes",
+          "action": "activity_monitor::ShowSystemProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Other Users’ Processes",
+          "action": "activity_monitor::ShowOtherUsersProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Active Processes",
+          "action": "activity_monitor::ShowActiveProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Filter Processes",
+          "action": "activity_monitor::FocusSearch",
+          "shortcut": "⌥⌘F",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Inspect Process",
+          "action": "activity_monitor::InspectProcess",
+          "shortcut": "⌘I",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quit Process",
+          "action": "activity_monitor::QuitProcess",
+          "shortcut": "⌥⌘Q",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Clear CPU History",
+          "action": "activity_monitor::ClearCpuHistory",
+          "shortcut": "⌘K",
+          "separator_before": true,
           "children": []
         }
       ]
@@ -239,9 +321,12 @@
     "controls": []
   },
   "toolbar": {
-    "present": false,
-    "extraction": "none",
-    "groups": []
+    "present": true,
+    "extraction": "heuristic",
+    "groups": [
+      "View filter",
+      "Search"
+    ]
   },
   "context_menus": {}
 }

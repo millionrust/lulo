@@ -1480,7 +1480,7 @@ def check_settings_view_menu(nested: Nested, bins: list[Path], settle: float) ->
             )
             if call.returncode:
                 raise StepFailed(f"View ▸ {title} activation failed: {call.stderr.strip()}")
-            time.sleep(0.5)
+            time.sleep(max(settle, 2.0))
             frame = run.active_frame()
             actual = name(frame) if frame is not None else ""
             if title not in actual:

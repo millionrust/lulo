@@ -350,7 +350,11 @@ pub(crate) fn run() {
                 // light.
                 KeyBinding::new("cmd-m", Minimize, Some("SystemSettings")),
             ]);
-            Settings::new(window, cx)
+            let settings = Settings::new(window, cx);
+            // Menu-bar actions need the Settings root as their target even
+            // while the search field or the top bar holds keyboard focus.
+            rmac_ui::register_menu_target(window, &settings.focus, cx);
+            settings
         },
         |arguments, cx| {
             // A later `--pane <id>` launch: land on that pane instead of

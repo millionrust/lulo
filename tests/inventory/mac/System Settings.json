@@ -4,8 +4,7 @@
   "menu_bar": [
     {
       "label": "Apple",
-      "items": [],
-      "items_omitted": "system Apple menu, scrubbed post-capture (OS chrome + contains the owner's name)"
+      "items": []
     },
     {
       "label": "System Settings",
@@ -913,7 +912,112 @@
     "controls": []
   },
   "settings_app": {
-    "sidebar": [],
-    "panes": {}
+    "sidebar": [
+      "<Owner>, Apple Account",
+      "Family",
+      "Wi‑Fi",
+      "Bluetooth",
+      "Network",
+      "Battery",
+      "General",
+      "Accessibility",
+      "Appearance",
+      "Apple Intelligence & Siri",
+      "Desktop & Dock",
+      "Displays",
+      "Menu Bar",
+      "Spotlight",
+      "Wallpaper",
+      "Notifications",
+      "Sound",
+      "Focus",
+      "Screen Time",
+      "Lock Screen",
+      "Privacy & Security",
+      "Touch ID & Password",
+      "Users & Groups",
+      "Internet Accounts",
+      "Game Center",
+      "iCloud",
+      "Wallet & Apple Pay",
+      "Keyboard",
+      "Trackpad",
+      "Printers & Scanners"
+    ],
+    "panes": {
+      "<Owner>, Apple Account": [
+        "group",
+        "split group",
+        "scroll area",
+        "Sidebar",
+        "scroll bar",
+        "search text field",
+        "Search",
+        "splitter",
+        "toolbar",
+        "Back",
+        "Forward",
+        "close button",
+        "zoom button",
+        "minimise button",
+        "Apple Account"
+      ],
+      "Family": [
+        "group"
+      ],
+      "Wi‑Fi": [],
+      "Bluetooth": [],
+      "Network": [],
+      "Battery": [],
+      "General": [],
+      "Accessibility": [
+        "group",
+        "split group",
+        "scroll area",
+        "Sidebar",
+        "scroll bar",
+        "search text field",
+        "Search",
+        "splitter",
+        "toolbar",
+        "Back",
+        "Forward",
+        "close button",
+        "zoom button",
+        "minimise button",
+        "Accessibility"
+      ],
+      "Appearance": [],
+      "Apple Intelligence & Siri": [],
+      "Desktop & Dock": [],
+      "Displays": [],
+      "Menu Bar": [],
+      "Spotlight": [],
+      "Wallpaper": [],
+      "Notifications": [
+        "group"
+      ],
+      "Sound": [],
+      "Focus": [],
+      "Screen Time": [],
+      "Lock Screen": [],
+      "Privacy & Security": [
+        "group"
+      ],
+      "Touch ID & Password": [],
+      "Users & Groups": [],
+      "Internet Accounts": [],
+      "Game Center": [],
+      "iCloud": [],
+      "Wallet & Apple Pay": [
+        "group"
+      ],
+      "Keyboard": [
+        "group",
+        "split group"
+      ],
+      "Trackpad": [],
+      "Printers & Scanners": []
+    }
   }
 }

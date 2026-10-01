@@ -4,8 +4,7 @@
   "menu_bar": [
     {
       "label": "Apple",
-      "items": [],
-      "items_omitted": "system Apple menu, scrubbed post-capture (OS chrome + contains the owner's name)"
+      "items": []
     },
     {
       "label": "Finder",
@@ -110,7 +109,7 @@
         {
           "label": "New Folder",
           "shortcut": "⇧⌘N",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -138,14 +137,14 @@
         {
           "label": "Open",
           "shortcut": "⌘O",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Open in New Tab",
           "shortcut": "⌃⌘O",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -343,7 +342,7 @@
         {
           "label": "Close Window",
           "shortcut": "⌘W",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -364,21 +363,21 @@
         {
           "label": "Get Info",
           "shortcut": "⌘I",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Show Inspector",
           "shortcut": "⌥⌘I",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Get Summary Info",
           "shortcut": "⌃⌘I",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -427,14 +426,14 @@
         {
           "label": "Quick Look “finder-context-sandbox”",
           "shortcut": "⌘Y",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Slideshow “finder-context-sandbox”",
           "shortcut": "⌥⌘Y",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -483,14 +482,14 @@
         {
           "label": "Add to Sidebar",
           "shortcut": "⌃⌘T",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Add to Dock",
           "shortcut": "⌃⇧⌘T",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -614,7 +613,7 @@
         {
           "label": "Copy “finder-context-sandbox” as Pathname",
           "shortcut": "⌥⌘C",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -649,7 +648,7 @@
         {
           "label": "Select All",
           "shortcut": "⌘A",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -732,28 +731,28 @@
         {
           "label": "as Icons",
           "shortcut": "⌘1",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "as List",
           "shortcut": "⌘2",
-          "enabled": true,
+          "enabled": false,
           "checked": true,
           "children": []
         },
         {
           "label": "as Columns",
           "shortcut": "⌘3",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "as Gallery",
           "shortcut": "⌘4",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -774,62 +773,62 @@
         {
           "label": "Sort By",
           "shortcut": "",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": [
             {
               "label": "Name",
               "shortcut": "⌃⌥⌘1",
-              "enabled": true,
+              "enabled": false,
               "checked": true,
               "children": []
             },
             {
               "label": "Kind",
               "shortcut": "⌃⌥⌘2",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Date Last Opened",
               "shortcut": "⌃⌥⌘3",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Date Added",
               "shortcut": "⌃⌥⌘4",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Date Modified",
               "shortcut": "⌃⌥⌘5",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Date Created",
               "shortcut": "",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Size",
               "shortcut": "⌃⌥⌘6",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Tags",
               "shortcut": "⌃⌥⌘7",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             }
@@ -909,14 +908,14 @@
         {
           "label": "Show Tab Bar",
           "shortcut": "⇧⌘T",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Show All Tabs",
           "shortcut": "⇧⌘\\",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -930,14 +929,14 @@
         {
           "label": "Hide Sidebar",
           "shortcut": "⌃⌘S",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Show Preview",
           "shortcut": "⇧⌘P",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -951,21 +950,21 @@
         {
           "label": "Hide Toolbar",
           "shortcut": "⌥⌘T",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Show Path Bar",
           "shortcut": "⌥⌘P",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Hide Status Bar",
           "shortcut": "⌘/",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -979,7 +978,7 @@
         {
           "label": "Customise Toolbar…",
           "shortcut": "",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -1000,7 +999,7 @@
         {
           "label": "Show Preview Options",
           "shortcut": "",
-          "enabled": false,
+          "enabled": true,
           "checked": false,
           "children": []
         },
@@ -1014,7 +1013,7 @@
         {
           "label": "Enter Full Screen",
           "shortcut": "F",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         }
@@ -1040,21 +1039,21 @@
         {
           "label": "Enclosing Folder",
           "shortcut": "⌘",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Enclosing Folder",
           "shortcut": "⌘",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Enclosing Folder in New Window",
           "shortcut": "⌃⌘",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -1242,7 +1241,7 @@
         {
           "label": "Minimise",
           "shortcut": "⌘M",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -1256,7 +1255,7 @@
         {
           "label": "Zoom",
           "shortcut": "",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -1270,14 +1269,14 @@
         {
           "label": "Fill",
           "shortcut": "⌃F",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
         {
           "label": "Centre",
           "shortcut": "⌃C",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -1304,28 +1303,28 @@
             {
               "label": "Left",
               "shortcut": "⌃←",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Right",
               "shortcut": "⌃→",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Top",
               "shortcut": "⌃↑",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Bottom",
               "shortcut": "⌃↓",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
@@ -1346,28 +1345,28 @@
             {
               "label": "Top Left",
               "shortcut": "",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Top Right",
               "shortcut": "",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Bottom Left",
               "shortcut": "",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Bottom Right",
               "shortcut": "",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
@@ -1388,56 +1387,56 @@
             {
               "label": "Left & Right",
               "shortcut": "⌃⇧←",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Left & Quarters",
               "shortcut": "⌃⌥⇧←",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Right & Left",
               "shortcut": "⌃⇧→",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Right & Quarters",
               "shortcut": "⌃⌥⇧→",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Top & Bottom",
               "shortcut": "⌃⇧↑",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Top & Quarters",
               "shortcut": "⌃⌥⇧↑",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Bottom & Top",
               "shortcut": "⌃⇧↓",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Bottom & Quarters",
               "shortcut": "⌃⌥⇧↓",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
@@ -1467,20 +1466,20 @@
         {
           "label": "Full-Screen Tile",
           "shortcut": "",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": [
             {
               "label": "Left of Screen",
               "shortcut": "",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             },
             {
               "label": "Right of Screen",
               "shortcut": "",
-              "enabled": true,
+              "enabled": false,
               "checked": false,
               "children": []
             }
@@ -1503,7 +1502,7 @@
         {
           "label": "Cycle Through Windows",
           "shortcut": "⌘`",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -1566,7 +1565,7 @@
         {
           "label": "Merge All Windows",
           "shortcut": "",
-          "enabled": true,
+          "enabled": false,
           "checked": false,
           "children": []
         },
@@ -1595,7 +1594,7 @@
           "label": "finder-context-sandbox",
           "shortcut": "",
           "enabled": true,
-          "checked": true,
+          "checked": false,
           "children": []
         }
       ]
@@ -2536,7 +2535,7 @@
         "enabled": true,
         "checked": false,
         "children": [],
-        "children_omitted": "dynamic/personal submenu, scrubbed post-capture"
+        "children_omitted": "dynamic/personal submenu, not read"
       },
       {
         "label": "Quick Actions",
@@ -2590,241 +2589,6 @@
         "children_omitted": "dynamic/personal submenu, not read"
       }
     ],
-    "background": [
-      {
-        "label": "Open in New Tab",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Open in New Window",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Move to Bin",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Get Info",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Show Inspector",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Rename",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Compress “Subfolder”",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Compress “Subfolder”",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Duplicate",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Duplicate Exactly",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Make Alias",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Quick Look",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Slideshow “Subfolder”",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Copy",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Copy “Subfolder” as Pathname",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Share…",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "label",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Import from iPhone",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": [],
-        "children_omitted": "dynamic/personal submenu, scrubbed post-capture"
-      },
-      {
-        "label": "Quick Actions",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": [
-          {
-            "label": null,
-            "shortcut": "",
-            "enabled": false,
-            "checked": false,
-            "children": []
-          },
-          {
-            "label": "Customise…",
-            "shortcut": "",
-            "enabled": true,
-            "checked": false,
-            "children": []
-          }
-        ]
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": null,
-        "shortcut": "",
-        "enabled": false,
-        "checked": false,
-        "children": []
-      },
-      {
-        "label": "Services",
-        "shortcut": "",
-        "enabled": true,
-        "checked": false,
-        "children": [],
-        "children_omitted": "dynamic/personal submenu, not read"
-      }
-    ]
+    "background": []
   }
 }

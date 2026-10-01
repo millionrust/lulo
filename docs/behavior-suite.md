@@ -209,18 +209,18 @@ scenario is not part of CI yet.
    python3 scripts/behavior/record_mac.py files/new-folder             # writes .mac.json
    ```
 
-3. Run it on Lulo. Do this on the laptop, under the screen lock, with binaries built from the
+3. Run it on Lulo. Do this on the laptop with binaries built from the
    branch under test. Build them with
    `cargo build --profile iterate --bins -p rmac-finder -p rmac-text-editor
    -p rmac-system-settings -p rmac-calculator -p rmac-preview
    -p rmac-file-chooser`, plus the shell's
    `wallpaper` binary. Don't use `--bin`: it restricts every `-p` to that one binary, which leaves
-   the others stale.
+   the others stale. The runner acquires `/tmp/lulo-journey.lock` itself; do not
+   wrap it in another lock on that file.
 
    ```sh
-   exec 9>/tmp/lulo-journey.lock; flock 9
    python3 scripts/behavior/run_lulo.py --bin-dir $CARGO_TARGET_DIR/iterate \
-     --shell-bin-dir $CARGO_TARGET_DIR/iterate --output /tmp/behavior.json files/new-folder 9>&-
+     --shell-bin-dir $CARGO_TARGET_DIR/iterate --output /tmp/behavior.json files/new-folder
    python3 scripts/behavior/compare.py /tmp/behavior.json --emit-parity-rows
    ```
 
@@ -234,7 +234,7 @@ scenario is not part of CI yet.
 
    ```sh
    python3 scripts/behavior/run_lulo.py --bin-dir $CARGO_TARGET_DIR/iterate \
-     --check-context-submenus 9>&-
+     --check-context-submenus
    ```
 
    The tag-swatch check needs `grim`. It verifies all seven visible colors and
@@ -243,7 +243,7 @@ scenario is not part of CI yet.
 
    ```sh
    python3 scripts/behavior/run_lulo.py --bin-dir $CARGO_TARGET_DIR/iterate \
-     --check-file-tag-swatches 9>&-
+     --check-file-tag-swatches
    ```
 
 ## Safety

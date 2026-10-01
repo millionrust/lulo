@@ -12,6 +12,7 @@ Only words and numbers are ever recorded: no captures, no absolute paths.
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from pathlib import Path
@@ -366,7 +367,13 @@ def compare(scenario: dict[str, Any], expected: dict[str, Any], actual: dict[str
     if "error" in actual:
         mismatches.append({"observation": "*", "fact": "*", "field": "error",
                            "expected": "no runner error", "actual": actual["error"], "rule": "exact"})
-    exp_obs = expected.get("observations", {})
+    # A scenario's "omit" list applies to the recorded expectation too, so a
+    # field omitted after recording (e.g. history-dependent Mac state) is not
+    # compared just because the older .mac.json still contains it.
+    exp_obs = {
+        name: finish_observation(scenario, name, copy.deepcopy(facts))
+        for name, facts in expected.get("observations", {}).items()
+    }
     act_obs = actual.get("observations", {})
     for name, facts in exp_obs.items():
         got = act_obs.get(name)

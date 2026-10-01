@@ -14,6 +14,12 @@
       "reason": "SF Mono is an Apple font; Lulo uses its bundled monospace font and exposes the font size separately."
     },
     {
+      "app": "Text Editor",
+      "label": "Menlo Regular 11",
+      "match": "exact",
+      "reason": "Menlo is an Apple font; Lulo uses its bundled monospace font and exposes the font size separately."
+    },
+    {
       "app": "*",
       "label": "Services",
       "match": "exact",

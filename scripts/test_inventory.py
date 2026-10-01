@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "inventory"))
 
 import diff as d  # noqa: E402
+import lulo_inventory as li  # noqa: E402
 import normalize as norm  # noqa: E402
 import rust_menu_parser as rmp  # noqa: E402
 
@@ -311,6 +312,94 @@ class AssignIdsTests(unittest.TestCase):
         self.assertEqual(gaps[0].gap_id, "FIL-MENU-001")
         self.assertEqual(gaps[1].gap_id, "FIL-MENU-002")
         self.assertEqual(gaps[2].gap_id, "NOT-MENU-001")
+
+
+class SynthesizedStandardMenusTests(unittest.TestCase):
+    """The menu bar synthesizes the Application/Window/Help menus for every
+    app (`app_menu`/`window_menu`/`help_menu` in
+    shell/bins/rmac-menubar/src/{main,menu_model}.rs); `lulo_inventory.py`
+    must mirror that exactly, or the diff reports standard items as missing
+    even though they are on screen (see docs/inventory-gaps.md's history:
+    Calculator, Clock and Weather each showed 76 such false gaps)."""
+
+    def test_take_menu_removes_and_returns_items(self):
+        menus = [rmp.Menu("File", [li._item("New", "x::New")]), rmp.Menu("Window", [])]
+        items = li._take_menu(menus, "Window")
+        self.assertEqual(items, [])
+        self.assertEqual([m.label for m in menus], ["File"])
+
+    def test_take_menu_absent_returns_empty_list_and_keeps_menus(self):
+        menus = [rmp.Menu("File", [li._item("New", "x::New")])]
+        self.assertEqual(li._take_menu(menus, "Window"), [])
+        self.assertEqual(len(menus), 1)
+
+    def test_app_menu_has_the_standard_rows_in_order(self):
+        menu = li._synthesize_app_menu("Clock", [])
+        labels = [item.label for item in menu.items]
+        self.assertEqual(
+            labels,
+            ["About Clock", "Services", "Hide Clock", "Hide Others", "Show All", "Quit Clock"],
+        )
+        by_label = {item.label: item for item in menu.items}
+        self.assertEqual(by_label["Hide Clock"].shortcut, "⌘H")
+        self.assertEqual(by_label["Hide Others"].shortcut, "⌥⌘H")
+        self.assertEqual(by_label["Quit Clock"].shortcut, "⌘Q")
+
+    def test_app_menu_keeps_the_apps_own_items_after_about(self):
+        settings = li._item("Settings…", "weather::ShowSettings", "⌘,")
+        menu = li._synthesize_app_menu("Weather", [settings])
+        labels = [item.label for item in menu.items]
+        self.assertEqual(labels[0], "About Weather")
+        self.assertEqual(labels[1], "Settings…")
+        self.assertTrue(menu.items[1].separator_before)
+
+    def test_finder_app_menu_has_no_quit_row(self):
+        menu = li._synthesize_app_menu("Finder", [])
+        labels = [item.label for item in menu.items]
+        self.assertNotIn("Quit Finder", labels)
+
+    def test_window_menu_has_minimise_all(self):
+        menu = li._synthesize_window_menu([])
+        by_label = {item.label: item for item in menu.items}
+        self.assertEqual(by_label["Minimise All"].shortcut, "⌥⌘M")
+        self.assertEqual(by_label["Minimise"].shortcut, "⌘M")
+        self.assertIn("Bring All to Front", by_label)
+        move_and_resize = by_label["Move & Resize"]
+        self.assertEqual(
+            [child.label for child in move_and_resize.children],
+            ["Left", "Right", "Top", "Bottom", "Return to Previous Size"],
+        )
+
+    def test_window_menu_keeps_the_apps_own_window_items(self):
+        tab = li._item("Show Next Tab", "finder::NextTab", "⌃⇥")
+        menu = li._synthesize_window_menu([tab])
+        labels = [item.label for item in menu.items]
+        self.assertIn("Show Next Tab", labels)
+        self.assertLess(labels.index("Show Next Tab"), labels.index("Bring All to Front"))
+
+    def test_help_menu_has_app_help_with_its_shortcut(self):
+        menu = li._synthesize_help_menu("Calculator", [])
+        self.assertEqual(menu.items[0].label, "Calculator Help")
+        self.assertEqual(menu.items[0].shortcut, "⌘?")
+
+    def test_help_menu_keeps_the_apps_own_help_items(self):
+        extra = li._item("File Format Help", "")
+        menu = li._synthesize_help_menu("Preview", [extra])
+        self.assertEqual([item.label for item in menu.items], ["Preview Help", "File Format Help"])
+
+    def test_read_menu_bar_assembles_application_window_and_help(self):
+        menus = li.read_menu_bar("Clock", "CLOCK_MENUS")
+        labels = [menu["label"] for menu in menus]
+        self.assertEqual(labels[0], "Application")
+        self.assertEqual(labels[-2], "Window")
+        self.assertEqual(labels[-1], "Help")
+        application_items = {item["label"] for item in menus[0]["items"]}
+        self.assertIn("About Clock", application_items)
+        self.assertIn("Hide Clock", application_items)
+        window_items = {item["label"] for item in menus[-2]["items"]}
+        self.assertIn("Minimise All", window_items)
+        help_items = {item["label"] for item in menus[-1]["items"]}
+        self.assertIn("Clock Help", help_items)
 
 
 if __name__ == "__main__":

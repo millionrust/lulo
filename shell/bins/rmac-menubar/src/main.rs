@@ -1337,7 +1337,7 @@ mod linux_wayland {
                     application_items,
                 ),
             ];
-            let help = menu_model::help_menu(&self.help_query, &exported, help_items);
+            let help = menu_model::help_menu(&self.help_query, &active_app, &exported, help_items);
             menus.extend(exported);
             // Every app has the Mac's Window and Help menus, exported or not.
             menus.push(menu_model::window_menu(
@@ -4673,6 +4673,10 @@ mod linux_wayland {
             dispatch_window_command(app_id, command, window_id, cx);
             return;
         }
+        if action == menu_model::APP_HELP_ACTION {
+            open_app_help(&app_id, cx);
+            return;
+        }
         if action.starts_with("help::") {
             return;
         }
@@ -4857,7 +4861,10 @@ mod linux_wayland {
             store.prune(&snapshot);
             let mut actions = Vec::new();
             match action.as_str() {
-                "app::hide" => {
+                // Window ▸ Minimise All (⌥⌘M) is the same operation as
+                // Hide App (⌘H) in the parking model (§2.2): every window
+                // of this app is minimised.
+                "app::hide" | menu_model::MINIMISE_ALL_ACTION => {
                     let windows = rmac_compositor::application_windows(&snapshot, &app_id);
                     store.record_from(&snapshot, &windows);
                     actions = windows
@@ -4903,6 +4910,53 @@ mod linux_wayland {
             }
         })
         .detach();
+    }
+
+    /// Help ▸ "<App> Help" (⌘?) opens the app's bundled help page: the
+    /// markdown embedded at compile time, written to a temp file and opened
+    /// in the desktop's default viewer, the same way other first-party
+    /// documents open (§FD-8: a real page, not a dead menu row).
+    fn open_app_help(app_id: &str, cx: &mut App) {
+        let Some(markdown) = app_help_markdown(app_id) else {
+            eprintln!("no bundled help for {app_id}");
+            return;
+        };
+        let file_name = format!(
+            "rmac-help-{}.md",
+            app_id.trim_start_matches("org.rmac.").to_lowercase()
+        );
+        cx.background_executor()
+            .spawn(async move {
+                let path = std::env::temp_dir().join(file_name);
+                if let Err(error) = fs::write(&path, markdown) {
+                    eprintln!("could not write the help page: {error}");
+                    return;
+                }
+                if let Err(error) = Command::new("xdg-open").arg(&path).spawn() {
+                    eprintln!("could not open the help page: {error}");
+                }
+            })
+            .detach();
+    }
+
+    /// The bundled per-app help markdown (`shell/assets/help/*.md`), shipped
+    /// in every rmac binary, embedded at compile time like the menu glyphs
+    /// above.
+    fn app_help_markdown(app_id: &str) -> Option<&'static str> {
+        use rmac_apps::identity as id;
+        Some(match app_id {
+            id::FILES => include_str!("../../../assets/help/files.md"),
+            id::TERMINAL => include_str!("../../../assets/help/terminal.md"),
+            id::NOTES => include_str!("../../../assets/help/notes.md"),
+            id::TEXT_EDITOR => include_str!("../../../assets/help/text-editor.md"),
+            id::SYSTEM_MONITOR => include_str!("../../../assets/help/system-monitor.md"),
+            id::SYSTEM_SETTINGS => include_str!("../../../assets/help/system-settings.md"),
+            id::CALCULATOR => include_str!("../../../assets/help/calculator.md"),
+            id::PREVIEW => include_str!("../../../assets/help/preview.md"),
+            id::CLOCK => include_str!("../../../assets/help/clock.md"),
+            id::WEATHER => include_str!("../../../assets/help/weather.md"),
+            _ => return None,
+        })
     }
 
     fn dispatch_system_menu(action: String, cx: &mut App) {

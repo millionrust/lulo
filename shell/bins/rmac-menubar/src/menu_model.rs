@@ -67,6 +67,13 @@ pub const HELP_SEARCH_CAPSULE_HEIGHT: f32 = 25.0;
 pub const HELP_SEARCH_INSET: f32 = 9.5;
 /// The synthesized Help menu's search field row. It is never activated.
 pub const HELP_SEARCH_ACTION: &str = "help::search";
+/// The synthesized Help menu's "<App> Help" row (⌘?), the same on every
+/// app: opens that app's bundled help page.
+pub const APP_HELP_ACTION: &str = "help::app-help";
+/// The synthesized Window menu's "Minimise All" row (⌥⌘M). It runs through
+/// `dispatch_app_menu_action` exactly like Hide App does (§2.2's parking
+/// model), since minimising every window of the app is the same operation.
+pub const MINIMISE_ALL_ACTION: &str = "app::minimise-all";
 /// A submenu overlaps its parent by this much (as Recent Items does).
 pub const SUBMENU_OVERLAP: f32 = 4.0;
 /// How long the pointer rests on a submenu row before the submenu opens,
@@ -280,6 +287,7 @@ pub fn window_menu(
         |label: &str, half, shortcut: &str| command(label, WindowCommand::Tile(half), shortcut);
     let mut items = vec![
         command(words.minimise(), WindowCommand::Minimise, "⌘M"),
+        Item::new("Minimise All", MINIMISE_ALL_ACTION, "⌥⌘M").enabled(!windows.is_empty()),
         command("Zoom", WindowCommand::Zoom, ""),
         command("Fill", WindowCommand::Fill, "⌃⇧⌘F"),
         command(words.centre(), WindowCommand::Centre, "⌃⌘C"),
@@ -343,10 +351,12 @@ fn shorten(text: &str, limit: usize) -> String {
 }
 
 /// The Help menu every app gets: a search field that finds the app's menu
-/// commands by name (as the Mac's Help search does), then the app's own
-/// help items. Results name the menu each command lives in.
+/// commands by name (as the Mac's Help search does), "<App> Help" (⌘?),
+/// which opens that app's bundled help page, then the app's own help
+/// items. Results name the menu each command lives in.
 pub fn help_menu(
     query: &str,
+    app_name: &str,
     app_menus: &[rmac_app_menu::Menu],
     help_items: Vec<Item>,
 ) -> rmac_app_menu::Menu {
@@ -385,7 +395,8 @@ pub fn help_menu(
             items.extend(results);
         }
     }
-    let mut help_items = help_items.into_iter();
+    let app_help = Item::new(format!("{app_name} Help"), APP_HELP_ACTION, "⌘?");
+    let mut help_items = std::iter::once(app_help).chain(help_items);
     if let Some(first) = help_items.next() {
         items.push(first.separated());
         items.extend(help_items);
@@ -508,8 +519,10 @@ pub fn menu_item_icon(action: &str, label: &str) -> Option<&'static str> {
         "app::about" | rmac_app_menu::ABOUT_ACTION => Some("info"),
         "app::services" => Some("services"),
         "app::hide" => Some("hide"),
+        MINIMISE_ALL_ACTION => Some("minimize"),
         "app::hide-others" => Some("hide-others"),
         "app::show-all" => Some("show-all"),
+        APP_HELP_ACTION => Some("help-book"),
         _ => None,
     };
     if by_action.is_some()
@@ -1780,6 +1793,7 @@ mod tests {
             labels,
             [
                 "Minimise",
+                "Minimise All",
                 "Zoom",
                 "Fill",
                 "Centre",
@@ -1791,26 +1805,31 @@ mod tests {
             ]
         );
         assert_eq!(menu.items[0].shortcut, "⌘M");
-        assert_eq!(menu.items[2].shortcut, "⌃⇧⌘F");
-        assert_eq!(menu.items[3].shortcut, "⌃⌘C");
-        assert!(menu.items[4].is_submenu());
-        assert_eq!(menu.items[4].children[0].shortcut, "⌃⌘←");
+        assert_eq!(menu.items[1].shortcut, "⌥⌘M");
+        assert_eq!(menu.items[1].action, MINIMISE_ALL_ACTION);
+        assert!(menu.items[1].enabled);
+        assert_eq!(menu.items[3].shortcut, "⌃⇧⌘F");
+        assert_eq!(menu.items[4].shortcut, "⌃⌘C");
+        assert!(menu.items[5].is_submenu());
+        assert_eq!(menu.items[5].children[0].shortcut, "⌃⌘←");
         assert_eq!(
-            WindowCommand::parse(&menu.items[4].children[4].action),
+            WindowCommand::parse(&menu.items[5].children[4].action),
             Some(WindowCommand::ReturnToPreviousSize)
         );
-        assert!(menu.items[5].separator_before);
-        assert_eq!(menu.items[8].checked, rmac_app_menu::CheckState::On);
-        assert_eq!(menu.items[7].checked, rmac_app_menu::CheckState::Off);
+        assert!(menu.items[6].separator_before);
+        assert_eq!(menu.items[9].checked, rmac_app_menu::CheckState::On);
+        assert_eq!(menu.items[8].checked, rmac_app_menu::CheckState::Off);
         assert_eq!(
-            WindowCommand::parse(&menu.items[7].action),
+            WindowCommand::parse(&menu.items[8].action),
             Some(WindowCommand::Focus(rmac_compositor::WindowId(7)))
         );
         assert!(rmac_app_menu::validate_menus(std::slice::from_ref(&menu)).is_ok());
 
-        // With no window focused, the window commands are greyed out.
+        // With no window focused, the window commands are greyed out, and
+        // Minimise All is greyed out too since there is nothing to minimise.
         let idle = window_menu(&[], None, Vec::new(), words);
         assert!(!idle.items[0].enabled);
+        assert!(!idle.items[1].enabled);
         assert!(!idle.items.last().unwrap().enabled);
     }
 
@@ -1859,23 +1878,31 @@ mod tests {
                 ),
             ],
         };
-        let help = help_menu("find n", std::slice::from_ref(&edit), Vec::new());
+        let help = help_menu("find n", "Files", std::slice::from_ref(&edit), Vec::new());
         assert_eq!(help.items[0].action, HELP_SEARCH_ACTION);
         assert_eq!(help.items[0].label, "find n");
-        assert_eq!(help.items.len(), 2);
         assert_eq!(help.items[1].label, "Edit ▸ Find ▸ Find Next");
         assert_eq!(help.items[1].action, "test::Find Next");
+        // "<App> Help" (⌘?) follows the search results on every app.
+        assert_eq!(help.items[2].label, "Files Help");
+        assert_eq!(help.items[2].shortcut, "⌘?");
+        assert_eq!(help.items[2].action, APP_HELP_ACTION);
+        assert!(help.items[2].separator_before);
+        assert_eq!(help.items.len(), 3);
 
         let empty = help_menu(
             "",
+            "Files",
             std::slice::from_ref(&edit),
-            vec![item("Files Help", "", false)],
+            vec![item("File Format Help", "", false)],
         );
         assert_eq!(empty.items[0].label, "Search");
         assert_eq!(empty.items[1].label, "Files Help");
         assert!(empty.items[1].separator_before);
+        assert_eq!(empty.items[2].label, "File Format Help");
+        assert!(!empty.items[2].separator_before);
 
-        let none = help_menu("zzz", &[edit], Vec::new());
+        let none = help_menu("zzz", "Files", &[edit], Vec::new());
         assert!(!none.items[1].enabled);
         // The search row is taller.
         assert_eq!(
@@ -1977,6 +2004,14 @@ mod tests {
             Some("open")
         );
         assert_eq!(menu_item_icon("terminal::Clear", "Clear"), None);
+        assert_eq!(
+            menu_item_icon(MINIMISE_ALL_ACTION, "Minimise All"),
+            Some("minimize")
+        );
+        assert_eq!(
+            menu_item_icon(APP_HELP_ACTION, "Files Help"),
+            Some("help-book")
+        );
     }
 
     fn network(

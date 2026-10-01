@@ -6,7 +6,7 @@
       "label": "Application",
       "items": [
         {
-          "label": "About",
+          "label": "About Terminal",
           "action": "rmac::ShowAboutPanel",
           "shortcut": "",
           "separator_before": false,
@@ -16,7 +16,42 @@
           "label": "Settings…",
           "action": "terminal::ShowSettings",
           "shortcut": "⌘,",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "action": "app::services",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Terminal",
+          "action": "app::hide",
+          "shortcut": "⌘H",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "action": "app::hide-others",
+          "shortcut": "⌥⌘H",
           "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "action": "app::show-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quit Terminal",
+          "action": "app::quit",
+          "shortcut": "⌘Q",
+          "separator_before": true,
           "children": []
         }
       ]
@@ -189,16 +224,113 @@
       "label": "Window",
       "items": [
         {
+          "label": "Minimise",
+          "action": "window::minimise",
+          "shortcut": "⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "action": "app::minimise-all",
+          "shortcut": "⌥⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "action": "window::zoom",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "action": "window::fill",
+          "shortcut": "⌃⇧⌘F",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "action": "window::centre",
+          "shortcut": "⌃⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "action": "window::move-and-resize",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Left",
+              "action": "window::tile-left",
+              "shortcut": "⌃⌘←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "action": "window::tile-right",
+              "shortcut": "⌃⌘→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "action": "window::tile-top",
+              "shortcut": "⌃⌘↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "action": "window::tile-bottom",
+              "shortcut": "⌃⌘↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "action": "window::restore-size",
+              "shortcut": "⌃⌘R",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Show Previous Tab",
           "action": "terminal::PrevTab",
           "shortcut": "⇧⌘[",
-          "separator_before": false,
+          "separator_before": true,
           "children": []
         },
         {
           "label": "Show Next Tab",
           "action": "terminal::NextTab",
           "shortcut": "⇧⌘]",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "action": "window::bring-all-to-front",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Terminal Help",
+          "action": "help::app-help",
+          "shortcut": "⌘?",
           "separator_before": false,
           "children": []
         }

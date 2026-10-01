@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "weather/sidebar-shortcut",
+  "observations": {
+    "visible": {},
+    "hidden": {},
+    "restored": {}
+  }
+}

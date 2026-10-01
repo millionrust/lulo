@@ -51,6 +51,7 @@ APP_BINARIES = {
     "settings": ["rmac-system-settings"],
     "calculator": ["rmac-calculator"],
     "clock": ["rmac-clock"],
+    "weather": ["rmac-weather"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
     "preview": ["rmac-preview"],
     "notes": ["rmac-notes"],
@@ -587,6 +588,10 @@ class LuloRun:
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content or "")
+        for entry, content in self.scenario.get("setup", {}).get("config", {}).items():
+            target = Path(self.env["XDG_CONFIG_HOME"]) / entry
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content or "")
         if self.app == "desktop":
             self.before = {p.name + ("/" if p.is_dir() else "") for p in self.files_root.iterdir()}
 

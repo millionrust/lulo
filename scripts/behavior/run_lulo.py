@@ -1279,18 +1279,50 @@ def check_storage_deep_link(nested: Nested, bins: list[Path], settle: float) -> 
         if second.returncode not in (0, None):
             raise StepFailed(f"second `--pane storage` launch exited {second.returncode}")
 
+        def on_storage_pane() -> bool:
+            frame = run.active_frame()
+            return frame is not None and "Storage" in name(frame)
+
+        reached_storage = False
+        reach_deadline = time.monotonic() + 10.0
+        while time.monotonic() < reach_deadline:
+            if on_storage_pane():
+                reached_storage = True
+                break
+            time.sleep(0.1)
+        if not reached_storage:
+            raise StepFailed(
+                "the second launch's --pane storage deep link never reached "
+                "the Storage pane at all (navigate_to_pane/SET-57 dispatch itself "
+                "is broken, not just the measurement)"
+            )
+
+        # Once on Storage, `categories` is `None` (unmeasured) until
+        # `measure_storage_categories()` runs; only then does the render add
+        # a second card (System Data's own row, plus any non-empty category)
+        # below the usage bar, pushing Refresh down from where it sits right
+        # under the bar alone. AT-SPI exposes no text for the GB figures
+        # themselves (`icon_row`/`storage_legend` are plain, unnamed divs),
+        # so this geometry shift -- confirmed by hand against a fixed build,
+        # where the categories card puts Refresh at y=263 -- is the only
+        # available signal that a scan actually completed.
         deadline = time.monotonic() + 15
         measured = False
         while time.monotonic() < deadline:
             y = refresh_y()
-            if y is not None and y >= 300:
+            if y is not None and y >= 220:
                 measured = True
                 break
             time.sleep(0.1)
         if not measured:
+            frame = run.active_frame()
+            names = [f"{role(n)} {name(n)!r}" for n in descendants(frame, limit=400)] if frame else []
+            shot = nested.work / "debug-storage-deep-link.png"
+            subprocess.run(["grim", str(shot)], env=run.env, check=False)
             raise StepFailed(
                 "Storage never measured categories after a --pane storage deep link "
-                "(the sidebar-click path already works; this one regressed)"
+                "(the sidebar-click path already works; this one regressed); "
+                f"refresh_y={refresh_y()}, screenshot={shot}, tree={names}"
             )
         print(
             "PASS  a --pane storage deep link (second launch, SET-57 reuse) "

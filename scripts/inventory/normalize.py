@@ -61,6 +61,9 @@ def normalize_label(label: str | None) -> str | None:
         return None
     text = label.strip()
     text = re.sub(r"\s+", " ", text)
+    # AX reports the nonbreaking hyphen in Wi‑Fi while Linux labels use
+    # ASCII hyphen; they name the same control.
+    text = text.replace("‑", "-")
     base, had_ellipsis = _strip_ellipsis(text)
     canon = _ALIAS_TO_CANON.get(base, base)
     if canon != base:

@@ -38,9 +38,11 @@ impl Settings {
     ) -> impl IntoElement {
         let can_back = self.can_go_back();
         let can_forward = self.can_go_forward();
-        let segment = |id: &'static str, path: &'static str, enabled: bool| {
+        let segment = |id: &'static str, path: &'static str, label: &'static str, enabled: bool| {
             div()
                 .id(id)
+                .role(Role::Button)
+                .aria_label(label)
                 .w(px(style::CAPSULE_SEGMENT))
                 .h(px(style::CAPSULE_SEGMENT))
                 .flex()
@@ -66,6 +68,7 @@ impl Settings {
                 segment(
                     rmac_system_settings::accessibility::BACK_ID,
                     "icons/chevron-left.svg",
+                    "Back",
                     can_back,
                 )
                 .when(can_back, |back| {
@@ -79,19 +82,22 @@ impl Settings {
                     .bg(style::capsule_divider()),
             )
             .child(
-                segment("nav-forward", "icons/chevron-right.svg", can_forward).when(
+                segment(
+                    "nav-forward",
+                    "icons/chevron-right.svg",
+                    "Forward",
                     can_forward,
-                    |forward| {
-                        forward.on_click(
-                            cx.listener(|this, _, window, cx| this.go_forward(window, cx)),
-                        )
-                    },
-                ),
+                )
+                .when(can_forward, |forward| {
+                    forward.on_click(cx.listener(|this, _, window, cx| this.go_forward(window, cx)))
+                }),
             );
         let title = self.toolbar_title();
         let subtitle = self.toolbar_subtitle();
 
         rmac_ui::title_bar_drag_region("topbar")
+            .role(Role::Toolbar)
+            .aria_label("Toolbar")
             .h(px(style::TOOLBAR_HEIGHT))
             .flex_none()
             .w_full()

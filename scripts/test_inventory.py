@@ -47,6 +47,9 @@ class NormalizeLabelTests(unittest.TestCase):
     def test_whitespace_is_collapsed(self):
         self.assertEqual(norm.normalize_label("New   Folder"), norm.normalize_label("New Folder"))
 
+    def test_nonbreaking_hyphen_matches_ascii_hyphen(self):
+        self.assertEqual(norm.normalize_label("Wi‑Fi"), norm.normalize_label("Wi-Fi"))
+
     def test_none_passes_through(self):
         self.assertIsNone(norm.normalize_label(None))
 
@@ -58,6 +61,16 @@ class NormalizeShortcutTests(unittest.TestCase):
     def test_empty_shortcut_is_empty_string(self):
         self.assertEqual(norm.normalize_shortcut(""), "")
         self.assertEqual(norm.normalize_shortcut(None), "")
+
+
+class SystemSettingsSidebarTests(unittest.TestCase):
+    def test_general_subpages_are_not_reported_as_sidebar_rows(self):
+        labels = {row["label"] for row in li.read_settings_sidebar()}
+        self.assertIn("General", labels)
+        self.assertNotIn("Date & Time", labels)
+        self.assertNotIn("Language & Region", labels)
+        self.assertNotIn("Login Items", labels)
+        self.assertNotIn("Sharing", labels)
 
 
 class RustMenuParserTests(unittest.TestCase):
@@ -413,7 +426,11 @@ class SynthesizedStandardMenusTests(unittest.TestCase):
         move_and_resize = by_label["Move & Resize"]
         self.assertEqual(
             [child.label for child in move_and_resize.children],
-            ["Left", "Right", "Top", "Bottom", "Return to Previous Size"],
+            [
+                "Halves", "Left", "Right", "Top", "Bottom", "Quarters",
+                "Top Left", "Top Right", "Bottom Left", "Bottom Right",
+                "Return to Previous Size",
+            ],
         )
 
     def test_window_menu_keeps_the_apps_own_window_items(self):

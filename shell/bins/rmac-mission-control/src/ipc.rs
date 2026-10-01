@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use crate::model::Command;
 
 const SOCKET_NAME: &str = "mission-control.sock";
-const MAX_WIRE_BYTES: usize = 16;
+const MAX_WIRE_BYTES: usize = 24;
 
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, message)

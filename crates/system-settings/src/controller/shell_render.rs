@@ -3,6 +3,18 @@
 use super::*;
 impl Render for Settings {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        rmac_ui::set_menu_enabled("system_settings::GoBack", self.can_go_back(), cx);
+        rmac_ui::set_menu_enabled("system_settings::GoForward", self.can_go_forward(), cx);
+        rmac_ui::set_menu_enabled("system_settings::EnterFullScreen", false, cx);
+        for (action, pane) in [
+            ("system_settings::ShowBattery", "Battery"),
+            ("system_settings::ShowBluetooth", "Bluetooth"),
+            ("system_settings::ShowDisplays", "Displays"),
+            ("system_settings::ShowTrackpad", "Trackpad"),
+            ("system_settings::ShowWifi", "Wi-Fi"),
+        ] {
+            rmac_ui::set_menu_enabled(action, self.pane_available(pane), cx);
+        }
         if !self.focused_once {
             self.focused_once = true;
             // The Mac's own System Settings opens with keyboard focus
@@ -152,6 +164,84 @@ impl Render for Settings {
             .on_action(cx.listener(|t, action: &NavigateToPane, window, cx| {
                 t.navigate_to_pane(&action.pane, window, cx)
             }))
+            .on_action(cx.listener(|_, _: &CloseAll, window, cx| {
+                window.dispatch_action(Box::new(rmac_ui::RequestClose), cx);
+            }))
+            .on_action(
+                cx.listener(|t, _: &ShowAbout, window, cx| t.navigate_to_pane("about", window, cx)),
+            )
+            .on_action(cx.listener(|t, _: &ShowAccessibility, window, cx| {
+                t.navigate_to_pane("accessibility", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowAppearance, window, cx| {
+                t.navigate_to_pane("appearance", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowBattery, window, cx| {
+                t.navigate_to_pane("battery", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowBluetooth, window, cx| {
+                t.navigate_to_pane("bluetooth", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowDateTime, window, cx| {
+                t.navigate_to_pane("date-time", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowDesktopDock, window, cx| {
+                t.navigate_to_pane("desktop-dock", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowDisplays, window, cx| {
+                t.navigate_to_pane("displays", window, cx)
+            }))
+            .on_action(
+                cx.listener(|t, _: &ShowFocus, window, cx| t.navigate_to_pane("focus", window, cx)),
+            )
+            .on_action(cx.listener(|t, _: &ShowKeyboard, window, cx| {
+                t.navigate_to_pane("keyboard", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowLanguageRegion, window, cx| {
+                t.navigate_to_pane("language-region", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowLockScreen, window, cx| {
+                t.navigate_to_pane("lock-screen", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowLoginItems, window, cx| {
+                t.navigate_to_pane("login-items", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowMenuBar, window, cx| {
+                t.navigate_to_pane("menu-bar", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowNetwork, window, cx| {
+                t.navigate_to_pane("network", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowNotifications, window, cx| {
+                t.navigate_to_pane("notifications", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowPrivacySecurity, window, cx| {
+                t.navigate_to_pane("privacy-security", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowSharing, window, cx| {
+                t.navigate_to_pane("sharing", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowSoftwareUpdate, window, cx| {
+                t.navigate_to_pane("software-update", window, cx)
+            }))
+            .on_action(
+                cx.listener(|t, _: &ShowSound, window, cx| t.navigate_to_pane("sound", window, cx)),
+            )
+            .on_action(cx.listener(|t, _: &ShowSpotlight, window, cx| {
+                t.navigate_to_pane("spotlight", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowStorage, window, cx| {
+                t.navigate_to_pane("storage", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowTrackpad, window, cx| {
+                t.navigate_to_pane("trackpad", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowWallpaper, window, cx| {
+                t.navigate_to_pane("wallpaper", window, cx)
+            }))
+            .on_action(
+                cx.listener(|t, _: &ShowWifi, window, cx| t.navigate_to_pane("wifi", window, cx)),
+            )
             .on_action(cx.listener(|t, _: &FocusSearch, window, cx| {
                 let focus = t.search.read(cx).focus_handle(cx);
                 window.focus(&focus, cx);

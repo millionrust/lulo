@@ -4531,6 +4531,13 @@ mod linux_wayland {
             );
             if let Some(item) = keep_windows {
                 items.push(item);
+            } else if app_id == Some(rmac_apps::identity::SYSTEM_SETTINGS) {
+                // System Settings has no document windows to restore. macOS
+                // shows this shortcut but keeps it disabled for this app.
+                items.push(
+                    Item::new("Quit and Keep Windows", "app::quit-keep-windows", "⌥⌘Q")
+                        .enabled(false),
+                );
             }
         }
         rmac_app_menu::Menu {

@@ -1,5 +1,17 @@
 # Behaviour-parity suite
 
+## System Settings View menu
+
+`scripts/behavior/run_lulo.py --check-settings-view-menu` launches one Settings
+instance in its private compositor and activates Appearance, Wallpaper and
+About through the published application-menu D-Bus endpoint. It checks that
+each command opens the named pane; no input reaches the live session.
+
+```sh
+python3 scripts/behavior/run_lulo.py \
+  --bin-dir ~/rmac-wt/target/iterate --check-settings-view-menu
+```
+
 ## Terminal profiles
 
 `docs/behavior-pending/terminal/profile-settings.json` describes the Settings

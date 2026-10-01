@@ -41,6 +41,10 @@ pub enum Command {
     TileRight,
     TileTop,
     TileBottom,
+    TileTopLeft,
+    TileTopRight,
+    TileBottomLeft,
+    TileBottomRight,
     /// 🌐⌃R: put the window back where Fill, Centre or a half left it from.
     RestoreSize,
     /// A window's title bar double-clicked (SET-33): the same toggle as
@@ -70,6 +74,10 @@ impl Command {
             "tile-right" => Self::TileRight,
             "tile-top" => Self::TileTop,
             "tile-bottom" => Self::TileBottom,
+            "tile-top-left" => Self::TileTopLeft,
+            "tile-top-right" => Self::TileTopRight,
+            "tile-bottom-left" => Self::TileBottomLeft,
+            "tile-bottom-right" => Self::TileBottomRight,
             "restore-size" => Self::RestoreSize,
             "zoom" => Self::Zoom,
             "minimize" => Self::Minimize,
@@ -92,6 +100,10 @@ impl Command {
             Self::TileRight => "tile-right",
             Self::TileTop => "tile-top",
             Self::TileBottom => "tile-bottom",
+            Self::TileTopLeft => "tile-top-left",
+            Self::TileTopRight => "tile-top-right",
+            Self::TileBottomLeft => "tile-bottom-left",
+            Self::TileBottomRight => "tile-bottom-right",
             Self::RestoreSize => "restore-size",
             Self::Zoom => "zoom",
             Self::Minimize => "minimize",
@@ -899,12 +911,16 @@ mod tests {
             Command::TileRight,
             Command::TileTop,
             Command::TileBottom,
+            Command::TileTopLeft,
+            Command::TileTopRight,
+            Command::TileBottomLeft,
+            Command::TileBottomRight,
             Command::RestoreSize,
             Command::Zoom,
             Command::Minimize,
         ] {
             assert_eq!(Command::parse(command.as_str()), Some(command));
-            assert!(command.as_str().len() <= 16);
+            assert!(command.as_str().len() <= 24);
         }
         assert_eq!(Command::parse("toggle-overview"), None);
     }

@@ -176,6 +176,33 @@ actions!(
         GoBack,
         GoForward,
         FocusSearch,
+        ShowAbout,
+        ShowAccessibility,
+        ShowAppearance,
+        ShowBattery,
+        ShowBluetooth,
+        ShowDateTime,
+        ShowDesktopDock,
+        ShowDisplays,
+        ShowFocus,
+        ShowKeyboard,
+        ShowLanguageRegion,
+        ShowLockScreen,
+        ShowLoginItems,
+        ShowMenuBar,
+        ShowNetwork,
+        ShowNotifications,
+        ShowPrivacySecurity,
+        ShowSharing,
+        ShowSoftwareUpdate,
+        ShowSound,
+        ShowSpotlight,
+        ShowStorage,
+        ShowTrackpad,
+        ShowWallpaper,
+        ShowWifi,
+        EnterFullScreen,
+        CloseAll,
         SelectAlert,
         SelectErrorAlert,
         SelectNotificationAlert,
@@ -318,11 +345,16 @@ pub(crate) fn run() {
                 // just need to close it -- reuse the same guarded handler
                 // (it already declines to close mid-VPN-import, etc.).
                 KeyBinding::new("cmd-q", rmac_ui::RequestClose, Some("SystemSettings")),
+                KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("SystemSettings")),
                 // ⌘M minimizes the window, the same as the yellow traffic
                 // light.
                 KeyBinding::new("cmd-m", Minimize, Some("SystemSettings")),
             ]);
-            Settings::new(window, cx)
+            let settings = Settings::new(window, cx);
+            // Menu-bar actions need the Settings root as their target even
+            // while the search field or the top bar holds keyboard focus.
+            rmac_ui::register_menu_target(window, &settings.focus, cx);
+            settings
         },
         |arguments, cx| {
             // A later `--pane <id>` launch: land on that pane instead of

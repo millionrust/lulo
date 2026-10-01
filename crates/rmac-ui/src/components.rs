@@ -62,7 +62,7 @@ pub(crate) fn init(cx: &mut App) {
     cx.on_action(|_: &PasteAndMatchStyle, cx| {
         // InputState is unstyled. Its ordinary Paste applies the target
         // field's style, including when the menu bar temporarily owns focus.
-        crate::menu_target::dispatch_menu_action(Box::new(gpui_component::input::Paste), cx);
+        crate::menu_target::dispatch_menu_action(Box::new(crate::controls::Paste), cx);
     });
 }
 

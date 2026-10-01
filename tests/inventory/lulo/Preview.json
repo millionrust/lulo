@@ -1,0 +1,273 @@
+{
+  "app": "Preview",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "Open…",
+          "action": "preview::OpenFile",
+          "shortcut": "⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Open Recent",
+          "action": "preview::OpenRecentMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Clear Menu",
+              "action": "preview::ClearRecentMenu",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Close Window",
+          "action": "preview::CloseWindow",
+          "shortcut": "⌘W",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Save",
+          "action": "preview::SaveMarkup",
+          "shortcut": "⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Revert to Original",
+          "action": "preview::RevertMarkup",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Export as PDF…",
+          "action": "preview::ExportAsPdf",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Print…",
+          "action": "preview::PrintDocument",
+          "shortcut": "⌘P",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "action": "input::Undo",
+          "shortcut": "⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "action": "input::Redo",
+          "shortcut": "⇧⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "action": "input::Cut",
+          "shortcut": "⌘X",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "action": "preview::Copy",
+          "shortcut": "⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "action": "input::Paste",
+          "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "action": "preview::SelectAll",
+          "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Find",
+          "action": "preview::FindMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Find…",
+              "action": "preview::Find",
+              "shortcut": "⌘F",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find Next",
+              "action": "preview::FindNext",
+              "shortcut": "⌘G",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find Previous",
+              "action": "preview::FindPrevious",
+              "shortcut": "⇧⌘G",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Hide Sidebar",
+          "action": "preview::HideSidebar",
+          "shortcut": "⌥⌘1",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Thumbnails",
+          "action": "preview::ShowThumbnails",
+          "shortcut": "⌥⌘2",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Actual Size",
+          "action": "preview::ActualSize",
+          "shortcut": "⌘0",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Zoom to Fit",
+          "action": "preview::ZoomToFit",
+          "shortcut": "⌘9",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom In",
+          "action": "preview::ZoomIn",
+          "shortcut": "⌘+",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom Out",
+          "action": "preview::ZoomOut",
+          "shortcut": "⌘−",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Go",
+      "items": [
+        {
+          "label": "Previous Item",
+          "action": "preview::PreviousItem",
+          "shortcut": "⌥↑",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Next Item",
+          "action": "preview::NextItem",
+          "shortcut": "⌥↓",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Go to Page…",
+          "action": "preview::GoToPage",
+          "shortcut": "⌥⌘G",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Tools",
+      "items": [
+        {
+          "label": "Show Markup Toolbar",
+          "action": "preview::ToggleMarkup",
+          "shortcut": "⇧⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Inspector",
+          "action": "preview::ShowInspector",
+          "shortcut": "⌘I",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Rotate Left",
+          "action": "preview::RotateLeft",
+          "shortcut": "⌘L",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Rotate Right",
+          "action": "preview::RotateRight",
+          "shortcut": "⌘R",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": false,
+    "extraction": "none",
+    "controls": []
+  },
+  "toolbar": {
+    "present": false,
+    "extraction": "none",
+    "groups": []
+  },
+  "context_menus": {}
+}

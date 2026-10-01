@@ -1,0 +1,284 @@
+{
+  "app": "Terminal",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Settings…",
+          "action": "terminal::ShowSettings",
+          "shortcut": "⌘,",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Shell",
+      "items": [
+        {
+          "label": "New Window",
+          "action": "terminal::NewWindow",
+          "shortcut": "⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "New Tab",
+          "action": "terminal::NewTab",
+          "shortcut": "⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close Tab",
+          "action": "terminal::CloseTab",
+          "shortcut": "⌘W",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Reset",
+          "action": "terminal::ResetTerminal",
+          "shortcut": "⌥⌘R",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hard Reset",
+          "action": "terminal::HardResetTerminal",
+          "shortcut": "⌃⌥⌘R",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Copy",
+          "action": "terminal::Copy",
+          "shortcut": "⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "action": "terminal::Paste",
+          "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "action": "terminal::SelectAll",
+          "shortcut": "⌘A",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Select Between Marks",
+          "action": "terminal::SelectCommandOutput",
+          "shortcut": "⇧⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Navigate",
+          "action": "terminal::NavigateMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Jump to Previous Mark",
+              "action": "terminal::PreviousPrompt",
+              "shortcut": "⌘↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Next Mark",
+              "action": "terminal::NextPrompt",
+              "shortcut": "⌘↓",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Clear to Start",
+          "action": "terminal::Clear",
+          "shortcut": "⌘K",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Find",
+          "action": "terminal::FindMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Find…",
+              "action": "terminal::Find",
+              "shortcut": "⌘F",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find Next",
+              "action": "terminal::FindNext",
+              "shortcut": "⌘G",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find Previous",
+              "action": "terminal::FindPrevious",
+              "shortcut": "⇧⌘G",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Default Font Size",
+          "action": "terminal::ZoomReset",
+          "shortcut": "⌘0",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Bigger",
+          "action": "terminal::ZoomIn",
+          "shortcut": "⌘+",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Smaller",
+          "action": "terminal::ZoomOut",
+          "shortcut": "⌘−",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Next Profile",
+          "action": "terminal::CycleProfile",
+          "shortcut": "⇧⌘P",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Show Previous Tab",
+          "action": "terminal::PrevTab",
+          "shortcut": "⇧⌘[",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Next Tab",
+          "action": "terminal::NextTab",
+          "shortcut": "⇧⌘]",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": true,
+    "extraction": "heuristic",
+    "controls": [
+      {
+        "kind": "section",
+        "label": "Profile"
+      },
+      {
+        "kind": "section",
+        "label": "Font"
+      },
+      {
+        "kind": "section",
+        "label": "Text"
+      },
+      {
+        "kind": "section",
+        "label": "Window"
+      },
+      {
+        "kind": "section",
+        "label": "Shell"
+      },
+      {
+        "kind": "section",
+        "label": "General"
+      },
+      {
+        "kind": "section",
+        "label": "Keyboard"
+      },
+      {
+        "kind": "control",
+        "label": "−"
+      },
+      {
+        "kind": "control",
+        "label": "+"
+      },
+      {
+        "kind": "tab",
+        "label": "Block"
+      },
+      {
+        "kind": "tab",
+        "label": "Underline"
+      },
+      {
+        "kind": "tab",
+        "label": "Vertical bar"
+      },
+      {
+        "kind": "tab",
+        "label": "Don't close the window"
+      },
+      {
+        "kind": "tab",
+        "label": "Close if the shell exited cleanly"
+      },
+      {
+        "kind": "tab",
+        "label": "Home directory"
+      },
+      {
+        "kind": "tab",
+        "label": "Same working directory"
+      }
+    ]
+  },
+  "toolbar": {
+    "present": false,
+    "extraction": "none",
+    "groups": []
+  },
+  "context_menus": {}
+}

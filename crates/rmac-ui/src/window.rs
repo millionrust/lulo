@@ -665,6 +665,9 @@ pub fn boot_unified_app_instance_with_assets<A, V, F>(
     let build = Rc::new(build);
     crate::application()
         .with_assets(assets)
+        // Finder stays resident after its last window closes and can open a
+        // new one through the application-instance service.
+        .with_quit_mode(gpui::QuitMode::Explicit)
         .run(move |cx: &mut App| {
             init_application(cx);
             let requested = build.clone();

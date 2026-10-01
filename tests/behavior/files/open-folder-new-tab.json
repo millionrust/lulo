@@ -6,7 +6,7 @@
   "launch": {"folder": "."},
   "steps": [
     {"key": "cmd-2"},
-    {"click": "Subfolder"},
+    {"select": "Subfolder"},
     {"key": "ctrl-cmd-o", "settle": 1.2},
     {"observe": "opened", "facts": ["tabs", "windows"]}
   ],

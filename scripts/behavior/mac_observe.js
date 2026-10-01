@@ -206,12 +206,42 @@ function run(argv) {
     out.display = { value: value };
   }
 
-  if (facts.indexOf("selection") >= 0 && procName === "Finder") {
-    try {
-      var finder = Application("Finder");
-      out.selection = { items: finder.selection().map(function (i) { return i.name(); }) };
-    } catch (e) {
-      out.selection = { items: [] };
+  if (facts.indexOf("selection") >= 0) {
+    if (procName === "Finder") {
+      try {
+        var finder = Application("Finder");
+        out.selection = { items: finder.selection().map(function (i) { return i.name(); }) };
+      } catch (e) {
+        out.selection = { items: [] };
+      }
+    } else {
+      // Any other process has no "selection" Apple Event; read it off the
+      // AX tree instead, e.g. the row highlighted in an Open/Save panel's
+      // sidebar after Command-D. Only our own window/sheet, never a
+      // baseline window of the owner's.
+      var selItems = [];
+      var selRoot = focusedWin && baseline.indexOf(focusedKey) < 0 ? focusedWin : null;
+      if (selRoot) {
+        walk(selRoot, 14, function (el) {
+          var role = A(el, "AXRole");
+          if (role === "AXRow" && A(el, "AXSelected") === true) {
+            var label = str(A(el, "AXTitle"));
+            if (!label) {
+              walk(el, 4, function (t) {
+                if (label) return false;
+                var tr = A(t, "AXRole");
+                if (tr === "AXStaticText" || tr === "AXTextField") {
+                  var v = str(A(t, "AXValue")) || str(A(t, "AXTitle"));
+                  if (v) label = v;
+                }
+              });
+            }
+            if (label) selItems.push(label);
+            return false; // a row's own cells also report AXSelected; don't double-count them
+          }
+        });
+      }
+      out.selection = { items: selItems.filter(function (v, i) { return selItems.indexOf(v) === i; }) };
     }
   }
   return JSON.stringify(out);

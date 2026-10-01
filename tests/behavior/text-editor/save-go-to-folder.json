@@ -15,5 +15,6 @@
     "goto.dialog.title": "ignore",
     "goto.dialog.buttons": "ignore",
     "goto.dialog.texts": "ignore"
-  }
+  },
+  "omit": ["goto.focus.value", "goto.focus.selected_text"]
 }

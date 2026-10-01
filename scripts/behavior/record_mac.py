@@ -169,6 +169,20 @@ def normalize(raw: dict[str, Any], facts: list[str], files_root: Path, before: s
                 # "none", so leave it out rather than expect none on Lulo.
                 dialog.pop("default", None)
             out["dialog"] = dialog
+        elif fact == "saved_documents":
+            # Mirrors run_lulo.py's fact_saved_documents (the nested run's
+            # isolated $HOME/Documents): read plain files under this run's
+            # own sandbox, never the owner's real Documents folder. Any
+            # scenario that actually commits a save must have already
+            # steered TextEdit's Save sheet into files_root first.
+            names = sorted(p.name for p in files_root.iterdir() if p.is_file()) if files_root.exists() else []
+            contents = {}
+            for name in names:
+                try:
+                    contents[name] = (files_root / name).read_bytes()[:4096].decode("utf-8", "replace")
+                except OSError:
+                    pass
+            out["saved_documents"] = {"entries": names, "contents": contents}
         elif fact in raw:
             out[fact] = raw[fact]
         else:
@@ -298,11 +312,15 @@ class MacRun:
         osascript(f'tell application "System Events" to keystroke {as_string(text)}')
 
     def _locate_item(self, name: str) -> tuple[float, float]:
-        """The on-screen centre of a Finder row or icon named `name` in the
-        focused window, found the same way `context()` finds the selected
-        item, but by title instead of selection state. Used for a real
-        click (shift-click, command-click, double-click), which a Finder
-        "select" Apple Event cannot produce."""
+        """The on-screen centre of a row, icon, button or pop-up named
+        `name` in the focused window (which, for a sheet, includes the
+        sheet's own children), found the same way `context()` finds the
+        selected Finder item, but by title instead of selection state. Used
+        for a real click (shift-click, command-click, double-click), which a
+        Finder "select" Apple Event cannot produce, and, for any process,
+        for a plain click on a dialog/sheet control (a Save panel's "Where"
+        pop-up, "Show Details", a System Settings sidebar row) that has no
+        such Apple Event at all."""
 
         script = f"""
 function run() {{
@@ -327,13 +345,22 @@ function run() {{
       for (var j = 0; j < kids.length; j++) dig(kids[j], depth - 1);
     }}
     dig(el, 4);
-    return found;
+    if (found) return found;
+    // A pop-up button (e.g. a Save sheet's "Where" control) has a fixed
+    // AXTitle label ("Where:") and no children at all; the folder it
+    // currently shows lives in AXValue instead. A disclosure triangle
+    // (the Save sheet's expand/collapse control) has neither a title nor
+    // children; its accessible name is AXDescription. Both are a last
+    // resort, after an exact title match.
+    var av = A(el, "AXValue");
+    if (typeof av === "string") return av;
+    return A(el, "AXDescription") || null;
   }}
   var hit = null;
   function walk(el, d) {{
     if (hit || d < 0) return;
     var role = A(el, "AXRole");
-    if ((role === "AXRow" || role === "AXImage" || role === "AXGroup") && nameOf(el) === {json.dumps(name)}) {{ hit = el; return; }}
+    if ((role === "AXRow" || role === "AXImage" || role === "AXGroup" || role === "AXButton" || role === "AXPopUpButton" || role === "AXMenuButton" || role === "AXRadioButton" || role === "AXCell" || role === "AXDisclosureTriangle") && nameOf(el) === {json.dumps(name)}) {{ hit = el; return; }}
     var k = A(el, "AXChildren") || [];
     for (var i = 0; i < k.length; i++) walk(k[i], d - 1);
   }}
@@ -345,13 +372,31 @@ function run() {{
 }}"""
         where = osascript(script, js=True)
         if where == "none":
-            raise Stop(f"no on-screen Finder item named {name!r} to click")
+            raise Stop(f"no on-screen item named {name!r} to click in {self.process}")
         x, y = (float(value) for value in where.split())
         return x, y
 
     def select(self, name: str, modifiers: Optional[list[str]] = None, double: bool = False) -> None:
-        if self.process != "Finder":
-            raise Stop("select is only defined for Finder scenarios")
+        if self.process != "Finder" and not self.menu_open and not (modifiers or double):
+            # Not Finder, and no open context menu: this is a plain click on
+            # a dialog/sheet control (Save panel "Where" pop-up button, menu
+            # item once that pop-up is open, "Show Details", a System
+            # Settings sidebar row) rather than a Finder item. There is no
+            # Apple Event for this outside Finder, so click the control's
+            # measured centre directly, the same way a real Finder click
+            # does below, then see whether the click opened a menu so the
+            # *next* select() knows to look for a menu item instead of
+            # another button.
+            self.check_target()
+            x, y = self._locate_item(name)
+            self.check_target()
+            subprocess.run([sys.executable, str(HERE / "mac_click.py"), "left", str(x), str(y)], check=True, timeout=10)
+            time.sleep(0.3)
+            raw = observe_raw(self.process, ["menu"], self.baseline)
+            self.menu_open = bool((raw.get("menu") or {}).get("present"))
+            return
+        if self.process != "Finder" and (modifiers or double):
+            raise Stop("select with modifiers or double-click is only defined for Finder scenarios")
         if not self.menu_open and (modifiers or double):
             # A real click, not a Finder "select" Apple Event: shift-click
             # extends the selection, command-click toggles an item into it,
@@ -527,7 +572,69 @@ function run() {{
             timeout=10,
         )
 
+    def _where_popup_title(self) -> Optional[str]:
+        """The folder currently shown by the Save sheet's "Where" pop-up
+        (its AXTitle is the constant label "Where:"; the folder name is
+        its AXValue), or None if that pop-up isn't in the focused window."""
+
+        script = f"""
+function run() {{
+  var se = Application("System Events");
+  var p = se.processes.byName({json.dumps(self.process)});
+  var w = p.attributes.byName("AXFocusedWindow").value();
+  function A(el, n) {{ try {{ return el.attributes.byName(n).value(); }} catch (e) {{ return undefined; }} }}
+  var hit = null;
+  function walk(el, d) {{
+    if (hit || d < 0) return;
+    if (A(el, "AXRole") === "AXPopUpButton" && A(el, "AXTitle") === "Where:") {{ hit = el; return; }}
+    var k = A(el, "AXChildren") || [];
+    for (var i = 0; i < k.length; i++) walk(k[i], d - 1);
+  }}
+  walk(w, 14);
+  if (!hit) return "none";
+  var v = A(hit, "AXValue");
+  return (typeof v === "string" && v) ? v : "none";
+}}"""
+        where = osascript(script, js=True)
+        return None if where == "none" else where
+
+    def _run_close_unsaved_save(self) -> dict[str, Any]:
+        """The same interaction as text-editor/close-unsaved-save.json
+        (new document, edit, close, name and confirm), except the Save
+        sheet's "Where" is steered to this run's own sandbox with Go to
+        Folder before anything is typed or confirmed. TextEdit's sheet
+        otherwise defaults "Where" to the owner's real Documents folder (or
+        iCloud Drive), and a save there must never happen
+        (docs/behavior-suite.md safety)."""
+
+        self.key("cmd-n")
+        time.sleep(1.2)
+        self.type_text("Hello")
+        time.sleep(0.8)
+        self.key("cmd-w")
+        time.sleep(1.2)
+        self.key("cmd-shift-g")
+        time.sleep(0.6)
+        self.type_text(str(self.sandbox))
+        self.key("return")
+        time.sleep(0.8)
+        title = self._where_popup_title()
+        if title != self.sandbox.name:
+            raise Stop(f"Save sheet's Where did not land on the sandbox (saw {title!r}); refusing to save")
+        self.type_text("SheetCheck")
+        self.key("return")
+        time.sleep(1.2)
+        facts = ["windows", "saved_documents", "dialog"]
+        raw = observe_raw(self.process, facts, self.baseline)
+        return {
+            "saved": sc.finish_observation(
+                self.scenario, "saved", normalize(raw, facts, self.files_root, self.before)
+            )
+        }
+
     def run_steps(self) -> dict[str, Any]:
+        if self.sid == "text-editor/close-unsaved-save":
+            return self._run_close_unsaved_save()
         observations: dict[str, Any] = {}
         for step in self.scenario["steps"]:
             if "key" in step:

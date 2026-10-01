@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "scenario": "text-editor/save-go-to-folder",
+  "platform": "macOS 26.2",
+  "recorded": "2026-10-01",
+  "observations": {
+    "goto": {
+      "focus": {
+        "role": "text-field",
+        "selection": [
+          0,
+          50
+        ],
+        "selected_all": true,
+        "label": null
+      },
+      "dialog": {
+        "present": true,
+        "title": null,
+        "texts": [],
+        "buttons": [
+          "Close"
+        ]
+      }
+    },
+    "cancelled": {
+      "dialog": {
+        "present": false
+      },
+      "saved_documents": {
+        "entries": [],
+        "contents": {}
+      }
+    }
+  }
+}

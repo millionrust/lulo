@@ -26,6 +26,7 @@ SURFACES = (
     ("quick-settings", "rmac-quick-settings", (), None),
     ("notification-center", "rmac-notification-center-panel", (), "cmd-ctrl-n"),
 )
+RESIDENT = {"launcher", "quick-settings"}
 
 
 def wait_for_socket(path: Path, process: subprocess.Popen, timeout: float = 8) -> bool:
@@ -63,16 +64,20 @@ def inner(args: argparse.Namespace) -> int:
     results = {}
     try:
         for action, binary, flags, chord in SURFACES:
-            before = run.capture(f"{action}-before")
+            resident = action in RESIDENT
+            before = None if resident else run.capture(f"{action}-before")
             started = time.monotonic()
             process = run.spawn([str(bins / binary), *flags], action,
-                                {"RMAC_SURFACE_IDLE_SECONDS": "1",
+                                {"RMAC_SURFACE_IDLE_SECONDS": "3",
                                  "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/intel_hasvk_icd.json"})
             endpoint = run.runtime / "rmac" / f"shortcut-{action}.sock"
             bound = wait_for_socket(endpoint, process)
             run.check(f"{action} cold endpoint bound", bound)
             if not bound:
                 continue
+            if resident:
+                before = run.capture(f"{action}-before")
+                started = time.monotonic()
             sent = dispatch(run, bins, action, bool(chord))
             run.check(f"{action} first dispatch accepted", sent)
             if not sent:
@@ -86,14 +91,26 @@ def inner(args: argparse.Namespace) -> int:
                     break
                 time.sleep(0.02)
             elapsed_ms = round((time.monotonic() - started) * 1000, 1)
-            run.check(f"{action} first request painted", appeared, f"cold upper bound {elapsed_ms} ms")
-            results[action] = {"painted": appeared, "cold_upper_bound_ms": elapsed_ms if appeared else None,
-                               "via_niri_spawn": bool(chord)}
+            timing = "resident first-open" if resident else "cold spawn-to-paint"
+            run.check(f"{action} first request painted", appeared, f"{timing} upper bound {elapsed_ms} ms")
+            results[action] = {"painted": appeared, "first_open_upper_bound_ms": elapsed_ms if appeared else None,
+                               "resident_at_login": resident, "via_niri_spawn": bool(chord)}
             if not appeared:
                 print((run.logs / f"{action}.log").read_text()[-1200:], flush=True)
             dispatch(run, bins, action, bool(chord))
-            gone = run.wait_for(lambda: process.poll() is not None, timeout=5)
-            run.check(f"{action} idle service exits", bool(gone))
+            if resident:
+                time.sleep(1.2)
+                run.check(f"{action} remains resident after dismissal", process.poll() is None)
+            else:
+                time.sleep(1.2)
+                run.check(f"{action} stays alive during idle grace", process.poll() is None)
+                reopened = dispatch(run, bins, action, bool(chord))
+                run.check(f"{action} warm dispatch accepted", reopened)
+                if reopened:
+                    run.check(f"{action} warm reopen reuses process", process.poll() is None)
+                    dispatch(run, bins, action, bool(chord))
+                gone = run.wait_for(lambda: process.poll() is not None, timeout=6)
+                run.check(f"{action} idle service exits", bool(gone))
         Path(args.output).write_text(json.dumps(results, indent=2) + "\n")
     finally:
         result = run.finish()

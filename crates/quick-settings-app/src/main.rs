@@ -258,7 +258,6 @@ fn main() {
         .with_assets(CombinedAssets)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
-            rmac_ui::install_surface_idle_exit(cx);
             cx.set_global(QuickSettingsService {
                 active: None,
                 next_token: 0,

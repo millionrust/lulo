@@ -3,14 +3,15 @@ Description=rmac Quick Settings
 PartOf=rmac-session.target
 After=rmac-session-supervisor.service rmac-focus.service
 OnFailure=rmac-component-failure@%N.service
-StartLimitIntervalSec=0
+StartLimitIntervalSec=60s
+StartLimitBurst=4
 ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-quick-settings
 
 [Service]
 Type=notify
 NotifyAccess=all
 ExecStart=%h/.local/libexec/rmac/rmac-quick-settings
-# The dispatcher starts this unit on first use.
-Restart=no
+Restart=on-failure
+RestartSec=1s
 NoNewPrivileges=yes
 PrivateTmp=yes

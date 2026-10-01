@@ -44,21 +44,16 @@ impl AppDrawer {
         })
         .detach();
 
+        // Let GPUI present the empty/loading frame before starting filesystem
+        // watches, reading recents, or walking the application catalog.
+        let (first_frame_tx, first_frame_rx) = async_channel::bounded(1);
+        window.on_next_frame(move |_, _| {
+            let _ = first_frame_tx.try_send(());
+        });
+
         // Native filesystem notifications wake the rescan task only when an
-        // app entry changes. The capacity-one channel coalesces event bursts
-        // before discovery and icon/category work runs off the UI thread.
+        // app entry changes. The capacity-one channel coalesces event bursts.
         let (catalog_events, catalog_event_rx) = async_channel::bounded(1);
-        let mut watcher_error: Option<SharedString> = None;
-        let catalog_watcher = match rmac_apps::watch_catalog(move || {
-            catalog::signal_change(&catalog_events);
-        }) {
-            Ok(watcher) => Some(watcher),
-            Err(error) => {
-                watcher_error =
-                    Some(format!("Apps loaded, but live updates are unavailable: {error}").into());
-                None
-            }
-        };
 
         // The first catalog scan walks every XDG application directory
         // (and, on macOS, extracts bundle icons) and can take real time on a
@@ -67,6 +62,40 @@ impl AppDrawer {
         // the scan finishes. After that it only wakes on a watcher event —
         // no polling, so idle cost is zero.
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            if first_frame_rx.recv().await.is_err() {
+                return;
+            }
+            let (catalog_watcher, recent_ids, mut watcher_error) = blocking::unblock(move || {
+                let watcher = rmac_apps::watch_catalog(move || {
+                    catalog::signal_change(&catalog_events);
+                });
+                let (watcher, error) = match watcher {
+                    Ok(watcher) => (Some(watcher), None),
+                    Err(error) => (
+                        None,
+                        Some(
+                            format!("Apps loaded, but live updates are unavailable: {error}")
+                                .into(),
+                        ),
+                    ),
+                };
+                (
+                    watcher,
+                    rmac_app_launch::recent_app_ids(RECENTS_ROW_COUNT),
+                    error,
+                )
+            })
+            .await;
+            if this
+                .update(cx, |this, cx| {
+                    this._catalog_watcher = catalog_watcher;
+                    this.recent_ids = recent_ids;
+                    cx.notify();
+                })
+                .is_err()
+            {
+                return;
+            }
             let (apps, scan_error) = cx.background_executor().spawn(scan_catalog()).await;
             if this
                 .update(cx, |this: &mut AppDrawer, cx| {
@@ -120,12 +149,9 @@ impl AppDrawer {
             launching: false,
             loading: true,
             was_active: false,
-            _catalog_watcher: catalog_watcher,
+            _catalog_watcher: None,
             dock_drag: None,
-            // A small, bounded local read (crates/rmac-app-launch/src/recent.rs
-            // caps the store at 64 KiB / 32 entries), cheap enough to do
-            // inline like the rest of this constructor.
-            recent_ids: rmac_app_launch::recent_app_ids(RECENTS_ROW_COUNT),
+            recent_ids: Vec::new(),
         }
     }
 

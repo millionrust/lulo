@@ -49,8 +49,8 @@ pub fn install_surface_idle_exit(cx: &mut App) {
     let seconds = env::var("RMAC_SURFACE_IDLE_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(300)
-        .clamp(1, 3600);
+        .unwrap_or(1800)
+        .clamp(1, 86400);
     let interval = Duration::from_secs(seconds);
     let generation = Arc::new(AtomicU64::new(0));
     cx.on_window_closed(move |cx, _| {

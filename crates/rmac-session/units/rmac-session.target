@@ -5,7 +5,7 @@ BindsTo=graphical-session.target niri.service
 After=graphical-session-pre.target niri.service
 Conflicts=rmac-safe-mode.target
 Requires=rmac-session-supervisor.service rmac-lock-coordinator.service
-Wants=rmac-top-bar.service rmac-dock.service rmac-notification-center.service rmac-focus.service rmac-wallpaper.service rmac-osd.service rmac-app-switcher.service rmac-screenshot.service rmac-mission-control.service rmac-clipboard.service rmac-shortcut-broker.service rmac-idle-lock.service rmac-mac-keyboard.service rmac-setup-assistant.service rmac-update-check.timer
+Wants=rmac-top-bar.service rmac-dock.service rmac-launcher.service rmac-quick-settings.service rmac-notification-center.service rmac-focus.service rmac-wallpaper.service rmac-osd.service rmac-app-switcher.service rmac-screenshot.service rmac-mission-control.service rmac-clipboard.service rmac-shortcut-broker.service rmac-idle-lock.service rmac-mac-keyboard.service rmac-setup-assistant.service rmac-update-check.timer
 
 [Install]
 WantedBy=graphical-session.target

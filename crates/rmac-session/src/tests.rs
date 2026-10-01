@@ -433,6 +433,8 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         include_str!("../units/rmac-mission-control.service"),
         include_str!("../units/rmac-clipboard.service"),
         include_str!("../units/rmac-shortcut-broker.service"),
+        include_str!("../units/rmac-launcher.service"),
+        include_str!("../units/rmac-quick-settings.service"),
     ];
     for unit in resident_units {
         assert!(unit.contains("Restart=on-failure"));
@@ -444,9 +446,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         assert!(!unit.contains("/bin/sh"));
     }
     let on_demand_units = [
-        include_str!("../units/rmac-launcher.service"),
         include_str!("../units/rmac-app-drawer.service"),
-        include_str!("../units/rmac-quick-settings.service"),
         include_str!("../units/rmac-notification-center-panel.service"),
     ];
     for unit in on_demand_units {
@@ -475,6 +475,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     let app_drawer = include_str!("../units/rmac-app-drawer.service");
     let quick_settings = include_str!("../units/rmac-quick-settings.service");
     let notification_panel = include_str!("../units/rmac-notification-center-panel.service");
+    let session = include_str!("../units/rmac-session.target");
     let shortcut_broker = include_str!("../units/rmac-shortcut-broker.service");
     assert!(launcher.contains("Type=notify"));
     assert!(launcher.contains("NotifyAccess=all"));
@@ -487,6 +488,9 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         .contains("After=rmac-session-supervisor.service rmac-notification-center.service"));
     assert!(notification_panel.contains("Type=notify"));
     assert!(notification_panel.contains("NotifyAccess=all"));
+    assert!(session.contains("Wants=rmac-top-bar.service rmac-dock.service rmac-launcher.service rmac-quick-settings.service"));
+    assert!(!session.contains("rmac-app-drawer.service"));
+    assert!(!session.contains("rmac-notification-center-panel.service"));
     assert!(!shortcut_broker.contains("rmac-quick-settings.service"));
     assert!(!shortcut_broker.contains("rmac-app-drawer.service"));
     assert!(!shortcut_broker.contains("rmac-notification-center-panel.service"));

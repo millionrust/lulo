@@ -162,9 +162,9 @@ impl SettingsView {
             .py_2()
             .border_b_1()
             .border_color(rmac_ui::mac::separator())
-            .children(Tab::ALL.into_iter().map(|tab| {
+            .children(Tab::ALL.into_iter().enumerate().map(|(index, tab)| {
                 let selected = tab == self.tab;
-                Button::new(("settings-tab", tab.label()), tab.label())
+                Button::new(("settings-tab", index), tab.label())
                     .small()
                     .selected(selected)
                     .on_click(cx.listener(move |this, _, _, cx| {

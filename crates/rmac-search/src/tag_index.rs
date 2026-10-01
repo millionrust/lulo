@@ -106,7 +106,6 @@ pub fn start_background_scan(home: PathBuf) {
 }
 
 fn scan(home: &Path) {
-    let mut visited = 0usize;
     let walker = walkdir::WalkDir::new(home)
         .follow_links(false)
         .max_depth(MAX_SCAN_DEPTH)
@@ -118,11 +117,10 @@ fn scan(home: &Path) {
                     .to_str()
                     .is_some_and(|name| SKIPPED_DIR_NAMES.contains(&name))
         });
-    for entry in walker {
+    for (visited, entry) in walker.enumerate() {
         if visited >= MAX_SCANNED_ENTRIES {
             break;
         }
-        visited += 1;
         let Ok(entry) = entry else {
             continue;
         };
@@ -154,7 +152,7 @@ pub fn note_listed<'a>(directory: &Path, paths: impl Iterator<Item = &'a Path>) 
         let stale: Vec<PathBuf> = index
             .by_path
             .keys()
-            .filter(|path| path.parent() == Some(directory) && !seen.contains(path))
+            .filter(|&path| path.parent() == Some(directory) && !seen.contains(path))
             .cloned()
             .collect();
         for path in stale {

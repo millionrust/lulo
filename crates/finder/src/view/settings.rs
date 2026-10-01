@@ -86,21 +86,17 @@ pub(super) enum SearchScope {
     #[default]
     ThisMac,
     CurrentFolder,
-    PreviousSearchScope,
+    PreviousScope,
 }
 
 impl SearchScope {
-    pub(super) const ALL: [Self; 3] = [
-        Self::ThisMac,
-        Self::CurrentFolder,
-        Self::PreviousSearchScope,
-    ];
+    pub(super) const ALL: [Self; 3] = [Self::ThisMac, Self::CurrentFolder, Self::PreviousScope];
 
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::ThisMac => "Search This Mac",
             Self::CurrentFolder => "Search the Current Folder",
-            Self::PreviousSearchScope => "Use the Previous Search Scope",
+            Self::PreviousScope => "Use the Previous Search Scope",
         }
     }
 }

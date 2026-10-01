@@ -238,15 +238,6 @@ impl EditorView {
             ))
             .attached()
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key.eq_ignore_ascii_case("g")
-                    && event.keystroke.modifiers.platform
-                    && event.keystroke.modifiers.shift
-                    && matches!(this.alert, Some(ActiveAlert::ConfirmSave(_)))
-                {
-                    cx.stop_propagation();
-                    this.open_save_goto(window, cx);
-                    return;
-                }
                 match event.keystroke.key.as_str() {
                     "escape" if this.save_goto_open => {
                         cx.stop_propagation();

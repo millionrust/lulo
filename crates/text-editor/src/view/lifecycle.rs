@@ -67,6 +67,7 @@ impl EditorView {
             KeyBinding::new(rmac_ui::shortcuts::OPEN.keystroke, OpenFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::SAVE.keystroke, SaveFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::SAVE_AS.keystroke, SaveFileAs, Some(CTX)),
+            KeyBinding::new("cmd-shift-g", SaveGoToFolder, Some(CTX)),
             KeyBinding::new(
                 rmac_ui::shortcuts::DUPLICATE_DOCUMENT.keystroke,
                 DuplicateDocument,

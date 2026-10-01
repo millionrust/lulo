@@ -157,6 +157,9 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.guarded(Pending::Close, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &crate::SaveGoToFolder, window, cx| {
+                this.open_save_goto(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereDocuments, _, cx| { this.save_location = SaveLocation::Documents; this.save_custom_folder = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereDesktop, _, cx| { this.save_location = SaveLocation::Desktop; this.save_custom_folder = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereHome, _, cx| { this.save_location = SaveLocation::Home; this.save_custom_folder = None; cx.notify(); }))

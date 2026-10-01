@@ -17,6 +17,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE = REPO_ROOT / ".github/workflows/release.yml"
 ROLLOUT = REPO_ROOT / ".github/workflows/rollout.yml"
+CANDIDATE = REPO_ROOT / ".github/workflows/candidate.yml"
 SHA_PINNED_USES = re.compile(r"^([^@]+)@([0-9a-f]{40})(?:\s+#.*)?$")
 
 
@@ -33,7 +34,7 @@ def _iter_uses(document: dict):
 
 
 def test_both_workflows_are_valid_yaml():
-    for path in (RELEASE, ROLLOUT):
+    for path in (RELEASE, ROLLOUT, CANDIDATE):
         document = _load(path)
         assert document["jobs"], f"{path} defines no jobs"
 
@@ -71,6 +72,31 @@ def test_release_container_images_are_pinned_by_digest():
         "release container images must use the reviewed Ubuntu 26.04 digest: "
         f"{images}"
     )
+
+
+def test_candidate_builds_and_verifies_unsigned_ubuntu_2604_packages():
+    document = _load(CANDIDATE)
+    triggers = document[True]
+    assert triggers["push"]["branches"] == ["dev"]
+    assert triggers["workflow_dispatch"]["inputs"]["profile"]["default"] == "release"
+    assert triggers["workflow_dispatch"]["inputs"]["profile"]["options"] == ["release", "iterate"]
+    assert document["permissions"] == {"contents": "read"}
+    jobs = document["jobs"]
+    assert set(jobs) == {"native-amd64", "third-party-amd64", "candidate-amd64"}
+    assert all(job["runs-on"] == "ubuntu-26.04" for job in jobs.values())
+    native = "\n".join(step.get("run", "") for step in jobs["native-amd64"]["steps"])
+    third_party = "\n".join(step.get("run", "") for step in jobs["third-party-amd64"]["steps"])
+    assembled = "\n".join(step.get("run", "") for step in jobs["candidate-amd64"]["steps"])
+    assert "build-native-inputs.sh" in native and "--profile \"$CANDIDATE_PROFILE\"" in native
+    assert "build-native-packages.py" in native and "verify-native-packages.py" in native
+    assert "build-niri-packages.sh" in third_party and "--build-deps system" in third_party
+    assert "sha256sum --check SHA256SUMS" in third_party
+    assert "copy-pinned-third-party-debs.py" in assembled
+    assert "verify-native-packages.py" in assembled
+    assert jobs["candidate-amd64"]["needs"] == ["native-amd64", "third-party-amd64"]
+    upload = jobs["candidate-amd64"]["steps"][-1]
+    assert upload["with"]["name"] == "lulo-candidate-${{ github.sha }}"
+    assert "secrets." not in CANDIDATE.read_text(encoding="utf-8")
 
 
 def test_rustup_bootstrap_uses_versioned_binaries_and_fixed_content_hashes():

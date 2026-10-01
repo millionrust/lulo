@@ -1,7 +1,8 @@
 # Release process
 
-This is the runbook for `.github/workflows/release.yml` and
-`.github/workflows/rollout.yml`. Read [Update trust](update-trust.md) first;
+This is the runbook for `.github/workflows/candidate.yml`,
+`.github/workflows/release.yml` and `.github/workflows/rollout.yml`.
+Read [Update trust](update-trust.md) first;
 this document is the day-to-day operator's guide to the pipeline that
 implements it, not a restatement of the trust design itself.
 
@@ -10,8 +11,8 @@ implements it, not a restatement of the trust design itself.
 Tagging `vX.Y.Z` (or a pre-release such as `v0.9.0-beta.1`):
 
 - builds `rmac-apps` and `rmac-session` on amd64 (a real `ubuntu:26.04`
-  container, since GitHub has no hosted Ubuntu 26.04 image yet -- see
-  "Runner decisions" below), twice, and requires byte-identical packages;
+  container -- see "Runner decisions" below), twice, and requires
+  byte-identical packages;
 - builds the same on arm64 **only if** the `RMAC_HAS_ARM64_RUNNER`
   repository variable is `true` (nothing is configured today, so this job
   is skipped, not failed);
@@ -479,9 +480,10 @@ upstream bumps the ordinary Debian revision (`debian_revision`: `1` -> `2`);
 
 ### Known gaps
 
-- **Not yet built anywhere.** Neither the CI job nor the laptop path has
-  run; expect to debug the first run (in particular the laptop's
-  user-sysroot pkg-config rewrite and `bindgen`'s view of it).
+- **Candidate CI not yet run.** The source-pinned laptop build has produced
+  the tested niri `26.04+lulo1-2` and xwayland-satellite
+  `0.8.2+lulo1-1` debs; the new candidate workflow still needs its first
+  hosted run after it reaches `dev`.
 - **Reproducibility is designed for, not proven.** Unlike rmac's own
   packages there is no second independent build compared byte for byte.
 - **In the APT repository** they are published like rmac's own packages,
@@ -493,7 +495,54 @@ upstream bumps the ordinary Debian revision (`debian_revision`: `1` -> `2`);
 
 ## Candidate builds for owner testing
 
-Candidate builds for owner testing use `--profile iterate`; Beta/stable
+`.github/workflows/candidate.yml` builds unsigned amd64 install candidates
+on the hosted Ubuntu 26.04 runner. Every push to `dev` builds with the
+`release` profile. `workflow_dispatch` offers `release` (default) or
+`iterate`; dispatch it against the desired `dev` commit. The native and
+third-party jobs run separately. The third-party job builds niri and
+xwayland-satellite from the tag, commit, upstream tarball SHA-256 and vendor
+SHA-256 pins in `packaging/third-party/upstreams.json`, using the same
+`build-niri-packages.sh` path as the tagged release. It never downloads an
+unverified deb from the laptop or a release asset. The final job checks both
+source artifacts' `SHA256SUMS`, copies the exact pinned deb pair, regenerates
+the four-deb `SHA256SUMS`, and runs `verify-native-packages.py`. The uploaded
+`lulo-candidate-<40-character commit SHA>` artifact contains exactly four
+debs, `native-packages.json`, and `SHA256SUMS`; it expires after 30 days.
+Cargo caches are separated by profile and keyed by the lockfiles. This
+workflow has no signing or APT publishing steps.
+
+After the coordinator pushes the change to `dev`, the push run starts
+automatically. To request a manual iterate candidate:
+
+```bash
+gh workflow run candidate.yml --ref dev -f profile=iterate
+```
+
+On the Ubuntu 26.04 reference laptop, check out the exact commit shown on
+the successful run and use the authenticated `gh` CLI:
+
+```bash
+git checkout <40-character candidate commit SHA>
+bash scripts/linux/fetch-candidate.sh <40-character candidate commit SHA>
+```
+
+The fetch script selects the latest successful `candidate.yml` run for that
+commit, downloads its matching artifact into
+`~/rmac-release/packages-ci-<sha>`, verifies all four SHA-256 checksums and
+the native package contract, then prints the
+`install-native-candidate.sh --check` command (including
+`--build-metadata iterate` when needed). Run that preflight from the
+untouched GNOME Wayland session before using the installer's separately
+authorized `--execute` path. The destination must be absent, so a rerun
+cannot silently reuse older bytes.
+
+The first hosted run remains the operational validation of runner disk
+capacity and cache size. The native build's 25 GiB local safety floor is
+lowered to 8 GiB only for this disposable CI runner; the laptop's default
+remains 25 GiB. A hosted run failure needs investigation before relying on
+this path for an owner install.
+
+Local fast candidate builds for owner testing use `--profile iterate`; Beta/stable
 releases use `release`. A full `release` build on the reference laptop (fat
 LTO, `codegen-units = 1`, 2 jobs) takes about 1.5 hours from a clean target,
 which is too slow for the owner to try a change. `[profile.iterate]` in the
@@ -552,9 +601,10 @@ for `stage-apt-snapshot.py` or a tagged release.
 
 ## Runner decisions
 
-**amd64**: built inside a real `ubuntu:26.04` container on a
-`ubuntu-latest` host, rather than directly on the host OS, so the build
-uses the target distribution's actual glibc and toolchain ABI.
+**amd64 tagged releases**: built inside a real `ubuntu:26.04` container on a
+`ubuntu-latest` host. **Candidate builds** use the hosted `ubuntu-26.04`
+runner already used by `ci.yml`'s "Linux checks (Ubuntu 26.04)" job. Both
+use the target distribution's actual glibc and toolchain ABI.
 `build-native-inputs.sh` and `check-native-reproducibility.sh` both refuse
 to run as root, so the job creates a non-root `builder` user and runs the
 Rust/package steps through `sudo -u builder`. **This has not been

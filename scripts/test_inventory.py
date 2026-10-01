@@ -353,6 +353,15 @@ class SynthesizedStandardMenusTests(unittest.TestCase):
         self.assertEqual(labels[1], "Settings…")
         self.assertTrue(menu.items[1].separator_before)
 
+    def test_quit_and_keep_windows_follows_quit(self):
+        keep = li._item("Quit and Keep Windows", "preview::QuitAndKeepWindows", "⌥⌘Q")
+        menu = li._synthesize_app_menu("Preview", [keep])
+        self.assertEqual(
+            [item.label for item in menu.items[-2:]],
+            ["Quit Preview", "Quit and Keep Windows"],
+        )
+        self.assertEqual(menu.items[-1].shortcut, "⌥⌘Q")
+
     def test_finder_app_menu_has_no_quit_row(self):
         menu = li._synthesize_app_menu("Finder", [])
         labels = [item.label for item in menu.items]

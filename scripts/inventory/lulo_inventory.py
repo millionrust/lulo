@@ -122,6 +122,12 @@ def _synthesize_app_menu(
     app's own items (Settings…, Files' Empty Trash…), Services, Hide/Hide
     Others/Show All, then Quit (Files/Finder is never quit)."""
     items = [_item(f"About {app_display_name}", ABOUT_ACTION)]
+    keep_windows = next(
+        (item for item in exported_items if item.label == "Quit and Keep Windows"),
+        None,
+    )
+    if keep_windows is not None:
+        exported_items.remove(keep_windows)
     if exported_items:
         exported_items[0].separator_before = True
         items.extend(exported_items)
@@ -137,6 +143,8 @@ def _synthesize_app_menu(
         items.append(
             _item(f"Quit {app_display_name}", "app::quit", "⌘Q", separator_before=True)
         )
+        if keep_windows is not None:
+            items.append(keep_windows)
     return rmp.Menu(APPLICATION_MENU, items)
 
 

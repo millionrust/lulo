@@ -33,6 +33,7 @@ STEP_KINDS = {
     "click_key",
     "capture",
     "focus_desktop",
+    "relaunch",
 }
 FACTS = {"focus", "windows", "window_size", "dialog", "menu", "selection", "files", "tabs", "display", "saved_documents"}
 

@@ -358,6 +358,23 @@ enum DragMode {
 }
 
 impl PreviewView {
+    pub(crate) fn open_paths(&self) -> Vec<PathBuf> {
+        self.slots.iter().map(|slot| slot.path.clone()).collect()
+    }
+
+    pub(crate) fn pending_markup(&self) -> Vec<(PathBuf, Option<PathBuf>, Vec<Annotation>)> {
+        self.slots
+            .iter()
+            .filter(|slot| slot.kind() == Some(Kind::Pdf) && slot.markup.dirty)
+            .map(|slot| {
+                (
+                    slot.path.clone(),
+                    slot.markup_original.clone(),
+                    slot.markup.items.clone(),
+                )
+            })
+            .collect()
+    }
     fn document_top(&self) -> f32 {
         metrics::TOOLBAR_HEIGHT + if self.markup_shown { 48.0 } else { 0.0 }
     }

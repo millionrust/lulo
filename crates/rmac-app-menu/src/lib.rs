@@ -696,6 +696,14 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
 
 const PREVIEW_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!(
+            "Quit and Keep Windows",
+            "preview::QuitAndKeepWindows",
+            "⌥⌘Q"
+        )],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             item!("Open…", "preview::OpenFile", "⌘O"),
@@ -2095,7 +2103,7 @@ mod tests {
                 .iter()
                 .map(|menu| menu.label.as_str())
                 .collect::<Vec<_>>(),
-            ["File", "Edit", "View", "Go", "Tools"]
+            ["Application", "File", "Edit", "View", "Go", "Tools"]
         );
         let shortcut = |label: &str| {
             menus
@@ -2105,6 +2113,7 @@ mod tests {
                 .map(|item| item.shortcut.clone())
         };
         assert_eq!(shortcut("Hide Sidebar").as_deref(), Some("⌥⌘1"));
+        assert_eq!(shortcut("Quit and Keep Windows").as_deref(), Some("⌥⌘Q"));
         assert_eq!(shortcut("Actual Size").as_deref(), Some("⌘0"));
         assert_eq!(shortcut("Rotate Right").as_deref(), Some("⌘R"));
         assert_eq!(shortcut("Next Item").as_deref(), Some("⌥"));

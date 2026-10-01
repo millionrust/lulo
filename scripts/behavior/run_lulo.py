@@ -586,17 +586,20 @@ class LuloRun:
         if self.app == "desktop":
             self.before = {p.name + ("/" if p.is_dir() else "") for p in self.files_root.iterdir()}
 
-    def launch(self) -> None:
-        launch = self.scenario.get("launch", {})
+    def launch(self, launch_override: Optional[dict[str, Any]] = None) -> None:
+        launch = self.scenario.get("launch", {}) if launch_override is None else launch_override
         command = [str(self.binary())]
         if self.app == "files":
             if "reveal" in launch:
                 command += ["--reveal", str(self.sandbox / launch["reveal"])]
             else:
                 command += ["--path", str(self.sandbox / launch.get("folder", "."))]
-        elif self.app == "preview":
+        elif self.app == "preview" and "file" in launch:
             command += [str(self.sandbox / launch["file"])]
-        self.log = open(self.nested.logs / f"{self.sid.replace('/', '-')}.log", "w")
+        self.log = open(
+            self.nested.logs / f"{self.sid.replace('/', '-')}.log",
+            "a" if launch_override is not None else "w",
+        )
         self.process = subprocess.Popen(
             command, env=self.env, stdout=self.log, stderr=subprocess.STDOUT, close_fds=True,
             cwd=str(self.sandbox),
@@ -981,6 +984,17 @@ class LuloRun:
         for index, step in enumerate(self.scenario["steps"]):
             if limit is not None and index >= limit:
                 break
+            if "relaunch" in step:
+                if self.process is None:
+                    raise StepFailed("no app to relaunch")
+                try:
+                    self.process.wait(timeout=8)
+                except subprocess.TimeoutExpired as error:
+                    raise StepFailed("app did not quit before relaunch") from error
+                if self.log:
+                    self.log.close()
+                self.launch(launch_override={})
+                continue
             self.ensure_alive()
             if "key" in step:
                 self.nested.input.key(step["key"])

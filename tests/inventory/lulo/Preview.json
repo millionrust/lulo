@@ -46,6 +46,13 @@
           "shortcut": "⌘Q",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "action": "preview::QuitAndKeepWindows",
+          "shortcut": "⌥⌘Q",
+          "separator_before": false,
+          "children": []
         }
       ]
     },

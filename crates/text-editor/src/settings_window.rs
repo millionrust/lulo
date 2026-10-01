@@ -32,7 +32,7 @@ pub(crate) fn show(cx: &mut App) {
     match cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Settings");
-        let view = cx.new(|cx| SettingsView::new(cx));
+        let view = cx.new(SettingsView::new);
         cx.new(|cx| Root::new(view, window, cx))
     }) {
         Ok(handle) => OPEN.with(|open| open.set(Some(handle))),
@@ -86,7 +86,6 @@ impl SettingsView {
     }
 
     fn number_row(
-        &self,
         id: &'static str,
         label: &'static str,
         value: String,
@@ -170,7 +169,7 @@ impl SettingsView {
                     .child("✓  Plain text"),
             )
             .child(Self::section_label("Window Size"))
-            .child(self.number_row(
+            .child(Self::number_row(
                 "settings-width",
                 "Width:",
                 self.settings.width_chars.to_string(),
@@ -189,7 +188,7 @@ impl SettingsView {
                 },
                 cx,
             ))
-            .child(self.number_row(
+            .child(Self::number_row(
                 "settings-height",
                 "Height:",
                 self.settings.height_lines.to_string(),
@@ -210,7 +209,7 @@ impl SettingsView {
             ))
             .child(Self::section_label("Font"))
             .child("Plain text font:")
-            .child(self.number_row(
+            .child(Self::number_row(
                 "settings-font-size",
                 "Size:",
                 self.settings.font_size.to_string(),

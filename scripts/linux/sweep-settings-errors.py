@@ -136,6 +136,7 @@ PANE_ROUTES: list[tuple[str, str]] = [
     ("appearance", "Appearance"),
     ("desktop-dock", "Desktop & Dock"),
     ("displays", "Displays"),
+    ("touchscreen", "Touchscreen"),
     ("menu-bar", "Menu Bar"),
     ("spotlight", "Spotlight"),
     ("wallpaper", "Wallpaper"),

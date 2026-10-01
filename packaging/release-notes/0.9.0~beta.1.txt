@@ -1,15 +1,22 @@
 Lulo OS Beta 1
 
-The first public Beta of Lulo OS, a Mac-feel desktop for everyday PCs.
+The first public Beta of Lulo OS, a Mac-feel desktop for everyday PCs,
+built on Ubuntu 26.04 and niri.
 
 - A macOS-style desktop: menu bar with app menus, Dock with folder stacks,
   Mission Control, Spotlight, Control Center and Notification Center.
-- Built-in apps: Files, Text Editor, Notes, Preview, Terminal, Calculator,
-  System Monitor, Clock and System Settings.
+- Touch input: tap, double-tap, hold for a context menu, drag, and natural
+  momentum scrolling on a touchscreen.
+- Built-in apps: Files, Terminal, Notes, Text Editor, Preview, Calculator,
+  System Monitor, Clock, Weather, Media Player, Archive Utility and System
+  Settings, every pane backed by a real Linux service.
 - Mac keyboard shortcuts, ⌘M minimise for every app, keyboard access to the
   menu bar (⌃F2) and the Dock (⌃F3), and window tiling.
-- Screen reader support in the shell and the built-in apps.
+- Files, Terminal and Notes now expose real accessible text content to
+  screen readers. Typing into a search or rename field over assistive
+  technology isn't supported yet -- an upstream limitation, not an app bug.
 - Software Update in System Settings, with updates installed at restart.
 
-This is a Beta: expect rough edges. Known issues are listed in
-docs/known-limitations.md.
+This is an early-access Beta, not a finished daily driver: expect rough
+edges, no NVIDIA testing yet, and no in-place updates. Known issues are
+listed in docs/known-limitations.md.

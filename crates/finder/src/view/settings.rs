@@ -24,7 +24,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-use gpui::{AnyWindowHandle, App, WeakEntity};
+use gpui::{AnyWindowHandle, App, AppContext, WeakEntity};
 use rmac_storage::{Backend as _, FileSystem};
 use serde::{Deserialize, Serialize};
 

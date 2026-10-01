@@ -8,6 +8,17 @@ mod text_system;
 #[cfg(feature = "wayland")]
 mod wayland;
 #[cfg(feature = "x11")]
+// Upstream GPUI X11 code, kept verbatim (ADR 0013); Lulo runs on Wayland.
+// The Desktop now links gpui_linux directly for drag and drop, so CI lints
+// this vendored module; its upstream style is left as is.
+#[allow(
+    clippy::collapsible_if,
+    clippy::enum_variant_names,
+    clippy::ptr_arg,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::unwrap_or_default
+)]
 mod x11;
 
 #[cfg(any(feature = "wayland", feature = "x11"))]

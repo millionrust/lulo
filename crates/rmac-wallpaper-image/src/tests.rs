@@ -115,6 +115,20 @@ fn procedural_default_is_deterministic_bounded_and_cached_by_target() {
 }
 
 #[test]
+fn clearing_cache_keeps_render_surface_alive() {
+    let cache = Cache::new(1024 * 1024);
+    let source = || {
+        rmac_wallpaper_system::ResolvedSource::BuiltIn(rmac_wallpaper::BuiltInId::Aurora.metadata())
+    };
+    let surface = cache.get_or_decode(source(), target(64, 32)).unwrap();
+    cache.clear();
+    assert!(cache.is_empty());
+    assert_eq!(surface.rgba.len(), 64 * 32 * 4);
+    let refreshed = cache.get_or_decode(source(), target(64, 32)).unwrap();
+    assert!(!Arc::ptr_eq(&surface, &refreshed));
+}
+
+#[test]
 fn user_file_decode_is_shared_across_outputs_and_explicitly_invalidated() {
     let root = temporary_directory("file-cache");
     std::fs::create_dir_all(&root).unwrap();

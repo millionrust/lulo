@@ -82,6 +82,7 @@ mod linux_wayland {
         fn new(
             updates: async_channel::Receiver<Presentation>,
             compositor: async_channel::Receiver<rmac_compositor::Event>,
+            activate: async_channel::Sender<()>,
             cx: &mut Context<Self>,
         ) -> Self {
             cx.spawn(async move |this, cx| {
@@ -135,6 +136,10 @@ mod linux_wayland {
                         Ok(generation) => generation,
                         Err(_) => return,
                     };
+                    // Opening hidden layer surfaces at login allocates a GPUI
+                    // renderer for every output. The first actual OSD event
+                    // requests them instead; the channel never blocks input.
+                    let _ = activate.try_send(());
 
                     let next = updates.recv().fuse();
                     let hide = cx.background_executor().timer(HIDE_DELAY).fuse();
@@ -501,7 +506,8 @@ mod linux_wayland {
                     }
                 })
                 .detach();
-            let status = cx.new(|cx| OsdStatus::new(updates, compositor_rx, cx));
+            let (activate_tx, activate_rx) = async_channel::bounded(1);
+            let status = cx.new(|cx| OsdStatus::new(updates, compositor_rx, activate_tx, cx));
             let (output_tx, output_rx) = async_channel::bounded(4);
             cx.background_executor()
                 .spawn(async move {
@@ -514,6 +520,9 @@ mod linux_wayland {
                 .detach();
             cx.spawn(async move |cx| {
                 let mut windows = OsdWindows::default();
+                if activate_rx.recv().await.is_err() {
+                    return;
+                }
                 match output_rx.recv().await {
                     Ok(mut desired) => loop {
                         cx.update(|cx| windows.reconcile(Some(&desired), &status, cx));

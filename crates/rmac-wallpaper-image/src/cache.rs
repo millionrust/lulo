@@ -101,6 +101,17 @@ impl Cache {
         keys.len()
     }
 
+    /// Release decoded pixels after a render has handed its surfaces to the
+    /// renderer. The returned surfaces keep their own `Arc`s until upload.
+    pub fn clear(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.entries.clear();
+        state.bytes = 0;
+    }
+
     pub fn len(&self) -> usize {
         self.state
             .lock()

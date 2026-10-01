@@ -5,7 +5,7 @@
   "steps": [
     {"key": "cmd-s", "settle": 1.2},
     {"select": "Documents", "settle": 0.5},
-    {"select": "Other…", "settle": 1.5},
+    {"select": "Show More Options", "settle": 1.5},
     {"select": "Show Details", "settle": 0.8},
     {"key": "cmd-d", "settle": 0.8},
     {"observe": "desktop", "facts": ["dialog", "selection"]},

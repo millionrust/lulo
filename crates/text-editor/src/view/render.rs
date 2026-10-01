@@ -6,9 +6,9 @@ mod save_sheet;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, font, px, AccessibleAction, Context, InteractiveElement as _, IntoElement, KeyDownEvent,
-    ParentElement, Render, Role, SharedString, StatefulInteractiveElement as _, Styled, StyledText,
-    TextRun, UnderlineStyle, Window,
+    div, font, px, AccessibleAction, ClickEvent, Context, InteractiveElement as _, IntoElement,
+    KeyDownEvent, ParentElement, Render, Role, SharedString, StatefulInteractiveElement as _,
+    Styled, StyledText, TextRun, UnderlineStyle, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
@@ -174,13 +174,6 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &crate::SheetWhereDesktop, _, cx| { this.save_location = SaveLocation::Desktop; this.save_custom_folder = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereHome, _, cx| { this.save_location = SaveLocation::Home; this.save_custom_folder = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereDownloads, _, cx| { this.save_location = SaveLocation::Downloads; this.save_custom_folder = None; cx.notify(); }))
-            .on_action(cx.listener(|this, _: &crate::SheetWhereOther, window, cx| {
-                if let Some(ActiveAlert::ConfirmSave(then)) = this.alert.take() {
-                    this.save_location = SaveLocation::Other;
-                    this.save_custom_folder = None;
-                    this.save_sheet(then, window, cx);
-                }
-            }))
             .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf8, _, cx| { this.text_format.encoding = document::TextEncoding::Utf8; this.refresh_dirty_state(cx); }))
             .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf8Bom, _, cx| { this.text_format.encoding = document::TextEncoding::Utf8Bom; this.refresh_dirty_state(cx); }))
             .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf16Le, _, cx| { this.text_format.encoding = document::TextEncoding::Utf16Le; this.refresh_dirty_state(cx); }))

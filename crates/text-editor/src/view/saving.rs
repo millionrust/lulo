@@ -11,6 +11,17 @@ struct NewPathRequest {
 }
 
 impl EditorView {
+    /// The save sheet's disclosure triangle (macOS 26.2 dropped the Where
+    /// pop-up's "Other…" item in favour of this control): open the full
+    /// file-chooser browser for a custom destination.
+    pub(super) fn open_full_browser(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(ActiveAlert::ConfirmSave(then)) = self.alert.take() {
+            self.save_location = SaveLocation::Other;
+            self.save_custom_folder = None;
+            self.save_sheet(then, window, cx);
+        }
+    }
+
     pub(super) fn save_sheet(
         &mut self,
         then: Option<Pending>,

@@ -383,19 +383,19 @@ because no Mac has a touchscreen (run it with `run_lulo.py --explore`), and:
   does. Record it once a reliable accessible path to that row is found.
 - `text-editor/save-untitled-other.json` and `save-panel-desktop.json`: both
   assume the Save sheet's "Where" pop-up has a "Documents" entry and an
-  "Other…" item that opens the full browser (which is also what Lulo's
-  `save_sheet.rs` implements, per `docs/parity.md` TE-18/OTHER-01). The
-  2026-10-01 recording attempt found that real macOS 26.2's "Where" pop-up
-  has neither: it lists a breadcrumb-style set of quick locations (Desktop,
-  Documents, iCloud Drive, Favourites, …) with no "Other…" row, and reaches
-  the full browser through a disclosure triangle instead (`AXDescription`
-  "show more options", not "Show Details"). There is now no one step
-  sequence that is valid on both platforms, so recording either scenario as
-  written would not test the same interaction Lulo implements; recording it
-  against the disclosure triangle instead would ask `run_lulo.py` to click a
-  control Lulo doesn't have. This is itself a parity gap (Lulo's "Other…"
-  item models an older Save-panel design); resolve which side changes
-  before recording.
+  "Other…" item that opens the full browser. The 2026-10-01 recording
+  attempt found that real macOS 26.2's "Where" pop-up has no "Other…" row,
+  and reaches the full browser through a disclosure triangle instead
+  (`AXDescription` "show more options", not "Show Details") — recorded as
+  OTHER-14. Lulo's `save_sheet.rs` now matches: the Where pop-up's
+  "Other…" item is gone, and a `save-sheet-where-disclosure` button next to
+  it (aria-label "Show More Options") opens the same full-chooser flow.
+  Both `.json` steps still select the old "Other…"/"Show Details" controls
+  and so need re-recording against the new control on each platform before
+  they can move out of `docs/behavior-pending/`; that recording pass still
+  needs a real Mac (for `save-untitled-other.json`) or the laptop's own
+  recorder (for `save-panel-desktop.json`), neither of which this pass
+  drives.
 - `files/drag-to-dock-and-desktop.json`: `scripts/behavior/record_mac.py`
   and `mac_click.py` only ever post a click (mouse-down immediately followed
   by mouse-up); neither has a drag primitive (mouse-down, several

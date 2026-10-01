@@ -744,6 +744,14 @@ class LuloRun:
         value, start, end = text_of(node) if normalized in TEXT_ROLES else (None, None, None)
         return {"role": normalized, "value": value, **sc.selection_facts(value, start, end), "label": name(node) or None}
 
+    def fact_note_body(self) -> dict[str, Any]:
+        frame = self.active_frame()
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            if name(node) == "Body" and sc.normalize_atspi_role(role(node)) in TEXT_ROLES:
+                value, _, _ = text_of(node)
+                return {"value": value}
+        return {"value": None}
+
     def fact_windows(self) -> dict[str, Any]:
         pyatspi = atspi()
         plain = [f for f in self.frames() if role(f) not in DIALOG_ROLES

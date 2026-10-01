@@ -44,6 +44,8 @@ def evaluate(results: dict[str, Any], root: Path = sc.SCENARIO_ROOT) -> list[dic
             continue
         scenario = sc.load(path)
         expected_path = sc.expectation_path(path, "lulo" if scenario.get("lulo_only") else "mac")
+        if not expected_path.exists() and not scenario.get("lulo_only"):
+            expected_path = sc.expectation_path(path, "lulo")
         if not expected_path.exists():
             out.append({"scenario": sid, "title": scenario["title"], "status": "fail",
                         "mismatches": [{"observation": "*", "fact": "*", "field": "recorded expectation",

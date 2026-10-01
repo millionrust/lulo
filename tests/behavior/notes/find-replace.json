@@ -18,7 +18,7 @@
     {"type": "gamma"},
     {"observe": "replacement", "facts": ["focus"]},
     {"select": "Replace"},
-    {"select": "Done"},
-    {"observe": "replaced_body", "facts": ["focus"]}
+    {"key": "escape"},
+    {"observe": "replaced_body", "facts": ["note_body"]}
   ]
 }

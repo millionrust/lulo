@@ -34,7 +34,7 @@ STEP_KINDS = {
     "capture",
     "focus_desktop",
 }
-FACTS = {"focus", "windows", "window_size", "dialog", "menu", "selection", "files", "tabs", "display", "saved_documents"}
+FACTS = {"focus", "windows", "window_size", "dialog", "menu", "selection", "files", "tabs", "display", "saved_documents", "note_body"}
 
 # Mac AX roles and AT-SPI role names, both mapped to one small vocabulary.
 AX_ROLES = {
@@ -362,6 +362,9 @@ def compare(scenario: dict[str, Any], expected: dict[str, Any], actual: dict[str
 
     tolerance = scenario.get("tolerance", {})
     mismatches = []
+    if "error" in actual:
+        mismatches.append({"observation": "*", "fact": "*", "field": "error",
+                           "expected": "no runner error", "actual": actual["error"], "rule": "exact"})
     exp_obs = expected.get("observations", {})
     act_obs = actual.get("observations", {})
     for name, facts in exp_obs.items():

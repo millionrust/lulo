@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "text-editor/save-panel-desktop",
+  "platform": "Task contract (Mac at login screen; no recording)",
+  "observations": {
+    "desktop": {"dialog": {"present": true}},
+    "cancelled": {"dialog": {"present": true}, "saved_documents": {"entries": [], "contents": {}}}
+  }
+}

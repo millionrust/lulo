@@ -67,6 +67,7 @@ impl AssetSource for CombinedAssets {
 fn open_panel(panel: PanelRequest, database: Arc<MimeDatabase>, cx: &mut App) {
     let PanelRequest {
         request,
+        recent_places,
         reply,
         closed,
         ..
@@ -116,7 +117,8 @@ fn open_panel(panel: PanelRequest, database: Arc<MimeDatabase>, cx: &mut App) {
     let opened = cx.open_window(options, |window, cx| {
         rmac_ui::reserve_client_frame(window);
         rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| Panel::new(request, reply, closed, database, window, cx));
+        let view =
+            cx.new(|cx| Panel::new(request, recent_places, reply, closed, database, window, cx));
         cx.new(|cx| Root::new(view, window, cx))
     });
     if opened.is_err() {
@@ -197,6 +199,7 @@ fn main() {
                         PanelRequest {
                             id: 0,
                             request,
+                            recent_places: Vec::new(),
                             reply,
                             closed,
                         },

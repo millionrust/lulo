@@ -1,0 +1,22 @@
+{
+  "title": "The expanded Save panel opens Desktop with Command-D and cancels without saving",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"key": "cmd-s", "settle": 1.2},
+    {"select": "Documents", "settle": 0.5},
+    {"select": "Other…", "settle": 1.5},
+    {"key": "cmd-d", "settle": 0.8},
+    {"observe": "desktop", "facts": ["dialog"]},
+    {"key": "escape", "settle": 0.8},
+    {"observe": "cancelled", "facts": ["dialog", "saved_documents"]}
+  ],
+  "tolerance": {
+    "desktop.dialog.title": "ignore",
+    "desktop.dialog.buttons": "ignore",
+    "desktop.dialog.texts": "ignore",
+    "cancelled.dialog.title": "ignore",
+    "cancelled.dialog.buttons": "ignore",
+    "cancelled.dialog.texts": "ignore"
+  }
+}

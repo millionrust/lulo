@@ -50,7 +50,7 @@ pub fn bind_keys(cx: &mut gpui::App) {
         KeyBinding::new("escape", Cancel, Some(CONTEXT)),
         KeyBinding::new("cmd-.", Cancel, Some(CONTEXT)),
         KeyBinding::new("cmd-shift-g", GoToFolder, Some(CONTEXT)),
-        KeyBinding::new("cmd-shift-d", GoDesktop, Some(CONTEXT)),
+        KeyBinding::new("cmd-d", GoDesktop, Some(CONTEXT)),
         KeyBinding::new("cmd-shift-h", GoHome, Some(CONTEXT)),
         KeyBinding::new("cmd-up", GoEnclosing, Some(CONTEXT)),
         KeyBinding::new("cmd-[", GoBack, Some(CONTEXT)),
@@ -139,6 +139,7 @@ pub struct Panel {
     pub(crate) notice: Option<SharedString>,
     pub(crate) focus: FocusHandle,
     pub(crate) sections: Vec<SidebarSection>,
+    recent_places: Vec<PathBuf>,
     pending_select: Option<PathBuf>,
     search_cancel: Option<Arc<AtomicBool>>,
     /// The folder a search started from, so clearing the field returns there.
@@ -228,6 +229,7 @@ fn sidebar_sections(home: &Path) -> Vec<SidebarSection> {
 impl Panel {
     pub fn new(
         request: Request,
+        recent_places: Vec<PathBuf>,
         reply: Sender<Outcome>,
         closed: Receiver<()>,
         database: Arc<MimeDatabase>,
@@ -322,6 +324,7 @@ impl Panel {
         let pending_select = request.current_file.clone();
         let mut panel = Self {
             sections: sidebar_sections(&home),
+            recent_places,
             filter_index: request.current_filter,
             choices: request.choices.clone(),
             request,
@@ -924,6 +927,19 @@ impl Panel {
                             action: Some(MenuAction::Go(ancestor.to_path_buf())),
                         });
                     }
+                    items.push(separator());
+                }
+                for path in &self.recent_places {
+                    if !items.iter().any(|item| matches!(&item.action, Some(MenuAction::Go(existing)) if existing == path)) {
+                        items.push(MenuItem {
+                            label: rmac_file_chooser::browser::display_name(path).into(),
+                            icon: Some("icons/folder-artwork.svg"),
+                            checked: false,
+                            action: Some(MenuAction::Go(path.clone())),
+                        });
+                    }
+                }
+                if !self.recent_places.is_empty() {
                     items.push(separator());
                 }
                 for section in self.sections.iter().skip(1) {

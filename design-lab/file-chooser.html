@@ -70,10 +70,16 @@
     New Folder        x 146 w 95, bottom row
 
   KEYBOARD (macOS behaviour, all implemented)
-    ⇧⌘G Go to Folder · ⇧⌘D Desktop · ⇧⌘H Home · ⌘↑ enclosing folder ·
+    ⇧⌘G Go to Folder · ⌘D Desktop · ⇧⌘H Home · ⌘↑ enclosing folder ·
     ⌘[ ⌘] back/forward · ⌘1 icons ⌘2 list · ↑↓←→ move · Return default
     button (opens a folder when a folder is selected in Open) · Esc Cancel ·
     type-to-select (1 s buffer) · ⌘F search · Tab moves Save As → list
+
+  WHERE POPUP
+    current folder and ancestors, then recently chosen folders for this app,
+    then standard places. Recent locations persist in XDG state; the compact
+    mock below shows the measured control, while the menu is rendered in-window.
+    Fresh measurements were unavailable on 2026-10-01 (Mac at login screen).
 -->
 <style>
   :root {

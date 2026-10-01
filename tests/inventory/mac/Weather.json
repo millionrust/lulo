@@ -1,0 +1,837 @@
+{
+  "app": "Weather",
+  "source": "mac-accessibility-tree",
+  "menu_bar": [
+    {
+      "label": "Apple",
+      "items": [],
+      "items_omitted": "system Apple menu, scrubbed post-capture (OS chrome + contains the owner's name)"
+    },
+    {
+      "label": "Weather",
+      "items": [
+        {
+          "label": "About Weather",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Settings…",
+          "shortcut": "⌘,",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Reset Identifier…",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [],
+          "children_omitted": "dynamic/personal submenu, not read"
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Weather",
+          "shortcut": "⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "shortcut": "⌥⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit Weather",
+          "shortcut": "⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "shortcut": "⌥⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "Add Location to List",
+          "shortcut": "⇧⌘L",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close",
+          "shortcut": "⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "shortcut": "⌥⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "shortcut": "⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "shortcut": "⇧⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "shortcut": "⌘X",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "shortcut": "⌘C",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "shortcut": "⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste and Match Style",
+          "shortcut": "⌥⇧⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Delete",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "shortcut": "⌘A",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Search",
+          "shortcut": "⌘F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AutoFill",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Contact…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Passwords…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Credit Card…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Start Dictation…",
+          "shortcut": "🎤",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Emoji & Symbols",
+          "shortcut": "🌐",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Fahrenheit",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Celsius",
+          "shortcut": "",
+          "enabled": true,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Precipitation Map",
+          "shortcut": "⌘1",
+          "enabled": false,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "Temperature Map",
+          "shortcut": "⌘2",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Air Quality Map",
+          "shortcut": "⌘3",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Wind Map",
+          "shortcut": "⌘4",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Default Zoom",
+          "shortcut": "⌘0",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom In",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom Out",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Go to Current Location",
+          "shortcut": "⌘L",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Expand Map",
+          "shortcut": "⌘K",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Sidebar",
+          "shortcut": "⌃⌘S",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "shortcut": "F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "shortcut": "⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "shortcut": "⌥⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "shortcut": "⌃F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "shortcut": "⌃C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Halves",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left",
+              "shortcut": "⌃←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "shortcut": "⌃→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "shortcut": "⌃↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "shortcut": "⌃↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Arrange",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Right",
+              "shortcut": "⌃⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Quarters",
+              "shortcut": "⌃⌥⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Left",
+              "shortcut": "⌃⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Quarters",
+              "shortcut": "⌃⌥⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Bottom",
+              "shortcut": "⌃⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Quarters",
+              "shortcut": "⌃⌥⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Top",
+              "shortcut": "⌃⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Quarters",
+              "shortcut": "⌃⌥⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "shortcut": "⌃R",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Full-Screen Tile",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Left of Screen",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right of Screen",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Remove Window from Set",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Athivilai",
+          "shortcut": "",
+          "enabled": true,
+          "checked": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Weather Help",
+          "shortcut": "⌘?",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "toolbar": {
+    "present": true,
+    "items": [
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Sidebar"
+      }
+    ]
+  },
+  "settings": {
+    "present": true,
+    "controls": [
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 2,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 3,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 4,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 5,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 6,
+        "role": "AXScrollArea",
+        "label": "scroll area"
+      },
+      {
+        "depth": 0,
+        "role": "AXToolbar",
+        "label": "toolbar"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "General"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Notifications"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "close button"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "zoom button"
+      },
+      {
+        "depth": 1,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "minimise button"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1023 @@
+{
+  "app": "System Settings",
+  "source": "mac-accessibility-tree",
+  "menu_bar": [
+    {
+      "label": "Apple",
+      "items": []
+    },
+    {
+      "label": "System Settings",
+      "items": [
+        {
+          "label": "About System Settings",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [],
+          "children_omitted": "dynamic/personal submenu, not read"
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide System Settings",
+          "shortcut": "⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "shortcut": "⌥⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit System Settings",
+          "shortcut": "⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "shortcut": "⌥⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "shortcut": "⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "shortcut": "⇧⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "shortcut": "⌘X",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "shortcut": "⌘C",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "shortcut": "⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Delete",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "shortcut": "⌘A",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AutoFill",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Contact…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Passwords…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Credit Card…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Start Dictation…",
+          "shortcut": "🎤",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Emoji & Symbols",
+          "shortcut": "🌐",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Back",
+          "shortcut": "⌘[",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Forward",
+          "shortcut": "⌘]",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Search",
+          "shortcut": "⌘F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "About",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Accessibility",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AirDrop & Handoff",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Appearance",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Apple Account",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Apple Intelligence & Siri",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AppleCare & Warranty",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Battery",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bluetooth",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Date & Time",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Desktop & Dock",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Device Management",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Displays",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Family",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Focus",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Game Center",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "iCloud",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Internet Accounts",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Keyboard",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Language & Region",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Lock Screen",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Login Items & Extensions",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Menu Bar",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Network",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Notifications",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Printers & Scanners",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Privacy & Security",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Screen Time",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Sharing",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Software Update",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Sound",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Spotlight",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Startup Disk",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Storage",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Time Machine",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Touch ID & Password",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Trackpad",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Transfer or Reset",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Users & Groups",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Wallet & Apple Pay",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Wallpaper",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Wi‑Fi",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "shortcut": "F",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Close",
+          "shortcut": "⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "shortcut": "⌥⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Minimise",
+          "shortcut": "⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "shortcut": "⌥⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "shortcut": "⌃F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "shortcut": "⌃C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Halves",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left",
+              "shortcut": "⌃←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "shortcut": "⌃→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "shortcut": "⌃↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "shortcut": "⌃↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Arrange",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Right",
+              "shortcut": "⌃⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Quarters",
+              "shortcut": "⌃⌥⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Left",
+              "shortcut": "⌃⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Quarters",
+              "shortcut": "⌃⌥⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Bottom",
+              "shortcut": "⌃⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Quarters",
+              "shortcut": "⌃⌥⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Top",
+              "shortcut": "⌃⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Quarters",
+              "shortcut": "⌃⌥⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "shortcut": "⌃R",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Full-Screen Tile",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Remove Window from Set",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "System Settings Help",
+          "shortcut": "⌘?",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "macOS Help",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "User Manual",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "macOS Support",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "MacBook Air Specifications",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hardware Support",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "toolbar": {
+    "present": true,
+    "items": [
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 2,
+        "role": "AXMenuButton",
+        "label": "Back"
+      },
+      {
+        "depth": 2,
+        "role": "AXMenuButton",
+        "label": "Forward"
+      }
+    ]
+  },
+  "settings": {
+    "present": false,
+    "controls": []
+  },
+  "settings_app": {
+    "sidebar": [
+      "<Owner>, Apple Account",
+      "Family",
+      "Wi‑Fi",
+      "Bluetooth",
+      "Network",
+      "Battery",
+      "General",
+      "Accessibility",
+      "Appearance",
+      "Apple Intelligence & Siri",
+      "Desktop & Dock",
+      "Displays",
+      "Menu Bar",
+      "Spotlight",
+      "Wallpaper",
+      "Notifications",
+      "Sound",
+      "Focus",
+      "Screen Time",
+      "Lock Screen",
+      "Privacy & Security",
+      "Touch ID & Password",
+      "Users & Groups",
+      "Internet Accounts",
+      "Game Center",
+      "iCloud",
+      "Wallet & Apple Pay",
+      "Keyboard",
+      "Trackpad",
+      "Printers & Scanners"
+    ],
+    "panes": {
+      "<Owner>, Apple Account": [
+        "group",
+        "split group",
+        "scroll area",
+        "Sidebar",
+        "scroll bar",
+        "search text field",
+        "Search",
+        "splitter",
+        "toolbar",
+        "Back",
+        "Forward",
+        "close button",
+        "zoom button",
+        "minimise button",
+        "Apple Account"
+      ],
+      "Family": [
+        "group"
+      ],
+      "Wi‑Fi": [],
+      "Bluetooth": [],
+      "Network": [],
+      "Battery": [],
+      "General": [],
+      "Accessibility": [
+        "group",
+        "split group",
+        "scroll area",
+        "Sidebar",
+        "scroll bar",
+        "search text field",
+        "Search",
+        "splitter",
+        "toolbar",
+        "Back",
+        "Forward",
+        "close button",
+        "zoom button",
+        "minimise button",
+        "Accessibility"
+      ],
+      "Appearance": [],
+      "Apple Intelligence & Siri": [],
+      "Desktop & Dock": [],
+      "Displays": [],
+      "Menu Bar": [],
+      "Spotlight": [],
+      "Wallpaper": [],
+      "Notifications": [
+        "group"
+      ],
+      "Sound": [],
+      "Focus": [],
+      "Screen Time": [],
+      "Lock Screen": [],
+      "Privacy & Security": [
+        "group"
+      ],
+      "Touch ID & Password": [],
+      "Users & Groups": [],
+      "Internet Accounts": [],
+      "Game Center": [],
+      "iCloud": [],
+      "Wallet & Apple Pay": [
+        "group"
+      ],
+      "Keyboard": [
+        "group",
+        "split group"
+      ],
+      "Trackpad": [],
+      "Printers & Scanners": []
+    }
+  }
+}

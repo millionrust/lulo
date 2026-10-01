@@ -1,0 +1,544 @@
+{
+  "app": "Terminal",
+  "source": "mac-accessibility-tree",
+  "menu_bar_error": "osascript timed out after 90s",
+  "toolbar": {
+    "present": false,
+    "items": []
+  },
+  "settings": {
+    "present": true,
+    "controls": [
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXTabGroup",
+        "label": "tab group"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "Text"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "Window"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "Tab"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "Shell"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "Keyboard"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "Advanced"
+      },
+      {
+        "depth": 2,
+        "role": "AXCheckBox",
+        "label": "Antialias text"
+      },
+      {
+        "depth": 2,
+        "role": "AXCheckBox",
+        "label": "Allow blinking text"
+      },
+      {
+        "depth": 2,
+        "role": "AXCheckBox",
+        "label": "Use bright colours for bold text"
+      },
+      {
+        "depth": 2,
+        "role": "AXCheckBox",
+        "label": "Display ANSI colours"
+      },
+      {
+        "depth": 2,
+        "role": "AXCheckBox",
+        "label": "Use bold fonts"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioGroup",
+        "label": "radio group"
+      },
+      {
+        "depth": 3,
+        "role": "AXRadioButton",
+        "label": "▊ Block"
+      },
+      {
+        "depth": 3,
+        "role": "AXRadioButton",
+        "label": "▁ Underline"
+      },
+      {
+        "depth": 3,
+        "role": "AXRadioButton",
+        "label": "┃ Vertical Bar"
+      },
+      {
+        "depth": 2,
+        "role": "AXCheckBox",
+        "label": "Blink cursor"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Cursor"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Cursor"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.544755 0.544755 0.544755 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "System textColor"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Bold Text"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Text"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "System textColor"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "System selectedControlColor"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Selection"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Text"
+      },
+      {
+        "depth": 2,
+        "role": "AXButton",
+        "label": "Help"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0 0 0 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.4 0.4 0.4 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.6 0 0 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.9 0 0 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0 0.65 0 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0 0.85 0 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.6 0.6 0 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.9 0.9 0 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0 0 0.7 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0 0 1 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.7 0 0.7 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.9 0 0.9 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0 0.65 0.7 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0 0.9 0.9 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.75 0.75 0.75 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "rgb 0.9 0.9 0.9 1"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Normal"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Bright"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "ANSI Colours"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "text"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Background"
+      },
+      {
+        "depth": 2,
+        "role": "AXColorWell",
+        "label": "System textBackgroundColor"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Colour & Effects"
+      },
+      {
+        "depth": 2,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 3,
+        "role": "AXStaticText",
+        "label": "text"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Image:"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "Font"
+      },
+      {
+        "depth": 2,
+        "role": "AXButton",
+        "label": "Change…"
+      },
+      {
+        "depth": 2,
+        "role": "AXStaticText",
+        "label": "SF Mono Regular 11"
+      },
+      {
+        "depth": 2,
+        "role": "AXCheckBox",
+        "label": "Dynamic foreground colours"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Add"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Remove"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Default"
+      },
+      {
+        "depth": 1,
+        "role": "AXMenuButton",
+        "label": "action"
+      },
+      {
+        "depth": 1,
+        "role": "AXScrollArea",
+        "label": "scroll area"
+      },
+      {
+        "depth": 2,
+        "role": "AXTable",
+        "label": "table"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Basic"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Clear Dark"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Clear Light"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Grass"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Homebrew"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Man Page"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Novel"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Ocean"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Pro"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Red Sands"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Silver Aerogel"
+      },
+      {
+        "depth": 3,
+        "role": "AXRow",
+        "label": "table row"
+      },
+      {
+        "depth": 4,
+        "role": "AXTextField",
+        "label": "Solid Colors"
+      },
+      {
+        "depth": 3,
+        "role": "AXColumn",
+        "label": "column"
+      },
+      {
+        "depth": 2,
+        "role": "AXScrollBar",
+        "label": "scroll bar"
+      },
+      {
+        "depth": 3,
+        "role": "AXValueIndicator",
+        "label": "value indicator"
+      },
+      {
+        "depth": 3,
+        "role": "AXButton",
+        "label": "increment arrow button"
+      },
+      {
+        "depth": 3,
+        "role": "AXButton",
+        "label": "decrement arrow button"
+      },
+      {
+        "depth": 3,
+        "role": "AXButton",
+        "label": "increment page button"
+      },
+      {
+        "depth": 3,
+        "role": "AXButton",
+        "label": "decrement page button"
+      },
+      {
+        "depth": 0,
+        "role": "AXToolbar",
+        "label": "toolbar"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "General"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Profiles"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Window Groups"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Encodings"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "close button"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "zoom button"
+      },
+      {
+        "depth": 1,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "minimise button"
+      },
+      {
+        "depth": 0,
+        "role": "AXStaticText",
+        "label": "Profiles"
+      }
+    ]
+  }
+}

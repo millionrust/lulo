@@ -1,0 +1,345 @@
+{
+  "app": "System Settings",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About System Settings",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "action": "app::services",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide System Settings",
+          "action": "app::hide",
+          "shortcut": "⌘H",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "action": "app::hide-others",
+          "shortcut": "⌥⌘H",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "action": "app::show-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quit System Settings",
+          "action": "app::quit",
+          "shortcut": "⌘Q",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "action": "input::Undo",
+          "shortcut": "⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "action": "input::Redo",
+          "shortcut": "⇧⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "action": "input::Cut",
+          "shortcut": "⌘X",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "action": "input::Copy",
+          "shortcut": "⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "action": "input::Paste",
+          "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "action": "input::SelectAll",
+          "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Back",
+          "action": "system_settings::GoBack",
+          "shortcut": "⌘[",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Forward",
+          "action": "system_settings::GoForward",
+          "shortcut": "⌘]",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Search",
+          "action": "system_settings::FocusSearch",
+          "shortcut": "⌘F",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "action": "window::minimise",
+          "shortcut": "⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "action": "app::minimise-all",
+          "shortcut": "⌥⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "action": "window::zoom",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "action": "window::fill",
+          "shortcut": "⌃⇧⌘F",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "action": "window::centre",
+          "shortcut": "⌃⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "action": "window::move-and-resize",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Left",
+              "action": "window::tile-left",
+              "shortcut": "⌃⌘←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "action": "window::tile-right",
+              "shortcut": "⌃⌘→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "action": "window::tile-top",
+              "shortcut": "⌃⌘↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "action": "window::tile-bottom",
+              "shortcut": "⌃⌘↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "action": "window::restore-size",
+              "shortcut": "⌃⌘R",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Bring All to Front",
+          "action": "window::bring-all-to-front",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "System Settings Help",
+          "action": "help::app-help",
+          "shortcut": "⌘?",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": false,
+    "extraction": "none",
+    "controls": []
+  },
+  "toolbar": {
+    "present": false,
+    "extraction": "none",
+    "groups": []
+  },
+  "context_menus": {},
+  "sidebar": [
+    {
+      "id": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "id": "bluetooth",
+      "label": "Bluetooth"
+    },
+    {
+      "id": "network",
+      "label": "Network"
+    },
+    {
+      "id": "vpn",
+      "label": "VPN"
+    },
+    {
+      "id": "battery",
+      "label": "Battery"
+    },
+    {
+      "id": "general",
+      "label": "General"
+    },
+    {
+      "id": "date-time",
+      "label": "Date & Time"
+    },
+    {
+      "id": "language-region",
+      "label": "Language & Region"
+    },
+    {
+      "id": "login-items",
+      "label": "Login Items"
+    },
+    {
+      "id": "sharing",
+      "label": "Sharing"
+    },
+    {
+      "id": "accessibility",
+      "label": "Accessibility"
+    },
+    {
+      "id": "appearance",
+      "label": "Appearance"
+    },
+    {
+      "id": "desktop-dock",
+      "label": "Desktop & Dock"
+    },
+    {
+      "id": "displays",
+      "label": "Displays"
+    },
+    {
+      "id": "touchscreen",
+      "label": "Touchscreen"
+    },
+    {
+      "id": "menu-bar",
+      "label": "Menu Bar"
+    },
+    {
+      "id": "spotlight",
+      "label": "Spotlight"
+    },
+    {
+      "id": "wallpaper",
+      "label": "Wallpaper"
+    },
+    {
+      "id": "notifications",
+      "label": "Notifications"
+    },
+    {
+      "id": "sound",
+      "label": "Sound"
+    },
+    {
+      "id": "keyboard",
+      "label": "Keyboard"
+    },
+    {
+      "id": "mouse",
+      "label": "Mouse"
+    },
+    {
+      "id": "trackpad",
+      "label": "Trackpad"
+    },
+    {
+      "id": "focus",
+      "label": "Focus"
+    },
+    {
+      "id": "lock-screen",
+      "label": "Lock Screen"
+    },
+    {
+      "id": "privacy-security",
+      "label": "Privacy & Security"
+    }
+  ]
+}

@@ -1,0 +1,216 @@
+{
+  "app": "Weather",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About Weather",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "action": "app::services",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Weather",
+          "action": "app::hide",
+          "shortcut": "⌘H",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "action": "app::hide-others",
+          "shortcut": "⌥⌘H",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "action": "app::show-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quit Weather",
+          "action": "app::quit",
+          "shortcut": "⌘Q",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "Close Window",
+          "action": "weather::CloseWindow",
+          "shortcut": "⌘W",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Find",
+          "action": "weather::FindCity",
+          "shortcut": "⌘F",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Celsius",
+          "action": "weather::UseCelsius",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Fahrenheit",
+          "action": "weather::UseFahrenheit",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Refresh",
+          "action": "weather::Refresh",
+          "shortcut": "⌘R",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "action": "window::minimise",
+          "shortcut": "⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "action": "app::minimise-all",
+          "shortcut": "⌥⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "action": "window::zoom",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "action": "window::fill",
+          "shortcut": "⌃⇧⌘F",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "action": "window::centre",
+          "shortcut": "⌃⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "action": "window::move-and-resize",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Left",
+              "action": "window::tile-left",
+              "shortcut": "⌃⌘←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "action": "window::tile-right",
+              "shortcut": "⌃⌘→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "action": "window::tile-top",
+              "shortcut": "⌃⌘↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "action": "window::tile-bottom",
+              "shortcut": "⌃⌘↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "action": "window::restore-size",
+              "shortcut": "⌃⌘R",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Bring All to Front",
+          "action": "window::bring-all-to-front",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Weather Help",
+          "action": "help::app-help",
+          "shortcut": "⌘?",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": false,
+    "extraction": "none",
+    "controls": []
+  },
+  "toolbar": {
+    "present": false,
+    "extraction": "none",
+    "groups": []
+  },
+  "context_menus": {}
+}

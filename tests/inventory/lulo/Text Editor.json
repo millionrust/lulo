@@ -1,0 +1,366 @@
+{
+  "app": "Text Editor",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About Text Editor",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "action": "app::services",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Text Editor",
+          "action": "app::hide",
+          "shortcut": "⌘H",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "action": "app::hide-others",
+          "shortcut": "⌥⌘H",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "action": "app::show-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quit Text Editor",
+          "action": "app::quit",
+          "shortcut": "⌘Q",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "New",
+          "action": "text_editor::NewFile",
+          "shortcut": "⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Open…",
+          "action": "text_editor::OpenFile",
+          "shortcut": "⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Open Recent",
+          "action": "text_editor::OpenRecentMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Clear Menu",
+              "action": "text_editor::ClearRecentMenu",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Close",
+          "action": "text_editor::CloseWindow",
+          "shortcut": "⌘W",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Save",
+          "action": "text_editor::SaveFile",
+          "shortcut": "⌘S",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Duplicate",
+          "action": "text_editor::DuplicateDocument",
+          "shortcut": "⇧⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Save As…",
+          "action": "text_editor::SaveFileAs",
+          "shortcut": "⌥⇧⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Export as PDF…",
+          "action": "text_editor::ExportPdf",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Print…",
+          "action": "text_editor::PrintFile",
+          "shortcut": "⌘P",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "action": "input::Undo",
+          "shortcut": "⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "action": "input::Redo",
+          "shortcut": "⇧⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "action": "input::Cut",
+          "shortcut": "⌘X",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "action": "input::Copy",
+          "shortcut": "⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "action": "input::Paste",
+          "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Delete",
+          "action": "input::Delete",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "action": "input::SelectAll",
+          "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Find",
+          "action": "text_editor::FindMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Find…",
+              "action": "text_editor::ToggleFind",
+              "shortcut": "⌘F",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find and Replace…",
+              "action": "text_editor::ToggleReplace",
+              "shortcut": "⌥⌘F",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find Next",
+              "action": "text_editor::FindNext",
+              "shortcut": "⌘G",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find Previous",
+              "action": "text_editor::FindPrev",
+              "shortcut": "⇧⌘G",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Format",
+      "items": [
+        {
+          "label": "Font",
+          "action": "text_editor::FontMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Bigger",
+              "action": "text_editor::IncreaseFont",
+              "shortcut": "⌘+",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Smaller",
+              "action": "text_editor::DecreaseFont",
+              "shortcut": "⌘−",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Monospaced",
+          "action": "text_editor::ToggleMono",
+          "shortcut": "⇧⌘M",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "action": "window::minimise",
+          "shortcut": "⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "action": "app::minimise-all",
+          "shortcut": "⌥⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "action": "window::zoom",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "action": "window::fill",
+          "shortcut": "⌃⇧⌘F",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "action": "window::centre",
+          "shortcut": "⌃⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "action": "window::move-and-resize",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Left",
+              "action": "window::tile-left",
+              "shortcut": "⌃⌘←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "action": "window::tile-right",
+              "shortcut": "⌃⌘→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "action": "window::tile-top",
+              "shortcut": "⌃⌘↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "action": "window::tile-bottom",
+              "shortcut": "⌃⌘↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "action": "window::restore-size",
+              "shortcut": "⌃⌘R",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Bring All to Front",
+          "action": "window::bring-all-to-front",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Text Editor Help",
+          "action": "help::app-help",
+          "shortcut": "⌘?",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": false,
+    "extraction": "none",
+    "controls": []
+  },
+  "toolbar": {
+    "present": false,
+    "extraction": "none",
+    "groups": []
+  },
+  "context_menus": {}
+}

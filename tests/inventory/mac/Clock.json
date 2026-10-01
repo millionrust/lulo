@@ -1,0 +1,822 @@
+{
+  "app": "Clock",
+  "source": "mac-accessibility-tree",
+  "menu_bar": [
+    {
+      "label": "Apple",
+      "items": [],
+      "items_omitted": "system Apple menu, scrubbed post-capture (OS chrome + contains the owner's name)"
+    },
+    {
+      "label": "Clock",
+      "items": [
+        {
+          "label": "About Clock",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [],
+          "children_omitted": "dynamic/personal submenu, not read"
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Clock",
+          "shortcut": "⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "shortcut": "⌥⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit Clock",
+          "shortcut": "⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "shortcut": "⌥⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "Start Recent Timer",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "No Recent Timers",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close",
+          "shortcut": "⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "shortcut": "⌥⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "shortcut": "⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "shortcut": "⇧⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "shortcut": "⌘X",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "shortcut": "⌘C",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "shortcut": "⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Delete",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "shortcut": "⌘A",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Spelling and Grammar",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Show Spelling and Grammar",
+              "shortcut": "⌘:",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Check Document Now",
+              "shortcut": "⌘;",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Check Spelling While Typing",
+              "shortcut": "",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            },
+            {
+              "label": "Check Grammar With Spelling",
+              "shortcut": "",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            },
+            {
+              "label": "Correct Spelling Automatically",
+              "shortcut": "",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Substitutions",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Smart Substitutions",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Smart Copy/Paste",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Smart Quotes",
+              "shortcut": "",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            },
+            {
+              "label": "Smart Dashes",
+              "shortcut": "",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            },
+            {
+              "label": "Smart Links",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Text Replacement",
+              "shortcut": "",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Transformations",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Make Uppercase",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Make Lowercase",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Capitalise",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Speech",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Start Speaking",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Stop Speaking",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AutoFill",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Contact…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Passwords…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Credit Card…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Start Dictation…",
+          "shortcut": "🎤",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Emoji & Symbols",
+          "shortcut": "🌐",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "World Clock",
+          "shortcut": "⌘1",
+          "enabled": true,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "Alarms",
+          "shortcut": "⌘2",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Stopwatch",
+          "shortcut": "⌘3",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Timers",
+          "shortcut": "⌘4",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "View Digital Stopwatch",
+          "shortcut": "",
+          "enabled": true,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "View Analogue Stopwatch",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "shortcut": "⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "shortcut": "⌥⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "shortcut": "⌃F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "shortcut": "⌃C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Halves",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left",
+              "shortcut": "⌃←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "shortcut": "⌃→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "shortcut": "⌃↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "shortcut": "⌃↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Arrange",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Right",
+              "shortcut": "⌃⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Quarters",
+              "shortcut": "⌃⌥⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Left",
+              "shortcut": "⌃⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Quarters",
+              "shortcut": "⌃⌥⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Bottom",
+              "shortcut": "⌃⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Quarters",
+              "shortcut": "⌃⌥⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Top",
+              "shortcut": "⌃⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Quarters",
+              "shortcut": "⌃⌥⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "shortcut": "⌃R",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Full-Screen Tile",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Left of Screen",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right of Screen",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Remove Window from Set",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Clock",
+          "shortcut": "",
+          "enabled": true,
+          "checked": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Clock Help",
+          "shortcut": "⌘?",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "toolbar": {
+    "present": true,
+    "items": [
+      {
+        "depth": 0,
+        "role": "AXRadioGroup",
+        "label": "radio group"
+      },
+      {
+        "depth": 1,
+        "role": "AXRadioButton",
+        "label": "World Clock"
+      },
+      {
+        "depth": 1,
+        "role": "AXRadioButton",
+        "label": "Alarms"
+      },
+      {
+        "depth": 1,
+        "role": "AXRadioButton",
+        "label": "Stopwatch"
+      },
+      {
+        "depth": 1,
+        "role": "AXRadioButton",
+        "label": "Timers"
+      },
+      {
+        "depth": 0,
+        "role": "AXMenuButton",
+        "label": "menu button"
+      },
+      {
+        "depth": 1,
+        "role": "AXMenuButton",
+        "label": "menu button"
+      }
+    ]
+  },
+  "settings": {
+    "present": false,
+    "controls": []
+  }
+}

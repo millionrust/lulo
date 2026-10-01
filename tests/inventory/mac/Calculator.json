@@ -1,0 +1,760 @@
+{
+  "app": "Calculator",
+  "source": "mac-accessibility-tree",
+  "menu_bar": [
+    {
+      "label": "Apple",
+      "items": [],
+      "items_omitted": "system Apple menu, scrubbed post-capture (OS chrome + contains the owner's name)"
+    },
+    {
+      "label": "Calculator",
+      "items": [
+        {
+          "label": "About Calculator",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [],
+          "children_omitted": "dynamic/personal submenu, not read"
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Calculator",
+          "shortcut": "⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "shortcut": "⌥⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit Calculator",
+          "shortcut": "⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "shortcut": "⌥⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "shortcut": "⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "shortcut": "⇧⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "shortcut": "⌘X",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "shortcut": "⌘C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "shortcut": "⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Delete",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "shortcut": "⌘A",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AutoFill",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Contact…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Passwords…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Credit Card…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Basic",
+          "shortcut": "⌘1",
+          "enabled": true,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "Scientific",
+          "shortcut": "⌘2",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Programmer",
+          "shortcut": "⌘3",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Convert",
+          "shortcut": "⌥⌘C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "RPN Mode",
+          "shortcut": "⌘R",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Maths Notes…",
+          "shortcut": "⌥⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Thousands Separator",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Decimal Places",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "0",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "1",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "2",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "3",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "4",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "5",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "6",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "7",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "8",
+              "shortcut": "",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            },
+            {
+              "label": "9",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "10",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "11",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "12",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "13",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "14",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "15",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show History",
+          "shortcut": "⌃⌘S",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "shortcut": "F",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Close",
+          "shortcut": "⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "shortcut": "⌥⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Minimise",
+          "shortcut": "⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "shortcut": "⌃F",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "shortcut": "⌃C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Halves",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left",
+              "shortcut": "⌃←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "shortcut": "⌃→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "shortcut": "⌃↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "shortcut": "⌃↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Arrange",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Right",
+              "shortcut": "⌃⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Quarters",
+              "shortcut": "⌃⌥⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Left",
+              "shortcut": "⌃⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Quarters",
+              "shortcut": "⌃⌥⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Bottom",
+              "shortcut": "⌃⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Quarters",
+              "shortcut": "⌃⌥⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Top",
+              "shortcut": "⌃⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Quarters",
+              "shortcut": "⌃⌥⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "shortcut": "⌃R",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Full-Screen Tile",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Remove Window from Set",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Always on Top",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Calculator Help",
+          "shortcut": "⌘?",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "toolbar": {
+    "present": true,
+    "items": [
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Show Sidebar"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "button"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Mode"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "change calculator mode"
+      },
+      {
+        "depth": 2,
+        "role": "AXMenuButton",
+        "label": "calculator.fill"
+      }
+    ]
+  },
+  "settings": {
+    "present": false,
+    "controls": []
+  }
+}

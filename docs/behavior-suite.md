@@ -1,5 +1,38 @@
 # Behaviour-parity suite
 
+## Terminal profiles
+
+`docs/behavior-pending/terminal/profile-settings.json` describes the Settings
+shortcut. It remains pending until a real Mac recording can provide its
+`.mac.json` expectation. On Lulo, the private nested-compositor check opens
+Settings, checks all 12 Mac profile names in the accessibility tree, then
+selects Clear Dark and checks that the choice was saved:
+
+```sh
+python3 scripts/behavior/run_lulo.py --bin-dir ~/rmac-wt/target/iterate --check-terminal-profiles
+```
+
+## Spotlight latency
+
+`scripts/behavior/run_cold_surfaces.py` is the private nested-niri Spotlight
+performance scenario. It starts one resident launcher before dispatching
+through niri and `rmac-shortcut-dispatch`, checks the first and later GPUI
+frames against a 150 ms limit, and types `cal` through the nested virtual
+keyboard. The echoed field and cached results must reach a frame within
+50 ms of the input-change event. It also verifies the launcher stays resident
+after dismissal and records its five-second memory sample. Other shell
+surfaces retain their lifecycle checks.
+
+```sh
+python3 scripts/behavior/run_cold_surfaces.py \
+  --bin-dir ~/rmac-wt/target/iterate \
+  --output /tmp/lulo-cold-surfaces.json --resident-settle 5
+```
+
+The cross-platform JSON scenario harness has no Spotlight app target, and
+its Mac recorder marks Spotlight input unsafe for the owner's live session;
+this private runner covers the interaction and timing on Lulo.
+
 ## Cross-app file drag
 
 `scripts/behavior/run_file_drag.py` starts the shipped Dock and wallpaper in
@@ -75,6 +108,11 @@ the repository.
 Finds places where Lulo *behaves* differently from the Mac, without anyone testing by hand. A
 scenario is data. The Mac recorder plays it on the owner's Mac and saves what macOS did. The Lulo
 runner plays the same scenario inside a private nested compositor and diffs the two.
+
+For a new Lulo behavior that cannot be recorded on the owner's busy Mac,
+`<name>.lulo.json` supplies a local contract using the same observation
+format. The runner prefers a `.mac.json` recording when one exists. The System
+Monitor Find Next journey uses a local contract and runs in the full suite.
 
 | Piece | Where | Runs on |
 |---|---|---|

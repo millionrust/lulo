@@ -1,6 +1,63 @@
 //! Launcher overlay geometry, invocation routing, creation, and token-checked release.
 
 use super::*;
+#[cfg(target_os = "linux")]
+use gpui::ParentElement as _;
+
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+unsafe extern "C" {
+    fn malloc_trim(pad: usize) -> i32;
+}
+
+#[cfg(target_os = "linux")]
+struct RendererWarmup;
+
+#[cfg(target_os = "linux")]
+impl gpui::Render for RendererWarmup {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        _cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        gpui::div().child("Search")
+    }
+}
+
+/// GPUI initializes the Wayland renderer when it opens its first window.
+/// Do that once at login, before the shortcut endpoint becomes ready. This
+/// tiny, pointer-transparent surface never asks the compositor for focus and
+/// is destroyed after its first frame. The process-shared GPU context stays
+/// initialized for the real launcher window.
+#[cfg(target_os = "linux")]
+pub(super) fn warm_renderer(cx: &mut App) {
+    use gpui::layer_shell::KeyboardInteractivity;
+
+    let mut options = overlay_options(
+        WindowBounds::Windowed(Bounds::new(point(px(0.0), px(0.0)), size(px(1.0), px(1.0)))),
+        0.0,
+    );
+    options.focus = false;
+    if let WindowKind::LayerShell(layer) = &mut options.kind {
+        layer.keyboard_interactivity = KeyboardInteractivity::None;
+    }
+    if let Err(error) = cx.open_window(options, |window, cx| {
+        window.set_input_region(Some(&[]));
+        window.on_next_frame(|window, cx| {
+            window.remove_window();
+            #[cfg(target_env = "gnu")]
+            cx.spawn(async move |_: &mut gpui::AsyncApp| {
+                async_io::Timer::after(std::time::Duration::from_millis(100)).await;
+                // glibc documents malloc_trim as thread-safe. The warmup
+                // window is gone before this asks glibc to return free pages.
+                blocking::unblock(|| unsafe { malloc_trim(0) }).await;
+            })
+            .detach();
+        });
+        cx.new(|_| RendererWarmup)
+    }) {
+        eprintln!("Launcher renderer warmup failed: {error}");
+    }
+}
 
 pub(crate) fn release(token: u64, cx: &mut App) {
     if cx.has_global::<LauncherService>() {
@@ -105,6 +162,14 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
         });
     let mut launcher = None;
     let handle = cx.open_window(options, |window, cx| {
+        if let Some(directory) = std::env::var_os("RMAC_SPOTLIGHT_FRAME_DIR") {
+            window.on_next_frame(move |_, _| {
+                let path = std::path::PathBuf::from(directory).join(format!("show-{token}.ready"));
+                std::fs::write(&path, b"ready\n").unwrap_or_else(|error| {
+                    panic!("write Spotlight frame marker {path:?}: {error}")
+                });
+            });
+        }
         window.set_window_title("Spotlight");
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| {

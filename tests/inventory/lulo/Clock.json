@@ -1,0 +1,279 @@
+{
+  "app": "Clock",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About Clock",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "action": "app::services",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Clock",
+          "action": "app::hide",
+          "shortcut": "⌘H",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "action": "app::hide-others",
+          "shortcut": "⌥⌘H",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "action": "app::show-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quit Clock",
+          "action": "app::quit",
+          "shortcut": "⌘Q",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "New",
+          "action": "clock::NewItem",
+          "shortcut": "⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close",
+          "action": "clock::CloseWindow",
+          "shortcut": "⌘W",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "action": "input::Undo",
+          "shortcut": "⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "action": "input::Redo",
+          "shortcut": "⇧⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "action": "input::Cut",
+          "shortcut": "⌘X",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "action": "input::Copy",
+          "shortcut": "⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "action": "input::Paste",
+          "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "action": "input::SelectAll",
+          "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "World Clock",
+          "action": "clock::ShowWorldClock",
+          "shortcut": "⌘1",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Alarms",
+          "action": "clock::ShowAlarms",
+          "shortcut": "⌘2",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Stopwatch",
+          "action": "clock::ShowStopwatch",
+          "shortcut": "⌘3",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Timers",
+          "action": "clock::ShowTimers",
+          "shortcut": "⌘4",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Start or Stop",
+          "action": "clock::StartStop",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Lap or Reset",
+          "action": "clock::LapReset",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "action": "window::minimise",
+          "shortcut": "⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "action": "app::minimise-all",
+          "shortcut": "⌥⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "action": "window::zoom",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "action": "window::fill",
+          "shortcut": "⌃⇧⌘F",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "action": "window::centre",
+          "shortcut": "⌃⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "action": "window::move-and-resize",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Left",
+              "action": "window::tile-left",
+              "shortcut": "⌃⌘←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "action": "window::tile-right",
+              "shortcut": "⌃⌘→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "action": "window::tile-top",
+              "shortcut": "⌃⌘↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "action": "window::tile-bottom",
+              "shortcut": "⌃⌘↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "action": "window::restore-size",
+              "shortcut": "⌃⌘R",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Bring All to Front",
+          "action": "window::bring-all-to-front",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Clock Help",
+          "action": "help::app-help",
+          "shortcut": "⌘?",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": false,
+    "extraction": "none",
+    "controls": []
+  },
+  "toolbar": {
+    "present": false,
+    "extraction": "none",
+    "groups": []
+  },
+  "context_menus": {}
+}

@@ -16,7 +16,9 @@ product_roots=(
 
 pattern='gpui_component::(button|input|switch|slider|table)|^[[:space:]]*(button|input|switch|slider|table)::'
 
-if matches="$(rg -n "$pattern" "${product_roots[@]}" --glob '*.rs' || true)" && [[ -n "$matches" ]]; then
+# grep -E rather than rg: CI runners don't ship ripgrep, and a missing tool
+# must fail loudly instead of passing silently.
+if matches="$(grep -rnE --include='*.rs' "$pattern" "${product_roots[@]}" || true)" && [[ -n "$matches" ]]; then
   echo "product apps must consume Button/Input/Switch/Slider/Table through rmac-ui:" >&2
   echo "$matches" >&2
   exit 1

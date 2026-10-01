@@ -145,6 +145,9 @@ pub(crate) fn run() {
                 learning: Arc::new(learning::load()),
             });
 
+            #[cfg(target_os = "linux")]
+            overlay::warm_renderer(cx);
+
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {
                 while let Ok(text) = clipboard_rx.recv().await {
                     cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string(text)));

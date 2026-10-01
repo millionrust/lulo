@@ -19,6 +19,7 @@ from PIL import ImageChops
 
 import run_lulo
 import run_window_move
+from measure_memory import sample
 
 SURFACES = (
     ("launcher", "rmac-launcher", (), "cmd-space"),
@@ -80,6 +81,10 @@ def inner(args: argparse.Namespace) -> int:
             process = run.spawn([str(bins / binary), *flags], action,
                                 {"RMAC_SURFACE_IDLE_SECONDS": "3",
                                  "RMAC_BENCHMARK_READY_FILE": str(frame_marker),
+                                 **({"RMAC_SPOTLIGHT_FRAME_DIR": str(run.work)}
+                                    if action == "launcher" else {}),
+                                 **({"RMAC_SPOTLIGHT_INPUT_PROBE_DIR": str(run.work)}
+                                    if action == "launcher" else {}),
                                  "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/intel_hasvk_icd.json"})
             endpoint = run.runtime / "rmac" / f"shortcut-{action}.sock"
             bound = wait_for_socket(endpoint, process)
@@ -90,6 +95,7 @@ def inner(args: argparse.Namespace) -> int:
                 time.sleep(args.resident_settle)
                 before = run.capture(f"{action}-before")
                 started = time.monotonic()
+            resident_memory = sample(process.pid) if action == "launcher" else None
             first_via_niri = bool(chord) and not (resident and args.resident_direct)
             sent = dispatch(run, bins, action, first_via_niri)
             run.check(f"{action} first dispatch accepted", sent)
@@ -98,6 +104,9 @@ def inner(args: argparse.Namespace) -> int:
             frame_ready = wait_for_frame(frame_marker, process)
             frame_ms = round((time.monotonic() - started) * 1000, 1)
             run.check(f"{action} first frame completed", frame_ready, f"{frame_ms} ms")
+            if action == "launcher":
+                run.check("Spotlight first frame within 150 ms", frame_ready and frame_ms <= 150,
+                          f"{frame_ms} ms")
             appeared = False
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
@@ -113,12 +122,43 @@ def inner(args: argparse.Namespace) -> int:
                                "screenshot_upper_bound_ms": elapsed_ms if appeared else None,
                                "resident_at_login": resident, "via_niri_spawn": first_via_niri,
                                "resident_settle_seconds": args.resident_settle if resident else 0}
+            if resident_memory is not None:
+                results[action]["resident_memory_mib"] = resident_memory
+            if action == "launcher" and appeared:
+                run.pointer.type_text("cal", delay=0.04)
+                echo = run.work / "echo-3.ready"
+                matches = run.work / "results-3.ready"
+                echo_ready = wait_for_frame(echo, process)
+                matches_ready = wait_for_frame(matches, process)
+                echo_ms = float(echo.read_text()) if echo_ready else None
+                matches_ms = float(matches.read_text()) if matches_ready else None
+                run.check("Spotlight typing echoed on next frame",
+                          echo_ms is not None and echo_ms < 50, f"{echo_ms} ms")
+                run.check("Spotlight cached results within 50 ms",
+                          matches_ms is not None and matches_ms < 50, f"{matches_ms} ms")
+                results[action]["typing_echo_ms"] = echo_ms
+                results[action]["cached_results_ms"] = matches_ms
             if not appeared:
                 print((run.logs / f"{action}.log").read_text()[-1200:], flush=True)
             dispatch(run, bins, action, bool(chord))
             if resident:
                 time.sleep(1.2)
                 run.check(f"{action} remains resident after dismissal", process.poll() is None)
+                if action == "launcher":
+                    later_frames = []
+                    for show_number in range(2, 5):
+                        reopened_at = time.monotonic()
+                        reopened = dispatch(run, bins, action, bool(chord))
+                        run.check(f"Spotlight show {show_number} dispatch accepted", reopened)
+                        if not reopened:
+                            break
+                        later_ready = wait_for_frame(run.work / f"show-{show_number}.ready", process)
+                        later_ms = round((time.monotonic() - reopened_at) * 1000, 1)
+                        run.check(f"Spotlight show {show_number} frame within 150 ms",
+                                  later_ready and later_ms <= 150, f"{later_ms} ms")
+                        later_frames.append(later_ms if later_ready else None)
+                        dispatch(run, bins, action, bool(chord))
+                    results[action]["later_frames_ms"] = later_frames
             else:
                 time.sleep(1.2)
                 run.check(f"{action} stays alive during idle grace", process.poll() is None)

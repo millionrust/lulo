@@ -163,7 +163,8 @@ impl EditorView {
         if !self.save_goto_open || self.save_goto_busy {
             return;
         }
-        let raw = self.save_goto_input.read(cx).text().trim().to_owned();
+        let raw = self.save_goto_input.read(cx).text().to_string();
+        let raw = raw.trim();
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_default();

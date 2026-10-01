@@ -1,0 +1,615 @@
+{
+  "cpu_runs": [
+    {
+      "accessibility_active": true,
+      "app": "calculator",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/current/rmac-calculator",
+      "binary_bytes": 43677456,
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "private_memory_kib": 59132,
+      "pss_anon_kib": 59132,
+      "pss_kib": 136724,
+      "run": 1,
+      "start_to_window_ms": 1465.7,
+      "swappss_kib": 0,
+      "variant": "current"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/current/rmac-files",
+      "binary_bytes": 60380360,
+      "hover": {
+        "cpu_percent": 2.485,
+        "cpu_s": 0.25,
+        "elapsed_s": 10.062
+      },
+      "idle": {
+        "cpu_percent": 0.017,
+        "cpu_s": 0.01,
+        "elapsed_s": 60.0
+      },
+      "list_scroll": {
+        "cpu_percent": 253.321,
+        "cpu_s": 25.38,
+        "elapsed_s": 10.019
+      },
+      "private_memory_kib": 73008,
+      "pss_anon_kib": 73008,
+      "pss_kib": 166163,
+      "run": 1,
+      "search_typing": {
+        "cpu_percent": 40.14,
+        "cpu_s": 4.04,
+        "elapsed_s": 10.065
+      },
+      "start_to_window_ms": 1922.5,
+      "swappss_kib": 0,
+      "variant": "current"
+    },
+    {
+      "accessibility_active": true,
+      "app": "calculator",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/fast/rmac-calculator",
+      "binary_bytes": 42294064,
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "private_memory_kib": 60264,
+      "pss_anon_kib": 60264,
+      "pss_kib": 138328,
+      "run": 1,
+      "start_to_window_ms": 1619.3,
+      "swappss_kib": 0,
+      "variant": "fast"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/fast/rmac-files",
+      "binary_bytes": 57900544,
+      "hover": {
+        "cpu_percent": 2.284,
+        "cpu_s": 0.23,
+        "elapsed_s": 10.069
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "list_scroll": {
+        "cpu_percent": 241.723,
+        "cpu_s": 24.29,
+        "elapsed_s": 10.049
+      },
+      "private_memory_kib": 73600,
+      "pss_anon_kib": 73600,
+      "pss_kib": 173810,
+      "run": 1,
+      "search_typing": {
+        "cpu_percent": 43.097,
+        "cpu_s": 4.33,
+        "elapsed_s": 10.047
+      },
+      "start_to_window_ms": 2229.6,
+      "swappss_kib": 0,
+      "variant": "fast"
+    },
+    {
+      "accessibility_active": true,
+      "app": "calculator",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/current/rmac-calculator",
+      "binary_bytes": 43677456,
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "private_memory_kib": 59024,
+      "pss_anon_kib": 59024,
+      "pss_kib": 136464,
+      "run": 2,
+      "start_to_window_ms": 1548.4,
+      "swappss_kib": 0,
+      "variant": "current"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/current/rmac-files",
+      "binary_bytes": 60380360,
+      "hover": {
+        "cpu_percent": 2.382,
+        "cpu_s": 0.24,
+        "elapsed_s": 10.074
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "list_scroll": {
+        "cpu_percent": 250.976,
+        "cpu_s": 25.15,
+        "elapsed_s": 10.021
+      },
+      "private_memory_kib": 72480,
+      "pss_anon_kib": 72480,
+      "pss_kib": 161734,
+      "run": 2,
+      "search_typing": {
+        "cpu_percent": 42.035,
+        "cpu_s": 4.23,
+        "elapsed_s": 10.063
+      },
+      "start_to_window_ms": 1979.8,
+      "swappss_kib": 0,
+      "variant": "current"
+    },
+    {
+      "accessibility_active": true,
+      "app": "calculator",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/fast/rmac-calculator",
+      "binary_bytes": 42294064,
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "private_memory_kib": 59864,
+      "pss_anon_kib": 59864,
+      "pss_kib": 138070,
+      "run": 2,
+      "start_to_window_ms": 1465.2,
+      "swappss_kib": 0,
+      "variant": "fast"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/fast/rmac-files",
+      "binary_bytes": 57900544,
+      "hover": {
+        "cpu_percent": 2.284,
+        "cpu_s": 0.23,
+        "elapsed_s": 10.071
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "list_scroll": {
+        "cpu_percent": 242.106,
+        "cpu_s": 24.36,
+        "elapsed_s": 10.062
+      },
+      "private_memory_kib": 73528,
+      "pss_anon_kib": 73528,
+      "pss_kib": 174404,
+      "run": 2,
+      "search_typing": {
+        "cpu_percent": 43.053,
+        "cpu_s": 4.33,
+        "elapsed_s": 10.057
+      },
+      "start_to_window_ms": 1876.4,
+      "swappss_kib": 0,
+      "variant": "fast"
+    },
+    {
+      "accessibility_active": true,
+      "app": "calculator",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/current/rmac-calculator",
+      "binary_bytes": 43677456,
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "private_memory_kib": 59424,
+      "pss_anon_kib": 59424,
+      "pss_kib": 137021,
+      "run": 3,
+      "start_to_window_ms": 1505.6,
+      "swappss_kib": 0,
+      "variant": "current"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/current/rmac-files",
+      "binary_bytes": 60380360,
+      "hover": {
+        "cpu_percent": 2.484,
+        "cpu_s": 0.25,
+        "elapsed_s": 10.064
+      },
+      "idle": {
+        "cpu_percent": 0.017,
+        "cpu_s": 0.01,
+        "elapsed_s": 60.0
+      },
+      "list_scroll": {
+        "cpu_percent": 251.307,
+        "cpu_s": 25.21,
+        "elapsed_s": 10.032
+      },
+      "private_memory_kib": 73032,
+      "pss_anon_kib": 73032,
+      "pss_kib": 162215,
+      "run": 3,
+      "search_typing": {
+        "cpu_percent": 40.03,
+        "cpu_s": 4.03,
+        "elapsed_s": 10.067
+      },
+      "start_to_window_ms": 1930.5,
+      "swappss_kib": 0,
+      "variant": "current"
+    },
+    {
+      "accessibility_active": true,
+      "app": "calculator",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/fast/rmac-calculator",
+      "binary_bytes": 42294064,
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "private_memory_kib": 60308,
+      "pss_anon_kib": 60308,
+      "pss_kib": 138453,
+      "run": 3,
+      "start_to_window_ms": 1468.6,
+      "swappss_kib": 0,
+      "variant": "fast"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/fast/rmac-files",
+      "binary_bytes": 57900544,
+      "hover": {
+        "cpu_percent": 2.184,
+        "cpu_s": 0.22,
+        "elapsed_s": 10.072
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 60.0
+      },
+      "list_scroll": {
+        "cpu_percent": 239.585,
+        "cpu_s": 24.14,
+        "elapsed_s": 10.076
+      },
+      "private_memory_kib": 73612,
+      "pss_anon_kib": 73612,
+      "pss_kib": 174694,
+      "run": 3,
+      "search_typing": {
+        "cpu_percent": 41.031,
+        "cpu_s": 4.13,
+        "elapsed_s": 10.065
+      },
+      "start_to_window_ms": 1927.3,
+      "swappss_kib": 0,
+      "variant": "fast"
+    }
+  ],
+  "date": "2026-10-01",
+  "frame_callback_probe_runs": [
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/current/rmac-files",
+      "binary_bytes": 60380360,
+      "frame_callback_latency": {
+        "hover": {
+          "count": 2,
+          "p50_ms": 15.17,
+          "p95_ms": 15.17
+        },
+        "list_scroll": {
+          "count": 165,
+          "p50_ms": 18.22,
+          "p95_ms": 79.68
+        },
+        "search_typing": {
+          "count": 21,
+          "p50_ms": 59.56,
+          "p95_ms": 101.82
+        }
+      },
+      "hover": {
+        "cpu_percent": 2.384,
+        "cpu_s": 0.24,
+        "elapsed_s": 10.069
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 1.0
+      },
+      "list_scroll": {
+        "cpu_percent": 250.684,
+        "cpu_s": 25.14,
+        "elapsed_s": 10.029
+      },
+      "private_memory_kib": 74520,
+      "pss_anon_kib": 74520,
+      "pss_kib": 167697,
+      "run": 1,
+      "search_typing": {
+        "cpu_percent": 40.382,
+        "cpu_s": 4.07,
+        "elapsed_s": 10.079
+      },
+      "start_to_window_ms": 1926.9,
+      "swappss_kib": 0,
+      "variant": "current"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/fast/rmac-files",
+      "binary_bytes": 57900544,
+      "frame_callback_latency": {
+        "hover": {
+          "count": 1,
+          "p50_ms": 70.65,
+          "p95_ms": 70.65
+        },
+        "list_scroll": {
+          "count": 125,
+          "p50_ms": 57.47,
+          "p95_ms": 68.09
+        },
+        "search_typing": {
+          "count": 21,
+          "p50_ms": 57.43,
+          "p95_ms": 67.18
+        }
+      },
+      "hover": {
+        "cpu_percent": 2.286,
+        "cpu_s": 0.23,
+        "elapsed_s": 10.061
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 1.0
+      },
+      "list_scroll": {
+        "cpu_percent": 240.452,
+        "cpu_s": 24.2,
+        "elapsed_s": 10.064
+      },
+      "private_memory_kib": 74636,
+      "pss_anon_kib": 74636,
+      "pss_kib": 164575,
+      "run": 1,
+      "search_typing": {
+        "cpu_percent": 41.166,
+        "cpu_s": 4.14,
+        "elapsed_s": 10.057
+      },
+      "start_to_window_ms": 1934.1,
+      "swappss_kib": 0,
+      "variant": "fast"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/current/rmac-files",
+      "binary_bytes": 60380360,
+      "frame_callback_latency": {
+        "hover": {
+          "count": 2,
+          "p50_ms": 24.54,
+          "p95_ms": 24.54
+        },
+        "list_scroll": {
+          "count": 170,
+          "p50_ms": 17.69,
+          "p95_ms": 81.09
+        },
+        "search_typing": {
+          "count": 21,
+          "p50_ms": 59.7,
+          "p95_ms": 94.18
+        }
+      },
+      "hover": {
+        "cpu_percent": 2.481,
+        "cpu_s": 0.25,
+        "elapsed_s": 10.075
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 1.0
+      },
+      "list_scroll": {
+        "cpu_percent": 248.553,
+        "cpu_s": 24.96,
+        "elapsed_s": 10.042
+      },
+      "private_memory_kib": 73716,
+      "pss_anon_kib": 73716,
+      "pss_kib": 163051,
+      "run": 2,
+      "search_typing": {
+        "cpu_percent": 40.264,
+        "cpu_s": 4.06,
+        "elapsed_s": 10.083
+      },
+      "start_to_window_ms": 2003.7,
+      "swappss_kib": 0,
+      "variant": "current"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/fast/rmac-files",
+      "binary_bytes": 57900544,
+      "frame_callback_latency": {
+        "hover": {
+          "count": 1,
+          "p50_ms": 69.7,
+          "p95_ms": 69.7
+        },
+        "list_scroll": {
+          "count": 125,
+          "p50_ms": 57.63,
+          "p95_ms": 69.6
+        },
+        "search_typing": {
+          "count": 22,
+          "p50_ms": 57.73,
+          "p95_ms": 65.03
+        }
+      },
+      "hover": {
+        "cpu_percent": 2.383,
+        "cpu_s": 0.24,
+        "elapsed_s": 10.071
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 1.0
+      },
+      "list_scroll": {
+        "cpu_percent": 241.866,
+        "cpu_s": 24.34,
+        "elapsed_s": 10.063
+      },
+      "private_memory_kib": 73164,
+      "pss_anon_kib": 73164,
+      "pss_kib": 174325,
+      "run": 2,
+      "search_typing": {
+        "cpu_percent": 42.8,
+        "cpu_s": 4.3,
+        "elapsed_s": 10.047
+      },
+      "start_to_window_ms": 1922.0,
+      "swappss_kib": 0,
+      "variant": "fast"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/current/rmac-files",
+      "binary_bytes": 60380360,
+      "frame_callback_latency": {
+        "hover": {
+          "count": 2,
+          "p50_ms": 13.91,
+          "p95_ms": 13.91
+        },
+        "list_scroll": {
+          "count": 169,
+          "p50_ms": 17.62,
+          "p95_ms": 76.05
+        },
+        "search_typing": {
+          "count": 22,
+          "p50_ms": 59.43,
+          "p95_ms": 82.01
+        }
+      },
+      "hover": {
+        "cpu_percent": 2.482,
+        "cpu_s": 0.25,
+        "elapsed_s": 10.071
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 1.0
+      },
+      "list_scroll": {
+        "cpu_percent": 252.108,
+        "cpu_s": 25.23,
+        "elapsed_s": 10.008
+      },
+      "private_memory_kib": 72936,
+      "pss_anon_kib": 72936,
+      "pss_kib": 162442,
+      "run": 3,
+      "search_typing": {
+        "cpu_percent": 42.354,
+        "cpu_s": 4.26,
+        "elapsed_s": 10.058
+      },
+      "start_to_window_ms": 1997.4,
+      "swappss_kib": 0,
+      "variant": "current"
+    },
+    {
+      "accessibility_active": true,
+      "app": "files",
+      "binary": "/home/jacob/rmac-gpui-fork-eval-bins/fast/rmac-files",
+      "binary_bytes": 57900544,
+      "frame_callback_latency": {
+        "hover": {
+          "count": 1,
+          "p50_ms": 70.1,
+          "p95_ms": 70.1
+        },
+        "list_scroll": {
+          "count": 125,
+          "p50_ms": 57.53,
+          "p95_ms": 69.8
+        },
+        "search_typing": {
+          "count": 22,
+          "p50_ms": 57.43,
+          "p95_ms": 59.14
+        }
+      },
+      "hover": {
+        "cpu_percent": 2.284,
+        "cpu_s": 0.23,
+        "elapsed_s": 10.069
+      },
+      "idle": {
+        "cpu_percent": 0.0,
+        "cpu_s": 0.0,
+        "elapsed_s": 1.0
+      },
+      "list_scroll": {
+        "cpu_percent": 239.855,
+        "cpu_s": 24.15,
+        "elapsed_s": 10.069
+      },
+      "private_memory_kib": 74336,
+      "pss_anon_kib": 74336,
+      "pss_kib": 175424,
+      "run": 3,
+      "search_typing": {
+        "cpu_percent": 42.957,
+        "cpu_s": 4.32,
+        "elapsed_s": 10.057
+      },
+      "start_to_window_ms": 1985.3,
+      "swappss_kib": 0,
+      "variant": "fast"
+    }
+  ],
+  "host": "reference laptop i5-5300U, Intel HD 5500",
+  "method": "private nested niri inside headless Sway; software renderer; one fresh app process per run"
+}

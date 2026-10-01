@@ -1,0 +1,13 @@
+{
+  "title": "Calculator: History shortcut opens and closes the calculation tape",
+  "app": "calculator",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"type": "2+3="},
+    {"key": "ctrl-cmd-s"},
+    {"observe": "history_open", "facts": ["menu"]},
+    {"key": "ctrl-cmd-s"},
+    {"observe": "history_closed", "facts": ["menu"]}
+  ]
+}

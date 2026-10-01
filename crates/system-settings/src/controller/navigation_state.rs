@@ -61,6 +61,24 @@ impl Settings {
         rmac_apps::find_desktop_entry(&self.app_catalog, app_id)
     }
 
+    pub(super) fn catalog_pane_visible(&self) -> bool {
+        matches!(
+            self.current().name.as_ref(),
+            "Notifications" | "Focus" | "Privacy & Security" | "Accessibility"
+        )
+    }
+
+    pub(super) fn sync_catalog_for_pane(&mut self, was_visible: bool) {
+        if self.catalog_pane_visible() {
+            if !was_visible {
+                let _ = self.catalog_reload.try_send(());
+            }
+        } else {
+            self.app_catalog = Vec::new();
+            self._app_catalog_watcher = None;
+        }
+    }
+
     /// Search results, ranked the way the Mac ranks them: a hit on a pane's
     /// own name (e.g. "Wallpaper" for "wallpaper") outranks one that only
     /// hit its description or hidden search vocabulary (e.g. "Desktop &
@@ -393,9 +411,12 @@ impl Settings {
         let Some(pane_id) = pane_id_for_category_name(category.name.as_ref()) else {
             return false;
         };
+        let catalog_was_visible = self.catalog_pane_visible();
         self.selected = target;
         self.nav.clear();
         self.forward.clear();
+        self.sync_catalog_for_pane(catalog_was_visible);
+        self.refresh_wallpaper_preview(cx);
         self.compact_sidebar_open = false;
         self.navigation_persistence.schedule(pane_id);
         self.sync_wifi_pane_scan_on_navigation(cx);

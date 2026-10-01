@@ -25,19 +25,32 @@ pub(super) fn shortcut_socket_path_in(runtime: &Path, id: &ShortcutId) -> Result
     Ok(runtime.join(format!("rmac/shortcut-{}.sock", id.0)))
 }
 
-/// A shortcut's own surface re-arms its dispatch socket by exiting once its
-/// last window closes and letting systemd restart it (rather than staying
-/// resident with an idle window), so the socket is briefly absent or stale
-/// after every activation of a surface such as Quick Settings or
-/// Notification Center. A send that lands in that gap fails with
-/// `ConnectionRefused` (the old, now-orphaned socket path) or `NotFound`
-/// (removed but not yet recreated). Retrying for a short budget absorbs a
-/// restart that is already in flight instead of surfacing a one-shot
-/// failure the person has no way to notice or recover from short of
-/// clicking again (observed on the reference laptop as "the quick-settings
-/// shortcut dispatcher failed: exit status: 1").
+/// Surface units start on the first shortcut rather than at login. A missing
+/// socket also occurs while a surface is rebinding after its window closes.
+/// Start the unit once and retain the retry so that first input is delivered
+/// after the GPUI process binds its endpoint.
 const DISPATCH_RETRY_BUDGET: std::time::Duration = std::time::Duration::from_millis(1_500);
-const DISPATCH_RETRY_STEP: std::time::Duration = std::time::Duration::from_millis(50);
+const DISPATCH_RETRY_STEP: std::time::Duration = std::time::Duration::from_millis(10);
+
+pub(super) fn surface_unit(id: &ShortcutId) -> Option<&'static str> {
+    Some(match id.0.as_str() {
+        "launcher" => "rmac-launcher.service",
+        "app-drawer" => "rmac-app-drawer.service",
+        "quick-settings" => "rmac-quick-settings.service",
+        "notification-center" => "rmac-notification-center-panel.service",
+        _ => return None,
+    })
+}
+
+fn start_surface(unit: &str) {
+    // Dispatch runs in a short-lived child of niri or the menu bar. Neither
+    // caller waits on the UI thread. --no-block only queues the systemd job.
+    let _ = std::process::Command::new("/usr/bin/systemctl")
+        .args(["--user", "start", "--no-block", unit])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
 
 pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
     let specs = default_shortcuts();
@@ -62,6 +75,11 @@ pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
         &path,
         DISPATCH_RETRY_BUDGET,
         DISPATCH_RETRY_STEP,
+        || {
+            if let Some(unit) = surface_unit(id) {
+                start_surface(unit);
+            }
+        },
     )
 }
 
@@ -71,8 +89,10 @@ pub(super) fn send_with_retry(
     path: &Path,
     budget: std::time::Duration,
     step: std::time::Duration,
+    activate: impl FnOnce(),
 ) -> Result<(), Error> {
     let deadline = std::time::Instant::now() + budget;
+    let mut activate = Some(activate);
     loop {
         match socket.send_to(bytes, path) {
             Ok(_) => return Ok(()),
@@ -82,6 +102,9 @@ pub(super) fn send_with_retry(
                     std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
                 ) && std::time::Instant::now() < deadline =>
             {
+                if let Some(activate) = activate.take() {
+                    activate();
+                }
                 std::thread::sleep(step);
             }
             Err(error) => return Err(Error::new(Operation::Dispatch, error.to_string())),

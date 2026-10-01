@@ -46,7 +46,14 @@ impl NotificationCenterView {
         })
         .detach();
 
+        let (first_frame_tx, first_frame_rx) = async_channel::bounded(1);
+        window.on_next_frame(move |_, _| {
+            let _ = first_frame_tx.try_send(());
+        });
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            if first_frame_rx.recv().await.is_err() {
+                return;
+            }
             let catalog = blocking::unblock(|| {
                 rmac_apps::discover()
                     .map(|catalog| ApplicationCatalog::new(catalog_entries(catalog)))

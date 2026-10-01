@@ -125,6 +125,7 @@ fn apply_settings_update(update: SettingsUpdate, cx: &mut App) {
 pub(crate) fn run() {
     rmac_ui::application()
         .with_assets(crate::assets::Assets)
+        .with_quit_mode(gpui::QuitMode::Explicit)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
 

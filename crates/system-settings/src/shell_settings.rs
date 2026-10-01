@@ -449,7 +449,20 @@ pub(super) fn render_wallpaper_preview(
 ) -> std::result::Result<std::sync::Arc<gpui::RenderImage>, String> {
     let source = rmac_wallpaper::parse_source(selection.source.as_deref())
         .map_err(|_| "the saved wallpaper source is invalid".to_owned())?;
-    let resolved = rmac_wallpaper_system::resolve(&source).map_err(|error| error.to_string())?;
+    // Built-in artwork ships with a gallery-sized JPEG. Decoding its desktop
+    // variant here used a full 1920p+ RGBA allocation for a 480x270 preview.
+    let resolved = match &source {
+        rmac_wallpaper::Source::BuiltIn(id) => {
+            if let Some(path) = id.metadata().thumbnail_path(dark) {
+                rmac_wallpaper_system::resolve(&rmac_wallpaper::Source::File(path))
+                    .or_else(|_| rmac_wallpaper_system::resolve(&source))
+            } else {
+                rmac_wallpaper_system::resolve(&source)
+            }
+        }
+        rmac_wallpaper::Source::File(_) => rmac_wallpaper_system::resolve(&source),
+    }
+    .map_err(|error| error.to_string())?;
     let decoded = rmac_wallpaper_image::Cache::new(0)
         .get_or_decode_for(
             resolved,

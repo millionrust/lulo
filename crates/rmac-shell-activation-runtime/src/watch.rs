@@ -1,4 +1,8 @@
+#[cfg(any(target_os = "linux", test))]
+use std::collections::VecDeque;
 use std::fmt;
+#[cfg(any(target_os = "linux", test))]
+use std::time::{Duration, Instant};
 
 #[cfg(any(target_os = "linux", test))]
 use crate::{Coordinator, Update};
@@ -98,19 +102,37 @@ pub(super) async fn consume(
     use futures_util::FutureExt as _;
 
     let mut coordinator = Coordinator::default();
+    let mut pending = VecDeque::new();
+    let mut pending_deadline: Option<Instant> = None;
     let endpoint_ready = endpoint.recv().fuse();
     futures_util::pin_mut!(endpoint_ready);
     loop {
         let shortcut = shortcuts.recv().fuse();
         let runtime = runtime.recv().fuse();
         let closed = sender.closed().fuse();
-        futures_util::pin_mut!(shortcut, runtime, closed);
+        let deadline = pending_deadline;
+        let expiry = async move {
+            if let Some(deadline) = deadline {
+                async_io::Timer::at(deadline).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        }
+        .fuse();
+        futures_util::pin_mut!(shortcut, runtime, closed, expiry);
         let update = futures_util::select! {
-            event = shortcut => Some(Update::Activated(Box::new(coordinator.activate(
-                event.map_err(|_| {
+            event = shortcut => {
+                let event = event.map_err(|_| {
                     Error::new(Operation::WatchShortcut, "the shortcut endpoint stopped")
-                })?,
-            )))),
+                })?;
+                if coordinator.ready() {
+                    Some(Update::Activated(Box::new(coordinator.activate(event))))
+                } else {
+                    pending.push_back(event);
+                    pending_deadline.get_or_insert_with(|| Instant::now() + Duration::from_secs(2));
+                    None
+                }
+            },
             ready = endpoint_ready => {
                 ready.map_err(|_| Error::new(
                     Operation::WatchShortcut,
@@ -125,6 +147,10 @@ pub(super) async fn consume(
                 ))?;
                 coordinator.apply_runtime(snapshot).then_some(Update::Ready)
             },
+            _ = expiry => {
+                pending_deadline = None;
+                None
+            },
             _ = closed => return Ok(()),
         };
         if let Some(update) = update {
@@ -132,6 +158,17 @@ pub(super) async fn consume(
                 .send(update)
                 .await
                 .map_err(|_| Error::new(Operation::Consume, "the activation consumer stopped"))?;
+        }
+        if coordinator.ready() || pending_deadline.is_none() {
+            while let Some(event) = pending.pop_front() {
+                sender
+                    .send(Update::Activated(Box::new(coordinator.activate(event))))
+                    .await
+                    .map_err(|_| {
+                        Error::new(Operation::Consume, "the activation consumer stopped")
+                    })?;
+            }
+            pending_deadline = None;
         }
     }
 }

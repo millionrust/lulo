@@ -173,6 +173,13 @@ class Run:
         bins = Path(self.args.bin_dir)
         shell = shell.replace("/usr/libexec/rmac/rmac-dock", str(bins / "dock"))
         shell = shell.replace("/usr/libexec/rmac/rmac-mission-control", str(bins / "mission-control"))
+        if getattr(self.args, "fallback_shortcuts", False):
+            fallback = (REPO / "packaging/rmac-session/shortcuts-fallback.kdl")
+            bindings = [line for line in fallback.read_text(encoding="utf-8").splitlines()
+                        if line.lstrip().startswith("Mod+")]
+            bindings = [line.replace("/usr/libexec/rmac/rmac-shortcut-dispatch",
+                                     str(bins / "rmac-shortcut-dispatch")) for line in bindings]
+            shell = shell.replace("binds {", "binds {\n" + "\n".join(bindings), 1)
         niri_config = self.logs / "niri.kdl"
         niri_config.write_text(shell)
         validate = subprocess.run([self.args.niri, "validate", "-c", str(niri_config)], env=self.env,

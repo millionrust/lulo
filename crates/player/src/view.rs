@@ -27,7 +27,6 @@ use crate::{
 /// Rewind and fast-forward jump this far (S: QuickTime scans instead).
 const SKIP_SECONDS: f64 = 10.0;
 const VOLUME_STEP: f64 = 10.0;
-const HIDE_CHECK: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Drag {
@@ -47,17 +46,23 @@ struct Playback {
     album: String,
     video: (f64, f64),
     loaded: bool,
+    ended: bool,
 }
 
 pub(crate) struct PlayerView {
     pub(crate) focus: FocusHandle,
     player: Option<Player>,
+    starting_player: bool,
+    player_generation: u64,
+    event_tx: async_channel::Sender<(u64, Event)>,
+    frame_tx: async_channel::Sender<()>,
     error: Option<SharedString>,
     playlist: Playlist,
     playback: Playback,
     frame: Option<Arc<RenderImage>>,
     garbage: Vec<Arc<RenderImage>>,
     last_pointer: Instant,
+    hide_timer_pending: bool,
     show_remaining: bool,
     drag: Option<Drag>,
     /// The window was resized to this video's size already.
@@ -72,14 +77,14 @@ impl PlayerView {
     pub(crate) fn new(playlist: Playlist, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (event_tx, event_rx) = async_channel::unbounded();
         let (frame_tx, frame_rx) = async_channel::bounded(1);
-        let (player, error) = match Player::start(event_tx, frame_tx) {
-            Ok(player) => (Some(player), None),
-            Err(error) => (None, Some(SharedString::from(error))),
-        };
         let mut view = Self {
             focus: cx.focus_handle(),
-            player,
-            error,
+            player: None,
+            starting_player: false,
+            player_generation: 0,
+            event_tx,
+            frame_tx,
+            error: None,
             playlist,
             playback: Playback {
                 volume: 100.0,
@@ -88,6 +93,7 @@ impl PlayerView {
             frame: None,
             garbage: Vec::new(),
             last_pointer: Instant::now(),
+            hide_timer_pending: false,
             show_remaining: false,
             drag: None,
             sized_for: None,
@@ -97,9 +103,13 @@ impl PlayerView {
             notices: None,
         };
         cx.spawn_in(window, async move |this, cx| {
-            while let Ok(event) = event_rx.recv().await {
+            while let Ok((generation, event)) = event_rx.recv().await {
                 if this
-                    .update_in(cx, |view, window, cx| view.apply(event, window, cx))
+                    .update_in(cx, |view, window, cx| {
+                        if view.player_generation == generation {
+                            view.apply(event, window, cx);
+                        }
+                    })
                     .is_err()
                 {
                     break;
@@ -115,15 +125,8 @@ impl PlayerView {
             }
         })
         .detach();
-        cx.spawn(async move |this, cx| loop {
-            cx.background_executor().timer(HIDE_CHECK).await;
-            if this.update(cx, |_, cx| cx.notify()).is_err() {
-                break;
-            }
-        })
-        .detach();
         view.start_mpris(window, cx);
-        view.load_current();
+        view.load_current(cx);
         view
     }
 
@@ -169,9 +172,9 @@ impl PlayerView {
         match command {
             Command::Raise => window.activate_window(),
             Command::Quit => window.remove_window(),
-            Command::Play => self.set_paused(false),
-            Command::Pause | Command::Stop => self.set_paused(true),
-            Command::PlayPause => self.toggle_play(),
+            Command::Play => self.set_paused(false, cx),
+            Command::Pause | Command::Stop => self.set_paused(true, cx),
+            Command::PlayPause => self.toggle_play(cx),
             Command::Next => self.next(cx),
             Command::Previous => self.previous(cx),
             Command::SeekTo(seconds) => self.seek_to(seconds),
@@ -183,7 +186,7 @@ impl PlayerView {
             Command::Open(uri) => {
                 if let Some(path) = playlist::path_from_open_uri(&uri) {
                     if self.playlist.append([path]).is_some() {
-                        self.load_current();
+                        self.load_current(cx);
                     }
                 }
             }
@@ -239,33 +242,56 @@ impl PlayerView {
     }
 
     fn apply(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
-        let playback = &mut self.playback;
+        let start_hide = matches!(&event, Event::Paused(false));
         match event {
-            Event::TimePosition(position) => playback.position = position,
-            Event::Duration(duration) => playback.duration = duration,
-            Event::Paused(paused) => playback.paused = paused,
-            Event::Volume(volume) => playback.volume = volume,
-            Event::Muted(muted) => playback.muted = muted,
-            Event::Title(title) => playback.title = title,
-            Event::Artist(artist) => playback.artist = artist,
-            Event::Album(album) => playback.album = album,
-            Event::FileLoaded => playback.loaded = true,
+            Event::TimePosition(position) => self.playback.position = position,
+            Event::Duration(duration) => self.playback.duration = duration,
+            Event::Paused(paused) => self.playback.paused = paused,
+            Event::Volume(volume) => self.playback.volume = volume,
+            Event::Muted(muted) => self.playback.muted = muted,
+            Event::Title(title) => self.playback.title = title,
+            Event::Artist(artist) => self.playback.artist = artist,
+            Event::Album(album) => self.playback.album = album,
+            Event::FileLoaded => {
+                self.playback.loaded = true;
+                self.playback.ended = false;
+            }
             Event::VideoSize(width, height) => {
-                playback.video = (width, height);
-                self.fit_window(window);
+                if width > 0.0 && height > 0.0 {
+                    self.playback.video = (width, height);
+                    self.fit_window(window);
+                }
             }
             Event::Ended(true) => {
                 if self.playlist.has_next() {
                     self.next(cx);
-                } else if let Some(player) = &self.player {
-                    // Stay on the last frame, paused, like QuickTime.
-                    player.set_paused(true);
+                } else {
+                    // GPUI owns the last frame; release mpv's decoded copy.
+                    self.playback.ended = true;
+                    self.playback.paused = true;
+                    if self.kind() == Some(Kind::Audio) {
+                        self.player_generation = self.player_generation.wrapping_add(1);
+                        if let Some(player) = self.player.take() {
+                            // Joining mpv's decoder/event threads can block;
+                            // retire them away from GPUI's UI thread.
+                            std::thread::spawn(move || drop(player));
+                        }
+                    } else if let Some(player) = &self.player {
+                        player.set_render_size(None);
+                    }
                 }
             }
             Event::Ended(false) => {
                 self.error = Some("The file could not be played.".into());
             }
-            Event::Shutdown => self.player = None,
+            Event::Shutdown => {
+                if let Some(player) = self.player.take() {
+                    std::thread::spawn(move || drop(player));
+                }
+            }
+        }
+        if start_hide {
+            self.schedule_hide_check(cx);
         }
         self.publish(None);
         cx.notify();
@@ -328,7 +354,7 @@ impl PlayerView {
         }
     }
 
-    fn load_current(&mut self) {
+    fn load_current(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.playlist.current().map(|path| path.to_path_buf()) else {
             return;
         };
@@ -337,14 +363,52 @@ impl PlayerView {
             muted: self.playback.muted,
             ..Playback::default()
         };
+        if let Some(old) = self.frame.take() {
+            self.garbage.push(old);
+        }
         self.error = None;
         if let Some(player) = &self.player {
             player.load(&path);
+        } else if !self.starting_player {
+            self.starting_player = true;
+            self.player_generation = self.player_generation.wrapping_add(1);
+            let generation = self.player_generation;
+            let events = self.event_tx.clone();
+            let frames = self.frame_tx.clone();
+            let (ready_tx, ready_rx) = async_channel::bounded(1);
+            std::thread::spawn(move || {
+                let _ = ready_tx.send_blocking(Player::start(generation, events, frames));
+            });
+            cx.spawn(async move |this, cx| {
+                let Ok(result) = ready_rx.recv().await else {
+                    return;
+                };
+                let _ = this.update(cx, |view, cx| {
+                    view.starting_player = false;
+                    match result {
+                        Ok(player) => {
+                            player.set_volume(view.playback.volume);
+                            player.set_muted(view.playback.muted);
+                            if let Some(path) = view.playlist.current() {
+                                player.load(path);
+                            }
+                            view.player = Some(player);
+                        }
+                        Err(error) => view.error = Some(SharedString::from(error)),
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
         }
         self.publish(None);
     }
 
-    fn set_paused(&mut self, paused: bool) {
+    fn set_paused(&mut self, paused: bool, cx: &mut Context<Self>) {
+        if !paused && (self.playback.ended || self.player.is_none()) {
+            self.load_current(cx);
+            return;
+        }
         if let Some(player) = &self.player {
             let at_end = self.playback.duration > 0.0
                 && self.playback.position >= self.playback.duration - 0.25;
@@ -355,8 +419,40 @@ impl PlayerView {
         }
     }
 
-    fn toggle_play(&mut self) {
-        self.set_paused(!self.playback.paused);
+    fn toggle_play(&mut self, cx: &mut Context<Self>) {
+        self.set_paused(!self.playback.paused, cx);
+    }
+
+    fn schedule_hide_check(&mut self, cx: &mut Context<Self>) {
+        if self.hide_timer_pending || self.kind() != Some(Kind::Video) || self.playback.paused {
+            return;
+        }
+        self.hide_timer_pending = true;
+        cx.spawn(async move |this, cx| {
+            let hide_after = Duration::from_millis(model::CONTROLS_HIDE_AFTER_MS);
+            loop {
+                let Ok(remaining) = this.update(cx, |view, _| {
+                    hide_after.saturating_sub(view.last_pointer.elapsed())
+                }) else {
+                    break;
+                };
+                cx.background_executor().timer(remaining).await;
+                let Ok(hidden) = this.update(cx, |view, cx| {
+                    if view.last_pointer.elapsed() < hide_after {
+                        return false;
+                    }
+                    view.hide_timer_pending = false;
+                    cx.notify();
+                    true
+                }) else {
+                    break;
+                };
+                if hidden {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     fn seek_to(&mut self, seconds: f64) {
@@ -376,7 +472,7 @@ impl PlayerView {
     fn next(&mut self, cx: &mut Context<Self>) {
         if self.playlist.advance().is_some() {
             self.sized_for = None;
-            self.load_current();
+            self.load_current(cx);
             cx.notify();
         }
     }
@@ -384,7 +480,7 @@ impl PlayerView {
     fn previous(&mut self, cx: &mut Context<Self>) {
         if self.playlist.previous(self.playback.position).is_some() {
             self.sized_for = None;
-            self.load_current();
+            self.load_current(cx);
         } else {
             self.seek_to(0.0);
         }
@@ -590,7 +686,7 @@ impl PlayerView {
                 play,
             )
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.toggle_play();
+                this.toggle_play(cx);
                 cx.notify();
             }))
             .into_any_element(),
@@ -864,6 +960,7 @@ impl Render for PlayerView {
         if let Some(player) = &self.player {
             player.set_render_size(
                 picture
+                    .filter(|_| !self.playback.ended)
                     .and_then(|display| model::render_size(display, window.scale_factor(), video)),
             );
         }
@@ -877,7 +974,7 @@ impl Render for PlayerView {
             .track_focus(&self.focus)
             .key_context("Player")
             .on_action(cx.listener(|this, _: &PlayPause, _, cx| {
-                this.toggle_play();
+                this.toggle_play(cx);
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &SkipBack, _, cx| {
@@ -908,6 +1005,7 @@ impl Render for PlayerView {
             )
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.last_pointer = Instant::now();
+                this.schedule_hide_check(cx);
                 if let (Some(drag), Some(MouseButton::Left)) = (this.drag, event.pressed_button) {
                     this.drag_to(drag, event.position, window);
                 }
@@ -941,7 +1039,7 @@ impl Render for PlayerView {
                                 if event.click_count() >= 2 {
                                     window.toggle_fullscreen();
                                 } else {
-                                    this.toggle_play();
+                                    this.toggle_play(cx);
                                 }
                                 cx.notify();
                             })),

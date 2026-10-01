@@ -30,6 +30,42 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
+            let Ok(visible) = this.update(cx, |this: &mut Settings, _| this.catalog_pane_visible())
+            else {
+                break;
+            };
+            if !visible {
+                if catalog_event_rx.recv().await.is_err() {
+                    break;
+                }
+                continue;
+            }
+            let Ok(events) = this.update(cx, |this: &mut Settings, _| {
+                this._app_catalog_watcher
+                    .is_none()
+                    .then(|| this.catalog_reload.clone())
+            }) else {
+                break;
+            };
+            if let Some(events) = events {
+                let watcher = blocking::unblock(move || {
+                    rmac_apps::watch_catalog(move || {
+                        let _ = events.try_send(());
+                    })
+                    .ok()
+                })
+                .await;
+                if this
+                    .update(cx, |this: &mut Settings, _| {
+                        if this.catalog_pane_visible() {
+                            this._app_catalog_watcher = watcher;
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
             // `rmac_apps::discover()` can shell out to `gsettings` to read
             // the active icon theme; GPUI's background executor is not
             // safe to spawn child processes from (LINUX-HW-07).
@@ -37,8 +73,10 @@ impl Settings {
             if let Ok(applications) = result {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
-                        this.app_catalog = applications;
-                        cx.notify();
+                        if this.catalog_pane_visible() {
+                            this.app_catalog = applications;
+                            cx.notify();
+                        }
                     })
                     .is_err()
                 {

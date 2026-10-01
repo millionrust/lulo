@@ -14,6 +14,10 @@ pub struct Coordinator {
 }
 
 impl Coordinator {
+    pub fn ready(&self) -> bool {
+        self.endpoint_ready && self.runtime.ready()
+    }
+
     pub fn endpoint_ready(&mut self) -> bool {
         self.endpoint_ready = true;
         self.take_readiness()

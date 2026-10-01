@@ -1,6 +1,7 @@
 //! Focused global-shortcut contracts.
 
 use super::*;
+use crate::dispatch::{send_with_retry, surface_unit};
 
 #[test]
 fn defaults_use_unique_standard_and_niri_triggers() {
@@ -188,6 +189,7 @@ fn dispatch_retries_past_a_stale_socket_until_the_surface_rebinds() {
         &path,
         std::time::Duration::from_millis(500),
         std::time::Duration::from_millis(10),
+        || {},
     );
     let bound = listener.join().unwrap();
     assert!(result.is_ok(), "{result:?}");
@@ -217,10 +219,65 @@ fn dispatch_gives_up_after_its_retry_budget() {
         &path,
         std::time::Duration::from_millis(80),
         std::time::Duration::from_millis(10),
+        || {},
     );
     assert!(result.is_err());
     assert!(started.elapsed() >= std::time::Duration::from_millis(80));
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn absent_surface_is_activated_once_and_first_dispatch_is_delivered() {
+    let root = std::env::temp_dir().join(format!("rmac-shortcut-cold-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("shortcut-launcher.sock");
+    let sender = std::os::unix::net::UnixDatagram::unbound().unwrap();
+    let (activated_tx, activated_rx) = std::sync::mpsc::channel();
+    let listener_path = path.clone();
+    let listener = std::thread::spawn(move || {
+        activated_rx.recv().unwrap();
+        std::os::unix::net::UnixDatagram::bind(listener_path).unwrap()
+    });
+    let mut activations = 0;
+    send_with_retry(
+        &sender,
+        b"first-press",
+        &path,
+        std::time::Duration::from_millis(500),
+        std::time::Duration::from_millis(10),
+        || {
+            activations += 1;
+            activated_tx.send(()).unwrap();
+        },
+    )
+    .unwrap();
+    assert_eq!(activations, 1);
+    let bound = listener.join().unwrap();
+    let mut buffer = [0u8; 32];
+    let (length, _) = bound.recv_from(&mut buffer).unwrap();
+    assert_eq!(&buffer[..length], b"first-press");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn only_surface_actions_start_surface_units() {
+    assert_eq!(
+        surface_unit(&ShortcutId("launcher".into())),
+        Some("rmac-launcher.service")
+    );
+    assert_eq!(
+        surface_unit(&ShortcutId("app-drawer".into())),
+        Some("rmac-app-drawer.service")
+    );
+    assert_eq!(
+        surface_unit(&ShortcutId("quick-settings".into())),
+        Some("rmac-quick-settings.service")
+    );
+    assert_eq!(
+        surface_unit(&ShortcutId("notification-center".into())),
+        Some("rmac-notification-center-panel.service")
+    );
+    assert_eq!(surface_unit(&ShortcutId("power-key".into())), None);
 }
 
 #[test]

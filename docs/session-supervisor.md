@@ -9,7 +9,7 @@ installer.
 ## Startup and environment
 
 Run `scripts/linux/install-session-units.sh` once from the repository. It
-builds the release supervisor, launcher, supervised Apps, on-demand Quick
+builds the release supervisor, launcher, supervised Apps, resident Quick
 Settings and Notification Center panel services, and launcher-routed System
 Settings, installs them under
 `~/.local/libexec/rmac/`, installs the unit files under the XDG systemd user
@@ -20,14 +20,14 @@ fallback unit. It refuses to build or install anything while
 it from `crates/rmac-lock-provider-linux/pam/rmac-lock`: without that PAM
 service every lock request fails, so the session would resume from suspend
 unlocked.
-The launcher, Apps, Quick Settings, and Notification Center panel
-services bind their separate action-scoped runtime sockets before the shortcut
-broker starts, so
-the first consented activation has an owner and one surface crash cannot
-consume another action. The panel service is distinct from the D-Bus
-notification authority: closing its window leaves its shortcut endpoint alive,
-while restarting it cannot take down notification admission or retained
-history.
+Spotlight and Quick Settings start with the session and keep their shortcut
+endpoints resident. Apps and the Notification Center panel start on first
+request through the shortcut dispatcher. It asks systemd to start the matching
+unit and retries delivery until that unit binds its action-scoped socket, so
+the first request survives startup. After the last window closes, these two
+processes remain available for 30 minutes by default, then exit. The
+panel remains distinct from the D-Bus notification authority, which retains
+history independently.
 The installer also
 builds the notification and Focus services, installs the notification
 portal descriptor and desktop-specific backend selection, and installs D-Bus
@@ -86,9 +86,9 @@ need to be imported before these services start.
 
 Top bar, Dock, launcher, Apps, Quick Settings, the notification authority,
 Notification Center panel, Focus authority, wallpaper, and the global shortcut
-broker each have their own service. They use
-`Restart=on-failure`, a
-one-second restart delay, and at most four starts in a 60-second interval. They
+broker each have their own service. Resident units use `Restart=on-failure`, a
+one-second restart delay, and at most four starts in a 60-second interval. Apps
+and the Notification Center panel use `Restart=no` so their idle exit persists. They
 are `PartOf` the normal rmac target; one component is not `RequiredBy` another.
 The unit conditions keep future D-phase services inactive—not failed—until
 their executables are installed.

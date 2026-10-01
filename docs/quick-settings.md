@@ -75,7 +75,7 @@ authority. The returned aggregate contains only that owned field, matching the
 model's per-control merge rule and preventing an older Wi-Fi task from rolling
 back newer sound state.
 
-`rmac-quick-settings-app` is the supervised on-demand presentation. It owns the
+`rmac-quick-settings-app` is the supervised resident presentation. It owns the
 action-scoped `quick-settings` shortcut socket, keeps at most one trailing GPUI
 popover, and starts the live shell-runtime subscription only while that popover
 is open. Shared toggles, buttons, and the output-volume slider render the model;

@@ -1,4 +1,6 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use std::{env, fs};
 
 use gpui::{px, AnyView, App, AppContext as _, Context, SharedString, Styled as _, Window};
@@ -38,6 +40,43 @@ pub fn init_application(cx: &mut App) {
     apply_component_theme(cx);
     start_theme_runtime(cx);
     crate::session::install(cx);
+}
+
+/// Release an on-demand shell renderer after its last window has been closed
+/// for the configured interval. A new close invalidates the previous timer;
+/// no periodic wake-up is needed while the surface is visible or idle.
+pub fn install_surface_idle_exit(cx: &mut App) {
+    let seconds = env::var("RMAC_SURFACE_IDLE_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(1800)
+        .clamp(1, 86400);
+    let interval = Duration::from_secs(seconds);
+    let generation = Arc::new(AtomicU64::new(0));
+    cx.on_window_closed(move |cx, _| {
+        let current = generation.fetch_add(1, Ordering::AcqRel) + 1;
+        schedule_surface_idle_exit(cx, generation.clone(), current, interval);
+    })
+    .detach();
+}
+
+fn schedule_surface_idle_exit(
+    cx: &mut App,
+    generation: Arc<AtomicU64>,
+    current: u64,
+    interval: Duration,
+) {
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        cx.background_executor().timer(interval).await;
+        if generation.load(Ordering::Acquire) == current {
+            cx.update(|cx| {
+                if cx.windows().is_empty() {
+                    cx.quit();
+                }
+            });
+        }
+    })
+    .detach();
 }
 
 /// Push the resolved rmac tokens into gpui-component's global theme so shared

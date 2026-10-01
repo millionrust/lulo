@@ -1,4 +1,4 @@
-//! Supervised, on-demand Quick Settings surface.
+//! Supervised resident Quick Settings surface with a window opened on demand.
 
 mod render;
 mod view;

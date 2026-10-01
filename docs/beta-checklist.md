@@ -167,7 +167,7 @@ for those.
     `tests/parallel/06-notes.json` checklist steps run in a nested session
     before closing out; "Tick All" and the Mac's move-checked-to-bottom
     setting remain unimplemented follow-ups.
-11. **FILES-05 / FILES-35 (P1, M/M)** — Fixed FILES-SETTINGS-TAGS-SHA: a
+11. **FILES-05 / FILES-35 (P1, M/M)** — Fixed 05818264: a
     bounded background-scanned Linux tag index backs the sidebar's Tags
     section on every OS (FILES-05), and a new Finder ▸ Settings… window
     (General/Tags/Sidebar/Advanced, versioned persistence, live broadcast

@@ -169,6 +169,12 @@ actions!(
         Find,
         CopyAsPathname,
         AddToSidebar,
+        SidebarRemove,
+        SidebarOpenWindow,
+        SidebarOpenTab,
+        SidebarShowEnclosing,
+        SidebarGetInfo,
+        SidebarRename,
         MoveItemHere,
         GoDesktop,
         GoDocuments,
@@ -263,6 +269,7 @@ enum SortKey {
 enum MenuPurpose {
     Context,
     Sort,
+    Sidebar,
 }
 
 /// One browser tab — its own directory and navigation history.
@@ -305,6 +312,9 @@ struct FinderView {
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<rmac_ui::ContextMenuState>,
     menu_purpose: MenuPurpose,
+    sidebar_context_path: Option<PathBuf>,
+    sidebar_context_is_favourite: bool,
+    missing_favourite: Option<PathBuf>,
     help_open: bool,
     renaming: Option<(PathBuf, gpui::Entity<InputState>)>,
     rename_click_generation: u64,

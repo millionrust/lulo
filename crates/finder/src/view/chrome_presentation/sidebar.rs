@@ -69,6 +69,26 @@ impl FinderView {
         let a11y_name = p.name.clone();
         let entity = cx.entity();
         let removable = self.is_removable_favourite(&p.path);
+        let label: gpui::AnyElement = match &self.renaming {
+            Some((path, input)) if path == &p.path => div()
+                .id("sidebar-rename-field")
+                .role(Role::TextInput)
+                .aria_label("Name")
+                .accessible_text_input(input, cx)
+                .flex_1()
+                .min_w(px(0.0))
+                .child(TextField::new(input).appearance(true))
+                .into_any_element(),
+            _ => div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .text_size(rmac_ui::text_px(13.0))
+                .font_weight(rmac_ui::mac::REGULAR)
+                .text_color(sidebar_text())
+                .child(p.name.clone())
+                .into_any_element(),
+        };
         let main = div()
             .id(SharedString::from(format!("placemain-{key}")))
             .flex_1()
@@ -78,22 +98,8 @@ impl FinderView {
             .min_w(px(0.0))
             .cursor_pointer()
             .child(leading)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .truncate()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .font_weight(rmac_ui::mac::REGULAR)
-                    .text_color(sidebar_text())
-                    .child(p.name.clone()),
-            )
+            .child(label)
             .on_click(cx.listener(move |this, _, _, cx| {
-                if this.is_removable_favourite(&np) && !np.exists() {
-                    this.operation_error = Some("The item can't be found. Remove it from the Sidebar? Use the × button or right-click the item.".into());
-                    cx.notify();
-                    return;
-                }
                 this.activate_place(kind, tag_name.clone(), np.clone(), cx)
             }));
 
@@ -120,6 +126,17 @@ impl FinderView {
             .when(selected, |el: Stateful<Div>| el.bg(sidebar_selection()))
             .when(removable && !p.path.exists(), |el: Stateful<Div>| el.opacity(0.5))
             .child(main);
+
+        if matches!(kind, PlaceKind::Item | PlaceKind::Volume) {
+            let context_path = p.path.clone();
+            row = row.on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                    cx.stop_propagation();
+                    this.open_sidebar_context_menu(context_path.clone(), is_favourite, event.position, window, cx);
+                }),
+            );
+        }
 
         // Dropping onto a folder place moves the items there, as in Finder.
         if is_favourite {
@@ -231,12 +248,86 @@ impl FinderView {
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
+        if self.is_removable_favourite(&path) && !path.exists() {
+            self.missing_favourite = Some(path);
+            cx.notify();
+            return;
+        }
         match kind {
             PlaceKind::Tag => self.tag_click(name, cx),
             PlaceKind::Recents => self.recents_click(cx),
             PlaceKind::Trash => self.trash_click(cx),
             PlaceKind::Applications => self.applications_click(cx),
+            _ if path.is_file() => self.open_paths(vec![path], cx),
             _ => self.navigate(path, cx),
+        }
+    }
+
+    fn open_sidebar_context_menu(
+        &mut self,
+        path: PathBuf,
+        is_favourite: bool,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.sidebar_context_path = Some(path);
+        self.sidebar_context_is_favourite = is_favourite;
+        self.menu_purpose = MenuPurpose::Sidebar;
+        self.menu_at = Some(rmac_ui::ContextMenuState::open(position, &self.focus, window, cx));
+        cx.notify();
+    }
+
+    pub(in crate::view) fn sidebar_remove_context(&mut self, cx: &mut Context<Self>) {
+        if let Some(path) = self.sidebar_context_path.clone() {
+            if self.is_removable_favourite(&path) {
+                self.remove_sidebar_favourite(&path, cx);
+            } else if self.sidebar_context_is_favourite {
+                self.set_builtin_sidebar_visibility(&path, false, cx);
+            }
+        }
+    }
+
+    pub(in crate::view) fn sidebar_open_window(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.sidebar_context_path.as_ref() else { return; };
+        if path.is_file() {
+            self.open_paths(vec![path.clone()], cx);
+        } else if path.is_dir() {
+            let path = path.display().to_string();
+            if !rmac_ui::open_another_window(vec!["--path".to_owned(), path], cx) {
+                self.operation_error = Some("Files could not open another window".into());
+                cx.notify();
+            }
+        }
+    }
+
+    pub(in crate::view) fn sidebar_open_tab(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.sidebar_context_path.clone() else { return; };
+        if path.is_dir() {
+            self.new_tab(cx);
+            self.navigate(path, cx);
+        } else if path.is_file() {
+            self.open_paths(vec![path], cx);
+        }
+    }
+
+    pub(in crate::view) fn sidebar_show_enclosing(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.sidebar_context_path.clone() else { return; };
+        if let Some(parent) = path.parent() {
+            self.pending_select = Some(path.clone());
+            self.navigate(parent.to_path_buf(), cx);
+        }
+    }
+
+    pub(in crate::view) fn sidebar_get_info(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(path) = self.sidebar_context_path.clone() {
+            self.get_info_for_paths(&[path], window, cx);
+        }
+    }
+
+    pub(in crate::view) fn sidebar_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(path) = self.sidebar_context_path.clone() {
+            self.rename_sidebar_path(path, window, cx);
         }
     }
 

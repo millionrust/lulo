@@ -1,6 +1,23 @@
 use super::*;
 
 impl FinderView {
+    pub(in crate::view) fn build_sidebar_menu(
+        pos: Point<Pixels>,
+        removable: bool,
+    ) -> rmac_ui::ContextMenu {
+        let mut menu = rmac_ui::ContextMenu::new(pos)
+            .item("Open in New Window", Box::new(SidebarOpenWindow))
+            .item("Open in New Tab", Box::new(SidebarOpenTab))
+            .item("Show in Enclosing Folder", Box::new(SidebarShowEnclosing))
+            .separator()
+            .item("Get Info", Box::new(SidebarGetInfo))
+            .item("Rename", Box::new(SidebarRename));
+        if removable {
+            menu = menu.separator().item("Remove from Sidebar", Box::new(SidebarRemove));
+        }
+        menu
+    }
+
     pub(in crate::view) fn build_sort_menu(
         pos: Point<Pixels>,
         key: SortKey,

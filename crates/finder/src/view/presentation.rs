@@ -99,6 +99,25 @@ impl Render for FinderView {
             )
             .into_any_element()
         });
+        let missing_favourite = self.missing_favourite.as_ref().map(|path| {
+            let name = rmac_finder::sidebar_favourites::label(path);
+            rmac_ui::alert(
+                "The item can't be found",
+                format!("“{name}” may have been moved or deleted. Remove it from the Sidebar?"),
+                vec![
+                    rmac_ui::dialog_button("missing-favourite-cancel", "Keep", rmac_ui::DialogButtonKind::Normal)
+                        .on_click(cx.listener(|this, _, _, cx| { this.missing_favourite = None; cx.notify(); }))
+                        .into_any_element(),
+                    rmac_ui::dialog_button("missing-favourite-remove", "Remove", rmac_ui::DialogButtonKind::Primary)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            if let Some(path) = this.missing_favourite.take() {
+                                this.remove_sidebar_favourite(&path, cx);
+                            }
+                        }))
+                        .into_any_element(),
+                ],
+            ).into_any_element()
+        });
         let conflict_dialog = self.render_conflict(cx);
         let recovery_dialog = self.render_recovery(cx);
         #[cfg(any(target_os = "linux", test))]
@@ -494,6 +513,10 @@ impl Render for FinderView {
                         self.file_words,
                     ),
                     MenuPurpose::Sort => Self::build_sort_menu(state.position(), sort_key),
+                    MenuPurpose::Sidebar => Self::build_sidebar_menu(
+                        state.position(),
+                        self.sidebar_context_is_favourite,
+                    ),
                 };
                 el.child(menu.render(&state))
             })
@@ -506,6 +529,7 @@ impl Render for FinderView {
             .when_some(archive_alert, |el, dialog| el.child(dialog))
             .when_some(rename_alert, |el, dialog| el.child(dialog))
             .when_some(help_dialog, |el, dialog| el.child(dialog))
+            .when_some(missing_favourite, |el, dialog| el.child(dialog))
     }
 }
 

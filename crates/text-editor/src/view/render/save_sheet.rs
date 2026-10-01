@@ -65,6 +65,19 @@ impl EditorView {
                     .role(Role::TextInput)
                     .aria_label("Go to Folder")
                     .accessible_text_input(&self.save_goto_input, cx)
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        match event.keystroke.key.as_str() {
+                            "escape" => {
+                                cx.stop_propagation();
+                                this.close_save_goto(window, cx);
+                            }
+                            "enter" => {
+                                cx.stop_propagation();
+                                this.commit_save_goto(window, cx);
+                            }
+                            _ => {}
+                        }
+                    }))
                     .child(TextField::new(&self.save_goto_input)),
             )
             .when(self.save_goto_error, |card| {
@@ -183,6 +196,15 @@ impl EditorView {
                     .role(Role::TextInput)
                     .aria_label("Save As:")
                     .accessible_text_input(&self.save_name_input, cx)
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        if event.keystroke.key.eq_ignore_ascii_case("g")
+                            && event.keystroke.modifiers.platform
+                            && event.keystroke.modifiers.shift
+                        {
+                            cx.stop_propagation();
+                            this.open_save_goto(window, cx);
+                        }
+                    }))
                     .child(TextField::new(&self.save_name_input)),
             ))
             .child(row("Where:", where_popup))

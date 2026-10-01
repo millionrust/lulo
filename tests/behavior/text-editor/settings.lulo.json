@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "scenario": "text-editor/settings",
+  "platform": "Lulo local contract",
+  "observations": {
+    "settings": {
+      "windows": {"count": 2, "front": "Settings"}
+    },
+    "open-and-save": {
+      "windows": {"count": 2, "front": "Settings"}
+    }
+  }
+}

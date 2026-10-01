@@ -102,13 +102,13 @@ impl SettingsView {
             .py_1()
             .child(div().w(px(72.0)).child(label))
             .child(
-                Button::new((id, "decrease"), "−")
+                Button::new(format!("{id}-decrease"), "−")
                     .small()
                     .on_click(cx.listener(move |this, _, _, cx| decrease(this, cx))),
             )
             .child(
                 div()
-                    .id((id, "value"))
+                    .id(format!("{id}-value"))
                     .role(Role::TextInput)
                     .aria_label(label)
                     .aria_value(value.clone())
@@ -117,7 +117,7 @@ impl SettingsView {
                     .child(value),
             )
             .child(
-                Button::new((id, "increase"), "+")
+                Button::new(format!("{id}-increase"), "+")
                     .small()
                     .on_click(cx.listener(move |this, _, _, cx| increase(this, cx))),
             )
@@ -141,7 +141,7 @@ impl SettingsView {
     fn encoding_row(&self, encoding: TextEncoding, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = self.settings.default_encoding == encoding;
         div()
-            .id(("settings-encoding", encoding.label()))
+            .id(format!("settings-encoding-{}", encoding.label()))
             .role(Role::RadioButton)
             .aria_label(encoding.label())
             .aria_selected(selected)
@@ -299,7 +299,7 @@ impl Render for SettingsView {
                     .border_b_1()
                     .border_color(rmac_ui::mac::separator())
                     .children([Tab::NewDocument, Tab::OpenAndSave].into_iter().map(|tab| {
-                        Button::new(("settings-tab", tab.label()), tab.label())
+                        Button::new(format!("settings-tab-{}", tab.label()), tab.label())
                             .small()
                             .selected(self.tab == tab)
                             .on_click(cx.listener(move |this, _, _, cx| {

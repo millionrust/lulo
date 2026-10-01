@@ -2107,7 +2107,9 @@ mod tests {
         assert_eq!(shortcut("Hide Sidebar").as_deref(), Some("⌥⌘1"));
         assert_eq!(shortcut("Actual Size").as_deref(), Some("⌘0"));
         assert_eq!(shortcut("Rotate Right").as_deref(), Some("⌘R"));
-        assert_eq!(shortcut("Next Item").as_deref(), Some("⌥↓"));
+        assert_eq!(shortcut("Next Item").as_deref(), Some("⌥"));
+        assert_eq!(shortcut("Zoom All to Fit").as_deref(), Some("⌥⌘9"));
+        assert_eq!(shortcut("Show Markup Toolbar").as_deref(), Some("⇧⌘A"));
         assert!(validate_menus(&menus).is_ok());
     }
 

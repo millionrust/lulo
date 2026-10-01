@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "scenario": "preview/selection-find",
+  "observations": {
+    "find_selection": {
+      "focus": {
+        "role": "text-field",
+        "value": "Preview search term",
+        "selection": [19, 19],
+        "selected_text": "",
+        "selected_all": false,
+        "label": "Find"
+      },
+      "windows": {
+        "count": 1,
+        "front": "selection.pdf – 1 page",
+        "titles": ["selection.pdf – 1 page"]
+      }
+    }
+  }
+}

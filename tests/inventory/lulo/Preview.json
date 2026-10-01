@@ -219,17 +219,17 @@
           "children": []
         },
         {
-          "label": "Actual Size on All",
-          "action": "preview::ActualSizeOnAll",
-          "shortcut": "⌥⌘0",
-          "separator_before": false,
-          "children": []
-        },
-        {
           "label": "Actual Size",
           "action": "preview::ActualSize",
           "shortcut": "⌘0",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Actual Size on All",
+          "action": "preview::ActualSizeOnAll",
+          "shortcut": "⌥⌘0",
+          "separator_before": false,
           "children": []
         },
         {

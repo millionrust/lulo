@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "scenario": "preview/markup-toggle",
+  "observations": {
+    "markup_open": {
+      "dialog": {"present": false},
+      "windows": {"count": 1, "front": "guide.pdf – 1 page"}
+    },
+    "markup_closed": {
+      "dialog": {"present": false},
+      "windows": {"count": 1, "front": "guide.pdf – 1 page"}
+    }
+  }
+}

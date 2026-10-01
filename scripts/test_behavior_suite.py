@@ -219,7 +219,13 @@ class ScenarioFileTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 scenario = sc.load(path)
                 expected = sc.expectation_path(path)
-                self.assertTrue(expected.exists(), f"{path.name} has no .mac.json")
+                lulo_expected = sc.expectation_path(path, "lulo")
+                self.assertTrue(
+                    expected.exists() or lulo_expected.exists(),
+                    f"{path.name} has no .mac.json or .lulo.json",
+                )
+                if not expected.exists():
+                    expected = lulo_expected
                 data = json.loads(expected.read_text())
                 self.assertNotIn("error", data)
                 names = {s["observe"] for s in scenario["steps"] if "observe" in s}

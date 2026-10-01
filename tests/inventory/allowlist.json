@@ -66,6 +66,18 @@
       "label": "Send to Keka",
       "match": "exact",
       "reason": "See \"Compress using Keka\": the Keka Finder Sync extension, not stock Finder."
+    },
+    {
+      "app": "Preview",
+      "label": "MSI G241",
+      "match": "exact",
+      "reason": "This soft-proof ICC profile belongs to the reference Mac's attached MSI monitor; it is machine-specific, not a Preview feature."
+    },
+    {
+      "app": "Preview",
+      "label": "Colour LCD",
+      "match": "exact",
+      "reason": "This soft-proof ICC profile belongs to Apple's built-in laptop display and does not exist on Lulo hardware."
     }
   ]
 }

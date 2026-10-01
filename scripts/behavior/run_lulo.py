@@ -3,7 +3,8 @@
 
     python3 scripts/behavior/run_lulo.py --bin-dir DIR [--shell-bin-dir DIR] [SCENARIO…]
 
-Every scenario with a recorded <name>.mac.json runs against the Lulo apps in
+Every scenario with a recorded <name>.mac.json or Lulo-only
+<name>.lulo.json expectation runs against the Lulo apps in
 --bin-dir (rmac-files, rmac-text-editor, rmac-system-settings,
 rmac-calculator; the desktop is the shell's `wallpaper` binary). Results go
 to --output (JSON) and a readable report goes to stdout; see compare.py.
@@ -1406,6 +1407,10 @@ def inner(args: argparse.Namespace) -> int:
             sid = sc.scenario_id(path)
             scenario = sc.load(path)
             expected_path = sc.expectation_path(path)
+            if not expected_path.exists():
+                # Lulo-only checks cover new behavior that has no Mac
+                # recording yet. A later Mac capture takes precedence.
+                expected_path = sc.expectation_path(path, "lulo")
             if not expected_path.exists() and not args.explore:
                 continue
             run = LuloRun(nested, sid, scenario, bins, args.settle,
@@ -1444,7 +1449,7 @@ def inner(args: argparse.Namespace) -> int:
     if args.output:
         Path(args.output).write_text(json.dumps({"format": sc.FORMAT, "results": results}, indent=2, ensure_ascii=False) + "\n")
     passed = sum(r["status"] == "pass" for r in results)
-    print(f"\n{passed}/{len(results)} scenarios match the Mac")
+    print(f"\n{passed}/{len(results)} scenarios match their recorded expectations")
     return 0 if passed == len(results) else 1
 
 
@@ -1560,7 +1565,7 @@ def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
 def main(argv: Optional[list[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("scenarios", nargs="*", help="area/name ids (default: every scenario with a .mac.json)")
+    parser.add_argument("scenarios", nargs="*", help="area/name ids (default: every scenario with a .mac.json or .lulo.json)")
     parser.add_argument("--bin-dir", action="append", default=[], help="directory with rmac-files etc. (repeatable)")
     parser.add_argument("--shell-bin-dir", action="append", default=[], help="directory with the shell's wallpaper binary")
     parser.add_argument("--output", help="write results JSON here (compare.py reads it)")

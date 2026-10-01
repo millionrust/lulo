@@ -738,6 +738,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                     item!("Find…", "preview::Find", "⌘F"),
                     item!("Find Next", "preview::FindNext", "⌘G"),
                     item!("Find Previous", "preview::FindPrevious", "⇧⌘G"),
+                    item!(
+                        "Use Selection for Find",
+                        "preview::UseSelectionForFind",
+                        "⌘E"
+                    ),
+                    item!("Jump to Selection", "preview::JumpToSelection", "⌘J"),
                 ],
                 separator
             ),
@@ -749,23 +755,36 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Hide Sidebar", "preview::HideSidebar", "⌥⌘1"),
             item!("Thumbnails", "preview::ShowThumbnails", "⌥⌘2"),
             item!("Actual Size", "preview::ActualSize", "⌘0", separator),
+            item!("Actual Size on All", "preview::ActualSizeOnAll", "⌥⌘0"),
             item!("Zoom to Fit", "preview::ZoomToFit", "⌘9"),
+            item!("Zoom All to Fit", "preview::ZoomAllToFit", "⌥⌘9"),
             item!("Zoom In", "preview::ZoomIn", "⌘+"),
+            item!("Zoom All In", "preview::ZoomAllIn", "⌥⌘+"),
             item!("Zoom Out", "preview::ZoomOut", "⌘−"),
+            item!("Zoom All Out", "preview::ZoomAllOut", "⌥⌘−"),
+            item!(
+                "Show Markup Toolbar",
+                "preview::ToggleMarkup",
+                "⇧⌘A",
+                separator
+            ),
         ],
     },
     MenuSpec {
         label: "Go",
         items: &[
-            item!("Previous Item", "preview::PreviousItem", "⌥↑"),
-            item!("Next Item", "preview::NextItem", "⌥↓"),
+            item!("Up", "preview::PageUp", ""),
+            item!("Previous Document", "preview::PreviousDocument", "⌥"),
+            item!("Down", "preview::PageDown", ""),
+            item!("Next Document", "preview::NextDocument", "⌥"),
+            item!("Previous Item", "preview::PreviousItem", "⌥"),
+            item!("Next Item", "preview::NextItem", "⌥"),
             item!("Go to Page…", "preview::GoToPage", "⌥⌘G", separator),
         ],
     },
     MenuSpec {
         label: "Tools",
         items: &[
-            item!("Show Markup Toolbar", "preview::ToggleMarkup", "⇧⌘A"),
             item!("Show Inspector", "preview::ShowInspector", "⌘I"),
             item!("Rotate Left", "preview::RotateLeft", "⌘L", separator),
             item!("Rotate Right", "preview::RotateRight", "⌘R"),

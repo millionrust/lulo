@@ -25,10 +25,11 @@ use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
-    ActualSize, CloseWindow, Copy, ExportAsPdf, Find, FindNext, FindPrevious, GoToPage,
-    HideSidebar, NextItem, PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft,
+    ActualSize, ActualSizeOnAll, CloseWindow, Copy, ExportAsPdf, Find, FindNext, FindPrevious,
+    GoToPage, HideSidebar, JumpToSelection, NextDocument, NextItem, PageDown, PageUp,
+    PreviousDocument, PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft,
     RotateRight, SaveMarkup, SelectAll, ShowInspector, ShowThumbnails, ToggleMarkup, UndoMarkup,
-    ZoomIn, ZoomOut, ZoomToFit,
+    UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -1100,6 +1101,14 @@ impl PreviewView {
         }
     }
 
+    fn step_document(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if self.slots.len() > 1 {
+            if let Some(index) = document::step(self.selected, self.slots.len(), delta) {
+                self.select(index, cx);
+            }
+        }
+    }
+
     /// Go ▸ Next / Previous Item for a single image: the images beside it,
     /// in Finder order.
     fn step_folder(&mut self, delta: isize, cx: &mut Context<Self>) {
@@ -1215,6 +1224,20 @@ impl PreviewView {
         cx.notify();
     }
 
+    fn set_zoom_all(&mut self, zoom_to: impl Fn(&Slot, f32) -> Zoom, cx: &mut Context<Self>) {
+        if self.slots.len() < 2 {
+            return;
+        }
+        let viewport = self.viewport;
+        for (index, slot) in self.slots.iter_mut().enumerate() {
+            if index != self.selected && slot.loaded().is_some() {
+                let scale = slot.zoom.resolve(slot.fit_scale(viewport));
+                slot.zoom = zoom_to(slot, scale);
+            }
+        }
+        self.set_zoom(zoom_to, cx);
+    }
+
     fn zoom_in(&mut self, cx: &mut Context<Self>) {
         self.set_zoom(
             |slot, scale| Zoom::Scale(zoom::zoom_in(slot.content_kind(), scale)),
@@ -1235,6 +1258,28 @@ impl PreviewView {
 
     fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
         self.set_zoom(|_, _| Zoom::Fit, cx);
+    }
+
+    fn actual_size_on_all(&mut self, cx: &mut Context<Self>) {
+        self.set_zoom_all(|_, _| Zoom::Scale(1.0), cx);
+    }
+
+    fn zoom_all_to_fit(&mut self, cx: &mut Context<Self>) {
+        self.set_zoom_all(|_, _| Zoom::Fit, cx);
+    }
+
+    fn zoom_all_in(&mut self, cx: &mut Context<Self>) {
+        self.set_zoom_all(
+            |slot, scale| Zoom::Scale(zoom::zoom_in(slot.content_kind(), scale)),
+            cx,
+        );
+    }
+
+    fn zoom_all_out(&mut self, cx: &mut Context<Self>) {
+        self.set_zoom_all(
+            |slot, scale| Zoom::Scale(zoom::zoom_out(slot.content_kind(), scale)),
+            cx,
+        );
     }
 
     fn rotate(&mut self, right: bool, cx: &mut Context<Self>) {
@@ -1497,6 +1542,63 @@ impl PreviewView {
                 char: last_chars,
             },
         ));
+        cx.notify();
+    }
+
+    /// Edit ▸ Find ▸ Use Selection for Find uses the PDF's selected text as
+    /// the next query. The same search path powers ⌘F and ⌘G.
+    fn use_selection_for_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(slot) = self.slot() else { return };
+        let (Some((anchor, focus)), TextState::Ready(pages)) = (self.text_selection, &slot.text)
+        else {
+            return;
+        };
+        let (from, to) = ordered(anchor, focus);
+        let query = poppler::selected_text(
+            pages,
+            (from.page, from.word, from.char),
+            (to.page, to.word, to.char),
+        );
+        if query.trim().is_empty() {
+            return;
+        }
+        self.search_input
+            .update(cx, |input, cx| input.set_value(query.clone(), window, cx));
+        self.run_search(query, cx);
+    }
+
+    /// Edit ▸ Find ▸ Jump to Selection scrolls the selected PDF text into
+    /// view without altering the selection or the active search query.
+    fn jump_to_selection(&mut self, cx: &mut Context<Self>) {
+        let Some((anchor, focus)) = self.text_selection else {
+            return;
+        };
+        let Some(slot) = self.slot() else { return };
+        let TextState::Ready(pages) = &slot.text else {
+            return;
+        };
+        let (from, to) = ordered(anchor, focus);
+        let Some(page_text) = pages.get(from.page) else {
+            return;
+        };
+        let Some(rect) = poppler::selection_rects(
+            page_text,
+            Some((from.word, from.char)),
+            (from.page == to.page).then_some((to.word, to.char)),
+        )
+        .first()
+        .copied() else {
+            return;
+        };
+        let scale = slot.zoom.resolve(slot.fit_scale(self.viewport));
+        let layout = layout::continuous(&slot.page_sizes(), scale, self.viewport.0);
+        let Some(page) = layout.pages.get(from.page) else {
+            return;
+        };
+        let rect = slot.rotation.apply_unit_rect(rect);
+        let x = (page.x + rect.x0 * page.width - self.viewport.0 / 2.0).max(0.0);
+        let y = (page.y + rect.y0 * page.height - self.viewport.1 / 3.0).max(0.0);
+        self.scroll.set_offset(point(px(-x), px(-y)));
         cx.notify();
     }
 
@@ -3361,6 +3463,54 @@ impl Render for PreviewView {
             // View ▸ Hide Sidebar / Thumbnails tick the key window's choice.
             rmac_ui::set_menu_checked("preview::HideSidebar", !self.sidebar, cx);
             rmac_ui::set_menu_checked("preview::ShowThumbnails", self.sidebar, cx);
+            rmac_ui::set_menu_checked("preview::ToggleMarkup", self.markup_shown, cx);
+            let loaded = self.slot().is_some_and(|slot| slot.loaded().is_some());
+            let selected_text = self.text_selection.is_some_and(|(a, b)| a != b);
+            let multiple = self.slots.len() > 1;
+            for action in [
+                "preview::HideSidebar",
+                "preview::ShowThumbnails",
+                "preview::ActualSize",
+                "preview::ZoomToFit",
+                "preview::ZoomIn",
+                "preview::ZoomOut",
+                "preview::ToggleMarkup",
+                "preview::ShowInspector",
+                "preview::RotateLeft",
+                "preview::RotateRight",
+                "preview::SaveMarkup",
+                "preview::PrintDocument",
+                "preview::PageUp",
+                "preview::PageDown",
+                "preview::PreviousItem",
+                "preview::NextItem",
+            ] {
+                rmac_ui::set_menu_enabled(action, loaded, cx);
+            }
+            for action in [
+                "preview::ActualSizeOnAll",
+                "preview::ZoomAllToFit",
+                "preview::ZoomAllIn",
+                "preview::ZoomAllOut",
+                "preview::PreviousDocument",
+                "preview::NextDocument",
+            ] {
+                rmac_ui::set_menu_enabled(action, loaded && multiple, cx);
+            }
+            rmac_ui::set_menu_enabled(
+                "preview::GoToPage",
+                self.slot()
+                    .is_some_and(|slot| slot.kind() == Some(Kind::Pdf)),
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
+                "preview::ExportAsPdf",
+                self.slot()
+                    .is_some_and(|slot| slot.kind() == Some(Kind::Pdf)),
+                cx,
+            );
+            rmac_ui::set_menu_enabled("preview::UseSelectionForFind", selected_text, cx);
+            rmac_ui::set_menu_enabled("preview::JumpToSelection", selected_text, cx);
         }
         let palette = palette();
         let size = window.viewport_size();
@@ -3432,14 +3582,32 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &FindNext, _, cx| this.step_match(1, cx)))
             .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.step_match(-1, cx)))
+            .on_action(cx.listener(|this, _: &UseSelectionForFind, window, cx| {
+                this.use_selection_for_find(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &JumpToSelection, _, cx| {
+                this.jump_to_selection(cx);
+            }))
             .on_action(cx.listener(|this, _: &HideSidebar, _, cx| this.set_sidebar(false, cx)))
             .on_action(cx.listener(|this, _: &ShowThumbnails, _, cx| this.set_sidebar(true, cx)))
             .on_action(cx.listener(|this, _: &ActualSize, _, cx| this.actual_size(cx)))
             .on_action(cx.listener(|this, _: &ZoomToFit, _, cx| this.zoom_to_fit(cx)))
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom_in(cx)))
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.zoom_out(cx)))
+            .on_action(cx.listener(|this, _: &ActualSizeOnAll, _, cx| this.actual_size_on_all(cx)))
+            .on_action(cx.listener(|this, _: &ZoomAllToFit, _, cx| this.zoom_all_to_fit(cx)))
+            .on_action(cx.listener(|this, _: &ZoomAllIn, _, cx| this.zoom_all_in(cx)))
+            .on_action(cx.listener(|this, _: &ZoomAllOut, _, cx| this.zoom_all_out(cx)))
             .on_action(cx.listener(|this, _: &PreviousItem, _, cx| this.step_item(-1, cx)))
             .on_action(cx.listener(|this, _: &NextItem, _, cx| this.step_item(1, cx)))
+            .on_action(cx.listener(|this, _: &PreviousDocument, _, cx| this.step_document(-1, cx)))
+            .on_action(cx.listener(|this, _: &NextDocument, _, cx| this.step_document(1, cx)))
+            .on_action(cx.listener(|this, _: &PageUp, _, cx| {
+                this.scroll_by(0.0, -(this.viewport.1 - LINE_SCROLL).max(LINE_SCROLL), cx);
+            }))
+            .on_action(cx.listener(|this, _: &PageDown, _, cx| {
+                this.scroll_by(0.0, (this.viewport.1 - LINE_SCROLL).max(LINE_SCROLL), cx);
+            }))
             .on_action(cx.listener(|this, _: &ShowInspector, _, cx| this.toggle_inspector(cx)))
             .on_action(cx.listener(|this, _: &RotateLeft, _, cx| this.rotate(false, cx)))
             .on_action(cx.listener(|this, _: &RotateRight, _, cx| this.rotate(true, cx)))

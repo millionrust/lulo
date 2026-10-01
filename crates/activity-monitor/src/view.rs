@@ -46,6 +46,8 @@ pub(crate) struct MonitorView {
     search_open: bool,
     /// Whether the View filter dropdown (MON-03) is open.
     pub(crate) filter_menu_open: bool,
+    refresh_seconds: u64,
+    refresh_wake: async_channel::Sender<()>,
 }
 
 impl MonitorView {
@@ -89,6 +91,7 @@ impl MonitorView {
         })
         .detach();
 
+        let (wake, events) = async_channel::bounded(1);
         let mut view = Self {
             table,
             search,
@@ -102,11 +105,12 @@ impl MonitorView {
             inspect_pid: None,
             search_open: false,
             filter_menu_open: false,
+            refresh_seconds: REFRESH_SECS as u64,
+            refresh_wake: wake.clone(),
         };
         view.refresh(cx);
 
         // An inactive window has no graph to update and no timer to run.
-        let (wake, events) = async_channel::bounded(1);
         cx.observe_window_activation(window, move |view, window, cx| {
             let _ = wake.try_send(());
             if window.is_window_active() {
@@ -116,14 +120,16 @@ impl MonitorView {
         })
         .detach();
         cx.spawn_in(window, async move |this, cx| loop {
-            let active = this
-                .update_in(cx, |_, window, _| window.is_window_active())
-                .unwrap_or(false);
+            let (active, seconds) = this
+                .update_in(cx, |view, window, _| {
+                    (window.is_window_active(), view.refresh_seconds)
+                })
+                .unwrap_or((false, REFRESH_SECS as u64));
             let timer_expired = futures_lite::future::race(
                 async {
                     if active {
                         cx.background_executor()
-                            .timer(Duration::from_secs(REFRESH_SECS as u64))
+                            .timer(Duration::from_secs(seconds))
                             .await;
                     } else {
                         std::future::pending::<()>().await;
@@ -189,14 +195,51 @@ impl MonitorView {
         cx.notify();
     }
 
-    /// The menu bar's live state for this, the key window (MON-12): Quit
-    /// Process and Force Quit Process are greyed out with nothing selected,
-    /// matching the Mac and the toolbar's own ⓧ (`accessible_icon_button`
-    /// in `view/render/chrome.rs`).
+    /// The menu bar's live state for the key window. Process commands are
+    /// greyed out without a selection, while view choices carry checkmarks.
     pub(super) fn publish_menu_state(&self, cx: &mut Context<Self>) {
         let has_selection = self.selected_proc(cx).is_some();
         rmac_ui::set_menu_enabled("activity_monitor::QuitProcess", has_selection, cx);
-        rmac_ui::set_menu_enabled("activity_monitor::ForceQuitProcess", has_selection, cx);
+        rmac_ui::set_menu_enabled("activity_monitor::InspectProcess", has_selection, cx);
+        let has_matches = !self.search.read(cx).value().is_empty()
+            && !self.table.read(cx).delegate().rows.is_empty();
+        rmac_ui::set_menu_enabled("activity_monitor::FindNext", has_matches, cx);
+        rmac_ui::set_menu_enabled("activity_monitor::FindPrevious", has_matches, cx);
+        for (action, filter) in [
+            ("activity_monitor::ShowAllProcesses", ViewFilter::All),
+            ("activity_monitor::ShowMyProcesses", ViewFilter::MyProcesses),
+            (
+                "activity_monitor::ShowSystemProcesses",
+                ViewFilter::SystemProcesses,
+            ),
+            (
+                "activity_monitor::ShowOtherUsersProcesses",
+                ViewFilter::OtherUsersProcesses,
+            ),
+            (
+                "activity_monitor::ShowActiveProcesses",
+                ViewFilter::ActiveProcesses,
+            ),
+        ] {
+            rmac_ui::set_menu_checked(action, self.view_filter(cx) == filter, cx);
+        }
+        for (action, seconds) in [
+            ("activity_monitor::RefreshEverySecond", 1),
+            ("activity_monitor::RefreshEveryTwoSeconds", 2),
+            ("activity_monitor::RefreshEveryFiveSeconds", 5),
+        ] {
+            rmac_ui::set_menu_checked(action, self.refresh_seconds == seconds, cx);
+        }
+        let visible = self.table.read(cx).delegate().visible.clone();
+        for (action, column) in [
+            ("activity_monitor::TogglePidColumn", ColKey::Pid),
+            ("activity_monitor::ToggleUserColumn", ColKey::User),
+            ("activity_monitor::ToggleCpuColumn", ColKey::Cpu),
+            ("activity_monitor::ToggleThreadsColumn", ColKey::Threads),
+            ("activity_monitor::ToggleMemoryColumn", ColKey::Mem),
+        ] {
+            rmac_ui::set_menu_checked(action, visible.contains(&column), cx);
+        }
     }
 
     fn selected_proc(&self, cx: &Context<Self>) -> Option<process_action::ProcessIdentity> {
@@ -383,6 +426,42 @@ impl MonitorView {
         self.search_open = true;
         self.search.update(cx, |s, cx| s.focus(window, cx));
         cx.notify();
+    }
+
+    fn find_match(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if self.search.read(cx).value().is_empty() {
+            return;
+        }
+        self.table.update(cx, |state, cx| {
+            let len = state.delegate().rows.len();
+            if len == 0 {
+                return;
+            }
+            let next = match state.selected_row() {
+                Some(index) if forward => (index + 1) % len,
+                Some(index) => (index + len - 1) % len,
+                None if forward => 0,
+                None => len - 1,
+            };
+            let pid = state.delegate().rows[next].pid;
+            state.delegate_mut().set_selected_pid(Some(pid));
+            state.set_selected_row(next, cx);
+        });
+        cx.notify();
+    }
+
+    fn clear_cpu_history(&mut self, cx: &mut Context<Self>) {
+        self.sampler.history.cpu_user.clear();
+        self.sampler.history.cpu_system.clear();
+        cx.notify();
+    }
+
+    fn set_refresh_seconds(&mut self, seconds: u64, cx: &mut Context<Self>) {
+        if self.refresh_seconds != seconds {
+            self.refresh_seconds = seconds;
+            let _ = self.refresh_wake.try_send(());
+            cx.notify();
+        }
     }
 
     /// Set the search query from an AT-SPI `SetValue`/`ReplaceSelectedText`

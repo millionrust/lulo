@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "system-monitor/find-process",
+  "platform": "Lulo local contract",
+  "observations": {
+    "opened": {"windows": {"count": 1}},
+    "query": {"focus": {"role": "text-field"}},
+    "found": {"selection": {"items": ["matching process"]}}
+  }
+}

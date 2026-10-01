@@ -121,21 +121,22 @@ def _synthesize_app_menu(
     (`app_menu` in shell/bins/rmac-menubar/src/main.rs, §3.3): About, the
     app's own items (Settings…, Files' Empty Trash…), Services, Hide/Hide
     Others/Show All, then Quit (Files/Finder is never quit)."""
-    items = [_item(f"About {app_display_name}", ABOUT_ACTION)]
+    menu_name = "Activity Monitor" if app_display_name == "System Monitor" else app_display_name
+    items = [_item(f"About {menu_name}", ABOUT_ACTION)]
     if exported_items:
         exported_items[0].separator_before = True
         items.extend(exported_items)
     items.extend(
         [
             _item("Services", "app::services", "", separator_before=True),
-            _item(f"Hide {app_display_name}", "app::hide", "⌘H", separator_before=True),
+            _item(f"Hide {menu_name}", "app::hide", "⌘H", separator_before=True),
             _item("Hide Others", "app::hide-others", "⌥⌘H"),
             _item("Show All", "app::show-all"),
         ]
     )
     if app_display_name not in NEVER_QUIT:
         items.append(
-            _item(f"Quit {app_display_name}", "app::quit", "⌘Q", separator_before=True)
+            _item(f"Quit {menu_name}", "app::quit", "⌘Q", separator_before=True)
         )
     return rmp.Menu(APPLICATION_MENU, items)
 
@@ -190,7 +191,8 @@ def _synthesize_help_menu(
     field (left out here: it is an AXTextField on the Mac, not a menu item,
     and Lulo's never registers it as one either), then "<App> Help" (⌘?),
     then the app's own Help items."""
-    items = [_item(f"{app_display_name} Help", "help::app-help", "⌘?")]
+    menu_name = "Activity Monitor" if app_display_name == "System Monitor" else app_display_name
+    items = [_item(f"{menu_name} Help", "help::app-help", "⌘?")]
     items.extend(exported_items)
     return rmp.Menu(HELP_MENU, items)
 
@@ -300,6 +302,7 @@ def read_settings_window(app_display_name: str) -> dict:
 TOOLBAR_FILES = {
     "Finder": ["crates/finder/src/view/chrome_presentation/toolbar.rs"],
     "Notes": ["crates/notes/src/toolbar.rs"],
+    "System Monitor": ["crates/activity-monitor/src/view/render/chrome.rs"],
 }
 
 

@@ -97,6 +97,11 @@ Finds places where Lulo *behaves* differently from the Mac, without anyone testi
 scenario is data. The Mac recorder plays it on the owner's Mac and saves what macOS did. The Lulo
 runner plays the same scenario inside a private nested compositor and diffs the two.
 
+For a new Lulo behavior that cannot be recorded on the owner's busy Mac,
+`<name>.lulo.json` supplies a local contract using the same observation
+format. The runner prefers a `.mac.json` recording when one exists. The System
+Monitor Find Next journey uses a local contract and runs in the full suite.
+
 | Piece | Where | Runs on |
 |---|---|---|
 | Scenarios | `tests/behavior/<area>/<name>.json` | — |

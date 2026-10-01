@@ -6,7 +6,7 @@
       "label": "Application",
       "items": [
         {
-          "label": "About System Monitor",
+          "label": "About Activity Monitor",
           "action": "rmac::ShowAboutPanel",
           "shortcut": "",
           "separator_before": false,
@@ -20,7 +20,7 @@
           "children": []
         },
         {
-          "label": "Hide System Monitor",
+          "label": "Hide Activity Monitor",
           "action": "app::hide",
           "shortcut": "⌘H",
           "separator_before": true,
@@ -41,10 +41,29 @@
           "children": []
         },
         {
-          "label": "Quit System Monitor",
+          "label": "Quit Activity Monitor",
           "action": "app::quit",
           "shortcut": "⌘Q",
           "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "Close",
+          "action": "activity_monitor::Close",
+          "shortcut": "⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "action": "activity_monitor::CloseAll",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
           "children": []
         }
       ]
@@ -106,6 +125,20 @@
               "shortcut": "⌘F",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Find Next",
+              "action": "activity_monitor::FindNext",
+              "shortcut": "⌘G",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find Previous",
+              "action": "activity_monitor::FindPrevious",
+              "shortcut": "⇧⌘G",
+              "separator_before": false,
+              "children": []
             }
           ]
         }
@@ -115,17 +148,138 @@
       "label": "View",
       "items": [
         {
-          "label": "Quit Process",
-          "action": "activity_monitor::QuitProcess",
-          "shortcut": "⌘⌫",
+          "label": "Columns",
+          "action": "activity_monitor::ColumnsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Process ID",
+              "action": "activity_monitor::TogglePidColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "User",
+              "action": "activity_monitor::ToggleUserColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "% CPU",
+              "action": "activity_monitor::ToggleCpuColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "# Threads",
+              "action": "activity_monitor::ToggleThreadsColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Real Memory",
+              "action": "activity_monitor::ToggleMemoryColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Update Frequency",
+          "action": "activity_monitor::UpdateFrequencyMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Very often (1 sec)",
+              "action": "activity_monitor::RefreshEverySecond",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Often (2 sec)",
+              "action": "activity_monitor::RefreshEveryTwoSeconds",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Normally (5 sec)",
+              "action": "activity_monitor::RefreshEveryFiveSeconds",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "All Processes",
+          "action": "activity_monitor::ShowAllProcesses",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
         {
-          "label": "Force Quit Process…",
-          "action": "activity_monitor::ForceQuitProcess",
-          "shortcut": "⇧⌘⌫",
+          "label": "My Processes",
+          "action": "activity_monitor::ShowMyProcesses",
+          "shortcut": "",
           "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "System Processes",
+          "action": "activity_monitor::ShowSystemProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Other Users’ Processes",
+          "action": "activity_monitor::ShowOtherUsersProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Active Processes",
+          "action": "activity_monitor::ShowActiveProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Filter Processes",
+          "action": "activity_monitor::FilterProcesses",
+          "shortcut": "⌥⌘F",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Inspect Process",
+          "action": "activity_monitor::InspectProcess",
+          "shortcut": "⌘I",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quit Process",
+          "action": "activity_monitor::QuitProcess",
+          "shortcut": "⌥⌘Q",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Clear CPU History",
+          "action": "activity_monitor::ClearCpuHistory",
+          "shortcut": "⌘K",
+          "separator_before": true,
           "children": []
         }
       ]
@@ -224,7 +378,7 @@
       "label": "Help",
       "items": [
         {
-          "label": "System Monitor Help",
+          "label": "Activity Monitor Help",
           "action": "help::app-help",
           "shortcut": "⌘?",
           "separator_before": false,
@@ -239,9 +393,12 @@
     "controls": []
   },
   "toolbar": {
-    "present": false,
-    "extraction": "none",
-    "groups": []
+    "present": true,
+    "extraction": "heuristic",
+    "groups": [
+      "View filter",
+      "Search"
+    ]
   },
   "context_menus": {}
 }

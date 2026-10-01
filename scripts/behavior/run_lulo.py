@@ -51,6 +51,7 @@ APP_BINARIES = {
     "calculator": ["rmac-calculator"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
     "preview": ["rmac-preview"],
+    "system-monitor": ["rmac-system-monitor"],
 }
 KEEP_ENV = {"PATH", "LANG", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DIR", "RUST_BACKTRACE", "RUST_LOG"}
 TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
@@ -1406,6 +1407,10 @@ def inner(args: argparse.Namespace) -> int:
             sid = sc.scenario_id(path)
             scenario = sc.load(path)
             expected_path = sc.expectation_path(path)
+            local_contract = False
+            if not expected_path.exists():
+                expected_path = sc.expectation_path(path, "lulo")
+                local_contract = expected_path.exists()
             if not expected_path.exists() and not args.explore:
                 continue
             run = LuloRun(nested, sid, scenario, bins, args.settle,
@@ -1437,14 +1442,14 @@ def inner(args: argparse.Namespace) -> int:
             if status == "unsupported":
                 print(f"SKIP  {sid}  {actual['unsupported']}")
             else:
-                print("\n".join(sc.report_lines(sid, scenario, mismatches)), flush=True)
+                print("\n".join(sc.report_lines(sid, scenario, mismatches, "Lulo contract" if local_contract else "Mac")), flush=True)
             time.sleep(0.5)
     finally:
         nested.close()
     if args.output:
         Path(args.output).write_text(json.dumps({"format": sc.FORMAT, "results": results}, indent=2, ensure_ascii=False) + "\n")
     passed = sum(r["status"] == "pass" for r in results)
-    print(f"\n{passed}/{len(results)} scenarios match the Mac")
+    print(f"\n{passed}/{len(results)} scenarios passed")
     return 0 if passed == len(results) else 1
 
 

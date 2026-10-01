@@ -58,6 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(dpkg --print-architecture)" = amd64
+          mkdir -p "$PWD/target"
           bash scripts/linux/build-native-inputs.sh \
             --output "$PWD/target/candidate-inputs" \
             --profile "$CANDIDATE_PROFILE" \

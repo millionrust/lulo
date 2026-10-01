@@ -90,7 +90,7 @@ impl NotesView {
                 "all-notes",
                 "All Notes",
                 glyphs::FOLDER,
-                all_count,
+                self.show_note_count.then_some(all_count),
                 current == FolderSelection::All,
                 cx.listener(|this, _, window, cx| {
                     this.select_folder(FolderSelection::All, window, cx)
@@ -103,7 +103,8 @@ impl NotesView {
                 ("folder", folder_id.get()),
                 folder.name.clone(),
                 glyphs::FOLDER,
-                self.session.folder_count(folder_id),
+                self.show_note_count
+                    .then_some(self.session.folder_count(folder_id)),
                 current == FolderSelection::Folder(folder_id),
                 cx.listener(move |this, _, window, cx| {
                     this.select_folder(FolderSelection::Folder(folder_id), window, cx)
@@ -115,7 +116,7 @@ impl NotesView {
             "trash-notes",
             "Recently Deleted",
             glyphs::TRASH,
-            trash_count,
+            self.show_note_count.then_some(trash_count),
             current == FolderSelection::Trash,
             cx.listener(|this, _, window, cx| {
                 this.select_folder(FolderSelection::Trash, window, cx)
@@ -559,7 +560,14 @@ impl NotesView {
                 1 => "1 note".to_string(),
                 count => format!("{count} notes"),
             };
-            (title, subtitle.into())
+            (
+                title,
+                if self.show_note_count {
+                    subtitle.into()
+                } else {
+                    "".into()
+                },
+            )
         };
         div()
             .w(px(LIST_WIDTH))

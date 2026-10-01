@@ -239,6 +239,10 @@ impl NotesView {
                 this.folders_visible = !this.folders_visible;
                 cx.notify();
             }))
+            .on_action(cx.listener(|this, _: &ToggleNoteCount, _, cx| {
+                this.show_note_count = !this.show_note_count;
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| {
                 this.note_zoom = (this.note_zoom + 1).min(12);
                 cx.notify();

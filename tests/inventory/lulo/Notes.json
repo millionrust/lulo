@@ -509,6 +509,13 @@
           "children": []
         },
         {
+          "label": "Hide Note Count",
+          "action": "notes::ToggleNoteCount",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Zoom In",
           "action": "notes::ZoomIn",
           "shortcut": "⇧⌘.",

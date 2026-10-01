@@ -574,6 +574,15 @@ impl NotesView {
             },
             cx,
         );
+        rmac_ui::set_menu_label(
+            "notes::ToggleNoteCount",
+            if self.show_note_count {
+                "Hide Note Count"
+            } else {
+                "Show Note Count"
+            },
+            cx,
+        );
         rmac_ui::set_menu_enabled("notes::ZoomIn", self.note_zoom < 12, cx);
         rmac_ui::set_menu_enabled("notes::ZoomOut", self.note_zoom > -5, cx);
         rmac_ui::set_menu_enabled("notes::ZoomReset", self.note_zoom != 0, cx);

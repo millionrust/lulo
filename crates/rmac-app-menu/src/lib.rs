@@ -558,6 +558,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
         label: "View",
         items: &[
             item!("Hide Folders", "notes::ToggleFolders", "⌃⌘S"),
+            item!("Hide Note Count", "notes::ToggleNoteCount", ""),
             item!("Zoom In", "notes::ZoomIn", "⇧⌘."),
             item!("Zoom Out", "notes::ZoomOut", "⇧⌘,"),
             item!("Actual Size", "notes::ZoomReset", "⇧⌘0"),
@@ -1870,18 +1871,18 @@ mod tests {
         let menus = definition(
             rmac_apps::identity::NOTES,
             &[
-                "notes::SortByEdited",
-                "notes::SortByTitle",
+                "notes::ToggleBold",
+                "notes::ToggleItalic",
                 "notes::TogglePin",
             ],
         )
         .unwrap();
         let live = apply_state(&menus, |item| match item.action.as_str() {
-            "notes::SortByTitle" => Some(ItemState {
+            "notes::ToggleItalic" => Some(ItemState {
                 checked: Some(CheckState::On),
                 ..ItemState::default()
             }),
-            "notes::SortByEdited" => Some(ItemState {
+            "notes::ToggleBold" => Some(ItemState {
                 enabled: Some(false),
                 ..ItemState::default()
             }),
@@ -1891,31 +1892,46 @@ mod tests {
             }),
             _ => None,
         });
-        let sort = &live[1].items[0];
-        assert!(sort.enabled, "one sort order is still available");
-        assert!(!sort.children[0].enabled);
-        assert_eq!(sort.children[1].checked, CheckState::On);
+        let font = &live
+            .iter()
+            .find(|menu| menu.label == "Format")
+            .unwrap()
+            .items[0];
+        assert!(font.enabled, "one font action is still available");
+        assert!(!font.children[0].enabled);
+        assert_eq!(font.children[1].checked, CheckState::On);
         assert_eq!(live[0].items[0].label, "Unpin Note");
 
         let none_left = apply_state(&menus, |item| {
-            item.action.starts_with("notes::SortBy").then(|| ItemState {
+            matches!(
+                item.action.as_str(),
+                "notes::ToggleBold" | "notes::ToggleItalic"
+            )
+            .then(|| ItemState {
                 enabled: Some(false),
                 ..ItemState::default()
             })
         });
-        assert!(!none_left[1].items[0].enabled);
+        assert!(
+            !none_left
+                .iter()
+                .find(|menu| menu.label == "Format")
+                .unwrap()
+                .items[0]
+                .enabled
+        );
     }
 
     #[test]
     fn a_new_menu_tree_gets_a_new_revision_and_submenus_are_not_commands() {
         let menus = definition(
             rmac_apps::identity::NOTES,
-            &["notes::SortByEdited", "notes::SortByTitle"],
+            &["notes::ToggleBold", "notes::ToggleItalic"],
         )
         .unwrap();
         let mut published = Published::new(menus.clone());
-        assert!(published.activatable.contains("notes::SortByTitle"));
-        assert!(!published.activatable.contains("notes::SortByMenu"));
+        assert!(published.activatable.contains("notes::ToggleItalic"));
+        assert!(!published.activatable.contains("notes::FontMenu"));
         assert_eq!(published.replace(menus.clone()), None);
         let checked = apply_state(&menus, |_| {
             Some(ItemState {

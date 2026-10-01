@@ -66,6 +66,7 @@ impl EditorView {
                     .aria_label("Go to Folder")
                     .accessible_text_input(&self.save_goto_input, cx)
                     .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        eprintln!("DEBUG_SAVE_NAME_KEY {}", event.keystroke.key);
                         match event.keystroke.key.as_str() {
                             "escape" => {
                                 cx.stop_propagation();
@@ -263,6 +264,7 @@ impl EditorView {
             ))
             .attached()
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                eprintln!("DEBUG_SAVE_DIALOG_KEY {}", event.keystroke.key);
                 match event.keystroke.key.as_str() {
                     "escape" if this.save_goto_open => {
                         cx.stop_propagation();

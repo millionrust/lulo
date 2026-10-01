@@ -129,6 +129,7 @@ impl Render for EditorView {
             )
             .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_next(cx)))
             .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
+                eprintln!("DEBUG_FIND_PREV save={}", matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))));
                 if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {
                     this.open_save_goto(window, cx);
                 } else {

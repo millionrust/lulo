@@ -162,14 +162,15 @@ impl FinderView {
     }
 
     pub(in crate::view) fn save_and_broadcast_favourites(&mut self, cx: &mut Context<Self>) {
-        if let Err(error) = saved::queue_save(saved::Favourites {
+        let favourites = saved::Favourites {
             paths: self.favourite_extras.clone(),
             order: self.favourite_order.clone(),
-        }) {
+        };
+        if let Err(error) = saved::queue_save(favourites.clone()) {
             self.operation_error =
                 Some(format!("Could not save sidebar favourites: {error}").into());
         }
         self.rebuild_sidebar_sections(cx);
-        cx.defer(settings::broadcast);
+        cx.defer(move |cx| settings::broadcast_favourites(favourites, cx));
     }
 }

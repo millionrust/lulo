@@ -387,6 +387,23 @@ pub(super) fn broadcast(cx: &mut App) {
     }
 }
 
+pub(super) fn broadcast_favourites(
+    favourites: rmac_finder::sidebar_favourites::Favourites,
+    cx: &mut App,
+) {
+    let Some(windows) = cx.try_global::<OpenFinderWindows>() else {
+        return;
+    };
+    let live = windows.0.clone();
+    for weak in live {
+        let _ = weak.update(cx, |view, cx| {
+            view.favourite_extras = favourites.paths.clone();
+            view.favourite_order = favourites.order.clone();
+            view.rebuild_sidebar_sections(cx);
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

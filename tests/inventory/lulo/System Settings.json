@@ -46,6 +46,13 @@
           "shortcut": "⌘Q",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "action": "app::quit-keep-windows",
+          "shortcut": "⌥⌘Q",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -88,6 +95,13 @@
           "children": []
         },
         {
+          "label": "Delete",
+          "action": "input::Delete",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Select All",
           "action": "input::SelectAll",
           "shortcut": "⌘A",
@@ -117,6 +131,188 @@
           "label": "Search",
           "action": "system_settings::FocusSearch",
           "shortcut": "⌘F",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "About",
+          "action": "system_settings::ShowAbout",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Accessibility",
+          "action": "system_settings::ShowAccessibility",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Appearance",
+          "action": "system_settings::ShowAppearance",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Battery",
+          "action": "system_settings::ShowBattery",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Bluetooth",
+          "action": "system_settings::ShowBluetooth",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Date & Time",
+          "action": "system_settings::ShowDateTime",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Desktop & Dock",
+          "action": "system_settings::ShowDesktopDock",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Displays",
+          "action": "system_settings::ShowDisplays",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Focus",
+          "action": "system_settings::ShowFocus",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Keyboard",
+          "action": "system_settings::ShowKeyboard",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Language & Region",
+          "action": "system_settings::ShowLanguageRegion",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Lock Screen",
+          "action": "system_settings::ShowLockScreen",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Login Items & Extensions",
+          "action": "system_settings::ShowLoginItems",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Menu Bar",
+          "action": "system_settings::ShowMenuBar",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Network",
+          "action": "system_settings::ShowNetwork",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Notifications",
+          "action": "system_settings::ShowNotifications",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Privacy & Security",
+          "action": "system_settings::ShowPrivacySecurity",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Sharing",
+          "action": "system_settings::ShowSharing",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Software Update",
+          "action": "system_settings::ShowSoftwareUpdate",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Sound",
+          "action": "system_settings::ShowSound",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Spotlight",
+          "action": "system_settings::ShowSpotlight",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Storage",
+          "action": "system_settings::ShowStorage",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Trackpad",
+          "action": "system_settings::ShowTrackpad",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Wallpaper",
+          "action": "system_settings::ShowWallpaper",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Wi-Fi",
+          "action": "system_settings::ShowWifi",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "system_settings::EnterFullScreen",
+          "shortcut": "F",
           "separator_before": true,
           "children": []
         }
@@ -167,6 +363,13 @@
           "separator_before": true,
           "children": [
             {
+              "label": "Halves",
+              "action": "window::heading-halves",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Left",
               "action": "window::tile-left",
               "shortcut": "⌃⌘←",
@@ -195,6 +398,41 @@
               "children": []
             },
             {
+              "label": "Quarters",
+              "action": "window::heading-quarters",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "action": "window::tile-top-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "action": "window::tile-top-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "action": "window::tile-bottom-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "action": "window::tile-bottom-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Return to Previous Size",
               "action": "window::restore-size",
               "shortcut": "⌃⌘R",
@@ -202,6 +440,20 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Close",
+          "action": "rmac_ui::RequestClose",
+          "shortcut": "⌘W",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "action": "rmac_ui::RequestClose",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
         },
         {
           "label": "Bring All to Front",
@@ -231,9 +483,12 @@
     "controls": []
   },
   "toolbar": {
-    "present": false,
-    "extraction": "none",
-    "groups": []
+    "present": true,
+    "extraction": "heuristic",
+    "groups": [
+      "Toolbar",
+      "Search"
+    ]
   },
   "context_menus": {},
   "sidebar": [
@@ -260,22 +515,6 @@
     {
       "id": "general",
       "label": "General"
-    },
-    {
-      "id": "date-time",
-      "label": "Date & Time"
-    },
-    {
-      "id": "language-region",
-      "label": "Language & Region"
-    },
-    {
-      "id": "login-items",
-      "label": "Login Items"
-    },
-    {
-      "id": "sharing",
-      "label": "Sharing"
     },
     {
       "id": "accessibility",

@@ -1399,6 +1399,9 @@ def inner(args: argparse.Namespace) -> int:
         if args.check_storage_deep_link:
             check_storage_deep_link(nested, bins, args.settle)
             return 0
+        if args.check_settings_view_menu:
+            check_settings_view_menu(nested, bins, args.settle)
+            return 0
         if args.preview_markup_capture:
             capture_preview_markup(nested, bins, args.settle, Path(args.preview_markup_capture))
             return 0
@@ -1446,6 +1449,36 @@ def inner(args: argparse.Namespace) -> int:
     passed = sum(r["status"] == "pass" for r in results)
     print(f"\n{passed}/{len(results)} scenarios match the Mac")
     return 0 if passed == len(results) else 1
+
+
+def check_settings_view_menu(nested: Nested, bins: list[Path], settle: float) -> None:
+    """Activate published View commands through the app's real menu endpoint."""
+    scenario = {"app": "settings", "launch": {}, "steps": []}
+    run = LuloRun(nested, "settings/view-menu-routes", scenario, bins, settle)
+    try:
+        run.setup()
+        run.launch()
+        for action, title in (
+            ("ShowAppearance", "Appearance"),
+            ("ShowWallpaper", "Wallpaper"),
+            ("ShowAbout", "About"),
+        ):
+            call = subprocess.run(
+                ["gdbus", "call", "--session", "--dest", "org.rmac.SystemSettings.Menu",
+                 "--object-path", "/org/rmac/AppMenu1", "--method",
+                 "org.rmac.AppMenu2.Activate", f"system_settings::{action}"],
+                env=run.env, capture_output=True, text=True, timeout=5,
+            )
+            if call.returncode:
+                raise StepFailed(f"View ▸ {title} activation failed: {call.stderr.strip()}")
+            time.sleep(0.5)
+            frame = run.active_frame()
+            actual = name(frame) if frame is not None else ""
+            if title not in actual:
+                raise StepFailed(f"View ▸ {title} left Settings at {actual!r}")
+            print(f"PASS  View ▸ {title} opens its pane through the published menu", flush=True)
+    finally:
+        run.stop()
 
 
 def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
@@ -1572,6 +1605,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--check-context-submenus", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check-file-tag-swatches", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check-storage-deep-link", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--check-settings-view-menu", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--benchmark-storage", type=int, metavar="FILES", help="measure Storage against a synthetic home")
     parser.add_argument("--preview-markup-capture", help=argparse.SUPPRESS)
     parser.add_argument("--inner", help=argparse.SUPPRESS)

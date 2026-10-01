@@ -429,6 +429,13 @@
           "separator_before": true,
           "children": [
             {
+              "label": "Halves",
+              "action": "window::heading-halves",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Left",
               "action": "window::tile-left",
               "shortcut": "⌃⌘←",
@@ -453,6 +460,41 @@
               "label": "Bottom",
               "action": "window::tile-bottom",
               "shortcut": "⌃⌘↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "action": "window::heading-quarters",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "action": "window::tile-top-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "action": "window::tile-top-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "action": "window::tile-bottom-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "action": "window::tile-bottom-right",
+              "shortcut": "",
               "separator_before": false,
               "children": []
             },

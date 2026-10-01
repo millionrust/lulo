@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_1011 gaps across 10 apps; 51 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Calculator
 
@@ -34,14 +34,14 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | CLC-MENU-011 | missing menu item (has a shortcut) | Scientific | View ▸ Scientific | ⌘2 |  | missing from Lulo's menu bar |
 | CLC-MENU-034 | missing menu item (has a shortcut) | Show History | View ▸ Show History | ⌃⌘S |  | missing from Lulo's menu bar |
 | CLC-MENU-036 | missing menu item (has a shortcut) | Close All | Window ▸ Close All | ⌥⌘W |  | missing from Lulo's menu bar |
-| CLC-MENU-059 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| CLC-MENU-058 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| CLC-MENU-053 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| CLC-MENU-052 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| CLC-MENU-054 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| CLC-MENU-055 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| CLC-MENU-056 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| CLC-MENU-057 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| CLC-MENU-053 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| CLC-MENU-052 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| CLC-MENU-047 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| CLC-MENU-046 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| CLC-MENU-048 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| CLC-MENU-049 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| CLC-MENU-050 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| CLC-MENU-051 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
 | CLC-MENU-007 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
 | CLC-MENU-008 | missing menu item | Contact… | Edit ▸ AutoFill ▸ Contact… |  |  | missing from Lulo's menu bar |
 | CLC-MENU-010 | missing menu item | Credit Card… | Edit ▸ AutoFill ▸ Credit Card… |  |  | missing from Lulo's menu bar |
@@ -65,26 +65,20 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | CLC-MENU-026 | missing menu item | 8 | View ▸ Decimal Places ▸ 8 |  |  | missing from Lulo's menu bar |
 | CLC-MENU-027 | missing menu item | 9 | View ▸ Decimal Places ▸ 9 |  |  | missing from Lulo's menu bar |
 | CLC-MENU-016 | missing menu item | Hide Thousands Separator | View ▸ Hide Thousands Separator |  |  | missing from Lulo's menu bar |
-| CLC-MENU-063 | missing menu item | Always on Top | Window ▸ Always on Top |  |  | missing from Lulo's menu bar |
-| CLC-MENU-064 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| CLC-MENU-061 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| CLC-MENU-051 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| CLC-MENU-049 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| CLC-MENU-050 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| CLC-MENU-041 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| CLC-MENU-046 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| CLC-MENU-047 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| CLC-MENU-048 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| CLC-MENU-062 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| CLC-MENU-057 | missing menu item | Always on Top | Window ▸ Always on Top |  |  | missing from Lulo's menu bar |
+| CLC-MENU-058 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| CLC-MENU-055 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| CLC-MENU-045 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| CLC-MENU-056 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
 | CLC-MENU-038 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
 | CLC-MENU-040 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
 | CLC-MENU-039 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
 | CLC-MENU-037 | wrong/missing shortcut | Minimise All | Window ▸ Minimise All |  | ⌥⌘M | shortcut differs |
-| CLC-MENU-045 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| CLC-MENU-042 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| CLC-MENU-060 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| CLC-MENU-043 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| CLC-MENU-044 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| CLC-MENU-044 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| CLC-MENU-041 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| CLC-MENU-054 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| CLC-MENU-042 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| CLC-MENU-043 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | CLC-TOOLBAR-001 | missing toolbar item | Toolbar | toolbar |  |  | the Mac has a toolbar for this app; Lulo has none implemented yet |
 
 ## Clock
@@ -95,14 +89,14 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | CLK-MENU-008 | missing menu item (has a shortcut) | Check Document Now | Edit ▸ Spelling and Grammar ▸ Check Document Now | ⌘; |  | missing from Lulo's menu bar |
 | CLK-MENU-007 | missing menu item (has a shortcut) | Show Spelling and Grammar | Edit ▸ Spelling and Grammar ▸ Show Spelling and Grammar | ⌘: |  | missing from Lulo's menu bar |
 | CLK-MENU-004 | missing menu item (has a shortcut) | Close All | File ▸ Close All | ⌥⌘W |  | missing from Lulo's menu bar |
-| CLK-MENU-053 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| CLK-MENU-052 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| CLK-MENU-047 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| CLK-MENU-046 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| CLK-MENU-048 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| CLK-MENU-049 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| CLK-MENU-050 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| CLK-MENU-051 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| CLK-MENU-047 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| CLK-MENU-046 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| CLK-MENU-041 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| CLK-MENU-040 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| CLK-MENU-042 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| CLK-MENU-043 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| CLK-MENU-044 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| CLK-MENU-045 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
 | CLK-MENU-026 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
 | CLK-MENU-027 | missing menu item | Contact… | Edit ▸ AutoFill ▸ Contact… |  |  | missing from Lulo's menu bar |
 | CLK-MENU-029 | missing menu item | Credit Card… | Edit ▸ AutoFill ▸ Credit Card… |  |  | missing from Lulo's menu bar |
@@ -130,31 +124,25 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | CLK-MENU-003 | missing menu item | No Recent Timers | File ▸ Start Recent Timer ▸ No Recent Timers |  |  | missing from Lulo's menu bar |
 | CLK-MENU-031 | missing menu item | View Analogue Stopwatch | View ▸ View Analogue Stopwatch |  |  | missing from Lulo's menu bar |
 | CLK-MENU-030 | missing menu item | View Digital Stopwatch | View ▸ View Digital Stopwatch |  |  | missing from Lulo's menu bar |
-| CLK-MENU-059 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| CLK-MENU-060 | missing menu item | Clock | Window ▸ Clock |  |  | missing from Lulo's menu bar |
-| CLK-MENU-055 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| CLK-MENU-056 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
-| CLK-MENU-057 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
-| CLK-MENU-045 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| CLK-MENU-043 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| CLK-MENU-044 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| CLK-MENU-035 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| CLK-MENU-040 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| CLK-MENU-041 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| CLK-MENU-042 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| CLK-MENU-058 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| CLK-MENU-053 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| CLK-MENU-054 | missing menu item | Clock | Window ▸ Clock |  |  | missing from Lulo's menu bar |
+| CLK-MENU-049 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| CLK-MENU-050 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
+| CLK-MENU-051 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
+| CLK-MENU-039 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| CLK-MENU-052 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
 | CLK-MENU-032 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
 | CLK-MENU-034 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
 | CLK-MENU-033 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| CLK-MENU-039 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| CLK-MENU-036 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| CLK-MENU-054 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| CLK-MENU-037 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| CLK-MENU-038 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| CLK-MENU-038 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| CLK-MENU-035 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| CLK-MENU-048 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| CLK-MENU-036 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| CLK-MENU-037 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | CLK-TOOLBAR-001 | missing toolbar item | Toolbar | toolbar |  |  | the Mac has a toolbar for this app; Lulo has none implemented yet |
-| CLK-MENU-061 | Lulo-only (not on the Mac) | New | File ▸ New |  | ⌘N | present in Lulo but not found on the Mac |
-| CLK-MENU-063 | Lulo-only (not on the Mac) | Lap or Reset | View ▸ Lap or Reset |  |  | present in Lulo but not found on the Mac |
-| CLK-MENU-062 | Lulo-only (not on the Mac) | Start or Stop | View ▸ Start or Stop |  |  | present in Lulo but not found on the Mac |
+| CLK-MENU-055 | Lulo-only (not on the Mac) | New | File ▸ New |  | ⌘N | present in Lulo but not found on the Mac |
+| CLK-MENU-057 | Lulo-only (not on the Mac) | Lap or Reset | View ▸ Lap or Reset |  |  | present in Lulo but not found on the Mac |
+| CLK-MENU-056 | Lulo-only (not on the Mac) | Start or Stop | View ▸ Start or Stop |  |  | present in Lulo but not found on the Mac |
 
 ## Finder
 
@@ -209,15 +197,15 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | FIL-MENU-060 | missing menu item (has a shortcut) | Size | View ▸ Sort By ▸ Size | ⌃⌥⌘6 |  | missing from Lulo's menu bar |
 | FIL-MENU-061 | missing menu item (has a shortcut) | Tags | View ▸ Sort By ▸ Tags | ⌃⌥⌘7 |  | missing from Lulo's menu bar |
 | FIL-MENU-052 | missing menu item (has a shortcut) | Use Groups | View ▸ Use Groups | ⌃⌘0 |  | missing from Lulo's menu bar |
-| FIL-MENU-121 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
-| FIL-MENU-115 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| FIL-MENU-114 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| FIL-MENU-109 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| FIL-MENU-108 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| FIL-MENU-110 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| FIL-MENU-111 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| FIL-MENU-112 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| FIL-MENU-113 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| FIL-MENU-115 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
+| FIL-MENU-109 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| FIL-MENU-108 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| FIL-MENU-103 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| FIL-MENU-102 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| FIL-MENU-104 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| FIL-MENU-105 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| FIL-MENU-106 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| FIL-MENU-107 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
 | FIL-CONTEXT-001 | missing context-menu item | Always Open With | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-002 | missing context-menu item | Compress “sample.txt” | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-003 | missing context-menu item | Copy “sample.txt” as Pathname | context menu ▸ file |  |  | missing from Lulo's context menu |
@@ -267,8 +255,8 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | FIL-MENU-089 | missing menu item | Downloads | Go ▸ Recent Folders ▸ Downloads |  |  | missing from Lulo's menu bar |
 | FIL-MENU-090 | missing menu item | finder-context-sandbox | Go ▸ Recent Folders ▸ finder-context-sandbox |  |  | missing from Lulo's menu bar |
 | FIL-MENU-091 | missing menu item | lulo-vis | Go ▸ Recent Folders ▸ lulo-vis |  |  | missing from Lulo's menu bar |
-| FIL-MENU-130 | missing menu item | Mac User Guide | Help ▸ Mac User Guide |  |  | missing from Lulo's menu bar |
-| FIL-MENU-131 | missing menu item | Tips for Your Mac | Help ▸ Tips for Your Mac |  |  | missing from Lulo's menu bar |
+| FIL-MENU-124 | missing menu item | Mac User Guide | Help ▸ Mac User Guide |  |  | missing from Lulo's menu bar |
+| FIL-MENU-125 | missing menu item | Tips for Your Mac | Help ▸ Tips for Your Mac |  |  | missing from Lulo's menu bar |
 | FIL-MENU-062 | missing menu item | Clean Up | View ▸ Clean Up |  |  | missing from Lulo's menu bar |
 | FIL-MENU-064 | missing menu item | Clean Up By | View ▸ Clean Up By |  |  | missing from Lulo's menu bar |
 | FIL-MENU-068 | missing menu item | Date Created | View ▸ Clean Up By ▸ Date Created |  |  | missing from Lulo's menu bar |
@@ -277,34 +265,28 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | FIL-MENU-077 | missing menu item | Show Preview Options | View ▸ Show Preview Options |  |  | missing from Lulo's menu bar |
 | FIL-MENU-053 | missing menu item | Sort By | View ▸ Sort By |  |  | missing from Lulo's menu bar |
 | FIL-MENU-059 | missing menu item | Date Created | View ▸ Sort By ▸ Date Created |  |  | missing from Lulo's menu bar |
-| FIL-MENU-123 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| FIL-MENU-128 | missing menu item | Downloads | Window ▸ Downloads |  |  | missing from Lulo's menu bar |
-| FIL-MENU-117 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| FIL-MENU-118 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
-| FIL-MENU-119 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
-| FIL-MENU-127 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
-| FIL-MENU-107 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| FIL-MENU-105 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| FIL-MENU-106 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| FIL-MENU-097 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| FIL-MENU-102 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| FIL-MENU-103 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| FIL-MENU-104 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| FIL-MENU-126 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
-| FIL-MENU-120 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
-| FIL-MENU-122 | missing menu item | Show Progress Window | Window ▸ Show Progress Window |  |  | missing from Lulo's menu bar |
+| FIL-MENU-117 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| FIL-MENU-122 | missing menu item | Downloads | Window ▸ Downloads |  |  | missing from Lulo's menu bar |
+| FIL-MENU-111 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| FIL-MENU-112 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
+| FIL-MENU-113 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
+| FIL-MENU-121 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
+| FIL-MENU-101 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| FIL-MENU-120 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
+| FIL-MENU-114 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| FIL-MENU-116 | missing menu item | Show Progress Window | Window ▸ Show Progress Window |  |  | missing from Lulo's menu bar |
 | FIL-MENU-094 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
-| FIL-MENU-129 | missing menu item | finder-context-sandbox | Window ▸ finder-context-sandbox |  |  | missing from Lulo's menu bar |
+| FIL-MENU-123 | missing menu item | finder-context-sandbox | Window ▸ finder-context-sandbox |  |  | missing from Lulo's menu bar |
 | FIL-MENU-079 | wrong/missing shortcut | Enclosing Folder | Go ▸ Enclosing Folder | ⌘ | ⌘↑ | shortcut differs |
 | FIL-MENU-096 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
 | FIL-MENU-095 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| FIL-MENU-101 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| FIL-MENU-098 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| FIL-MENU-116 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| FIL-MENU-099 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| FIL-MENU-100 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
-| FIL-MENU-125 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⌃⇥ | shortcut differs |
-| FIL-MENU-124 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⌃⇧⇥ | shortcut differs |
+| FIL-MENU-100 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| FIL-MENU-097 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| FIL-MENU-110 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| FIL-MENU-098 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| FIL-MENU-099 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| FIL-MENU-119 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⌃⇥ | shortcut differs |
+| FIL-MENU-118 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⌃⇧⇥ | shortcut differs |
 | FIL-SETTINGS-001 | missing settings control | Finder Settings | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | FIL-SETTINGS-002 | missing settings control | Store your Desktop & Documents folders in iCloud Drive and access them from your other devices. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | FIL-SETTINGS-003 | missing settings control | close button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
@@ -332,18 +314,18 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | FIL-CONTEXT-030 | Lulo-only (not on the Mac) | Purple | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
 | FIL-CONTEXT-031 | Lulo-only (not on the Mac) | Red | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
 | FIL-CONTEXT-032 | Lulo-only (not on the Mac) | Yellow | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-134 | Lulo-only (not on the Mac) | Copy as Pathname | Edit ▸ Copy as Pathname |  | ⌥⌘C | present in Lulo but not found on the Mac |
-| FIL-MENU-133 | Lulo-only (not on the Mac) | Undo | Edit ▸ Undo |  | ⌘Z | present in Lulo but not found on the Mac |
-| FIL-MENU-132 | Lulo-only (not on the Mac) | Close Tab | File ▸ Close Tab |  | ⌘W | present in Lulo but not found on the Mac |
-| FIL-MENU-141 | Lulo-only (not on the Mac) | Bin | Go ▸ Trash |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-143 | Lulo-only (not on the Mac) | Files Help | Help ▸ Files Help |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-142 | Lulo-only (not on the Mac) | Finder Help | Help ▸ Finder Help |  | ⌘? | present in Lulo but not found on the Mac |
-| FIL-MENU-140 | Lulo-only (not on the Mac) | Quick Look | View ▸ Quick Look |  | Space | present in Lulo but not found on the Mac |
-| FIL-MENU-139 | Lulo-only (not on the Mac) | Show Hidden Files | View ▸ Show Hidden Files |  | ⇧⌘. | present in Lulo but not found on the Mac |
-| FIL-MENU-136 | Lulo-only (not on the Mac) | Sort by Date Modified | View ▸ Sort by Date Modified |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-138 | Lulo-only (not on the Mac) | Sort by Kind | View ▸ Sort by Kind |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-135 | Lulo-only (not on the Mac) | Sort by Name | View ▸ Sort by Name |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-137 | Lulo-only (not on the Mac) | Sort by Size | View ▸ Sort by Size |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-128 | Lulo-only (not on the Mac) | Copy as Pathname | Edit ▸ Copy as Pathname |  | ⌥⌘C | present in Lulo but not found on the Mac |
+| FIL-MENU-127 | Lulo-only (not on the Mac) | Undo | Edit ▸ Undo |  | ⌘Z | present in Lulo but not found on the Mac |
+| FIL-MENU-126 | Lulo-only (not on the Mac) | Close Tab | File ▸ Close Tab |  | ⌘W | present in Lulo but not found on the Mac |
+| FIL-MENU-135 | Lulo-only (not on the Mac) | Bin | Go ▸ Trash |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-137 | Lulo-only (not on the Mac) | Files Help | Help ▸ Files Help |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-136 | Lulo-only (not on the Mac) | Finder Help | Help ▸ Finder Help |  | ⌘? | present in Lulo but not found on the Mac |
+| FIL-MENU-134 | Lulo-only (not on the Mac) | Quick Look | View ▸ Quick Look |  | Space | present in Lulo but not found on the Mac |
+| FIL-MENU-133 | Lulo-only (not on the Mac) | Show Hidden Files | View ▸ Show Hidden Files |  | ⇧⌘. | present in Lulo but not found on the Mac |
+| FIL-MENU-130 | Lulo-only (not on the Mac) | Sort by Date Modified | View ▸ Sort by Date Modified |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-132 | Lulo-only (not on the Mac) | Sort by Kind | View ▸ Sort by Kind |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-129 | Lulo-only (not on the Mac) | Sort by Name | View ▸ Sort by Name |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-131 | Lulo-only (not on the Mac) | Sort by Size | View ▸ Sort by Size |  |  | present in Lulo but not found on the Mac |
 
 ## Notes
 
@@ -407,15 +389,15 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | NOT-MENU-128 | missing menu item (has a shortcut) | Zoom Out | View ▸ Zoom Out | ⇧⌘, |  | missing from Lulo's menu bar |
 | NOT-MENU-111 | missing menu item (has a shortcut) | as Gallery | View ▸ as Gallery | ⌘2 |  | missing from Lulo's menu bar |
 | NOT-MENU-110 | missing menu item (has a shortcut) | as List | View ▸ as List | ⌘1 |  | missing from Lulo's menu bar |
-| NOT-MENU-159 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| NOT-MENU-158 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| NOT-MENU-153 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| NOT-MENU-152 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| NOT-MENU-154 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| NOT-MENU-155 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| NOT-MENU-156 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| NOT-MENU-157 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
-| NOT-MENU-166 | missing menu item (has a shortcut) | Notes | Window ▸ Notes | ⌘0 |  | missing from Lulo's menu bar |
+| NOT-MENU-153 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| NOT-MENU-152 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| NOT-MENU-147 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| NOT-MENU-146 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| NOT-MENU-148 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| NOT-MENU-149 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| NOT-MENU-150 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| NOT-MENU-151 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| NOT-MENU-160 | missing menu item (has a shortcut) | Notes | Window ▸ Notes | ⌘0 |  | missing from Lulo's menu bar |
 | NOT-MENU-138 | missing menu item (has a shortcut) | Zoom All | Window ▸ Zoom All | ⌃⌥⌘Z |  | missing from Lulo's menu bar |
 | NOT-MENU-002 | missing menu item | Accounts… | Application ▸ Accounts… |  |  | missing from Lulo's menu bar |
 | NOT-MENU-003 | missing menu item | Close All Locked Notes | Application ▸ Close All Locked Notes |  |  | missing from Lulo's menu bar |
@@ -484,8 +466,8 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | NOT-MENU-100 | missing menu item | Writing Direction | Format ▸ Text ▸ Writing Direction |  |  | missing from Lulo's menu bar |
 | NOT-MENU-101 | missing menu item | Paragraph | Format ▸ Text ▸ Writing Direction ▸ Paragraph |  |  | missing from Lulo's menu bar |
 | NOT-MENU-102 | missing menu item | Selection | Format ▸ Text ▸ Writing Direction ▸ Selection |  |  | missing from Lulo's menu bar |
-| NOT-MENU-170 | missing menu item | Using Smart Folders | Help ▸ Using Smart Folders |  |  | missing from Lulo's menu bar |
-| NOT-MENU-169 | missing menu item | Using Tags | Help ▸ Using Tags |  |  | missing from Lulo's menu bar |
+| NOT-MENU-164 | missing menu item | Using Smart Folders | Help ▸ Using Smart Folders |  |  | missing from Lulo's menu bar |
+| NOT-MENU-163 | missing menu item | Using Tags | Help ▸ Using Tags |  |  | missing from Lulo's menu bar |
 | NOT-MENU-119 | missing menu item | Attachment View | View ▸ Attachment View |  |  | missing from Lulo's menu bar |
 | NOT-MENU-121 | missing menu item | Set All to Large | View ▸ Attachment View ▸ Set All to Large |  |  | missing from Lulo's menu bar |
 | NOT-MENU-120 | missing menu item | Set All to Small | View ▸ Attachment View ▸ Set All to Small |  |  | missing from Lulo's menu bar |
@@ -497,51 +479,45 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | NOT-MENU-115 | missing menu item | Projects links: | View ▸ Recent Notes ▸ Projects links: |  |  | missing from Lulo's menu bar |
 | NOT-MENU-126 | missing menu item | Show Folder Activity | View ▸ Show Folder Activity |  |  | missing from Lulo's menu bar |
 | NOT-MENU-123 | missing menu item | Show in Note | View ▸ Show in Note |  |  | missing from Lulo's menu bar |
-| NOT-MENU-168 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| NOT-MENU-161 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| NOT-MENU-162 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
-| NOT-MENU-163 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
-| NOT-MENU-151 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| NOT-MENU-149 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| NOT-MENU-150 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| NOT-MENU-141 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| NOT-MENU-146 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| NOT-MENU-147 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| NOT-MENU-148 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| NOT-MENU-165 | missing menu item | Open Note in New Window | Window ▸ Open Note in New Window |  |  | missing from Lulo's menu bar |
-| NOT-MENU-167 | missing menu item | Photo Browser | Window ▸ Photo Browser |  |  | missing from Lulo's menu bar |
-| NOT-MENU-164 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| NOT-MENU-162 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| NOT-MENU-155 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| NOT-MENU-156 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
+| NOT-MENU-157 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
+| NOT-MENU-145 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| NOT-MENU-159 | missing menu item | Open Note in New Window | Window ▸ Open Note in New Window |  |  | missing from Lulo's menu bar |
+| NOT-MENU-161 | missing menu item | Photo Browser | Window ▸ Photo Browser |  |  | missing from Lulo's menu bar |
+| NOT-MENU-158 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
 | NOT-MENU-140 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
 | NOT-MENU-139 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| NOT-MENU-145 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| NOT-MENU-142 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| NOT-MENU-160 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| NOT-MENU-143 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| NOT-MENU-144 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| NOT-MENU-144 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| NOT-MENU-141 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| NOT-MENU-154 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| NOT-MENU-142 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| NOT-MENU-143 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | NOT-MENU-137 | wrong/missing shortcut | Zoom | Window ▸ Zoom | ⌃⌘Z |  | shortcut differs |
 | NOT-SETTINGS-001 | missing settings control | Settings window | settings |  |  | the Mac has a Settings window for this app; Lulo has none yet |
-| NOT-MENU-175 | Lulo-only (not on the Mac) | Add Photo… | Edit ▸ Add Photo… |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-173 | Lulo-only (not on the Mac) | Export Notes… | File ▸ Export Notes… |  | ⇧⌘E | present in Lulo but not found on the Mac |
-| NOT-MENU-172 | Lulo-only (not on the Mac) | PDF… | File ▸ Export as ▸ PDF… |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-171 | Lulo-only (not on the Mac) | Import Notes Bundle… | File ▸ Import Notes Bundle… |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-174 | Lulo-only (not on the Mac) | Pin Note | File ▸ Pin Note |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-176 | Lulo-only (not on the Mac) | Bold | Format ▸ Bold |  | ⌘B | present in Lulo but not found on the Mac |
-| NOT-MENU-177 | Lulo-only (not on the Mac) | Italic | Format ▸ Italic |  | ⌘I | present in Lulo but not found on the Mac |
-| NOT-MENU-185 | Lulo-only (not on the Mac) | Lists | Format ▸ Lists |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-186 | Lulo-only (not on the Mac) | Bulleted List | Format ▸ Lists ▸ Bulleted List |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-187 | Lulo-only (not on the Mac) | Numbered List | Format ▸ Lists ▸ Numbered List |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-184 | Lulo-only (not on the Mac) | Mark as Done | Format ▸ Mark as Done |  | ⇧⌘U | present in Lulo but not found on the Mac |
-| NOT-MENU-178 | Lulo-only (not on the Mac) | Paragraph Style | Format ▸ Paragraph Style |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-182 | Lulo-only (not on the Mac) | Body | Format ▸ Paragraph Style ▸ Body |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-180 | Lulo-only (not on the Mac) | Heading | Format ▸ Paragraph Style ▸ Heading |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-183 | Lulo-only (not on the Mac) | Monospaced | Format ▸ Paragraph Style ▸ Monospaced |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-181 | Lulo-only (not on the Mac) | Subheading | Format ▸ Paragraph Style ▸ Subheading |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-179 | Lulo-only (not on the Mac) | Title | Format ▸ Paragraph Style ▸ Title |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-192 | Lulo-only (not on the Mac) | Markdown Preview | View ▸ Markdown Preview |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-188 | Lulo-only (not on the Mac) | Sort By | View ▸ Sort By |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-190 | Lulo-only (not on the Mac) | Date Created | View ▸ Sort By ▸ Date Created |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-189 | Lulo-only (not on the Mac) | Date Edited | View ▸ Sort By ▸ Date Edited |  |  | present in Lulo but not found on the Mac |
-| NOT-MENU-191 | Lulo-only (not on the Mac) | Title | View ▸ Sort By ▸ Title |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-169 | Lulo-only (not on the Mac) | Add Photo… | Edit ▸ Add Photo… |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-167 | Lulo-only (not on the Mac) | Export Notes… | File ▸ Export Notes… |  | ⇧⌘E | present in Lulo but not found on the Mac |
+| NOT-MENU-166 | Lulo-only (not on the Mac) | PDF… | File ▸ Export as ▸ PDF… |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-165 | Lulo-only (not on the Mac) | Import Notes Bundle… | File ▸ Import Notes Bundle… |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-168 | Lulo-only (not on the Mac) | Pin Note | File ▸ Pin Note |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-170 | Lulo-only (not on the Mac) | Bold | Format ▸ Bold |  | ⌘B | present in Lulo but not found on the Mac |
+| NOT-MENU-171 | Lulo-only (not on the Mac) | Italic | Format ▸ Italic |  | ⌘I | present in Lulo but not found on the Mac |
+| NOT-MENU-179 | Lulo-only (not on the Mac) | Lists | Format ▸ Lists |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-180 | Lulo-only (not on the Mac) | Bulleted List | Format ▸ Lists ▸ Bulleted List |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-181 | Lulo-only (not on the Mac) | Numbered List | Format ▸ Lists ▸ Numbered List |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-178 | Lulo-only (not on the Mac) | Mark as Done | Format ▸ Mark as Done |  | ⇧⌘U | present in Lulo but not found on the Mac |
+| NOT-MENU-172 | Lulo-only (not on the Mac) | Paragraph Style | Format ▸ Paragraph Style |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-176 | Lulo-only (not on the Mac) | Body | Format ▸ Paragraph Style ▸ Body |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-174 | Lulo-only (not on the Mac) | Heading | Format ▸ Paragraph Style ▸ Heading |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-177 | Lulo-only (not on the Mac) | Monospaced | Format ▸ Paragraph Style ▸ Monospaced |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-175 | Lulo-only (not on the Mac) | Subheading | Format ▸ Paragraph Style ▸ Subheading |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-173 | Lulo-only (not on the Mac) | Title | Format ▸ Paragraph Style ▸ Title |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-186 | Lulo-only (not on the Mac) | Markdown Preview | View ▸ Markdown Preview |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-182 | Lulo-only (not on the Mac) | Sort By | View ▸ Sort By |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-184 | Lulo-only (not on the Mac) | Date Created | View ▸ Sort By ▸ Date Created |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-183 | Lulo-only (not on the Mac) | Date Edited | View ▸ Sort By ▸ Date Edited |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-185 | Lulo-only (not on the Mac) | Title | View ▸ Sort By ▸ Title |  |  | present in Lulo but not found on the Mac |
 
 ## Preview
 
@@ -598,14 +574,14 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | PRV-MENU-075 | missing menu item (has a shortcut) | Zoom All Out | View ▸ Zoom All Out | ⌥⌘− |  | missing from Lulo's menu bar |
 | PRV-MENU-073 | missing menu item (has a shortcut) | Zoom All to Fit | View ▸ Zoom All to Fit | ⌥⌘9 |  | missing from Lulo's menu bar |
 | PRV-MENU-076 | missing menu item (has a shortcut) | Zoom to Selection | View ▸ Zoom to Selection | ⌘* |  | missing from Lulo's menu bar |
-| PRV-MENU-141 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| PRV-MENU-140 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| PRV-MENU-135 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| PRV-MENU-134 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| PRV-MENU-136 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| PRV-MENU-137 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| PRV-MENU-138 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| PRV-MENU-139 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| PRV-MENU-135 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| PRV-MENU-134 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| PRV-MENU-129 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| PRV-MENU-128 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| PRV-MENU-130 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| PRV-MENU-131 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| PRV-MENU-132 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| PRV-MENU-133 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
 | PRV-MENU-041 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
 | PRV-MENU-042 | missing menu item | Contact… | Edit ▸ AutoFill ▸ Contact… |  |  | missing from Lulo's menu bar |
 | PRV-MENU-044 | missing menu item | Credit Card… | Edit ▸ AutoFill ▸ Credit Card… |  |  | missing from Lulo's menu bar |
@@ -672,35 +648,29 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | PRV-MENU-068 | missing menu item | SMPTE RP 431-2-2007 DCI (P3) | View ▸ Soft Proof with Profile ▸ SMPTE RP 431-2-2007 DCI (P3) |  |  | missing from Lulo's menu bar |
 | PRV-MENU-069 | missing menu item | sRGB IEC61966-2.1 | View ▸ Soft Proof with Profile ▸ sRGB IEC61966-2.1 |  |  | missing from Lulo's menu bar |
 | PRV-MENU-071 | missing menu item | Use Dark Appearance for PDF | View ▸ Use Dark Appearance for PDF |  |  | missing from Lulo's menu bar |
-| PRV-MENU-145 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| PRV-MENU-143 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| PRV-MENU-149 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
-| PRV-MENU-133 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| PRV-MENU-131 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| PRV-MENU-132 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| PRV-MENU-123 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| PRV-MENU-128 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| PRV-MENU-129 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| PRV-MENU-130 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| PRV-MENU-148 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
-| PRV-MENU-144 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
-| PRV-MENU-147 | missing menu item | Show Next Tab | Window ▸ Show Next Tab |  |  | missing from Lulo's menu bar |
-| PRV-MENU-146 | missing menu item | Show Previous Tab | Window ▸ Show Previous Tab |  |  | missing from Lulo's menu bar |
+| PRV-MENU-139 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| PRV-MENU-137 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| PRV-MENU-143 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
+| PRV-MENU-127 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| PRV-MENU-142 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
+| PRV-MENU-138 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| PRV-MENU-141 | missing menu item | Show Next Tab | Window ▸ Show Next Tab |  |  | missing from Lulo's menu bar |
+| PRV-MENU-140 | missing menu item | Show Previous Tab | Window ▸ Show Previous Tab |  |  | missing from Lulo's menu bar |
 | PRV-MENU-120 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
 | PRV-MENU-087 | wrong/missing shortcut | Next Item | Go ▸ Next Item | ⌥ | ⌥↓ | shortcut differs |
 | PRV-MENU-086 | wrong/missing shortcut | Previous Item | Go ▸ Previous Item | ⌥ | ⌥↑ | shortcut differs |
-| PRV-MENU-150 | wrong/missing shortcut | Preview Help | Help ▸ Preview Help |  | ⌘? | shortcut differs |
+| PRV-MENU-144 | wrong/missing shortcut | Preview Help | Help ▸ Preview Help |  | ⌘? | shortcut differs |
 | PRV-MENU-122 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
 | PRV-MENU-121 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| PRV-MENU-127 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| PRV-MENU-124 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| PRV-MENU-142 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| PRV-MENU-125 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| PRV-MENU-126 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| PRV-MENU-126 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| PRV-MENU-123 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| PRV-MENU-136 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| PRV-MENU-124 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| PRV-MENU-125 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | PRV-SETTINGS-001 | missing settings control | Settings window | settings |  |  | the Mac has a Settings window for this app; Lulo has none yet |
-| PRV-MENU-151 | Lulo-only (not on the Mac) | Clear Menu | File ▸ Open Recent ▸ Clear Menu |  |  | present in Lulo but not found on the Mac |
-| PRV-MENU-152 | Lulo-only (not on the Mac) | Revert to Original | File ▸ Revert to Original |  |  | present in Lulo but not found on the Mac |
-| PRV-MENU-153 | Lulo-only (not on the Mac) | Show Markup Toolbar | Tools ▸ Show Markup Toolbar |  | ⇧⌘A | present in Lulo but not found on the Mac |
+| PRV-MENU-145 | Lulo-only (not on the Mac) | Clear Menu | File ▸ Open Recent ▸ Clear Menu |  |  | present in Lulo but not found on the Mac |
+| PRV-MENU-146 | Lulo-only (not on the Mac) | Revert to Original | File ▸ Revert to Original |  |  | present in Lulo but not found on the Mac |
+| PRV-MENU-147 | Lulo-only (not on the Mac) | Show Markup Toolbar | Tools ▸ Show Markup Toolbar |  | ⇧⌘A | present in Lulo but not found on the Mac |
 
 ## System Monitor
 
@@ -716,7 +686,7 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | MON-MENU-006 | missing menu item (has a shortcut) | Close All | File ▸ Close All | ⌥⌘W |  | missing from Lulo's menu bar |
 | MON-MENU-007 | missing menu item (has a shortcut) | Page Setup… | File ▸ Page Setup… | ⇧⌘P |  | missing from Lulo's menu bar |
 | MON-MENU-008 | missing menu item (has a shortcut) | Print… | File ▸ Print… | ⌘P |  | missing from Lulo's menu bar |
-| MON-MENU-111 | missing menu item (has a shortcut) | Activity Monitor Help | Help ▸ Activity Monitor Help | ⌘? |  | missing from Lulo's menu bar |
+| MON-MENU-105 | missing menu item (has a shortcut) | Activity Monitor Help | Help ▸ Activity Monitor Help | ⌘? |  | missing from Lulo's menu bar |
 | MON-MENU-077 | missing menu item (has a shortcut) | Clear CPU History | View ▸ Clear CPU History | ⌘K |  | missing from Lulo's menu bar |
 | MON-MENU-078 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
 | MON-MENU-069 | missing menu item (has a shortcut) | Filter Processes | View ▸ Filter Processes | ⌥⌘F |  | missing from Lulo's menu bar |
@@ -724,18 +694,18 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | MON-MENU-072 | missing menu item (has a shortcut) | Run Spindump | View ▸ Run Spindump | ⌃⌥⌘S |  | missing from Lulo's menu bar |
 | MON-MENU-071 | missing menu item (has a shortcut) | Sample Process | View ▸ Sample Process | ⌥⌘S |  | missing from Lulo's menu bar |
 | MON-MENU-076 | missing menu item (has a shortcut) | Show Deltas for Process | View ▸ Show Deltas for Process | ⌥⌘J |  | missing from Lulo's menu bar |
-| MON-MENU-104 | missing menu item (has a shortcut) | Activity Monitor | Window ▸ Activity Monitor | ⌘1 |  | missing from Lulo's menu bar |
-| MON-MENU-106 | missing menu item (has a shortcut) | CPU History | Window ▸ CPU History | ⌘3 |  | missing from Lulo's menu bar |
-| MON-MENU-105 | missing menu item (has a shortcut) | CPU Usage | Window ▸ CPU Usage | ⌘2 |  | missing from Lulo's menu bar |
-| MON-MENU-107 | missing menu item (has a shortcut) | GPU History | Window ▸ GPU History | ⌘4 |  | missing from Lulo's menu bar |
-| MON-MENU-100 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| MON-MENU-099 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| MON-MENU-094 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| MON-MENU-093 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| MON-MENU-095 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| MON-MENU-096 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| MON-MENU-097 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| MON-MENU-098 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| MON-MENU-098 | missing menu item (has a shortcut) | Activity Monitor | Window ▸ Activity Monitor | ⌘1 |  | missing from Lulo's menu bar |
+| MON-MENU-100 | missing menu item (has a shortcut) | CPU History | Window ▸ CPU History | ⌘3 |  | missing from Lulo's menu bar |
+| MON-MENU-099 | missing menu item (has a shortcut) | CPU Usage | Window ▸ CPU Usage | ⌘2 |  | missing from Lulo's menu bar |
+| MON-MENU-101 | missing menu item (has a shortcut) | GPU History | Window ▸ GPU History | ⌘4 |  | missing from Lulo's menu bar |
+| MON-MENU-094 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| MON-MENU-093 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| MON-MENU-088 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| MON-MENU-087 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| MON-MENU-089 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| MON-MENU-090 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| MON-MENU-091 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| MON-MENU-092 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
 | MON-MENU-001 | missing menu item | About Activity Monitor | Application ▸ About Activity Monitor |  |  | missing from Lulo's menu bar |
 | MON-MENU-004 | missing menu item | Quit and Keep Windows | Application ▸ Quit and Keep Windows |  |  | missing from Lulo's menu bar |
 | MON-MENU-014 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
@@ -796,141 +766,64 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | MON-MENU-055 | missing menu item | Often (2 sec) | View ▸ Update Frequency ▸ Often (2 sec) |  |  | missing from Lulo's menu bar |
 | MON-MENU-054 | missing menu item | Very often (1 sec) | View ▸ Update Frequency ▸ Very often (1 sec) |  |  | missing from Lulo's menu bar |
 | MON-MENU-065 | missing menu item | Windowed Processes | View ▸ Windowed Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-110 | missing menu item | Activity Monitor (All Processes) | Window ▸ Activity Monitor (All Processes) |  |  | missing from Lulo's menu bar |
-| MON-MENU-109 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| MON-MENU-102 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| MON-MENU-108 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
-| MON-MENU-092 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| MON-MENU-090 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| MON-MENU-091 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| MON-MENU-082 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| MON-MENU-087 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| MON-MENU-088 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| MON-MENU-089 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| MON-MENU-103 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| MON-MENU-104 | missing menu item | Activity Monitor (All Processes) | Window ▸ Activity Monitor (All Processes) |  |  | missing from Lulo's menu bar |
+| MON-MENU-103 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| MON-MENU-096 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| MON-MENU-102 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
+| MON-MENU-086 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| MON-MENU-097 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
 | MON-MENU-079 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
 | MON-MENU-074 | wrong/missing shortcut | Quit Process | View ▸ Quit Process | ⌥⌘Q | ⌘⌫ | shortcut differs |
 | MON-MENU-081 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
 | MON-MENU-080 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| MON-MENU-086 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| MON-MENU-083 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| MON-MENU-101 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| MON-MENU-084 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| MON-MENU-085 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| MON-MENU-085 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| MON-MENU-082 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| MON-MENU-095 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| MON-MENU-083 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| MON-MENU-084 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | MON-TOOLBAR-001 | missing toolbar item | Toolbar | toolbar |  |  | the Mac has a toolbar for this app; Lulo has none implemented yet |
-| MON-MENU-112 | Lulo-only (not on the Mac) | About System Monitor | Application ▸ About System Monitor |  |  | present in Lulo but not found on the Mac |
-| MON-MENU-113 | Lulo-only (not on the Mac) | Hide System Monitor | Application ▸ Hide System Monitor |  | ⌘H | present in Lulo but not found on the Mac |
-| MON-MENU-114 | Lulo-only (not on the Mac) | Quit System Monitor | Application ▸ Quit System Monitor |  | ⌘Q | present in Lulo but not found on the Mac |
-| MON-MENU-116 | Lulo-only (not on the Mac) | System Monitor Help | Help ▸ System Monitor Help |  | ⌘? | present in Lulo but not found on the Mac |
-| MON-MENU-115 | Lulo-only (not on the Mac) | Force Quit Process… | View ▸ Force Quit Process… |  | ⇧⌘⌫ | present in Lulo but not found on the Mac |
+| MON-MENU-106 | Lulo-only (not on the Mac) | About System Monitor | Application ▸ About System Monitor |  |  | present in Lulo but not found on the Mac |
+| MON-MENU-107 | Lulo-only (not on the Mac) | Hide System Monitor | Application ▸ Hide System Monitor |  | ⌘H | present in Lulo but not found on the Mac |
+| MON-MENU-108 | Lulo-only (not on the Mac) | Quit System Monitor | Application ▸ Quit System Monitor |  | ⌘Q | present in Lulo but not found on the Mac |
+| MON-MENU-110 | Lulo-only (not on the Mac) | System Monitor Help | Help ▸ System Monitor Help |  | ⌘? | present in Lulo but not found on the Mac |
+| MON-MENU-109 | Lulo-only (not on the Mac) | Force Quit Process… | View ▸ Force Quit Process… |  | ⇧⌘⌫ | present in Lulo but not found on the Mac |
 
 ## System Settings
 
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
-| SET-MENU-001 | missing menu item (has a shortcut) | Quit and Keep Windows | Application ▸ Quit and Keep Windows | ⌥⌘Q |  | missing from Lulo's menu bar |
-| SET-MENU-049 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
-| SET-MENU-050 | missing menu item (has a shortcut) | Close | Window ▸ Close | ⌘W |  | missing from Lulo's menu bar |
-| SET-MENU-051 | missing menu item (has a shortcut) | Close All | Window ▸ Close All | ⌥⌘W |  | missing from Lulo's menu bar |
-| SET-MENU-073 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| SET-MENU-072 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| SET-MENU-067 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| SET-MENU-066 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| SET-MENU-068 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| SET-MENU-069 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| SET-MENU-070 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| SET-MENU-071 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
-| SET-MENU-003 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
-| SET-MENU-004 | missing menu item | Contact… | Edit ▸ AutoFill ▸ Contact… |  |  | missing from Lulo's menu bar |
-| SET-MENU-006 | missing menu item | Credit Card… | Edit ▸ AutoFill ▸ Credit Card… |  |  | missing from Lulo's menu bar |
-| SET-MENU-005 | missing menu item | Passwords… | Edit ▸ AutoFill ▸ Passwords… |  |  | missing from Lulo's menu bar |
-| SET-MENU-002 | missing menu item | Delete | Edit ▸ Delete |  |  | missing from Lulo's menu bar |
-| SET-MENU-082 | missing menu item | Hardware Support | Help ▸ Hardware Support |  |  | missing from Lulo's menu bar |
-| SET-MENU-081 | missing menu item | MacBook Air Specifications | Help ▸ MacBook Air Specifications |  |  | missing from Lulo's menu bar |
-| SET-MENU-079 | missing menu item | User Manual | Help ▸ User Manual |  |  | missing from Lulo's menu bar |
-| SET-MENU-078 | missing menu item | macOS Help | Help ▸ macOS Help |  |  | missing from Lulo's menu bar |
-| SET-MENU-080 | missing menu item | macOS Support | Help ▸ macOS Support |  |  | missing from Lulo's menu bar |
-| SET-MENU-007 | missing menu item | About | View ▸ About |  |  | missing from Lulo's menu bar |
-| SET-MENU-008 | missing menu item | Accessibility | View ▸ Accessibility |  |  | missing from Lulo's menu bar |
-| SET-MENU-009 | missing menu item | AirDrop & Handoff | View ▸ AirDrop & Handoff |  |  | missing from Lulo's menu bar |
-| SET-MENU-010 | missing menu item | Appearance | View ▸ Appearance |  |  | missing from Lulo's menu bar |
-| SET-MENU-011 | missing menu item | Apple Account | View ▸ Apple Account |  |  | missing from Lulo's menu bar |
-| SET-MENU-012 | missing menu item | Apple Intelligence & Siri | View ▸ Apple Intelligence & Siri |  |  | missing from Lulo's menu bar |
-| SET-MENU-013 | missing menu item | AppleCare & Warranty | View ▸ AppleCare & Warranty |  |  | missing from Lulo's menu bar |
-| SET-MENU-014 | missing menu item | Battery | View ▸ Battery |  |  | missing from Lulo's menu bar |
-| SET-MENU-015 | missing menu item | Bluetooth | View ▸ Bluetooth |  |  | missing from Lulo's menu bar |
-| SET-MENU-016 | missing menu item | Date & Time | View ▸ Date & Time |  |  | missing from Lulo's menu bar |
-| SET-MENU-017 | missing menu item | Desktop & Dock | View ▸ Desktop & Dock |  |  | missing from Lulo's menu bar |
-| SET-MENU-018 | missing menu item | Device Management | View ▸ Device Management |  |  | missing from Lulo's menu bar |
-| SET-MENU-019 | missing menu item | Displays | View ▸ Displays |  |  | missing from Lulo's menu bar |
-| SET-MENU-020 | missing menu item | Family | View ▸ Family |  |  | missing from Lulo's menu bar |
-| SET-MENU-021 | missing menu item | Focus | View ▸ Focus |  |  | missing from Lulo's menu bar |
-| SET-MENU-022 | missing menu item | Game Center | View ▸ Game Center |  |  | missing from Lulo's menu bar |
-| SET-MENU-024 | missing menu item | Internet Accounts | View ▸ Internet Accounts |  |  | missing from Lulo's menu bar |
-| SET-MENU-025 | missing menu item | Keyboard | View ▸ Keyboard |  |  | missing from Lulo's menu bar |
-| SET-MENU-026 | missing menu item | Language & Region | View ▸ Language & Region |  |  | missing from Lulo's menu bar |
-| SET-MENU-027 | missing menu item | Lock Screen | View ▸ Lock Screen |  |  | missing from Lulo's menu bar |
-| SET-MENU-028 | missing menu item | Login Items & Extensions | View ▸ Login Items & Extensions |  |  | missing from Lulo's menu bar |
-| SET-MENU-029 | missing menu item | Menu Bar | View ▸ Menu Bar |  |  | missing from Lulo's menu bar |
-| SET-MENU-030 | missing menu item | Network | View ▸ Network |  |  | missing from Lulo's menu bar |
-| SET-MENU-031 | missing menu item | Notifications | View ▸ Notifications |  |  | missing from Lulo's menu bar |
-| SET-MENU-032 | missing menu item | Printers & Scanners | View ▸ Printers & Scanners |  |  | missing from Lulo's menu bar |
-| SET-MENU-033 | missing menu item | Privacy & Security | View ▸ Privacy & Security |  |  | missing from Lulo's menu bar |
-| SET-MENU-034 | missing menu item | Screen Time | View ▸ Screen Time |  |  | missing from Lulo's menu bar |
-| SET-MENU-035 | missing menu item | Sharing | View ▸ Sharing |  |  | missing from Lulo's menu bar |
-| SET-MENU-036 | missing menu item | Software Update | View ▸ Software Update |  |  | missing from Lulo's menu bar |
-| SET-MENU-037 | missing menu item | Sound | View ▸ Sound |  |  | missing from Lulo's menu bar |
-| SET-MENU-038 | missing menu item | Spotlight | View ▸ Spotlight |  |  | missing from Lulo's menu bar |
-| SET-MENU-039 | missing menu item | Startup Disk | View ▸ Startup Disk |  |  | missing from Lulo's menu bar |
-| SET-MENU-040 | missing menu item | Storage | View ▸ Storage |  |  | missing from Lulo's menu bar |
-| SET-MENU-041 | missing menu item | Time Machine | View ▸ Time Machine |  |  | missing from Lulo's menu bar |
-| SET-MENU-042 | missing menu item | Touch ID & Password | View ▸ Touch ID & Password |  |  | missing from Lulo's menu bar |
-| SET-MENU-043 | missing menu item | Trackpad | View ▸ Trackpad |  |  | missing from Lulo's menu bar |
-| SET-MENU-044 | missing menu item | Transfer or Reset | View ▸ Transfer or Reset |  |  | missing from Lulo's menu bar |
-| SET-MENU-045 | missing menu item | Users & Groups | View ▸ Users & Groups |  |  | missing from Lulo's menu bar |
-| SET-MENU-046 | missing menu item | Wallet & Apple Pay | View ▸ Wallet & Apple Pay |  |  | missing from Lulo's menu bar |
-| SET-MENU-047 | missing menu item | Wallpaper | View ▸ Wallpaper |  |  | missing from Lulo's menu bar |
-| SET-MENU-048 | missing menu item | Wi‑Fi | View ▸ Wi‑Fi |  |  | missing from Lulo's menu bar |
-| SET-MENU-023 | missing menu item | iCloud | View ▸ iCloud |  |  | missing from Lulo's menu bar |
-| SET-MENU-077 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| SET-MENU-075 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| SET-MENU-065 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| SET-MENU-063 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| SET-MENU-064 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| SET-MENU-055 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| SET-MENU-060 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| SET-MENU-061 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| SET-MENU-062 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| SET-MENU-076 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
-| SET-MENU-052 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
-| SET-MENU-054 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
-| SET-MENU-053 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| SET-MENU-059 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| SET-MENU-056 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| SET-MENU-074 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| SET-MENU-057 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| SET-MENU-058 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
-| SET-SIDEBAR-001 | missing sidebar pane | Apple Intelligence & Siri | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-002 | missing sidebar pane | Family | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-003 | missing sidebar pane | Game Center | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-004 | missing sidebar pane | Internet Accounts | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-005 | missing sidebar pane | Jacob Samas, Apple Account | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-006 | missing sidebar pane | Printers & Scanners | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-007 | missing sidebar pane | Screen Time | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-008 | missing sidebar pane | Touch ID & Password | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-009 | missing sidebar pane | Users & Groups | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-010 | missing sidebar pane | Wallet & Apple Pay | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-011 | missing sidebar pane | Wi‑Fi | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-012 | missing sidebar pane | iCloud | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-TOOLBAR-001 | missing toolbar item | Toolbar | toolbar |  |  | the Mac has a toolbar for this app; Lulo has none implemented yet |
-| SET-SIDEBAR-013 | Lulo-only (not on the Mac) | Date & Time | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-014 | Lulo-only (not on the Mac) | Language & Region | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-015 | Lulo-only (not on the Mac) | Login Items | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-016 | Lulo-only (not on the Mac) | Mouse | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-017 | Lulo-only (not on the Mac) | Sharing | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-018 | Lulo-only (not on the Mac) | Touchscreen | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-019 | Lulo-only (not on the Mac) | VPN | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-020 | Lulo-only (not on the Mac) | Wi-Fi | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-MENU-022 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| SET-MENU-021 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| SET-MENU-016 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| SET-MENU-015 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| SET-MENU-017 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| SET-MENU-018 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| SET-MENU-019 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| SET-MENU-020 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| SET-MENU-001 | missing menu item | Internet Accounts | View ▸ Internet Accounts |  |  | missing from Lulo's menu bar |
+| SET-MENU-002 | missing menu item | Printers & Scanners | View ▸ Printers & Scanners |  |  | missing from Lulo's menu bar |
+| SET-MENU-003 | missing menu item | Startup Disk | View ▸ Startup Disk |  |  | missing from Lulo's menu bar |
+| SET-MENU-004 | missing menu item | Time Machine | View ▸ Time Machine |  |  | missing from Lulo's menu bar |
+| SET-MENU-005 | missing menu item | Transfer or Reset | View ▸ Transfer or Reset |  |  | missing from Lulo's menu bar |
+| SET-MENU-006 | missing menu item | Users & Groups | View ▸ Users & Groups |  |  | missing from Lulo's menu bar |
+| SET-MENU-026 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| SET-MENU-024 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| SET-MENU-014 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| SET-MENU-025 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| SET-MENU-007 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
+| SET-MENU-009 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
+| SET-MENU-008 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
+| SET-MENU-013 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| SET-MENU-010 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| SET-MENU-023 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| SET-MENU-011 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| SET-MENU-012 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| SET-SIDEBAR-001 | missing sidebar pane | Internet Accounts | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-002 | missing sidebar pane | Printers & Scanners | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-003 | missing sidebar pane | Users & Groups | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-004 | Lulo-only (not on the Mac) | Mouse | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-SIDEBAR-005 | Lulo-only (not on the Mac) | Touchscreen | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-SIDEBAR-006 | Lulo-only (not on the Mac) | VPN | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
 
 ## Terminal
 
@@ -1035,7 +928,7 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | TRM-MENU-013 | Lulo-only (not on the Mac) | Paste | Edit ▸ Paste |  | ⌘V | present in Lulo but not found on the Mac |
 | TRM-MENU-014 | Lulo-only (not on the Mac) | Select All | Edit ▸ Select All |  | ⌘A | present in Lulo but not found on the Mac |
 | TRM-MENU-015 | Lulo-only (not on the Mac) | Select Between Marks | Edit ▸ Select Between Marks |  | ⇧⌘A | present in Lulo but not found on the Mac |
-| TRM-MENU-042 | Lulo-only (not on the Mac) | Terminal Help | Help ▸ Terminal Help |  | ⌘? | present in Lulo but not found on the Mac |
+| TRM-MENU-048 | Lulo-only (not on the Mac) | Terminal Help | Help ▸ Terminal Help |  | ⌘? | present in Lulo but not found on the Mac |
 | TRM-MENU-009 | Lulo-only (not on the Mac) | Close Tab | Shell ▸ Close Tab |  | ⌘W | present in Lulo but not found on the Mac |
 | TRM-MENU-011 | Lulo-only (not on the Mac) | Hard Reset | Shell ▸ Hard Reset |  | ⌃⌥⌘R | present in Lulo but not found on the Mac |
 | TRM-MENU-008 | Lulo-only (not on the Mac) | New Tab | Shell ▸ New Tab |  | ⌘T | present in Lulo but not found on the Mac |
@@ -1045,19 +938,25 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | TRM-MENU-024 | Lulo-only (not on the Mac) | Default Font Size | View ▸ Default Font Size |  | ⌘0 | present in Lulo but not found on the Mac |
 | TRM-MENU-027 | Lulo-only (not on the Mac) | Next Profile | View ▸ Next Profile |  | ⇧⌘P | present in Lulo but not found on the Mac |
 | TRM-MENU-026 | Lulo-only (not on the Mac) | Smaller | View ▸ Smaller |  | ⌘− | present in Lulo but not found on the Mac |
-| TRM-MENU-041 | Lulo-only (not on the Mac) | Bring All to Front | Window ▸ Bring All to Front |  |  | present in Lulo but not found on the Mac |
+| TRM-MENU-047 | Lulo-only (not on the Mac) | Bring All to Front | Window ▸ Bring All to Front |  |  | present in Lulo but not found on the Mac |
 | TRM-MENU-032 | Lulo-only (not on the Mac) | Centre | Window ▸ Centre |  | ⌃⌘C | present in Lulo but not found on the Mac |
 | TRM-MENU-031 | Lulo-only (not on the Mac) | Fill | Window ▸ Fill |  | ⌃⇧⌘F | present in Lulo but not found on the Mac |
 | TRM-MENU-028 | Lulo-only (not on the Mac) | Minimise | Window ▸ Minimise |  | ⌘M | present in Lulo but not found on the Mac |
 | TRM-MENU-029 | Lulo-only (not on the Mac) | Minimise All | Window ▸ Minimise All |  | ⌥⌘M | present in Lulo but not found on the Mac |
 | TRM-MENU-033 | Lulo-only (not on the Mac) | Move & Resize | Window ▸ Move & Resize |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-037 | Lulo-only (not on the Mac) | Bottom | Window ▸ Move & Resize ▸ Bottom |  | ⌃⌘↓ | present in Lulo but not found on the Mac |
-| TRM-MENU-034 | Lulo-only (not on the Mac) | Left | Window ▸ Move & Resize ▸ Left |  | ⌃⌘← | present in Lulo but not found on the Mac |
-| TRM-MENU-038 | Lulo-only (not on the Mac) | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size |  | ⌃⌘R | present in Lulo but not found on the Mac |
-| TRM-MENU-035 | Lulo-only (not on the Mac) | Right | Window ▸ Move & Resize ▸ Right |  | ⌃⌘→ | present in Lulo but not found on the Mac |
-| TRM-MENU-036 | Lulo-only (not on the Mac) | Top | Window ▸ Move & Resize ▸ Top |  | ⌃⌘↑ | present in Lulo but not found on the Mac |
-| TRM-MENU-040 | Lulo-only (not on the Mac) | Show Next Tab | Window ▸ Show Next Tab |  | ⇧⌘] | present in Lulo but not found on the Mac |
-| TRM-MENU-039 | Lulo-only (not on the Mac) | Show Previous Tab | Window ▸ Show Previous Tab |  | ⇧⌘[ | present in Lulo but not found on the Mac |
+| TRM-MENU-038 | Lulo-only (not on the Mac) | Bottom | Window ▸ Move & Resize ▸ Bottom |  | ⌃⌘↓ | present in Lulo but not found on the Mac |
+| TRM-MENU-042 | Lulo-only (not on the Mac) | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | present in Lulo but not found on the Mac |
+| TRM-MENU-043 | Lulo-only (not on the Mac) | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | present in Lulo but not found on the Mac |
+| TRM-MENU-034 | Lulo-only (not on the Mac) | Halves | Window ▸ Move & Resize ▸ Halves |  |  | present in Lulo but not found on the Mac |
+| TRM-MENU-035 | Lulo-only (not on the Mac) | Left | Window ▸ Move & Resize ▸ Left |  | ⌃⌘← | present in Lulo but not found on the Mac |
+| TRM-MENU-039 | Lulo-only (not on the Mac) | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | present in Lulo but not found on the Mac |
+| TRM-MENU-044 | Lulo-only (not on the Mac) | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size |  | ⌃⌘R | present in Lulo but not found on the Mac |
+| TRM-MENU-036 | Lulo-only (not on the Mac) | Right | Window ▸ Move & Resize ▸ Right |  | ⌃⌘→ | present in Lulo but not found on the Mac |
+| TRM-MENU-037 | Lulo-only (not on the Mac) | Top | Window ▸ Move & Resize ▸ Top |  | ⌃⌘↑ | present in Lulo but not found on the Mac |
+| TRM-MENU-040 | Lulo-only (not on the Mac) | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | present in Lulo but not found on the Mac |
+| TRM-MENU-041 | Lulo-only (not on the Mac) | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | present in Lulo but not found on the Mac |
+| TRM-MENU-046 | Lulo-only (not on the Mac) | Show Next Tab | Window ▸ Show Next Tab |  | ⇧⌘] | present in Lulo but not found on the Mac |
+| TRM-MENU-045 | Lulo-only (not on the Mac) | Show Previous Tab | Window ▸ Show Previous Tab |  | ⇧⌘[ | present in Lulo but not found on the Mac |
 | TRM-MENU-030 | Lulo-only (not on the Mac) | Zoom | Window ▸ Zoom |  |  | present in Lulo but not found on the Mac |
 
 ## Text Editor
@@ -1096,18 +995,24 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | TXT-MENU-029 | Lulo-only (not on the Mac) | Bigger | Format ▸ Font ▸ Bigger |  | ⌘+ | present in Lulo but not found on the Mac |
 | TXT-MENU-030 | Lulo-only (not on the Mac) | Smaller | Format ▸ Font ▸ Smaller |  | ⌘− | present in Lulo but not found on the Mac |
 | TXT-MENU-031 | Lulo-only (not on the Mac) | Monospaced | Format ▸ Monospaced |  | ⇧⌘M | present in Lulo but not found on the Mac |
-| TXT-MENU-044 | Lulo-only (not on the Mac) | Text Editor Help | Help ▸ Text Editor Help |  | ⌘? | present in Lulo but not found on the Mac |
-| TXT-MENU-043 | Lulo-only (not on the Mac) | Bring All to Front | Window ▸ Bring All to Front |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-050 | Lulo-only (not on the Mac) | Text Editor Help | Help ▸ Text Editor Help |  | ⌘? | present in Lulo but not found on the Mac |
+| TXT-MENU-049 | Lulo-only (not on the Mac) | Bring All to Front | Window ▸ Bring All to Front |  |  | present in Lulo but not found on the Mac |
 | TXT-MENU-036 | Lulo-only (not on the Mac) | Centre | Window ▸ Centre |  | ⌃⌘C | present in Lulo but not found on the Mac |
 | TXT-MENU-035 | Lulo-only (not on the Mac) | Fill | Window ▸ Fill |  | ⌃⇧⌘F | present in Lulo but not found on the Mac |
 | TXT-MENU-032 | Lulo-only (not on the Mac) | Minimise | Window ▸ Minimise |  | ⌘M | present in Lulo but not found on the Mac |
 | TXT-MENU-033 | Lulo-only (not on the Mac) | Minimise All | Window ▸ Minimise All |  | ⌥⌘M | present in Lulo but not found on the Mac |
 | TXT-MENU-037 | Lulo-only (not on the Mac) | Move & Resize | Window ▸ Move & Resize |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-041 | Lulo-only (not on the Mac) | Bottom | Window ▸ Move & Resize ▸ Bottom |  | ⌃⌘↓ | present in Lulo but not found on the Mac |
-| TXT-MENU-038 | Lulo-only (not on the Mac) | Left | Window ▸ Move & Resize ▸ Left |  | ⌃⌘← | present in Lulo but not found on the Mac |
-| TXT-MENU-042 | Lulo-only (not on the Mac) | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size |  | ⌃⌘R | present in Lulo but not found on the Mac |
-| TXT-MENU-039 | Lulo-only (not on the Mac) | Right | Window ▸ Move & Resize ▸ Right |  | ⌃⌘→ | present in Lulo but not found on the Mac |
-| TXT-MENU-040 | Lulo-only (not on the Mac) | Top | Window ▸ Move & Resize ▸ Top |  | ⌃⌘↑ | present in Lulo but not found on the Mac |
+| TXT-MENU-042 | Lulo-only (not on the Mac) | Bottom | Window ▸ Move & Resize ▸ Bottom |  | ⌃⌘↓ | present in Lulo but not found on the Mac |
+| TXT-MENU-046 | Lulo-only (not on the Mac) | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-047 | Lulo-only (not on the Mac) | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-038 | Lulo-only (not on the Mac) | Halves | Window ▸ Move & Resize ▸ Halves |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-039 | Lulo-only (not on the Mac) | Left | Window ▸ Move & Resize ▸ Left |  | ⌃⌘← | present in Lulo but not found on the Mac |
+| TXT-MENU-043 | Lulo-only (not on the Mac) | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-048 | Lulo-only (not on the Mac) | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size |  | ⌃⌘R | present in Lulo but not found on the Mac |
+| TXT-MENU-040 | Lulo-only (not on the Mac) | Right | Window ▸ Move & Resize ▸ Right |  | ⌃⌘→ | present in Lulo but not found on the Mac |
+| TXT-MENU-041 | Lulo-only (not on the Mac) | Top | Window ▸ Move & Resize ▸ Top |  | ⌃⌘↑ | present in Lulo but not found on the Mac |
+| TXT-MENU-044 | Lulo-only (not on the Mac) | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-045 | Lulo-only (not on the Mac) | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | present in Lulo but not found on the Mac |
 | TXT-MENU-034 | Lulo-only (not on the Mac) | Zoom | Window ▸ Zoom |  |  | present in Lulo but not found on the Mac |
 
 ## Weather
@@ -1136,14 +1041,14 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | WTH-MENU-020 | missing menu item (has a shortcut) | Precipitation Map | View ▸ Precipitation Map | ⌘1 |  | missing from Lulo's menu bar |
 | WTH-MENU-021 | missing menu item (has a shortcut) | Temperature Map | View ▸ Temperature Map | ⌘2 |  | missing from Lulo's menu bar |
 | WTH-MENU-023 | missing menu item (has a shortcut) | Wind Map | View ▸ Wind Map | ⌘4 |  | missing from Lulo's menu bar |
-| WTH-MENU-052 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| WTH-MENU-051 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| WTH-MENU-046 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| WTH-MENU-045 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| WTH-MENU-047 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| WTH-MENU-048 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| WTH-MENU-049 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| WTH-MENU-050 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| WTH-MENU-046 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| WTH-MENU-045 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| WTH-MENU-040 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| WTH-MENU-039 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| WTH-MENU-041 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| WTH-MENU-042 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| WTH-MENU-043 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| WTH-MENU-044 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
 | WTH-MENU-002 | missing menu item | Reset Identifier… | Application ▸ Reset Identifier… |  |  | missing from Lulo's menu bar |
 | WTH-MENU-016 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
 | WTH-MENU-017 | missing menu item | Contact… | Edit ▸ AutoFill ▸ Contact… |  |  | missing from Lulo's menu bar |
@@ -1152,29 +1057,23 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | WTH-MENU-013 | missing menu item | Delete | Edit ▸ Delete |  |  | missing from Lulo's menu bar |
 | WTH-MENU-025 | missing menu item | Zoom In | View ▸ Zoom In |  |  | missing from Lulo's menu bar |
 | WTH-MENU-026 | missing menu item | Zoom Out | View ▸ Zoom Out |  |  | missing from Lulo's menu bar |
-| WTH-MENU-058 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| WTH-MENU-059 | missing menu item | Athivilai | Window ▸ Athivilai |  |  | missing from Lulo's menu bar |
-| WTH-MENU-054 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| WTH-MENU-055 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
-| WTH-MENU-056 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
-| WTH-MENU-044 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| WTH-MENU-042 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| WTH-MENU-043 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| WTH-MENU-034 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| WTH-MENU-039 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| WTH-MENU-040 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| WTH-MENU-041 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| WTH-MENU-057 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| WTH-MENU-052 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| WTH-MENU-053 | missing menu item | Athivilai | Window ▸ Athivilai |  |  | missing from Lulo's menu bar |
+| WTH-MENU-048 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| WTH-MENU-049 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
+| WTH-MENU-050 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
+| WTH-MENU-038 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| WTH-MENU-051 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
 | WTH-MENU-031 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
 | WTH-MENU-033 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
 | WTH-MENU-032 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| WTH-MENU-038 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| WTH-MENU-035 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| WTH-MENU-053 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| WTH-MENU-036 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| WTH-MENU-037 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| WTH-MENU-037 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| WTH-MENU-034 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| WTH-MENU-047 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| WTH-MENU-035 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| WTH-MENU-036 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | WTH-SETTINGS-001 | missing settings control | Settings window | settings |  |  | the Mac has a Settings window for this app; Lulo has none yet |
 | WTH-TOOLBAR-001 | missing toolbar item | Toolbar | toolbar |  |  | the Mac has a toolbar for this app; Lulo has none implemented yet |
-| WTH-MENU-061 | Lulo-only (not on the Mac) | Find | Edit ▸ Find |  | ⌘F | present in Lulo but not found on the Mac |
-| WTH-MENU-060 | Lulo-only (not on the Mac) | Close Window | File ▸ Close Window |  | ⌘W | present in Lulo but not found on the Mac |
-| WTH-MENU-062 | Lulo-only (not on the Mac) | Refresh | View ▸ Refresh |  | ⌘R | present in Lulo but not found on the Mac |
+| WTH-MENU-055 | Lulo-only (not on the Mac) | Find | Edit ▸ Find |  | ⌘F | present in Lulo but not found on the Mac |
+| WTH-MENU-054 | Lulo-only (not on the Mac) | Close Window | File ▸ Close Window |  | ⌘W | present in Lulo but not found on the Mac |
+| WTH-MENU-056 | Lulo-only (not on the Mac) | Refresh | View ▸ Refresh |  | ⌘R | present in Lulo but not found on the Mac |

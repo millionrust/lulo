@@ -716,10 +716,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 [item!("Clear Menu", "preview::ClearRecentMenu", "")]
             ),
             item!("Close Window", "preview::CloseWindow", "⌘W", separator),
+            item!("Close All", "preview::CloseAll", "⌥⌘W"),
+            item!("Close Selected", "preview::CloseSelected", "⇧⌘W"),
             item!("Save", "preview::SaveMarkup", "⌘S"),
             item!("Revert to Original", "preview::RevertMarkup", "", separator),
             // PREV-15: the Mac's File menu also has New from Clipboard,
-            // Close All, Save As…, Duplicate, Rename…, Move To…,
+            // Save As…, Duplicate, Rename…, Move To…,
             // Enter Password…, Edit Permissions…, Import from
             // Camera/Scanner, Take Screenshot ▸, Export…, Share ▸ — none of
             // those has a working implementation to wire up yet, so none is
@@ -739,6 +741,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Copy", "preview::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
             item!("Select All", "preview::SelectAll", "⌘A"),
+            item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(
                 "Find",
                 "preview::FindMenu",
@@ -776,6 +779,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 "⇧⌘A",
                 separator
             ),
+            item!("Enter Full Screen", "preview::EnterFullScreen", "F"),
         ],
     },
     MenuSpec {
@@ -2114,6 +2118,9 @@ mod tests {
         };
         assert_eq!(shortcut("Hide Sidebar").as_deref(), Some("⌥⌘1"));
         assert_eq!(shortcut("Quit and Keep Windows").as_deref(), Some("⌥⌘Q"));
+        assert_eq!(shortcut("Close All").as_deref(), Some("⌥⌘W"));
+        assert_eq!(shortcut("Close Selected").as_deref(), Some("⇧⌘W"));
+        assert_eq!(shortcut("Move to Bin").as_deref(), Some("⌘⌫"));
         assert_eq!(shortcut("Actual Size").as_deref(), Some("⌘0"));
         assert_eq!(shortcut("Rotate Right").as_deref(), Some("⌘R"));
         assert_eq!(shortcut("Next Item").as_deref(), Some("⌥"));

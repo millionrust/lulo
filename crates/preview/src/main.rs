@@ -23,7 +23,10 @@ gpui::actions!(
         OpenFile,
         QuitAndKeepWindows,
         CloseWindow,
+        CloseAll,
+        CloseSelected,
         Copy,
+        MoveToTrash,
         Find,
         FindNext,
         FindPrevious,
@@ -53,6 +56,7 @@ gpui::actions!(
         PrintDocument,
         ExportAsPdf,
         ToggleMarkup,
+        EnterFullScreen,
         SaveMarkup,
         RevertMarkup,
         UndoMarkup,
@@ -114,7 +118,10 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new(shortcuts::OPEN.keystroke, OpenFile, None),
         KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, None),
         KeyBinding::new(shortcuts::CLOSE.keystroke, CloseWindow, context),
+        KeyBinding::new("alt-cmd-w", CloseAll, None),
+        KeyBinding::new("shift-cmd-w", CloseSelected, context),
         KeyBinding::new(shortcuts::COPY.keystroke, Copy, context),
+        KeyBinding::new("cmd-backspace", MoveToTrash, context),
         KeyBinding::new(shortcuts::SELECT_ALL.keystroke, SelectAll, context),
         KeyBinding::new("alt-cmd-g", GoToPage, context),
         KeyBinding::new(shortcuts::PRINT.keystroke, PrintDocument, context),
@@ -390,7 +397,22 @@ fn main() {
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
             bind_keys(cx);
+            cx.on_window_closed(|cx, _| {
+                let has_document_window = OPEN_VIEWS
+                    .with(|views| views.borrow().iter().any(|view| view.upgrade().is_some()));
+                if !has_document_window {
+                    view::disable_document_menu(cx);
+                }
+            })
+            .detach();
             cx.on_action(|_: &QuitAndKeepWindows, cx| quit_and_keep_windows(cx));
+            cx.on_action(|_: &CloseAll, cx| {
+                for handle in cx.windows() {
+                    let _ = handle.update(cx, |_, window, cx| {
+                        window.dispatch_action(Box::new(CloseWindow), cx);
+                    });
+                }
+            });
             cx.on_action(|_: &OpenFile, cx| choose_and_open(false, cx));
             cx.on_action(|_: &OpenRecent0, cx| open_recent_menu_entry(0, cx));
             cx.on_action(|_: &OpenRecent1, cx| open_recent_menu_entry(1, cx));

@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "scenario": "preview/close-documents",
+  "observations": {
+    "both_open": {
+      "windows": {
+        "count": 1
+      }
+    },
+    "selected_closed": {
+      "windows": {
+        "count": 1,
+        "front": "second.pdf \u2013 1 page"
+      },
+      "files": {
+        "entries": []
+      }
+    },
+    "all_closed": {
+      "windows": {
+        "count": 0
+      },
+      "files": {
+        "entries": []
+      }
+    }
+  }
+}

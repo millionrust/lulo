@@ -27,3 +27,4 @@ rmac-recent-documents.workspace = true
 rmac-ui.workspace = true
 rust-embed.workspace = true
 serde_json.workspace = true
+trash.workspace = true

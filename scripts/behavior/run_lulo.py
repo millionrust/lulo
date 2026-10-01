@@ -594,8 +594,11 @@ class LuloRun:
                 command += ["--reveal", str(self.sandbox / launch["reveal"])]
             else:
                 command += ["--path", str(self.sandbox / launch.get("folder", "."))]
-        elif self.app == "preview" and "file" in launch:
-            command += [str(self.sandbox / launch["file"])]
+        elif self.app == "preview":
+            if "files" in launch:
+                command += [str(self.sandbox / file) for file in launch["files"]]
+            elif "file" in launch:
+                command += [str(self.sandbox / launch["file"])]
         self.log = open(
             self.nested.logs / f"{self.sid.replace('/', '-')}.log",
             "a" if launch_override is not None else "w",
@@ -754,7 +757,15 @@ class LuloRun:
         if front in titles:
             titles.remove(front)
             titles.insert(0, front)
-        return {"count": len(plain), "front": front, "titles": titles}
+        compositor = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
+        focused = next((w for w in compositor if w.get("focused")), None)
+        current = focused or (compositor[0] if compositor else {})
+        return {
+            "count": len(plain),
+            "front": front,
+            "titles": titles,
+            "fullscreen": bool(current.get("fullscreen_mode", 0)),
+        }
 
     def fact_info(self) -> dict[str, Any]:
         """Check the accessible Size row in the frontmost Get Info window."""
@@ -906,7 +917,11 @@ class LuloRun:
             if top in self.before:
                 continue
             entries.append(rel.as_posix() + ("/" if path.is_dir() else ""))
-        return {"entries": entries}
+        # Lulo-only scenarios can also assert that a removed file reached
+        # this run's private Bin rather than being deleted outright.
+        directory = Path(self.env["XDG_DATA_HOME"]) / "Trash/files"
+        trash_entries = sorted(path.name for path in directory.iterdir()) if directory.exists() else []
+        return {"entries": entries, "trash_entries": trash_entries}
 
     def fact_saved_documents(self) -> dict[str, Any]:
         """Read the isolated Documents folder after a Text Editor Save sheet."""

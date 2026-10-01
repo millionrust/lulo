@@ -89,6 +89,20 @@
           "children": []
         },
         {
+          "label": "Close All",
+          "action": "preview::CloseAll",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close Selected",
+          "action": "preview::CloseSelected",
+          "shortcut": "⇧⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Save",
           "action": "preview::SaveMarkup",
           "shortcut": "⌘S",
@@ -160,6 +174,13 @@
           "label": "Select All",
           "action": "preview::SelectAll",
           "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move to Bin",
+          "action": "preview::MoveToTrash",
+          "shortcut": "⌘⌫",
           "separator_before": false,
           "children": []
         },
@@ -286,6 +307,13 @@
           "action": "preview::ToggleMarkup",
           "shortcut": "⇧⌘A",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "preview::EnterFullScreen",
+          "shortcut": "F",
+          "separator_before": false,
           "children": []
         }
       ]

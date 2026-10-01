@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::{
-    canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement,
+    canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement, App,
     AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable as _,
     FontWeight, Image, ImageFormat, InteractiveElement as _, IntoElement, KeyDownEvent,
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, PathBuilder,
@@ -25,11 +25,12 @@ use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
-    ActualSize, ActualSizeOnAll, CloseWindow, Copy, ExportAsPdf, Find, FindNext, FindPrevious,
-    GoToPage, HideSidebar, JumpToSelection, NextDocument, NextItem, PageDown, PageUp,
-    PreviousDocument, PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft,
-    RotateRight, SaveMarkup, SelectAll, ShowInspector, ShowThumbnails, ToggleMarkup, UndoMarkup,
-    UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
+    ActualSize, ActualSizeOnAll, CloseSelected, CloseWindow, Copy, EnterFullScreen, ExportAsPdf,
+    Find, FindNext, FindPrevious, GoToPage, HideSidebar, JumpToSelection, MoveToTrash,
+    NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
+    RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveMarkup, SelectAll, ShowInspector,
+    ShowThumbnails, ToggleMarkup, UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut,
+    ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -40,6 +41,56 @@ const MAX_PAGE_BITMAPS: usize = 8;
 const MAX_THUMBNAILS: usize = 80;
 /// Arrow-key scroll step.
 const LINE_SCROLL: f32 = 40.0;
+
+/// Keep the app's menu honest after the last document window closes. Menu
+/// state otherwise retains the last focused window's enabled overrides.
+pub(crate) fn disable_document_menu(cx: &mut App) {
+    for action in [
+        "preview::CloseWindow",
+        "preview::CloseAll",
+        "preview::CloseSelected",
+        "preview::Copy",
+        "preview::Find",
+        "preview::FindNext",
+        "preview::FindPrevious",
+        "preview::UseSelectionForFind",
+        "preview::JumpToSelection",
+        "preview::HideSidebar",
+        "preview::ShowThumbnails",
+        "preview::ActualSize",
+        "preview::ZoomToFit",
+        "preview::ZoomIn",
+        "preview::ZoomOut",
+        "preview::ActualSizeOnAll",
+        "preview::ZoomAllToFit",
+        "preview::ZoomAllIn",
+        "preview::ZoomAllOut",
+        "preview::PreviousItem",
+        "preview::NextItem",
+        "preview::PreviousDocument",
+        "preview::NextDocument",
+        "preview::PageUp",
+        "preview::PageDown",
+        "preview::GoToPage",
+        "preview::ShowInspector",
+        "preview::RotateLeft",
+        "preview::RotateRight",
+        "preview::SelectAll",
+        "preview::PrintDocument",
+        "preview::ExportAsPdf",
+        "preview::ToggleMarkup",
+        "preview::SaveMarkup",
+        "preview::RevertMarkup",
+        "preview::MoveToTrash",
+        "preview::EnterFullScreen",
+    ] {
+        rmac_ui::set_menu_enabled(action, false, cx);
+    }
+    rmac_ui::set_menu_checked("preview::ToggleMarkup", false, cx);
+    rmac_ui::set_menu_checked("preview::HideSidebar", false, cx);
+    rmac_ui::set_menu_checked("preview::ShowThumbnails", false, cx);
+    rmac_ui::set_menu_label("preview::EnterFullScreen", "Enter Full Screen", cx);
+}
 
 static NEXT_WINDOW_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -875,6 +926,107 @@ impl PreviewView {
                         cx.notify();
                     }
                 }
+            });
+        })
+        .detach();
+    }
+
+    fn remove_document(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.slots.iter().position(|slot| slot.id == id) else {
+            return;
+        };
+        let mut removed = self.slots.remove(index);
+        removed.release_images(&mut self.garbage);
+        self.folder = None;
+        self.document_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        if self.slots.is_empty() {
+            window.remove_window();
+            return;
+        }
+        self.selected = index.min(self.slots.len() - 1);
+        self.clear_search(cx);
+        self.text_selection = None;
+        self.text_selecting = false;
+        self.markup_selected = None;
+        self.markup_drag = None;
+        self.scroll.set_offset(point(px(0.0), px(0.0)));
+        self.ensure_text(cx);
+        cx.notify();
+    }
+
+    /// Close the sidebar's selected document while keeping the other open
+    /// documents in this window. PDF annotation writes stay off the UI thread.
+    fn close_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.markup_save_busy || self.slots.len() < 2 {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        let id = slot.id;
+        if slot.kind() != Some(Kind::Pdf) || !slot.markup.dirty {
+            self.remove_document(id, window, cx);
+            return;
+        }
+        let source = slot.path.clone();
+        let original = slot.markup_original.clone();
+        let items = slot.markup.items.clone();
+        self.markup_save_busy = true;
+        cx.spawn_in(window, async move |this, cx| {
+            let result = blocking::unblock(move || -> Result<(), String> {
+                let base = original.unwrap_or_else(|| source.clone());
+                let temporary =
+                    source.with_extension(format!("lulo-closing-{}.pdf", std::process::id()));
+                markup::write_pdf(&base, &temporary, &items)?;
+                std::fs::rename(&temporary, &source).map_err(|error| error.to_string())
+            })
+            .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.markup_save_busy = false;
+                match result {
+                    Ok(()) => this.remove_document(id, window, cx),
+                    Err(error) => {
+                        eprintln!("rmac-preview: save on close selected failed: {error}");
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Edit ▸ Move to Bin (⌘⌫). Save any in-flight PDF annotations before
+    /// moving the current file, then remove only that document from this
+    /// window. The filesystem work runs on the blocking pool.
+    fn move_to_bin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.markup_save_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        let id = slot.id;
+        let source = slot.path.clone();
+        let pending_markup = (slot.kind() == Some(Kind::Pdf) && slot.markup.dirty)
+            .then(|| (slot.markup_original.clone(), slot.markup.items.clone()));
+        self.markup_save_busy = true;
+        cx.spawn_in(window, async move |this, cx| {
+            let result = blocking::unblock(move || -> Result<(), String> {
+                if let Some((original, items)) = pending_markup {
+                    let base = original.unwrap_or_else(|| source.clone());
+                    let temporary =
+                        source.with_extension(format!("lulo-trashing-{}.pdf", std::process::id()));
+                    markup::write_pdf(&base, &temporary, &items)?;
+                    std::fs::rename(&temporary, &source).map_err(|error| error.to_string())?;
+                }
+                trash::delete(&source).map_err(|error| error.to_string())
+            })
+            .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.markup_save_busy = false;
+                if let Err(error) = result {
+                    eprintln!("rmac-preview: could not move document to Bin: {error}");
+                    cx.notify();
+                    return;
+                }
+                this.remove_document(id, window, cx);
             });
         })
         .detach();
@@ -2152,6 +2304,7 @@ impl PreviewView {
             "space" => self.scroll_by(0.0, page, cx),
             "home" => self.scroll_by(0.0, f32::MIN / 2.0, cx),
             "end" => self.scroll_by(0.0, f32::MAX / 2.0, cx),
+            "f" if !modifiers.shift => window.toggle_fullscreen(),
             _ => return,
         }
         cx.stop_propagation();
@@ -3481,6 +3634,22 @@ impl Render for PreviewView {
             rmac_ui::set_menu_checked("preview::HideSidebar", !self.sidebar, cx);
             rmac_ui::set_menu_checked("preview::ShowThumbnails", self.sidebar, cx);
             rmac_ui::set_menu_checked("preview::ToggleMarkup", self.markup_shown, cx);
+            rmac_ui::set_menu_enabled("preview::CloseWindow", true, cx);
+            rmac_ui::set_menu_enabled("preview::CloseAll", true, cx);
+            rmac_ui::set_menu_enabled(
+                "preview::CloseSelected",
+                self.slots.len() > 1 && !self.markup_save_busy,
+                cx,
+            );
+            rmac_ui::set_menu_label(
+                "preview::EnterFullScreen",
+                if window.is_fullscreen() {
+                    "Exit Full Screen"
+                } else {
+                    "Enter Full Screen"
+                },
+                cx,
+            );
             let loaded = self.slot().is_some_and(|slot| slot.loaded().is_some());
             let selected_text = self.text_selection.is_some_and(|(a, b)| a != b);
             let multiple = self.slots.len() > 1;
@@ -3501,9 +3670,28 @@ impl Render for PreviewView {
                 "preview::PageDown",
                 "preview::PreviousItem",
                 "preview::NextItem",
+                "preview::MoveToTrash",
+                "preview::EnterFullScreen",
+                "preview::Copy",
             ] {
                 rmac_ui::set_menu_enabled(action, loaded, cx);
             }
+            rmac_ui::set_menu_enabled("preview::MoveToTrash", loaded && !self.markup_save_busy, cx);
+            let pdf = self
+                .slot()
+                .is_some_and(|slot| slot.kind() == Some(Kind::Pdf));
+            for action in ["preview::Find", "preview::SelectAll"] {
+                rmac_ui::set_menu_enabled(action, pdf, cx);
+            }
+            for action in ["preview::FindNext", "preview::FindPrevious"] {
+                rmac_ui::set_menu_enabled(action, pdf && !self.search.matches.is_empty(), cx);
+            }
+            rmac_ui::set_menu_enabled(
+                "preview::RevertMarkup",
+                self.slot()
+                    .is_some_and(|slot| slot.markup.dirty || slot.markup_original.is_some()),
+                cx,
+            );
             for action in [
                 "preview::ActualSizeOnAll",
                 "preview::ZoomAllToFit",
@@ -3514,18 +3702,8 @@ impl Render for PreviewView {
             ] {
                 rmac_ui::set_menu_enabled(action, loaded && multiple, cx);
             }
-            rmac_ui::set_menu_enabled(
-                "preview::GoToPage",
-                self.slot()
-                    .is_some_and(|slot| slot.kind() == Some(Kind::Pdf)),
-                cx,
-            );
-            rmac_ui::set_menu_enabled(
-                "preview::ExportAsPdf",
-                self.slot()
-                    .is_some_and(|slot| slot.kind() == Some(Kind::Pdf)),
-                cx,
-            );
+            rmac_ui::set_menu_enabled("preview::GoToPage", pdf, cx);
+            rmac_ui::set_menu_enabled("preview::ExportAsPdf", pdf, cx);
             rmac_ui::set_menu_enabled("preview::UseSelectionForFind", selected_text, cx);
             rmac_ui::set_menu_enabled("preview::JumpToSelection", selected_text, cx);
         }
@@ -3581,6 +3759,15 @@ impl Render for PreviewView {
                 this.on_key_down(event, window, cx);
             }))
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
+            .on_action(cx.listener(|this, _: &MoveToTrash, window, cx| {
+                this.move_to_bin(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CloseSelected, window, cx| {
+                this.close_selected(window, cx);
+            }))
+            .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| {
+                window.toggle_fullscreen();
+            }))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &GoToPage, window, cx| {
                 this.open_go_to_page(window, cx);

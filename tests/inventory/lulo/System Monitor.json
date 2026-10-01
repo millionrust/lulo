@@ -6,7 +6,7 @@
       "label": "Application",
       "items": [
         {
-          "label": "About System Monitor",
+          "label": "About Activity Monitor",
           "action": "rmac::ShowAboutPanel",
           "shortcut": "",
           "separator_before": false,
@@ -20,7 +20,7 @@
           "children": []
         },
         {
-          "label": "Hide System Monitor",
+          "label": "Hide Activity Monitor",
           "action": "app::hide",
           "shortcut": "⌘H",
           "separator_before": true,
@@ -41,7 +41,7 @@
           "children": []
         },
         {
-          "label": "Quit System Monitor",
+          "label": "Quit Activity Monitor",
           "action": "app::quit",
           "shortcut": "⌘Q",
           "separator_before": true,
@@ -147,6 +147,78 @@
     {
       "label": "View",
       "items": [
+        {
+          "label": "Columns",
+          "action": "activity_monitor::ColumnsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Process ID",
+              "action": "activity_monitor::TogglePidColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "User",
+              "action": "activity_monitor::ToggleUserColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "% CPU",
+              "action": "activity_monitor::ToggleCpuColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "# Threads",
+              "action": "activity_monitor::ToggleThreadsColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Real Memory",
+              "action": "activity_monitor::ToggleMemoryColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Update Frequency",
+          "action": "activity_monitor::UpdateFrequencyMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Very often (1 sec)",
+              "action": "activity_monitor::RefreshEverySecond",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Often (2 sec)",
+              "action": "activity_monitor::RefreshEveryTwoSeconds",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Normally (5 sec)",
+              "action": "activity_monitor::RefreshEveryFiveSeconds",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
         {
           "label": "All Processes",
           "action": "activity_monitor::ShowAllProcesses",
@@ -306,7 +378,7 @@
       "label": "Help",
       "items": [
         {
-          "label": "System Monitor Help",
+          "label": "Activity Monitor Help",
           "action": "help::app-help",
           "shortcut": "⌘?",
           "separator_before": false,

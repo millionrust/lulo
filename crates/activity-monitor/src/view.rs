@@ -46,6 +46,8 @@ pub(crate) struct MonitorView {
     search_open: bool,
     /// Whether the View filter dropdown (MON-03) is open.
     pub(crate) filter_menu_open: bool,
+    refresh_seconds: u64,
+    refresh_wake: async_channel::Sender<()>,
 }
 
 impl MonitorView {
@@ -89,6 +91,7 @@ impl MonitorView {
         })
         .detach();
 
+        let (wake, events) = async_channel::bounded(1);
         let mut view = Self {
             table,
             search,
@@ -102,11 +105,12 @@ impl MonitorView {
             inspect_pid: None,
             search_open: false,
             filter_menu_open: false,
+            refresh_seconds: REFRESH_SECS as u64,
+            refresh_wake: wake.clone(),
         };
         view.refresh(cx);
 
         // An inactive window has no graph to update and no timer to run.
-        let (wake, events) = async_channel::bounded(1);
         cx.observe_window_activation(window, move |view, window, cx| {
             let _ = wake.try_send(());
             if window.is_window_active() {
@@ -116,14 +120,16 @@ impl MonitorView {
         })
         .detach();
         cx.spawn_in(window, async move |this, cx| loop {
-            let active = this
-                .update_in(cx, |_, window, _| window.is_window_active())
-                .unwrap_or(false);
+            let (active, seconds) = this
+                .update_in(cx, |view, window, _| {
+                    (window.is_window_active(), view.refresh_seconds)
+                })
+                .unwrap_or((false, REFRESH_SECS as u64));
             let timer_expired = futures_lite::future::race(
                 async {
                     if active {
                         cx.background_executor()
-                            .timer(Duration::from_secs(REFRESH_SECS as u64))
+                            .timer(Duration::from_secs(seconds))
                             .await;
                     } else {
                         std::future::pending::<()>().await;
@@ -218,6 +224,23 @@ impl MonitorView {
             ),
         ] {
             rmac_ui::set_menu_checked(action, self.view_filter(cx) == filter, cx);
+        }
+        for (action, seconds) in [
+            ("activity_monitor::RefreshEverySecond", 1),
+            ("activity_monitor::RefreshEveryTwoSeconds", 2),
+            ("activity_monitor::RefreshEveryFiveSeconds", 5),
+        ] {
+            rmac_ui::set_menu_checked(action, self.refresh_seconds == seconds, cx);
+        }
+        let visible = self.table.read(cx).delegate().visible.clone();
+        for (action, column) in [
+            ("activity_monitor::TogglePidColumn", ColKey::Pid),
+            ("activity_monitor::ToggleUserColumn", ColKey::User),
+            ("activity_monitor::ToggleCpuColumn", ColKey::Cpu),
+            ("activity_monitor::ToggleThreadsColumn", ColKey::Threads),
+            ("activity_monitor::ToggleMemoryColumn", ColKey::Mem),
+        ] {
+            rmac_ui::set_menu_checked(action, visible.contains(&column), cx);
         }
     }
 
@@ -433,6 +456,14 @@ impl MonitorView {
         self.sampler.history.cpu_user.clear();
         self.sampler.history.cpu_system.clear();
         cx.notify();
+    }
+
+    fn set_refresh_seconds(&mut self, seconds: u64, cx: &mut Context<Self>) {
+        if self.refresh_seconds != seconds {
+            self.refresh_seconds = seconds;
+            let _ = self.refresh_wake.try_send(());
+            cx.notify();
+        }
     }
 
     /// Set the search query from an AT-SPI `SetValue`/`ReplaceSelectedText`

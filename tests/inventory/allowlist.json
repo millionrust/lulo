@@ -14,6 +14,30 @@
       "reason": "Services is populated system-wide from every installed app's Info.plist; Lulo has no Services architecture and nothing to port."
     },
     {
+      "app": "System Monitor",
+      "label": "AutoFill",
+      "match": "exact",
+      "reason": "AppKit's AutoFill submenu belongs to macOS's system Contacts and Passwords services, which System Monitor cannot access on Linux."
+    },
+    {
+      "app": "System Monitor",
+      "label": "Contact…",
+      "match": "exact",
+      "reason": "Opens a macOS Contacts AutoFill picker tied to the user's Apple Contacts data."
+    },
+    {
+      "app": "System Monitor",
+      "label": "Passwords…",
+      "match": "exact",
+      "reason": "Opens the macOS Passwords AutoFill picker backed by Apple Passwords and iCloud Keychain."
+    },
+    {
+      "app": "System Monitor",
+      "label": "Credit Card…",
+      "match": "exact",
+      "reason": "Opens macOS's protected payment-card AutoFill picker backed by Apple Wallet or Safari data."
+    },
+    {
       "app": "*",
       "label": "Recent Items",
       "match": "exact",

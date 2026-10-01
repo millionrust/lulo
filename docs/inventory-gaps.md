@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_716 gaps across 7 apps; 19 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_694 gaps across 7 apps; 23 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Coverage notes
 
@@ -518,108 +518,86 @@ To finish this run once the Mac is free: `python3 scripts/inventory/mac_inventor
 
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
-| MON-MENU-002 | missing menu item (has a shortcut) | Hide Activity Monitor | Application ▸ Hide Activity Monitor | ⌘H |  | missing from Lulo's menu bar |
-| MON-MENU-003 | missing menu item (has a shortcut) | Quit Activity Monitor | Application ▸ Quit Activity Monitor | ⌘Q |  | missing from Lulo's menu bar |
-| MON-MENU-009 | missing menu item (has a shortcut) | Jump to Selection | Edit ▸ Find ▸ Jump to Selection | ⌘J |  | missing from Lulo's menu bar |
-| MON-MENU-008 | missing menu item (has a shortcut) | Use Selection for Find | Edit ▸ Find ▸ Use Selection for Find | ⌘E |  | missing from Lulo's menu bar |
-| MON-MENU-005 | missing menu item (has a shortcut) | Page Setup… | File ▸ Page Setup… | ⇧⌘P |  | missing from Lulo's menu bar |
-| MON-MENU-006 | missing menu item (has a shortcut) | Print… | File ▸ Print… | ⌘P |  | missing from Lulo's menu bar |
-| MON-MENU-098 | missing menu item (has a shortcut) | Activity Monitor Help | Help ▸ Activity Monitor Help | ⌘? |  | missing from Lulo's menu bar |
-| MON-MENU-065 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
-| MON-MENU-061 | missing menu item (has a shortcut) | Run Spindump | View ▸ Run Spindump | ⌃⌥⌘S |  | missing from Lulo's menu bar |
-| MON-MENU-060 | missing menu item (has a shortcut) | Sample Process | View ▸ Sample Process | ⌥⌘S |  | missing from Lulo's menu bar |
-| MON-MENU-064 | missing menu item (has a shortcut) | Show Deltas for Process | View ▸ Show Deltas for Process | ⌥⌘J |  | missing from Lulo's menu bar |
-| MON-MENU-091 | missing menu item (has a shortcut) | Activity Monitor | Window ▸ Activity Monitor | ⌘1 |  | missing from Lulo's menu bar |
-| MON-MENU-093 | missing menu item (has a shortcut) | CPU History | Window ▸ CPU History | ⌘3 |  | missing from Lulo's menu bar |
-| MON-MENU-092 | missing menu item (has a shortcut) | CPU Usage | Window ▸ CPU Usage | ⌘2 |  | missing from Lulo's menu bar |
-| MON-MENU-094 | missing menu item (has a shortcut) | GPU History | Window ▸ GPU History | ⌘4 |  | missing from Lulo's menu bar |
-| MON-MENU-087 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| MON-MENU-086 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| MON-MENU-081 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| MON-MENU-080 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| MON-MENU-082 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| MON-MENU-083 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| MON-MENU-084 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| MON-MENU-085 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
-| MON-MENU-001 | missing menu item | About Activity Monitor | Application ▸ About Activity Monitor |  |  | missing from Lulo's menu bar |
-| MON-MENU-004 | missing menu item | Quit and Keep Windows | Application ▸ Quit and Keep Windows |  |  | missing from Lulo's menu bar |
-| MON-MENU-010 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
-| MON-MENU-011 | missing menu item | Contact… | Edit ▸ AutoFill ▸ Contact… |  |  | missing from Lulo's menu bar |
-| MON-MENU-013 | missing menu item | Credit Card… | Edit ▸ AutoFill ▸ Credit Card… |  |  | missing from Lulo's menu bar |
-| MON-MENU-012 | missing menu item | Passwords… | Edit ▸ AutoFill ▸ Passwords… |  |  | missing from Lulo's menu bar |
-| MON-MENU-007 | missing menu item | Delete | Edit ▸ Delete |  |  | missing from Lulo's menu bar |
-| MON-MENU-053 | missing menu item | All Processes, Hierarchically | View ▸ All Processes, Hierarchically |  |  | missing from Lulo's menu bar |
-| MON-MENU-058 | missing menu item | Applications in last 12 hours | View ▸ Applications in last 12 hours |  |  | missing from Lulo's menu bar |
-| MON-MENU-014 | missing menu item | Columns | View ▸ Columns |  |  | missing from Lulo's menu bar |
-| MON-MENU-022 | missing menu item | # Ports | View ▸ Columns ▸ # Ports |  |  | missing from Lulo's menu bar |
-| MON-MENU-021 | missing menu item | # Threads | View ▸ Columns ▸ # Threads |  |  | missing from Lulo's menu bar |
-| MON-MENU-017 | missing menu item | % CPU | View ▸ Columns ▸ % CPU |  |  | missing from Lulo's menu bar |
-| MON-MENU-019 | missing menu item | % GPU | View ▸ Columns ▸ % GPU |  |  | missing from Lulo's menu bar |
-| MON-MENU-032 | missing menu item | App Nap | View ▸ Columns ▸ App Nap |  |  | missing from Lulo's menu bar |
-| MON-MENU-041 | missing menu item | Bytes Read | View ▸ Columns ▸ Bytes Read |  |  | missing from Lulo's menu bar |
-| MON-MENU-040 | missing menu item | Bytes Written | View ▸ Columns ▸ Bytes Written |  |  | missing from Lulo's menu bar |
-| MON-MENU-018 | missing menu item | CPU Time | View ▸ Columns ▸ CPU Time |  |  | missing from Lulo's menu bar |
-| MON-MENU-039 | missing menu item | Compressed Memory | View ▸ Columns ▸ Compressed Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-031 | missing menu item | Energy Impact | View ▸ Columns ▸ Energy Impact |  |  | missing from Lulo's menu bar |
-| MON-MENU-020 | missing menu item | GPU Time | View ▸ Columns ▸ GPU Time |  |  | missing from Lulo's menu bar |
-| MON-MENU-030 | missing menu item | Idle Wake Ups | View ▸ Columns ▸ Idle Wake Ups |  |  | missing from Lulo's menu bar |
-| MON-MENU-026 | missing menu item | Kind | View ▸ Columns ▸ Kind |  |  | missing from Lulo's menu bar |
-| MON-MENU-038 | missing menu item | Memory | View ▸ Columns ▸ Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-042 | missing menu item | Preventing Sleep | View ▸ Columns ▸ Preventing Sleep |  |  | missing from Lulo's menu bar |
-| MON-MENU-015 | missing menu item | Process ID | View ▸ Columns ▸ Process ID |  |  | missing from Lulo's menu bar |
-| MON-MENU-037 | missing menu item | Purgeable Memory | View ▸ Columns ▸ Purgeable Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-023 | missing menu item | Real Memory | View ▸ Columns ▸ Real Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-024 | missing menu item | Real Private Memory | View ▸ Columns ▸ Real Private Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-025 | missing menu item | Real Shared Memory | View ▸ Columns ▸ Real Shared Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-035 | missing menu item | Received Bytes | View ▸ Columns ▸ Received Bytes |  |  | missing from Lulo's menu bar |
-| MON-MENU-036 | missing menu item | Received Packets | View ▸ Columns ▸ Received Packets |  |  | missing from Lulo's menu bar |
-| MON-MENU-029 | missing menu item | Restricted | View ▸ Columns ▸ Restricted |  |  | missing from Lulo's menu bar |
-| MON-MENU-028 | missing menu item | Sandbox | View ▸ Columns ▸ Sandbox |  |  | missing from Lulo's menu bar |
-| MON-MENU-033 | missing menu item | Sent Bytes | View ▸ Columns ▸ Sent Bytes |  |  | missing from Lulo's menu bar |
-| MON-MENU-034 | missing menu item | Sent Packets | View ▸ Columns ▸ Sent Packets |  |  | missing from Lulo's menu bar |
-| MON-MENU-027 | missing menu item | Sudden Termination | View ▸ Columns ▸ Sudden Termination |  |  | missing from Lulo's menu bar |
-| MON-MENU-016 | missing menu item | User | View ▸ Columns ▸ User |  |  | missing from Lulo's menu bar |
-| MON-MENU-043 | missing menu item | Dock Icon | View ▸ Dock Icon |  |  | missing from Lulo's menu bar |
-| MON-MENU-048 | missing menu item | Show Application Icon | View ▸ Dock Icon ▸ Show Application Icon |  |  | missing from Lulo's menu bar |
-| MON-MENU-045 | missing menu item | Show CPU History | View ▸ Dock Icon ▸ Show CPU History |  |  | missing from Lulo's menu bar |
-| MON-MENU-044 | missing menu item | Show CPU Usage | View ▸ Dock Icon ▸ Show CPU Usage |  |  | missing from Lulo's menu bar |
-| MON-MENU-047 | missing menu item | Show Disk Activity | View ▸ Dock Icon ▸ Show Disk Activity |  |  | missing from Lulo's menu bar |
-| MON-MENU-046 | missing menu item | Show Network Usage | View ▸ Dock Icon ▸ Show Network Usage |  |  | missing from Lulo's menu bar |
-| MON-MENU-055 | missing menu item | GPU Processes | View ▸ GPU Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-054 | missing menu item | Inactive Processes | View ▸ Inactive Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-059 | missing menu item | Processes, by GPU | View ▸ Processes, by GPU |  |  | missing from Lulo's menu bar |
-| MON-MENU-062 | missing menu item | Run System Diagnostics… | View ▸ Run System Diagnostics… |  |  | missing from Lulo's menu bar |
-| MON-MENU-057 | missing menu item | Selected Processes | View ▸ Selected Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-063 | missing menu item | Send Signal to Process… | View ▸ Send Signal to Process… |  |  | missing from Lulo's menu bar |
-| MON-MENU-049 | missing menu item | Update Frequency | View ▸ Update Frequency |  |  | missing from Lulo's menu bar |
-| MON-MENU-052 | missing menu item | Normally (5 sec) | View ▸ Update Frequency ▸ Normally (5 sec) |  |  | missing from Lulo's menu bar |
-| MON-MENU-051 | missing menu item | Often (2 sec) | View ▸ Update Frequency ▸ Often (2 sec) |  |  | missing from Lulo's menu bar |
-| MON-MENU-050 | missing menu item | Very often (1 sec) | View ▸ Update Frequency ▸ Very often (1 sec) |  |  | missing from Lulo's menu bar |
-| MON-MENU-056 | missing menu item | Windowed Processes | View ▸ Windowed Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-097 | missing menu item | Activity Monitor (All Processes) | Window ▸ Activity Monitor (All Processes) |  |  | missing from Lulo's menu bar |
-| MON-MENU-096 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| MON-MENU-089 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| MON-MENU-095 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
-| MON-MENU-079 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| MON-MENU-077 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| MON-MENU-078 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| MON-MENU-069 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| MON-MENU-074 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| MON-MENU-075 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| MON-MENU-076 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| MON-MENU-090 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
-| MON-MENU-066 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
-| MON-MENU-068 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
-| MON-MENU-067 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| MON-MENU-073 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| MON-MENU-070 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| MON-MENU-088 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| MON-MENU-071 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| MON-MENU-072 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
-| MON-MENU-099 | Lulo-only (not on the Mac) | About System Monitor | Application ▸ About System Monitor |  |  | present in Lulo but not found on the Mac |
-| MON-MENU-100 | Lulo-only (not on the Mac) | Hide System Monitor | Application ▸ Hide System Monitor |  | ⌘H | present in Lulo but not found on the Mac |
-| MON-MENU-101 | Lulo-only (not on the Mac) | Quit System Monitor | Application ▸ Quit System Monitor |  | ⌘Q | present in Lulo but not found on the Mac |
-| MON-MENU-102 | Lulo-only (not on the Mac) | System Monitor Help | Help ▸ System Monitor Help |  | ⌘? | present in Lulo but not found on the Mac |
+| MON-MENU-006 | missing menu item (has a shortcut) | Jump to Selection | Edit ▸ Find ▸ Jump to Selection | ⌘J |  | missing from Lulo's menu bar |
+| MON-MENU-005 | missing menu item (has a shortcut) | Use Selection for Find | Edit ▸ Find ▸ Use Selection for Find | ⌘E |  | missing from Lulo's menu bar |
+| MON-MENU-002 | missing menu item (has a shortcut) | Page Setup… | File ▸ Page Setup… | ⇧⌘P |  | missing from Lulo's menu bar |
+| MON-MENU-003 | missing menu item (has a shortcut) | Print… | File ▸ Print… | ⌘P |  | missing from Lulo's menu bar |
+| MON-MENU-048 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
+| MON-MENU-044 | missing menu item (has a shortcut) | Run Spindump | View ▸ Run Spindump | ⌃⌥⌘S |  | missing from Lulo's menu bar |
+| MON-MENU-043 | missing menu item (has a shortcut) | Sample Process | View ▸ Sample Process | ⌥⌘S |  | missing from Lulo's menu bar |
+| MON-MENU-047 | missing menu item (has a shortcut) | Show Deltas for Process | View ▸ Show Deltas for Process | ⌥⌘J |  | missing from Lulo's menu bar |
+| MON-MENU-074 | missing menu item (has a shortcut) | Activity Monitor | Window ▸ Activity Monitor | ⌘1 |  | missing from Lulo's menu bar |
+| MON-MENU-076 | missing menu item (has a shortcut) | CPU History | Window ▸ CPU History | ⌘3 |  | missing from Lulo's menu bar |
+| MON-MENU-075 | missing menu item (has a shortcut) | CPU Usage | Window ▸ CPU Usage | ⌘2 |  | missing from Lulo's menu bar |
+| MON-MENU-077 | missing menu item (has a shortcut) | GPU History | Window ▸ GPU History | ⌘4 |  | missing from Lulo's menu bar |
+| MON-MENU-070 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| MON-MENU-069 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| MON-MENU-064 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| MON-MENU-063 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| MON-MENU-065 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| MON-MENU-066 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| MON-MENU-067 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| MON-MENU-068 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| MON-MENU-001 | missing menu item | Quit and Keep Windows | Application ▸ Quit and Keep Windows |  |  | missing from Lulo's menu bar |
+| MON-MENU-004 | missing menu item | Delete | Edit ▸ Delete |  |  | missing from Lulo's menu bar |
+| MON-MENU-036 | missing menu item | All Processes, Hierarchically | View ▸ All Processes, Hierarchically |  |  | missing from Lulo's menu bar |
+| MON-MENU-041 | missing menu item | Applications in last 12 hours | View ▸ Applications in last 12 hours |  |  | missing from Lulo's menu bar |
+| MON-MENU-010 | missing menu item | # Ports | View ▸ Columns ▸ # Ports |  |  | missing from Lulo's menu bar |
+| MON-MENU-008 | missing menu item | % GPU | View ▸ Columns ▸ % GPU |  |  | missing from Lulo's menu bar |
+| MON-MENU-019 | missing menu item | App Nap | View ▸ Columns ▸ App Nap |  |  | missing from Lulo's menu bar |
+| MON-MENU-028 | missing menu item | Bytes Read | View ▸ Columns ▸ Bytes Read |  |  | missing from Lulo's menu bar |
+| MON-MENU-027 | missing menu item | Bytes Written | View ▸ Columns ▸ Bytes Written |  |  | missing from Lulo's menu bar |
+| MON-MENU-007 | missing menu item | CPU Time | View ▸ Columns ▸ CPU Time |  |  | missing from Lulo's menu bar |
+| MON-MENU-026 | missing menu item | Compressed Memory | View ▸ Columns ▸ Compressed Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-018 | missing menu item | Energy Impact | View ▸ Columns ▸ Energy Impact |  |  | missing from Lulo's menu bar |
+| MON-MENU-009 | missing menu item | GPU Time | View ▸ Columns ▸ GPU Time |  |  | missing from Lulo's menu bar |
+| MON-MENU-017 | missing menu item | Idle Wake Ups | View ▸ Columns ▸ Idle Wake Ups |  |  | missing from Lulo's menu bar |
+| MON-MENU-013 | missing menu item | Kind | View ▸ Columns ▸ Kind |  |  | missing from Lulo's menu bar |
+| MON-MENU-025 | missing menu item | Memory | View ▸ Columns ▸ Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-029 | missing menu item | Preventing Sleep | View ▸ Columns ▸ Preventing Sleep |  |  | missing from Lulo's menu bar |
+| MON-MENU-024 | missing menu item | Purgeable Memory | View ▸ Columns ▸ Purgeable Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-011 | missing menu item | Real Private Memory | View ▸ Columns ▸ Real Private Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-012 | missing menu item | Real Shared Memory | View ▸ Columns ▸ Real Shared Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-022 | missing menu item | Received Bytes | View ▸ Columns ▸ Received Bytes |  |  | missing from Lulo's menu bar |
+| MON-MENU-023 | missing menu item | Received Packets | View ▸ Columns ▸ Received Packets |  |  | missing from Lulo's menu bar |
+| MON-MENU-016 | missing menu item | Restricted | View ▸ Columns ▸ Restricted |  |  | missing from Lulo's menu bar |
+| MON-MENU-015 | missing menu item | Sandbox | View ▸ Columns ▸ Sandbox |  |  | missing from Lulo's menu bar |
+| MON-MENU-020 | missing menu item | Sent Bytes | View ▸ Columns ▸ Sent Bytes |  |  | missing from Lulo's menu bar |
+| MON-MENU-021 | missing menu item | Sent Packets | View ▸ Columns ▸ Sent Packets |  |  | missing from Lulo's menu bar |
+| MON-MENU-014 | missing menu item | Sudden Termination | View ▸ Columns ▸ Sudden Termination |  |  | missing from Lulo's menu bar |
+| MON-MENU-030 | missing menu item | Dock Icon | View ▸ Dock Icon |  |  | missing from Lulo's menu bar |
+| MON-MENU-035 | missing menu item | Show Application Icon | View ▸ Dock Icon ▸ Show Application Icon |  |  | missing from Lulo's menu bar |
+| MON-MENU-032 | missing menu item | Show CPU History | View ▸ Dock Icon ▸ Show CPU History |  |  | missing from Lulo's menu bar |
+| MON-MENU-031 | missing menu item | Show CPU Usage | View ▸ Dock Icon ▸ Show CPU Usage |  |  | missing from Lulo's menu bar |
+| MON-MENU-034 | missing menu item | Show Disk Activity | View ▸ Dock Icon ▸ Show Disk Activity |  |  | missing from Lulo's menu bar |
+| MON-MENU-033 | missing menu item | Show Network Usage | View ▸ Dock Icon ▸ Show Network Usage |  |  | missing from Lulo's menu bar |
+| MON-MENU-038 | missing menu item | GPU Processes | View ▸ GPU Processes |  |  | missing from Lulo's menu bar |
+| MON-MENU-037 | missing menu item | Inactive Processes | View ▸ Inactive Processes |  |  | missing from Lulo's menu bar |
+| MON-MENU-042 | missing menu item | Processes, by GPU | View ▸ Processes, by GPU |  |  | missing from Lulo's menu bar |
+| MON-MENU-045 | missing menu item | Run System Diagnostics… | View ▸ Run System Diagnostics… |  |  | missing from Lulo's menu bar |
+| MON-MENU-040 | missing menu item | Selected Processes | View ▸ Selected Processes |  |  | missing from Lulo's menu bar |
+| MON-MENU-046 | missing menu item | Send Signal to Process… | View ▸ Send Signal to Process… |  |  | missing from Lulo's menu bar |
+| MON-MENU-039 | missing menu item | Windowed Processes | View ▸ Windowed Processes |  |  | missing from Lulo's menu bar |
+| MON-MENU-080 | missing menu item | Activity Monitor (All Processes) | Window ▸ Activity Monitor (All Processes) |  |  | missing from Lulo's menu bar |
+| MON-MENU-079 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| MON-MENU-072 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| MON-MENU-078 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
+| MON-MENU-062 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| MON-MENU-060 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
+| MON-MENU-061 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
+| MON-MENU-052 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
+| MON-MENU-057 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
+| MON-MENU-058 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
+| MON-MENU-059 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
+| MON-MENU-073 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| MON-MENU-049 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
+| MON-MENU-051 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
+| MON-MENU-050 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
+| MON-MENU-056 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| MON-MENU-053 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| MON-MENU-071 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| MON-MENU-054 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| MON-MENU-055 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 
 ## System Settings
 

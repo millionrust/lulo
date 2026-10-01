@@ -652,6 +652,39 @@ const MONITOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
+            submenu!(
+                "Columns",
+                "activity_monitor::ColumnsMenu",
+                [
+                    item!("Process ID", "activity_monitor::TogglePidColumn", ""),
+                    item!("User", "activity_monitor::ToggleUserColumn", ""),
+                    item!("% CPU", "activity_monitor::ToggleCpuColumn", ""),
+                    item!("# Threads", "activity_monitor::ToggleThreadsColumn", ""),
+                    item!("Real Memory", "activity_monitor::ToggleMemoryColumn", ""),
+                ]
+            ),
+            submenu!(
+                "Update Frequency",
+                "activity_monitor::UpdateFrequencyMenu",
+                [
+                    item!(
+                        "Very often (1 sec)",
+                        "activity_monitor::RefreshEverySecond",
+                        ""
+                    ),
+                    item!(
+                        "Often (2 sec)",
+                        "activity_monitor::RefreshEveryTwoSeconds",
+                        ""
+                    ),
+                    item!(
+                        "Normally (5 sec)",
+                        "activity_monitor::RefreshEveryFiveSeconds",
+                        ""
+                    ),
+                ],
+                separator
+            ),
             item!("All Processes", "activity_monitor::ShowAllProcesses", ""),
             item!("My Processes", "activity_monitor::ShowMyProcesses", ""),
             item!(

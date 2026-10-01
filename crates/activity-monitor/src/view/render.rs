@@ -13,8 +13,9 @@ use crate::view_filter::ViewFilter;
 use crate::{
     process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, FindNext,
     FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, Minimize, QuitProcess,
-    ShowActiveProcesses, ShowAllProcesses, ShowMyProcesses, ShowOtherUsersProcesses,
-    ShowSystemProcesses,
+    RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds, ShowActiveProcesses,
+    ShowAllProcesses, ShowMyProcesses, ShowOtherUsersProcesses, ShowSystemProcesses,
+    ToggleCpuColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
 };
 
 use super::MonitorView;
@@ -58,6 +59,30 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ClearCpuHistory, _, cx| {
                 this.clear_cpu_history(cx);
+            }))
+            .on_action(cx.listener(|this, _: &TogglePidColumn, _, cx| {
+                this.toggle_column(ColKey::Pid, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleUserColumn, _, cx| {
+                this.toggle_column(ColKey::User, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleCpuColumn, _, cx| {
+                this.toggle_column(ColKey::Cpu, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleThreadsColumn, _, cx| {
+                this.toggle_column(ColKey::Threads, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleMemoryColumn, _, cx| {
+                this.toggle_column(ColKey::Mem, cx);
+            }))
+            .on_action(cx.listener(|this, _: &RefreshEverySecond, _, cx| {
+                this.set_refresh_seconds(1, cx);
+            }))
+            .on_action(cx.listener(|this, _: &RefreshEveryTwoSeconds, _, cx| {
+                this.set_refresh_seconds(2, cx);
+            }))
+            .on_action(cx.listener(|this, _: &RefreshEveryFiveSeconds, _, cx| {
+                this.set_refresh_seconds(5, cx);
             }))
             .on_action(cx.listener(|this, _: &ShowAllProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::All, cx);

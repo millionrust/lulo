@@ -4,6 +4,11 @@ use super::*;
 #[cfg(target_os = "linux")]
 use gpui::ParentElement as _;
 
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+unsafe extern "C" {
+    fn malloc_trim(pad: usize) -> i32;
+}
+
 #[cfg(target_os = "linux")]
 struct RendererWarmup;
 
@@ -37,7 +42,17 @@ pub(super) fn warm_renderer(cx: &mut App) {
     }
     if let Err(error) = cx.open_window(options, |window, cx| {
         window.set_input_region(Some(&[]));
-        window.on_next_frame(|window, _| window.remove_window());
+        window.on_next_frame(|window, cx| {
+            window.remove_window();
+            #[cfg(target_env = "gnu")]
+            cx.spawn(async move |_: &mut gpui::AsyncApp| {
+                async_io::Timer::after(std::time::Duration::from_millis(100)).await;
+                // glibc documents malloc_trim as thread-safe. The warmup
+                // window is gone before this asks glibc to return free pages.
+                blocking::unblock(|| unsafe { malloc_trim(0) }).await;
+            })
+            .detach();
+        });
         cx.new(|_| RendererWarmup)
     }) {
         eprintln!("Launcher renderer warmup failed: {error}");

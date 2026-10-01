@@ -160,12 +160,13 @@ for those.
 9. **TE-18 (P1, M)** — Saving a new Untitled document mostly works (direct
    Save is fixed, TE-22) but the full Save-sheet parity has remaining gaps.
    Plan: small follow-up once TE-22's current state is confirmed live.
-10. **NOTES-02 (P1, M)** — Fixed `92f4b461`: clicking a checklist circle in
+10. **NOTES-02 (P1, M)** — Fixed `65477bc9`: clicking a checklist circle in
     Markdown Preview, or ⇧⌘U on the current line, now flips `- [ ]`/`- [x]`
-    in the saved body (undoable, AT-SPI `CheckBox` role/state). Plan: needs
-    a live Linux-build check (`tests/parallel/06-notes.json`'s extended
-    checklist steps) before closing out; "Tick All" and the Mac's
-    move-checked-to-bottom setting remain unimplemented follow-ups.
+    in the saved body (undoable, AT-SPI `CheckBox` role/state). Laptop unit
+    tests/clippy/fmt pass. Plan: still needs the extended
+    `tests/parallel/06-notes.json` checklist steps run in a nested session
+    before closing out; "Tick All" and the Mac's move-checked-to-bottom
+    setting remain unimplemented follow-ups.
 11. **FILES-05 / FILES-35 (P1, M/M)** — Files has no Tags sidebar section
     (macOS-only `cfg` gate left it out of the Linux build) and no
     Finder-equivalent Settings… pane. Plan: FILES-05 is a one-line `cfg`

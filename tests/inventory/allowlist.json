@@ -38,6 +38,18 @@
       "reason": "Opens macOS's protected payment-card AutoFill picker backed by Apple Wallet or Safari data."
     },
     {
+      "app": "System Monitor",
+      "label": "Run Spindump",
+      "match": "exact",
+      "reason": "Runs Apple's macOS spindump utility and produces a .spin report, neither of which exists on Linux."
+    },
+    {
+      "app": "System Monitor",
+      "label": "Run System Diagnostics…",
+      "match": "exact",
+      "reason": "Invokes Apple's macOS sysdiagnose collection and its proprietary report format."
+    },
+    {
       "app": "*",
       "label": "Recent Items",
       "match": "exact",

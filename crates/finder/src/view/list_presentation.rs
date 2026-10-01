@@ -793,6 +793,9 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
             .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
+            .on_action(
+                cx.listener(|this, _: &GoUpInNewWindow, _, cx| this.open_parent_in_new_window(cx)),
+            )
             .on_action(cx.listener(|this, _: &GoHome, _, cx| this.go_home(cx)))
             .on_action(cx.listener(|this, _: &GoApplications, _, cx| this.applications_click(cx)))
             .on_action(cx.listener(|this, _: &GoUtilities, _, cx| this.utilities_click(cx)))
@@ -806,6 +809,17 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &MoveItemHere, _, cx| this.move_item_here(cx)))
             .on_action(cx.listener(|this, _: &GoTrash, _, cx| this.trash_click(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
+            .on_action(cx.listener(|this, _: &OpenSelectionInNewTab, _, cx| {
+                this.open_selection_in_new_tab(cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenSelectionInNewWindow, _, cx| {
+                this.open_selection_in_new_window(cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &OpenSelectionInNewWindowAndClose, window, cx| {
+                    this.open_selection_in_new_window_and_close(window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &AddToSidebar, _, cx| {
                 for path in this.selected_paths() {
                     this.add_sidebar_favourite(path, cx);

@@ -102,6 +102,20 @@
           "children": []
         },
         {
+          "label": "Open in New Tab",
+          "action": "finder::OpenSelectionInNewTab",
+          "shortcut": "⌃⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Open in New Window and Close",
+          "action": "finder::OpenSelectionInNewWindowAndClose",
+          "shortcut": "⌥⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Close Window",
           "action": "finder::CloseTab",
           "shortcut": "⌘W",
@@ -113,6 +127,13 @@
           "action": "finder::GetInfo",
           "shortcut": "⌘I",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Quick Look",
+          "action": "finder::QuickLook",
+          "shortcut": "⌘Y",
+          "separator_before": false,
           "children": []
         },
         {
@@ -287,6 +308,13 @@
           "children": []
         },
         {
+          "label": "Use Groups",
+          "action": "finder::UseGroups",
+          "shortcut": "⌃⌘0",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Sort by Name",
           "action": "finder::SortByName",
           "shortcut": "",
@@ -322,13 +350,6 @@
           "children": []
         },
         {
-          "label": "Quick Look",
-          "action": "finder::QuickLook",
-          "shortcut": "Space",
-          "separator_before": false,
-          "children": []
-        },
-        {
           "label": "Show View Options",
           "action": "finder::ShowViewOptions",
           "shortcut": "⌘J",
@@ -350,7 +371,7 @@
           "children": []
         },
         {
-          "label": "Show Status Bar",
+          "label": "Hide Status Bar",
           "action": "finder::ToggleStatusBar",
           "shortcut": "⌘/",
           "separator_before": false,
@@ -379,6 +400,13 @@
           "label": "Enclosing Folder",
           "action": "finder::GoUp",
           "shortcut": "⌘↑",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Enclosing Folder in New Window",
+          "action": "finder::GoUpInNewWindow",
+          "shortcut": "⌃⌘↑",
           "separator_before": false,
           "children": []
         },
@@ -835,7 +863,7 @@
       },
       {
         "type": "item",
-        "label": "<label>"
+        "label": "Compress"
       },
       {
         "type": "command_item",
@@ -855,6 +883,10 @@
       {
         "type": "command_item",
         "label": "Copy"
+      },
+      {
+        "type": "command_item",
+        "label": "Copy as Pathname"
       },
       {
         "type": "item",
@@ -910,6 +942,14 @@
       },
       {
         "type": "item",
+        "label": "Open in New Tab"
+      },
+      {
+        "type": "item",
+        "label": "Open in New Window"
+      },
+      {
+        "type": "item",
         "label": "New Folder with Selection"
       },
       {
@@ -947,7 +987,7 @@
       },
       {
         "type": "item",
-        "label": "<label>"
+        "label": "Compress"
       },
       {
         "type": "command_item",
@@ -967,6 +1007,10 @@
       {
         "type": "command_item",
         "label": "Copy"
+      },
+      {
+        "type": "command_item",
+        "label": "Copy as Pathname"
       },
       {
         "type": "item",

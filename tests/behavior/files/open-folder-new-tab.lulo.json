@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "files/open-folder-new-tab",
+  "platform": "Lulo",
+  "observations": {
+    "opened": {"tabs": {"count": 2}, "windows": {"count": 1}}
+  }
+}

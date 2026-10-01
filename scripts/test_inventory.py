@@ -53,6 +53,12 @@ class NormalizeLabelTests(unittest.TestCase):
     def test_none_passes_through(self):
         self.assertIsNone(norm.normalize_label(None))
 
+    def test_finder_selection_labels_match_their_runtime_command(self):
+        self.assertEqual(norm.normalize_label('Copy “report.txt” as Pathname'), "Copy as Pathname")
+        self.assertEqual(norm.normalize_label('Quick Look “report.txt”'), "Quick Look")
+        self.assertEqual(norm.normalize_label('Compress “report.txt”'), "Compress")
+        self.assertEqual(norm.normalize_label('Undo Move of “Untitled”'), "Undo")
+
 
 class NormalizeShortcutTests(unittest.TestCase):
     def test_hyphen_and_minus_sign_are_equal(self):
@@ -61,6 +67,9 @@ class NormalizeShortcutTests(unittest.TestCase):
     def test_empty_shortcut_is_empty_string(self):
         self.assertEqual(norm.normalize_shortcut(""), "")
         self.assertEqual(norm.normalize_shortcut(None), "")
+
+    def test_finder_private_use_up_arrow(self):
+        self.assertEqual(norm.normalize_shortcut("⌘"), "⌘↑")
 
 
 class SystemSettingsSidebarTests(unittest.TestCase):

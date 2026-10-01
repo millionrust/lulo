@@ -51,6 +51,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             Some("Finder"),
         ),
         KeyBinding::new(rmac_ui::shortcuts::GO_UP.keystroke, GoUp, Some("Finder")),
+        KeyBinding::new("ctrl-cmd-up", GoUpInNewWindow, Some("Finder")),
         KeyBinding::new("cmd-[", GoBack, Some("Finder")),
         KeyBinding::new("cmd-]", GoForward, Some("Finder")),
         KeyBinding::new("cmd-shift-h", GoHome, Some("Finder")),
@@ -61,6 +62,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("cmd-2", ViewAsList, Some("Finder")),
         KeyBinding::new("cmd-3", ViewAsColumns, Some("Finder")),
         KeyBinding::new("cmd-4", ViewAsGallery, Some("Finder")),
+        KeyBinding::new("ctrl-cmd-0", UseGroups, Some("Finder")),
         KeyBinding::new("cmd-j", ShowViewOptions, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::OPEN_SELECTION.keystroke,
@@ -136,6 +138,12 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("alt-cmd-c", CopyAsPathname, Some("Finder")),
         KeyBinding::new("ctrl-alt-cmd-c", CopyAsLink, Some("Finder")),
         KeyBinding::new("alt-cmd-a", DeselectAll, Some("Finder")),
+        KeyBinding::new("ctrl-cmd-o", OpenSelectionInNewTab, Some("Finder")),
+        KeyBinding::new(
+            "alt-cmd-o",
+            OpenSelectionInNewWindowAndClose,
+            Some("Finder"),
+        ),
         KeyBinding::new(
             "alt-shift-cmd-backspace",
             EmptyTrashImmediately,

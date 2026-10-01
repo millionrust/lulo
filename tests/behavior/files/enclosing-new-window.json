@@ -1,0 +1,12 @@
+{
+  "title": "Control-Command-Up opens the enclosing folder in another window",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"Subfolder/item.txt": "Fixture\n"}},
+  "launch": {"folder": "Subfolder"},
+  "steps": [
+    {"key": "ctrl-cmd-up", "settle": 1.2},
+    {"observe": "opened", "facts": ["windows"]}
+  ],
+  "omit": ["opened.windows.front", "opened.windows.titles"]
+}

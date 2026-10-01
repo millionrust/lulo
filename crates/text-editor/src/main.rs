@@ -53,7 +53,6 @@ gpui::actions!(
         SheetWhereDesktop,
         SheetWhereHome,
         SheetWhereDownloads,
-        SheetWhereOther,
         SheetEncodingUtf8,
         SheetEncodingUtf8Bom,
         SheetEncodingUtf16Le,

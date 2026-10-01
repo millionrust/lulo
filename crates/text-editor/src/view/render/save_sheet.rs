@@ -128,9 +128,25 @@ impl EditorView {
                     .menu("Desktop", Box::new(crate::SheetWhereDesktop))
                     .menu("Home", Box::new(crate::SheetWhereHome))
                     .menu("Downloads", Box::new(crate::SheetWhereDownloads))
-                    .separator()
-                    .menu("Other…", Box::new(crate::SheetWhereOther))
             });
+        // macOS 26.2 dropped "Other…" from the Where pop-up; the full
+        // browser now opens through this disclosure triangle instead
+        // (AXDescription "show more options" on the Mac).
+        let where_disclosure = div()
+            .id("save-sheet-where-disclosure")
+            .role(Role::Button)
+            .aria_label("Show More Options")
+            .size(px(16.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .cursor_pointer()
+            .hover(|style| style.bg(mac::hover()))
+            .child(Icon::new(IconName::ChevronRight).text_color(mac::text_secondary()))
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.open_full_browser(window, cx);
+            }));
         let encoding_popup = PopUpButton::new(
             "save-sheet-encoding",
             encoding_label(self.text_format.encoding),
@@ -201,7 +217,15 @@ impl EditorView {
                     .accessible_text_input(&self.save_name_input, cx)
                     .child(TextField::new(&self.save_name_input)),
             ))
-            .child(row("Where:", where_popup))
+            .child(row(
+                "Where:",
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(div().flex_1().min_w(px(0.0)).child(where_popup))
+                    .child(where_disclosure),
+            ))
             .child(row("Plain Text Encoding:", encoding_popup))
             .child(
                 div()

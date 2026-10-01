@@ -1269,10 +1269,11 @@ mod fit_tests {
     #[test]
     fn usable_area_shrinks_a_window_that_reaches_under_a_bottom_dock() {
         // 1920x1080 output, 32 top bar, 96 Dock (reserve space on) + a
-        // little air: a 723x832 Settings window fits the width but its
-        // height has to come down so the bottom edge clears the Dock.
+        // little air: an oversized 723x1000 window's width already fits,
+        // but its height has to come down so the bottom edge clears the
+        // Dock.
         let (width, height) =
-            fit_to_usable_area(723.0, 832.0, 1920.0, 1080.0, (32.0, 0.0, 96.0, 0.0));
+            fit_to_usable_area(723.0, 1000.0, 1920.0, 1080.0, (32.0, 0.0, 96.0, 0.0));
         assert_eq!(width, 723.0);
         assert_eq!(height, 1080.0 - 32.0 - 96.0 - 16.0);
     }
@@ -1287,9 +1288,11 @@ mod fit_tests {
 
     #[test]
     fn usable_area_reserves_the_side_the_dock_is_actually_on() {
-        // A left-placed Dock takes width, not height.
+        // A left-placed Dock takes width, not height: an oversized
+        // 1850-wide window has to come down to clear it, but its height
+        // already fits.
         let (width, height) =
-            fit_to_usable_area(1800.0, 900.0, 1920.0, 1080.0, (32.0, 0.0, 0.0, 96.0));
+            fit_to_usable_area(1850.0, 900.0, 1920.0, 1080.0, (32.0, 0.0, 0.0, 96.0));
         assert_eq!(width, 1920.0 - 96.0 - 16.0);
         assert_eq!(height, 900.0);
     }

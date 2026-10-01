@@ -156,6 +156,9 @@ impl EditorView {
         });
         let card = div()
             .id("save-sheet-card")
+            .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
+                this.open_save_goto(window, cx)
+            }))
             .w(px(458.0))
             .h(px(367.0))
             .px(px(26.0))

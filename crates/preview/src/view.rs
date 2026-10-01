@@ -25,8 +25,8 @@ use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
-    ActualSize, ActualSizeOnAll, CloseSelected, CloseWindow, Copy, EnterFullScreen, ExportAsPdf,
-    Find, FindNext, FindPrevious, GoToPage, HideSidebar, JumpToSelection, MoveToTrash,
+    ActualSize, ActualSizeOnAll, CloseAll, CloseSelected, CloseWindow, Copy, EnterFullScreen,
+    ExportAsPdf, Find, FindNext, FindPrevious, GoToPage, HideSidebar, JumpToSelection, MoveToTrash,
     NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
     RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveMarkup, SelectAll, ShowInspector,
     ShowThumbnails, ToggleMarkup, UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut,
@@ -3764,6 +3764,9 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &CloseSelected, window, cx| {
                 this.close_selected(window, cx);
+            }))
+            .on_action(cx.listener(|_, _: &CloseAll, _, cx| {
+                cx.defer(crate::close_all);
             }))
             .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| {
                 window.toggle_fullscreen();

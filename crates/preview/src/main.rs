@@ -257,6 +257,43 @@ fn quit_and_keep_windows(cx: &mut App) {
     .detach();
 }
 
+/// Close every Preview window after saving any dirty PDF annotations. Keep
+/// the writes off the UI thread, then close the windows that existed when
+/// the command was invoked.
+fn close_all(cx: &mut App) {
+    let windows = cx.windows();
+    let jobs = OPEN_VIEWS.with(|views| {
+        views
+            .borrow()
+            .iter()
+            .filter_map(WeakEntity::upgrade)
+            .flat_map(|view| view.read(cx).pending_markup())
+            .collect::<Vec<_>>()
+    });
+    cx.spawn(async move |cx| {
+        let result = blocking::unblock(move || -> std::io::Result<()> {
+            for (source, original, items) in jobs {
+                let base = original.unwrap_or_else(|| source.clone());
+                let temporary =
+                    source.with_extension(format!("lulo-closing-{}.pdf", std::process::id()));
+                markup::write_pdf(&base, &temporary, &items).map_err(std::io::Error::other)?;
+                std::fs::rename(temporary, source)?;
+            }
+            Ok(())
+        })
+        .await;
+        match result {
+            Ok(()) => cx.update(|cx| {
+                for handle in windows {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                }
+            }),
+            Err(error) => eprintln!("rmac-preview: save on close all failed: {error}"),
+        }
+    })
+    .detach();
+}
+
 /// Consume the saved session once. Reading and removing the file stays off
 /// the UI thread, including when a home directory is slow.
 fn restore_kept_windows(initial_paths: Vec<PathBuf>, cx: &mut App) {
@@ -406,13 +443,6 @@ fn main() {
             })
             .detach();
             cx.on_action(|_: &QuitAndKeepWindows, cx| quit_and_keep_windows(cx));
-            cx.on_action(|_: &CloseAll, cx| {
-                for handle in cx.windows() {
-                    let _ = handle.update(cx, |_, window, cx| {
-                        window.dispatch_action(Box::new(CloseWindow), cx);
-                    });
-                }
-            });
             cx.on_action(|_: &OpenFile, cx| choose_and_open(false, cx));
             cx.on_action(|_: &OpenRecent0, cx| open_recent_menu_entry(0, cx));
             cx.on_action(|_: &OpenRecent1, cx| open_recent_menu_entry(1, cx));

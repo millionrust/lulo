@@ -13,7 +13,7 @@
         "front": "second.pdf \u2013 1 page"
       },
       "files": {
-        "entries": []
+        "entries": ["guide.pdf", "second.pdf"]
       }
     },
     "all_closed": {
@@ -21,7 +21,7 @@
         "count": 0
       },
       "files": {
-        "entries": []
+        "entries": ["guide.pdf", "second.pdf"]
       }
     }
   }

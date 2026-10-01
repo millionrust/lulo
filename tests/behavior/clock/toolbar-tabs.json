@@ -1,0 +1,13 @@
+{
+  "title": "Clock: menu shortcuts select the matching toolbar tabs",
+  "app": "clock",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "world", "facts": ["tabs"]},
+    {"key": "cmd-3"},
+    {"observe": "stopwatch", "facts": ["tabs"]},
+    {"key": "cmd-4"},
+    {"observe": "timers", "facts": ["tabs"]}
+  ]
+}

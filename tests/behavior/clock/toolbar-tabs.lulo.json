@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "clock/toolbar-tabs",
+  "observations": {
+    "world": {"tabs": {"count": 4, "selected": ["World Clock"]}},
+    "stopwatch": {"tabs": {"count": 4, "selected": ["Stopwatch"]}},
+    "timers": {"tabs": {"count": 4, "selected": ["Timers"]}}
+  }
+}

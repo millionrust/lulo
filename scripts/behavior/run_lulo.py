@@ -50,6 +50,7 @@ APP_BINARIES = {
     "text-editor": ["rmac-text-editor"],
     "settings": ["rmac-system-settings"],
     "calculator": ["rmac-calculator"],
+    "clock": ["rmac-clock"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
     "preview": ["rmac-preview"],
     "notes": ["rmac-notes"],
@@ -879,10 +880,16 @@ class LuloRun:
 
     def fact_tabs(self) -> dict[str, Any]:
         frame = self.active_frame()
-        tabs = [name(n) for n in descendants(frame, limit=3000) if role(n) == "page tab"] if frame is not None else []
+        pyatspi = atspi()
+        nodes = (
+            [n for n in descendants(frame, limit=3000) if role(n) == "page tab"]
+            if frame is not None else []
+        )
+        tabs = [name(n) for n in nodes]
+        selected = [name(n) for n in nodes if has_state(n, pyatspi.STATE_SELECTED)]
         if not tabs and frame is not None:
             tabs = [name(frame)]
-        return {"count": len(tabs), "titles": tabs}
+        return {"count": len(tabs), "titles": tabs, "selected": selected}
 
     def fact_display(self) -> dict[str, Any]:
         frame = self.active_frame()

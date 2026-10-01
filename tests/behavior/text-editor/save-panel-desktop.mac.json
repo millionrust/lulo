@@ -3,7 +3,7 @@
   "scenario": "text-editor/save-panel-desktop",
   "platform": "Task contract (Mac at login screen; no recording)",
   "observations": {
-    "desktop": {"dialog": {"present": true}},
-    "cancelled": {"dialog": {"present": true}, "saved_documents": {"entries": [], "contents": {}}}
+    "desktop": {"dialog": {"present": true}, "selection": {"items": ["Desktop"]}},
+    "cancelled": {"dialog": {"present": false}, "saved_documents": {"entries": [], "contents": {}}}
   }
 }

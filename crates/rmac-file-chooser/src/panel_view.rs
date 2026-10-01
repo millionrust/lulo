@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, svg, AnyElement, ClickEvent, Context, Div,
-    Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
+    div, prelude::FluentBuilder as _, px, svg, AccessibleAction, AnyElement, ClickEvent, Context,
+    Div, Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
     MouseDownEvent, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
@@ -242,9 +242,19 @@ impl Panel {
                     colors.text_sidebar
                 };
                 let location = place.location.clone();
+                let accessible_location = location.clone();
+                let entity = cx.entity();
                 column = column.child(
                     div()
                         .id(SharedString::from(format!("place-{index}-{row}")))
+                        .role(Role::ListBoxOption)
+                        .aria_label(place.name.clone())
+                        .aria_selected(selected)
+                        .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                            entity.update(cx, |this, cx| {
+                                this.navigate(accessible_location.clone(), cx)
+                            });
+                        })
                         .relative()
                         .ml(px(m::SIDEBAR_PILL_INSET))
                         .w(px(m::SIDEBAR_PILL_WIDTH))

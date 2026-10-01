@@ -7,7 +7,7 @@
     {"select": "Documents", "settle": 0.5},
     {"select": "Other…", "settle": 1.5},
     {"key": "cmd-d", "settle": 0.8},
-    {"observe": "desktop", "facts": ["dialog"]},
+    {"observe": "desktop", "facts": ["dialog", "selection"]},
     {"key": "escape", "settle": 0.8},
     {"observe": "cancelled", "facts": ["dialog", "saved_documents"]}
   ],

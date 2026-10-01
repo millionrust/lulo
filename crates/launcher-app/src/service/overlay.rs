@@ -1,6 +1,8 @@
 //! Launcher overlay geometry, invocation routing, creation, and token-checked release.
 
 use super::*;
+#[cfg(target_os = "linux")]
+use gpui::ParentElement as _;
 
 #[cfg(target_os = "linux")]
 struct RendererWarmup;
@@ -142,6 +144,14 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
         });
     let mut launcher = None;
     let handle = cx.open_window(options, |window, cx| {
+        if let Some(directory) = std::env::var_os("RMAC_SPOTLIGHT_FRAME_DIR") {
+            window.on_next_frame(move |_, _| {
+                let path = std::path::PathBuf::from(directory).join(format!("show-{token}.ready"));
+                std::fs::write(&path, b"ready\n").unwrap_or_else(|error| {
+                    panic!("write Spotlight frame marker {path:?}: {error}")
+                });
+            });
+        }
         window.set_window_title("Spotlight");
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| {

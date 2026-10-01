@@ -80,6 +80,8 @@ def inner(args: argparse.Namespace) -> int:
             process = run.spawn([str(bins / binary), *flags], action,
                                 {"RMAC_SURFACE_IDLE_SECONDS": "3",
                                  "RMAC_BENCHMARK_READY_FILE": str(frame_marker),
+                                 **({"RMAC_SPOTLIGHT_FRAME_DIR": str(run.work)}
+                                    if action == "launcher" else {}),
                                  "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/intel_hasvk_icd.json"})
             endpoint = run.runtime / "rmac" / f"shortcut-{action}.sock"
             bound = wait_for_socket(endpoint, process)
@@ -98,6 +100,9 @@ def inner(args: argparse.Namespace) -> int:
             frame_ready = wait_for_frame(frame_marker, process)
             frame_ms = round((time.monotonic() - started) * 1000, 1)
             run.check(f"{action} first frame completed", frame_ready, f"{frame_ms} ms")
+            if action == "launcher":
+                run.check("Spotlight first frame within 150 ms", frame_ready and frame_ms <= 150,
+                          f"{frame_ms} ms")
             appeared = False
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
@@ -119,6 +124,17 @@ def inner(args: argparse.Namespace) -> int:
             if resident:
                 time.sleep(1.2)
                 run.check(f"{action} remains resident after dismissal", process.poll() is None)
+                if action == "launcher":
+                    reopened_at = time.monotonic()
+                    reopened = dispatch(run, bins, action, bool(chord))
+                    run.check("Spotlight later dispatch accepted", reopened)
+                    if reopened:
+                        later_ready = wait_for_frame(run.work / "show-2.ready", process)
+                        later_ms = round((time.monotonic() - reopened_at) * 1000, 1)
+                        run.check("Spotlight later frame within 150 ms",
+                                  later_ready and later_ms <= 150, f"{later_ms} ms")
+                        results[action]["later_frame_ms"] = later_ms if later_ready else None
+                        dispatch(run, bins, action, bool(chord))
             else:
                 time.sleep(1.2)
                 run.check(f"{action} stays alive during idle grace", process.poll() is None)

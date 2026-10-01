@@ -17,7 +17,9 @@ use rmac_calculator::scientific::{self, ScientificCalculator};
 use rmac_calculator::scientific_keypad;
 use rmac_ui::mac;
 
-use crate::{CloseWindow, Copy, Paste, ShowBasic, ShowHistory, ShowScientific};
+use crate::{
+    CloseWindow, Copy, Paste, ShowBasic, ShowHistory, ShowScientific, ToggleThousandsSeparator,
+};
 
 /// How long a key stays lit after a hardware key press.
 const KEY_FLASH: Duration = Duration::from_millis(110);
@@ -48,6 +50,7 @@ pub(crate) struct CalculatorView {
     flash_generation: u64,
     mode_menu_open: bool,
     history_open: bool,
+    hide_thousands_separator: bool,
 }
 
 impl CalculatorView {
@@ -61,6 +64,7 @@ impl CalculatorView {
             flash_generation: 0,
             mode_menu_open: false,
             history_open: false,
+            hide_thousands_separator: false,
         }
     }
 
@@ -181,6 +185,24 @@ impl CalculatorView {
         rmac_ui::set_menu_checked("calculator::ShowHistory", self.history_open, cx);
         self.mode_menu_open = false;
         cx.notify();
+    }
+
+    fn toggle_thousands_separator(&mut self, cx: &mut Context<Self>) {
+        self.hide_thousands_separator = !self.hide_thousands_separator;
+        rmac_ui::set_menu_checked(
+            "calculator::ToggleThousandsSeparator",
+            self.hide_thousands_separator,
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn display_grouping(&self, text: &str) -> String {
+        if self.hide_thousands_separator {
+            text.replace(',', "")
+        } else {
+            text.to_owned()
+        }
     }
 
     /// Load a history entry's result back in as the current value, like
@@ -420,16 +442,16 @@ impl CalculatorView {
         let entries = self.history();
         let mut rows = Vec::with_capacity(entries.len());
         for (index, entry) in entries.iter().enumerate().rev() {
-            let expression = SharedString::from(entry.expression.clone());
-            let result = SharedString::from(entry.result.clone());
+            let expression = SharedString::from(self.display_grouping(&entry.expression));
+            let result = SharedString::from(self.display_grouping(&entry.result));
             rows.push(
                 div()
                     .id(SharedString::from(format!("calculator-history-{index}")))
                     .role(Role::MenuItem)
-                    .aria_label(SharedString::from(format!(
+                    .aria_label(SharedString::from(self.display_grouping(&format!(
                         "{} = {}",
                         entry.expression, entry.result
-                    )))
+                    ))))
                     .cursor_pointer()
                     .px(px(12.0))
                     .py(px(6.0))
@@ -528,6 +550,8 @@ impl CalculatorView {
                 self.scientific.display(),
             ),
         };
+        let expression = self.display_grouping(&expression);
+        let result = self.display_grouping(&result);
         let expression_size = fitted_font_size(&expression, width, keypad::EXPRESSION_SIZE, 11.0);
         let result_size = fitted_font_size(
             &result,
@@ -879,6 +903,9 @@ impl Render for CalculatorView {
                 this.set_mode(Mode::Scientific, window, cx);
             }))
             .on_action(cx.listener(|this, _: &ShowHistory, _, cx| this.toggle_history(cx)))
+            .on_action(cx.listener(|this, _: &ToggleThousandsSeparator, _, cx| {
+                this.toggle_thousands_separator(cx);
+            }))
             .on_action(cx.listener(|_, _: &CloseWindow, _, cx| cx.quit()))
             .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, _, cx| cx.quit()))
             .relative()

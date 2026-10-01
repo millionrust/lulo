@@ -865,6 +865,11 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Basic", "calculator::ShowBasic", "⌘1"),
             item!("Scientific", "calculator::ShowScientific", "⌘2"),
+            item!(
+                "Hide Thousands Separator",
+                "calculator::ToggleThousandsSeparator",
+                ""
+            ),
             item!("Show History", "calculator::ShowHistory", "⌃⌘S", separator),
         ],
     },

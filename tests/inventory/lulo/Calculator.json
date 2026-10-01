@@ -121,6 +121,13 @@
           "children": []
         },
         {
+          "label": "Hide Thousands Separator",
+          "action": "calculator::ToggleThousandsSeparator",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Show History",
           "action": "calculator::ShowHistory",
           "shortcut": "⌃⌘S",

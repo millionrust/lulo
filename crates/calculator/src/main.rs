@@ -21,6 +21,7 @@ gpui::actions!(
         ShowBasic,
         ShowScientific,
         ShowHistory,
+        ToggleThousandsSeparator,
         CloseWindow
     ]
 );

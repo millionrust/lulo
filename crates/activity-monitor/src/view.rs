@@ -195,10 +195,8 @@ impl MonitorView {
         cx.notify();
     }
 
-    /// The menu bar's live state for this, the key window (MON-12): Quit
-    /// Process and Force Quit Process are greyed out with nothing selected,
-    /// matching the Mac and the toolbar's own ⓧ (`accessible_icon_button`
-    /// in `view/render/chrome.rs`).
+    /// The menu bar's live state for the key window. Process commands are
+    /// greyed out without a selection, while view choices carry checkmarks.
     pub(super) fn publish_menu_state(&self, cx: &mut Context<Self>) {
         let has_selection = self.selected_proc(cx).is_some();
         rmac_ui::set_menu_enabled("activity_monitor::QuitProcess", has_selection, cx);

@@ -3,13 +3,40 @@
   "app": "text-editor",
   "launch": {},
   "steps": [
-    {"key": "cmd-o", "settle": 1.5},
-    {"wait": 4},
-    {"observe": "open", "facts": ["dialog"]},
-    {"key": "cmd-d", "settle": 0.8},
-    {"observe": "desktop", "facts": ["dialog", "selection"]},
-    {"key": "escape", "settle": 0.8},
-    {"observe": "cancelled", "facts": ["dialog"]}
+    {
+      "key": "cmd-o",
+      "settle": 1.5
+    },
+    {
+      "wait": 4
+    },
+    {
+      "observe": "open",
+      "facts": [
+        "dialog"
+      ]
+    },
+    {
+      "key": "cmd-d",
+      "settle": 0.8
+    },
+    {
+      "observe": "desktop",
+      "facts": [
+        "dialog",
+        "selection"
+      ]
+    },
+    {
+      "key": "escape",
+      "settle": 0.8
+    },
+    {
+      "observe": "cancelled",
+      "facts": [
+        "dialog"
+      ]
+    }
   ],
   "tolerance": {
     "open.dialog.title": "ignore",
@@ -17,6 +44,9 @@
     "open.dialog.texts": "ignore",
     "desktop.dialog.title": "ignore",
     "desktop.dialog.buttons": "ignore",
-    "desktop.dialog.texts": "ignore"
-  }
+    "desktop.dialog.texts": "ignore",
+    "open.dialog.present": "ignore",
+    "desktop.dialog.present": "ignore"
+  },
+  "note": "macOS 26's Open panel is a standalone window that the recorder's dialog heuristic does not report, so dialog.present is ignored while it is open; cancelled.dialog.present must still be false and ⌘D must select Desktop."
 }

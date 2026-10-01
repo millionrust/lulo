@@ -871,3 +871,6 @@ surface, ⌃F2's implementation and remaining live-verification gap) are
 folded into Shell → Accessibility above.
 
 ---
+| TE-23 | P2 | — | Deliberate difference | Mac TextEdit saves a new document as Rich Text (.rtf) by default. Lulo's Text Editor is a plain-text editor and saves .txt, by design; behavior:text-editor/close-unsaved-save tolerates the format and checks that the save happened. | `crates/text-editor` |
+| OTHER-13 | P1 | S | Missing | Mac: in the Open panel, ⌘D moves to Desktop and selects the Desktop sidebar row (behavior:text-editor/open-panel-desktop). Lulo: ⌘D does not leave the Desktop row selected in the chooser sidebar. | `crates/rmac-file-chooser` |
+| OTHER-14 | P2 | S | Missing | macOS 26.2's Save sheet "Where" pop-up has no "Other…" item; the full browser opens with the "show more options" disclosure triangle. Lulo's save sheet still offers "Other…" (TE-18/OTHER-01). | `crates/text-editor/src/view/save_sheet.rs` |

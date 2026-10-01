@@ -3,18 +3,48 @@
   "app": "text-editor",
   "launch": {},
   "steps": [
-    {"type": "A new document"},
-    {"key": "cmd-s", "settle": 1.0},
-    {"key": "cmd-shift-g", "settle": 0.8},
-    {"observe": "goto", "facts": ["focus", "dialog"]},
-    {"key": "escape"},
-    {"key": "escape"},
-    {"observe": "cancelled", "facts": ["dialog", "saved_documents"]}
+    {
+      "type": "A new document"
+    },
+    {
+      "key": "cmd-s",
+      "settle": 1.0
+    },
+    {
+      "key": "cmd-shift-g",
+      "settle": 0.8
+    },
+    {
+      "observe": "goto",
+      "facts": [
+        "focus",
+        "dialog"
+      ]
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "observe": "cancelled",
+      "facts": [
+        "dialog",
+        "saved_documents"
+      ]
+    }
   ],
   "tolerance": {
     "goto.dialog.title": "ignore",
     "goto.dialog.buttons": "ignore",
     "goto.dialog.texts": "ignore"
   },
-  "omit": ["goto.focus.value", "goto.focus.selected_text"]
+  "omit": [
+    "goto.focus.selected_all",
+    "goto.focus.selected_text",
+    "goto.focus.selection",
+    "goto.focus.value"
+  ],
+  "note": "The Go to Folder field pre-fills with macOS's cross-app last-used folder, so its contents and selection depend on history; the check covers that the field opens focused in a dialog and that cancelling saves nothing."
 }

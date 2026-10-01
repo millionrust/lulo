@@ -466,6 +466,34 @@ impl Wallpaper {
         }
     }
 
+    fn near_external_drop_target(
+        &self,
+        position: Point<Pixels>,
+        window: &Window,
+        cx: &App,
+    ) -> bool {
+        let x = f32::from(position.x) as f64;
+        let y = f32::from(position.y) as f64;
+        if y >= f32::from(window.viewport_size().height) as f64 - 150.0 {
+            return true; // Dock tiles occupy the bottom of the output.
+        }
+        const APPROACH: f64 = 64.0;
+        let status = self.status.read(cx);
+        status.compositor.windows.values().any(|target| {
+            let Some(origin) = target.layout.tile_position_in_view else {
+                return false;
+            };
+            let left = origin.x + target.layout.window_offset_in_tile.x;
+            let top = origin.y + target.layout.window_offset_in_tile.y;
+            let width = target.layout.tile_size.width;
+            let height = target.layout.tile_size.height;
+            x >= left - APPROACH
+                && x <= left + width + APPROACH
+                && y >= top - APPROACH
+                && y <= top + height + APPROACH
+        })
+    }
+
     fn open_context_menu(
         &mut self,
         target: MenuTarget,
@@ -699,14 +727,15 @@ impl Wallpaper {
         if let Some((control, track_left)) = slider {
             self.set_slider(control, f32::from(event.position.x) - track_left, cx);
         }
+        let near_target = self.near_external_drop_target(event.position, window, cx);
         if let Some(Drag::Icons {
             moved: true,
             external_started,
             ..
         }) = &mut self.desk.drag
         {
-            if !*external_started {
-                *external_started = gpui_linux::stage_external_file_drag(
+            if !*external_started && near_target {
+                *external_started = gpui_linux::begin_external_file_drag(
                     self.desk.selection.iter().cloned().collect(),
                 );
             }

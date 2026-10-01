@@ -230,6 +230,7 @@ pub struct Output {
 }
 
 pub(crate) struct WaylandClientState {
+    connection: Connection,
     serial_tracker: SerialTracker,
     globals: Globals,
     pub gpu_context: GpuContext,
@@ -307,6 +308,8 @@ pub struct DragState {
     window: Option<WaylandWindowStatePtr>,
     position: Point<Pixels>,
     action: Option<DndAction>,
+    paths_ready: bool,
+    drop_pending: bool,
 }
 
 struct StagedFileDrag {
@@ -362,7 +365,30 @@ pub fn stage_external_file_drag(paths: Vec<PathBuf>) -> bool {
             serial,
             paths,
         });
-        state.start_staged_file_drag_if_outside(position);
+        state.try_start_staged_file_drag(position, false);
+        state.file_drag_source.is_some()
+    })
+}
+
+/// Begin Wayland DnD while a surface still owns the pointer or touch grab.
+/// Desktop surfaces cover the whole output, so they choose the handoff when
+/// the pointer approaches another window rather than waiting for an edge.
+pub fn begin_external_file_drag(paths: Vec<PathBuf>) -> bool {
+    if stage_external_file_drag(paths) {
+        return true;
+    }
+    FILE_DRAG_CLIENT.with(|slot| {
+        let Some(client) = slot.borrow().upgrade() else {
+            return false;
+        };
+        let mut state = client.borrow_mut();
+        let position = state
+            .touch
+            .as_ref()
+            .map(|touch| touch.position)
+            .or(state.mouse_location)
+            .unwrap_or_default();
+        state.try_start_staged_file_drag(position, true);
         state.file_drag_source.is_some()
     })
 }
@@ -433,12 +459,27 @@ mod file_drag_tests {
 }
 
 impl WaylandClientState {
-    fn start_staged_file_drag_if_outside(&mut self, position: Point<Pixels>) {
+    fn try_start_staged_file_drag(&mut self, position: Point<Pixels>, force: bool) {
         let Some(staged) = self.staged_file_drag.as_ref() else {
             return;
         };
         let bounds = staged.window.window_geometry();
-        if bounds.contains(&position) {
+        // Start while the press grab still belongs to the source surface.
+        // Waiting until the pointer is outside can make the compositor reject
+        // start_drag before it ever sends an offer to the target.
+        const EDGE_INSET: f32 = 64.0;
+        let x = position.x.as_f32();
+        let y = position.y.as_f32();
+        let left = bounds.origin.x.as_f32();
+        let top = bounds.origin.y.as_f32();
+        let right = left + bounds.size.width.as_f32();
+        let bottom = top + bounds.size.height.as_f32();
+        if !force
+            && x >= left + EDGE_INSET
+            && x < right - EDGE_INSET
+            && y >= top + EDGE_INSET
+            && y < bottom - EDGE_INSET
+        {
             return;
         }
         let Some(manager) = self.globals.data_device_manager.as_ref() else {
@@ -460,6 +501,9 @@ impl WaylandClientState {
             DndAction::Copy | DndAction::Move | DndAction::Ask
         });
         device.start_drag(Some(&source), &staged.window.surface(), None, staged.serial);
+        if let Err(error) = self.connection.flush() {
+            log::warn!("Wayland file drag start flush failed: {error}");
+        }
         self.file_drag_source = Some(FileDragSource {
             source,
             uri_list,
@@ -1131,6 +1175,7 @@ impl WaylandClient {
             .unwrap();
 
         let state = Rc::new(RefCell::new(WaylandClientState {
+            connection: conn.clone(),
             serial_tracker: SerialTracker::new(),
             globals,
             gpu_context,
@@ -1166,6 +1211,8 @@ impl WaylandClient {
                 window: None,
                 position: Point::default(),
                 action: None,
+                paths_ready: false,
+                drop_pending: false,
             },
             staged_file_drag: None,
             file_drag_source: None,
@@ -2616,7 +2663,7 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                         if gesture == TouchGesture::PointerDrag {
                             client
                                 .borrow_mut()
-                                .start_staged_file_drag_if_outside(position);
+                                .try_start_staged_file_drag(position, false);
                         }
                     }
                     TouchGesture::ContextMenu => {}
@@ -2736,7 +2783,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
             wl_pointer::Event::Leave { .. } => {
                 state.momentum_generation = state.momentum_generation.wrapping_add(1);
                 if state.button_pressed == Some(MouseButton::Left) {
-                    state.start_staged_file_drag_if_outside(point(px(-1.0), px(-1.0)));
+                    state.try_start_staged_file_drag(point(px(-1.0), px(-1.0)), false);
                 }
                 if let Some(focused_window) = state.mouse_focused_window.clone() {
                     let input = PlatformInput::MouseExited(MouseExitEvent {
@@ -2822,10 +2869,10 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                         window.start_window_move_with_serial(serial);
                     }
                     window.handle_input(input);
-                    client.borrow_mut().start_staged_file_drag_if_outside(point(
-                        px(surface_x as f32),
-                        px(surface_y as f32),
-                    ));
+                    client.borrow_mut().try_start_staged_file_drag(
+                        point(px(surface_x as f32), px(surface_y as f32)),
+                        false,
+                    );
                 }
             }
             wl_pointer::Event::Button {
@@ -3249,6 +3296,12 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                             DndAction::Move
                         },
                     );
+                    state.drag.data_offer = Some(data_offer.clone());
+                    state.drag.window = Some(drag_window.clone());
+                    state.drag.position = Point::new(x.into(), y.into());
+                    state.drag.paths_ready = false;
+                    state.drag.drop_pending = false;
+                    let offer_id = data_offer.id();
 
                     let pipe = Pipe::new().unwrap();
                     data_offer.receive(FILE_LIST_MIME_TYPE.to_string(), unsafe {
@@ -3272,7 +3325,7 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                                 Ok(list) => list,
                                 Err(err) => {
                                     log::error!("error reading drag and drop pipe: {err:?}");
-                                    return;
+                                    String::new()
                                 }
                             };
 
@@ -3287,28 +3340,39 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                                     }
                                 })
                                 .collect();
-                            let position = Point::new(x.into(), y.into());
-
-                            // Prevent dropping text from other programs.
-                            if paths.is_empty() {
-                                data_offer.destroy();
-                                return;
-                            }
-
-                            let input = PlatformInput::FileDrop(FileDropEvent::Entered {
-                                position,
-                                paths: gpui::ExternalPaths(paths),
-                            });
-
                             let client = this.get_client();
                             let mut state = client.borrow_mut();
+                            if !state
+                                .drag
+                                .data_offer
+                                .as_ref()
+                                .is_some_and(|offer| offer.id() == offer_id)
+                            {
+                                return; // The pointer already left this offer.
+                            }
+                            // Prevent dropping text from other programs.
+                            if paths.is_empty() {
+                                state.drag.data_offer.take().unwrap().destroy();
+                                state.drag.window = None;
+                                state.drag.paths_ready = false;
+                                state.drag.drop_pending = false;
+                                return;
+                            }
+                            let position = state.drag.position;
+                            let drop_pending = state.drag.drop_pending;
+                            state.drag.paths_ready = true;
                             let source_window = state
                                 .file_drag_source
                                 .as_ref()
                                 .map(|source| (source.window.clone(), source.position));
-                            state.drag.data_offer = Some(data_offer);
-                            state.drag.window = Some(drag_window.clone());
-                            state.drag.position = position;
+                            if drop_pending {
+                                let offer = state.drag.data_offer.take().unwrap();
+                                offer.finish();
+                                offer.destroy();
+                                state.drag.window = None;
+                                state.drag.paths_ready = false;
+                                state.drag.drop_pending = false;
+                            }
 
                             drop(state);
                             // GPUI keeps its old in-window drag value until a
@@ -3322,7 +3386,17 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                                     click_count: 1,
                                 }));
                             }
-                            drag_window.handle_input(input);
+                            drag_window.handle_input(PlatformInput::FileDrop(
+                                FileDropEvent::Entered {
+                                    position,
+                                    paths: gpui::ExternalPaths(paths),
+                                },
+                            ));
+                            if drop_pending {
+                                drag_window.handle_input(PlatformInput::FileDrop(
+                                    FileDropEvent::Submit { position },
+                                ));
+                            }
                         })
                         .detach();
                 }
@@ -3333,36 +3407,46 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                 };
                 let position = Point::new(x.into(), y.into());
                 state.drag.position = position;
+                if !state.drag.paths_ready {
+                    return;
+                }
 
                 let input = PlatformInput::FileDrop(FileDropEvent::Pending { position });
                 drop(state);
                 drag_window.handle_input(input);
             }
             wl_data_device::Event::Leave => {
-                state.drag.action = None;
+                if state.drag.drop_pending {
+                    return; // Submit after the pending URI read completes.
+                }
                 let Some(drag_window) = state.drag.window.clone() else {
                     return;
                 };
-                let data_offer = state.drag.data_offer.clone().unwrap();
-                data_offer.destroy();
-
-                state.drag.data_offer = None;
+                let paths_ready = state.drag.paths_ready;
+                state.drag.data_offer.take().unwrap().destroy();
                 state.drag.window = None;
+                state.drag.paths_ready = false;
+                state.drag.action = None;
 
-                let input = PlatformInput::FileDrop(FileDropEvent::Exited {});
+                if !paths_ready {
+                    return;
+                }
                 drop(state);
-                drag_window.handle_input(input);
+                drag_window.handle_input(PlatformInput::FileDrop(FileDropEvent::Exited {}));
             }
             wl_data_device::Event::Drop => {
                 let Some(drag_window) = state.drag.window.clone() else {
                     return;
                 };
-                let data_offer = state.drag.data_offer.clone().unwrap();
-                data_offer.finish();
-                data_offer.destroy();
-
-                state.drag.data_offer = None;
+                if !state.drag.paths_ready {
+                    state.drag.drop_pending = true;
+                    return;
+                }
+                let offer = state.drag.data_offer.take().unwrap();
+                offer.finish();
+                offer.destroy();
                 state.drag.window = None;
+                state.drag.paths_ready = false;
 
                 let input = PlatformInput::FileDrop(FileDropEvent::Submit {
                     position: state.drag.position,

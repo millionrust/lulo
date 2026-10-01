@@ -19,7 +19,7 @@ import run_lulo
 import run_window_move
 
 
-def accessible_point(pid: int, label: str) -> tuple[float, float]:
+def accessible_point(pid: int, label: str, *, leading: bool = False) -> tuple[float, float]:
     """Return an element's screen point within its Wayland surface."""
     run_lulo.pump()
     desktop = run_lulo.atspi().Registry.getDesktop(0)
@@ -32,24 +32,53 @@ def accessible_point(pid: int, label: str) -> tuple[float, float]:
             if name == label or (label == "Trash" and name.startswith("Trash")):
                 box = run_lulo.extents(node)
                 if box and box[2] > 0 and box[3] > 0:
-                    return box[0] + box[2] / 2, box[1] + box[3] / 2
+                    x = box[0] + (min(45, box[2] / 2) if leading else box[2] / 2)
+                    return x, box[1] + box[3] / 2
     raise RuntimeError(f"no accessible {label!r} for pid {pid}")
 
 
 def file_point(run: run_window_move.Run, pid: int, name: str) -> tuple[float, float]:
-    x, y = accessible_point(pid, name)
+    x, y = accessible_point(pid, name, leading=True)
     window = run.window("org.rmac.Files")
     if window is None:
         raise RuntimeError("Files window disappeared")
-    rect = window["rect"]
-    inner = window.get("window_rect") or {"x": 0, "y": 0}
-    return x + rect["x"] + inner.get("x", 0), y + rect["y"] + inner.get("y", 0)
+    left, top, _, _ = run.geometry(window)
+    # GPUI's 12 px client frame is included in AT-SPI window coordinates,
+    # while niri's layout position starts at the outer edge of that frame.
+    return x + left - 12, y + top - 12
 
 
 def drag_once(run: run_window_move.Run, pid: int, name: str,
-              destination: tuple[float, float]) -> None:
+              destination: tuple[float, float], *, steps: int = 20,
+              delay: float = .12, hold: float = .8) -> None:
     start = file_point(run, pid, name)
-    run.drag(start, destination)
+    drag_points(run, start, destination, steps=steps, delay=delay, hold=hold)
+
+
+def drag_points(run: run_window_move.Run, start: tuple[float, float],
+                destination: tuple[float, float], *, steps: int = 20,
+                delay: float = .12, hold: float = .8) -> None:
+    pointer = run.pointer
+    pointer.move(*run.parent_point(*start), run.parent_width, run.parent_height)
+    time.sleep(.1)
+    pointer.button(True)
+    for step in range(1, steps + 1):
+        part = step / steps
+        point = (start[0] + (destination[0] - start[0]) * part,
+                 start[1] + (destination[1] - start[1]) * part)
+        pointer.move(*run.parent_point(*point), run.parent_width, run.parent_height)
+        time.sleep(delay)
+    time.sleep(hold)
+    pointer.button(False)
+
+
+def files_content_point(run: run_window_move.Run) -> tuple[float, float]:
+    """Use empty space in the Files content pane, above its status bar."""
+    window = run.window("org.rmac.Files")
+    if window is None:
+        raise RuntimeError("Files window disappeared")
+    left, top, width, height = run.geometry(window)
+    return left + width * .75, top + height * .65
 
 
 def check_move(run: run_window_move.Run, source: Path, destination: Path, label: str) -> None:
@@ -65,6 +94,15 @@ def inner(args: argparse.Namespace) -> int:
     args.geometry_only = False
     run = run_window_move.Run(args, args.inner)
     try:
+        accessibility = subprocess.run(
+            ["busctl", "--user", "set-property", "org.a11y.Bus", "/org/a11y/bus",
+             "org.a11y.Status", "IsEnabled", "b", "true"],
+            env=run.env, capture_output=True, text=True, timeout=10,
+        )
+        run.check("private AT-SPI bus enabled", accessibility.returncode == 0,
+                  accessibility.stderr[-200:])
+        if accessibility.returncode:
+            return run.finish()
         run.start()
         scenario = json.loads((run_window_move.REPO / "tests/behavior/files/drag-to-dock-and-desktop.json")
                               .read_text())
@@ -83,7 +121,7 @@ def inner(args: argparse.Namespace) -> int:
         if dock is None:
             raise RuntimeError("nested Dock was not started")
         bin_point = run.wait_for(lambda: accessible_point(dock.pid, "Trash"), 20)
-        run.check("Dock Bin accessible", bin_point is not None)
+        run.check("Dock Bin accessible", bin_point is not None, str(bin_point))
         if bin_point is None:
             return run.finish()
 
@@ -97,16 +135,50 @@ def inner(args: argparse.Namespace) -> int:
         desktop_source = source_dir / scenario["drags"][1]["source"]
         desktop_source.write_text(fixtures[desktop_source.name])
         run.wait_for(lambda: accessible_point(files.pid, desktop_source.name), 10)
-        files_rect = run.window("org.rmac.Files")["rect"]
+        files_left, files_top, files_width, files_height = run.geometry(run.window("org.rmac.Files"))
         candidates = [(run.width - 80, 120), (80, 120), (run.width - 80, run.height - 180)]
         desktop_point = next(((x, y) for x, y in candidates
-                              if not (files_rect["x"] <= x < files_rect["x"] + files_rect["width"]
-                                      and files_rect["y"] <= y < files_rect["y"] + files_rect["height"])), None)
+                              if not (files_left <= x < files_left + files_width
+                                      and files_top <= y < files_top + files_height)), None)
         if desktop_point is None:
             raise RuntimeError("no exposed Desktop point outside Files")
         drag_once(run, files.pid, desktop_source.name, desktop_point)
         desktop_destination = Path(run.env["HOME"]) / "Desktop" / desktop_source.name
         check_move(run, desktop_source, desktop_destination, "Files → Desktop moves file")
+
+        folder = source_dir / "Drop Folder"
+        folder.mkdir()
+        within_source = source_dir / scenario["drags"][2]["source"]
+        within_source.write_text(fixtures[within_source.name])
+        run.wait_for(lambda: accessible_point(files.pid, within_source.name), 10)
+        folder_point = run.wait_for(lambda: file_point(run, files.pid, folder.name), 10)
+        run.check("Files folder drop target accessible", folder_point is not None)
+        if folder_point is None:
+            return run.finish()
+        drag_once(run, files.pid, within_source.name, folder_point,
+                  steps=8, delay=.04, hold=.1)
+        check_move(run, within_source, folder / within_source.name,
+                   "Files in-window drag moves file into folder")
+
+        wallpaper = next((child for child in run.children
+                          if child.args and Path(child.args[0]).name == "wallpaper"), None)
+        if wallpaper is None:
+            raise RuntimeError("nested wallpaper was not started")
+        desktop_to_files = desktop_destination.parent / scenario["drags"][3]["source"]
+        before_icon = run.capture("desktop-before-source")
+        desktop_to_files.write_text(fixtures[desktop_to_files.name])
+        time.sleep(.8)  # Desktop watcher debounce and one paint in private niri.
+        after_icon = run.capture("desktop-source-visible")
+        top_right = (run.width - 150, 35, run.width, 170)
+        painted = run.changed_pixels(before_icon, after_icon, top_right)
+        run.check("Desktop drag icon painted", painted > 100, f"changed pixels={painted}")
+        # The isolated Desktop has default view options. Its first sorted icon
+        # is at Grid(ICON_RIGHT=34, ICON_TOP=41, icon_size=64), and this file
+        # sorts before the two other fixtures.
+        desktop_icon = (run.width - 34 - 32, 41 + 32)
+        drag_points(run, desktop_icon, files_content_point(run))
+        check_move(run, desktop_to_files, source_dir / desktop_to_files.name,
+                   "Desktop → Files moves file into open folder")
         return run.finish()
     except Exception as error:  # noqa: BLE001
         run.check("drag runner completed", False, str(error))

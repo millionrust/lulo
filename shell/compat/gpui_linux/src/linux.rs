@@ -22,7 +22,10 @@ pub(crate) use text_system::*;
 #[cfg(feature = "wayland")]
 pub(crate) use wayland::*;
 #[cfg(feature = "wayland")]
-pub use wayland::{external_file_drag_active, file_drop_should_copy, stage_external_file_drag};
+pub use wayland::{
+    begin_external_file_drag, external_file_drag_active, file_drop_should_copy,
+    stage_external_file_drag,
+};
 #[cfg(feature = "x11")]
 pub(crate) use x11::*;
 

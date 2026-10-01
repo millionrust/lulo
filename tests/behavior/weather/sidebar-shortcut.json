@@ -12,7 +12,7 @@
     {
       "observe": "visible",
       "facts": [
-        "focus"
+        "sidebar"
       ]
     },
     {
@@ -21,7 +21,7 @@
     {
       "observe": "hidden",
       "facts": [
-        "focus"
+        "sidebar"
       ]
     },
     {
@@ -30,7 +30,7 @@
     {
       "observe": "restored",
       "facts": [
-        "focus"
+        "sidebar"
       ]
     }
   ]

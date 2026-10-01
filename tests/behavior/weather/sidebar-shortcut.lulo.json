@@ -2,8 +2,20 @@
   "format": 1,
   "scenario": "weather/sidebar-shortcut",
   "observations": {
-    "visible": {},
-    "hidden": {},
-    "restored": {}
+    "visible": {
+      "sidebar": {
+        "visible": true
+      }
+    },
+    "hidden": {
+      "sidebar": {
+        "visible": false
+      }
+    },
+    "restored": {
+      "sidebar": {
+        "visible": true
+      }
+    }
   }
 }

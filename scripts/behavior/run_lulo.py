@@ -896,6 +896,15 @@ class LuloRun:
             tabs = [name(frame)]
         return {"count": len(tabs), "titles": tabs, "selected": selected}
 
+    def fact_sidebar(self) -> dict[str, Any]:
+        """Weather's city list owns the window's only editable search field."""
+        frame = self.active_frame()
+        visible = frame is not None and any(
+            sc.normalize_atspi_role(role(node)) in TEXT_ROLES
+            for node in descendants(frame, limit=3000)
+        )
+        return {"visible": visible}
+
     def fact_display(self) -> dict[str, Any]:
         frame = self.active_frame()
         for node in descendants(frame, limit=2000) if frame is not None else []:

@@ -9,6 +9,33 @@ const FILE_TAG_XATTR: &str = "user.rmac.tag";
 const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
 
 impl FinderView {
+    /// File ▸ Show Original resolves a symbolic-link alias and reveals its
+    /// target in the enclosing folder.
+    pub(super) fn show_original(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.selected_paths().into_iter().next() else { return; };
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let target = blocking::unblock(move || {
+                let metadata = std::fs::symlink_metadata(&path)?;
+                if !metadata.file_type().is_symlink() {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "The selected item is not an alias"));
+                }
+                std::fs::canonicalize(path)
+            }).await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| match target {
+                Ok(target) => {
+                    if let Some(parent) = target.parent() {
+                        this.pending_select = Some(target.clone());
+                        this.navigate(parent.to_path_buf(), cx);
+                    }
+                }
+                Err(error) => {
+                    this.operation_error = Some(error.to_string().into());
+                    cx.notify();
+                }
+            });
+        }).detach();
+    }
+
     pub(super) fn menu_unavailable(&mut self, message: &'static str, cx: &mut Context<Self>) {
         self.menu_at = None;
         self.operation_notice = Some(message.into());

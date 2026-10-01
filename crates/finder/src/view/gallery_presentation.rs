@@ -114,7 +114,7 @@ impl FinderView {
         // Finder's does (design-lab/finder.html).
         let stage_height = window_height
             - TOOLBAR_HEIGHT
-            - STATUS_BAR_HEIGHT
+            - if self.show_status_bar { STATUS_BAR_HEIGHT } else { 0.0 }
             - if self.show_path_bar {
                 PATH_BAR_HEIGHT
             } else {

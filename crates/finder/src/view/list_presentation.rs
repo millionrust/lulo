@@ -741,6 +741,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &PasteItems, _, cx| this.paste(cx)))
             .on_action(cx.listener(|this, _: &UndoOperation, _, cx| this.start_undo(cx)))
             .on_action(cx.listener(|this, _: &MakeAlias, _, cx| this.make_alias(cx)))
+            .on_action(cx.listener(|this, _: &ShowOriginal, _, cx| this.show_original(cx)))
             .on_action(cx.listener(|this, _: &TagRed, _, cx| this.set_selected_tag("red", cx)))
             .on_action(
                 cx.listener(|this, _: &TagOrange, _, cx| this.set_selected_tag("orange", cx)),
@@ -835,6 +836,12 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
             .on_action(cx.listener(|this, _: &TogglePathBar, _, cx| {
                 this.show_path_bar = !this.show_path_bar;
+                this.publish_app_menu_state(cx);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ToggleStatusBar, _, cx| {
+                this.show_status_bar = !this.show_status_bar;
+                this.publish_app_menu_state(cx);
                 cx.notify();
             }))
             .on_action(
@@ -957,7 +964,7 @@ impl FinderView {
             .when(self.show_path_bar, |el: Stateful<Div>| {
                 el.child(self.render_path_bar(cx))
             })
-            .child(self.render_status_bar())
+            .when(self.show_status_bar, |el: Stateful<Div>| el.child(self.render_status_bar()))
     }
     fn render_list_row(
         &self,

@@ -563,6 +563,7 @@ impl FinderView {
         rmac_ui::set_menu_label("finder::CloseTab", state.close_label, cx);
         rmac_ui::set_menu_label("finder::ToggleSidebar", state.sidebar_label, cx);
         rmac_ui::set_menu_label("finder::TogglePathBar", state.path_bar_label, cx);
+        rmac_ui::set_menu_label("finder::ToggleStatusBar", if self.show_status_bar { "Hide Status Bar" } else { "Show Status Bar" }, cx);
         for (action, checked) in [
             ("finder::SortByName", state.sort_name),
             ("finder::SortByDate", state.sort_date),

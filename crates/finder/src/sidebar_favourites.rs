@@ -88,7 +88,7 @@ pub fn save(paths: &[PathBuf]) -> std::io::Result<()> {
 pub fn queue_save(paths: Vec<PathBuf>) -> std::io::Result<()> {
     static WRITER: OnceLock<Result<mpsc::Sender<Vec<PathBuf>>, String>> = OnceLock::new();
     let writer = WRITER.get_or_init(|| {
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = mpsc::channel::<Vec<PathBuf>>();
         std::thread::Builder::new()
             .name("files-sidebar-save".into())
             .spawn(move || {

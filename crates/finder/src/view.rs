@@ -113,6 +113,7 @@ actions!(
         RenameNextItem,
         Duplicate,
         MakeAlias,
+        ShowOriginal,
         TagRed,
         TagOrange,
         TagYellow,
@@ -162,6 +163,7 @@ actions!(
         ShowHelp,
         ToggleSidebar,
         TogglePathBar,
+        ToggleStatusBar,
         GoComputer,
         NewWindow,
         GoToFolder,
@@ -422,6 +424,7 @@ struct FinderView {
     search_open: bool,
     /// View ▸ Show Path Bar (⌥⌘P); off by default, as on the Mac.
     show_path_bar: bool,
+    show_status_bar: bool,
     icon_scroll: gpui::ScrollHandle,
     marquee: Option<Marquee>,
     type_select: TypeSelect,

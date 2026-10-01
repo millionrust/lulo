@@ -547,6 +547,8 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Rename", "finder::RenameItem", ""),
             item!("Compress", "finder::Compress", ""),
             item!("Duplicate", "finder::Duplicate", "⌘D"),
+            item!("Make Alias", "finder::MakeAlias", "⌘L"),
+            item!("Show Original", "finder::ShowOriginal", "⌘R"),
             item!("Add to Sidebar", "finder::AddToSidebar", "⌃⌘T"),
             item!("Move to Trash", "finder::MoveToTrash", "⌘⌫", separator),
             // The Mac shows this as Move to Bin's ⌥ alternate; the menu bar
@@ -589,6 +591,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Show View Options", "finder::ShowViewOptions", "⌘J"),
             item!("Hide Sidebar", "finder::ToggleSidebar", "⌃⌘S", separator),
             item!("Show Path Bar", "finder::TogglePathBar", "⌥⌘P"),
+            item!("Show Status Bar", "finder::ToggleStatusBar", "⌘/"),
         ],
     },
     MenuSpec {

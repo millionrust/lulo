@@ -104,6 +104,9 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         // View ▸ Hide Sidebar, View ▸ Show Path Bar and Go ▸ Computer.
         KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Finder")),
         KeyBinding::new("alt-cmd-p", TogglePathBar, Some("Finder")),
+        KeyBinding::new("cmd-/", ToggleStatusBar, Some("Finder")),
+        KeyBinding::new("cmd-l", MakeAlias, Some("Finder")),
+        KeyBinding::new("cmd-r", ShowOriginal, Some("Finder")),
         KeyBinding::new("cmd-shift-c", GoComputer, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::NEW_WINDOW.keystroke,

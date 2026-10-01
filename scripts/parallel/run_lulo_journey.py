@@ -250,6 +250,12 @@ class Driver:
             self.click(step[kind], step.get("target"))
         elif kind == "menu":
             for label in step[kind]:
+                if self.current == "text-editor" and label == "Parallel Journey Sandbox":
+                    # Text Editor adds its format extension when saving; its
+                    # Open Recent menu shows the resulting file name.
+                    matches = list(self.sandbox.glob(f"{label}*"))
+                    if len(matches) == 1:
+                        label = matches[0].name
                 self.click(label)
                 time.sleep(0.15)
         elif kind == "key":

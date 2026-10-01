@@ -289,6 +289,22 @@ impl FinderView {
                         .text_size(rmac_ui::text_px(TITLE_SIZE))
                         .font_weight(rmac_ui::mac::BOLD)
                         .text_color(toolbar_glyph())
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                                if event.modifiers.platform && this.result_title.is_none() {
+                                    cx.stop_propagation();
+                                    this.menu_purpose = MenuPurpose::TitlePath;
+                                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                        event.position,
+                                        &this.focus,
+                                        window,
+                                        cx,
+                                    ));
+                                    cx.notify();
+                                }
+                            }),
+                        )
                         .child(self.title()),
                 )
             })

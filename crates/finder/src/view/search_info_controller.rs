@@ -42,6 +42,22 @@ impl FinderView {
         }
         let selected_paths = self.selected_paths();
         let entries = get_info_entries(&selected_paths, &self.cwd, self.applications_view);
+        self.open_info_entries(entries, cx);
+    }
+
+    pub(super) fn get_info_for_paths(
+        &mut self,
+        paths: &[PathBuf],
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_info_entries(
+            paths.iter().filter_map(|path| entry_for(path)).collect(),
+            cx,
+        );
+    }
+
+    fn open_info_entries(&mut self, entries: Vec<Entry>, cx: &mut Context<Self>) {
         let owner = cx.entity().downgrade();
         for entry in entries {
             let thumbnail = self.thumbs.get(&entry.path).cloned();

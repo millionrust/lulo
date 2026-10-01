@@ -55,6 +55,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("cmd-]", GoForward, Some("Finder")),
         KeyBinding::new("cmd-shift-h", GoHome, Some("Finder")),
         KeyBinding::new("cmd-shift-a", GoApplications, Some("Finder")),
+        KeyBinding::new("cmd-shift-u", GoUtilities, Some("Finder")),
         KeyBinding::new("cmd-alt-l", GoDownloads, Some("Finder")),
         KeyBinding::new("cmd-1", ViewAsIcons, Some("Finder")),
         KeyBinding::new("cmd-2", ViewAsList, Some("Finder")),
@@ -104,6 +105,10 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         // View ▸ Hide Sidebar, View ▸ Show Path Bar and Go ▸ Computer.
         KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Finder")),
         KeyBinding::new("alt-cmd-p", TogglePathBar, Some("Finder")),
+        KeyBinding::new("cmd-/", ToggleStatusBar, Some("Finder")),
+        KeyBinding::new("cmd-l", MakeAlias, Some("Finder")),
+        KeyBinding::new("ctrl-cmd-n", NewFolderWithSelection, Some("Finder")),
+        KeyBinding::new("cmd-r", ShowOriginal, Some("Finder")),
         KeyBinding::new("cmd-shift-c", GoComputer, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::NEW_WINDOW.keystroke,
@@ -129,6 +134,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         ),
         KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, Find, Some("Finder")),
         KeyBinding::new("alt-cmd-c", CopyAsPathname, Some("Finder")),
+        KeyBinding::new("ctrl-cmd-t", AddToSidebar, Some("Finder")),
         KeyBinding::new("alt-cmd-v", MoveItemHere, Some("Finder")),
         KeyBinding::new("cmd-shift-d", GoDesktop, Some("Finder")),
         KeyBinding::new("cmd-shift-o", GoDocuments, Some("Finder")),

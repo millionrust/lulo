@@ -1,5 +1,17 @@
 use super::*;
 
+fn drag_transfer_kind(
+    copy_requested: bool,
+    force_move: bool,
+    same_device: bool,
+) -> file_ops::TransferKind {
+    if copy_requested || (!force_move && !same_device) {
+        file_ops::TransferKind::Copy
+    } else {
+        file_ops::TransferKind::Move
+    }
+}
+
 impl FinderView {
     /// Column-view preview (design-lab/finder.html): the preview fills the
     /// top of the column, then the name, "kind – size" and an Information
@@ -730,60 +742,101 @@ impl FinderView {
             )
     }
 
-    pub(super) fn drop_into(&mut self, dir: PathBuf, paths: &[PathBuf], cx: &mut Context<Self>) {
-        let mut tasks = Vec::new();
-        for src in paths {
-            if src == &dir || src.parent() == Some(dir.as_path()) {
-                continue;
-            }
-            let Some(name) = src.file_name() else {
-                continue;
-            };
-            tasks.push(file_ops::TransferTask {
-                kind: file_ops::TransferKind::Move,
-                source: src.clone(),
-                destination: dir.join(name),
+    pub(super) fn drop_into(
+        &mut self,
+        dir: PathBuf,
+        paths: &[PathBuf],
+        copy_requested: bool,
+        force_move: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let paths = paths.to_vec();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let tasks = blocking::unblock(move || {
+                #[cfg(unix)]
+                let destination_device = std::fs::metadata(&dir).ok().map(|metadata| {
+                    use std::os::unix::fs::MetadataExt as _;
+                    metadata.dev()
+                });
+                let mut reserved = BTreeSet::new();
+                paths
+                    .into_iter()
+                    .filter_map(|source| {
+                        if source == dir {
+                            return None;
+                        }
+                        let name = source.file_name()?;
+                        #[cfg(unix)]
+                        let same_device = std::fs::symlink_metadata(&source)
+                            .ok()
+                            .zip(destination_device)
+                            .is_some_and(|(metadata, device)| {
+                                use std::os::unix::fs::MetadataExt as _;
+                                metadata.dev() == device
+                            });
+                        #[cfg(not(unix))]
+                        let same_device = false;
+                        let kind = drag_transfer_kind(copy_requested, force_move, same_device);
+                        if source.parent() == Some(dir.as_path())
+                            && kind == file_ops::TransferKind::Move
+                        {
+                            return None;
+                        }
+                        let mut destination = dir.join(name);
+                        if source.parent() == Some(dir.as_path()) {
+                            destination = unique_path_avoiding(destination, &reserved);
+                        }
+                        reserved.insert(destination.clone());
+                        Some(file_ops::TransferTask {
+                            kind,
+                            source,
+                            destination,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                let label = if tasks
+                    .iter()
+                    .any(|task| task.kind == file_ops::TransferKind::Copy)
+                {
+                    "Copying"
+                } else {
+                    "Moving"
+                };
+                this.start_transfer_with_conflicts(label, tasks, false, true, cx);
             });
-        }
-        self.start_transfer_with_conflicts("Moving", tasks, false, true, cx);
+        })
+        .detach();
     }
 
     /// External file drops follow the compositor's selected action. A move
     /// across filesystems becomes a copy, as in Finder.
-    pub(super) fn drop_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
-        let mut tasks = Vec::new();
+    pub(super) fn drop_external(
+        &mut self,
+        paths: Vec<PathBuf>,
+        force_move: bool,
+        cx: &mut Context<Self>,
+    ) {
         #[cfg(target_os = "linux")]
         let copy_requested = gpui_linux::file_drop_should_copy();
         #[cfg(not(target_os = "linux"))]
         let copy_requested = true;
-        #[cfg(unix)]
-        let destination_device = std::fs::metadata(&self.cwd).ok().map(|metadata| {
-            use std::os::unix::fs::MetadataExt as _;
-            metadata.dev()
-        });
-        for src in paths {
-            if let Some(name) = src.file_name().map(|name| name.to_owned()) {
-                #[cfg(unix)]
-                let same_device = std::fs::symlink_metadata(&src)
-                    .ok()
-                    .zip(destination_device)
-                    .is_some_and(|(metadata, device)| {
-                        use std::os::unix::fs::MetadataExt as _;
-                        metadata.dev() == device
-                    });
-                #[cfg(not(unix))]
-                let same_device = false;
-                tasks.push(file_ops::TransferTask {
-                    kind: if copy_requested || !same_device {
-                        file_ops::TransferKind::Copy
-                    } else {
-                        file_ops::TransferKind::Move
-                    },
-                    source: src,
-                    destination: self.cwd.join(name),
-                });
-            }
-        }
-        self.start_transfer_with_conflicts("Copying", tasks, false, true, cx);
+        self.drop_into(self.cwd.clone(), &paths, copy_requested, force_move, cx);
+    }
+}
+
+#[cfg(test)]
+mod drag_tests {
+    use super::*;
+
+    #[test]
+    fn modifier_and_volume_choose_finder_drag_action() {
+        use file_ops::TransferKind::{Copy, Move};
+        assert_eq!(drag_transfer_kind(false, false, true), Move);
+        assert_eq!(drag_transfer_kind(false, false, false), Copy);
+        assert_eq!(drag_transfer_kind(true, false, true), Copy);
+        assert_eq!(drag_transfer_kind(false, true, false), Move);
     }
 }

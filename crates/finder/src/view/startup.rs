@@ -26,10 +26,8 @@ impl FinderView {
 
         // User-added Favourites (drag a folder onto the Favourites header),
         // shared by every window and pruned to folders that still exist.
-        let favourite_extras: Vec<PathBuf> = sidebar_favourites::load_sidebar_favourites()
-            .into_iter()
-            .filter(|path| path.is_dir())
-            .collect();
+        let favourite_extras = Vec::new();
+        let favourite_order = Vec::new();
         // Built from `favourite_extras`/`mounts`/the Settings window's
         // Sidebar and Tags tabs below, right after `view` exists.
         let sections = Vec::new();
@@ -110,6 +108,7 @@ impl FinderView {
             if window.is_window_active() {
                 this.publish_app_menu_state(cx);
                 this.refresh_pasteboard_state(cx);
+                this.refresh_sidebar_favourites(cx);
             }
             if !window.is_window_active()
                 && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window, cx)
@@ -173,6 +172,10 @@ impl FinderView {
             selected: BTreeSet::new(),
             menu_at: None,
             menu_purpose: MenuPurpose::Context,
+            sidebar_context_path: None,
+            sidebar_context_is_favourite: false,
+            open_with_menu: None,
+            missing_favourite: None,
             help_open: false,
             anchor: None,
             clipboard: Vec::new(),
@@ -207,6 +210,8 @@ impl FinderView {
             file_words,
             sections,
             favourite_extras,
+            favourite_order,
+            sidebar_drop_index: None,
             info_windows: Vec::new(),
             go_to: None,
             pending_select: None,
@@ -271,12 +276,14 @@ impl FinderView {
             search_cancel: None,
             search_open: false,
             show_path_bar: false,
+            show_status_bar: true,
             icon_scroll: gpui::ScrollHandle::new(),
             marquee: None,
             type_select: TypeSelect::default(),
             spring: SpringLoading::default(),
         };
         view.rebuild_sidebar_sections(cx);
+        view.refresh_sidebar_favourites(cx);
         super::settings::register_window(cx.weak_entity(), cx);
         view.persist_finder_state();
         view.reload(cx);

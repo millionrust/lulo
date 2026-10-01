@@ -35,9 +35,39 @@ impl FinderView {
         let Some(entry) = self.selected_entry() else {
             return;
         };
-        let path = entry.path.clone();
-        let name = entry.name.to_string();
-        let selection = rename_selection(&name, entry.is_dir);
+        self.begin_rename_path(
+            entry.path.clone(),
+            entry.name.to_string(),
+            entry.is_dir,
+            window,
+            cx,
+        );
+    }
+
+    pub(super) fn rename_sidebar_path(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.renaming.is_some() || self.block_mutation_during_transfer(cx) {
+            return;
+        }
+        let Some(entry) = entry_for(&path) else {
+            return;
+        };
+        self.begin_rename_path(path, entry.name.to_string(), entry.is_dir, window, cx);
+    }
+
+    fn begin_rename_path(
+        &mut self,
+        path: PathBuf,
+        name: String,
+        is_dir: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let selection = rename_selection(&name, is_dir);
         let input = cx.new(|cx| InputState::new(window, cx).default_value(name));
         cx.subscribe_in(
             &input,
@@ -78,7 +108,34 @@ impl FinderView {
         self.pending_select = scheduled
             .as_ref()
             .map(|(path, _)| path.clone())
-            .or(Some(path));
+            .or(Some(path.clone()));
+        if self.is_removable_favourite(&path) {
+            if let Some((destination, completion)) = scheduled.as_ref() {
+                let source = path.clone();
+                let destination = destination.clone();
+                let completion = completion.clone();
+                cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                    if completion.recv().await == Ok(true) {
+                        let _ = this.update(cx, |this: &mut FinderView, cx| {
+                            if let Some(favourite) = this
+                                .favourite_extras
+                                .iter_mut()
+                                .find(|item| item.as_path() == source.as_path())
+                            {
+                                *favourite = destination.clone();
+                                for key in &mut this.favourite_order {
+                                    if *key == FavouriteKey::Path(source.clone()) {
+                                        *key = FavouriteKey::Path(destination.clone());
+                                    }
+                                }
+                                this.save_and_broadcast_favourites(cx);
+                            }
+                        });
+                    }
+                })
+                .detach();
+            }
+        }
         window.focus(&self.focus, cx);
         if scheduled.is_none() {
             self.reload(cx);

@@ -15,6 +15,7 @@ pub(super) fn build_sections(
     home: &Path,
     mounts: &[rmac_mounts::Mount],
     favourite_extras: &[PathBuf],
+    favourite_order: &[FavouriteKey],
     file_words: &rmac_locale::FileVocabulary,
     settings: &FinderSettings,
 ) -> Vec<Section> {
@@ -101,14 +102,23 @@ pub(super) fn build_sections(
             })
             .map(from_spec),
     );
-    // User-added Favourites (drag a folder onto the Favourites header),
-    // shared by every window and pruned to folders that still exist.
+    // Keep missing targets visible so a click can explain the problem.
     favorites.extend(
         favourite_extras
             .iter()
-            .filter(|path| path.is_dir())
             .map(|path| sidebar_favourites::extra_favourite_place(path)),
     );
+    favorites.sort_by_key(|place| {
+        favourite_order
+            .iter()
+            .position(|key| match key {
+                FavouriteKey::Applications => place.kind == PlaceKind::Applications,
+                FavouriteKey::Path(path) => {
+                    path == &place.path && place.kind != PlaceKind::Applications
+                }
+            })
+            .unwrap_or(usize::MAX)
+    });
     if cfg!(target_os = "linux") && settings.sidebar.show_bin {
         locations.push(p(
             file_words.bin(),
@@ -160,6 +170,7 @@ impl FinderView {
             &self.home,
             &self.mounts,
             &self.favourite_extras,
+            &self.favourite_order,
             &self.file_words,
             &super::settings::current(),
         );
@@ -190,7 +201,7 @@ mod tests {
         settings.sidebar.show_documents = false;
         settings.sidebar.show_downloads = true;
 
-        let shown = names(&build_sections(home, &[], &[], &words, &settings));
+        let shown = names(&build_sections(home, &[], &[], &[], &words, &settings));
         assert!(!shown.contains(&"Recents".to_owned()));
         assert!(!shown.contains(&"Applications".to_owned()));
         assert!(!shown.contains(&"Desktop".to_owned()));
@@ -205,7 +216,7 @@ mod tests {
         let mut settings = FinderSettings::default();
         settings.sidebar.show_tags = false;
 
-        let sections = build_sections(home, &[], &[], &words, &settings);
+        let sections = build_sections(home, &[], &[], &[], &words, &settings);
         assert!(!sections
             .iter()
             .any(|section| section.title.as_ref() == "Tags"));
@@ -218,7 +229,7 @@ mod tests {
         let mut settings = FinderSettings::default();
         settings.tags[0].show_in_sidebar = false; // "red"
 
-        let shown = names(&build_sections(home, &[], &[], &words, &settings));
+        let shown = names(&build_sections(home, &[], &[], &[], &words, &settings));
         assert!(!shown.contains(&"Red".to_owned()));
         assert!(shown.contains(&"Blue".to_owned()));
     }
@@ -244,8 +255,37 @@ mod tests {
         let mut settings = FinderSettings::default();
         settings.sidebar.show_hard_disks = false;
         settings.sidebar.show_external_disks = true;
-        let shown = names(&build_sections(home, &mounts, &[], &words, &settings));
+        let shown = names(&build_sections(home, &mounts, &[], &[], &words, &settings));
         assert!(!shown.contains(&"Internal".to_owned()));
         assert!(shown.contains(&"External".to_owned()));
+    }
+
+    #[test]
+    fn saved_order_moves_custom_and_builtin_favourites_together() {
+        let home = Path::new("/nonexistent-rmac-sidebar-test/jake");
+        let words = rmac_locale::FileVocabulary::for_locale("en_US.UTF-8");
+        let custom = PathBuf::from("/nonexistent-rmac-sidebar-test/project.txt");
+        let order = [
+            FavouriteKey::Path(custom.clone()),
+            FavouriteKey::Path(home.join("Downloads")),
+            FavouriteKey::Applications,
+        ];
+        let sections = build_sections(
+            home,
+            &[],
+            &[custom],
+            &order,
+            &words,
+            &FinderSettings::default(),
+        );
+        let names = sections
+            .iter()
+            .find(|section| section.title.as_ref() == words.favourites())
+            .unwrap()
+            .places
+            .iter()
+            .map(|place| place.name.as_ref())
+            .collect::<Vec<&str>>();
+        assert_eq!(names, ["project.txt", "Downloads", "Applications"]);
     }
 }

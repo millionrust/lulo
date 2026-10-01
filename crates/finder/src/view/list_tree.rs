@@ -1,6 +1,82 @@
 use super::*;
 
 impl FinderView {
+    /// Option-click a disclosure to open or close its whole descendant tree.
+    /// The scan is bounded for a low-end machine and never runs on the UI thread.
+    pub(super) fn toggle_list_folder_tree(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.expanded.contains(&path) {
+            let descendants = self
+                .expanded
+                .iter()
+                .filter(|expanded| expanded.starts_with(&path))
+                .cloned()
+                .collect::<Vec<_>>();
+            for descendant in descendants {
+                self.expanded.remove(&descendant);
+                if self.watched_children.remove(&descendant) {
+                    if let Some(watcher) = self.watcher.as_mut() {
+                        let _ = watcher.unwatch(&descendant);
+                    }
+                }
+            }
+            self.rebuild_list_entries();
+            cx.notify();
+            return;
+        }
+        self.expanded.insert(path.clone());
+        self.rebuild_list_entries();
+        cx.notify();
+        let generation = self.directory_generation;
+        let show_hidden = self.show_hidden;
+        let key = self.sort_key;
+        let asc = self.sort_asc;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let root = path.clone();
+            let children = blocking::unblock(move || {
+                let mut pending = vec![root];
+                let mut children = HashMap::new();
+                while let Some(folder) = pending.pop() {
+                    if children.len() >= 256 {
+                        break;
+                    }
+                    let Ok((_, mut entries)) = read_entries_checked(&folder, show_hidden, None)
+                    else {
+                        continue;
+                    };
+                    sort_entries(&mut entries, key, asc);
+                    for entry in &entries {
+                        if entry.is_dir
+                            && std::fs::symlink_metadata(&entry.path)
+                                .is_ok_and(|metadata| !metadata.file_type().is_symlink())
+                        {
+                            pending.push(entry.path.clone());
+                        }
+                    }
+                    children.insert(folder, entries);
+                }
+                children
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if this.directory_generation != generation || !this.expanded.contains(&path) {
+                    return;
+                }
+                for (folder, entries) in children {
+                    if let Some(watcher) = this.watcher.as_mut() {
+                        if watcher.watch(&folder, RecursiveMode::NonRecursive).is_ok() {
+                            this.watched_children.insert(folder.clone());
+                        }
+                    }
+                    this.expanded.insert(folder.clone());
+                    this.child_entries.insert(folder, entries);
+                }
+                this.rebuild_list_entries();
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn scroll_list_row_into_view(&self, position: usize) {
         if self.view != ViewMode::List {
             return;

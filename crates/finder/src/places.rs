@@ -1,7 +1,69 @@
 //! Framework-neutral sidebar places shared by Files and the Open/Save panel.
 //! Only folders that exist on this machine are offered.
 
+use rmac_storage::{Backend as _, FileSystem};
 use std::path::{Path, PathBuf};
+
+/// The Files Settings ▸ Sidebar choices used by the separate chooser process.
+/// It reads the same versioned document that Files writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SidebarVisibility {
+    pub recents: bool,
+    pub applications: bool,
+    pub desktop: bool,
+    pub documents: bool,
+    pub downloads: bool,
+    pub home: bool,
+    pub hard_disks: bool,
+    pub external_disks: bool,
+}
+
+impl Default for SidebarVisibility {
+    fn default() -> Self {
+        Self {
+            recents: true,
+            applications: true,
+            desktop: false,
+            documents: false,
+            downloads: true,
+            home: false,
+            hard_disks: true,
+            external_disks: true,
+        }
+    }
+}
+
+pub fn sidebar_visibility() -> SidebarVisibility {
+    let mut visibility = SidebarVisibility::default();
+    let Some(state_home) = std::env::var_os("XDG_STATE_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+    else {
+        return visibility;
+    };
+    let path = state_home.join("rmac/files/settings.json");
+    let Ok(bytes) = FileSystem.read_bounded_no_follow(&path, 64 * 1024) else {
+        return visibility;
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return visibility;
+    };
+    if value["version"].as_u64() != Some(1) {
+        return visibility;
+    }
+    let sidebar = &value["settings"]["sidebar"];
+    let enabled = |name: &str, default| sidebar[name].as_bool().unwrap_or(default);
+    visibility.recents = enabled("show_recents", visibility.recents);
+    visibility.applications = enabled("show_applications", visibility.applications);
+    visibility.desktop = enabled("show_desktop", visibility.desktop);
+    visibility.documents = enabled("show_documents", visibility.documents);
+    visibility.downloads = enabled("show_downloads", visibility.downloads);
+    visibility.home = enabled("show_home", visibility.home);
+    visibility.hard_disks = enabled("show_hard_disks", visibility.hard_disks);
+    visibility.external_disks = enabled("show_external_disks", visibility.external_disks);
+    visibility
+}
 
 /// One real folder in the sidebar. `icon` is an asset path inside
 /// `crates/finder/assets`.
@@ -43,7 +105,7 @@ pub fn shared_folder(home: &Path) -> Option<PlaceSpec> {
 /// and the root volume from the sidebar by default, so rmac does too;
 /// ⇧⌘C and the path bar still reach the root.
 pub fn favourite_folders(home: &Path) -> Vec<PlaceSpec> {
-    let mut favourites = vec![
+    let favourites = vec![
         place(
             "Downloads",
             home.join("Downloads"),
@@ -53,10 +115,6 @@ pub fn favourite_folders(home: &Path) -> Vec<PlaceSpec> {
         place("Documents", home.join("Documents"), "icons/file.svg", false),
         place("Desktop", home.join("Desktop"), "icons/desktop.svg", false),
     ];
-    let projects = home.join("Projects");
-    if projects.is_dir() {
-        favourites.push(place("Projects", projects, "icons/folder.svg", false));
-    }
     favourites
 }
 

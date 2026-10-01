@@ -114,7 +114,11 @@ impl FinderView {
         // Finder's does (design-lab/finder.html).
         let stage_height = window_height
             - TOOLBAR_HEIGHT
-            - STATUS_BAR_HEIGHT
+            - if self.show_status_bar {
+                STATUS_BAR_HEIGHT
+            } else {
+                0.0
+            }
             - if self.show_path_bar {
                 PATH_BAR_HEIGHT
             } else {
@@ -332,9 +336,17 @@ impl FinderView {
                                 .drag_over::<DraggedPaths>(|style, _, _, _| {
                                     style.bg(rmac_ui::mac::accent_subtle())
                                 })
-                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
-                                    this.drop_into(drop_directory.clone(), &paths.0, cx)
-                                }))
+                                .on_drop(cx.listener(
+                                    move |this, paths: &DraggedPaths, window, cx| {
+                                        this.drop_into(
+                                            drop_directory.clone(),
+                                            &paths.0,
+                                            window.modifiers().alt,
+                                            window.modifiers().platform,
+                                            cx,
+                                        )
+                                    },
+                                ))
                         },
                     )
                     .into_any_element(),

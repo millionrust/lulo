@@ -16,6 +16,7 @@ impl FinderView {
                 self.anchor = None;
             }
         }
+        self.load_open_with_menu(cx);
         self.menu_purpose = MenuPurpose::Context;
         self.menu_at = Some(rmac_ui::ContextMenuState::open(
             position,
@@ -549,9 +550,17 @@ impl FinderView {
                                         this.spring_hover(spring_dir.clone(), inside, cx);
                                     },
                                 ))
-                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
-                                    this.drop_into(drop_directory.clone(), &paths.0, cx)
-                                }))
+                                .on_drop(cx.listener(
+                                    move |this, paths: &DraggedPaths, window, cx| {
+                                        this.drop_into(
+                                            drop_directory.clone(),
+                                            &paths.0,
+                                            window.modifiers().alt,
+                                            window.modifiers().platform,
+                                            cx,
+                                        )
+                                    },
+                                ))
                         },
                     )
                     .into_any_element(),
@@ -726,6 +735,9 @@ impl FinderView {
             .track_focus(&self.focus)
             .key_context("Finder")
             .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
+            .on_action(cx.listener(|this, _: &NewFolderWithSelection, _, cx| {
+                this.new_folder_with_selection(cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
@@ -741,6 +753,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &PasteItems, _, cx| this.paste(cx)))
             .on_action(cx.listener(|this, _: &UndoOperation, _, cx| this.start_undo(cx)))
             .on_action(cx.listener(|this, _: &MakeAlias, _, cx| this.make_alias(cx)))
+            .on_action(cx.listener(|this, _: &ShowOriginal, _, cx| this.show_original(cx)))
             .on_action(cx.listener(|this, _: &TagRed, _, cx| this.set_selected_tag("red", cx)))
             .on_action(
                 cx.listener(|this, _: &TagOrange, _, cx| this.set_selected_tag("orange", cx)),
@@ -781,6 +794,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
             .on_action(cx.listener(|this, _: &GoHome, _, cx| this.go_home(cx)))
             .on_action(cx.listener(|this, _: &GoApplications, _, cx| this.applications_click(cx)))
+            .on_action(cx.listener(|this, _: &GoUtilities, _, cx| this.utilities_click(cx)))
             .on_action(cx.listener(|this, _: &GoDownloads, _, cx| this.go_downloads(cx)))
             .on_action(cx.listener(|this, _: &GoDesktop, _, cx| this.go_desktop(cx)))
             .on_action(cx.listener(|this, _: &GoDocuments, _, cx| this.go_documents(cx)))
@@ -790,7 +804,44 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &MoveItemHere, _, cx| this.move_item_here(cx)))
             .on_action(cx.listener(|this, _: &GoTrash, _, cx| this.trash_click(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
+            .on_action(cx.listener(|this, _: &AddToSidebar, _, cx| {
+                for path in this.selected_paths() {
+                    this.add_sidebar_favourite(path, cx);
+                }
+            }))
+            .on_action(
+                cx.listener(|this, _: &SidebarRemove, _, cx| this.sidebar_remove_context(cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SidebarOpenWindow, _, cx| this.sidebar_open_window(cx)),
+            )
+            .on_action(cx.listener(|this, _: &SidebarOpenTab, _, cx| this.sidebar_open_tab(cx)))
+            .on_action(
+                cx.listener(|this, _: &SidebarShowEnclosing, _, cx| {
+                    this.sidebar_show_enclosing(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SidebarGetInfo, window, cx| {
+                    this.sidebar_get_info(window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SidebarRename, window, cx| this.sidebar_rename(window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SidebarAddToDock, _, cx| this.sidebar_add_to_dock(cx)),
+            )
+            .on_action(cx.listener(|this, _: &AddToDock, _, cx| {
+                this.add_paths_to_dock(this.selected_paths(), cx)
+            }))
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
+            .on_action(cx.listener(|this, action: &OpenWithHandlerAction, _, cx| {
+                this.open_with_menu_handler(action.index, cx)
+            }))
+            .on_action(cx.listener(|this, action: &GoToTitlePathAction, _, cx| {
+                this.navigate(action.path.clone(), cx)
+            }))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
             .on_action(cx.listener(|this, _: &Compress, _, cx| this.compress_selection(cx)))
@@ -824,6 +875,12 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
             .on_action(cx.listener(|this, _: &TogglePathBar, _, cx| {
                 this.show_path_bar = !this.show_path_bar;
+                this.publish_app_menu_state(cx);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ToggleStatusBar, _, cx| {
+                this.show_status_bar = !this.show_status_bar;
+                this.publish_app_menu_state(cx);
                 cx.notify();
             }))
             .on_action(
@@ -933,8 +990,8 @@ impl FinderView {
             .when(!self.applications_view && !self.trash_view, |element| {
                 element
                     .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(rmac_ui::mac::accent_subtle()))
-                    .on_drop(cx.listener(|this, ep: &ExternalPaths, _, cx| {
-                        this.drop_external(ep.paths().to_vec(), cx)
+                    .on_drop(cx.listener(|this, ep: &ExternalPaths, window, cx| {
+                        this.drop_external(ep.paths().to_vec(), window.modifiers().platform, cx)
                     }))
             })
             .flex_1()
@@ -946,7 +1003,9 @@ impl FinderView {
             .when(self.show_path_bar, |el: Stateful<Div>| {
                 el.child(self.render_path_bar(cx))
             })
-            .child(self.render_status_bar())
+            .when(self.show_status_bar, |el: Stateful<Div>| {
+                el.child(self.render_status_bar())
+            })
     }
     fn render_list_row(
         &self,
@@ -1211,10 +1270,16 @@ impl FinderView {
                                         .on_mouse_down(MouseButton::Left, |_, _, cx| {
                                             cx.stop_propagation()
                                         })
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            cx.stop_propagation();
-                                            this.toggle_list_folder(path.clone(), cx);
-                                        }))
+                                        .on_click(cx.listener(
+                                            move |this, event: &ClickEvent, _, cx| {
+                                                cx.stop_propagation();
+                                                if event.modifiers().alt {
+                                                    this.toggle_list_folder_tree(path.clone(), cx);
+                                                } else {
+                                                    this.toggle_list_folder(path.clone(), cx);
+                                                }
+                                            },
+                                        ))
                                         .on_a11y_action(
                                             AccessibleAction::Click,
                                             move |_, _, cx| {
@@ -1409,8 +1474,14 @@ impl FinderView {
                             this.spring_hover(spring_dir.clone(), inside, cx);
                         },
                     ))
-                    .on_drop(cx.listener(move |this, p: &DraggedPaths, _, cx| {
-                        this.drop_into(dd.clone(), &p.0, cx)
+                    .on_drop(cx.listener(move |this, p: &DraggedPaths, window, cx| {
+                        this.drop_into(
+                            dd.clone(),
+                            &p.0,
+                            window.modifiers().alt,
+                            window.modifiers().platform,
+                            cx,
+                        )
                     }))
             },
         )

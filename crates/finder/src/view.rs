@@ -67,6 +67,7 @@ use gpui::{
 };
 use gpui_component::{Icon, IconName, Root, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use rmac_finder::sidebar_favourites::FavouriteKey;
 use rmac_ui::{
     AccessibleTextInput as _, Button, InputEvent, InputState, SearchField, Slider, SliderEvent,
     SliderState, Spinner, TextField, Toggle,
@@ -109,10 +110,12 @@ actions!(
     finder,
     [
         NewFolder,
+        NewFolderWithSelection,
         RenameItem,
         RenameNextItem,
         Duplicate,
         MakeAlias,
+        ShowOriginal,
         TagRed,
         TagOrange,
         TagYellow,
@@ -138,6 +141,7 @@ actions!(
         GoUp,
         GoHome,
         GoApplications,
+        GoUtilities,
         GoDownloads,
         GoTrash,
         ToggleHidden,
@@ -162,12 +166,22 @@ actions!(
         ShowHelp,
         ToggleSidebar,
         TogglePathBar,
+        ToggleStatusBar,
         GoComputer,
         NewWindow,
         GoToFolder,
         EmptyTrash,
         Find,
         CopyAsPathname,
+        AddToSidebar,
+        SidebarRemove,
+        SidebarOpenWindow,
+        SidebarOpenTab,
+        SidebarShowEnclosing,
+        SidebarGetInfo,
+        SidebarRename,
+        SidebarAddToDock,
+        AddToDock,
         MoveItemHere,
         GoDesktop,
         GoDocuments,
@@ -187,6 +201,21 @@ enum ViewMode {
 
 /// Drag payload: the file paths being dragged.
 struct DraggedPaths(Vec<PathBuf>);
+
+/// A sidebar shortcut drag. It never carries a filesystem move request.
+struct DraggedSidebarItem(PathBuf);
+
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = finder, no_json)]
+struct OpenWithHandlerAction {
+    index: usize,
+}
+
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = finder, no_json)]
+struct GoToTitlePathAction {
+    path: PathBuf,
+}
 
 /// The little pill shown under the cursor while dragging.
 struct DragPreview {
@@ -262,6 +291,8 @@ enum SortKey {
 enum MenuPurpose {
     Context,
     Sort,
+    Sidebar,
+    TitlePath,
 }
 
 /// One browser tab — its own directory and navigation history.
@@ -304,6 +335,10 @@ struct FinderView {
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<rmac_ui::ContextMenuState>,
     menu_purpose: MenuPurpose,
+    sidebar_context_path: Option<PathBuf>,
+    sidebar_context_is_favourite: bool,
+    open_with_menu: Option<(PathBuf, rmac_apps::FileAssociation)>,
+    missing_favourite: Option<PathBuf>,
     help_open: bool,
     renaming: Option<(PathBuf, gpui::Entity<InputState>)>,
     rename_click_generation: u64,
@@ -339,6 +374,8 @@ struct FinderView {
     /// User-added Favourites, over and above the built-in ones — the same
     /// list `sidebar_favourites` persists and every window shares.
     favourite_extras: Vec<PathBuf>,
+    favourite_order: Vec<FavouriteKey>,
+    sidebar_drop_index: Option<usize>,
     /// Separate Get Info windows opened from this Finder window.
     info_windows: Vec<gpui::WindowHandle<Root>>,
     /// Go ▸ Go to Folder…, while its sheet is open.
@@ -410,6 +447,7 @@ struct FinderView {
     search_open: bool,
     /// View ▸ Show Path Bar (⌥⌘P); off by default, as on the Mac.
     show_path_bar: bool,
+    show_status_bar: bool,
     icon_scroll: gpui::ScrollHandle,
     marquee: Option<Marquee>,
     type_select: TypeSelect,

@@ -540,6 +540,11 @@ const FILES_MENUS: &[MenuSpec] = &[
         items: &[
             item!("New Finder Window", "finder::NewWindow", "⌘N"),
             item!("New Folder", "finder::NewFolder", "⇧⌘N"),
+            item!(
+                "New Folder with Selection",
+                "finder::NewFolderWithSelection",
+                "⌃⌘N"
+            ),
             item!("New Tab", "finder::NewTab", "⌘T"),
             item!("Open", "finder::OpenItems", "⌘O"),
             item!("Close Tab", "finder::CloseTab", "⌘W"),
@@ -547,6 +552,10 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Rename", "finder::RenameItem", ""),
             item!("Compress", "finder::Compress", ""),
             item!("Duplicate", "finder::Duplicate", "⌘D"),
+            item!("Make Alias", "finder::MakeAlias", "⌘L"),
+            item!("Show Original", "finder::ShowOriginal", "⌘R"),
+            item!("Add to Sidebar", "finder::AddToSidebar", "⌃⌘T"),
+            item!("Add to Dock", "finder::AddToDock", ""),
             item!("Move to Trash", "finder::MoveToTrash", "⌘⌫", separator),
             // The Mac shows this as Move to Bin's ⌥ alternate; the menu bar
             // has no alternates yet, so it is listed after it.
@@ -588,6 +597,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Show View Options", "finder::ShowViewOptions", "⌘J"),
             item!("Hide Sidebar", "finder::ToggleSidebar", "⌃⌘S", separator),
             item!("Show Path Bar", "finder::TogglePathBar", "⌥⌘P"),
+            item!("Show Status Bar", "finder::ToggleStatusBar", "⌘/"),
         ],
     },
     MenuSpec {
@@ -603,6 +613,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Home", "finder::GoHome", "⇧⌘H"),
             item!("Computer", "finder::GoComputer", "⇧⌘C"),
             item!("Applications", "finder::GoApplications", "⇧⌘A"),
+            item!("Utilities", "finder::GoUtilities", "⇧⌘U"),
             item!("Trash", "finder::GoTrash", ""),
             item!("Go to Folder…", "finder::GoToFolder", "⇧⌘G", separator),
         ],

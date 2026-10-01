@@ -4,3 +4,4 @@ pub mod accessibility;
 pub mod goto;
 pub mod listing;
 pub mod places;
+pub mod sidebar_favourites;

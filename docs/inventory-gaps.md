@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_863 gaps across 10 apps; 41 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_837 gaps across 10 apps; 51 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Coverage notes
 
@@ -168,184 +168,187 @@ To finish this run once the Mac is free: `python3 scripts/inventory/mac_inventor
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
 | FIL-MENU-001 | missing menu item (has a shortcut) | Empty Bin | Application ▸ Empty Trash | ⌥⇧⌘⌫ |  | missing from Lulo's menu bar |
-| FIL-MENU-044 | missing menu item (has a shortcut) | Copy as Link | Edit ▸ Copy as Link | ⌃⌥⌘C |  | missing from Lulo's menu bar |
-| FIL-MENU-043 | missing menu item (has a shortcut) | Copy “finder-context-sandbox” as Pathname | Edit ▸ Copy “finder-context-sandbox” as Pathname | ⌥⌘C |  | missing from Lulo's menu bar |
-| FIL-MENU-046 | missing menu item (has a shortcut) | Deselect All | Edit ▸ Deselect All | ⌥⌘A |  | missing from Lulo's menu bar |
-| FIL-MENU-045 | missing menu item (has a shortcut) | Paste Exactly | Edit ▸ Paste Exactly | ⌥⇧⌘V |  | missing from Lulo's menu bar |
-| FIL-MENU-042 | missing menu item (has a shortcut) | Redo | Edit ▸ Redo | ⇧⌘Z |  | missing from Lulo's menu bar |
-| FIL-MENU-041 | missing menu item (has a shortcut) | Undo Move of “Untitled” | Edit ▸ Undo Move of “Untitled” | ⌘Z |  | missing from Lulo's menu bar |
-| FIL-MENU-038 | missing menu item (has a shortcut) | Add to Sidebar | File ▸ Add to Sidebar | ⌃⌘T |  | missing from Lulo's menu bar |
-| FIL-MENU-029 | missing menu item (has a shortcut) | Close All | File ▸ Close All | ⌥⌘W |  | missing from Lulo's menu bar |
-| FIL-MENU-028 | missing menu item (has a shortcut) | Close Window | File ▸ Close Window | ⌘W |  | missing from Lulo's menu bar |
-| FIL-MENU-032 | missing menu item (has a shortcut) | Duplicate Exactly | File ▸ Duplicate Exactly | ⌥⇧⌘D |  | missing from Lulo's menu bar |
-| FIL-MENU-039 | missing menu item (has a shortcut) | Eject | File ▸ Eject | ⌘E |  | missing from Lulo's menu bar |
-| FIL-MENU-040 | missing menu item (has a shortcut) | Find by Name… | File ▸ Find by Name… | ⌃⇧⌘F |  | missing from Lulo's menu bar |
-| FIL-MENU-031 | missing menu item (has a shortcut) | Get Summary Info | File ▸ Get Summary Info | ⌃⌘I |  | missing from Lulo's menu bar |
-| FIL-MENU-002 | missing menu item (has a shortcut) | New Folder with Selection | File ▸ New Folder with Selection | ⌃⌘N |  | missing from Lulo's menu bar |
-| FIL-MENU-004 | missing menu item (has a shortcut) | Open in New Tab | File ▸ Open in New Tab | ⌃⌘O |  | missing from Lulo's menu bar |
-| FIL-MENU-005 | missing menu item (has a shortcut) | Open in New Window and Close | File ▸ Open in New Window and Close | ⌥⌘O |  | missing from Lulo's menu bar |
-| FIL-MENU-035 | missing menu item (has a shortcut) | Print | File ▸ Print | ⌘P |  | missing from Lulo's menu bar |
-| FIL-MENU-033 | missing menu item (has a shortcut) | Quick Look “finder-context-sandbox” | File ▸ Quick Look “finder-context-sandbox” | ⌘Y |  | missing from Lulo's menu bar |
-| FIL-MENU-030 | missing menu item (has a shortcut) | Show Inspector | File ▸ Show Inspector | ⌥⌘I |  | missing from Lulo's menu bar |
-| FIL-MENU-037 | missing menu item (has a shortcut) | Show Original | File ▸ Show Original | ⌘R |  | missing from Lulo's menu bar |
-| FIL-MENU-034 | missing menu item (has a shortcut) | Slideshow “finder-context-sandbox” | File ▸ Slideshow “finder-context-sandbox” | ⌥⌘Y |  | missing from Lulo's menu bar |
-| FIL-MENU-083 | missing menu item (has a shortcut) | AirDrop | Go ▸ AirDrop | ⇧⌘R |  | missing from Lulo's menu bar |
-| FIL-MENU-093 | missing menu item (has a shortcut) | Connect to Server… | Go ▸ Connect to Server… | ⌘K |  | missing from Lulo's menu bar |
-| FIL-MENU-080 | missing menu item (has a shortcut) | Enclosing Folder in New Window | Go ▸ Enclosing Folder in New Window | ⌃⌘ |  | missing from Lulo's menu bar |
-| FIL-MENU-084 | missing menu item (has a shortcut) | Network | Go ▸ Network | ⇧⌘K |  | missing from Lulo's menu bar |
-| FIL-MENU-081 | missing menu item (has a shortcut) | Select Startup Disk | Go ▸ Select Startup Disk | ⇧⌘ |  | missing from Lulo's menu bar |
-| FIL-MENU-086 | missing menu item (has a shortcut) | Shared | Go ▸ Shared | ⇧⌘S |  | missing from Lulo's menu bar |
-| FIL-MENU-087 | missing menu item (has a shortcut) | Utilities | Go ▸ Utilities | ⇧⌘U |  | missing from Lulo's menu bar |
-| FIL-MENU-085 | missing menu item (has a shortcut) | iCloud Drive | Go ▸ iCloud Drive | ⇧⌘I |  | missing from Lulo's menu bar |
-| FIL-MENU-067 | missing menu item (has a shortcut) | Date Modified | View ▸ Clean Up By ▸ Date Modified | ⌥⌘5 |  | missing from Lulo's menu bar |
-| FIL-MENU-066 | missing menu item (has a shortcut) | Kind | View ▸ Clean Up By ▸ Kind | ⌥⌘2 |  | missing from Lulo's menu bar |
-| FIL-MENU-065 | missing menu item (has a shortcut) | Name | View ▸ Clean Up By ▸ Name | ⌥⌘1 |  | missing from Lulo's menu bar |
-| FIL-MENU-069 | missing menu item (has a shortcut) | Size | View ▸ Clean Up By ▸ Size | ⌥⌘6 |  | missing from Lulo's menu bar |
-| FIL-MENU-070 | missing menu item (has a shortcut) | Tags | View ▸ Clean Up By ▸ Tags | ⌥⌘7 |  | missing from Lulo's menu bar |
-| FIL-MENU-078 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
-| FIL-MENU-075 | missing menu item (has a shortcut) | Hide Status Bar | View ▸ Hide Status Bar | ⌘/ |  | missing from Lulo's menu bar |
-| FIL-MENU-074 | missing menu item (has a shortcut) | Hide Toolbar | View ▸ Hide Toolbar | ⌥⌘T |  | missing from Lulo's menu bar |
-| FIL-MENU-072 | missing menu item (has a shortcut) | Show All Tabs | View ▸ Show All Tabs | ⇧⌘\ |  | missing from Lulo's menu bar |
-| FIL-MENU-073 | missing menu item (has a shortcut) | Show Preview | View ▸ Show Preview | ⇧⌘P |  | missing from Lulo's menu bar |
-| FIL-MENU-071 | missing menu item (has a shortcut) | Show Tab Bar | View ▸ Show Tab Bar | ⇧⌘T |  | missing from Lulo's menu bar |
-| FIL-MENU-057 | missing menu item (has a shortcut) | Date Added | View ▸ Sort By ▸ Date Added | ⌃⌥⌘4 |  | missing from Lulo's menu bar |
-| FIL-MENU-056 | missing menu item (has a shortcut) | Date Last Opened | View ▸ Sort By ▸ Date Last Opened | ⌃⌥⌘3 |  | missing from Lulo's menu bar |
-| FIL-MENU-058 | missing menu item (has a shortcut) | Date Modified | View ▸ Sort By ▸ Date Modified | ⌃⌥⌘5 |  | missing from Lulo's menu bar |
-| FIL-MENU-055 | missing menu item (has a shortcut) | Kind | View ▸ Sort By ▸ Kind | ⌃⌥⌘2 |  | missing from Lulo's menu bar |
-| FIL-MENU-054 | missing menu item (has a shortcut) | Name | View ▸ Sort By ▸ Name | ⌃⌥⌘1 |  | missing from Lulo's menu bar |
-| FIL-MENU-060 | missing menu item (has a shortcut) | Size | View ▸ Sort By ▸ Size | ⌃⌥⌘6 |  | missing from Lulo's menu bar |
-| FIL-MENU-061 | missing menu item (has a shortcut) | Tags | View ▸ Sort By ▸ Tags | ⌃⌥⌘7 |  | missing from Lulo's menu bar |
-| FIL-MENU-052 | missing menu item (has a shortcut) | Use Groups | View ▸ Use Groups | ⌃⌘0 |  | missing from Lulo's menu bar |
-| FIL-MENU-121 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
-| FIL-MENU-115 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| FIL-MENU-114 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| FIL-MENU-109 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| FIL-MENU-108 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| FIL-MENU-110 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| FIL-MENU-111 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| FIL-MENU-112 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| FIL-MENU-113 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| FIL-MENU-041 | missing menu item (has a shortcut) | Copy as Link | Edit ▸ Copy as Link | ⌃⌥⌘C |  | missing from Lulo's menu bar |
+| FIL-MENU-040 | missing menu item (has a shortcut) | Copy “finder-context-sandbox” as Pathname | Edit ▸ Copy “finder-context-sandbox” as Pathname | ⌥⌘C |  | missing from Lulo's menu bar |
+| FIL-MENU-043 | missing menu item (has a shortcut) | Deselect All | Edit ▸ Deselect All | ⌥⌘A |  | missing from Lulo's menu bar |
+| FIL-MENU-042 | missing menu item (has a shortcut) | Paste Exactly | Edit ▸ Paste Exactly | ⌥⇧⌘V |  | missing from Lulo's menu bar |
+| FIL-MENU-039 | missing menu item (has a shortcut) | Redo | Edit ▸ Redo | ⇧⌘Z |  | missing from Lulo's menu bar |
+| FIL-MENU-038 | missing menu item (has a shortcut) | Undo Move of “Untitled” | Edit ▸ Undo Move of “Untitled” | ⌘Z |  | missing from Lulo's menu bar |
+| FIL-MENU-028 | missing menu item (has a shortcut) | Close All | File ▸ Close All | ⌥⌘W |  | missing from Lulo's menu bar |
+| FIL-MENU-027 | missing menu item (has a shortcut) | Close Window | File ▸ Close Window | ⌘W |  | missing from Lulo's menu bar |
+| FIL-MENU-031 | missing menu item (has a shortcut) | Duplicate Exactly | File ▸ Duplicate Exactly | ⌥⇧⌘D |  | missing from Lulo's menu bar |
+| FIL-MENU-036 | missing menu item (has a shortcut) | Eject | File ▸ Eject | ⌘E |  | missing from Lulo's menu bar |
+| FIL-MENU-037 | missing menu item (has a shortcut) | Find by Name… | File ▸ Find by Name… | ⌃⇧⌘F |  | missing from Lulo's menu bar |
+| FIL-MENU-030 | missing menu item (has a shortcut) | Get Summary Info | File ▸ Get Summary Info | ⌃⌘I |  | missing from Lulo's menu bar |
+| FIL-MENU-003 | missing menu item (has a shortcut) | Open in New Tab | File ▸ Open in New Tab | ⌃⌘O |  | missing from Lulo's menu bar |
+| FIL-MENU-004 | missing menu item (has a shortcut) | Open in New Window and Close | File ▸ Open in New Window and Close | ⌥⌘O |  | missing from Lulo's menu bar |
+| FIL-MENU-034 | missing menu item (has a shortcut) | Print | File ▸ Print | ⌘P |  | missing from Lulo's menu bar |
+| FIL-MENU-032 | missing menu item (has a shortcut) | Quick Look “finder-context-sandbox” | File ▸ Quick Look “finder-context-sandbox” | ⌘Y |  | missing from Lulo's menu bar |
+| FIL-MENU-029 | missing menu item (has a shortcut) | Show Inspector | File ▸ Show Inspector | ⌥⌘I |  | missing from Lulo's menu bar |
+| FIL-MENU-033 | missing menu item (has a shortcut) | Slideshow “finder-context-sandbox” | File ▸ Slideshow “finder-context-sandbox” | ⌥⌘Y |  | missing from Lulo's menu bar |
+| FIL-MENU-080 | missing menu item (has a shortcut) | AirDrop | Go ▸ AirDrop | ⇧⌘R |  | missing from Lulo's menu bar |
+| FIL-MENU-089 | missing menu item (has a shortcut) | Connect to Server… | Go ▸ Connect to Server… | ⌘K |  | missing from Lulo's menu bar |
+| FIL-MENU-077 | missing menu item (has a shortcut) | Enclosing Folder in New Window | Go ▸ Enclosing Folder in New Window | ⌃⌘ |  | missing from Lulo's menu bar |
+| FIL-MENU-081 | missing menu item (has a shortcut) | Network | Go ▸ Network | ⇧⌘K |  | missing from Lulo's menu bar |
+| FIL-MENU-078 | missing menu item (has a shortcut) | Select Startup Disk | Go ▸ Select Startup Disk | ⇧⌘ |  | missing from Lulo's menu bar |
+| FIL-MENU-083 | missing menu item (has a shortcut) | Shared | Go ▸ Shared | ⇧⌘S |  | missing from Lulo's menu bar |
+| FIL-MENU-082 | missing menu item (has a shortcut) | iCloud Drive | Go ▸ iCloud Drive | ⇧⌘I |  | missing from Lulo's menu bar |
+| FIL-MENU-064 | missing menu item (has a shortcut) | Date Modified | View ▸ Clean Up By ▸ Date Modified | ⌥⌘5 |  | missing from Lulo's menu bar |
+| FIL-MENU-063 | missing menu item (has a shortcut) | Kind | View ▸ Clean Up By ▸ Kind | ⌥⌘2 |  | missing from Lulo's menu bar |
+| FIL-MENU-062 | missing menu item (has a shortcut) | Name | View ▸ Clean Up By ▸ Name | ⌥⌘1 |  | missing from Lulo's menu bar |
+| FIL-MENU-066 | missing menu item (has a shortcut) | Size | View ▸ Clean Up By ▸ Size | ⌥⌘6 |  | missing from Lulo's menu bar |
+| FIL-MENU-067 | missing menu item (has a shortcut) | Tags | View ▸ Clean Up By ▸ Tags | ⌥⌘7 |  | missing from Lulo's menu bar |
+| FIL-MENU-075 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
+| FIL-MENU-072 | missing menu item (has a shortcut) | Hide Status Bar | View ▸ Hide Status Bar | ⌘/ |  | missing from Lulo's menu bar |
+| FIL-MENU-071 | missing menu item (has a shortcut) | Hide Toolbar | View ▸ Hide Toolbar | ⌥⌘T |  | missing from Lulo's menu bar |
+| FIL-MENU-069 | missing menu item (has a shortcut) | Show All Tabs | View ▸ Show All Tabs | ⇧⌘\ |  | missing from Lulo's menu bar |
+| FIL-MENU-070 | missing menu item (has a shortcut) | Show Preview | View ▸ Show Preview | ⇧⌘P |  | missing from Lulo's menu bar |
+| FIL-MENU-068 | missing menu item (has a shortcut) | Show Tab Bar | View ▸ Show Tab Bar | ⇧⌘T |  | missing from Lulo's menu bar |
+| FIL-MENU-054 | missing menu item (has a shortcut) | Date Added | View ▸ Sort By ▸ Date Added | ⌃⌥⌘4 |  | missing from Lulo's menu bar |
+| FIL-MENU-053 | missing menu item (has a shortcut) | Date Last Opened | View ▸ Sort By ▸ Date Last Opened | ⌃⌥⌘3 |  | missing from Lulo's menu bar |
+| FIL-MENU-055 | missing menu item (has a shortcut) | Date Modified | View ▸ Sort By ▸ Date Modified | ⌃⌥⌘5 |  | missing from Lulo's menu bar |
+| FIL-MENU-052 | missing menu item (has a shortcut) | Kind | View ▸ Sort By ▸ Kind | ⌃⌥⌘2 |  | missing from Lulo's menu bar |
+| FIL-MENU-051 | missing menu item (has a shortcut) | Name | View ▸ Sort By ▸ Name | ⌃⌥⌘1 |  | missing from Lulo's menu bar |
+| FIL-MENU-057 | missing menu item (has a shortcut) | Size | View ▸ Sort By ▸ Size | ⌃⌥⌘6 |  | missing from Lulo's menu bar |
+| FIL-MENU-058 | missing menu item (has a shortcut) | Tags | View ▸ Sort By ▸ Tags | ⌃⌥⌘7 |  | missing from Lulo's menu bar |
+| FIL-MENU-049 | missing menu item (has a shortcut) | Use Groups | View ▸ Use Groups | ⌃⌘0 |  | missing from Lulo's menu bar |
+| FIL-MENU-117 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
+| FIL-MENU-111 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| FIL-MENU-110 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| FIL-MENU-105 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| FIL-MENU-104 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| FIL-MENU-106 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| FIL-MENU-107 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| FIL-MENU-108 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| FIL-MENU-109 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
 | FIL-CONTEXT-001 | missing context-menu item | Always Open With | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-002 | missing context-menu item | Compress “sample.txt” | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-003 | missing context-menu item | Copy “sample.txt” as Pathname | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-004 | missing context-menu item | Duplicate Exactly | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-005 | missing context-menu item | Show Inspector | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-006 | missing context-menu item | Slideshow “sample.txt” | context menu ▸ file |  |  | missing from Lulo's context menu |
-| FIL-CONTEXT-015 | missing context-menu item | Compress “Subfolder” | context menu ▸ folder |  |  | missing from Lulo's context menu |
-| FIL-CONTEXT-016 | missing context-menu item | Copy “Subfolder” as Pathname | context menu ▸ folder |  |  | missing from Lulo's context menu |
-| FIL-CONTEXT-017 | missing context-menu item | Duplicate Exactly | context menu ▸ folder |  |  | missing from Lulo's context menu |
-| FIL-CONTEXT-018 | missing context-menu item | Import from iPhone | context menu ▸ folder |  |  | missing from Lulo's context menu |
-| FIL-CONTEXT-019 | missing context-menu item | Open in New Tab | context menu ▸ folder |  |  | missing from Lulo's context menu |
-| FIL-CONTEXT-020 | missing context-menu item | Open in New Window | context menu ▸ folder |  |  | missing from Lulo's context menu |
-| FIL-CONTEXT-021 | missing context-menu item | Show Inspector | context menu ▸ folder |  |  | missing from Lulo's context menu |
-| FIL-CONTEXT-022 | missing context-menu item | Slideshow “Subfolder” | context menu ▸ folder |  |  | missing from Lulo's context menu |
-| FIL-MENU-048 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
-| FIL-MENU-049 | missing menu item | Contact… | Edit ▸ AutoFill ▸ Contact… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-051 | missing menu item | Credit Card… | Edit ▸ AutoFill ▸ Credit Card… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-050 | missing menu item | Passwords… | Edit ▸ AutoFill ▸ Passwords… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-047 | missing menu item | Show Clipboard | Edit ▸ Show Clipboard |  |  | missing from Lulo's menu bar |
-| FIL-MENU-017 | missing menu item | Always Open With | File ▸ Always Open With |  |  | missing from Lulo's menu bar |
-| FIL-MENU-026 | missing menu item | App Store… | File ▸ Always Open With ▸ App Store… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-019 | missing menu item | Arc | File ▸ Always Open With ▸ Arc |  |  | missing from Lulo's menu bar |
-| FIL-MENU-020 | missing menu item | Books | File ▸ Always Open With ▸ Books |  |  | missing from Lulo's menu bar |
-| FIL-MENU-021 | missing menu item | Chromium | File ▸ Always Open With ▸ Chromium |  |  | missing from Lulo's menu bar |
-| FIL-MENU-022 | missing menu item | ColorSync Utility | File ▸ Always Open With ▸ ColorSync Utility |  |  | missing from Lulo's menu bar |
-| FIL-MENU-018 | missing menu item | Google Chrome (default) | File ▸ Always Open With ▸ Google Chrome (default) |  |  | missing from Lulo's menu bar |
-| FIL-MENU-023 | missing menu item | Microsoft Word | File ▸ Always Open With ▸ Microsoft Word |  |  | missing from Lulo's menu bar |
-| FIL-MENU-027 | missing menu item | Other… | File ▸ Always Open With ▸ Other… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-024 | missing menu item | Preview | File ▸ Always Open With ▸ Preview |  |  | missing from Lulo's menu bar |
-| FIL-MENU-025 | missing menu item | Safari | File ▸ Always Open With ▸ Safari |  |  | missing from Lulo's menu bar |
-| FIL-MENU-036 | missing menu item | Manage Shared Folder… | File ▸ Manage Shared Folder… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-003 | missing menu item | New Smart Folder | File ▸ New Smart Folder |  |  | missing from Lulo's menu bar |
-| FIL-MENU-006 | missing menu item | Open With | File ▸ Open With |  |  | missing from Lulo's menu bar |
-| FIL-MENU-015 | missing menu item | App Store… | File ▸ Open With ▸ App Store… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-008 | missing menu item | Arc | File ▸ Open With ▸ Arc |  |  | missing from Lulo's menu bar |
-| FIL-MENU-009 | missing menu item | Books | File ▸ Open With ▸ Books |  |  | missing from Lulo's menu bar |
-| FIL-MENU-010 | missing menu item | Chromium | File ▸ Open With ▸ Chromium |  |  | missing from Lulo's menu bar |
-| FIL-MENU-011 | missing menu item | ColorSync Utility | File ▸ Open With ▸ ColorSync Utility |  |  | missing from Lulo's menu bar |
-| FIL-MENU-007 | missing menu item | Google Chrome (default) | File ▸ Open With ▸ Google Chrome (default) |  |  | missing from Lulo's menu bar |
-| FIL-MENU-012 | missing menu item | Microsoft Word | File ▸ Open With ▸ Microsoft Word |  |  | missing from Lulo's menu bar |
-| FIL-MENU-016 | missing menu item | Other… | File ▸ Open With ▸ Other… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-013 | missing menu item | Preview | File ▸ Open With ▸ Preview |  |  | missing from Lulo's menu bar |
-| FIL-MENU-014 | missing menu item | Safari | File ▸ Open With ▸ Safari |  |  | missing from Lulo's menu bar |
-| FIL-MENU-082 | missing menu item | Library | Go ▸ Library |  |  | missing from Lulo's menu bar |
-| FIL-MENU-088 | missing menu item | Recent Folders | Go ▸ Recent Folders |  |  | missing from Lulo's menu bar |
-| FIL-MENU-092 | missing menu item | Clear Menu | Go ▸ Recent Folders ▸ Clear Menu |  |  | missing from Lulo's menu bar |
-| FIL-MENU-089 | missing menu item | Downloads | Go ▸ Recent Folders ▸ Downloads |  |  | missing from Lulo's menu bar |
-| FIL-MENU-090 | missing menu item | finder-context-sandbox | Go ▸ Recent Folders ▸ finder-context-sandbox |  |  | missing from Lulo's menu bar |
-| FIL-MENU-091 | missing menu item | lulo-vis | Go ▸ Recent Folders ▸ lulo-vis |  |  | missing from Lulo's menu bar |
-| FIL-MENU-130 | missing menu item | Mac User Guide | Help ▸ Mac User Guide |  |  | missing from Lulo's menu bar |
-| FIL-MENU-131 | missing menu item | Tips for Your Mac | Help ▸ Tips for Your Mac |  |  | missing from Lulo's menu bar |
-| FIL-MENU-062 | missing menu item | Clean Up | View ▸ Clean Up |  |  | missing from Lulo's menu bar |
-| FIL-MENU-064 | missing menu item | Clean Up By | View ▸ Clean Up By |  |  | missing from Lulo's menu bar |
-| FIL-MENU-068 | missing menu item | Date Created | View ▸ Clean Up By ▸ Date Created |  |  | missing from Lulo's menu bar |
-| FIL-MENU-063 | missing menu item | Clean Up Selection | View ▸ Clean Up Selection |  |  | missing from Lulo's menu bar |
-| FIL-MENU-076 | missing menu item | Customise Toolbar… | View ▸ Customise Toolbar… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-077 | missing menu item | Show Preview Options | View ▸ Show Preview Options |  |  | missing from Lulo's menu bar |
-| FIL-MENU-053 | missing menu item | Sort By | View ▸ Sort By |  |  | missing from Lulo's menu bar |
-| FIL-MENU-059 | missing menu item | Date Created | View ▸ Sort By ▸ Date Created |  |  | missing from Lulo's menu bar |
-| FIL-MENU-123 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| FIL-MENU-128 | missing menu item | Downloads | Window ▸ Downloads |  |  | missing from Lulo's menu bar |
-| FIL-MENU-117 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| FIL-MENU-118 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
-| FIL-MENU-119 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
-| FIL-MENU-127 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
-| FIL-MENU-107 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| FIL-MENU-105 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| FIL-MENU-106 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| FIL-MENU-097 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| FIL-MENU-102 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| FIL-MENU-103 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| FIL-MENU-104 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| FIL-MENU-126 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
-| FIL-MENU-120 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
-| FIL-MENU-122 | missing menu item | Show Progress Window | Window ▸ Show Progress Window |  |  | missing from Lulo's menu bar |
-| FIL-MENU-094 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
-| FIL-MENU-129 | missing menu item | finder-context-sandbox | Window ▸ finder-context-sandbox |  |  | missing from Lulo's menu bar |
-| FIL-MENU-079 | wrong/missing shortcut | Enclosing Folder | Go ▸ Enclosing Folder | ⌘ | ⌘↑ | shortcut differs |
-| FIL-MENU-096 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
-| FIL-MENU-095 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| FIL-MENU-101 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| FIL-MENU-098 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| FIL-MENU-116 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| FIL-MENU-099 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| FIL-MENU-100 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
-| FIL-MENU-125 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⌃⇥ | shortcut differs |
-| FIL-MENU-124 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⌃⇧⇥ | shortcut differs |
+| FIL-CONTEXT-018 | missing context-menu item | Compress “Subfolder” | context menu ▸ folder |  |  | missing from Lulo's context menu |
+| FIL-CONTEXT-019 | missing context-menu item | Copy “Subfolder” as Pathname | context menu ▸ folder |  |  | missing from Lulo's context menu |
+| FIL-CONTEXT-020 | missing context-menu item | Duplicate Exactly | context menu ▸ folder |  |  | missing from Lulo's context menu |
+| FIL-CONTEXT-021 | missing context-menu item | Import from iPhone | context menu ▸ folder |  |  | missing from Lulo's context menu |
+| FIL-CONTEXT-022 | missing context-menu item | Open in New Tab | context menu ▸ folder |  |  | missing from Lulo's context menu |
+| FIL-CONTEXT-023 | missing context-menu item | Open in New Window | context menu ▸ folder |  |  | missing from Lulo's context menu |
+| FIL-CONTEXT-024 | missing context-menu item | Show Inspector | context menu ▸ folder |  |  | missing from Lulo's context menu |
+| FIL-CONTEXT-025 | missing context-menu item | Slideshow “Subfolder” | context menu ▸ folder |  |  | missing from Lulo's context menu |
+| FIL-MENU-045 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
+| FIL-MENU-046 | missing menu item | Contact… | Edit ▸ AutoFill ▸ Contact… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-048 | missing menu item | Credit Card… | Edit ▸ AutoFill ▸ Credit Card… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-047 | missing menu item | Passwords… | Edit ▸ AutoFill ▸ Passwords… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-044 | missing menu item | Show Clipboard | Edit ▸ Show Clipboard |  |  | missing from Lulo's menu bar |
+| FIL-MENU-016 | missing menu item | Always Open With | File ▸ Always Open With |  |  | missing from Lulo's menu bar |
+| FIL-MENU-025 | missing menu item | App Store… | File ▸ Always Open With ▸ App Store… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-018 | missing menu item | Arc | File ▸ Always Open With ▸ Arc |  |  | missing from Lulo's menu bar |
+| FIL-MENU-019 | missing menu item | Books | File ▸ Always Open With ▸ Books |  |  | missing from Lulo's menu bar |
+| FIL-MENU-020 | missing menu item | Chromium | File ▸ Always Open With ▸ Chromium |  |  | missing from Lulo's menu bar |
+| FIL-MENU-021 | missing menu item | ColorSync Utility | File ▸ Always Open With ▸ ColorSync Utility |  |  | missing from Lulo's menu bar |
+| FIL-MENU-017 | missing menu item | Google Chrome (default) | File ▸ Always Open With ▸ Google Chrome (default) |  |  | missing from Lulo's menu bar |
+| FIL-MENU-022 | missing menu item | Microsoft Word | File ▸ Always Open With ▸ Microsoft Word |  |  | missing from Lulo's menu bar |
+| FIL-MENU-026 | missing menu item | Other… | File ▸ Always Open With ▸ Other… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-023 | missing menu item | Preview | File ▸ Always Open With ▸ Preview |  |  | missing from Lulo's menu bar |
+| FIL-MENU-024 | missing menu item | Safari | File ▸ Always Open With ▸ Safari |  |  | missing from Lulo's menu bar |
+| FIL-MENU-035 | missing menu item | Manage Shared Folder… | File ▸ Manage Shared Folder… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-002 | missing menu item | New Smart Folder | File ▸ New Smart Folder |  |  | missing from Lulo's menu bar |
+| FIL-MENU-005 | missing menu item | Open With | File ▸ Open With |  |  | missing from Lulo's menu bar |
+| FIL-MENU-014 | missing menu item | App Store… | File ▸ Open With ▸ App Store… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-007 | missing menu item | Arc | File ▸ Open With ▸ Arc |  |  | missing from Lulo's menu bar |
+| FIL-MENU-008 | missing menu item | Books | File ▸ Open With ▸ Books |  |  | missing from Lulo's menu bar |
+| FIL-MENU-009 | missing menu item | Chromium | File ▸ Open With ▸ Chromium |  |  | missing from Lulo's menu bar |
+| FIL-MENU-010 | missing menu item | ColorSync Utility | File ▸ Open With ▸ ColorSync Utility |  |  | missing from Lulo's menu bar |
+| FIL-MENU-006 | missing menu item | Google Chrome (default) | File ▸ Open With ▸ Google Chrome (default) |  |  | missing from Lulo's menu bar |
+| FIL-MENU-011 | missing menu item | Microsoft Word | File ▸ Open With ▸ Microsoft Word |  |  | missing from Lulo's menu bar |
+| FIL-MENU-015 | missing menu item | Other… | File ▸ Open With ▸ Other… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-012 | missing menu item | Preview | File ▸ Open With ▸ Preview |  |  | missing from Lulo's menu bar |
+| FIL-MENU-013 | missing menu item | Safari | File ▸ Open With ▸ Safari |  |  | missing from Lulo's menu bar |
+| FIL-MENU-079 | missing menu item | Library | Go ▸ Library |  |  | missing from Lulo's menu bar |
+| FIL-MENU-084 | missing menu item | Recent Folders | Go ▸ Recent Folders |  |  | missing from Lulo's menu bar |
+| FIL-MENU-088 | missing menu item | Clear Menu | Go ▸ Recent Folders ▸ Clear Menu |  |  | missing from Lulo's menu bar |
+| FIL-MENU-085 | missing menu item | Downloads | Go ▸ Recent Folders ▸ Downloads |  |  | missing from Lulo's menu bar |
+| FIL-MENU-086 | missing menu item | finder-context-sandbox | Go ▸ Recent Folders ▸ finder-context-sandbox |  |  | missing from Lulo's menu bar |
+| FIL-MENU-087 | missing menu item | lulo-vis | Go ▸ Recent Folders ▸ lulo-vis |  |  | missing from Lulo's menu bar |
+| FIL-MENU-126 | missing menu item | Mac User Guide | Help ▸ Mac User Guide |  |  | missing from Lulo's menu bar |
+| FIL-MENU-127 | missing menu item | Tips for Your Mac | Help ▸ Tips for Your Mac |  |  | missing from Lulo's menu bar |
+| FIL-MENU-059 | missing menu item | Clean Up | View ▸ Clean Up |  |  | missing from Lulo's menu bar |
+| FIL-MENU-061 | missing menu item | Clean Up By | View ▸ Clean Up By |  |  | missing from Lulo's menu bar |
+| FIL-MENU-065 | missing menu item | Date Created | View ▸ Clean Up By ▸ Date Created |  |  | missing from Lulo's menu bar |
+| FIL-MENU-060 | missing menu item | Clean Up Selection | View ▸ Clean Up Selection |  |  | missing from Lulo's menu bar |
+| FIL-MENU-073 | missing menu item | Customise Toolbar… | View ▸ Customise Toolbar… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-074 | missing menu item | Show Preview Options | View ▸ Show Preview Options |  |  | missing from Lulo's menu bar |
+| FIL-MENU-050 | missing menu item | Sort By | View ▸ Sort By |  |  | missing from Lulo's menu bar |
+| FIL-MENU-056 | missing menu item | Date Created | View ▸ Sort By ▸ Date Created |  |  | missing from Lulo's menu bar |
+| FIL-MENU-119 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| FIL-MENU-124 | missing menu item | Downloads | Window ▸ Downloads |  |  | missing from Lulo's menu bar |
+| FIL-MENU-113 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| FIL-MENU-114 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
+| FIL-MENU-115 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
+| FIL-MENU-123 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
+| FIL-MENU-103 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| FIL-MENU-101 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
+| FIL-MENU-102 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
+| FIL-MENU-093 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
+| FIL-MENU-098 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
+| FIL-MENU-099 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
+| FIL-MENU-100 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
+| FIL-MENU-122 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
+| FIL-MENU-116 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| FIL-MENU-118 | missing menu item | Show Progress Window | Window ▸ Show Progress Window |  |  | missing from Lulo's menu bar |
+| FIL-MENU-090 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
+| FIL-MENU-125 | missing menu item | finder-context-sandbox | Window ▸ finder-context-sandbox |  |  | missing from Lulo's menu bar |
+| FIL-MENU-076 | wrong/missing shortcut | Enclosing Folder | Go ▸ Enclosing Folder | ⌘ | ⌘↑ | shortcut differs |
+| FIL-MENU-092 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
+| FIL-MENU-091 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
+| FIL-MENU-097 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| FIL-MENU-094 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| FIL-MENU-112 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| FIL-MENU-095 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| FIL-MENU-096 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| FIL-MENU-121 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⌃⇥ | shortcut differs |
+| FIL-MENU-120 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⌃⇧⇥ | shortcut differs |
 | FIL-SETTINGS-001 | missing settings control | Finder Settings | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | FIL-SETTINGS-002 | missing settings control | Store your Desktop & Documents folders in iCloud Drive and access them from your other devices. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | FIL-SETTINGS-003 | missing settings control | heading | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | FIL-SETTINGS-004 | missing settings control | tickbox | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-CONTEXT-007 | Lulo-only (not on the Mac) | <label> | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-008 | Lulo-only (not on the Mac) | Blue | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-009 | Lulo-only (not on the Mac) | Gray | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-010 | Lulo-only (not on the Mac) | Green | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-011 | Lulo-only (not on the Mac) | Orange | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-012 | Lulo-only (not on the Mac) | Purple | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-013 | Lulo-only (not on the Mac) | Red | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-014 | Lulo-only (not on the Mac) | Yellow | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-023 | Lulo-only (not on the Mac) | <label> | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-024 | Lulo-only (not on the Mac) | Blue | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-025 | Lulo-only (not on the Mac) | Gray | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-026 | Lulo-only (not on the Mac) | Green | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-027 | Lulo-only (not on the Mac) | Open | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-028 | Lulo-only (not on the Mac) | Open With | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-029 | Lulo-only (not on the Mac) | Orange | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-030 | Lulo-only (not on the Mac) | Purple | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-031 | Lulo-only (not on the Mac) | Red | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-CONTEXT-032 | Lulo-only (not on the Mac) | Yellow | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-134 | Lulo-only (not on the Mac) | Copy as Pathname | Edit ▸ Copy as Pathname |  | ⌥⌘C | present in Lulo but not found on the Mac |
-| FIL-MENU-133 | Lulo-only (not on the Mac) | Undo | Edit ▸ Undo |  | ⌘Z | present in Lulo but not found on the Mac |
-| FIL-MENU-132 | Lulo-only (not on the Mac) | Close Tab | File ▸ Close Tab |  | ⌘W | present in Lulo but not found on the Mac |
-| FIL-MENU-141 | Lulo-only (not on the Mac) | Bin | Go ▸ Trash |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-143 | Lulo-only (not on the Mac) | Files Help | Help ▸ Files Help |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-142 | Lulo-only (not on the Mac) | Finder Help | Help ▸ Finder Help |  | ⌘? | present in Lulo but not found on the Mac |
-| FIL-MENU-140 | Lulo-only (not on the Mac) | Quick Look | View ▸ Quick Look |  | Space | present in Lulo but not found on the Mac |
-| FIL-MENU-139 | Lulo-only (not on the Mac) | Show Hidden Files | View ▸ Show Hidden Files |  | ⇧⌘. | present in Lulo but not found on the Mac |
-| FIL-MENU-136 | Lulo-only (not on the Mac) | Sort by Date Modified | View ▸ Sort by Date Modified |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-138 | Lulo-only (not on the Mac) | Sort by Kind | View ▸ Sort by Kind |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-135 | Lulo-only (not on the Mac) | Sort by Name | View ▸ Sort by Name |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-137 | Lulo-only (not on the Mac) | Sort by Size | View ▸ Sort by Size |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-007 | Lulo-only (not on the Mac) | <handler.name.clone()> | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-008 | Lulo-only (not on the Mac) | <label> | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-009 | Lulo-only (not on the Mac) | Blue | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-010 | Lulo-only (not on the Mac) | Gray | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-011 | Lulo-only (not on the Mac) | Green | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-012 | Lulo-only (not on the Mac) | New Folder with Selection | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-013 | Lulo-only (not on the Mac) | Orange | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-014 | Lulo-only (not on the Mac) | Other… | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-015 | Lulo-only (not on the Mac) | Purple | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-016 | Lulo-only (not on the Mac) | Red | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-017 | Lulo-only (not on the Mac) | Yellow | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-026 | Lulo-only (not on the Mac) | <handler.name.clone()> | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-027 | Lulo-only (not on the Mac) | <label> | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-028 | Lulo-only (not on the Mac) | Blue | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-029 | Lulo-only (not on the Mac) | Gray | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-030 | Lulo-only (not on the Mac) | Green | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-031 | Lulo-only (not on the Mac) | New Folder with Selection | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-032 | Lulo-only (not on the Mac) | Open | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-033 | Lulo-only (not on the Mac) | Open With | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-034 | Lulo-only (not on the Mac) | Orange | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-035 | Lulo-only (not on the Mac) | Other… | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-036 | Lulo-only (not on the Mac) | Purple | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-037 | Lulo-only (not on the Mac) | Red | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-038 | Lulo-only (not on the Mac) | Yellow | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-130 | Lulo-only (not on the Mac) | Copy as Pathname | Edit ▸ Copy as Pathname |  | ⌥⌘C | present in Lulo but not found on the Mac |
+| FIL-MENU-129 | Lulo-only (not on the Mac) | Undo | Edit ▸ Undo |  | ⌘Z | present in Lulo but not found on the Mac |
+| FIL-MENU-128 | Lulo-only (not on the Mac) | Close Tab | File ▸ Close Tab |  | ⌘W | present in Lulo but not found on the Mac |
+| FIL-MENU-138 | Lulo-only (not on the Mac) | Bin | Go ▸ Trash |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-140 | Lulo-only (not on the Mac) | Files Help | Help ▸ Files Help |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-139 | Lulo-only (not on the Mac) | Finder Help | Help ▸ Finder Help |  | ⌘? | present in Lulo but not found on the Mac |
+| FIL-MENU-136 | Lulo-only (not on the Mac) | Quick Look | View ▸ Quick Look |  | Space | present in Lulo but not found on the Mac |
+| FIL-MENU-135 | Lulo-only (not on the Mac) | Show Hidden Files | View ▸ Show Hidden Files |  | ⇧⌘. | present in Lulo but not found on the Mac |
+| FIL-MENU-137 | Lulo-only (not on the Mac) | Show Status Bar | View ▸ Show Status Bar |  | ⌘/ | present in Lulo but not found on the Mac |
+| FIL-MENU-132 | Lulo-only (not on the Mac) | Sort by Date Modified | View ▸ Sort by Date Modified |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-134 | Lulo-only (not on the Mac) | Sort by Kind | View ▸ Sort by Kind |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-131 | Lulo-only (not on the Mac) | Sort by Name | View ▸ Sort by Name |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-133 | Lulo-only (not on the Mac) | Sort by Size | View ▸ Sort by Size |  |  | present in Lulo but not found on the Mac |
 
 ## Notes
 
@@ -467,160 +470,131 @@ To finish this run once the Mac is free: `python3 scripts/inventory/mac_inventor
 
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
-| PRV-MENU-002 | missing menu item (has a shortcut) | Quit and Keep Windows | Application ▸ Quit and Keep Windows | ⌥⌘Q |  | missing from Lulo's menu bar |
 | PRV-MENU-001 | missing menu item (has a shortcut) | Settings… | Application ▸ Settings… | ⌘, |  | missing from Lulo's menu bar |
-| PRV-MENU-031 | missing menu item (has a shortcut) | Jump to Selection | Edit ▸ Find ▸ Jump to Selection | ⌘J |  | missing from Lulo's menu bar |
-| PRV-MENU-030 | missing menu item (has a shortcut) | Use Selection for Find | Edit ▸ Find ▸ Use Selection for Find | ⌘E |  | missing from Lulo's menu bar |
-| PRV-MENU-025 | missing menu item (has a shortcut) | Invert Selection | Edit ▸ Invert Selection | ⇧⌘I |  | missing from Lulo's menu bar |
-| PRV-MENU-029 | missing menu item (has a shortcut) | Move to Bin | Edit ▸ Move to Trash | ⌘⌫ |  | missing from Lulo's menu bar |
-| PRV-MENU-034 | missing menu item (has a shortcut) | Check Document Now | Edit ▸ Spelling and Grammar ▸ Check Document Now | ⌘; |  | missing from Lulo's menu bar |
-| PRV-MENU-033 | missing menu item (has a shortcut) | Show Spelling and Grammar | Edit ▸ Spelling and Grammar ▸ Show Spelling and Grammar | ⌘: |  | missing from Lulo's menu bar |
-| PRV-MENU-004 | missing menu item (has a shortcut) | Close All | File ▸ Close All | ⌥⌘W |  | missing from Lulo's menu bar |
-| PRV-MENU-005 | missing menu item (has a shortcut) | Close Selected | File ▸ Close Selected | ⇧⌘W |  | missing from Lulo's menu bar |
-| PRV-MENU-007 | missing menu item (has a shortcut) | Duplicate | File ▸ Duplicate | ⇧⌘S |  | missing from Lulo's menu bar |
-| PRV-MENU-003 | missing menu item (has a shortcut) | New from Clipboard | File ▸ New from Clipboard | ⌘N |  | missing from Lulo's menu bar |
-| PRV-MENU-006 | missing menu item (has a shortcut) | Save As… | File ▸ Save As… | ⌥⇧⌘S |  | missing from Lulo's menu bar |
-| PRV-MENU-088 | missing menu item (has a shortcut) | Back | Go ▸ Back | ⌘[ |  | missing from Lulo's menu bar |
-| PRV-MENU-084 | missing menu item (has a shortcut) | Down | Go ▸ Down |  |  | missing from Lulo's menu bar |
-| PRV-MENU-089 | missing menu item (has a shortcut) | Forward | Go ▸ Forward | ⌘] |  | missing from Lulo's menu bar |
-| PRV-MENU-085 | missing menu item (has a shortcut) | Next Document | Go ▸ Next Document | ⌥ |  | missing from Lulo's menu bar |
-| PRV-MENU-083 | missing menu item (has a shortcut) | Previous Document | Go ▸ Previous Document | ⌥ |  | missing from Lulo's menu bar |
-| PRV-MENU-082 | missing menu item (has a shortcut) | Up | Go ▸ Up |  |  | missing from Lulo's menu bar |
-| PRV-MENU-113 | missing menu item (has a shortcut) | Add Bookmark | Tools ▸ Add Bookmark | ⌘D |  | missing from Lulo's menu bar |
-| PRV-MENU-103 | missing menu item (has a shortcut) | Arrow | Tools ▸ Annotate ▸ Arrow | ⌃⌘A |  | missing from Lulo's menu bar |
-| PRV-MENU-097 | missing menu item (has a shortcut) | Highlight Text | Tools ▸ Annotate ▸ Highlight Text | ⌃⌘H |  | missing from Lulo's menu bar |
-| PRV-MENU-102 | missing menu item (has a shortcut) | Line | Tools ▸ Annotate ▸ Line | ⌃⌘I |  | missing from Lulo's menu bar |
-| PRV-MENU-109 | missing menu item (has a shortcut) | Loupe | Tools ▸ Annotate ▸ Loupe | ⌃⌘L |  | missing from Lulo's menu bar |
-| PRV-MENU-110 | missing menu item (has a shortcut) | Note | Tools ▸ Annotate ▸ Note | ⌃⌘N |  | missing from Lulo's menu bar |
-| PRV-MENU-101 | missing menu item (has a shortcut) | Oval | Tools ▸ Annotate ▸ Oval | ⌃⌘O |  | missing from Lulo's menu bar |
-| PRV-MENU-100 | missing menu item (has a shortcut) | Rectangle | Tools ▸ Annotate ▸ Rectangle | ⌃⌘R |  | missing from Lulo's menu bar |
-| PRV-MENU-099 | missing menu item (has a shortcut) | Strike Through Text | Tools ▸ Annotate ▸ Strike Through Text | ⌃⌘S |  | missing from Lulo's menu bar |
-| PRV-MENU-106 | missing menu item (has a shortcut) | Text | Tools ▸ Annotate ▸ Text | ⌃⌘T |  | missing from Lulo's menu bar |
-| PRV-MENU-098 | missing menu item (has a shortcut) | Underline Text | Tools ▸ Annotate ▸ Underline Text | ⌃⌘U |  | missing from Lulo's menu bar |
-| PRV-MENU-116 | missing menu item (has a shortcut) | Crop | Tools ▸ Crop | ⌘K |  | missing from Lulo's menu bar |
-| PRV-MENU-117 | missing menu item (has a shortcut) | Remove Background | Tools ▸ Remove Background | ⇧⌘K |  | missing from Lulo's menu bar |
-| PRV-MENU-090 | missing menu item (has a shortcut) | Show Magnifier | Tools ▸ Show Magnifier | ` |  | missing from Lulo's menu bar |
-| PRV-MENU-072 | missing menu item (has a shortcut) | Actual Size on All | View ▸ Actual Size on All | ⌥⌘0 |  | missing from Lulo's menu bar |
-| PRV-MENU-049 | missing menu item (has a shortcut) | Bookmarks | View ▸ Bookmarks | ⌥⌘5 |  | missing from Lulo's menu bar |
-| PRV-MENU-050 | missing menu item (has a shortcut) | Contact Sheet | View ▸ Contact Sheet | ⌥⌘6 |  | missing from Lulo's menu bar |
-| PRV-MENU-051 | missing menu item (has a shortcut) | Continuous Scroll | View ▸ Continuous Scroll | ⌘1 |  | missing from Lulo's menu bar |
-| PRV-MENU-081 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
-| PRV-MENU-048 | missing menu item (has a shortcut) | Highlights and Notes | View ▸ Highlights and Notes | ⌥⌘4 |  | missing from Lulo's menu bar |
-| PRV-MENU-046 | missing menu item (has a shortcut) | Show All Tabs | View ▸ Show All Tabs | ⇧⌘\ |  | missing from Lulo's menu bar |
-| PRV-MENU-070 | missing menu item (has a shortcut) | Show Image Background | View ▸ Show Image Background | ⌥⌘B |  | missing from Lulo's menu bar |
-| PRV-MENU-077 | missing menu item (has a shortcut) | Show Markup Toolbar | View ▸ Show Markup Toolbar | ⇧⌘A |  | missing from Lulo's menu bar |
-| PRV-MENU-078 | missing menu item (has a shortcut) | Show Toolbar | View ▸ Show Toolbar | ⌥⌘T |  | missing from Lulo's menu bar |
-| PRV-MENU-052 | missing menu item (has a shortcut) | Single Page | View ▸ Single Page | ⌘2 |  | missing from Lulo's menu bar |
-| PRV-MENU-080 | missing menu item (has a shortcut) | Slideshow | View ▸ Slideshow | ⇧⌘F |  | missing from Lulo's menu bar |
-| PRV-MENU-047 | missing menu item (has a shortcut) | Table of Contents | View ▸ Table of Contents | ⌥⌘3 |  | missing from Lulo's menu bar |
-| PRV-MENU-053 | missing menu item (has a shortcut) | Two Pages | View ▸ Two Pages | ⌘3 |  | missing from Lulo's menu bar |
-| PRV-MENU-074 | missing menu item (has a shortcut) | Zoom All In | View ▸ Zoom All In | ⌥⌘+ |  | missing from Lulo's menu bar |
-| PRV-MENU-075 | missing menu item (has a shortcut) | Zoom All Out | View ▸ Zoom All Out | ⌥⌘− |  | missing from Lulo's menu bar |
-| PRV-MENU-073 | missing menu item (has a shortcut) | Zoom All to Fit | View ▸ Zoom All to Fit | ⌥⌘9 |  | missing from Lulo's menu bar |
-| PRV-MENU-076 | missing menu item (has a shortcut) | Zoom to Selection | View ▸ Zoom to Selection | ⌘* |  | missing from Lulo's menu bar |
-| PRV-MENU-141 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
-| PRV-MENU-140 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
-| PRV-MENU-135 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
-| PRV-MENU-134 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
-| PRV-MENU-136 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
-| PRV-MENU-137 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
-| PRV-MENU-138 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
-| PRV-MENU-139 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
-| PRV-MENU-041 | missing menu item | AutoFill | Edit ▸ AutoFill |  |  | missing from Lulo's menu bar |
-| PRV-MENU-042 | missing menu item | Contact… | Edit ▸ AutoFill ▸ Contact… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-044 | missing menu item | Credit Card… | Edit ▸ AutoFill ▸ Credit Card… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-043 | missing menu item | Passwords… | Edit ▸ AutoFill ▸ Passwords… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-024 | missing menu item | Delete | Edit ▸ Delete |  |  | missing from Lulo's menu bar |
-| PRV-MENU-026 | missing menu item | Insert | Edit ▸ Insert |  |  | missing from Lulo's menu bar |
-| PRV-MENU-028 | missing menu item | Blank Page | Edit ▸ Insert ▸ Blank Page |  |  | missing from Lulo's menu bar |
-| PRV-MENU-027 | missing menu item | Page from File… | Edit ▸ Insert ▸ Page from File… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-038 | missing menu item | Speech | Edit ▸ Speech |  |  | missing from Lulo's menu bar |
-| PRV-MENU-039 | missing menu item | Start Speaking | Edit ▸ Speech ▸ Start Speaking |  |  | missing from Lulo's menu bar |
-| PRV-MENU-040 | missing menu item | Stop Speaking | Edit ▸ Speech ▸ Stop Speaking |  |  | missing from Lulo's menu bar |
-| PRV-MENU-032 | missing menu item | Spelling and Grammar | Edit ▸ Spelling and Grammar |  |  | missing from Lulo's menu bar |
-| PRV-MENU-036 | missing menu item | Check Grammar With Spelling | Edit ▸ Spelling and Grammar ▸ Check Grammar With Spelling |  |  | missing from Lulo's menu bar |
-| PRV-MENU-035 | missing menu item | Check Spelling While Typing | Edit ▸ Spelling and Grammar ▸ Check Spelling While Typing |  |  | missing from Lulo's menu bar |
-| PRV-MENU-037 | missing menu item | Correct Spelling Automatically | Edit ▸ Spelling and Grammar ▸ Correct Spelling Automatically |  |  | missing from Lulo's menu bar |
-| PRV-MENU-014 | missing menu item | <<Import From Device - unlocalized>> | File ▸ <<Import From Device - unlocalized>> |  |  | missing from Lulo's menu bar |
-| PRV-MENU-013 | missing menu item | Edit Permissions… | File ▸ Edit Permissions… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-012 | missing menu item | Enter Password… | File ▸ Enter Password… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-021 | missing menu item | Export As… | File ▸ Export As… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-015 | missing menu item | Import from Camera… | File ▸ Import from Camera… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-016 | missing menu item | Import from Scanner… | File ▸ Import from Scanner… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-009 | missing menu item | Move To… | File ▸ Move To… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-008 | missing menu item | Rename… | File ▸ Rename… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-010 | missing menu item | Revert To | File ▸ Revert To |  |  | missing from Lulo's menu bar |
-| PRV-MENU-011 | missing menu item | No Document | File ▸ Revert To ▸ No Document |  |  | missing from Lulo's menu bar |
-| PRV-MENU-022 | missing menu item | Share | File ▸ Share |  |  | missing from Lulo's menu bar |
-| PRV-MENU-023 | missing menu item | No Document | File ▸ Share ▸ No Document |  |  | missing from Lulo's menu bar |
-| PRV-MENU-017 | missing menu item | Take Screenshot | File ▸ Take Screenshot |  |  | missing from Lulo's menu bar |
-| PRV-MENU-020 | missing menu item | From Entire Screen | File ▸ Take Screenshot ▸ From Entire Screen |  |  | missing from Lulo's menu bar |
-| PRV-MENU-018 | missing menu item | From Selection… | File ▸ Take Screenshot ▸ From Selection… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-019 | missing menu item | From Window… | File ▸ Take Screenshot ▸ From Window… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-091 | missing menu item | Adjust Size… | Tools ▸ Adjust Size… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-096 | missing menu item | Annotate | Tools ▸ Annotate |  |  | missing from Lulo's menu bar |
-| PRV-MENU-108 | missing menu item | Mask | Tools ▸ Annotate ▸ Mask |  |  | missing from Lulo's menu bar |
-| PRV-MENU-104 | missing menu item | Polygon | Tools ▸ Annotate ▸ Polygon |  |  | missing from Lulo's menu bar |
-| PRV-MENU-111 | missing menu item | Signature | Tools ▸ Annotate ▸ Signature |  |  | missing from Lulo's menu bar |
-| PRV-MENU-112 | missing menu item | Manage Signatures… | Tools ▸ Annotate ▸ Signature ▸ Manage Signatures… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-107 | missing menu item | Speech Bubble | Tools ▸ Annotate ▸ Speech Bubble |  |  | missing from Lulo's menu bar |
-| PRV-MENU-105 | missing menu item | Star | Tools ▸ Annotate ▸ Star |  |  | missing from Lulo's menu bar |
-| PRV-MENU-118 | missing menu item | Assign Profile… | Tools ▸ Assign Profile… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-092 | missing menu item | Automatic Selection | Tools ▸ Automatic Selection |  |  | missing from Lulo's menu bar |
-| PRV-MENU-114 | missing menu item | Flip Horizontal | Tools ▸ Flip Horizontal |  |  | missing from Lulo's menu bar |
-| PRV-MENU-115 | missing menu item | Flip Vertical | Tools ▸ Flip Vertical |  |  | missing from Lulo's menu bar |
-| PRV-MENU-093 | missing menu item | Rectangular Selection | Tools ▸ Rectangular Selection |  |  | missing from Lulo's menu bar |
-| PRV-MENU-095 | missing menu item | Redact | Tools ▸ Redact |  |  | missing from Lulo's menu bar |
-| PRV-MENU-119 | missing menu item | Show Location Info | Tools ▸ Show Location Info |  |  | missing from Lulo's menu bar |
-| PRV-MENU-094 | missing menu item | Text Selection | Tools ▸ Text Selection |  |  | missing from Lulo's menu bar |
-| PRV-MENU-079 | missing menu item | Customise Toolbar… | View ▸ Customise Toolbar… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-045 | missing menu item | Show Tab Bar | View ▸ Show Tab Bar |  |  | missing from Lulo's menu bar |
-| PRV-MENU-054 | missing menu item | Soft Proof with Profile | View ▸ Soft Proof with Profile |  |  | missing from Lulo's menu bar |
-| PRV-MENU-056 | missing menu item | ACES CG Linear (Academy Color Encoding System AP1) | View ▸ Soft Proof with Profile ▸ ACES CG Linear (Academy Color Encoding System AP1) |  |  | missing from Lulo's menu bar |
-| PRV-MENU-057 | missing menu item | Adobe RGB (1998) | View ▸ Soft Proof with Profile ▸ Adobe RGB (1998) |  |  | missing from Lulo's menu bar |
-| PRV-MENU-058 | missing menu item | Colour LCD | View ▸ Soft Proof with Profile ▸ Colour LCD |  |  | missing from Lulo's menu bar |
-| PRV-MENU-059 | missing menu item | Display P3 | View ▸ Soft Proof with Profile ▸ Display P3 |  |  | missing from Lulo's menu bar |
-| PRV-MENU-060 | missing menu item | Generic CMYK Profile | View ▸ Soft Proof with Profile ▸ Generic CMYK Profile |  |  | missing from Lulo's menu bar |
-| PRV-MENU-061 | missing menu item | Generic Grey Gamma 2.2 Profile | View ▸ Soft Proof with Profile ▸ Generic Grey Gamma 2.2 Profile |  |  | missing from Lulo's menu bar |
-| PRV-MENU-062 | missing menu item | Generic Grey Profile | View ▸ Soft Proof with Profile ▸ Generic Grey Profile |  |  | missing from Lulo's menu bar |
-| PRV-MENU-063 | missing menu item | Generic RGB Profile | View ▸ Soft Proof with Profile ▸ Generic RGB Profile |  |  | missing from Lulo's menu bar |
-| PRV-MENU-064 | missing menu item | MSI G241 | View ▸ Soft Proof with Profile ▸ MSI G241 |  |  | missing from Lulo's menu bar |
-| PRV-MENU-055 | missing menu item | None | View ▸ Soft Proof with Profile ▸ None |  |  | missing from Lulo's menu bar |
-| PRV-MENU-067 | missing menu item | ROMM RGB: ISO 22028-2:2013 | View ▸ Soft Proof with Profile ▸ ROMM RGB: ISO 22028-2:2013 |  |  | missing from Lulo's menu bar |
-| PRV-MENU-065 | missing menu item | Rec. ITU-R BT.2020-1 | View ▸ Soft Proof with Profile ▸ Rec. ITU-R BT.2020-1 |  |  | missing from Lulo's menu bar |
-| PRV-MENU-066 | missing menu item | Rec. ITU-R BT.709-5 | View ▸ Soft Proof with Profile ▸ Rec. ITU-R BT.709-5 |  |  | missing from Lulo's menu bar |
-| PRV-MENU-068 | missing menu item | SMPTE RP 431-2-2007 DCI (P3) | View ▸ Soft Proof with Profile ▸ SMPTE RP 431-2-2007 DCI (P3) |  |  | missing from Lulo's menu bar |
-| PRV-MENU-069 | missing menu item | sRGB IEC61966-2.1 | View ▸ Soft Proof with Profile ▸ sRGB IEC61966-2.1 |  |  | missing from Lulo's menu bar |
-| PRV-MENU-071 | missing menu item | Use Dark Appearance for PDF | View ▸ Use Dark Appearance for PDF |  |  | missing from Lulo's menu bar |
-| PRV-MENU-145 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| PRV-MENU-143 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| PRV-MENU-149 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
-| PRV-MENU-133 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
-| PRV-MENU-131 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
-| PRV-MENU-132 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
-| PRV-MENU-123 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
-| PRV-MENU-128 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
-| PRV-MENU-129 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
-| PRV-MENU-130 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
-| PRV-MENU-148 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
-| PRV-MENU-144 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
-| PRV-MENU-147 | missing menu item | Show Next Tab | Window ▸ Show Next Tab |  |  | missing from Lulo's menu bar |
-| PRV-MENU-146 | missing menu item | Show Previous Tab | Window ▸ Show Previous Tab |  |  | missing from Lulo's menu bar |
-| PRV-MENU-120 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
-| PRV-MENU-087 | wrong/missing shortcut | Next Item | Go ▸ Next Item | ⌥ | ⌥↓ | shortcut differs |
-| PRV-MENU-086 | wrong/missing shortcut | Previous Item | Go ▸ Previous Item | ⌥ | ⌥↑ | shortcut differs |
-| PRV-MENU-150 | wrong/missing shortcut | Preview Help | Help ▸ Preview Help |  | ⌘? | shortcut differs |
-| PRV-MENU-122 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
-| PRV-MENU-121 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| PRV-MENU-127 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
-| PRV-MENU-124 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
-| PRV-MENU-142 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
-| PRV-MENU-125 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
-| PRV-MENU-126 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
+| PRV-MENU-018 | missing menu item (has a shortcut) | Invert Selection | Edit ▸ Invert Selection | ⇧⌘I |  | missing from Lulo's menu bar |
+| PRV-MENU-024 | missing menu item (has a shortcut) | Check Document Now | Edit ▸ Spelling and Grammar ▸ Check Document Now | ⌘; |  | missing from Lulo's menu bar |
+| PRV-MENU-023 | missing menu item (has a shortcut) | Show Spelling and Grammar | Edit ▸ Spelling and Grammar ▸ Show Spelling and Grammar | ⌘: |  | missing from Lulo's menu bar |
+| PRV-MENU-004 | missing menu item (has a shortcut) | Duplicate | File ▸ Duplicate | ⇧⌘S |  | missing from Lulo's menu bar |
+| PRV-MENU-002 | missing menu item (has a shortcut) | New from Clipboard | File ▸ New from Clipboard | ⌘N |  | missing from Lulo's menu bar |
+| PRV-MENU-003 | missing menu item (has a shortcut) | Save As… | File ▸ Save As… | ⌥⇧⌘S |  | missing from Lulo's menu bar |
+| PRV-MENU-060 | missing menu item (has a shortcut) | Back | Go ▸ Back | ⌘[ |  | missing from Lulo's menu bar |
+| PRV-MENU-061 | missing menu item (has a shortcut) | Forward | Go ▸ Forward | ⌘] |  | missing from Lulo's menu bar |
+| PRV-MENU-085 | missing menu item (has a shortcut) | Add Bookmark | Tools ▸ Add Bookmark | ⌘D |  | missing from Lulo's menu bar |
+| PRV-MENU-075 | missing menu item (has a shortcut) | Arrow | Tools ▸ Annotate ▸ Arrow | ⌃⌘A |  | missing from Lulo's menu bar |
+| PRV-MENU-069 | missing menu item (has a shortcut) | Highlight Text | Tools ▸ Annotate ▸ Highlight Text | ⌃⌘H |  | missing from Lulo's menu bar |
+| PRV-MENU-074 | missing menu item (has a shortcut) | Line | Tools ▸ Annotate ▸ Line | ⌃⌘I |  | missing from Lulo's menu bar |
+| PRV-MENU-081 | missing menu item (has a shortcut) | Loupe | Tools ▸ Annotate ▸ Loupe | ⌃⌘L |  | missing from Lulo's menu bar |
+| PRV-MENU-082 | missing menu item (has a shortcut) | Note | Tools ▸ Annotate ▸ Note | ⌃⌘N |  | missing from Lulo's menu bar |
+| PRV-MENU-073 | missing menu item (has a shortcut) | Oval | Tools ▸ Annotate ▸ Oval | ⌃⌘O |  | missing from Lulo's menu bar |
+| PRV-MENU-072 | missing menu item (has a shortcut) | Rectangle | Tools ▸ Annotate ▸ Rectangle | ⌃⌘R |  | missing from Lulo's menu bar |
+| PRV-MENU-071 | missing menu item (has a shortcut) | Strike Through Text | Tools ▸ Annotate ▸ Strike Through Text | ⌃⌘S |  | missing from Lulo's menu bar |
+| PRV-MENU-078 | missing menu item (has a shortcut) | Text | Tools ▸ Annotate ▸ Text | ⌃⌘T |  | missing from Lulo's menu bar |
+| PRV-MENU-070 | missing menu item (has a shortcut) | Underline Text | Tools ▸ Annotate ▸ Underline Text | ⌃⌘U |  | missing from Lulo's menu bar |
+| PRV-MENU-088 | missing menu item (has a shortcut) | Crop | Tools ▸ Crop | ⌘K |  | missing from Lulo's menu bar |
+| PRV-MENU-089 | missing menu item (has a shortcut) | Remove Background | Tools ▸ Remove Background | ⇧⌘K |  | missing from Lulo's menu bar |
+| PRV-MENU-062 | missing menu item (has a shortcut) | Show Magnifier | Tools ▸ Show Magnifier | ` |  | missing from Lulo's menu bar |
+| PRV-MENU-035 | missing menu item (has a shortcut) | Bookmarks | View ▸ Bookmarks | ⌥⌘5 |  | missing from Lulo's menu bar |
+| PRV-MENU-036 | missing menu item (has a shortcut) | Contact Sheet | View ▸ Contact Sheet | ⌥⌘6 |  | missing from Lulo's menu bar |
+| PRV-MENU-037 | missing menu item (has a shortcut) | Continuous Scroll | View ▸ Continuous Scroll | ⌘1 |  | missing from Lulo's menu bar |
+| PRV-MENU-034 | missing menu item (has a shortcut) | Highlights and Notes | View ▸ Highlights and Notes | ⌥⌘4 |  | missing from Lulo's menu bar |
+| PRV-MENU-032 | missing menu item (has a shortcut) | Show All Tabs | View ▸ Show All Tabs | ⇧⌘\ |  | missing from Lulo's menu bar |
+| PRV-MENU-054 | missing menu item (has a shortcut) | Show Image Background | View ▸ Show Image Background | ⌥⌘B |  | missing from Lulo's menu bar |
+| PRV-MENU-057 | missing menu item (has a shortcut) | Show Toolbar | View ▸ Show Toolbar | ⌥⌘T |  | missing from Lulo's menu bar |
+| PRV-MENU-038 | missing menu item (has a shortcut) | Single Page | View ▸ Single Page | ⌘2 |  | missing from Lulo's menu bar |
+| PRV-MENU-059 | missing menu item (has a shortcut) | Slideshow | View ▸ Slideshow | ⇧⌘F |  | missing from Lulo's menu bar |
+| PRV-MENU-033 | missing menu item (has a shortcut) | Table of Contents | View ▸ Table of Contents | ⌥⌘3 |  | missing from Lulo's menu bar |
+| PRV-MENU-039 | missing menu item (has a shortcut) | Two Pages | View ▸ Two Pages | ⌘3 |  | missing from Lulo's menu bar |
+| PRV-MENU-056 | missing menu item (has a shortcut) | Zoom to Selection | View ▸ Zoom to Selection | ⌘* |  | missing from Lulo's menu bar |
+| PRV-MENU-113 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
+| PRV-MENU-112 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
+| PRV-MENU-107 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
+| PRV-MENU-106 | missing menu item (has a shortcut) | Left & Right | Window ▸ Move & Resize ▸ Left & Right | ⌃⇧← |  | missing from Lulo's menu bar |
+| PRV-MENU-108 | missing menu item (has a shortcut) | Right & Left | Window ▸ Move & Resize ▸ Right & Left | ⌃⇧→ |  | missing from Lulo's menu bar |
+| PRV-MENU-109 | missing menu item (has a shortcut) | Right & Quarters | Window ▸ Move & Resize ▸ Right & Quarters | ⌃⌥⇧→ |  | missing from Lulo's menu bar |
+| PRV-MENU-110 | missing menu item (has a shortcut) | Top & Bottom | Window ▸ Move & Resize ▸ Top & Bottom | ⌃⇧↑ |  | missing from Lulo's menu bar |
+| PRV-MENU-111 | missing menu item (has a shortcut) | Top & Quarters | Window ▸ Move & Resize ▸ Top & Quarters | ⌃⌥⇧↑ |  | missing from Lulo's menu bar |
+| PRV-MENU-017 | missing menu item | Delete | Edit ▸ Delete |  |  | missing from Lulo's menu bar |
+| PRV-MENU-019 | missing menu item | Insert | Edit ▸ Insert |  |  | missing from Lulo's menu bar |
+| PRV-MENU-021 | missing menu item | Blank Page | Edit ▸ Insert ▸ Blank Page |  |  | missing from Lulo's menu bar |
+| PRV-MENU-020 | missing menu item | Page from File… | Edit ▸ Insert ▸ Page from File… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-028 | missing menu item | Speech | Edit ▸ Speech |  |  | missing from Lulo's menu bar |
+| PRV-MENU-029 | missing menu item | Start Speaking | Edit ▸ Speech ▸ Start Speaking |  |  | missing from Lulo's menu bar |
+| PRV-MENU-030 | missing menu item | Stop Speaking | Edit ▸ Speech ▸ Stop Speaking |  |  | missing from Lulo's menu bar |
+| PRV-MENU-022 | missing menu item | Spelling and Grammar | Edit ▸ Spelling and Grammar |  |  | missing from Lulo's menu bar |
+| PRV-MENU-026 | missing menu item | Check Grammar With Spelling | Edit ▸ Spelling and Grammar ▸ Check Grammar With Spelling |  |  | missing from Lulo's menu bar |
+| PRV-MENU-025 | missing menu item | Check Spelling While Typing | Edit ▸ Spelling and Grammar ▸ Check Spelling While Typing |  |  | missing from Lulo's menu bar |
+| PRV-MENU-027 | missing menu item | Correct Spelling Automatically | Edit ▸ Spelling and Grammar ▸ Correct Spelling Automatically |  |  | missing from Lulo's menu bar |
+| PRV-MENU-009 | missing menu item | Edit Permissions… | File ▸ Edit Permissions… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-008 | missing menu item | Enter Password… | File ▸ Enter Password… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-016 | missing menu item | Export As… | File ▸ Export As… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-010 | missing menu item | Import from Camera… | File ▸ Import from Camera… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-011 | missing menu item | Import from Scanner… | File ▸ Import from Scanner… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-006 | missing menu item | Move To… | File ▸ Move To… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-005 | missing menu item | Rename… | File ▸ Rename… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-007 | missing menu item | Revert To | File ▸ Revert To |  |  | missing from Lulo's menu bar |
+| PRV-MENU-012 | missing menu item | Take Screenshot | File ▸ Take Screenshot |  |  | missing from Lulo's menu bar |
+| PRV-MENU-015 | missing menu item | From Entire Screen | File ▸ Take Screenshot ▸ From Entire Screen |  |  | missing from Lulo's menu bar |
+| PRV-MENU-013 | missing menu item | From Selection… | File ▸ Take Screenshot ▸ From Selection… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-014 | missing menu item | From Window… | File ▸ Take Screenshot ▸ From Window… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-063 | missing menu item | Adjust Size… | Tools ▸ Adjust Size… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-068 | missing menu item | Annotate | Tools ▸ Annotate |  |  | missing from Lulo's menu bar |
+| PRV-MENU-080 | missing menu item | Mask | Tools ▸ Annotate ▸ Mask |  |  | missing from Lulo's menu bar |
+| PRV-MENU-076 | missing menu item | Polygon | Tools ▸ Annotate ▸ Polygon |  |  | missing from Lulo's menu bar |
+| PRV-MENU-083 | missing menu item | Signature | Tools ▸ Annotate ▸ Signature |  |  | missing from Lulo's menu bar |
+| PRV-MENU-084 | missing menu item | Manage Signatures… | Tools ▸ Annotate ▸ Signature ▸ Manage Signatures… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-079 | missing menu item | Speech Bubble | Tools ▸ Annotate ▸ Speech Bubble |  |  | missing from Lulo's menu bar |
+| PRV-MENU-077 | missing menu item | Star | Tools ▸ Annotate ▸ Star |  |  | missing from Lulo's menu bar |
+| PRV-MENU-090 | missing menu item | Assign Profile… | Tools ▸ Assign Profile… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-064 | missing menu item | Automatic Selection | Tools ▸ Automatic Selection |  |  | missing from Lulo's menu bar |
+| PRV-MENU-086 | missing menu item | Flip Horizontal | Tools ▸ Flip Horizontal |  |  | missing from Lulo's menu bar |
+| PRV-MENU-087 | missing menu item | Flip Vertical | Tools ▸ Flip Vertical |  |  | missing from Lulo's menu bar |
+| PRV-MENU-065 | missing menu item | Rectangular Selection | Tools ▸ Rectangular Selection |  |  | missing from Lulo's menu bar |
+| PRV-MENU-067 | missing menu item | Redact | Tools ▸ Redact |  |  | missing from Lulo's menu bar |
+| PRV-MENU-091 | missing menu item | Show Location Info | Tools ▸ Show Location Info |  |  | missing from Lulo's menu bar |
+| PRV-MENU-066 | missing menu item | Text Selection | Tools ▸ Text Selection |  |  | missing from Lulo's menu bar |
+| PRV-MENU-058 | missing menu item | Customise Toolbar… | View ▸ Customise Toolbar… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-031 | missing menu item | Show Tab Bar | View ▸ Show Tab Bar |  |  | missing from Lulo's menu bar |
+| PRV-MENU-040 | missing menu item | Soft Proof with Profile | View ▸ Soft Proof with Profile |  |  | missing from Lulo's menu bar |
+| PRV-MENU-042 | missing menu item | ACES CG Linear (Academy Color Encoding System AP1) | View ▸ Soft Proof with Profile ▸ ACES CG Linear (Academy Color Encoding System AP1) |  |  | missing from Lulo's menu bar |
+| PRV-MENU-043 | missing menu item | Adobe RGB (1998) | View ▸ Soft Proof with Profile ▸ Adobe RGB (1998) |  |  | missing from Lulo's menu bar |
+| PRV-MENU-044 | missing menu item | Display P3 | View ▸ Soft Proof with Profile ▸ Display P3 |  |  | missing from Lulo's menu bar |
+| PRV-MENU-045 | missing menu item | Generic CMYK Profile | View ▸ Soft Proof with Profile ▸ Generic CMYK Profile |  |  | missing from Lulo's menu bar |
+| PRV-MENU-046 | missing menu item | Generic Grey Gamma 2.2 Profile | View ▸ Soft Proof with Profile ▸ Generic Grey Gamma 2.2 Profile |  |  | missing from Lulo's menu bar |
+| PRV-MENU-047 | missing menu item | Generic Grey Profile | View ▸ Soft Proof with Profile ▸ Generic Grey Profile |  |  | missing from Lulo's menu bar |
+| PRV-MENU-048 | missing menu item | Generic RGB Profile | View ▸ Soft Proof with Profile ▸ Generic RGB Profile |  |  | missing from Lulo's menu bar |
+| PRV-MENU-041 | missing menu item | None | View ▸ Soft Proof with Profile ▸ None |  |  | missing from Lulo's menu bar |
+| PRV-MENU-051 | missing menu item | ROMM RGB: ISO 22028-2:2013 | View ▸ Soft Proof with Profile ▸ ROMM RGB: ISO 22028-2:2013 |  |  | missing from Lulo's menu bar |
+| PRV-MENU-049 | missing menu item | Rec. ITU-R BT.2020-1 | View ▸ Soft Proof with Profile ▸ Rec. ITU-R BT.2020-1 |  |  | missing from Lulo's menu bar |
+| PRV-MENU-050 | missing menu item | Rec. ITU-R BT.709-5 | View ▸ Soft Proof with Profile ▸ Rec. ITU-R BT.709-5 |  |  | missing from Lulo's menu bar |
+| PRV-MENU-052 | missing menu item | SMPTE RP 431-2-2007 DCI (P3) | View ▸ Soft Proof with Profile ▸ SMPTE RP 431-2-2007 DCI (P3) |  |  | missing from Lulo's menu bar |
+| PRV-MENU-053 | missing menu item | sRGB IEC61966-2.1 | View ▸ Soft Proof with Profile ▸ sRGB IEC61966-2.1 |  |  | missing from Lulo's menu bar |
+| PRV-MENU-055 | missing menu item | Use Dark Appearance for PDF | View ▸ Use Dark Appearance for PDF |  |  | missing from Lulo's menu bar |
+| PRV-MENU-117 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| PRV-MENU-115 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| PRV-MENU-121 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
+| PRV-MENU-105 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
+| PRV-MENU-103 | missing menu item | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | missing from Lulo's menu bar |
+| PRV-MENU-104 | missing menu item | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | missing from Lulo's menu bar |
+| PRV-MENU-095 | missing menu item | Halves | Window ▸ Move & Resize ▸ Halves |  |  | missing from Lulo's menu bar |
+| PRV-MENU-100 | missing menu item | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | missing from Lulo's menu bar |
+| PRV-MENU-101 | missing menu item | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | missing from Lulo's menu bar |
+| PRV-MENU-102 | missing menu item | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | missing from Lulo's menu bar |
+| PRV-MENU-120 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
+| PRV-MENU-116 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| PRV-MENU-119 | missing menu item | Show Next Tab | Window ▸ Show Next Tab |  |  | missing from Lulo's menu bar |
+| PRV-MENU-118 | missing menu item | Show Previous Tab | Window ▸ Show Previous Tab |  |  | missing from Lulo's menu bar |
+| PRV-MENU-092 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
+| PRV-MENU-122 | wrong/missing shortcut | Preview Help | Help ▸ Preview Help |  | ⌘? | shortcut differs |
+| PRV-MENU-094 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
+| PRV-MENU-093 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
+| PRV-MENU-099 | wrong/missing shortcut | Bottom | Window ▸ Move & Resize ▸ Bottom | ⌃↓ | ⌃⌘↓ | shortcut differs |
+| PRV-MENU-096 | wrong/missing shortcut | Left | Window ▸ Move & Resize ▸ Left | ⌃← | ⌃⌘← | shortcut differs |
+| PRV-MENU-114 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
+| PRV-MENU-097 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
+| PRV-MENU-098 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | PRV-SETTINGS-001 | missing settings control | Settings window | settings |  |  | the Mac has a Settings window for this app; Lulo has none yet |
-| PRV-MENU-151 | Lulo-only (not on the Mac) | Clear Menu | File ▸ Open Recent ▸ Clear Menu |  |  | present in Lulo but not found on the Mac |
-| PRV-MENU-152 | Lulo-only (not on the Mac) | Revert to Original | File ▸ Revert to Original |  |  | present in Lulo but not found on the Mac |
-| PRV-MENU-153 | Lulo-only (not on the Mac) | Show Markup Toolbar | Tools ▸ Show Markup Toolbar |  | ⇧⌘A | present in Lulo but not found on the Mac |
+| PRV-MENU-123 | Lulo-only (not on the Mac) | Clear Menu | File ▸ Open Recent ▸ Clear Menu |  |  | present in Lulo but not found on the Mac |
+| PRV-MENU-124 | Lulo-only (not on the Mac) | Revert to Original | File ▸ Revert to Original |  |  | present in Lulo but not found on the Mac |
 
 ## System Monitor
 

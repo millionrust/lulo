@@ -14,7 +14,7 @@ cargo_jobs=${CARGO_BUILD_JOBS:-1}
 profile=release
 
 usage() {
-  echo "usage: $0 --output /absolute/new/directory [--profile release|iterate]" >&2
+  echo "usage: $0 --output /absolute/new/directory [--profile release|iterate] [--minimum-free-gib N]" >&2
 }
 
 output=
@@ -28,6 +28,14 @@ while [[ $# -gt 0 ]]; do
     --profile)
       [[ $# -ge 2 ]] || { usage; exit 2; }
       profile=$2
+      shift 2
+      ;;
+    --minimum-free-gib)
+      [[ $# -ge 2 && "$2" =~ ^[1-9][0-9]*$ ]] || { usage; exit 2; }
+      # CI's disposable runner has a smaller disk than the reference laptop.
+      # The normal local floor stays 25 GiB unless explicitly overridden.
+      build_minimum_kib=$(( $2 * 1024 * 1024 ))
+      minimum_kib=$build_minimum_kib
       shift 2
       ;;
     *)

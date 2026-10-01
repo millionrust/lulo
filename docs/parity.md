@@ -674,6 +674,7 @@ similar — no plan, not tracked as rows here).
 | OTHER-13 | P2 | M | Missing | Mac Page Setup… ⇧⌘P is a 663×261 sheet: Format For (Any Printer), Paper Size, Orientation, Scale % + stepper; ?, Cancel · OK. / Lulo: no Page Setup anywhere (TE-10 is the menu row). | new |
 | OTHER-14 | P2 | L | Missing | Mac: Show Fonts ⌘T opens the floating Fonts panel (collections, family, typeface, size; Esc doesn't close it) and Show Colours ⇧⌘C the floating Colours panel. / Lulo: neither panel exists. | new |
 | OTHER-15 | P2 | M | Missing | Mac: Edit ▸ Emoji & Symbols (fn E / ⌃⌘Space) opens the character palette popover at the caret. / Lulo: no character palette. | new |
+| OTHER-16 | P1 | M | Partial (hosted run pending) | Owner testing: producing installable Lulo debs on the i5-5300U laptop takes about 1.5 hours for a full release build and makes the live desktop lag. The new Ubuntu 26.04 candidate workflow builds the native and source-pinned third-party debs off the laptop, verifies the four-package set, and provides a checked download path. The remaining gap is a successful hosted run and an owner install from its artifact after the coordinator pushes the workflow to `dev`. | `.github/workflows/candidate.yml`, `scripts/linux/fetch-candidate.sh`, `docs/release-process.md` |
 
 ---
 

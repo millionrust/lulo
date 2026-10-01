@@ -1,0 +1,194 @@
+name: Candidate packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Cargo build profile
+        type: choice
+        options: [release, iterate]
+        default: release
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CANDIDATE_PROFILE: ${{ github.event_name == 'push' && 'release' || inputs.profile }}
+
+jobs:
+  native-amd64:
+    name: Build native packages (Ubuntu 26.04 amd64)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out the candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            clang dpkg-dev libfontconfig1-dev libfreetype-dev libpam0g-dev libssl-dev \
+            libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev pkg-config
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal
+
+      - name: Restore Cargo build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/${{ env.CANDIDATE_PROFILE }}
+            shell/target/${{ env.CANDIDATE_PROFILE }}
+          key: candidate-native-amd64-${{ env.CANDIDATE_PROFILE }}-${{ hashFiles('Cargo.lock', 'shell/Cargo.lock', 'rust-toolchain.toml', 'shell/rust-toolchain.toml') }}
+          restore-keys: candidate-native-amd64-${{ env.CANDIDATE_PROFILE }}-
+
+      - name: Build native inputs and packages
+        env:
+          CARGO_BUILD_JOBS: "2"
+        run: |
+          set -euo pipefail
+          test "$(dpkg --print-architecture)" = amd64
+          bash scripts/linux/build-native-inputs.sh \
+            --output "$PWD/target/candidate-inputs" \
+            --profile "$CANDIDATE_PROFILE" \
+            --minimum-free-gib 8
+          args=()
+          if [[ "$CANDIDATE_PROFILE" == iterate ]]; then
+            args+=(--build-metadata iterate)
+          fi
+          python3 scripts/linux/build-native-packages.py \
+            --binary-dir "$PWD/target/candidate-inputs" \
+            --output "$PWD/target/candidate-native" \
+            --architecture amd64 \
+            --source-date-epoch "$(git log -1 --format=%ct)" \
+            "${args[@]}"
+          python3 scripts/linux/verify-native-packages.py \
+            --directory "$PWD/target/candidate-native" \
+            --architecture amd64 "${args[@]}"
+
+      - name: Upload native package set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-native-amd64
+          path: target/candidate-native/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  third-party-amd64:
+    name: Build pinned niri and xwayland-satellite (Ubuntu 26.04 amd64)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out the candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned third-party build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential clang curl dpkg-dev git libcairo2-dev \
+            libclang-dev libdbus-1-dev libdisplay-info-dev libgbm-dev \
+            libinput-dev libpango1.0-dev libpipewire-0.3-dev libseat-dev \
+            libsystemd-dev libudev-dev libwayland-dev libxcb-cursor-dev \
+            libxcb1-dev libxkbcommon-dev pkgconf python3 xz-utils
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal
+
+      - name: Restore third-party Cargo cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/niri-build/target
+            ~/niri-build/downloads
+          key: candidate-third-party-amd64-${{ hashFiles('packaging/third-party/upstreams.json', 'packaging/third-party/**/debian/**', 'rust-toolchain.toml') }}
+          restore-keys: candidate-third-party-amd64-
+
+      - name: Build source-pinned third-party packages
+        run: |
+          set -euo pipefail
+          test "$(dpkg --print-architecture)" = amd64
+          bash scripts/linux/build-niri-packages.sh \
+            --work-dir "$HOME/niri-build" \
+            --output "$PWD/target/candidate-third-party" \
+            --build-deps system \
+            --jobs 2 \
+            --minimum-free-gib 8
+          (cd target/candidate-third-party && sha256sum --check SHA256SUMS)
+
+      - name: Upload third-party package set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-third-party-amd64
+          path: target/candidate-third-party/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  candidate-amd64:
+    name: Verify and upload installable candidate
+    needs: [native-amd64, third-party-amd64]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download native package set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-native-amd64
+          path: target/candidate-native
+
+      - name: Download pinned third-party package set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-third-party-amd64
+          path: target/candidate-third-party
+
+      - name: Assemble and verify the exact installable package set
+        run: |
+          set -euo pipefail
+          test "$(dpkg --print-architecture)" = amd64
+          (cd target/candidate-native && sha256sum --check SHA256SUMS)
+          (cd target/candidate-third-party && sha256sum --check SHA256SUMS)
+          mkdir -p target/candidate
+          cp target/candidate-native/* target/candidate/
+          python3 scripts/linux/copy-pinned-third-party-debs.py \
+            --source "$PWD/target/candidate-third-party" \
+            --destination "$PWD/target/candidate" \
+            --architecture amd64
+          (cd target/candidate && sha256sum -- *.deb > SHA256SUMS && sha256sum --check SHA256SUMS)
+          args=()
+          if [[ "$CANDIDATE_PROFILE" == iterate ]]; then
+            args+=(--build-metadata iterate)
+          fi
+          python3 scripts/linux/verify-native-packages.py \
+            --directory "$PWD/target/candidate" \
+            --architecture amd64 "${args[@]}"
+
+      - name: Upload unsigned candidate for this commit
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lulo-candidate-${{ github.sha }}
+          path: target/candidate/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

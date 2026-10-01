@@ -319,3 +319,12 @@ recording exists: `settings/storage-refresh.json` and
 `scripts/behavior/record_mac.py`), and `settings/hardware-touchscreen.json`,
 which is Lulo-only because no Mac has a touchscreen. Run it with
 `run_lulo.py --explore`.
+
+Scenarios whose expected results are hand-written task contracts, not Mac
+recordings, are kept out of `tests/behavior/` so that every enforced
+expectation comes from a real Mac. They are in `docs/behavior-pending/`:
+`text-editor/close-unsaved-*`, `save-untitled-other`, `save-panel-desktop`,
+`open-panel-desktop` and `save-go-to-folder` (each with a `.contract.json`),
+and `files/drag-to-dock-and-desktop.json`, which
+`scripts/behavior/run_file_drag.py` runs directly. To promote one, record it
+with `scripts/behavior/record_mac.py` and move it back.

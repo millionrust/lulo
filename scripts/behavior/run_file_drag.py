@@ -104,7 +104,7 @@ def inner(args: argparse.Namespace) -> int:
         if accessibility.returncode:
             return run.finish()
         run.start()
-        scenario = json.loads((run_window_move.REPO / "tests/behavior/files/drag-to-dock-and-desktop.json")
+        scenario = json.loads((run_window_move.REPO / "docs/behavior-pending/files/drag-to-dock-and-desktop.json")
                               .read_text())
         fixtures = scenario["setup"]["files"]
         source_dir = Path(run.env["HOME"]) / "Documents" / "Drag Source"

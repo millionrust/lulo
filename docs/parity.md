@@ -8,6 +8,12 @@ Rules for agents: read only your surface's `##` section; when you fix a gap, set
 
 ## Shell
 
+### Memory on low-spec PCs
+
+| ID | Sev | Size | Status | Gap | Where |
+|---|---|---|---|---|---|
+| MEM-01 | P1 | M | Partial (`b1d6202a`) | Idle OSD allocated a renderer and layer surface before any volume or brightness event; it now opens on first use, and wallpaper releases its decoded pixel cache after rendering. In the nested Intel session, sampled shell RSS fell 637.49→538.53 MiB and PSS 399.77→361.98 MiB. Remaining: combined shell RSS still exceeds 256 MiB; Player is 160.17 MiB and Settings 131.30 MiB against the 128 MiB app limit. Software-rendered clients remain well over budget. The eight-hour swap-aware soak is open. | `shell/bins/rmac-osd/src/main.rs`, `crates/rmac-wallpaper-{runtime,image}`, `docs/perf/reference-laptop-2026-10-01-memory-diet.md` |
+
 ### Touch input
 
 | ID | Sev | Size | Status | Gap | Where |

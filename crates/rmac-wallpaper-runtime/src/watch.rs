@@ -320,12 +320,16 @@ async fn consume(
         }
         if plan_changed || force_render {
             let plan = next.plan.clone();
-            let cache = cache.clone();
+            let render_cache = cache.clone();
             let rasterization = blocking::unblock(move || {
-                let rasterized = rmac_wallpaper_image::rasterize_for(&plan, &cache, dark);
+                let rasterized = rmac_wallpaper_image::rasterize_for(&plan, &render_cache, dark);
                 (plan, rasterized)
             })
             .await;
+            // The rasterized surfaces retain their own references until the
+            // renderer has prepared them. An additional cache copy would
+            // remain at idle for no benefit.
+            cache.clear();
             if sender
                 .send(Update::Render {
                     plan: rasterization.0,

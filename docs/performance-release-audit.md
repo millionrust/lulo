@@ -47,6 +47,15 @@ the same descendants. This is useful evidence under the 0.5% CPU threshold,
 but its two-point sampling can miss a short-lived child; the full sampler has
 not run on the installed desktop, and other shell budgets remain open.
 
+The [2026-10-01 nested memory comparison](perf/reference-laptop-2026-10-01-memory-diet.md)
+reads `smaps_rollup` rather than inferring memory from RSS alone. On the
+reference Intel GPU, lazy OSD surfaces and release of the wallpaper's decoded
+pixel cache reduced the sampled shell from 637.49 to 538.53 MiB summed RSS
+and 399.77 to 361.98 MiB summed PSS. Nine of eleven opened app windows met
+128 MiB RSS; Player (160.17 MiB) and System Settings (131.30 MiB) did not.
+The 256 MiB combined shell RSS limit also still fails. These five-second idle
+samples do not replace the release-profile, eight-hour soak gate.
+
 The shared-window shell probe can be run without staging files on the PC:
 
 ```sh

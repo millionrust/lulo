@@ -1,7 +1,5 @@
 //! Read-only Markdown preview projection for Notes.
 
-use std::ops::Range;
-
 use gpui::{
     div, font, prelude::FluentBuilder as _, px, AnyElement, Context, InteractiveElement as _,
     IntoElement, ParentElement, Role, StatefulInteractiveElement as _, StrikethroughStyle, Styled,

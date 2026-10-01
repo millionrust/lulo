@@ -171,6 +171,53 @@ fn centered_window_bounds(width: f32, height: f32, cx: &App) -> WindowBounds {
     WindowBounds::centered(size(px(width), px(height)), cx)
 }
 
+/// The reserved top/right/bottom/left edges a window must stay inside on
+/// `output`: the top bar (always the top edge, a fixed `rmac-top-bar`
+/// constant) plus the Dock's *current* exclusive zone, which lands on
+/// bottom, left or right depending on `DockPlacement`, or nowhere at all
+/// with "Reserve space" off. This is the real, live-settings equivalent of
+/// the macOS-shaped guess `fit_to_screen` falls back to when there's no
+/// compositor snapshot to ask (before a window's first frame).
+fn reserved_edges(
+    compositor: &rmac_compositor::Snapshot,
+    output: &rmac_compositor::OutputId,
+    dock_settings: &rmac_shell_settings::DockSettings,
+) -> (f32, f32, f32, f32) {
+    let mut edges = (rmac_top_bar::BAR_HEIGHT as f32, 0.0_f32, 0.0_f32, 0.0_f32);
+    if let Ok(descriptions) =
+        rmac_dock::surface_descriptions(compositor, dock_settings, Some(output), false)
+    {
+        if let Some(found) = descriptions
+            .iter()
+            .find(|candidate| &candidate.output == output)
+        {
+            match found.placement {
+                rmac_shell_settings::DockPlacement::Bottom => edges.2 += found.exclusive_zone,
+                rmac_shell_settings::DockPlacement::Left => edges.3 += found.exclusive_zone,
+                rmac_shell_settings::DockPlacement::Right => edges.1 += found.exclusive_zone,
+            }
+        }
+    }
+    edges
+}
+
+/// Shrink `(width, height)` to fit inside `(screen_width, screen_height)`
+/// less the reserved `edges` (top, right, bottom, left) and a little air
+/// around both.
+fn fit_to_usable_area(
+    width: f32,
+    height: f32,
+    screen_width: f32,
+    screen_height: f32,
+    edges: (f32, f32, f32, f32),
+) -> (f32, f32) {
+    const BREATHING_ROOM: f32 = 16.0;
+    let (top, right, bottom, left) = edges;
+    let max_width = (screen_width - left - right - BREATHING_ROOM).max(MIN_WINDOW_WIDTH);
+    let max_height = (screen_height - top - bottom - BREATHING_ROOM).max(MIN_WINDOW_HEIGHT);
+    (width.min(max_width), height.min(max_height))
+}
+
 /// GPUI cannot report the logical screen size on Wayland before or right
 /// after mapping (it names no display, lists outputs divided by wl_output's
 /// integer scale, and briefly reports that integer scale), so ask the
@@ -179,47 +226,76 @@ fn centered_window_bounds(width: f32, height: f32, cx: &App) -> WindowBounds {
 fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
     window
         .spawn(cx, async move |cx| {
-            let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
-                return;
-            };
-            let screen = snapshot
-                .focus
-                .output
-                .as_ref()
-                .and_then(|id| snapshot.outputs.iter().find(|output| &output.id == id))
-                .or_else(|| snapshot.outputs.first())
-                .and_then(|output| output.logical.as_ref())
-                .map(|logical| (logical.size.width as f32, logical.size.height as f32));
-            let Some((screen_width, screen_height)) = screen else {
-                return;
-            };
+            let pid = std::process::id() as i32;
+            // A small, sandboxed file read -- not a Wayland round trip --
+            // done off this already-background task, the same as the rest
+            // of Settings' own disk/D-Bus work (`blocking::unblock`, never
+            // `background_executor` directly).
+            let dock_settings = blocking::unblock(|| {
+                rmac_shell_settings::ShellSettingsStore::from_environment()
+                    .and_then(|store| store.load())
+                    .map(|snapshot| snapshot.settings.dock)
+                    .ok()
+            })
+            .await
+            .unwrap_or_default();
             // This process's own newly mapped window (WIN-02): niri centres
             // a *resize* on the working area below the menu bar and beside
             // the Dock (the same area `Action::CenterWindow` and the green
             // button's Centre use), but centres a window's *initial*
             // placement on the whole output. Even a window that fits can
             // therefore open under the Dock unless it is centred after map.
-            let pid = std::process::id() as i32;
-            let window_id = snapshot
-                .windows
-                .iter()
-                .filter(|window| window.pid == Some(pid))
-                .min_by_key(|window| i32::from(!window.focused))
-                .map(|window| window.id);
-            // niri configures a new floating window after it maps and would
-            // replace a size set before that, so keep fitting briefly until
-            // the window stays inside the space above the Dock.
+            //
+            // niri also configures a new floating window after it maps and
+            // would replace a size set before that, and the very first
+            // snapshot taken right after `cx.open_window` can run before
+            // niri has reported this process's own window at all -- so keep
+            // refetching the snapshot (not just reusing one taken before the
+            // loop) and fitting briefly until the window is found, sized to
+            // the real usable area, and centred.
             for _ in 0..10 {
                 cx.background_executor()
                     .timer(std::time::Duration::from_millis(100))
                     .await;
+                let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+                    continue;
+                };
+                let Some(output) = snapshot
+                    .focus
+                    .output
+                    .clone()
+                    .or_else(|| snapshot.outputs.first().map(|output| output.id.clone()))
+                else {
+                    continue;
+                };
+                let Some((screen_width, screen_height)) = snapshot
+                    .outputs
+                    .iter()
+                    .find(|candidate| candidate.id == output)
+                    .and_then(|candidate| candidate.logical.as_ref())
+                    .map(|logical| (logical.size.width as f32, logical.size.height as f32))
+                else {
+                    continue;
+                };
+                let Some(window_id) = snapshot
+                    .windows
+                    .iter()
+                    .filter(|window| window.pid == Some(pid))
+                    .min_by_key(|window| i32::from(!window.focused))
+                    .map(|window| window.id)
+                else {
+                    // Not in niri's window list yet -- try again next tick.
+                    continue;
+                };
+                let edges = reserved_edges(&snapshot, &output, &dock_settings);
                 let oversized = cx.update(|window, _| {
                     let current = window.bounds().size;
-                    let (width, height) = fit_to_screen(
+                    let (width, height) = fit_to_usable_area(
                         f32::from(current.width),
                         f32::from(current.height),
                         screen_width,
                         screen_height,
+                        edges,
                     );
                     let oversized =
                         width < f32::from(current.width) || height < f32::from(current.height);
@@ -228,12 +304,11 @@ fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
                     }
                     oversized
                 });
-                if let Some(window_id) = window_id {
-                    let _ = rmac_compositor_niri::execute_action(
-                        &rmac_compositor::Action::CenterWindow { window: window_id },
-                    )
+                let _ =
+                    rmac_compositor_niri::execute_action(&rmac_compositor::Action::CenterWindow {
+                        window: window_id,
+                    })
                     .await;
-                }
                 if !matches!(oversized, Ok(true)) {
                     break;
                 }
@@ -271,10 +346,17 @@ fn restored_window_bounds(app_id: &str, width: f32, height: f32, cx: &App) -> Wi
     ) else {
         return fallback();
     };
-    // A size saved on a larger screen still has to fit between the menu bar
-    // and the Dock here; floating windows ignore the Dock's reserved zone.
-    let (width, height) = match (state.mode, cx.primary_display()) {
-        (WindowMode::Windowed, Some(display)) => {
+    // A size saved on a larger screen, under a bigger Dock, or (restored
+    // verbatim) from a stale Maximized/Fullscreen snapshot, still has to fit
+    // between the menu bar and the Dock here -- a restored frame is clamped
+    // the same way a brand-new one is, regardless of mode. This is only the
+    // best guess available before the window has a first frame
+    // (`cx.primary_display()` is unreliable on Wayland at this point, see
+    // `fit_to_display_after_first_frame`, which re-fits and re-centres every
+    // window -- restored or not -- against the compositor's real geometry
+    // and exclusive zones once it's known).
+    let (width, height) = match cx.primary_display() {
+        Some(display) => {
             let screen = display.bounds().size;
             fit_to_screen(
                 state.width as f32,
@@ -283,7 +365,7 @@ fn restored_window_bounds(app_id: &str, width: f32, height: f32, cx: &App) -> Wi
                 f32::from(screen.height),
             )
         }
-        _ => (state.width as f32, state.height as f32),
+        None => (state.width as f32, state.height as f32),
     };
     let bounds = Bounds::new(
         point(px(state.x as f32), px(state.y as f32)),
@@ -1174,7 +1256,7 @@ pub fn boot_with_assets<A, V, F>(
 
 #[cfg(test)]
 mod fit_tests {
-    use super::fit_to_screen;
+    use super::{fit_to_screen, fit_to_usable_area};
 
     #[test]
     fn default_sizes_shrink_to_the_space_between_menu_bar_and_dock() {
@@ -1182,5 +1264,103 @@ mod fit_tests {
         assert_eq!(fit_to_screen(947.0, 833.0, 1536.0, 864.0), (947.0, 730.0));
         assert_eq!(fit_to_screen(700.0, 500.0, 1536.0, 864.0), (700.0, 500.0));
         assert_eq!(fit_to_screen(2000.0, 900.0, 1470.0, 956.0), (1430.0, 822.0));
+    }
+
+    #[test]
+    fn usable_area_shrinks_a_window_that_reaches_under_a_bottom_dock() {
+        // 1920x1080 output, 32 top bar, 96 Dock (reserve space on) + a
+        // little air: a 723x832 Settings window fits the width but its
+        // height has to come down so the bottom edge clears the Dock.
+        let (width, height) =
+            fit_to_usable_area(723.0, 832.0, 1920.0, 1080.0, (32.0, 0.0, 96.0, 0.0));
+        assert_eq!(width, 723.0);
+        assert_eq!(height, 1080.0 - 32.0 - 96.0 - 16.0);
+    }
+
+    #[test]
+    fn usable_area_leaves_a_window_untouched_when_it_already_fits() {
+        assert_eq!(
+            fit_to_usable_area(640.0, 480.0, 1920.0, 1080.0, (32.0, 0.0, 96.0, 0.0)),
+            (640.0, 480.0)
+        );
+    }
+
+    #[test]
+    fn usable_area_reserves_the_side_the_dock_is_actually_on() {
+        // A left-placed Dock takes width, not height.
+        let (width, height) =
+            fit_to_usable_area(1800.0, 900.0, 1920.0, 1080.0, (32.0, 0.0, 0.0, 96.0));
+        assert_eq!(width, 1920.0 - 96.0 - 16.0);
+        assert_eq!(height, 900.0);
+    }
+
+    #[test]
+    fn usable_area_never_shrinks_below_the_app_minimum() {
+        let (width, height) =
+            fit_to_usable_area(700.0, 500.0, 500.0, 300.0, (32.0, 0.0, 96.0, 0.0));
+        assert_eq!(width, super::MIN_WINDOW_WIDTH);
+        assert_eq!(height, super::MIN_WINDOW_HEIGHT);
+    }
+
+    fn output(id: &str) -> rmac_compositor::Output {
+        rmac_compositor::Output {
+            id: id.into(),
+            make: String::new(),
+            model: String::new(),
+            serial: None,
+            physical_size_mm: None,
+            modes: Vec::new(),
+            current_mode: Some(0),
+            custom_mode: false,
+            vrr_supported: false,
+            vrr_enabled: false,
+            logical: Some(rmac_compositor::LogicalOutput {
+                position: Default::default(),
+                size: rmac_compositor::LogicalSize {
+                    width: 1920.0,
+                    height: 1080.0,
+                },
+                scale: 1.0,
+                transform: "normal".into(),
+            }),
+        }
+    }
+
+    #[test]
+    fn reserved_edges_reads_the_top_bar_and_the_docks_real_placement_and_zone() {
+        let output_id = rmac_compositor::OutputId::from("eDP-1");
+        let compositor = rmac_compositor::Snapshot {
+            outputs: vec![output("eDP-1")],
+            ..Default::default()
+        };
+
+        let bottom_dock = rmac_shell_settings::DockSettings {
+            placement: rmac_shell_settings::DockPlacement::Bottom,
+            reserve_space: true,
+            ..Default::default()
+        };
+        let (top, right, bottom, left) =
+            super::reserved_edges(&compositor, &output_id, &bottom_dock);
+        assert_eq!(top, rmac_top_bar::BAR_HEIGHT as f32);
+        assert_eq!((right, left), (0.0, 0.0));
+        assert_eq!(bottom, 64.0); // default tile size + shelf padding
+
+        let left_dock = rmac_shell_settings::DockSettings {
+            placement: rmac_shell_settings::DockPlacement::Left,
+            reserve_space: true,
+            ..Default::default()
+        };
+        let (_, right, bottom, left) = super::reserved_edges(&compositor, &output_id, &left_dock);
+        assert_eq!((right, bottom), (0.0, 0.0));
+        assert_eq!(left, 64.0);
+
+        let hidden_dock = rmac_shell_settings::DockSettings {
+            reserve_space: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            super::reserved_edges(&compositor, &output_id, &hidden_dock),
+            (rmac_top_bar::BAR_HEIGHT as f32, 0.0, 0.0, 0.0)
+        );
     }
 }

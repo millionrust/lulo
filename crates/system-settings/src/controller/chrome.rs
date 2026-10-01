@@ -382,12 +382,14 @@ impl Settings {
                         div()
                             .flex()
                             .items_center()
+                            .w_full()
                             .gap(px(style::SIDEBAR_LABEL_X
                                 - style::SIDEBAR_ICON_X
                                 - style::SIDEBAR_ICON))
                             .child(tile(cat.icon, cat.color, style::SIDEBAR_ICON))
                             .child(
                                 div()
+                                    .flex_1()
                                     .min_w_0()
                                     .v_flex()
                                     .child(

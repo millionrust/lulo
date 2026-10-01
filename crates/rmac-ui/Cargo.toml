@@ -12,6 +12,7 @@ gpui-component.workspace = true
 gpui-component-assets.workspace = true
 async-channel.workspace = true
 async-io.workspace = true
+blocking.workspace = true
 rmac-appearance.workspace = true
 rmac-appearance-portal.workspace = true
 rmac-app-menu.workspace = true
@@ -20,8 +21,10 @@ rmac-recent-documents.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-design.workspace = true
+rmac-dock.workspace = true
 rmac-shell-settings.workspace = true
 rmac-theme.workspace = true
+rmac-top-bar.workspace = true
 rmac-window-state.workspace = true
 
 [target.'cfg(unix)'.dependencies]

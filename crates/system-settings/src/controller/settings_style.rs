@@ -35,6 +35,10 @@ pub(super) const SIDEBAR_INSET: f32 = 8.0;
 /// (LINUX-HW-02) truncated to "Touchscre…" at that width even though every
 /// Mac row fits. Widened just enough for the longest current label with
 /// its icon/inset budget; keep this in sync if a longer row is ever added.
+/// Widening this alone did not fix the truncation: the category row's label
+/// wrapper (`chrome.rs`'s sidebar list) had no `flex_1()`, so it never
+/// claimed the extra room this constant made available and kept truncating
+/// at its old, narrower content-sized width. Both are needed together.
 pub(super) const SIDEBAR_PANEL_WIDTH: f32 = 236.0;
 pub(super) const SIDEBAR_COLUMN_WIDTH: f32 = SIDEBAR_INSET + SIDEBAR_PANEL_WIDTH;
 /// Window radius 27 minus the inset keeps the corners concentric.

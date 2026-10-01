@@ -268,7 +268,7 @@
         },
         {
           "label": "Close All",
-          "action": "calculator::CloseWindow",
+          "action": "rmac_ui::RequestClose",
           "shortcut": "⌥⌘W",
           "separator_before": false,
           "children": []

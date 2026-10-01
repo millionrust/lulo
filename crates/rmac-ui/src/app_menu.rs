@@ -137,6 +137,11 @@ fn current_menus(cx: &mut App) -> Vec<Menu> {
         {
             state.enabled = Some(false);
         }
+        if item.action == rmac_app_menu::PASTE_MATCH_STYLE_ACTION
+            && !available.contains("input::Paste")
+        {
+            state.enabled = Some(false);
+        }
         Some(state)
     });
     // File ▸ Open Recent ▸ (TE-02, PREV-08/PREV-15): built fresh every time

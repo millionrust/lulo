@@ -68,7 +68,7 @@
         },
         {
           "label": "Close All",
-          "action": "weather::CloseWindow",
+          "action": "rmac_ui::RequestClose",
           "shortcut": "⌥⌘W",
           "separator_before": false,
           "children": []
@@ -115,7 +115,7 @@
         },
         {
           "label": "Paste and Match Style",
-          "action": "input::Paste",
+          "action": "rmac_ui::PasteAndMatchStyle",
           "shortcut": "⌥⇧⌘V",
           "separator_before": false,
           "children": []

@@ -68,7 +68,7 @@
         },
         {
           "label": "Close All",
-          "action": "clock::CloseWindow",
+          "action": "rmac_ui::RequestClose",
           "shortcut": "⌥⌘W",
           "separator_before": false,
           "children": []

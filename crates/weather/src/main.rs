@@ -62,7 +62,7 @@ fn main() {
                 KeyBinding::new("cmd-r", Refresh, context),
                 KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, FindCity, context),
                 KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
-                KeyBinding::new("alt-cmd-w", CloseWindow, context),
+                KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, context),
                 KeyBinding::new("ctrl-cmd-s", ToggleSidebar, context),
                 KeyBinding::new("shift-cmd-l", AddLocationToList, context),
             ]);

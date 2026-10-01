@@ -483,9 +483,14 @@ impl NotesView {
                 .selected_note()
                 .is_some_and(|note| !note.deleted);
         let body_focused = self.body.read(cx).focus_handle(cx).is_focused(window);
+        let body_has_selection = {
+            let body = self.body.read(cx);
+            !body.selected_range().is_empty()
+        };
         for action in [
             "notes::ToggleBold",
             "notes::ToggleItalic",
+            "notes::ToggleStrikethrough",
             "notes::SetStyleTitle",
             "notes::SetStyleHeading",
             "notes::SetStyleSubheading",
@@ -504,6 +509,9 @@ impl NotesView {
             "notes::UntickAll",
             "notes::MoveTickedToBottom",
             "notes::DeleteTicked",
+            "notes::MoveItemUp",
+            "notes::MoveItemDown",
+            "notes::InsertTable",
         ] {
             rmac_ui::set_menu_enabled(action, body_editable && body_focused, cx);
         }
@@ -522,6 +530,17 @@ impl NotesView {
         rmac_ui::set_menu_enabled("notes::UseSelectionForFind", body_editable, cx);
         rmac_ui::set_menu_enabled("notes::JumpToSelection", body_editable, cx);
         rmac_ui::set_menu_enabled("notes::FindInNote", ready && has_note, cx);
+        for action in [
+            "notes::MakeUppercase",
+            "notes::MakeLowercase",
+            "notes::Capitalise",
+        ] {
+            rmac_ui::set_menu_enabled(
+                action,
+                body_editable && body_focused && body_has_selection,
+                cx,
+            );
+        }
         rmac_ui::set_menu_enabled("notes::FindAndReplace", body_editable, cx);
         rmac_ui::set_menu_enabled("notes::PrintNote", has_note, cx);
         rmac_ui::set_menu_enabled("notes::ExportNotePdf", has_note, cx);

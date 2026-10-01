@@ -70,7 +70,7 @@ use input_support::{
     display_title, now_unix_ms, parse_tags, safe_export_stem, take_counter, unique_folder_name,
 };
 use markdown_presentation::render_markdown_document;
-use note_format_controller::{ChecklistBulkAction, ListMarker, ParagraphStyle};
+use note_format_controller::{ChecklistBulkAction, ListMarker, ParagraphStyle, TextTransform};
 use notes_style::*;
 use presentation::{
     attachment_match_row, centered_state, date_label, date_section, folder_row,
@@ -105,6 +105,9 @@ actions!(
         UseSelectionForFind,
         JumpToSelection,
         PastePlainText,
+        MakeUppercase,
+        MakeLowercase,
+        Capitalise,
         ExportNotes,
         RenameSelectedFolder,
         DeleteSelectedFolder,
@@ -114,8 +117,12 @@ actions!(
         UntickAll,
         MoveTickedToBottom,
         DeleteTicked,
+        MoveItemUp,
+        MoveItemDown,
+        InsertTable,
         ToggleBold,
         ToggleItalic,
+        ToggleStrikethrough,
         SetStyleTitle,
         SetStyleHeading,
         SetStyleSubheading,

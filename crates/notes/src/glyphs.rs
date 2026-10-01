@@ -8,6 +8,8 @@ use gpui::{px, svg, AssetSource, Hsla, Result, SharedString, Styled, Svg};
 pub(super) const COMPOSE: &str = "notes/compose.svg";
 pub(super) const CHECKLIST: &str = "notes/checklist.svg";
 pub(super) const ATTACH: &str = "notes/attach.svg";
+pub(super) const FORMAT: &str = "notes/format.svg";
+pub(super) const TABLE: &str = "notes/table.svg";
 pub(super) const MORE: &str = "notes/more.svg";
 pub(super) const SEARCH: &str = "notes/search.svg";
 pub(super) const FOLDER: &str = "notes/folder.svg";
@@ -17,6 +19,8 @@ const GLYPHS: &[(&str, &[u8])] = &[
     (COMPOSE, include_bytes!("../assets/notes/compose.svg")),
     (CHECKLIST, include_bytes!("../assets/notes/checklist.svg")),
     (ATTACH, include_bytes!("../assets/notes/attach.svg")),
+    (FORMAT, include_bytes!("../assets/notes/format.svg")),
+    (TABLE, include_bytes!("../assets/notes/table.svg")),
     (MORE, include_bytes!("../assets/notes/more.svg")),
     (SEARCH, include_bytes!("../assets/notes/search.svg")),
     (FOLDER, include_bytes!("../assets/notes/folder.svg")),

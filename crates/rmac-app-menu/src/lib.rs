@@ -485,6 +485,15 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
+            submenu!(
+                "Transformations",
+                "notes::TransformationsMenu",
+                [
+                    item!("Make Uppercase", "notes::MakeUppercase", ""),
+                    item!("Make Lowercase", "notes::MakeLowercase", ""),
+                    item!("Capitalise", "notes::Capitalise", ""),
+                ]
+            ),
         ],
     },
     MenuSpec {
@@ -517,11 +526,21 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ]
             ),
             submenu!(
+                "Move Item",
+                "notes::MoveItemMenu",
+                [
+                    item!("Up", "notes::MoveItemUp", "⌃⌘"),
+                    item!("Down", "notes::MoveItemDown", "⌃⌘"),
+                ]
+            ),
+            item!("Table", "notes::InsertTable", "⌥⌘T"),
+            submenu!(
                 "Font",
                 "notes::FontMenu",
                 [
                     item!("Bold", "notes::ToggleBold", "⌘B"),
                     item!("Italic", "notes::ToggleItalic", "⌘I"),
+                    item!("Strikethrough", "notes::ToggleStrikethrough", ""),
                 ],
                 separator
             ),

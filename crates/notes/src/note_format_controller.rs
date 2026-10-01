@@ -22,6 +22,7 @@ pub(super) enum ParagraphStyle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ListMarker {
     Bulleted,
+    Dashed,
     Numbered,
 }
 
@@ -31,6 +32,38 @@ pub(super) enum ChecklistBulkAction {
     UntickAll,
     MoveTickedToBottom,
     DeleteTicked,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum TextTransform {
+    Uppercase,
+    Lowercase,
+    Capitalise,
+}
+
+fn transformed_text(text: &str, transform: TextTransform) -> String {
+    match transform {
+        TextTransform::Uppercase => text.to_uppercase(),
+        TextTransform::Lowercase => text.to_lowercase(),
+        TextTransform::Capitalise => {
+            let mut word_start = true;
+            let mut result = String::new();
+            for character in text.chars() {
+                if character.is_alphanumeric() {
+                    if word_start {
+                        result.extend(character.to_uppercase());
+                    } else {
+                        result.extend(character.to_lowercase());
+                    }
+                    word_start = false;
+                } else {
+                    result.push(character);
+                    word_start = true;
+                }
+            }
+            result
+        }
+    }
 }
 
 fn checklist_line(line: &str) -> bool {
@@ -146,7 +179,134 @@ fn current_line_range(value: &str, cursor: usize) -> std::ops::Range<usize> {
     start..end
 }
 
+fn is_list_item(line: &str) -> bool {
+    let line = line.trim_start();
+    if line.starts_with("- ") || line.starts_with("* ") {
+        return true;
+    }
+    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
+    digits > 0 && line[digits..].starts_with(". ")
+}
+
+/// Swap one Markdown list line with the adjacent item in its contiguous
+/// list. Return the source and new caret, keeping the caret within the item
+/// that moved rather than leaving it on its old row.
+fn moved_list_item(value: &str, cursor: usize, up: bool) -> Option<(String, usize)> {
+    let current = current_line_range(value, cursor);
+    let line = value.get(current.clone())?;
+    if !is_list_item(line) {
+        return None;
+    }
+    let offset = cursor.saturating_sub(current.start).min(line.len());
+    let adjacent = if up {
+        let previous_end = current.start.checked_sub(1)?;
+        current_line_range(value, previous_end)
+    } else {
+        let next_start = current.end.checked_add(1)?;
+        if next_start > value.len() {
+            return None;
+        }
+        current_line_range(value, next_start)
+    };
+    let other = value.get(adjacent.clone())?;
+    if !is_list_item(other) {
+        return None;
+    }
+    let (start, end, replacement, caret) = if up {
+        (
+            adjacent.start,
+            current.end,
+            format!("{line}\n{other}"),
+            adjacent.start + offset,
+        )
+    } else {
+        (
+            current.start,
+            adjacent.end,
+            format!("{other}\n{line}"),
+            current.start + other.len() + 1 + offset,
+        )
+    };
+    let mut updated = value.to_string();
+    updated.replace_range(start..end, &replacement);
+    Some((updated, caret))
+}
+
 impl NotesView {
+    pub(super) fn insert_table(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        self.body.update(cx, |state, cx| {
+            let cursor = state.selected_range().start;
+            let value = state.value().to_string();
+            let needs_newline = cursor > 0 && !value[..cursor].ends_with('\n');
+            let template = format!(
+                "{}| Column 1 | Column 2 |\n| --- | --- |\n|  |  |\n|  |  |\n",
+                if needs_newline { "\n" } else { "" }
+            );
+            let first_heading = cursor + usize::from(needs_newline) + 2;
+            state.replace(template, window, cx);
+            state.set_selected_range(first_heading..first_heading + "Column 1".len(), cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+    }
+
+    pub(super) fn transform_selection(
+        &mut self,
+        transform: TextTransform,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let mut changed = false;
+        self.body.update(cx, |state, cx| {
+            let selected = state.selected_range();
+            let Some(text) = state.value().get(selected) else {
+                return;
+            };
+            if text.is_empty() {
+                return;
+            }
+            let next = transformed_text(text, transform);
+            if next == text {
+                return;
+            }
+            state.replace(next, window, cx);
+            state.focus(window, cx);
+            changed = true;
+        });
+        if changed {
+            self.schedule_current_edit(cx);
+        }
+    }
+
+    pub(super) fn move_current_list_item(
+        &mut self,
+        up: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let value = self.body.read(cx).value().to_string();
+        let cursor = self.body.read(cx).cursor();
+        let Some((updated, caret)) = moved_list_item(&value, cursor, up) else {
+            return;
+        };
+        self.body.update(cx, |state, cx| {
+            state.set_selected_range(0..value.len(), cx);
+            state.replace(updated, window, cx);
+            state.set_selected_range(caret..caret, cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+    }
+
     pub(super) fn apply_checklist_bulk(
         &mut self,
         action: ChecklistBulkAction,
@@ -239,7 +399,8 @@ impl NotesView {
         self.apply_to_current_line(window, cx, |line| {
             let body = strip_leading_marker(line);
             match marker {
-                ListMarker::Bulleted => format!("- {body}"),
+                ListMarker::Bulleted => format!("* {body}"),
+                ListMarker::Dashed => format!("- {body}"),
                 ListMarker::Numbered => format!("1. {body}"),
             }
         });
@@ -349,6 +510,10 @@ impl NotesView {
     /// visually with a Bulleted List's `- ` or a lone `*`.
     pub(super) fn toggle_italic(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.apply_inline_markdown("_", "_", window, cx);
+    }
+
+    pub(super) fn toggle_strikethrough(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_inline_markdown("~~", "~~", window, cx);
     }
 
     /// ⇧⌘U: mark the checklist item on the current line done/not done, like
@@ -474,5 +639,32 @@ mod tests {
             .lines()
             .filter(|line| checklist_line(line))
             .all(|line| !ticked_line(line)));
+    }
+
+    #[test]
+    fn moving_one_list_item_preserves_its_caret_and_other_paragraphs() {
+        let body = "Intro\n- [ ] one\n- [x] two\nOutro";
+        let cursor = body.find("two").unwrap() + 1;
+        let (moved, caret) = moved_list_item(body, cursor, true).unwrap();
+        assert_eq!(moved, "Intro\n- [x] two\n- [ ] one\nOutro");
+        assert_eq!(&moved[caret - 1..caret + 2], "two");
+        assert!(moved_list_item(body, cursor, false).is_none());
+        assert!(moved_list_item(body, 1, true).is_none());
+    }
+
+    #[test]
+    fn text_transformations_handle_unicode_and_word_boundaries() {
+        assert_eq!(
+            transformed_text("élan and café", TextTransform::Uppercase),
+            "ÉLAN AND CAFÉ"
+        );
+        assert_eq!(
+            transformed_text("ÉLAN AND CAFÉ", TextTransform::Lowercase),
+            "élan and café"
+        );
+        assert_eq!(
+            transformed_text("hELLO-world again", TextTransform::Capitalise),
+            "Hello-World Again"
+        );
     }
 }

@@ -54,6 +54,7 @@ pub enum MarkdownPreviewBlockKind {
         depth: u8,
         ordered_index: Option<u32>,
         checked: Option<bool>,
+        unordered_marker: Option<char>,
     },
     CodeBlock,
     TableRow {
@@ -167,7 +168,7 @@ pub fn parse_inert_markdown_preview(
     let mut options = markdown::ParseOptions::gfm();
     options.constructs.frontmatter = true;
     let tree = markdown::to_mdast(source, &options).map_err(|_| MarkdownPreviewError::Parse)?;
-    let mut builder = PreviewBuilder::new(source.len());
+    let mut builder = PreviewBuilder::new(source);
     builder.render_node(&tree, BlockContext::Paragraph, 0);
     Ok(builder.finish())
 }
@@ -180,6 +181,7 @@ enum BlockContext {
         depth: u8,
         ordered_index: Option<u32>,
         checked: Option<bool>,
+        unordered_marker: Option<char>,
         /// The whole item's byte range in the source, as a `(start, end)`
         /// pair so the context stays `Copy` (unlike `Range<usize>`).
         source_range: Option<(usize, usize)>,
@@ -198,7 +200,8 @@ fn list_item_source_range(context: BlockContext) -> Option<Range<usize>> {
     }
 }
 
-struct PreviewBuilder {
+struct PreviewBuilder<'a> {
+    source: &'a str,
     source_bytes: usize,
     remaining_text_bytes: usize,
     remaining_runs: usize,
@@ -206,10 +209,11 @@ struct PreviewBuilder {
     truncated: bool,
 }
 
-impl PreviewBuilder {
-    fn new(source_bytes: usize) -> Self {
+impl<'a> PreviewBuilder<'a> {
+    fn new(source: &'a str) -> Self {
         Self {
-            source_bytes,
+            source,
+            source_bytes: source.len(),
             remaining_text_bytes: MAX_MARKDOWN_PREVIEW_OUTPUT_BYTES,
             remaining_runs: MAX_MARKDOWN_PREVIEW_RUNS,
             blocks: Vec::new(),
@@ -338,10 +342,20 @@ impl PreviewBuilder {
         list_depth: u8,
         depth: usize,
     ) {
+        let unordered_marker = if ordered_index.is_none() {
+            item.position
+                .as_ref()
+                .and_then(|position| self.source.get(position.start.offset..))
+                .and_then(|source| source.trim_start().chars().next())
+                .filter(|marker| matches!(marker, '-' | '*' | '+'))
+        } else {
+            None
+        };
         let context = BlockContext::ListItem {
             depth: list_depth,
             ordered_index,
             checked: item.checked,
+            unordered_marker,
             source_range: item
                 .position
                 .as_ref()
@@ -422,11 +436,13 @@ fn context_kind(context: BlockContext) -> MarkdownPreviewBlockKind {
             depth,
             ordered_index,
             checked,
+            unordered_marker,
             ..
         } => MarkdownPreviewBlockKind::ListItem {
             depth,
             ordered_index,
             checked,
+            unordered_marker,
         },
         BlockContext::Footnote => MarkdownPreviewBlockKind::Footnote,
     }
@@ -771,6 +787,22 @@ mod tests {
                 .count(),
             0
         );
+    }
+
+    #[test]
+    fn preview_retains_bullet_and_dash_markers() {
+        let document = parse_inert_markdown_preview("* Bullet\n- Dash\n").unwrap();
+        let markers = document
+            .blocks()
+            .iter()
+            .filter_map(|block| match block.kind() {
+                MarkdownPreviewBlockKind::ListItem {
+                    unordered_marker, ..
+                } => unordered_marker,
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(markers, vec!['*', '-']);
     }
 
     #[test]

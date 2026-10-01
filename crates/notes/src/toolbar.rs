@@ -129,7 +129,7 @@ impl NotesView {
             }
             - LIST_WIDTH
             - 1.0;
-        let search_width = (editor_width - 280.0).clamp(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH);
+        let search_width = (editor_width - 360.0).clamp(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH);
 
         let compose_button = glyph_button("compose", glyphs::COMPOSE, CAPSULE_HEIGHT, "New Note")
             .disabled(!ready)
@@ -153,6 +153,30 @@ impl NotesView {
         );
 
         let format = capsule("format-capsule")
+            .child(
+                PopUpButton::new("note-format", "Format")
+                    .menu_button(glyphs::FORMAT, TOOLBAR_GLYPH)
+                    .w(px(CAPSULE_BUTTON_WIDTH))
+                    .h(px(CAPSULE_HEIGHT - 2.0))
+                    .rounded(px(CAPSULE_HEIGHT / 2.0))
+                    .text_color(toolbar_glyph())
+                    .disabled(!ready || deleted || !has_note || preview_visible)
+                    .dropdown_menu(|menu, _, _| {
+                        menu.menu("Title", Box::new(SetStyleTitle))
+                            .menu("Heading", Box::new(SetStyleHeading))
+                            .menu("Subheading", Box::new(SetStyleSubheading))
+                            .menu("Body", Box::new(SetStyleBody))
+                            .menu("Monostyled", Box::new(SetStyleMonospaced))
+                            .separator()
+                            .menu("Bold", Box::new(ToggleBold))
+                            .menu("Italic", Box::new(ToggleItalic))
+                            .menu("Strikethrough", Box::new(ToggleStrikethrough))
+                            .separator()
+                            .menu("Bulleted List", Box::new(InsertBulletedList))
+                            .menu("Dashed List", Box::new(InsertDashedList))
+                            .menu("Numbered List", Box::new(InsertNumberedList))
+                    }),
+            )
             .child(accessible_icon_button(
                 "checklist",
                 "Checklist",
@@ -167,6 +191,16 @@ impl NotesView {
                 .on_click(cx.listener(|this, _, window, cx| this.insert_checklist(window, cx))),
                 view.clone(),
                 |this, window, cx| this.insert_checklist(window, cx),
+            ))
+            .child(accessible_icon_button(
+                "insert-table",
+                "Table",
+                ready && !deleted && has_note && !preview_visible,
+                glyph_button("insert-table", glyphs::TABLE, CAPSULE_BUTTON_WIDTH, "Table")
+                    .disabled(!ready || deleted || !has_note || preview_visible)
+                    .on_click(cx.listener(|this, _, window, cx| this.insert_table(window, cx))),
+                view.clone(),
+                |this, window, cx| this.insert_table(window, cx),
             ))
             .child(accessible_icon_button(
                 "add-image",
@@ -320,7 +354,28 @@ impl NotesView {
             .child(
                 div()
                     .absolute()
-                    .left(px(LIST_TITLE_X))
+                    .left(px(3.0))
+                    .top(px(CAPSULE_TOP))
+                    .child(accessible_icon_button(
+                        "toggle-folders",
+                        "Folders",
+                        true,
+                        glyph_button("toggle-folders", glyphs::FOLDER, CAPSULE_HEIGHT, "Folders")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.folders_visible = !this.folders_visible;
+                                cx.notify();
+                            })),
+                        cx.entity(),
+                        |this, _, cx| {
+                            this.folders_visible = !this.folders_visible;
+                            cx.notify();
+                        },
+                    )),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(px(LIST_TITLE_X + 39.0))
                     .top(px(10.75))
                     .right(px(LIST_MORE_RIGHT + CAPSULE_HEIGHT + 8.0))
                     .v_flex()

@@ -127,6 +127,7 @@ fn render_markdown_block(block: &MarkdownPreviewBlock, cx: &mut Context<NotesVie
             depth,
             ordered_index,
             checked,
+            unordered_marker,
         } => {
             let source_range = block.source_range();
             let marker = match checked {
@@ -172,9 +173,16 @@ fn render_markdown_block(block: &MarkdownPreviewBlock, cx: &mut Context<NotesVie
                 None => div()
                     .w(px(24.0))
                     .text_color(mac::text_secondary())
-                    .child(
-                        ordered_index.map_or_else(|| "•".to_string(), |index| format!("{index}.")),
-                    )
+                    .child(ordered_index.map_or_else(
+                        || {
+                            if unordered_marker == Some('-') {
+                                "–".to_string()
+                            } else {
+                                "•".to_string()
+                            }
+                        },
+                        |index| format!("{index}."),
+                    ))
                     .into_any_element(),
             };
             div()

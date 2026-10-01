@@ -294,7 +294,7 @@ def read_settings_window(app_display_name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Toolbar (heuristic: .aria_label("...") literals in the app's toolbar file).
+# Toolbar (heuristic: accessible names in the app's toolbar source).
 # ---------------------------------------------------------------------------
 
 TOOLBAR_FILES = {
@@ -311,9 +311,18 @@ def read_toolbar(app_display_name: str) -> dict:
     groups: list[str] = []
     for path in existing:
         text = rmp.strip_line_comments(path.read_text())
-        for m in re.finditer(r'\.aria_label\("([^"]+)"\)', text):
-            if m.group(1) not in groups:
-                groups.append(m.group(1))
+        patterns = [r'\.aria_label\("([^"]+)"\)']
+        if app_display_name == "Notes":
+            # Notes names glyph buttons through its accessibility wrapper
+            # and menus through PopUpButton::new, not .aria_label calls.
+            patterns.extend([
+                r'accessible_icon_button\(\s*"[^"]+"\s*,\s*"([^"]+)"',
+                r'PopUpButton::new\(\s*"[^"]+"\s*,\s*"([^"]+)"',
+            ])
+        for pattern in patterns:
+            for m in re.finditer(pattern, text):
+                if m.group(1) not in groups:
+                    groups.append(m.group(1))
     return {"present": True, "extraction": "heuristic", "groups": groups}
 
 

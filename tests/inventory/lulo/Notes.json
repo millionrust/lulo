@@ -268,6 +268,35 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Transformations",
+          "action": "notes::TransformationsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Make Uppercase",
+              "action": "notes::MakeUppercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make Lowercase",
+              "action": "notes::MakeLowercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Capitalise",
+              "action": "notes::Capitalise",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         }
       ]
     },
@@ -388,6 +417,35 @@
           ]
         },
         {
+          "label": "Move Item",
+          "action": "notes::MoveItemMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Up",
+              "action": "notes::MoveItemUp",
+              "shortcut": "⌃⌘",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Down",
+              "action": "notes::MoveItemDown",
+              "shortcut": "⌃⌘",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Table",
+          "action": "notes::InsertTable",
+          "shortcut": "⌥⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Font",
           "action": "notes::FontMenu",
           "shortcut": "",
@@ -404,6 +462,13 @@
               "label": "Italic",
               "action": "notes::ToggleItalic",
               "shortcut": "⌘I",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Strikethrough",
+              "action": "notes::ToggleStrikethrough",
+              "shortcut": "",
               "separator_before": false,
               "children": []
             }
@@ -586,7 +651,16 @@
     "extraction": "heuristic",
     "groups": [
       "Search",
-      "Toolbar"
+      "Toolbar",
+      "New Note",
+      "Checklist",
+      "Table",
+      "Add Photo…",
+      "Move Note…",
+      "Folders",
+      "Format",
+      "More",
+      "View Options"
     ]
   },
   "context_menus": {}

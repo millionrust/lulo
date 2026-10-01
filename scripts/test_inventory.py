@@ -269,6 +269,20 @@ class DiffSettingsAndToolbarTests(unittest.TestCase):
         self.assertEqual(len(gaps), 1)
         self.assertEqual(gaps[0].tier, d.TIER_TOOLBAR)
 
+    def test_notes_toolbar_compares_named_commands(self):
+        mac = {"present": True, "items": [
+            {"role": "AXButton", "label": "New Note"},
+            {"role": "AXMenuButton", "label": "Media"},
+            {"role": "AXGroup", "label": "group"},
+            {"role": "AXButton", "label": "button"},
+        ]}
+        lulo = {"present": True, "groups": ["New Note"]}
+        self.assertEqual([gap.label for gap in d.diff_toolbar("Notes", mac, lulo)], ["Media"])
+
+    def test_notes_toolbar_extractor_finds_wrapped_buttons_and_popups(self):
+        toolbar = li.read_toolbar("Notes")
+        self.assertTrue({"New Note", "View Options", "More"} <= set(toolbar["groups"]))
+
 
 class DiffSidebarTests(unittest.TestCase):
     def test_missing_and_extra_panes(self):

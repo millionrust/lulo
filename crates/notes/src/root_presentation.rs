@@ -134,6 +134,15 @@ impl NotesView {
                     this.paste_plain_text(window, cx)
                 }),
             )
+            .on_action(cx.listener(|this, _: &MakeUppercase, window, cx| {
+                this.transform_selection(TextTransform::Uppercase, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MakeLowercase, window, cx| {
+                this.transform_selection(TextTransform::Lowercase, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &Capitalise, window, cx| {
+                this.transform_selection(TextTransform::Capitalise, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &ExportNotes, _, cx| this.begin_export(cx)))
             .on_action(cx.listener(|this, _: &PrintNote, window, cx| this.print_note(window, cx)))
             .on_action(
@@ -160,10 +169,22 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &DeleteTicked, window, cx| {
                 this.apply_checklist_bulk(ChecklistBulkAction::DeleteTicked, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &MoveItemUp, window, cx| {
+                this.move_current_list_item(true, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MoveItemDown, window, cx| {
+                this.move_current_list_item(false, window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &InsertTable, window, cx| this.insert_table(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &ToggleBold, window, cx| this.toggle_bold(window, cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleItalic, window, cx| this.toggle_italic(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &ToggleStrikethrough, window, cx| {
+                this.toggle_strikethrough(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &SetStyleTitle, window, cx| {
                 this.set_paragraph_style(ParagraphStyle::Title, window, cx)
             }))
@@ -186,7 +207,7 @@ impl NotesView {
                 this.insert_list_marker(ListMarker::Numbered, window, cx)
             }))
             .on_action(cx.listener(|this, _: &InsertDashedList, window, cx| {
-                this.insert_list_marker(ListMarker::Bulleted, window, cx)
+                this.insert_list_marker(ListMarker::Dashed, window, cx)
             }))
             .on_action(cx.listener(|this, _: &InsertBlockQuote, window, cx| {
                 this.insert_block_quote(window, cx)

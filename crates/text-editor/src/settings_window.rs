@@ -1,9 +1,9 @@
 //! Text Editor ▸ Settings…: defaults for new plain-text documents.
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
-    StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
+    div, px, App, AppContext as _, Context, FocusHandle, FontWeight, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, Role, StatefulInteractiveElement as _, Styled as _,
+    Window, WindowHandle,
 };
 use rmac_ui::{Button, Checkbox, Root, StyledExt as _};
 

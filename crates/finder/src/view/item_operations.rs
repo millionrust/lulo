@@ -9,6 +9,43 @@ const FILE_TAG_XATTR: &str = "user.rmac.tag";
 const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
 
 impl FinderView {
+    pub(super) fn add_paths_to_dock(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if paths.is_empty() { return; }
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let resolved = blocking::unblock(move || {
+                paths.into_iter().map(|path| {
+                    std::fs::canonicalize(path)?.into_os_string().into_string()
+                        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "The path cannot be added to the Dock"))
+                }).collect::<std::io::Result<Vec<_>>>()
+            }).await;
+            let result = match resolved {
+                Ok(paths) => {
+                    use rmac_dock_system::Backend as _;
+                    let backend = rmac_dock_system::SystemBackend;
+                    let mut result = Ok(());
+                    for path in paths {
+                        let command = rmac_dock::StackCommand::Add(
+                            rmac_shell_settings::DockStackKind::Path { path }
+                        );
+                        if let Err(error) = backend.update_stacks(&command).await {
+                            result = Err(error.to_string());
+                            break;
+                        }
+                    }
+                    result
+                }
+                Err(error) => Err(error.to_string()),
+            };
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                match result {
+                    Ok(()) => this.operation_notice = Some("Added to Dock".into()),
+                    Err(error) => this.operation_error = Some(format!("Could not add to Dock: {error}").into()),
+                }
+                cx.notify();
+            });
+        }).detach();
+    }
+
     /// File ▸ Show Original resolves a symbolic-link alias and reveals its
     /// target in the enclosing folder.
     pub(super) fn show_original(&mut self, cx: &mut Context<Self>) {

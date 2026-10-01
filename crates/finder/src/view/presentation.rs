@@ -142,6 +142,10 @@ impl Render for FinderView {
         let delete_dialog: Option<gpui::AnyElement> = None;
         div()
             .id("files-root")
+            .drag_over::<DraggedSidebarItem>(|style, _, _, _| style)
+            .on_drop(cx.listener(|this, item: &DraggedSidebarItem, _, cx| {
+                this.remove_sidebar_item(&item.0, cx);
+            }))
             .size_full()
             .relative()
             .flex()

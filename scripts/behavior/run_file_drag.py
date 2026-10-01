@@ -240,6 +240,11 @@ def inner(args: argparse.Namespace) -> int:
         removed = run.wait_for(lambda: str(pinned_one) not in saved_favourites(run), 8)
         run.check("Remove from Sidebar preserves the folder", bool(removed) and pinned_one.is_dir(),
                   str(saved_favourites(run)))
+        second_row = sidebar_point(run, files.pid, pinned_two.name)
+        drag_points(run, second_row, files_content_point(run), steps=8, delay=.04, hold=.15)
+        dragged_out = run.wait_for(lambda: str(pinned_two) not in saved_favourites(run), 8)
+        run.check("Dragging out of sidebar preserves the folder",
+                  bool(dragged_out) and pinned_two.is_dir(), str(saved_favourites(run)))
 
         wallpaper = next((child for child in run.children
                           if child.args and Path(child.args[0]).name == "wallpaper"), None)

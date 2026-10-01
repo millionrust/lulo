@@ -549,8 +549,8 @@ impl FinderView {
                                         this.spring_hover(spring_dir.clone(), inside, cx);
                                     },
                                 ))
-                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
-                                    this.drop_into(drop_directory.clone(), &paths.0, cx)
+                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, window, cx| {
+                                    this.drop_into(drop_directory.clone(), &paths.0, window.modifiers().alt, window.modifiers().platform, cx)
                                 }))
                         },
                     )
@@ -817,6 +817,10 @@ impl FinderView {
             .on_action(
                 cx.listener(|this, _: &SidebarRename, window, cx| this.sidebar_rename(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &SidebarAddToDock, _, cx| this.sidebar_add_to_dock(cx)))
+            .on_action(cx.listener(|this, _: &AddToDock, _, cx| {
+                this.add_paths_to_dock(this.selected_paths(), cx)
+            }))
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
@@ -966,8 +970,8 @@ impl FinderView {
             .when(!self.applications_view && !self.trash_view, |element| {
                 element
                     .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(rmac_ui::mac::accent_subtle()))
-                    .on_drop(cx.listener(|this, ep: &ExternalPaths, _, cx| {
-                        this.drop_external(ep.paths().to_vec(), cx)
+                    .on_drop(cx.listener(|this, ep: &ExternalPaths, window, cx| {
+                        this.drop_external(ep.paths().to_vec(), window.modifiers().platform, cx)
                     }))
             })
             .flex_1()
@@ -1444,8 +1448,8 @@ impl FinderView {
                             this.spring_hover(spring_dir.clone(), inside, cx);
                         },
                     ))
-                    .on_drop(cx.listener(move |this, p: &DraggedPaths, _, cx| {
-                        this.drop_into(dd.clone(), &p.0, cx)
+                    .on_drop(cx.listener(move |this, p: &DraggedPaths, window, cx| {
+                        this.drop_into(dd.clone(), &p.0, window.modifiers().alt, window.modifiers().platform, cx)
                     }))
             },
         )

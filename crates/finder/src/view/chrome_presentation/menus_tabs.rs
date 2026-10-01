@@ -16,6 +16,7 @@ impl FinderView {
                 .separator()
                 .item("Get Info", Box::new(SidebarGetInfo))
                 .item("Rename", Box::new(SidebarRename))
+                .item("Add to Dock", Box::new(SidebarAddToDock))
         };
         if removable {
             menu = menu

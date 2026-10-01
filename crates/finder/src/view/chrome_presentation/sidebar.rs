@@ -177,6 +177,17 @@ impl FinderView {
                         this.insert_sidebar_favourite(path, index, cx);
                     }
                 }))
+                .drag_over::<DraggedSidebarItem>(|style, _, _, _| style)
+                .on_drag_move(cx.listener(move |this, event: &gpui::DragMoveEvent<DraggedSidebarItem>, _, cx| {
+                    let lower = event.event.position.y > event.bounds.center().y;
+                    this.sidebar_drop_index = Some(if lower { after } else { before });
+                    cx.notify();
+                }))
+                .on_drop(cx.listener(move |this, item: &DraggedSidebarItem, _, cx| {
+                    cx.stop_propagation();
+                    let index = this.sidebar_drop_index.take().unwrap_or(before);
+                    this.insert_sidebar_favourite(item.0.clone(), index, cx);
+                }))
                 .drag_over::<ExternalPaths>(|style, _, _, _| style)
                 .on_drag_move(cx.listener(
                     move |this, event: &gpui::DragMoveEvent<ExternalPaths>, _, cx| {
@@ -195,8 +206,8 @@ impl FinderView {
             let destination = p.path.clone();
             row = row
                 .drag_over::<DraggedPaths>(|style, _, _, _| style.bg(sidebar_selection()))
-                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
-                    this.drop_into(destination.clone(), &paths.0, cx)
+                .on_drop(cx.listener(move |this, paths: &DraggedPaths, window, cx| {
+                    this.drop_into(destination.clone(), &paths.0, window.modifiers().alt, window.modifiers().platform, cx)
                 }));
         }
 
@@ -223,11 +234,7 @@ impl FinderView {
         }
         if is_favourite {
             let dragged = p.path.clone();
-            row = row.on_drag(DraggedPaths(vec![dragged.clone()]), move |_, _, _, cx| {
-                #[cfg(target_os = "linux")]
-                if dragged.exists() {
-                    gpui_linux::stage_external_file_drag(vec![dragged.clone()]);
-                }
+            row = row.on_drag(DraggedSidebarItem(dragged), move |_, _, _, cx| {
                 cx.new(|_| DragPreview { count: 1 })
             });
         }
@@ -302,11 +309,18 @@ impl FinderView {
 
     pub(in crate::view) fn sidebar_remove_context(&mut self, cx: &mut Context<Self>) {
         if let Some(path) = self.sidebar_context_path.clone() {
-            if self.is_removable_favourite(&path) {
-                self.remove_sidebar_favourite(&path, cx);
-            } else if self.sidebar_context_is_favourite {
-                self.set_builtin_sidebar_visibility(&path, false, cx);
+            if self.sidebar_context_is_favourite {
+                self.remove_sidebar_item(&path, cx);
             }
+        }
+    }
+
+    pub(in crate::view) fn remove_sidebar_item(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.sidebar_drop_index = None;
+        if self.is_removable_favourite(path) {
+            self.remove_sidebar_favourite(path, cx);
+        } else {
+            self.set_builtin_sidebar_visibility(path, false, cx);
         }
     }
 
@@ -360,6 +374,12 @@ impl FinderView {
     pub(in crate::view) fn sidebar_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(path) = self.sidebar_context_path.clone() {
             self.rename_sidebar_path(path, window, cx);
+        }
+    }
+
+    pub(in crate::view) fn sidebar_add_to_dock(&mut self, cx: &mut Context<Self>) {
+        if let Some(path) = self.sidebar_context_path.clone().filter(|path| !path.as_os_str().is_empty()) {
+            self.add_paths_to_dock(vec![path], cx);
         }
     }
 
@@ -470,6 +490,12 @@ impl FinderView {
                             for path in paths.0.iter().cloned().rev() {
                                 this.insert_sidebar_favourite(path, 0, cx);
                             }
+                        }))
+                        .drag_over::<DraggedSidebarItem>(|style, _, _, _| style.bg(sidebar_selection()))
+                        .on_drop(cx.listener(|this, item: &DraggedSidebarItem, _, cx| {
+                            cx.stop_propagation();
+                            this.sidebar_drop_index = None;
+                            this.insert_sidebar_favourite(item.0.clone(), 0, cx);
                         }))
                         .drag_over::<ExternalPaths>(|style, _, _, _| style.bg(sidebar_selection()))
                         .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {

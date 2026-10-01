@@ -179,6 +179,8 @@ actions!(
         SidebarShowEnclosing,
         SidebarGetInfo,
         SidebarRename,
+        SidebarAddToDock,
+        AddToDock,
         MoveItemHere,
         GoDesktop,
         GoDocuments,
@@ -198,6 +200,9 @@ enum ViewMode {
 
 /// Drag payload: the file paths being dragged.
 struct DraggedPaths(Vec<PathBuf>);
+
+/// A sidebar shortcut drag. It never carries a filesystem move request.
+struct DraggedSidebarItem(PathBuf);
 
 /// The little pill shown under the cursor while dragging.
 struct DragPreview {

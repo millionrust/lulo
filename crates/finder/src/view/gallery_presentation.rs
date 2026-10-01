@@ -336,8 +336,8 @@ impl FinderView {
                                 .drag_over::<DraggedPaths>(|style, _, _, _| {
                                     style.bg(rmac_ui::mac::accent_subtle())
                                 })
-                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
-                                    this.drop_into(drop_directory.clone(), &paths.0, cx)
+                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, window, cx| {
+                                    this.drop_into(drop_directory.clone(), &paths.0, window.modifiers().alt, window.modifiers().platform, cx)
                                 }))
                         },
                     )

@@ -2579,8 +2579,9 @@ mod tests {
             .iter()
             .map(|item| item.label.as_str())
             .collect::<Vec<_>>();
+        let recents = labels.iter().position(|label| *label == "Recents").unwrap();
         assert_eq!(
-            &labels[3..6],
+            &labels[recents..recents + 3],
             ["Recents", "Documents", "Desktop"],
             "Finder's Go order"
         );

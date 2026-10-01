@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Terminal Settings — TERM-03</title>
+<!--
+  Terminal ▸ Settings… (⌘,), extended for TERM-03 (docs/parity.md). Lulo's
+  Settings window was a single scrolling page (crates/terminal/src/
+  settings_window.rs: Profile list, Font stepper, Use Option as Meta Key) —
+  not a tabbed Profiles/General window like the Mac's 667×628 one (that's
+  tracked separately as TERM-17, out of scope here). This mock keeps the
+  SAME single-page-with-section-headers structure already shipped and
+  tested, and just adds the four new sections this task asks for: Cursor
+  style + blink, Window size (cols×rows), Shell "when it exits", and
+  General "new windows open with". Numbers below are inherited from the
+  shipped window (320 × 420, now taller) and `design-lab/tokens.css`; no
+  fresh Mac Terminal Settings measurement was taken for this pass — the Mac
+  reference text in docs/parity.md's TERM-03/TERM-17 rows drove the wording
+  and option set, not new on-screen measurements.
+-->
+<link rel="stylesheet" href="tokens.css">
+<style>
+  body { margin: 0; background: #1b1b1b; display: flex; justify-content: center; padding: 40px 0; font-family: var(--font); }
+  .window {
+    width: 320px;
+    height: 620px;
+    background: var(--window);
+    border-radius: var(--win-radius-titlebar);
+    box-shadow: var(--win-shadow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .titlebar {
+    height: var(--titlebar-h);
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    border-bottom: 1px solid var(--separator);
+  }
+  .titlebar .lights { position: absolute; left: 13px; display: flex; gap: 7px; }
+  .titlebar .lights span { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .titlebar .lights .red { background: #ff5f57; }
+  .titlebar .lights .yellow { background: #febc2e; }
+  .titlebar .lights .green { background: #28c840; }
+  .titlebar .label { font-size: 13px; font-weight: 700; color: var(--label-2); }
+
+  .scroll { flex: 1 1 auto; overflow-y: auto; }
+  .section-label {
+    padding: 12px 12px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--label-2);
+  }
+  .list {
+    margin: 0 12px;
+    border: 1px solid var(--separator);
+    border-radius: var(--ctl-radius);
+    overflow: hidden;
+  }
+  .row {
+    height: 30px;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--label);
+    border-top: 1px solid var(--separator);
+  }
+  .row:first-child { border-top: none; }
+  .row:hover { background: var(--hover); }
+  .row .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--separator); flex: 0 0 auto; }
+  .row .name { flex: 1 1 auto; }
+  .row .check { color: var(--accent); }
+
+  .inline-row {
+    margin: 0 12px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--label);
+  }
+  .stepper-value { width: 40px; text-align: center; font-size: 12px; color: var(--label); }
+  .mini-btn {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: var(--fill-control); color: var(--label);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; cursor: default;
+  }
+  .toggle-row {
+    margin: 0 12px 12px;
+    padding: 0 8px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--label);
+  }
+  .size-field {
+    width: 48px; height: 22px; border-radius: 6px;
+    background: var(--field); border: 1px solid var(--separator);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: var(--label);
+  }
+  .size-row { display: flex; align-items: center; gap: 6px; margin: 0 12px 12px; font-size: 12px; color: var(--label); }
+  .size-row .x { color: var(--label-3); }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar">
+    <div class="lights"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+    <div class="label">Settings</div>
+  </div>
+  <div class="scroll">
+    <div class="section-label">Profile</div>
+    <div class="list">
+      <div class="row"><span class="swatch" style="background:#1e1e1e"></span><span class="name">Lulo OS Dark</span><span class="check">✓</span></div>
+      <div class="row"><span class="swatch" style="background:#ffffff"></span><span class="name">Basic</span></div>
+      <div class="row"><span class="swatch" style="background:#000000"></span><span class="name">Pro</span></div>
+    </div>
+
+    <div class="section-label">Font</div>
+    <div class="inline-row">
+      <span>Size</span>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="mini-btn">−</div>
+        <span class="stepper-value">12 pt</span>
+        <div class="mini-btn">+</div>
+      </div>
+    </div>
+
+    <div class="section-label">Text</div>
+    <div class="list">
+      <div class="row"><span class="name">Cursor: Block</span><span class="check">✓</span></div>
+      <div class="row"><span class="name">Cursor: Underline</span></div>
+      <div class="row"><span class="name">Cursor: Vertical Bar</span></div>
+    </div>
+    <div class="toggle-row">
+      <span>Blink Cursor</span>
+      <span>On</span>
+    </div>
+
+    <div class="section-label">Window</div>
+    <div class="size-row">
+      <span>Size</span>
+      <div class="mini-btn">−</div>
+      <div class="size-field">80</div>
+      <span class="x">×</span>
+      <div class="size-field">24</div>
+      <div class="mini-btn">+</div>
+      <span style="color:var(--label-3)">cols × rows</span>
+    </div>
+
+    <div class="section-label">Shell</div>
+    <div class="list">
+      <div class="row"><span class="name">Don't close the window</span><span class="check">✓</span></div>
+      <div class="row"><span class="name">Close if the shell exited cleanly</span></div>
+    </div>
+
+    <div class="section-label">General</div>
+    <div class="list">
+      <div class="row"><span class="name">New windows open with: Home directory</span><span class="check">✓</span></div>
+      <div class="row"><span class="name">New windows open with: Same working directory</span></div>
+    </div>
+
+    <div class="section-label">Keyboard</div>
+    <div class="toggle-row">
+      <span>Use Option as Meta Key</span>
+      <span>Off</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

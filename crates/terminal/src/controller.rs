@@ -40,6 +40,7 @@ use crate::profiles::{self, active, load as load_profile, save as save_profile, 
 #[cfg(test)]
 use crate::session::EventProxy;
 use crate::session::{PasteError, RedrawSender, Session, SessionControlError, SessionWriteError};
+use crate::settings::{self, CursorStyle};
 use crate::shell_integration::{CommandRangeKind, PromptDirection};
 #[cfg(test)]
 use crate::ui_state::MAX_SEARCH_QUERY_BYTES;
@@ -63,9 +64,6 @@ use rmac_ui::{Button, InputEvent, InputState, SearchField};
 use vte::ansi::Processor;
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor};
 
-/// A new Terminal window on macOS 26.2 is 80 × 24 (measured).
-const COLS: usize = 80;
-const ROWS: usize = 24;
 pub(super) const MAX_TABS: usize = 16;
 /// The Basic profile's cells measure 7.0 × 14.0 pt on the Mac. JetBrains Mono
 /// advances 0.6 em, so 7.0 / 0.6 gives the same 7 pt column.
@@ -213,6 +211,20 @@ pub(super) struct TerminalView {
     /// Whether ⌥ sends Meta (an Escape prefix) instead of typing the
     /// platform's composed character. Off by default, as on the Mac.
     option_as_meta: bool,
+    /// Terminal ▸ Settings… ▸ Text ▸ Cursor style, read once at window
+    /// creation — like `profile`/`font_size`, a later Settings change
+    /// applies to the next window, not retroactively to this one.
+    cursor_style: CursorStyle,
+    /// Terminal ▸ Settings… ▸ Text ▸ Blink cursor, read once at creation.
+    cursor_blink_enabled: bool,
+    /// Current phase of the cursor-blink animation; always `true` (visible)
+    /// when blink is disabled or the window is not focused. The animation
+    /// task that flips this exits the instant focus is lost or blink turns
+    /// off — nothing ticks while this window is unfocused.
+    blink_visible: bool,
+    /// Invalidates an in-flight blink task after a newer one starts, so two
+    /// never race if focus is regained before the old one has noticed.
+    blink_generation: u64,
     persistence_error: Option<SharedString>,
     operation_error: Option<SharedString>,
     pending_close: Option<PendingClose>,

@@ -12,6 +12,7 @@ mod output_filter;
 mod paste;
 mod profiles;
 mod session;
+mod settings;
 mod settings_window;
 mod shell_integration;
 mod storage;

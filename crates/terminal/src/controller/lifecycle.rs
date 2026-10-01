@@ -5,9 +5,60 @@ use super::*;
 impl TerminalView {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (redraw, redraw_rx) = async_channel::bounded(1);
+        let (profile, persistence_error) = match load_profile() {
+            Ok((profile, legacy_index)) => {
+                let migration_error = legacy_index
+                    .then(|| save_profile(profile).err())
+                    .flatten()
+                    .map(|failure| SharedString::from(failure.to_string()));
+                (profile, migration_error)
+            }
+            Err(failure) => (
+                profiles::DEFAULT_PROFILE,
+                Some(SharedString::from(failure.to_string())),
+            ),
+        };
+        let option_as_meta = profiles::load_option_as_meta();
+        let font_size = profiles::load_font_size().unwrap_or(FONT_SIZE);
+        let (settings, settings_error) = match settings::load() {
+            Ok(settings) => (settings, None),
+            Err(failure) => (
+                crate::settings::Settings::default(),
+                Some(SharedString::from(failure.to_string())),
+            ),
+        };
+        let persistence_error = persistence_error.or(settings_error);
+        let cols = usize::from(settings.columns);
+        let rows = usize::from(settings.rows);
         let scrollback_lines = scrollback_limit_for_tab_count(1);
-        let session = Session::spawn(COLS, ROWS, scrollback_lines, None, redraw.clone())
-            .unwrap_or_else(|error| Session::failed(COLS, ROWS, scrollback_lines, error));
+        let starting_directory = match settings.new_window_directory {
+            settings::NewWindowWorkingDirectory::Home => None,
+            settings::NewWindowWorkingDirectory::SameWorkingDirectory => {
+                crate::working_directory::last_front_directory()
+            }
+        };
+        let session = Session::spawn(
+            cols,
+            rows,
+            scrollback_lines,
+            starting_directory,
+            redraw.clone(),
+        )
+        .unwrap_or_else(|error| Session::failed(cols, rows, scrollback_lines, error));
+        // Settings ▸ Window ▸ Size: the OS window itself is resized to the
+        // requested cell count using the same cell-measurement fallback
+        // `main.rs`'s hard-coded 580×385 used for the 80×24 default — the
+        // real cell advance isn't measurable until a window exists, and
+        // `resize_to` (called on the first render below) immediately
+        // recomputes `cols`/`rows` from whatever size the window actually
+        // becomes, exactly as it already does after the user's own resizes.
+        {
+            let cell_w = font_size * CELL_RATIO_FALLBACK;
+            let line_h = font_size * (LINE_H / FONT_SIZE);
+            let width = cols as f32 * cell_w + 2.0 * PAD_X;
+            let height = rows as f32 * line_h + TITLE_BAR_HEIGHT + PAD_TOP + PAD_BOTTOM;
+            window.resize(gpui::size(px(width), px(height)));
+        }
 
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         cx.observe(&search, |this, _, cx| {
@@ -154,21 +205,6 @@ impl TerminalView {
             this.handle_window_activation(window.is_window_active(), window, cx);
         })
         .detach();
-        let (profile, persistence_error) = match load_profile() {
-            Ok((profile, legacy_index)) => {
-                let migration_error = legacy_index
-                    .then(|| save_profile(profile).err())
-                    .flatten()
-                    .map(|failure| SharedString::from(failure.to_string()));
-                (profile, migration_error)
-            }
-            Err(failure) => (
-                profiles::DEFAULT_PROFILE,
-                Some(SharedString::from(failure.to_string())),
-            ),
-        };
-        let option_as_meta = profiles::load_option_as_meta();
-        let font_size = profiles::load_font_size().unwrap_or(FONT_SIZE);
 
         // PTY/model events wake this task. The bounded channel coalesces output
         // bursts while leaving the application fully asleep when nothing changes.
@@ -181,12 +217,12 @@ impl TerminalView {
         })
         .detach();
 
-        Self {
+        let mut view = Self {
             tabs: vec![session],
             redraw,
             active: 0,
-            cols: COLS,
-            rows: ROWS,
+            cols,
+            rows,
             font_size,
             line_h: font_size * (LINE_H / FONT_SIZE),
             cell_w: measure_cell_w(window, font_size),
@@ -206,13 +242,58 @@ impl TerminalView {
             profile,
             picker_open: false,
             option_as_meta,
+            cursor_style: settings.cursor_style,
+            cursor_blink_enabled: settings.cursor_blink,
+            blink_visible: true,
+            blink_generation: 0,
             persistence_error,
             operation_error: None,
             pending_close: None,
             pending_paste: None,
             menu_at: None,
             a11y_cache: None,
+        };
+        if window_active {
+            view.start_cursor_blink(window, cx);
         }
+        view
+    }
+
+    /// Settings ▸ Text ▸ Blink cursor: flips `blink_visible` on a timer
+    /// while — and only while — this window is both focused and blink is
+    /// on. The loop checks both on every tick and exits the moment either
+    /// becomes false, so no timer ever ticks for an unfocused window or one
+    /// with blink off; `blink_generation` stops an old loop from fighting a
+    /// new one if focus is regained before the old one notices it lost it.
+    pub(super) fn start_cursor_blink(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.blink_visible = true;
+        if !self.cursor_blink_enabled {
+            return;
+        }
+        self.blink_generation = self.blink_generation.wrapping_add(1);
+        let generation = self.blink_generation;
+        cx.spawn_in(window, async move |this, cx| loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(530))
+                .await;
+            let should_continue = this
+                .update_in(cx, |this, window, cx| {
+                    if this.blink_generation != generation
+                        || !window.is_window_active()
+                        || !this.cursor_blink_enabled
+                    {
+                        return false;
+                    }
+                    this.blink_visible = !this.blink_visible;
+                    cx.notify();
+                    true
+                })
+                .unwrap_or(false);
+            if !should_continue {
+                break;
+            }
+        })
+        .detach();
     }
 
     pub(super) fn set_profile(&mut self, i: usize, cx: &mut Context<Self>) {

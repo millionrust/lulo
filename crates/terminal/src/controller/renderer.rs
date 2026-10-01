@@ -10,7 +10,20 @@ use super::*;
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         profiles::set_active(self.profile);
+        // Settings ▸ Shell ▸ "When the shell exits": never empties `tabs`
+        // (the single-tab case closes the whole *window* instead, leaving
+        // `tabs` untouched while GPUI tears it down), so `self.active` stays
+        // valid for the rest of this render either way.
+        self.auto_close_exited_tabs(window, cx);
         self.resize_to(window);
+        // Settings ▸ General ▸ "New windows open with: Same Working
+        // Directory" (⌘N) tracks whichever window was frontmost; only a
+        // focused window's directory is a candidate.
+        if self.window_active {
+            if let Some(directory) = self.tabs[self.active].working_directory() {
+                crate::working_directory::set_last_front_directory(directory);
+            }
+        }
         let layout = responsive_layout::terminal_layout(f32::from(
             rmac_ui::window_content_size(window).width,
         ));

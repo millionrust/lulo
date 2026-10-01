@@ -28,7 +28,7 @@ impl FinderView {
                             rmac_shell_settings::DockStackKind::Path { path }
                         );
                         if let Err(error) = backend.update_stacks(&command).await {
-                            result = Err(error.to_string());
+                            result = Err(error.detail);
                             break;
                         }
                     }

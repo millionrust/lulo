@@ -655,6 +655,13 @@ const MONITOR_MENUS: &[MenuSpec] = &[
 
 const SETTINGS_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: WINDOW_MENU,
+        items: &[
+            item!("Close", "rmac_ui::RequestClose", "⌘W"),
+            item!("Close All", "rmac_ui::RequestClose", "⌥⌘W"),
+        ],
+    },
+    MenuSpec {
         label: "Edit",
         items: &[
             item!("Undo", "input::Undo", "⌘Z"),
@@ -662,6 +669,7 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
             item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "input::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
+            item!("Delete", "input::Delete", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
         ],
     },
@@ -671,6 +679,43 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
             item!("Back", "system_settings::GoBack", "⌘["),
             item!("Forward", "system_settings::GoForward", "⌘]"),
             item!("Search", "system_settings::FocusSearch", "⌘F", separator),
+            item!("About", "system_settings::ShowAbout", "", separator),
+            item!("Accessibility", "system_settings::ShowAccessibility", ""),
+            item!("Appearance", "system_settings::ShowAppearance", ""),
+            item!("Battery", "system_settings::ShowBattery", ""),
+            item!("Bluetooth", "system_settings::ShowBluetooth", ""),
+            item!("Date & Time", "system_settings::ShowDateTime", ""),
+            item!("Desktop & Dock", "system_settings::ShowDesktopDock", ""),
+            item!("Displays", "system_settings::ShowDisplays", ""),
+            item!("Focus", "system_settings::ShowFocus", ""),
+            item!("Keyboard", "system_settings::ShowKeyboard", ""),
+            item!(
+                "Language & Region",
+                "system_settings::ShowLanguageRegion",
+                ""
+            ),
+            item!("Lock Screen", "system_settings::ShowLockScreen", ""),
+            item!(
+                "Login Items & Extensions",
+                "system_settings::ShowLoginItems",
+                ""
+            ),
+            item!("Menu Bar", "system_settings::ShowMenuBar", ""),
+            item!("Network", "system_settings::ShowNetwork", ""),
+            item!("Notifications", "system_settings::ShowNotifications", ""),
+            item!(
+                "Privacy & Security",
+                "system_settings::ShowPrivacySecurity",
+                ""
+            ),
+            item!("Sharing", "system_settings::ShowSharing", ""),
+            item!("Software Update", "system_settings::ShowSoftwareUpdate", ""),
+            item!("Sound", "system_settings::ShowSound", ""),
+            item!("Spotlight", "system_settings::ShowSpotlight", ""),
+            item!("Storage", "system_settings::ShowStorage", ""),
+            item!("Trackpad", "system_settings::ShowTrackpad", ""),
+            item!("Wallpaper", "system_settings::ShowWallpaper", ""),
+            item!("Wi-Fi", "system_settings::ShowWifi", ""),
         ],
     },
 ];

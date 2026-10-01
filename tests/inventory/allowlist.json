@@ -66,6 +66,132 @@
       "label": "Send to Keka",
       "match": "exact",
       "reason": "See \"Compress using Keka\": the Keka Finder Sync extension, not stock Finder."
+    },
+    {
+      "app": "System Settings",
+      "label": "AirDrop & Handoff",
+      "match": "exact",
+      "reason": "AirDrop and Handoff require Apple devices and Continuity services."
+    },
+    {
+      "app": "System Settings",
+      "label": "Apple Account",
+      "match": "exact",
+      "reason": "Apple Account is an Apple identity service."
+    },
+    {
+      "app": "System Settings",
+      "label": "Apple Intelligence & Siri",
+      "match": "exact",
+      "reason": "Apple Intelligence and Siri require Apple services and models."
+    },
+    {
+      "app": "System Settings",
+      "label": "AppleCare & Warranty",
+      "match": "exact",
+      "reason": "AppleCare warranty lookup applies only to Apple hardware."
+    },
+    {
+      "app": "System Settings",
+      "label": "Family",
+      "match": "exact",
+      "reason": "Family Sharing is an Apple Account service."
+    },
+    {
+      "app": "System Settings",
+      "label": "Game Center",
+      "match": "exact",
+      "reason": "Game Center requires Apple game services."
+    },
+    {
+      "app": "System Settings",
+      "label": "iCloud",
+      "match": "exact",
+      "reason": "iCloud requires Apple Account cloud services."
+    },
+    {
+      "app": "System Settings",
+      "label": "Screen Time",
+      "match": "exact",
+      "reason": "Apple Screen Time sync and parental controls depend on Apple services."
+    },
+    {
+      "app": "System Settings",
+      "label": "Touch ID & Password",
+      "match": "exact",
+      "reason": "Touch ID is an Apple biometric hardware feature."
+    },
+    {
+      "app": "System Settings",
+      "label": "Wallet & Apple Pay",
+      "match": "exact",
+      "reason": "Wallet and Apple Pay require Apple payment services and hardware."
+    },
+    {
+      "app": "System Settings",
+      "label": "<Owner>, Apple Account",
+      "match": "exact",
+      "reason": "The reference Mac owner’s Apple Account card requires Apple Account services."
+    },
+    {
+      "app": "System Settings",
+      "label": "AutoFill",
+      "match": "exact",
+      "reason": "macOS AutoFill reads the Apple Contacts, Passwords, and Wallet stores."
+    },
+    {
+      "app": "System Settings",
+      "label": "Contact…",
+      "match": "exact",
+      "reason": "This AutoFill source is the Apple Contacts store."
+    },
+    {
+      "app": "System Settings",
+      "label": "Passwords…",
+      "match": "exact",
+      "reason": "This AutoFill source is the Apple Passwords store."
+    },
+    {
+      "app": "System Settings",
+      "label": "Credit Card…",
+      "match": "exact",
+      "reason": "This AutoFill source is the Apple Wallet card store."
+    },
+    {
+      "app": "System Settings",
+      "label": "macOS Help",
+      "match": "exact",
+      "reason": "This opens Apple’s macOS Help documentation."
+    },
+    {
+      "app": "System Settings",
+      "label": "macOS Support",
+      "match": "exact",
+      "reason": "This opens Apple’s macOS support site."
+    },
+    {
+      "app": "System Settings",
+      "label": "MacBook Air Specifications",
+      "match": "exact",
+      "reason": "This opens specifications for the reference Mac’s Apple hardware."
+    },
+    {
+      "app": "System Settings",
+      "label": "Hardware Support",
+      "match": "exact",
+      "reason": "This opens Apple hardware support for the reference Mac."
+    },
+    {
+      "app": "System Settings",
+      "label": "User Manual",
+      "match": "exact",
+      "reason": "This opens the Apple macOS user manual."
+    },
+    {
+      "app": "System Settings",
+      "label": "Device Management",
+      "match": "exact",
+      "reason": "This pane manages Apple MDM profiles; Lulo has no Apple MDM enrollment."
     }
   ]
 }

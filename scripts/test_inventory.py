@@ -47,6 +47,9 @@ class NormalizeLabelTests(unittest.TestCase):
     def test_whitespace_is_collapsed(self):
         self.assertEqual(norm.normalize_label("New   Folder"), norm.normalize_label("New Folder"))
 
+    def test_nonbreaking_hyphen_matches_ascii_hyphen(self):
+        self.assertEqual(norm.normalize_label("Wi‑Fi"), norm.normalize_label("Wi-Fi"))
+
     def test_none_passes_through(self):
         self.assertIsNone(norm.normalize_label(None))
 

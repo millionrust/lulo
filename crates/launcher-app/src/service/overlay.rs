@@ -20,7 +20,9 @@ impl gpui::Render for RendererWarmup {
 
 /// GPUI initializes the Wayland renderer when it opens its first window.
 /// Do that once at login, before the shortcut endpoint becomes ready. This
-/// tiny, pointer-transparent surface never asks the compositor for focus.
+/// tiny, pointer-transparent surface never asks the compositor for focus and
+/// is destroyed after its first frame. The process-shared GPU context stays
+/// initialized for the real launcher window.
 #[cfg(target_os = "linux")]
 pub(super) fn warm_renderer(cx: &mut App) {
     use gpui::layer_shell::KeyboardInteractivity;
@@ -35,6 +37,7 @@ pub(super) fn warm_renderer(cx: &mut App) {
     }
     if let Err(error) = cx.open_window(options, |window, cx| {
         window.set_input_region(Some(&[]));
+        window.on_next_frame(|window, _| window.remove_window());
         cx.new(|_| RendererWarmup)
     }) {
         eprintln!("Launcher renderer warmup failed: {error}");

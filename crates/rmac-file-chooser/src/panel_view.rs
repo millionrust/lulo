@@ -300,6 +300,8 @@ impl Panel {
         .child(
             div()
                 .id("sidebar-scroll")
+                .role(Role::ListBox)
+                .aria_label("Sidebar")
                 .size_full()
                 .overflow_y_scroll()
                 .child(column),
@@ -1643,6 +1645,30 @@ impl Render for Panel {
             .on_action(cx.listener(move |this, _: &GoHome, _, cx| {
                 this.navigate(Location::Folder(home.clone()), cx)
             }))
+            .on_action({
+                let home = self.home.clone();
+                let downloads = home.join("Downloads");
+                cx.listener(move |this, _: &GoDownloads, _, cx| {
+                    let target = if downloads.is_dir() {
+                        downloads.clone()
+                    } else {
+                        this.home.clone()
+                    };
+                    this.navigate(Location::Folder(target), cx)
+                })
+            })
+            .on_action({
+                let home = self.home.clone();
+                let documents = home.join("Documents");
+                cx.listener(move |this, _: &GoDocuments, _, cx| {
+                    let target = if documents.is_dir() {
+                        documents.clone()
+                    } else {
+                        this.home.clone()
+                    };
+                    this.navigate(Location::Folder(target), cx)
+                })
+            })
             .on_action(cx.listener(|this, _: &GoEnclosing, _, cx| this.go_enclosing(cx)))
             .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
             .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))

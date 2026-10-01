@@ -167,10 +167,17 @@ for those.
     `tests/parallel/06-notes.json` checklist steps run in a nested session
     before closing out; "Tick All" and the Mac's move-checked-to-bottom
     setting remain unimplemented follow-ups.
-11. **FILES-05 / FILES-35 (P1, M/M)** — Files has no Tags sidebar section
-    (macOS-only `cfg` gate left it out of the Linux build) and no
-    Finder-equivalent Settings… pane. Plan: FILES-05 is a one-line `cfg`
-    fix plus wiring; FILES-35 is a new preferences pane, medium effort.
+11. **FILES-05 / FILES-35 (P1, M/M)** — Fixed FILES-SETTINGS-TAGS-SHA: a
+    bounded background-scanned Linux tag index backs the sidebar's Tags
+    section on every OS (FILES-05), and a new Finder ▸ Settings… window
+    (General/Tags/Sidebar/Advanced, versioned persistence, live broadcast
+    to every open window) covers FILES-35, with sidebar checkboxes,
+    extension visibility, folders-on-top, the empty-Bin warning and the
+    new-window target wired live. See `docs/parity.md` rows FILES-05 and
+    FILES-35 for exactly what still isn't wired (open-folders-in-tabs,
+    the rename extension warning, the 30-day Bin sweep, Desktop-item
+    settings, and search scope). Plan: still needs a laptop clippy/fmt/test
+    pass and a nested-session behaviour check before closing out fully.
 12. **TERM-03 (P1, M)** — Fixed `c894f1dd`: Settings… now has Text (cursor
     style/blink), Window (size), Shell (when it exits) and General
     (new-window directory) sections on top of Profile/Font. Plan: needs a

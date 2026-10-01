@@ -103,8 +103,8 @@ impl SearchProvider for SystemSearchProvider {
         merge_recent_paths(rmac_snapshot.paths, desktop_recents, options)
     }
 
-    fn tagged(&self, _tag: &str, _options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
-        Err(Error::Unsupported("file tags"))
+    fn tagged(&self, tag: &str, options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
+        crate::tag_index::query(tag, options)
     }
 }
 

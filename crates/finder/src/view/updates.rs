@@ -251,11 +251,25 @@ impl FinderView {
                         Ok((identity, mut entries)) => {
                             sort_entries(&mut entries, key, asc);
                             view_options::group_entries(&mut entries, group);
+                            // FILES-05: a navigation or a watcher-triggered
+                            // reload already reads this folder, so refresh
+                            // the Linux tag index's slice of it for free —
+                            // no separate home-wide watch needed.
+                            #[cfg(any(target_os = "linux", test))]
+                            rmac_search::tag_index::note_listed(
+                                &path,
+                                entries.iter().map(|entry| entry.path.as_path()),
+                            );
                             let free = refresh_free_space.then(|| free_space(&path));
                             let children = expanded.into_iter().filter_map(|folder| {
                                 read_entries_checked(&folder, show_hidden, None).ok().map(|(_, mut rows)| {
                                     sort_entries(&mut rows, key, asc);
                                     view_options::group_entries(&mut rows, group);
+                                    #[cfg(any(target_os = "linux", test))]
+                                    rmac_search::tag_index::note_listed(
+                                        &folder,
+                                        rows.iter().map(|entry| entry.path.as_path()),
+                                    );
                                     (folder, rows)
                                 })
                             }).collect::<HashMap<_, _>>();

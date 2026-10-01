@@ -255,8 +255,62 @@ pub(super) fn disappeared_mount_roots(
         .collect()
 }
 
+/// Finder ▸ Settings… ▸ Advanced ▸ "Show all filename extensions", off:
+/// hides a regular file's extension in every rendered name (list rows,
+/// icon/gallery labels, columns) — never in `entry.path` or `entry.name`
+/// themselves, which every other operation (rename's default value, open,
+/// search, drag-and-drop) keeps using untouched. A name with no extension,
+/// or a folder, is never changed either way.
+pub(super) fn displayed_name(entry: &Entry) -> SharedString {
+    if super::settings::current()
+        .advanced
+        .show_all_filename_extensions
+    {
+        return entry.name.clone();
+    }
+    hide_extension(&entry.name, entry.is_dir)
+}
+
+/// The pure half of [`displayed_name`] — no global settings read, so tests
+/// can exercise it directly without touching the process-wide settings
+/// cache every other test in this binary also reads.
+fn hide_extension(name: &str, is_dir: bool) -> SharedString {
+    if is_dir {
+        return SharedString::from(name.to_owned());
+    }
+    let path = Path::new(name);
+    match (path.file_stem(), path.extension()) {
+        (Some(stem), Some(_)) if !stem.is_empty() => {
+            SharedString::from(stem.to_string_lossy().into_owned())
+        }
+        _ => SharedString::from(name.to_owned()),
+    }
+}
+
 pub(super) fn sort_entries(v: &mut [Entry], key: SortKey, asc: bool) {
+    // Finder ▸ Settings… ▸ Advanced ▸ "Keep folders on top: in windows when
+    // sorting by name" — the Mac only offers this for the Name sort, so it
+    // reads the shared setting here rather than threading a parameter
+    // through every one of this function's call sites.
+    let folders_on_top = key == SortKey::Name
+        && super::settings::current()
+            .advanced
+            .keep_folders_on_top_in_windows;
+    sort_entries_with(v, key, asc, folders_on_top);
+}
+
+/// The pure half of [`sort_entries`] — no global settings read, so tests
+/// can exercise "folders on top" directly without touching the
+/// process-wide settings cache every other test in this binary also reads.
+fn sort_entries_with(v: &mut [Entry], key: SortKey, asc: bool, folders_on_top: bool) {
     v.sort_by(|a, b| {
+        if folders_on_top {
+            match (a.is_dir, b.is_dir) {
+                (true, false) => return std::cmp::Ordering::Less,
+                (false, true) => return std::cmp::Ordering::Greater,
+                _ => {}
+            }
+        }
         let o = match key {
             SortKey::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             SortKey::Date => a.mtime.cmp(&b.mtime),
@@ -417,4 +471,90 @@ fn date_label(t: SystemTime) -> String {
 fn date_label_absolute(t: SystemTime) -> String {
     let date: chrono::DateTime<chrono::Local> = t.into();
     date.format("%-d %b %Y at %-I:%M %p").to_string()
+}
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+
+    fn unique_dir(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("test clock should follow the Unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "rmac-files-filesystem-helpers-{label}-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&path).expect("test directory should be created");
+        path
+    }
+
+    #[test]
+    fn hide_extension_keeps_folders_and_extension_less_names_untouched() {
+        assert_eq!(
+            hide_extension("Projects", true),
+            SharedString::from("Projects")
+        );
+        assert_eq!(
+            hide_extension("README", false),
+            SharedString::from("README")
+        );
+        assert_eq!(
+            hide_extension(".gitignore", false),
+            SharedString::from(".gitignore")
+        );
+    }
+
+    #[test]
+    fn hide_extension_drops_the_extension_from_an_ordinary_file_name() {
+        assert_eq!(
+            hide_extension("report.txt", false),
+            SharedString::from("report")
+        );
+        assert_eq!(
+            hide_extension("archive.tar.gz", false),
+            SharedString::from("archive.tar")
+        );
+    }
+
+    #[test]
+    fn folders_on_top_keeps_folders_first_regardless_of_direction() {
+        let root = unique_dir("folders-on-top");
+        std::fs::write(root.join("b-file.txt"), b"x").unwrap();
+        std::fs::write(root.join("a-file.txt"), b"x").unwrap();
+        std::fs::create_dir(root.join("z-folder")).unwrap();
+        let mut entries = read_entries(&root, true);
+
+        sort_entries_with(&mut entries, SortKey::Name, true, true);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|e| e.name.to_string())
+                .collect::<Vec<_>>(),
+            ["z-folder", "a-file.txt", "b-file.txt"]
+        );
+
+        sort_entries_with(&mut entries, SortKey::Name, false, true);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|e| e.name.to_string())
+                .collect::<Vec<_>>(),
+            ["z-folder", "b-file.txt", "a-file.txt"],
+            "folders stay first even when the rest sorts descending"
+        );
+
+        sort_entries_with(&mut entries, SortKey::Name, true, false);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|e| e.name.to_string())
+                .collect::<Vec<_>>(),
+            ["a-file.txt", "b-file.txt", "z-folder"],
+            "with the setting off, folders sort in with everything else"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

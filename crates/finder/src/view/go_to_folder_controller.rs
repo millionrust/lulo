@@ -35,14 +35,25 @@ pub(super) struct GoToSheet {
 
 impl FinderView {
     /// File ▸ New Finder Window: another window in this process, opened on
-    /// the home folder as Finder's are by default.
+    /// Finder ▸ Settings… ▸ General ▸ "New Finder windows show:" (the home
+    /// folder by default), falling back to the home folder itself when that
+    /// target does not exist on this machine.
     pub(super) fn new_window(&mut self, cx: &mut Context<Self>) {
-        let Some(home) = self.home.to_str().map(str::to_owned) else {
+        let target = super::settings::current()
+            .general
+            .new_window_target
+            .resolve(&self.home);
+        let target = if target.is_dir() {
+            target
+        } else {
+            self.home.clone()
+        };
+        let Some(path) = target.to_str().map(str::to_owned) else {
             self.operation_error = Some("The home folder path cannot open a new window".into());
             cx.notify();
             return;
         };
-        if !rmac_ui::open_another_window(vec!["--path".to_owned(), home], cx) {
+        if !rmac_ui::open_another_window(vec!["--path".to_owned(), path], cx) {
             self.operation_error = Some("Files could not open another window".into());
             cx.notify();
         }

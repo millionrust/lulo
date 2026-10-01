@@ -10,5 +10,6 @@ chrono.workspace = true
 libc.workspace = true
 quick-xml.workspace = true
 rmac-recent-documents.workspace = true
+rustix.workspace = true
 url.workspace = true
 walkdir.workspace = true

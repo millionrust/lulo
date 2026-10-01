@@ -111,6 +111,7 @@ impl FinderView {
                 return;
             }
             self.menu_at = None;
+            let warn = super::settings::current().advanced.warn_before_emptying_bin;
             cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
                 let listed = cx
                     .background_executor()
@@ -130,7 +131,14 @@ impl FinderView {
                                 paths: Vec::new(),
                                 empty_trash: true,
                             });
-                            let _ = rmac_sound::play_alert();
+                            if warn {
+                                let _ = rmac_sound::play_alert();
+                            } else {
+                                // Finder ▸ Settings… ▸ Advanced ▸ "Show
+                                // warning before emptying the Bin", off:
+                                // skip the confirmation sheet entirely.
+                                this.confirm_permanent_delete(cx);
+                            }
                         }
                         Err(error) => {
                             this.operation_error = Some(

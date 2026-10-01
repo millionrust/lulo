@@ -1,0 +1,12 @@
+{
+  "title": "⌘, opens one Settings window with document defaults and tabs",
+  "app": "text-editor",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"key": "cmd-,", "settle": 0.8},
+    {"observe": "settings", "facts": ["windows"]},
+    {"select": "Open and Save"},
+    {"observe": "open-and-save", "facts": ["windows"]}
+  ]
+}

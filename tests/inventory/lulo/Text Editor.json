@@ -452,6 +452,34 @@
       {
         "kind": "control",
         "label": "Restore All Defaults"
+      },
+      {
+        "kind": "control",
+        "label": "Plain text"
+      },
+      {
+        "kind": "control",
+        "label": "✓  Plain text"
+      },
+      {
+        "kind": "control",
+        "label": "Plain text font:"
+      },
+      {
+        "kind": "control",
+        "label": "These defaults apply to new document windows."
+      },
+      {
+        "kind": "control",
+        "label": "New documents use:"
+      },
+      {
+        "kind": "control",
+        "label": "Opening a file still detects its encoding from its contents."
+      },
+      {
+        "kind": "control",
+        "label": "Settings"
       }
     ]
   },

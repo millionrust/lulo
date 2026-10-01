@@ -17,9 +17,9 @@ use crate::{
     document, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, ExportPdf,
     FindNext, FindPrev, IncreaseFont, NewFile, OpenFile, OpenRecent0, OpenRecent1, OpenRecent2,
     OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8, OpenRecent9,
-    PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8,
-    SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ToggleFind,
-    ToggleMono, ToggleReplace,
+    PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SetEncodingUtf16Be, SetEncodingUtf16Le,
+    SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf,
+    ToggleFind, ToggleMono, ToggleReplace,
 };
 
 use super::{

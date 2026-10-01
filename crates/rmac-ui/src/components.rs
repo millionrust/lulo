@@ -264,16 +264,18 @@ impl RenderOnce for Dialog {
             // Swallow clicks on the scrim so they don't fall through to the app.
             .occlude()
             .track_focus(&boundary)
-            .when(self.focus_trap, |element| element.capture_key_down(move |event: &KeyDownEvent, window, cx| {
-                let forward = match event.keystroke.key.as_str() {
-                    "tab" => Some(!event.keystroke.modifiers.shift),
-                    _ => None,
-                };
-                if let Some(forward) = forward {
-                    cx.stop_propagation();
-                    cycle_focus_within(&navigation_boundary, forward, window, cx);
-                }
-            }))
+            .when(self.focus_trap, |element| {
+                element.capture_key_down(move |event: &KeyDownEvent, window, cx| {
+                    let forward = match event.keystroke.key.as_str() {
+                        "tab" => Some(!event.keystroke.modifiers.shift),
+                        _ => None,
+                    };
+                    if let Some(forward) = forward {
+                        cx.stop_propagation();
+                        cycle_focus_within(&navigation_boundary, forward, window, cx);
+                    }
+                })
+            })
             .when_some(self.aria_label, |el, name| el.aria_label(name))
             .child(self.content);
         for listener in self.extra_key_down {

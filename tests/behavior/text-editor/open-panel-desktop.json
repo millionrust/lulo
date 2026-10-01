@@ -1,0 +1,22 @@
+{
+  "title": "Open panel navigates to Desktop with Command-D and cancels",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"key": "cmd-o", "settle": 1.5},
+    {"wait": 4},
+    {"observe": "open", "facts": ["dialog"]},
+    {"key": "cmd-d", "settle": 0.8},
+    {"observe": "desktop", "facts": ["dialog"]},
+    {"key": "escape", "settle": 0.8},
+    {"observe": "cancelled", "facts": ["dialog"]}
+  ],
+  "tolerance": {
+    "open.dialog.title": "ignore",
+    "open.dialog.buttons": "ignore",
+    "open.dialog.texts": "ignore",
+    "desktop.dialog.title": "ignore",
+    "desktop.dialog.buttons": "ignore",
+    "desktop.dialog.texts": "ignore"
+  }
+}

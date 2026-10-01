@@ -48,6 +48,37 @@ def file_point(run: run_window_move.Run, pid: int, name: str) -> tuple[float, fl
     return x + left - 12, y + top - 12
 
 
+def sidebar_point(run: run_window_move.Run, pid: int, label: str) -> tuple[float, float]:
+    """Find a named row in the sidebar rather than an item with the same name."""
+    run_lulo.pump()
+    desktop = run_lulo.atspi().Registry.getDesktop(0)
+    for index in range(desktop.childCount):
+        app = desktop.getChildAtIndex(index)
+        if app is None or app.get_process_id() != pid:
+            continue
+        for node in run_lulo.descendants(app):
+            if run_lulo.name(node) != label or run_lulo.role(node) != "list box option":
+                continue
+            box = run_lulo.extents(node)
+            if box and box[0] < 220 and box[2] > 0:
+                window = run.window("org.rmac.Files")
+                left, top, _, _ = run.geometry(window)
+                return left + box[0] + 45 - 12, top + box[1] + box[3] / 2 - 12
+    raise RuntimeError(f"no sidebar row {label!r} for pid {pid}")
+
+
+def saved_favourites(run: run_window_move.Run) -> list[str]:
+    path = Path(run.env["XDG_STATE_HOME"]) / "rmac/files/favourites.json"
+    if not path.exists():
+        return []
+    document = json.loads(path.read_text())
+    if isinstance(document, list):
+        return document
+    if document.get("version") != 1:
+        raise RuntimeError(f"unexpected sidebar version: {document.get('version')}")
+    return document["paths"]
+
+
 def drag_once(run: run_window_move.Run, pid: int, name: str,
               destination: tuple[float, float], *, steps: int = 20,
               delay: float = .12, hold: float = .8) -> None:
@@ -160,6 +191,47 @@ def inner(args: argparse.Namespace) -> int:
         check_move(run, within_source, folder / within_source.name,
                    "Files in-window drag moves file into folder")
 
+        sidebar_scenario = json.loads(
+            (run_window_move.REPO / "tests/behavior/files/sidebar-favourites.json").read_text()
+        )
+        pinned_one, pinned_two = [source_dir / name for name in sidebar_scenario["setup"]["folders"]]
+        pinned_one.mkdir()
+        pinned_two.mkdir()
+        heading = run.wait_for(lambda: file_point(run, files.pid, "Favourites"), 10)
+        run.check("Favourites drop target accessible", heading is not None)
+        if heading is None:
+            return run.finish()
+        for target in (pinned_one, pinned_two):
+            run.wait_for(lambda: file_point(run, files.pid, target.name), 10)
+            drag_once(run, files.pid, target.name, heading, steps=8, delay=.04, hold=.15)
+            added = run.wait_for(lambda: str(target) in saved_favourites(run), 8)
+            run.check(f"Files → sidebar adds {target.name}", bool(added), str(saved_favourites(run)))
+        row = run.wait_for(lambda: sidebar_point(run, files.pid, pinned_one.name), 10)
+        run.check("Sidebar favourite row accessible", row is not None)
+        if row is None:
+            return run.finish()
+        drag_points(run, row, heading, steps=8, delay=.04, hold=.15)
+        reordered = run.wait_for(
+            lambda: saved_favourites(run)[:2] == [str(pinned_one), str(pinned_two)], 8
+        )
+        run.check("Sidebar drag reorders favourites", bool(reordered), str(saved_favourites(run)))
+
+        row = sidebar_point(run, files.pid, pinned_one.name)
+        pointer = run.pointer
+        pointer.move(*run.parent_point(*row), run.parent_width, run.parent_height)
+        pointer.button(True, "right")
+        pointer.button(False, "right")
+        remove_point = run.wait_for(lambda: file_point(run, files.pid, "Remove from Sidebar"), 8)
+        run.check("Sidebar context menu offers Remove from Sidebar", remove_point is not None)
+        if remove_point is None:
+            return run.finish()
+        pointer.move(*run.parent_point(*remove_point), run.parent_width, run.parent_height)
+        pointer.button(True)
+        pointer.button(False)
+        removed = run.wait_for(lambda: str(pinned_one) not in saved_favourites(run), 8)
+        run.check("Remove from Sidebar preserves the folder", bool(removed) and pinned_one.is_dir(),
+                  str(saved_favourites(run)))
+
         wallpaper = next((child for child in run.children
                           if child.args and Path(child.args[0]).name == "wallpaper"), None)
         if wallpaper is None:
@@ -179,6 +251,15 @@ def inner(args: argparse.Namespace) -> int:
         drag_points(run, desktop_icon, files_content_point(run))
         check_move(run, desktop_to_files, source_dir / desktop_to_files.name,
                    "Desktop → Files moves file into open folder")
+        desktop_favourite = desktop_destination.parent / "Sidebar Desktop Folder"
+        desktop_favourite.mkdir()
+        time.sleep(.8)
+        drag_points(run, desktop_icon, heading, steps=20, delay=.08, hold=.2)
+        added_desktop = run.wait_for(
+            lambda: str(desktop_favourite) in saved_favourites(run), 8
+        )
+        run.check("Desktop → Files sidebar adds folder without moving it",
+                  bool(added_desktop) and desktop_favourite.is_dir(), str(saved_favourites(run)))
         return run.finish()
     except Exception as error:  # noqa: BLE001
         run.check("drag runner completed", False, str(error))

@@ -308,13 +308,7 @@ impl Panel {
         let focus = cx.focus_handle();
         cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
-                let sections = sidebar_sections(&this.home);
-                if !this.sections.iter().flat_map(|s| &s.places).map(|p| (&p.name, &p.location)).eq(
-                    sections.iter().flat_map(|s| &s.places).map(|p| (&p.name, &p.location))
-                ) {
-                    this.sections = sections;
-                    cx.notify();
-                }
+                this.refresh_sidebar_async(cx);
             }
         }).detach();
         match &name {
@@ -350,7 +344,7 @@ impl Panel {
 
         let pending_select = request.current_file.clone();
         let mut panel = Self {
-            sections: sidebar_sections(&home),
+            sections: Vec::new(),
             recent_places,
             filter_index: request.current_filter,
             choices: request.choices.clone(),
@@ -374,8 +368,20 @@ impl Panel {
             search_origin: None,
             _subscriptions: subscriptions,
         };
+        panel.refresh_sidebar_async(cx);
         panel.load(cx);
         panel
+    }
+
+    fn refresh_sidebar_async(&self, cx: &mut Context<Self>) {
+        let home = self.home.clone();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let sections = cx.background_executor().spawn(async move { sidebar_sections(&home) }).await;
+            let _ = this.update(cx, |this, cx| {
+                this.sections = sections;
+                cx.notify();
+            });
+        }).detach();
     }
 
     pub fn mode(&self) -> Mode {
@@ -516,6 +522,18 @@ impl Panel {
 
     pub fn navigate(&mut self, location: Location, cx: &mut Context<Self>) {
         self.menu = None;
+        let location = match location {
+            Location::Folder(path) if path.is_file() => {
+                self.pending_select = Some(path.clone());
+                Location::Folder(path.parent().unwrap_or(&self.home).to_path_buf())
+            }
+            Location::Folder(path) if !path.exists() => {
+                self.notice = Some("The item can't be found".into());
+                cx.notify();
+                return;
+            }
+            other => other,
+        };
         if !matches!(location, Location::Search(_)) {
             self.search_origin = None;
         }

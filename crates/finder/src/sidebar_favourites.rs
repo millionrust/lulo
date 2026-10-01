@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, OnceLock};
 
 use rmac_storage::{Backend as _, FileSystem};
 use serde::{Deserialize, Serialize};
@@ -47,12 +48,16 @@ pub fn load() -> Vec<PathBuf> {
     let Ok(bytes) = FileSystem.read_bounded_no_follow(&path, MAX_FILE_BYTES) else {
         return Vec::new();
     };
-    let paths = serde_json::from_slice::<SavedFavourites>(&bytes)
+    decode(&bytes)
+}
+
+fn decode(bytes: &[u8]) -> Vec<PathBuf> {
+    let paths = serde_json::from_slice::<SavedFavourites>(bytes)
         .ok()
         .filter(|saved| saved.version == VERSION)
         .map(|saved| saved.paths)
         // Migrate the unversioned array written by older Files builds.
-        .or_else(|| serde_json::from_slice::<Vec<PathBuf>>(&bytes).ok())
+        .or_else(|| serde_json::from_slice::<Vec<PathBuf>>(bytes).ok())
         .unwrap_or_default();
     sanitise(paths)
 }
@@ -76,6 +81,33 @@ pub fn save(paths: &[PathBuf]) -> std::io::Result<()> {
         ));
     }
     rmac_storage::atomic_write_private(&path, &bytes)
+}
+
+/// Queue persistence on a single sleeping worker. Consecutive reorders are
+/// coalesced so the UI never waits on storage and the last order wins.
+pub fn queue_save(paths: Vec<PathBuf>) -> std::io::Result<()> {
+    static WRITER: OnceLock<Result<mpsc::Sender<Vec<PathBuf>>, String>> = OnceLock::new();
+    let writer = WRITER.get_or_init(|| {
+        let (sender, receiver) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("files-sidebar-save".into())
+            .spawn(move || {
+                while let Ok(mut paths) = receiver.recv() {
+                    while let Ok(newer) = receiver.try_recv() {
+                        paths = newer;
+                    }
+                    if let Err(error) = save(&paths) {
+                        eprintln!("could not save Files sidebar favourites: {error}");
+                    }
+                }
+            })
+            .map(|_| sender)
+            .map_err(|error| error.to_string())
+    });
+    match writer {
+        Ok(sender) => sender.send(paths).map_err(std::io::Error::other),
+        Err(error) => Err(std::io::Error::other(error.clone())),
+    }
 }
 
 /// Insert or reorder a path. `index` is the insertion point in the custom
@@ -120,5 +152,13 @@ mod tests {
         let mut paths = vec!["/a".into(), "/b".into(), "/c".into()];
         assert!(insert(&mut paths, "/a".into(), 3));
         assert_eq!(paths, vec![PathBuf::from("/b"), PathBuf::from("/c"), PathBuf::from("/a")]);
+    }
+
+    #[test]
+    fn versioned_and_legacy_documents_read_the_same_paths() {
+        let v1 = br#"{"version":1,"paths":["/tmp/one","/tmp/two"]}"#;
+        let legacy = br#"["/tmp/one","/tmp/two"]"#;
+        assert_eq!(decode(v1), decode(legacy));
+        assert_eq!(decode(br#"{"version":2,"paths":["/tmp/one"]}"#), Vec::<PathBuf>::new());
     }
 }

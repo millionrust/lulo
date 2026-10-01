@@ -107,6 +107,16 @@ impl FinderView {
             if window.is_window_active() {
                 this.publish_app_menu_state(cx);
                 this.refresh_pasteboard_state(cx);
+                let before = this.favourite_extras.clone();
+                cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                    let favourites = blocking::unblock(sidebar_favourites::load_sidebar_favourites).await;
+                    let _ = this.update(cx, |this, cx| {
+                        if this.favourite_extras == before && favourites != before {
+                            this.favourite_extras = favourites;
+                            this.rebuild_sidebar_sections(cx);
+                        }
+                    });
+                }).detach();
             }
             if !window.is_window_active()
                 && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window, cx)

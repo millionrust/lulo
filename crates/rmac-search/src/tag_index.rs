@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(not(target_os = "macos"))]
 use crate::{Error, Options};
 
 /// The extended attribute Files writes a colour tag's lowercase name into
@@ -171,7 +171,7 @@ pub fn note_listed<'a>(directory: &Path, paths: impl Iterator<Item = &'a Path>) 
 /// The paths currently indexed under `tag` (already lowercased — Files'
 /// own sidebar labels are title-cased, e.g. "Blue", so callers compare
 /// case-insensitively), filtered the same way every other search result is.
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(not(target_os = "macos"))]
 pub(super) fn query(tag: &str, options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
     crate::ranked::check_cancelled(options.cancel)?;
     let tag = tag.to_lowercase();

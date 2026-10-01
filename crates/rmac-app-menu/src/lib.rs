@@ -705,6 +705,8 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 [item!("Clear Menu", "preview::ClearRecentMenu", "")]
             ),
             item!("Close Window", "preview::CloseWindow", "⌘W", separator),
+            item!("Save", "preview::SaveMarkup", "⌘S"),
+            item!("Revert to Original", "preview::RevertMarkup", "", separator),
             // PREV-15: the Mac's File menu also has New from Clipboard,
             // Close All, Save, Save As…, Duplicate, Rename…, Move To…,
             // Revert To ▸, Enter Password…, Edit Permissions…, Import from
@@ -760,6 +762,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Tools",
         items: &[
+            item!("Show Markup Toolbar", "preview::ToggleMarkup", "⇧⌘A"),
             item!("Show Inspector", "preview::ShowInspector", "⌘I"),
             item!("Rotate Left", "preview::RotateLeft", "⌘L", separator),
             item!("Rotate Right", "preview::RotateRight", "⌘R"),

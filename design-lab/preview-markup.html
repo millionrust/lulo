@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Preview markup · macOS 26 design study</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  body { margin: 0; padding: 24px; background: #181920; color: #ececf0; font: 13px -apple-system, BlinkMacSystemFont, sans-serif; }
+  .window { width: 1121px; height: 789px; overflow: hidden; border-radius: 22px; background: #262734; box-shadow: 0 20px 65px #0009; }
+  .titlebar, .markup { display: flex; align-items: center; box-sizing: border-box; border-bottom: 1px solid #43455a; }
+  .titlebar { height: 52px; gap: 12px; padding: 0 12px 0 188px; background: #20212b; }
+  .title { font-weight: 700; margin-right: auto; }
+  .capsule, button { height: 36px; border: 1px solid #434567; border-radius: 18px; background: #262737; color: inherit; }
+  .capsule { padding: 0 13px; line-height: 34px; }
+  .capsule.active, button.active { background: #435887; border-color: #6188d5; }
+  .markup { height: 48px; gap: 5px; padding: 5px 12px 5px 178px; background: #20212b; }
+  button { min-width: 36px; padding: 0 10px; font: inherit; cursor: default; }
+  button.wide { min-width: 65px; }
+  .gap { width: 10px; }
+  .color { width: 15px; height: 15px; display: inline-block; vertical-align: middle; border: 1px solid #ddd8; border-radius: 50%; background: #f3cc30; }
+  .body { height: calc(100% - 100px); display: flex; }
+  .sidebar { width: 168px; background: #20212b; }
+  .thumbnail { width: 120px; height: 155px; margin: 16px auto; background: white; border: 6px solid #3478f6; border-radius: 8px; }
+  .document { flex: 1; overflow: hidden; padding: 16px 12px; }
+  .page { position: relative; width: 928px; height: 1201px; background: white; color: #1d1d1d; box-shadow: 0 2px 8px #0005; }
+  .page p { position: absolute; left: 110px; top: 145px; font-size: 20px; }
+  .highlight { background: #f3cc3080; }
+  .rect { position: absolute; left: 500px; top: 270px; width: 190px; height: 106px; border: 3px solid #e65354; }
+  .handle { position: absolute; right: -5px; bottom: -5px; width: 9px; height: 9px; border-radius: 50%; background: #3478f6; }
+  .text-box { position: absolute; left: 153px; top: 294px; border: 1px dashed #3478f6; padding: 9px; color: #e65354; font-size: 21px; }
+</style>
+<div class="window">
+  <div class="titlebar"><span class="title">guide.pdf</span><span class="capsule active">◉ Markup</span><span class="capsule">− &nbsp; 1:1 &nbsp; +</span><span class="capsule">⌕ Search</span></div>
+  <div class="markup"><button class="active wide">▧ Select</button><button>✎ Sketch</button><button>◇ Draw</button><button class="wide">▢ Shapes ▾</button><button>T</button><button class="active">▰ Highlight</button><button>✍ Sign ▾</button><button>▤ Note</button><span class="gap"></span><button>◯ <span class="color"></span> ▾</button><button>━━ 3 ▾</button><button>Aa ▾</button></div>
+  <div class="body"><div class="sidebar"><div class="thumbnail"></div></div><div class="document"><div class="page"><p>The <span class="highlight">quick brown fox</span> jumps over the lazy dog.</p><div class="rect"><span class="handle"></span></div><div class="text-box">Review this section</div></div></div></div>
+</div>

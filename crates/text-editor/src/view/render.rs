@@ -128,7 +128,13 @@ impl Render for EditorView {
                 cx.listener(|this, _: &ToggleReplace, window, cx| this.toggle_replace(window, cx)),
             )
             .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_next(cx)))
-            .on_action(cx.listener(|this, _: &FindPrev, _, cx| this.find_prev(cx)))
+            .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
+                if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {
+                    this.open_save_goto(window, cx);
+                } else {
+                    this.find_prev(cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &CloseBar, window, cx| this.close_bar(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
             .on_action(cx.listener(|this, _: &SetEncodingUtf8, _, cx| {
@@ -156,9 +162,6 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &DecreaseFont, _, cx| this.decrease_font(cx)))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.guarded(Pending::Close, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::SaveGoToFolder, window, cx| {
-                this.open_save_goto(window, cx)
             }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereDocuments, _, cx| { this.save_location = SaveLocation::Documents; this.save_custom_folder = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereDesktop, _, cx| { this.save_location = SaveLocation::Desktop; this.save_custom_folder = None; cx.notify(); }))

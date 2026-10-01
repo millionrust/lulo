@@ -39,7 +39,7 @@ use crate::PrintFile;
 use crate::{document, long_lines, recovery, rtf, storage};
 use crate::{
     CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont,
-    NewFile, OpenFile, SaveFile, SaveFileAs, SaveGoToFolder, ToggleFind, ToggleMono, ToggleReplace,
+    NewFile, OpenFile, SaveFile, SaveFileAs, ToggleFind, ToggleMono, ToggleReplace,
 };
 
 use document_io::{

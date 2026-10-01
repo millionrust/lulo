@@ -53,7 +53,6 @@ gpui::actions!(
         SheetWhereHome,
         SheetWhereDownloads,
         SheetWhereOther,
-        SaveGoToFolder,
         SheetEncodingUtf8,
         SheetEncodingUtf8Bom,
         SheetEncodingUtf16Le,

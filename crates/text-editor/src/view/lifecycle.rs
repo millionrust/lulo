@@ -67,10 +67,6 @@ impl EditorView {
             KeyBinding::new(rmac_ui::shortcuts::OPEN.keystroke, OpenFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::SAVE.keystroke, SaveFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::SAVE_AS.keystroke, SaveFileAs, Some(CTX)),
-            // The attached Save sheet has its own dialog key context, so its
-            // Go to Folder shortcut must remain reachable while its name
-            // field holds focus. The action itself checks for that sheet.
-            KeyBinding::new("cmd-shift-g", SaveGoToFolder, None),
             KeyBinding::new(
                 rmac_ui::shortcuts::DUPLICATE_DOCUMENT.keystroke,
                 DuplicateDocument,

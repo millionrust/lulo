@@ -114,8 +114,8 @@ TRASH_BIN = f"""
   <rect x="168" y="146" width="688" height="82" rx="41" fill="url(#hole)"/>"""
 TRASH_RING = ('<rect x="146" y="130" width="732" height="112" rx="56" fill="none" '
               'stroke="#FFFFFF" stroke-width="12"/>')
+TRASH_MOUTH_CLIP = '<clipPath id="mouth"><rect x="0" y="0" width="1024" height="206"/></clipPath>'
 TRASH_PAPERS = """
-  <clipPath id="mouth"><rect x="0" y="0" width="1024" height="206"/></clipPath>
   <g clip-path="url(#mouth)" fill="url(#paper)" stroke="#B3B9C6" stroke-width="6"
      stroke-linejoin="round">
     <path d="M296 214L314 112L400 74L472 122L456 214Z"/>
@@ -344,7 +344,7 @@ ICONS: dict[str, tuple[tuple[str, str] | None, str, str]] = {
 
     "trash": (None, TRASH_DEFS, TRASH_BIN + TRASH_RING),
 
-    "trash-full": (None, TRASH_DEFS, TRASH_BIN + TRASH_PAPERS + TRASH_RING),
+    "trash-full": (None, TRASH_DEFS + TRASH_MOUTH_CLIP, TRASH_BIN + TRASH_PAPERS + TRASH_RING),
 }
 
 APPEARANCES = ("default", "dark", "clear", "tinted")

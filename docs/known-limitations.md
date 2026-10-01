@@ -7,15 +7,35 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 
 ## Release blockers
 
-- The current stable GPUI line does not prove the required Linux accessibility
-  semantics or layer-shell path. Final shell rendering and Orca claims remain
-  gated by the upstream framework decision.
+- The Linux layer-shell path and GPUI's accessibility semantics are no longer
+  an open framework question: `crates/gpui_linux` is vendored and patched
+  in-tree (ADR 0013), and Terminal, Notes, and Files' content surfaces now
+  publish real AT-SPI roles/text/caret (ACC-01/02/03). The one confirmed
+  remaining gap is upstream, not a framework decision: the pinned
+  `accesskit_unix`/`accesskit_atspi_common` versions implement no
+  `EditableText` interface at all, so Spotlight, Terminal, Notes, and Files'
+  search/rename fields cannot be **typed into** by assistive technology or a
+  keyboard-injector script (real keyboard/pointer typing is unaffected). See
+  "Accessibility limits" below. A formal, owner-run Orca audit at 200% text
+  scaling (journey 9) has still not happened — only the owner can enable Orca.
 - The signed APT repository, clean native install, upgrade, rollback, and
-  uninstall evidence are not complete. Repository tools are not public
-  installers.
+  uninstall evidence are not complete; this Beta ships `.deb` files you
+  install and later remove by hand (see "How to go back" in the release
+  notes). Signed, automatic in-place updates over APT are not part of this
+  release.
+- Two owner-reported desktop/Dock bugs reproduce live but not in the nested
+  test compositor, so they remain open and unverified-fixed: desktop icons
+  can stay hidden until a click after login (parity row DESK-12), and the
+  Dock's Bin icon can vanish and the Dock itself lag/disappear for a moment
+  after a delete while its service keeps running (DOCK-27). Both are narrowed
+  to "live session only" — if you hit either, a relaunch of the affected
+  surface (or `niri msg action` as documented in Troubleshooting) recovers it.
 - Critical visual references, all Orca observations, performance traces,
-  chaos/soak runs, and the security review still need native candidate evidence.
-- No hardware station is yet certified for Alpha, Beta, or 1.0.
+  chaos/soak runs, and the security review still need native candidate
+  evidence. No hardware station is yet certified for Alpha, Beta, or 1.0, and
+  this Beta has only been exercised on Intel graphics — **no NVIDIA hardware
+  has been tested**; treat NVIDIA/proprietary-driver systems as unverified
+  until a Beta 2 NVIDIA station result is published.
 
 ## Accessibility limits
 

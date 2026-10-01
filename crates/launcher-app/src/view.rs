@@ -9,8 +9,12 @@ mod surface;
 
 use std::process::Command;
 use std::sync::Arc;
+use std::time::Instant;
 
-use gpui::{px, size, AppContext as _, Context, Entity, Focusable as _, SharedString, Window};
+use gpui::{
+    px, size, AnyWindowHandle, AppContext as _, Context, Entity, Focusable as _, SharedString,
+    Window,
+};
 use rmac_launcher::{ActivationMode, ApplicationGroup, Category, MoveSelection, ResultId};
 use rmac_launcher_runtime::{
     CatalogUpdate, Coordinator, KeyCommand, KeyEffect, Registry, Row, ShortcutEffect,
@@ -45,6 +49,22 @@ pub(crate) struct LauncherView {
     /// The arrow keys moved the selection since the query last changed:
     /// the selected row turns from the grey top-hit plate to blue.
     keyboard_selection: bool,
+    window_handle: AnyWindowHandle,
+    input_probe: Option<InputProbe>,
+}
+
+struct InputProbe {
+    directory: std::path::PathBuf,
+    sequence: u64,
+    pending: Option<(u64, Instant)>,
+}
+
+fn mark_input_frame(window: &Window, path: std::path::PathBuf, started: Instant) {
+    window.on_next_frame(move |_, _| {
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+        std::fs::write(&path, format!("{elapsed_ms:.1}\n"))
+            .unwrap_or_else(|error| panic!("write Spotlight input marker {path:?}: {error}"));
+    });
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,6 +150,16 @@ impl LauncherView {
         cx.subscribe(&query, move |this, query, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 let value = query.read(cx).value().to_string();
+                if let Some(probe) = &mut this.input_probe {
+                    probe.sequence += 1;
+                    let sequence = probe.sequence;
+                    let started = Instant::now();
+                    probe.pending = Some((sequence, started));
+                    let path = probe.directory.join(format!("echo-{sequence}.ready"));
+                    let _ = cx.update_window(window_handle, |_, window, _| {
+                        mark_input_frame(window, path, started);
+                    });
+                }
                 this.panel_query_changed();
                 this.keyboard_selection = false;
                 let compact =
@@ -205,6 +235,14 @@ impl LauncherView {
             applications,
             press_inside: false,
             keyboard_selection: false,
+            window_handle,
+            input_probe: std::env::var_os("RMAC_SPOTLIGHT_INPUT_PROBE_DIR").map(|directory| {
+                InputProbe {
+                    directory: directory.into(),
+                    sequence: 0,
+                    pending: None,
+                }
+            }),
         };
         view.ensure_browse_selection();
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
@@ -225,6 +263,21 @@ impl LauncherView {
                     if this
                         .update(cx, |this, cx| {
                             if this.coordinator.apply(batch) {
+                                if !this.coordinator.snapshot().rows.is_empty() {
+                                    if let Some(probe) = &mut this.input_probe {
+                                        if let Some((sequence, started)) = probe.pending.take() {
+                                            let path = probe
+                                                .directory
+                                                .join(format!("results-{sequence}.ready"));
+                                            let _ = cx.update_window(
+                                                this.window_handle,
+                                                |_, window, _| {
+                                                    mark_input_frame(window, path, started);
+                                                },
+                                            );
+                                        }
+                                    }
+                                }
                                 this.ensure_browse_selection();
                                 cx.notify();
                             }

@@ -14,6 +14,7 @@ impl EditorView {
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
         let save_name_input = cx.new(|cx| InputState::new(window, cx).default_value("Untitled"));
+        let save_goto_input = cx.new(|cx| InputState::new(window, cx).placeholder("Go to Folder"));
 
         // TextEdit-style untitled numbering: only a window that opens with
         // no path (never one about to load a file) claims a number, freed
@@ -264,6 +265,11 @@ impl EditorView {
             find_input,
             replace_input,
             save_name_input,
+            save_goto_input,
+            save_goto_open: false,
+            save_goto_busy: false,
+            save_goto_error: false,
+            save_custom_folder: None,
             save_location: SaveLocation::default(),
             matches: Vec::new(),
             current: 0,

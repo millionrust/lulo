@@ -44,7 +44,11 @@ impl EditorView {
             );
             return;
         }
-        let Some(directory) = self.save_location.directory() else {
+        let Some(directory) = self
+            .save_custom_folder
+            .clone()
+            .or_else(|| self.save_location.directory())
+        else {
             self.alert = Some(ActiveAlert::ConfirmSave(then));
             return;
         };

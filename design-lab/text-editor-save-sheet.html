@@ -8,6 +8,8 @@
 .save-sheet{box-sizing:border-box;position:absolute;top:32px;left:50%;transform:translateX(-50%);width:458px;height:367px;padding:30px 26px 20px;border-radius:0 0 12px 12px;background:var(--sheet);color:var(--label);box-shadow:0 12px 24px #0008;display:flex;flex-direction:column}
 .save-sheet h2{font-size:15px;line-height:20px;margin:0 0 10px}.save-sheet p{font-size:13px;line-height:18px;margin:0 0 22px;color:var(--label-2)}
 .form-row{display:flex;align-items:center;gap:12px;height:38px;font-size:13px}.form-row label{width:140px;text-align:right}.form-row .control{flex:1;border-radius:6px;background:var(--fill-control);padding:6px 9px}.selection{background:var(--accent);color:white}.actions{display:flex;gap:8px;margin-top:auto}.actions button{border:0;border-radius:7px;padding:6px 20px;background:var(--btn-secondary);color:inherit}.actions .delete{margin-right:auto;background:var(--btn-destructive);color:white}.actions .save{background:var(--accent);color:white}
+.goto-sheet{box-sizing:border-box;position:absolute;top:76px;left:50%;transform:translateX(-50%);width:460px;height:183px;padding:20px;border-radius:24px;background:var(--sheet);color:var(--label);box-shadow:0 12px 32px #0009,0 0 0 1px var(--separator);display:flex;flex-direction:column;gap:14px}
+.goto-sheet h3{font-size:15px;margin:0}.goto-sheet .path{border-radius:6px;background:var(--fill-control);padding:8px 10px;box-shadow:0 0 0 2px var(--accent)}.goto-sheet .actions{justify-content:flex-end}
 </style>
 <div class="sample"><div class="titlebar">Untitled — Edited</div><div class="dim"></div>
 <div class="save-sheet"><h2>Do you want to keep this new document “Untitled”?</h2>
@@ -15,4 +17,10 @@
 <div class="form-row"><label>Save As:</label><div class="control"><span class="selection">Untitled</span></div></div>
 <div class="form-row"><label>Where:</label><div class="control">Documents　⌄</div></div>
 <div class="form-row"><label>Plain Text Encoding:</label><div class="control">Unicode (UTF-8)　⌄</div></div>
-<div class="actions"><button class="delete">Delete</button><button>Cancel</button><button class="save">Save</button></div></div></div></html>
+<div class="actions"><button class="delete">Delete</button><button>Cancel</button><button class="save">Save</button></div></div></div>
+<!-- The Go to Folder card follows the 460 × 183 panel measured for the chooser
+     in design-lab/file-chooser.html. The Mac was locked on 2026-10-01, so this
+     Text Editor placement is a layout adaptation, not a new Mac measurement. -->
+<div class="sample"><div class="titlebar">Untitled — Edited</div><div class="dim"></div>
+<div class="save-sheet"><h2>Do you want to keep this new document “Untitled”?</h2><p>You can choose to save your changes or delete this document immediately. You can’t undo this action.</p><div class="form-row"><label>Save As:</label><div class="control">Untitled</div></div><div class="form-row"><label>Where:</label><div class="control">Documents　⌄</div></div><div class="form-row"><label>Plain Text Encoding:</label><div class="control">Unicode (UTF-8)　⌄</div></div><div class="actions"><button class="delete">Delete</button><button>Cancel</button><button class="save">Save</button></div></div>
+<div class="goto-sheet"><h3>Go to Folder</h3><div class="path">~/Documents</div><div class="actions"><button>Cancel</button><button class="save">Go</button></div></div></div></html>

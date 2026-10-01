@@ -35,9 +35,83 @@ fn encoding_label(encoding: document::TextEncoding) -> &'static str {
 }
 
 impl EditorView {
+    fn render_save_goto(&self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .id("save-goto-sheet")
+            .absolute()
+            .left(px(-1.0))
+            .top(px(76.0))
+            .w(px(460.0))
+            .h(px(183.0))
+            .p(px(20.0))
+            .flex()
+            .flex_col()
+            .gap(px(14.0))
+            .rounded(px(mac::radius_card()))
+            .bg(mac::sheet())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .occlude()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(15.0))
+                    .font_weight(mac::BOLD)
+                    .child("Go to Folder"),
+            )
+            .child(
+                div()
+                    .id("save-goto-path")
+                    .role(Role::TextInput)
+                    .aria_label("Go to Folder")
+                    .accessible_text_input(&self.save_goto_input, cx)
+                    .child(TextField::new(&self.save_goto_input)),
+            )
+            .when(self.save_goto_error, |card| {
+                card.child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::text_secondary())
+                        .child("Choose an existing folder."),
+                )
+            })
+            .child(
+                div()
+                    .mt_auto()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "save-goto-cancel",
+                            "Cancel",
+                            DialogButtonKind::Normal,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.close_save_goto(window, cx)),
+                        ),
+                    )
+                    .child(
+                        rmac_ui::dialog_button("save-goto-go", "Go", DialogButtonKind::Primary)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| {
+                                    this.commit_save_goto(window, cx)
+                                }),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+
     pub(super) fn render_save_sheet(&self, cx: &mut Context<Self>) -> AnyElement {
         let closing = matches!(self.alert, Some(ActiveAlert::ConfirmSave(Some(_))));
-        let where_popup = PopUpButton::new("save-sheet-where", self.save_location.label())
+        let where_label = self
+            .save_custom_folder
+            .as_ref()
+            .and_then(|folder| folder.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| self.save_location.label().to_owned());
+        let where_popup = PopUpButton::new("save-sheet-where", where_label)
             .form()
             .dropdown_menu(|menu, _, _| {
                 menu.menu("Documents", Box::new(crate::SheetWhereDocuments))
@@ -151,6 +225,7 @@ impl EditorView {
                         ),
                     ),
             )
+            .when(self.save_goto_open, |card| card.child(self.render_save_goto(cx)))
             .with_animation(
                 "text-editor-save-sheet-slide",
                 Animation::new(Duration::from_millis(180)),
@@ -163,7 +238,24 @@ impl EditorView {
             ))
             .attached()
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key.eq_ignore_ascii_case("g")
+                    && event.keystroke.modifiers.platform
+                    && event.keystroke.modifiers.shift
+                    && matches!(this.alert, Some(ActiveAlert::ConfirmSave(_)))
+                {
+                    cx.stop_propagation();
+                    this.open_save_goto(window, cx);
+                    return;
+                }
                 match event.keystroke.key.as_str() {
+                    "escape" if this.save_goto_open => {
+                        cx.stop_propagation();
+                        this.close_save_goto(window, cx);
+                    }
+                    "enter" if this.save_goto_open => {
+                        cx.stop_propagation();
+                        this.commit_save_goto(window, cx);
+                    }
                     "escape" if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) => {
                         cx.stop_propagation();
                         this.alert_cancel(cx);

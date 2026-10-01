@@ -522,8 +522,11 @@ impl Render for FinderView {
                         compress_label,
                         self.selection_count(),
                         can_open_with,
-                        self.open_with_menu.as_ref().and_then(|(path, association)|
-                            (self.selected_paths().first() == Some(path)).then_some(association)),
+                        self.open_with_menu
+                            .as_ref()
+                            .and_then(|(path, association)| {
+                                (self.selected_paths().first() == Some(path)).then_some(association)
+                            }),
                         can_paste,
                         self.trash_view,
                         self.applications_view,
@@ -535,7 +538,9 @@ impl Render for FinderView {
                     MenuPurpose::Sidebar => Self::build_sidebar_menu(
                         state.position(),
                         self.sidebar_context_is_favourite,
-                        self.sidebar_context_path.as_ref().is_some_and(|path| path.as_os_str().is_empty()),
+                        self.sidebar_context_path
+                            .as_ref()
+                            .is_some_and(|path| path.as_os_str().is_empty()),
                     ),
                 };
                 el.child(menu.render(&state))

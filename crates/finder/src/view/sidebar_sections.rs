@@ -270,9 +270,22 @@ mod tests {
             FavouriteKey::Path(home.join("Downloads")),
             FavouriteKey::Applications,
         ];
-        let sections = build_sections(home, &[], &[custom], &order, &words, &FinderSettings::default());
-        let names = sections.iter().find(|section| section.title.as_ref() == words.favourites())
-            .unwrap().places.iter().map(|place| place.name.as_ref()).collect::<Vec<&str>>();
+        let sections = build_sections(
+            home,
+            &[],
+            &[custom],
+            &order,
+            &words,
+            &FinderSettings::default(),
+        );
+        let names = sections
+            .iter()
+            .find(|section| section.title.as_ref() == words.favourites())
+            .unwrap()
+            .places
+            .iter()
+            .map(|place| place.name.as_ref())
+            .collect::<Vec<&str>>();
         assert_eq!(names, ["project.txt", "Downloads", "Applications"]);
     }
 }

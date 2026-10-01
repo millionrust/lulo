@@ -10,14 +10,27 @@ const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purpl
 
 impl FinderView {
     pub(super) fn add_paths_to_dock(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
-        if paths.is_empty() { return; }
+        if paths.is_empty() {
+            return;
+        }
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let resolved = blocking::unblock(move || {
-                paths.into_iter().map(|path| {
-                    std::fs::canonicalize(path)?.into_os_string().into_string()
-                        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "The path cannot be added to the Dock"))
-                }).collect::<std::io::Result<Vec<_>>>()
-            }).await;
+                paths
+                    .into_iter()
+                    .map(|path| {
+                        std::fs::canonicalize(path)?
+                            .into_os_string()
+                            .into_string()
+                            .map_err(|_| {
+                                std::io::Error::new(
+                                    std::io::ErrorKind::InvalidInput,
+                                    "The path cannot be added to the Dock",
+                                )
+                            })
+                    })
+                    .collect::<std::io::Result<Vec<_>>>()
+            })
+            .await;
             let result = match resolved {
                 Ok(paths) => {
                     use rmac_dock_system::Backend as _;
@@ -25,7 +38,7 @@ impl FinderView {
                     let mut result = Ok(());
                     for path in paths {
                         let command = rmac_dock::StackCommand::Add(
-                            rmac_shell_settings::DockStackKind::Path { path }
+                            rmac_shell_settings::DockStackKind::Path { path },
                         );
                         if let Err(error) = backend.update_stacks(&command).await {
                             result = Err(error.detail);
@@ -39,11 +52,15 @@ impl FinderView {
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 match result {
                     Ok(()) => this.operation_notice = Some("Added to Dock".into()),
-                    Err(error) => this.operation_error = Some(format!("Could not add to Dock: {error}").into()),
+                    Err(error) => {
+                        this.operation_error =
+                            Some(format!("Could not add to Dock: {error}").into())
+                    }
                 }
                 cx.notify();
             });
-        }).detach();
+        })
+        .detach();
     }
 
     /// File ▸ Show Original resolves a symbolic-link alias and reveals its
@@ -161,12 +178,19 @@ impl FinderView {
             return;
         }
         let paths = self.selected_paths();
-        let Some(parent) = paths.first().and_then(|path| path.parent()).map(Path::to_path_buf) else {
+        let Some(parent) = paths
+            .first()
+            .and_then(|path| path.parent())
+            .map(Path::to_path_buf)
+        else {
             self.operation_notice = Some("Select items to put in a new folder".into());
             cx.notify();
             return;
         };
-        if paths.iter().any(|path| path.parent() != Some(parent.as_path())) {
+        if paths
+            .iter()
+            .any(|path| path.parent() != Some(parent.as_path()))
+        {
             self.operation_error = Some("Select items from one folder".into());
             cx.notify();
             return;
@@ -183,22 +207,28 @@ impl FinderView {
                 let folder = unique_path(parent.join("New Folder With Items"));
                 file_ops::create_folder(&file_ops::RealFileSystem, &folder)
                     .map_err(|error| error.detail)?;
-                journal.undo_store().archive_created_folder(&folder)
+                journal
+                    .undo_store()
+                    .archive_created_folder(&folder)
                     .map_err(|error| error.to_string())?;
                 Ok::<_, String>((folder, paths))
-            }).await;
+            })
+            .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 this.new_folder_busy = false;
                 match result {
                     Ok((folder, paths)) => {
-                        let tasks = paths.into_iter().filter_map(|source| {
-                            let name = source.file_name()?;
-                            Some(file_ops::TransferTask {
-                                kind: file_ops::TransferKind::Move,
-                                destination: folder.join(name),
-                                source,
+                        let tasks = paths
+                            .into_iter()
+                            .filter_map(|source| {
+                                let name = source.file_name()?;
+                                Some(file_ops::TransferTask {
+                                    kind: file_ops::TransferKind::Move,
+                                    destination: folder.join(name),
+                                    source,
+                                })
                             })
-                        }).collect();
+                            .collect();
                         this.pending_select = Some(folder);
                         this.start_transfer_with_conflicts("Moving", tasks, false, false, cx);
                     }
@@ -208,7 +238,8 @@ impl FinderView {
                     }
                 }
             });
-        }).detach();
+        })
+        .detach();
     }
 
     pub(super) fn new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {

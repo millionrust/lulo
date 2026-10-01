@@ -24,7 +24,12 @@ fn place_is_selected(
 }
 
 impl FinderView {
-    fn render_place(&self, p: &Place, favourite_slot: Option<usize>, cx: &Context<Self>) -> impl IntoElement {
+    fn render_place(
+        &self,
+        p: &Place,
+        favourite_slot: Option<usize>,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let is_favourite = favourite_slot.is_some();
         let is_tag = p.kind == PlaceKind::Tag;
         let selected = place_is_selected(
@@ -130,7 +135,10 @@ impl FinderView {
             })
             .child(main);
 
-        if matches!(kind, PlaceKind::Item | PlaceKind::Volume | PlaceKind::Applications) {
+        if matches!(
+            kind,
+            PlaceKind::Item | PlaceKind::Volume | PlaceKind::Applications
+        ) {
             let context_path = p.path.clone();
             row = row.on_mouse_down(
                 MouseButton::Right,
@@ -150,7 +158,9 @@ impl FinderView {
         // Dropping onto a folder place moves the items there, as in Finder.
         if let Some(before) = favourite_slot {
             let after = before + 1;
-            let favourite_count = self.sections.iter()
+            let favourite_count = self
+                .sections
+                .iter()
                 .find(|section| section.title.as_ref() == self.file_words.favourites())
                 .map_or(0, |section| section.places.len());
             row = row
@@ -159,8 +169,7 @@ impl FinderView {
                     |el: Stateful<Div>| el.border_t_2().border_color(accent()),
                 )
                 .when(
-                    self.sidebar_drop_index == Some(after)
-                        && after == favourite_count,
+                    self.sidebar_drop_index == Some(after) && after == favourite_count,
                     |el: Stateful<Div>| el.border_b_2().border_color(accent()),
                 )
                 .drag_over::<DraggedPaths>(|style, _, _, _| style)
@@ -178,11 +187,13 @@ impl FinderView {
                     }
                 }))
                 .drag_over::<DraggedSidebarItem>(|style, _, _, _| style)
-                .on_drag_move(cx.listener(move |this, event: &gpui::DragMoveEvent<DraggedSidebarItem>, _, cx| {
-                    let lower = event.event.position.y > event.bounds.center().y;
-                    this.sidebar_drop_index = Some(if lower { after } else { before });
-                    cx.notify();
-                }))
+                .on_drag_move(cx.listener(
+                    move |this, event: &gpui::DragMoveEvent<DraggedSidebarItem>, _, cx| {
+                        let lower = event.event.position.y > event.bounds.center().y;
+                        this.sidebar_drop_index = Some(if lower { after } else { before });
+                        cx.notify();
+                    },
+                ))
                 .on_drop(cx.listener(move |this, item: &DraggedSidebarItem, _, cx| {
                     cx.stop_propagation();
                     let index = this.sidebar_drop_index.take().unwrap_or(before);
@@ -207,7 +218,13 @@ impl FinderView {
             row = row
                 .drag_over::<DraggedPaths>(|style, _, _, _| style.bg(sidebar_selection()))
                 .on_drop(cx.listener(move |this, paths: &DraggedPaths, window, cx| {
-                    this.drop_into(destination.clone(), &paths.0, window.modifiers().alt, window.modifiers().platform, cx)
+                    this.drop_into(
+                        destination.clone(),
+                        &paths.0,
+                        window.modifiers().alt,
+                        window.modifiers().platform,
+                        cx,
+                    )
                 }));
         }
 
@@ -378,7 +395,11 @@ impl FinderView {
     }
 
     pub(in crate::view) fn sidebar_add_to_dock(&mut self, cx: &mut Context<Self>) {
-        if let Some(path) = self.sidebar_context_path.clone().filter(|path| !path.as_os_str().is_empty()) {
+        if let Some(path) = self
+            .sidebar_context_path
+            .clone()
+            .filter(|path| !path.as_os_str().is_empty())
+        {
             self.add_paths_to_dock(vec![path], cx);
         }
     }
@@ -491,7 +512,9 @@ impl FinderView {
                                 this.insert_sidebar_favourite(path, 0, cx);
                             }
                         }))
-                        .drag_over::<DraggedSidebarItem>(|style, _, _, _| style.bg(sidebar_selection()))
+                        .drag_over::<DraggedSidebarItem>(|style, _, _, _| {
+                            style.bg(sidebar_selection())
+                        })
                         .on_drop(cx.listener(|this, item: &DraggedSidebarItem, _, cx| {
                             cx.stop_propagation();
                             this.sidebar_drop_index = None;

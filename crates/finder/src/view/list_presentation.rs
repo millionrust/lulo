@@ -550,9 +550,17 @@ impl FinderView {
                                         this.spring_hover(spring_dir.clone(), inside, cx);
                                     },
                                 ))
-                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, window, cx| {
-                                    this.drop_into(drop_directory.clone(), &paths.0, window.modifiers().alt, window.modifiers().platform, cx)
-                                }))
+                                .on_drop(cx.listener(
+                                    move |this, paths: &DraggedPaths, window, cx| {
+                                        this.drop_into(
+                                            drop_directory.clone(),
+                                            &paths.0,
+                                            window.modifiers().alt,
+                                            window.modifiers().platform,
+                                            cx,
+                                        )
+                                    },
+                                ))
                         },
                     )
                     .into_any_element(),
@@ -727,7 +735,9 @@ impl FinderView {
             .track_focus(&self.focus)
             .key_context("Finder")
             .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
-            .on_action(cx.listener(|this, _: &NewFolderWithSelection, _, cx| this.new_folder_with_selection(cx)))
+            .on_action(cx.listener(|this, _: &NewFolderWithSelection, _, cx| {
+                this.new_folder_with_selection(cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
@@ -818,7 +828,9 @@ impl FinderView {
             .on_action(
                 cx.listener(|this, _: &SidebarRename, window, cx| this.sidebar_rename(window, cx)),
             )
-            .on_action(cx.listener(|this, _: &SidebarAddToDock, _, cx| this.sidebar_add_to_dock(cx)))
+            .on_action(
+                cx.listener(|this, _: &SidebarAddToDock, _, cx| this.sidebar_add_to_dock(cx)),
+            )
             .on_action(cx.listener(|this, _: &AddToDock, _, cx| {
                 this.add_paths_to_dock(this.selected_paths(), cx)
             }))
@@ -1453,7 +1465,13 @@ impl FinderView {
                         },
                     ))
                     .on_drop(cx.listener(move |this, p: &DraggedPaths, window, cx| {
-                        this.drop_into(dd.clone(), &p.0, window.modifiers().alt, window.modifiers().platform, cx)
+                        this.drop_into(
+                            dd.clone(),
+                            &p.0,
+                            window.modifiers().alt,
+                            window.modifiers().platform,
+                            cx,
+                        )
                     }))
             },
         )

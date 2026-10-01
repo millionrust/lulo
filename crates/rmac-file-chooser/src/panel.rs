@@ -202,28 +202,32 @@ fn sidebar_sections(home: &Path) -> Vec<SidebarSection> {
                 }),
         )
         .map(place)
-        .chain(
-            saved.paths
-                .into_iter()
-                .map(|path| SidebarPlace {
-                    name: rmac_finder::sidebar_favourites::label(&path).into(),
-                    icon: if path.is_dir() {
-                        "icons/folder.svg"
-                    } else {
-                        "icons/file.svg"
-                    },
-                    location: Location::Folder(path),
-                }),
-        )
+        .chain(saved.paths.into_iter().map(|path| SidebarPlace {
+            name: rmac_finder::sidebar_favourites::label(&path).into(),
+            icon: if path.is_dir() {
+                "icons/folder.svg"
+            } else {
+                "icons/file.svg"
+            },
+            location: Location::Folder(path),
+        }))
         .collect();
     favourites.sort_by_key(|place| {
-        saved.order.iter().position(|key| match (key, &place.location) {
-            (rmac_finder::sidebar_favourites::FavouriteKey::Applications, Location::Folder(path)) =>
-                path == Path::new("/usr/share/applications"),
-            (rmac_finder::sidebar_favourites::FavouriteKey::Path(saved), Location::Folder(path)) =>
-                saved == path,
-            _ => false,
-        }).unwrap_or(usize::MAX)
+        saved
+            .order
+            .iter()
+            .position(|key| match (key, &place.location) {
+                (
+                    rmac_finder::sidebar_favourites::FavouriteKey::Applications,
+                    Location::Folder(path),
+                ) => path == Path::new("/usr/share/applications"),
+                (
+                    rmac_finder::sidebar_favourites::FavouriteKey::Path(saved),
+                    Location::Folder(path),
+                ) => saved == path,
+                _ => false,
+            })
+            .unwrap_or(usize::MAX)
     });
     let mut locations: Vec<SidebarPlace> = rmac_finder::places::standard_locations(home)
         .into_iter()

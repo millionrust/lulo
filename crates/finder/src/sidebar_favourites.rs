@@ -90,9 +90,19 @@ fn decode(bytes: &[u8]) -> Favourites {
     serde_json::from_slice::<SavedFavourites>(bytes)
         .ok()
         .filter(|saved| saved.version == VERSION)
-        .map(|saved| Favourites { paths: saved.paths, order: saved.order })
+        .map(|saved| Favourites {
+            paths: saved.paths,
+            order: saved.order,
+        })
         // Migrate the unversioned array written by older Files builds.
-        .or_else(|| serde_json::from_slice::<Vec<PathBuf>>(bytes).ok().map(|paths| Favourites { paths, order: Vec::new() }))
+        .or_else(|| {
+            serde_json::from_slice::<Vec<PathBuf>>(bytes)
+                .ok()
+                .map(|paths| Favourites {
+                    paths,
+                    order: Vec::new(),
+                })
+        })
         .unwrap_or_default()
         .sanitised()
 }
@@ -208,6 +218,9 @@ mod tests {
         let v1 = br#"{"version":1,"paths":["/tmp/one","/tmp/two"]}"#;
         let legacy = br#"["/tmp/one","/tmp/two"]"#;
         assert_eq!(decode(v1), decode(legacy));
-        assert_eq!(decode(br#"{"version":2,"paths":["/tmp/one"]}"#), Favourites::default());
+        assert_eq!(
+            decode(br#"{"version":2,"paths":["/tmp/one"]}"#),
+            Favourites::default()
+        );
     }
 }

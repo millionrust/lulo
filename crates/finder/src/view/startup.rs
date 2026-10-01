@@ -26,9 +26,8 @@ impl FinderView {
 
         // User-added Favourites (drag a folder onto the Favourites header),
         // shared by every window and pruned to folders that still exist.
-        let saved_favourites = rmac_finder::sidebar_favourites::load_state();
-        let favourite_extras = saved_favourites.paths;
-        let favourite_order = saved_favourites.order;
+        let favourite_extras = Vec::new();
+        let favourite_order = Vec::new();
         // Built from `favourite_extras`/`mounts`/the Settings window's
         // Sidebar and Tags tabs below, right after `view` exists.
         let sections = Vec::new();
@@ -109,19 +108,7 @@ impl FinderView {
             if window.is_window_active() {
                 this.publish_app_menu_state(cx);
                 this.refresh_pasteboard_state(cx);
-                let before = this.favourite_extras.clone();
-                cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-                    let favourites =
-                        blocking::unblock(rmac_finder::sidebar_favourites::load_state).await;
-                    let _ = this.update(cx, |this, cx| {
-                        if this.favourite_extras == before && (favourites.paths != before || favourites.order != this.favourite_order) {
-                            this.favourite_extras = favourites.paths;
-                            this.favourite_order = favourites.order;
-                            this.rebuild_sidebar_sections(cx);
-                        }
-                    });
-                })
-                .detach();
+                this.refresh_sidebar_favourites(cx);
             }
             if !window.is_window_active()
                 && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window, cx)
@@ -296,6 +283,7 @@ impl FinderView {
             spring: SpringLoading::default(),
         };
         view.rebuild_sidebar_sections(cx);
+        view.refresh_sidebar_favourites(cx);
         super::settings::register_window(cx.weak_entity(), cx);
         view.persist_finder_state();
         view.reload(cx);

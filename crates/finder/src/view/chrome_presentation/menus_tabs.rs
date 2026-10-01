@@ -124,13 +124,19 @@ impl FinderView {
                 Box::new(OpenItems),
             );
             if selection_count > 1 {
-                m = m.item("New Folder with Selection", Box::new(NewFolderWithSelection));
+                m = m.item(
+                    "New Folder with Selection",
+                    Box::new(NewFolderWithSelection),
+                );
             }
             if can_open_with {
                 let mut submenu = rmac_ui::ContextMenu::new(pos);
                 if let Some(association) = open_with_association {
                     for (index, handler) in association.handlers.iter().take(16).enumerate() {
-                        submenu = submenu.item(handler.name.clone(), Box::new(OpenWithHandlerAction { index }));
+                        submenu = submenu.item(
+                            handler.name.clone(),
+                            Box::new(OpenWithHandlerAction { index }),
+                        );
                     }
                     submenu = submenu.separator();
                 }

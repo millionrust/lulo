@@ -67,11 +67,11 @@ use gpui::{
 };
 use gpui_component::{Icon, IconName, Root, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use rmac_finder::sidebar_favourites::FavouriteKey;
 use rmac_ui::{
     AccessibleTextInput as _, Button, InputEvent, InputState, SearchField, Slider, SliderEvent,
     SliderState, Spinner, TextField, Toggle,
 };
-use rmac_finder::sidebar_favourites::FavouriteKey;
 
 use crate::conflict::{
     conflict_prompt, prepare_conflict_batch, resolve_conflict_task, unique_path_avoiding,

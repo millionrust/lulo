@@ -23,18 +23,42 @@ pub(super) fn dedupe_absolute_directories(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 impl FinderView {
+    pub(in crate::view) fn refresh_sidebar_favourites(&mut self, cx: &mut Context<Self>) {
+        let before = saved::Favourites {
+            paths: self.favourite_extras.clone(),
+            order: self.favourite_order.clone(),
+        };
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let favourites = blocking::unblock(saved::load_state).await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if this.favourite_extras == before.paths
+                    && this.favourite_order == before.order
+                    && favourites != before
+                {
+                    this.favourite_extras = favourites.paths;
+                    this.favourite_order = favourites.order;
+                    this.rebuild_sidebar_sections(cx);
+                }
+            });
+        }).detach();
+    }
+
     fn visible_favourite_keys(&self) -> Vec<FavouriteKey> {
         self.sections
             .iter()
             .find(|section| section.title.as_ref() == self.file_words.favourites())
             .map(|section| {
-                section.places.iter().map(|place| {
-                    if place.kind == PlaceKind::Applications {
-                        FavouriteKey::Applications
-                    } else {
-                        FavouriteKey::Path(place.path.clone())
-                    }
-                }).collect()
+                section
+                    .places
+                    .iter()
+                    .map(|place| {
+                        if place.kind == PlaceKind::Applications {
+                            FavouriteKey::Applications
+                        } else {
+                            FavouriteKey::Path(place.path.clone())
+                        }
+                    })
+                    .collect()
             })
             .unwrap_or_default()
     }
@@ -81,24 +105,31 @@ impl FinderView {
         cx: &mut Context<Self>,
     ) {
         let applications = path.as_os_str().is_empty();
-        if !applications && (!path.is_absolute() || (!path.exists() && !self.is_removable_favourite(&path))) {
+        if !applications
+            && (!path.is_absolute() || (!path.exists() && !self.is_removable_favourite(&path)))
+        {
             return;
         }
         let builtin = self.set_builtin_sidebar_visibility(&path, true, cx);
-        if !applications && !builtin
-            && !self.favourite_extras.contains(&path)
-        {
+        if !applications && !builtin && !self.favourite_extras.contains(&path) {
             if self.favourite_extras.len() >= saved::MAX_FAVOURITES {
-                self.operation_error = Some("The sidebar can hold up to 32 custom favourites".into());
+                self.operation_error =
+                    Some("The sidebar can hold up to 32 custom favourites".into());
                 cx.notify();
                 return;
             }
             self.favourite_extras.push(path.clone());
         }
-        let key = if applications { FavouriteKey::Applications } else { FavouriteKey::Path(path) };
+        let key = if applications {
+            FavouriteKey::Applications
+        } else {
+            FavouriteKey::Path(path)
+        };
         let mut visible = self.visible_favourite_keys();
         let old = visible.iter().position(|existing| existing == &key);
-        if let Some(old) = old { visible.remove(old); }
+        if let Some(old) = old {
+            visible.remove(old);
+        }
         let slot = index.saturating_sub(usize::from(old.is_some_and(|old| old < index)));
         visible.insert(slot.min(visible.len()), key.clone());
         let mut order = visible;
@@ -119,7 +150,8 @@ impl FinderView {
         let before = self.favourite_extras.len();
         self.favourite_extras.retain(|extra| extra != path);
         if self.favourite_extras.len() != before {
-            self.favourite_order.retain(|key| key != &FavouriteKey::Path(path.to_path_buf()));
+            self.favourite_order
+                .retain(|key| key != &FavouriteKey::Path(path.to_path_buf()));
             self.save_and_broadcast_favourites(cx);
         }
     }

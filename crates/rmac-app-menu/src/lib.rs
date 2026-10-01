@@ -540,7 +540,11 @@ const FILES_MENUS: &[MenuSpec] = &[
         items: &[
             item!("New Finder Window", "finder::NewWindow", "⌘N"),
             item!("New Folder", "finder::NewFolder", "⇧⌘N"),
-            item!("New Folder with Selection", "finder::NewFolderWithSelection", "⌃⌘N"),
+            item!(
+                "New Folder with Selection",
+                "finder::NewFolderWithSelection",
+                "⌃⌘N"
+            ),
             item!("New Tab", "finder::NewTab", "⌘T"),
             item!("Open", "finder::OpenItems", "⌘O"),
             item!("Close Tab", "finder::CloseTab", "⌘W"),

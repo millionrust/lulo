@@ -708,8 +708,8 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Save", "preview::SaveMarkup", "⌘S"),
             item!("Revert to Original", "preview::RevertMarkup", "", separator),
             // PREV-15: the Mac's File menu also has New from Clipboard,
-            // Close All, Save, Save As…, Duplicate, Rename…, Move To…,
-            // Revert To ▸, Enter Password…, Edit Permissions…, Import from
+            // Close All, Save As…, Duplicate, Rename…, Move To…,
+            // Enter Password…, Edit Permissions…, Import from
             // Camera/Scanner, Take Screenshot ▸, Export…, Share ▸ — none of
             // those has a working implementation to wire up yet, so none is
             // listed rather than adding a dead item.

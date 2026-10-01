@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::{
-    canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement, AppContext as _,
-    ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable as _, FontWeight, Image,
-    ImageFormat, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, PathBuilder,
-    MouseMoveEvent, MouseUpEvent, ParentElement as _, Render, RenderImage, Role, ScrollHandle,
-    ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
-    WindowControlArea,
+    canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement,
+    AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable as _,
+    FontWeight, Image, ImageFormat, InteractiveElement as _, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, PathBuilder,
+    Render, RenderImage, Role, ScrollHandle, ScrollWheelEvent, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
 use rmac_preview::document::{self, Kind};
 use rmac_preview::layout::{self, Rect, Rotation, ThumbItem};
@@ -26,8 +26,9 @@ use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
     ActualSize, CloseWindow, Copy, ExportAsPdf, Find, FindNext, FindPrevious, GoToPage,
-    HideSidebar, NextItem, PreviousItem, PrintDocument, RotateLeft, RotateRight, SelectAll,
-    ShowInspector, ShowThumbnails, ToggleMarkup, SaveMarkup, RevertMarkup, UndoMarkup, RedoMarkup, ZoomIn, ZoomOut, ZoomToFit,
+    HideSidebar, NextItem, PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft,
+    RotateRight, SaveMarkup, SelectAll, ShowInspector, ShowThumbnails, ToggleMarkup, UndoMarkup,
+    ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -267,6 +268,16 @@ impl Slot {
     }
 }
 
+impl Drop for Slot {
+    fn drop(&mut self) {
+        if let Some(path) = self.markup_original.take() {
+            std::thread::spawn(move || {
+                let _ = std::fs::remove_file(path);
+            });
+        }
+    }
+}
+
 #[derive(Default)]
 struct Search {
     /// The query the matches belong to.
@@ -309,6 +320,9 @@ pub(crate) struct PreviewView {
     markup_drag: Option<MarkupDrag>,
     markup_text_input: Entity<InputState>,
     markup_save_busy: bool,
+    signatures: Vec<Vec<(f32, f32)>>,
+    signature_active: usize,
+    signature_capture: bool,
     go_to_page_input: Entity<InputState>,
     go_to_page_open: bool,
     recent_documents: Vec<PathBuf>,
@@ -332,14 +346,84 @@ struct MarkupDrag {
     last: (f32, f32),
     index: usize,
     mode: DragMode,
+    started: bool,
 }
 
 #[derive(Clone, Copy)]
-enum DragMode { Create, Move, Resize }
+enum DragMode {
+    Create,
+    Move,
+    Resize,
+}
 
 impl PreviewView {
     fn document_top(&self) -> f32 {
         metrics::TOOLBAR_HEIGHT + if self.markup_shown { 48.0 } else { 0.0 }
+    }
+
+    fn signature_path() -> PathBuf {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
+            })
+            .unwrap_or_else(std::env::temp_dir)
+            .join("rmac/preview-signatures.txt")
+    }
+
+    fn load_signatures(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let templates = blocking::unblock(|| {
+                let data = std::fs::read_to_string(Self::signature_path()).unwrap_or_default();
+                data.lines()
+                    .take(3)
+                    .map(|line| {
+                        line.split(';')
+                            .filter_map(|pair| {
+                                let (x, y) = pair.split_once(',')?;
+                                Some((
+                                    x.parse::<f32>().ok()?.clamp(0.0, 1.0),
+                                    y.parse::<f32>().ok()?.clamp(0.0, 1.0),
+                                ))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .filter(|points| points.len() > 1)
+                    .collect::<Vec<_>>()
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                this.signatures = templates;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn save_signatures(&self, cx: &mut Context<Self>) {
+        let signatures = self.signatures.clone();
+        cx.background_executor()
+            .spawn(blocking::unblock(move || {
+                let path = Self::signature_path();
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let data = signatures
+                    .iter()
+                    .map(|signature| {
+                        signature
+                            .iter()
+                            .map(|(x, y)| format!("{x},{y}"))
+                            .collect::<Vec<_>>()
+                            .join(";")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if let Err(error) = std::fs::write(path, data) {
+                    eprintln!("rmac-preview: cannot save signature: {error}");
+                }
+            }))
+            .detach();
     }
 
     fn choose_markup_tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
@@ -348,10 +432,57 @@ impl PreviewView {
         cx.notify();
     }
 
+    fn choose_signature(&mut self, cx: &mut Context<Self>) {
+        if self.signatures.is_empty() {
+            self.signature_capture = true;
+        } else {
+            if self.markup_tool == Tool::Signature && !self.signature_capture {
+                self.signature_active = (self.signature_active + 1) % self.signatures.len();
+            }
+            self.signature_capture = false;
+        }
+        self.choose_markup_tool(Tool::Signature, cx);
+    }
+
+    fn set_markup_color(&mut self, color: u32, cx: &mut Context<Self>) {
+        self.markup_color = color;
+        if let Some(index) = self.markup_selected {
+            if let Some(slot) = self.slot_mut() {
+                slot.markup.checkpoint();
+                if let Some(item) = slot.markup.items.get_mut(index) {
+                    item.color = color;
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn step_markup_width(&mut self, cx: &mut Context<Self>) {
+        self.markup_width = if self.markup_width >= 5.0 {
+            1.0
+        } else {
+            self.markup_width + 1.0
+        };
+        let width = self.markup_width;
+        if let Some(index) = self.markup_selected {
+            if let Some(slot) = self.slot_mut() {
+                slot.markup.checkpoint();
+                if let Some(item) = slot.markup.items.get_mut(index) {
+                    item.width = width;
+                }
+            }
+        }
+        cx.notify();
+    }
+
     fn highlight_selection(&mut self, cx: &mut Context<Self>) {
-        let Some((anchor, focus)) = self.text_selection else { return };
+        let Some((anchor, focus)) = self.text_selection else {
+            return;
+        };
         let Some(slot) = self.slot() else { return };
-        let TextState::Ready(pages) = &slot.text else { return };
+        let TextState::Ready(pages) = &slot.text else {
+            return;
+        };
         let rotation = slot.rotation;
         let (from, to) = ordered(anchor, focus);
         let mut annotations = Vec::new();
@@ -359,10 +490,18 @@ impl PreviewView {
             let start = (page == from.page).then_some((from.word, from.char));
             let end = (page == to.page).then_some((to.word, to.char));
             for rect in poppler::selection_rects(&pages[page], start, end) {
-                annotations.push(Annotation::new(page, Tool::Highlight, rotation.apply_unit_rect(rect), self.markup_color, 1.0));
+                annotations.push(Annotation::new(
+                    page,
+                    Tool::Highlight,
+                    rotation.apply_unit_rect(rect),
+                    self.markup_color,
+                    1.0,
+                ));
             }
         }
-        if annotations.is_empty() { return; }
+        if annotations.is_empty() {
+            return;
+        }
         if let Some(slot) = self.slot_mut() {
             slot.markup.checkpoint();
             slot.markup.items.extend(annotations);
@@ -371,21 +510,64 @@ impl PreviewView {
         cx.notify();
     }
 
-    fn markup_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if !self.markup_shown || event.button != MouseButton::Left { return false; }
-        if self.markup_tool == Tool::Highlight { return false; }
-        let Some((page, point)) = self.screen_to_page_point(event.position) else { return false };
-        let Some(slot) = self.slot() else { return false };
-        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect { x0: point.0, y0: point.1, x1: point.0, y1: point.1 });
+    fn markup_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.markup_shown || event.button != MouseButton::Left {
+            return false;
+        }
+        if self.markup_tool == Tool::Highlight {
+            return false;
+        }
+        let Some((page, point)) = self.screen_to_page_point(event.position) else {
+            return false;
+        };
+        let Some(slot) = self.slot() else {
+            return false;
+        };
+        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
+            x0: point.0,
+            y0: point.1,
+            x1: point.0,
+            y1: point.1,
+        });
         let point = (raw.x0, raw.y0);
         window.focus(&self.focus, cx);
         if self.markup_tool == Tool::Select {
-            let hit = slot.markup.items.iter().enumerate().rev().find(|(_, item)| item.page == page && item.contains(point)).map(|(i, item)| (i, item.rect));
+            let hit = slot
+                .markup
+                .items
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, item)| item.page == page && item.contains(point))
+                .map(|(i, item)| (i, item.rect));
             if let Some((index, rect)) = hit {
-                let near_corner = (rect.x1 - point.0).abs() < 0.02 && (rect.y1 - point.1).abs() < 0.02;
+                let text = (slot.markup.items[index].tool == Tool::Text)
+                    .then(|| slot.markup.items[index].text.clone());
+                let near_corner =
+                    (rect.x1 - point.0).abs() < 0.02 && (rect.y1 - point.1).abs() < 0.02;
                 self.markup_selected = Some(index);
-                if let Some(slot) = self.slot_mut() { slot.markup.checkpoint(); }
-                self.markup_drag = Some(MarkupDrag { page, start: point, last: point, index, mode: if near_corner { DragMode::Resize } else { DragMode::Move } });
+                if let Some(text) = text {
+                    self.markup_text_input.update(cx, |input, cx| {
+                        input.set_value(text, window, cx);
+                    });
+                }
+                self.markup_drag = Some(MarkupDrag {
+                    page,
+                    start: point,
+                    last: point,
+                    index,
+                    mode: if near_corner {
+                        DragMode::Resize
+                    } else {
+                        DragMode::Move
+                    },
+                    started: false,
+                });
                 cx.notify();
                 return true;
             }
@@ -396,43 +578,129 @@ impl PreviewView {
         let tool = self.markup_tool;
         let color = self.markup_color;
         let width = self.markup_width;
+        let saved_signature = (tool == Tool::Signature && !self.signature_capture)
+            .then(|| self.signatures.get(self.signature_active).cloned())
+            .flatten();
         let index = slot.markup.items.len();
-        let rect = layout::UnitRect { x0: point.0, y0: point.1, x1: point.0, y1: point.1 };
+        let rect = layout::UnitRect {
+            x0: point.0,
+            y0: point.1,
+            x1: point.0,
+            y1: point.1,
+        };
         if let Some(slot) = self.slot_mut() {
             slot.markup.checkpoint();
             let mut item = Annotation::new(page, tool, rect, color, width);
-            if matches!(tool, Tool::Sketch | Tool::Signature) { item.path.push(point); }
+            if matches!(
+                tool,
+                Tool::Sketch | Tool::Signature | Tool::Line | Tool::Arrow
+            ) {
+                item.path.push(point);
+            }
+            if let Some(path) = saved_signature {
+                item.path = path;
+                item.rect = layout::UnitRect {
+                    x0: point.0,
+                    y0: point.1,
+                    x1: (point.0 + 0.25).min(1.0),
+                    y1: (point.1 + 0.10).min(1.0),
+                };
+            }
             if tool == Tool::Text {
-                item.rect = layout::UnitRect { x0: point.0, y0: point.1, x1: (point.0 + 0.25).min(1.0), y1: (point.1 + 0.06).min(1.0) };
+                item.rect = layout::UnitRect {
+                    x0: point.0,
+                    y0: point.1,
+                    x1: (point.0 + 0.25).min(1.0),
+                    y1: (point.1 + 0.06).min(1.0),
+                };
                 item.text = "Text".into();
             }
             slot.markup.items.push(item);
         }
         self.markup_selected = Some(index);
-        self.markup_drag = (tool != Tool::Text).then_some(MarkupDrag { page, start: point, last: point, index, mode: DragMode::Create });
+        self.markup_drag = (tool != Tool::Text
+            && (tool != Tool::Signature || self.signature_capture))
+            .then_some(MarkupDrag {
+                page,
+                start: point,
+                last: point,
+                index,
+                mode: DragMode::Create,
+                started: true,
+            });
         if tool == Tool::Text {
-            self.markup_text_input.update(cx, |input, cx| { input.set_value("Text", window, cx); input.focus(window, cx); });
+            self.markup_text_input.update(cx, |input, cx| {
+                input.set_value("Text", window, cx);
+            });
+            cx.spawn_in(window, async move |this, cx| {
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if this.markup_tool == Tool::Text && this.markup_selected.is_some() {
+                        this.markup_text_input
+                            .update(cx, |input, cx| input.focus(window, cx));
+                    }
+                });
+            })
+            .detach();
         }
         cx.notify();
         true
     }
 
     fn markup_mouse_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
-        let Some(mut drag) = self.markup_drag else { return };
-        let Some((page, point)) = self.screen_to_page_point(event.position) else { return };
-        if page != drag.page { return; }
+        let Some(mut drag) = self.markup_drag else {
+            return;
+        };
+        let Some((page, point)) = self.screen_to_page_point(event.position) else {
+            return;
+        };
+        if page != drag.page {
+            return;
+        }
         let Some(slot) = self.slot() else { return };
-        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect { x0: point.0, y0: point.1, x1: point.0, y1: point.1 });
+        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
+            x0: point.0,
+            y0: point.1,
+            x1: point.0,
+            y1: point.1,
+        });
         let point = (raw.x0, raw.y0);
-        if let Some(item) = self.slot_mut().and_then(|slot| slot.markup.items.get_mut(drag.index)) {
+        if !drag.started {
+            if let Some(slot) = self.slot_mut() {
+                slot.markup.checkpoint();
+            }
+            drag.started = true;
+        }
+        if let Some(item) = self
+            .slot_mut()
+            .and_then(|slot| slot.markup.items.get_mut(drag.index))
+        {
             match drag.mode {
                 DragMode::Create if matches!(item.tool, Tool::Sketch | Tool::Signature) => {
-                    if item.path.last().is_none_or(|last| (last.0-point.0).abs() + (last.1-point.1).abs() > 0.001) { item.path.push(point); }
+                    if item.path.last().is_none_or(|last| {
+                        (last.0 - point.0).abs() + (last.1 - point.1).abs() > 0.001
+                    }) {
+                        item.path.push(point);
+                    }
                     let points = &item.path;
-                    item.rect = markup::normal(layout::UnitRect { x0: points.iter().map(|p| p.0).fold(1.0, f32::min), y0: points.iter().map(|p| p.1).fold(1.0, f32::min), x1: points.iter().map(|p| p.0).fold(0.0, f32::max), y1: points.iter().map(|p| p.1).fold(0.0, f32::max) });
+                    item.rect = markup::normal(layout::UnitRect {
+                        x0: points.iter().map(|p| p.0).fold(1.0, f32::min),
+                        y0: points.iter().map(|p| p.1).fold(1.0, f32::min),
+                        x1: points.iter().map(|p| p.0).fold(0.0, f32::max),
+                        y1: points.iter().map(|p| p.1).fold(0.0, f32::max),
+                    });
                 }
-                DragMode::Create => item.rect = markup::normal(layout::UnitRect { x0: drag.start.0, y0: drag.start.1, x1: point.0, y1: point.1 }),
-                DragMode::Move => item.translate((point.0-drag.last.0, point.1-drag.last.1)),
+                DragMode::Create => {
+                    item.rect = markup::normal(layout::UnitRect {
+                        x0: drag.start.0,
+                        y0: drag.start.1,
+                        x1: point.0,
+                        y1: point.1,
+                    });
+                    if matches!(item.tool, Tool::Line | Tool::Arrow) {
+                        item.path = vec![drag.start, point];
+                    }
+                }
+                DragMode::Move => item.translate((point.0 - drag.last.0, point.1 - drag.last.1)),
                 DragMode::Resize => item.resize(point),
             }
         }
@@ -442,78 +710,200 @@ impl PreviewView {
     }
 
     fn markup_mouse_up(&mut self, cx: &mut Context<Self>) {
-        let Some(drag) = self.markup_drag.take() else { return };
-        if let Some(item) = self.slot_mut().and_then(|slot| slot.markup.items.get_mut(drag.index)) {
-            if matches!(item.tool, Tool::Sketch | Tool::Signature) && matches!(drag.mode, DragMode::Create) {
+        let Some(drag) = self.markup_drag.take() else {
+            return;
+        };
+        if let Some(item) = self
+            .slot_mut()
+            .and_then(|slot| slot.markup.items.get_mut(drag.index))
+        {
+            if matches!(
+                item.tool,
+                Tool::Sketch | Tool::Signature | Tool::Line | Tool::Arrow
+            ) && matches!(drag.mode, DragMode::Create)
+            {
                 let r = item.rect;
-                let width = (r.x1-r.x0).max(0.001);
-                let height = (r.y1-r.y0).max(0.001);
-                for p in &mut item.path { p.0 = (p.0-r.x0)/width; p.1 = (p.1-r.y0)/height; }
+                let width = (r.x1 - r.x0).max(0.001);
+                let height = (r.y1 - r.y0).max(0.001);
+                for p in &mut item.path {
+                    p.0 = (p.0 - r.x0) / width;
+                    p.1 = (p.1 - r.y0) / height;
+                }
+            }
+        }
+        if self.markup_tool == Tool::Signature && self.signature_capture {
+            if let Some(path) = self
+                .slot()
+                .and_then(|slot| slot.markup.items.get(drag.index))
+                .map(|item| item.path.clone())
+            {
+                if path.len() > 1 {
+                    self.signatures.push(path);
+                    if self.signatures.len() > 3 {
+                        self.signatures.remove(0);
+                    }
+                    self.signature_active = self.signatures.len() - 1;
+                    self.signature_capture = false;
+                    self.save_signatures(cx);
+                }
             }
         }
         cx.notify();
     }
 
     fn delete_markup(&mut self, cx: &mut Context<Self>) {
-        let Some(index) = self.markup_selected.take() else { return };
+        let Some(index) = self.markup_selected.take() else {
+            return;
+        };
         if let Some(slot) = self.slot_mut() {
-            if index < slot.markup.items.len() { slot.markup.checkpoint(); slot.markup.items.remove(index); }
+            if index < slot.markup.items.len() {
+                slot.markup.checkpoint();
+                slot.markup.items.remove(index);
+            }
         }
         cx.notify();
     }
 
     fn save_markup(&mut self, cx: &mut Context<Self>) {
-        if self.markup_save_busy { return; }
+        if self.markup_save_busy {
+            return;
+        }
         let Some(slot) = self.slot() else { return };
-        if slot.kind() != Some(Kind::Pdf) || !slot.markup.dirty { return; }
+        if slot.kind() != Some(Kind::Pdf) || !slot.markup.dirty {
+            return;
+        }
         let source = slot.path.clone();
-        let original = slot.markup_original.clone().unwrap_or_else(|| source.with_extension(format!("lulo-original-{}.pdf", std::process::id())));
+        let original = slot.markup_original.clone().unwrap_or_else(|| {
+            source.with_extension(format!("lulo-original-{}.pdf", std::process::id()))
+        });
         let first_save = slot.markup_original.is_none();
         let items = slot.markup.items.clone();
+        let revision = slot.markup.revision;
         let id = slot.id;
         self.markup_save_busy = true;
         cx.spawn(async move |this, cx| {
             let result = blocking::unblock(move || -> Result<PathBuf, String> {
-                if first_save { std::fs::copy(&source, &original).map_err(|e| e.to_string())?; }
-                let temporary = source.with_extension(format!("lulo-saving-{}.pdf", std::process::id()));
+                if first_save {
+                    std::fs::copy(&source, &original).map_err(|e| e.to_string())?;
+                }
+                let temporary =
+                    source.with_extension(format!("lulo-saving-{}.pdf", std::process::id()));
                 if let Err(error) = markup::write_pdf(&original, &temporary, &items) {
                     let _ = std::fs::remove_file(&temporary);
                     return Err(error);
                 }
                 std::fs::rename(&temporary, &source).map_err(|e| e.to_string())?;
                 Ok(original)
-            }).await;
+            })
+            .await;
             let _ = this.update(cx, |this, cx| {
                 this.markup_save_busy = false;
                 if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
                     match result {
-                        Ok(original) => { slot.markup_original = Some(original); slot.markup.dirty = false; }
+                        Ok(original) => {
+                            slot.markup_original = Some(original);
+                            if slot.markup.revision == revision {
+                                slot.markup.dirty = false;
+                            }
+                        }
                         Err(error) => eprintln!("rmac-preview: markup save failed: {error}"),
                     }
                 }
                 cx.notify();
             });
-        }).detach();
+        })
+        .detach();
+    }
+
+    fn close_with_markup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.markup_save_busy {
+            return;
+        }
+        let jobs: Vec<_> = self
+            .slots
+            .iter()
+            .filter(|slot| slot.kind() == Some(Kind::Pdf) && slot.markup.dirty)
+            .map(|slot| {
+                (
+                    slot.path.clone(),
+                    slot.markup_original.clone(),
+                    slot.markup.items.clone(),
+                )
+            })
+            .collect();
+        if jobs.is_empty() {
+            window.remove_window();
+            return;
+        }
+        self.markup_save_busy = true;
+        cx.spawn_in(window, async move |this, cx| {
+            let result = blocking::unblock(move || -> Result<(), String> {
+                for (source, original, items) in jobs {
+                    let base = original.unwrap_or_else(|| source.clone());
+                    let temporary =
+                        source.with_extension(format!("lulo-closing-{}.pdf", std::process::id()));
+                    markup::write_pdf(&base, &temporary, &items)?;
+                    std::fs::rename(&temporary, &source).map_err(|e| e.to_string())?;
+                }
+                Ok(())
+            })
+            .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.markup_save_busy = false;
+                match result {
+                    Ok(()) => window.remove_window(),
+                    Err(error) => {
+                        eprintln!("rmac-preview: save on close failed: {error}");
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
     }
 
     fn revert_markup(&mut self, cx: &mut Context<Self>) {
+        if self.markup_save_busy {
+            return;
+        }
         let Some(slot) = self.slot() else { return };
         let original = slot.markup_original.clone();
         let source = slot.path.clone();
         let id = slot.id;
-        if let Some(slot) = self.slot_mut() { slot.markup.revert(); }
-        self.markup_selected = None;
         if let Some(original) = original {
+            self.markup_save_busy = true;
             cx.spawn(async move |this, cx| {
-                let result = blocking::unblock(move || std::fs::copy(&original, &source)).await;
+                let result = blocking::unblock(move || {
+                    let result = std::fs::copy(&original, &source);
+                    if result.is_ok() {
+                        let _ = std::fs::remove_file(&original);
+                    }
+                    result
+                })
+                .await;
                 let _ = this.update(cx, |this, cx| {
-                    if let Err(error) = result { eprintln!("rmac-preview: revert failed: {error}"); }
-                    if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) { slot.markup_original = None; }
+                    this.markup_save_busy = false;
+                    match result {
+                        Ok(_) => {
+                            if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                                slot.markup.revert();
+                                slot.markup_original = None;
+                            }
+                            this.markup_selected = None;
+                        }
+                        Err(error) => eprintln!("rmac-preview: revert failed: {error}"),
+                    }
                     cx.notify();
                 });
-            }).detach();
+            })
+            .detach();
+        } else {
+            if let Some(slot) = self.slot_mut() {
+                slot.markup.revert();
+            }
+            self.markup_selected = None;
+            cx.notify();
         }
-        cx.notify();
     }
     pub(crate) fn new(paths: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search_input = cx.new(|cx| {
@@ -557,12 +947,19 @@ impl PreviewView {
             if let InputEvent::Change = event {
                 let value = this.markup_text_input.read(cx).value().to_string();
                 if let Some(index) = this.markup_selected {
-                    if let Some(item) = this.slot_mut().and_then(|slot| slot.markup.items.get_mut(index)) {
-                        if item.tool == Tool::Text { item.text = value; cx.notify(); }
+                    if let Some(item) = this
+                        .slot_mut()
+                        .and_then(|slot| slot.markup.items.get_mut(index))
+                    {
+                        if item.tool == Tool::Text {
+                            item.text = value;
+                            cx.notify();
+                        }
                     }
                 }
             }
-        }).detach();
+        })
+        .detach();
         let slots: Vec<Slot> = paths
             .into_iter()
             .enumerate()
@@ -590,12 +987,15 @@ impl PreviewView {
             text_selecting: false,
             markup_shown: false,
             markup_tool: Tool::Select,
-            markup_color: 0xF3CC30,
+            markup_color: palette().find,
             markup_width: 2.0,
             markup_selected: None,
             markup_drag: None,
             markup_text_input,
             markup_save_busy: false,
+            signatures: Vec::new(),
+            signature_active: 0,
+            signature_capture: true,
             go_to_page_input,
             go_to_page_open: false,
             recent_documents: load_recent_documents(),
@@ -608,6 +1008,7 @@ impl PreviewView {
         for index in 0..view.slots.len() {
             view.start_load(index, cx);
         }
+        view.load_signatures(cx);
         view
     }
 
@@ -1271,6 +1672,9 @@ impl PreviewView {
     fn text_mouse_up(&mut self, cx: &mut Context<Self>) {
         if self.text_selecting {
             self.text_selecting = false;
+            if self.markup_shown && self.markup_tool == Tool::Highlight {
+                self.highlight_selection(cx);
+            }
             cx.notify();
         }
     }
@@ -1962,47 +2366,179 @@ impl PreviewView {
             .child(sidebar_toggle)
             .child(title_block)
             .child(zoom_group)
-            .child(capsule("preview-toggle-markup", group.zoom - 48.0, 36.0)
-                .role(Role::Button).aria_label("Show Markup Toolbar")
-                .flex().items_center().justify_center()
-                .when(self.markup_shown, |button| button.bg(rgb(palette.selection)))
-                .text_color(rgb(palette.glyph)).child("✎")
-                .on_click(cx.listener(|this, _, _, cx| { this.markup_shown = !this.markup_shown; cx.notify(); })))
+            .child(
+                capsule("preview-toggle-markup", group.zoom - 48.0, 36.0)
+                    .role(Role::Button)
+                    .aria_label("Show Markup Toolbar")
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .when(self.markup_shown, |button| {
+                        button.bg(rgb(palette.selection))
+                    })
+                    .text_color(rgb(palette.glyph))
+                    .child("✎")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.markup_shown = !this.markup_shown;
+                        cx.notify();
+                    })),
+            )
             .child(rotate)
             .child(info)
             .children(search)
     }
 
-    fn render_markup_toolbar(&self, palette: Palette, width: f32, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_markup_toolbar(
+        &self,
+        palette: Palette,
+        width: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let yellow = palette.find;
+        let blue = palette.selection;
         let control = |id: &'static str, label: &'static str, selected: bool| {
-            div().id(id).role(Role::Button).aria_label(label)
-                .h(px(34.0)).px(px(9.0)).flex().items_center().justify_center()
-                .rounded(px(17.0)).border_1()
-                .border_color(rgb(if selected { palette.selection } else { palette.control_edge }))
-                .bg(rgb(if selected { palette.selection } else { palette.control_fill }))
-                .text_color(rgb(palette.glyph)).text_size(px(12.0))
+            let name = match id {
+                "markup-rectangle" => "Rectangle",
+                "markup-oval" => "Oval",
+                "markup-line" => "Line",
+                "markup-arrow" => "Arrow",
+                "markup-text" => "Text",
+                "markup-color-yellow" => "Yellow",
+                "markup-color-blue" => "Blue",
+                _ => label,
+            };
+            div()
+                .id(id)
+                .role(Role::Button)
+                .aria_label(name)
+                .h(px(34.0))
+                .px(px(9.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(17.0))
+                .border_1()
+                .border_color(rgb(if selected {
+                    palette.selection
+                } else {
+                    palette.control_edge
+                }))
+                .bg(rgb(if selected {
+                    palette.selection
+                } else {
+                    palette.control_fill
+                }))
+                .text_color(rgb(palette.glyph))
+                .text_size(px(12.0))
                 .child(label)
         };
-        div().id("preview-markup-toolbar").absolute()
-            .left(px(if self.sidebar { metrics::TITLE_LEFT_WITH_SIDEBAR - 10.0 } else { 12.0 }))
+        div()
+            .id("preview-markup-toolbar")
+            .absolute()
+            .left(px(if self.sidebar {
+                metrics::TITLE_LEFT_WITH_SIDEBAR - 10.0
+            } else {
+                12.0
+            }))
             .top(px(metrics::TOOLBAR_HEIGHT))
-            .w(px(width)).h(px(48.0)).flex().items_center().gap(px(5.0))
-            .bg(rgb(palette.window)).border_b_1().border_color(rgb(palette.divider))
-            .child(control("markup-select", "Select", self.markup_tool == Tool::Select).on_click(cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Select, cx))))
-            .child(control("markup-sketch", "Sketch", self.markup_tool == Tool::Sketch).on_click(cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Sketch, cx))))
-            .child(control("markup-rectangle", "▢", self.markup_tool == Tool::Rectangle).on_click(cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Rectangle, cx))))
-            .child(control("markup-oval", "◯", self.markup_tool == Tool::Oval).on_click(cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Oval, cx))))
-            .child(control("markup-line", "╱", self.markup_tool == Tool::Line).on_click(cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Line, cx))))
-            .child(control("markup-arrow", "↗", self.markup_tool == Tool::Arrow).on_click(cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Arrow, cx))))
-            .child(control("markup-text", "T", self.markup_tool == Tool::Text).on_click(cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Text, cx))))
-            .child(control("markup-highlight", "Highlight", self.markup_tool == Tool::Highlight).on_click(cx.listener(|this, _, _, cx| { this.choose_markup_tool(Tool::Highlight, cx); this.highlight_selection(cx); })))
-            .child(control("markup-sign", "Sign", self.markup_tool == Tool::Signature).on_click(cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Signature, cx))))
-            .child(control("markup-color-yellow", "●", self.markup_color == palette.find).text_color(rgb(palette.find)).on_click(cx.listener(|this, _, _, cx| { this.markup_color = palette().find; cx.notify(); })))
-            .child(control("markup-color-blue", "●", self.markup_color == palette.selection).text_color(rgb(palette.selection)).on_click(cx.listener(|this, _, _, cx| { this.markup_color = palette().selection; cx.notify(); })))
-            .child(control("markup-width", "Line width", false).on_click(cx.listener(|this, _, _, cx| { this.markup_width = if this.markup_width >= 5.0 { 1.0 } else { this.markup_width + 1.0 }; cx.notify(); })))
-            .when(self.markup_selected.and_then(|i| self.slot()?.markup.items.get(i)).is_some_and(|a| a.tool == Tool::Text), |row| {
-                row.child(div().id("markup-text-field").w(px(160.0)).h(px(32.0)).bg(rgb(palette.control_fill)).child(rmac_ui::TextField::new(&self.markup_text_input)))
-            })
+            .w(px(width))
+            .h(px(48.0))
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .bg(rgb(palette.window))
+            .border_b_1()
+            .border_color(rgb(palette.divider))
+            .child(
+                control("markup-select", "Select", self.markup_tool == Tool::Select).on_click(
+                    cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Select, cx)),
+                ),
+            )
+            .child(
+                control("markup-sketch", "Sketch", self.markup_tool == Tool::Sketch).on_click(
+                    cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Sketch, cx)),
+                ),
+            )
+            .child(
+                control("markup-rectangle", "▢", self.markup_tool == Tool::Rectangle).on_click(
+                    cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Rectangle, cx)),
+                ),
+            )
+            .child(
+                control("markup-oval", "◯", self.markup_tool == Tool::Oval).on_click(
+                    cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Oval, cx)),
+                ),
+            )
+            .child(
+                control("markup-line", "╱", self.markup_tool == Tool::Line).on_click(
+                    cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Line, cx)),
+                ),
+            )
+            .child(
+                control("markup-arrow", "↗", self.markup_tool == Tool::Arrow).on_click(
+                    cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Arrow, cx)),
+                ),
+            )
+            .child(
+                control("markup-text", "T", self.markup_tool == Tool::Text).on_click(
+                    cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Text, cx)),
+                ),
+            )
+            .child(
+                control(
+                    "markup-highlight",
+                    "Highlight",
+                    self.markup_tool == Tool::Highlight,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.choose_markup_tool(Tool::Highlight, cx);
+                    this.highlight_selection(cx);
+                })),
+            )
+            .child(
+                control("markup-sign", "Sign", self.markup_tool == Tool::Signature)
+                    .on_click(cx.listener(|this, _, _, cx| this.choose_signature(cx))),
+            )
+            .child(
+                control(
+                    "markup-new-sign",
+                    "New Sign",
+                    self.signature_capture && self.markup_tool == Tool::Signature,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.signature_capture = true;
+                    this.choose_markup_tool(Tool::Signature, cx);
+                })),
+            )
+            .child(
+                control("markup-color-yellow", "●", self.markup_color == yellow)
+                    .text_color(rgb(yellow))
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_markup_color(yellow, cx))),
+            )
+            .child(
+                control("markup-color-blue", "●", self.markup_color == blue)
+                    .text_color(rgb(blue))
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_markup_color(blue, cx))),
+            )
+            .child(
+                control("markup-width", "Line width", false)
+                    .on_click(cx.listener(|this, _, _, cx| this.step_markup_width(cx))),
+            )
+            .when(
+                self.markup_selected
+                    .and_then(|i| self.slot()?.markup.items.get(i))
+                    .is_some_and(|a| a.tool == Tool::Text),
+                |row| {
+                    row.child(
+                        div()
+                            .id("markup-text-field")
+                            .w(px(160.0))
+                            .h(px(32.0))
+                            .bg(rgb(palette.control_fill))
+                            .child(rmac_ui::TextField::new(&self.markup_text_input)),
+                    )
+                },
+            )
     }
 
     fn render_sidebar(
@@ -2211,16 +2747,25 @@ impl PreviewView {
                         }
                         let pages = visible.map(|page| {
                             let rect = layout.pages[page];
-                            let annotations: Vec<_> = slot.markup.items.iter().enumerate().filter(|(_, item)| item.page == page).map(|(index, item)| (index, item.clone())).collect();
+                            let annotations: Vec<_> = slot
+                                .markup
+                                .items
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, item)| item.page == page)
+                                .map(|(index, item)| (index, item.clone()))
+                                .collect();
                             render_page(
                                 rect,
                                 slot.pages.get(&page).map(|bitmap| bitmap.image.clone()),
                                 highlights.get(&page).cloned().unwrap_or_default(),
-                                annotations,
-                                slot.rotation,
-                                self.markup_selected,
-                                self.markup_drag.map(|drag| drag.index),
-                                palette.selection,
+                                PageMarkupRender {
+                                    annotations,
+                                    rotation: slot.rotation,
+                                    selected: self.markup_selected,
+                                    drawing: self.markup_drag.map(|drag| drag.index),
+                                    selection_color: palette.selection,
+                                },
                             )
                         });
                         let element = div()
@@ -2253,7 +2798,9 @@ impl PreviewView {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, event: &MouseDownEvent, window, cx| {
-                            if !this.markup_mouse_down(event, window, cx) { this.text_mouse_down(event, window, cx); }
+                            if !this.markup_mouse_down(event, window, cx) {
+                                this.text_mouse_down(event, window, cx);
+                            }
                         }),
                     )
                     .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
@@ -2262,11 +2809,17 @@ impl PreviewView {
                     }))
                     .on_mouse_up(
                         MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, _, cx| { this.markup_mouse_up(cx); this.text_mouse_up(cx); }),
+                        cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                            this.markup_mouse_up(cx);
+                            this.text_mouse_up(cx);
+                        }),
                     )
                     .on_mouse_up_out(
                         MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, _, cx| { this.markup_mouse_up(cx); this.text_mouse_up(cx); }),
+                        cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                            this.markup_mouse_up(cx);
+                            this.text_mouse_up(cx);
+                        }),
                     )
             })
             .child(body)
@@ -2589,16 +3142,27 @@ fn message(text: &str, palette: Palette) -> AnyElement {
         .into_any_element()
 }
 
-fn render_page(
-    rect: Rect,
-    image: Option<Arc<RenderImage>>,
-    highlights: Vec<(layout::UnitRect, u32)>,
+struct PageMarkupRender {
     annotations: Vec<(usize, Annotation)>,
     rotation: Rotation,
     selected: Option<usize>,
     drawing: Option<usize>,
     selection_color: u32,
+}
+
+fn render_page(
+    rect: Rect,
+    image: Option<Arc<RenderImage>>,
+    highlights: Vec<(layout::UnitRect, u32)>,
+    markup: PageMarkupRender,
 ) -> AnyElement {
+    let PageMarkupRender {
+        annotations,
+        rotation,
+        selected,
+        drawing,
+        selection_color,
+    } = markup;
     let draw_items = annotations.clone();
     div()
         .absolute()
@@ -2622,55 +3186,169 @@ fn render_page(
         .children(annotations.into_iter().filter_map(move |(index, item)| {
             let r = rotation.apply_unit_rect(item.rect);
             match item.tool {
-                Tool::Highlight => Some(div().absolute().left(px(r.x0*rect.width)).top(px(r.y0*rect.height)).w(px((r.x1-r.x0)*rect.width)).h(px((r.y1-r.y0)*rect.height)).bg(rgba((item.color << 8) | 0x66)).into_any_element()),
-                Tool::Text => Some(div().absolute().left(px(r.x0*rect.width)).top(px(r.y0*rect.height)).text_size(px(16.0)).text_color(rgb(item.color)).child(item.text).into_any_element()),
-                _ => (selected == Some(index)).then(|| div().absolute().left(px(r.x1*rect.width - 5.0)).top(px(r.y1*rect.height - 5.0)).size(px(10.0)).rounded_full().bg(rgb(selection_color)).into_any_element()),
+                Tool::Highlight => Some(
+                    div()
+                        .absolute()
+                        .left(px(r.x0 * rect.width))
+                        .top(px(r.y0 * rect.height))
+                        .w(px((r.x1 - r.x0) * rect.width))
+                        .h(px((r.y1 - r.y0) * rect.height))
+                        .bg(rgba((item.color << 8) | 0x66))
+                        .into_any_element(),
+                ),
+                Tool::Text => Some(
+                    div()
+                        .absolute()
+                        .left(px(r.x0 * rect.width))
+                        .top(px(r.y0 * rect.height))
+                        .text_size(px(16.0))
+                        .text_color(rgb(item.color))
+                        .child(item.text)
+                        .into_any_element(),
+                ),
+                Tool::Rectangle | Tool::Oval => Some(
+                    div()
+                        .absolute()
+                        .left(px(r.x0 * rect.width))
+                        .top(px(r.y0 * rect.height))
+                        .w(px((r.x1 - r.x0) * rect.width))
+                        .h(px((r.y1 - r.y0) * rect.height))
+                        .border(px(item.width.max(1.0)))
+                        .border_color(rgb(item.color))
+                        .when(item.tool == Tool::Oval, |shape| shape.rounded_full())
+                        .when(selected == Some(index), |shape| {
+                            shape.child(
+                                div()
+                                    .absolute()
+                                    .right(px(-5.0))
+                                    .bottom(px(-5.0))
+                                    .size(px(10.0))
+                                    .rounded_full()
+                                    .bg(rgb(selection_color)),
+                            )
+                        })
+                        .into_any_element(),
+                ),
+                _ => (selected == Some(index)).then(|| {
+                    div()
+                        .absolute()
+                        .left(px(r.x1 * rect.width - 5.0))
+                        .top(px(r.y1 * rect.height - 5.0))
+                        .size(px(10.0))
+                        .rounded_full()
+                        .bg(rgb(selection_color))
+                        .into_any_element()
+                }),
             }
         }))
-        .child(canvas(|_, _, _| (), move |bounds, (), window, _| {
-            let origin = bounds.origin;
-            let width = f32::from(bounds.size.width);
-            let height = f32::from(bounds.size.height);
-            let at = |p: (f32, f32)| point(origin.x + px(p.0*width), origin.y + px(p.1*height));
-            for (index, item) in &draw_items {
-                if matches!(item.tool, Tool::Highlight | Tool::Select | Tool::Text) { continue; }
-                let r = rotation.apply_unit_rect(item.rect);
-                let mut path = PathBuilder::stroke(px(item.width.max(1.0)));
-                match item.tool {
-                    Tool::Rectangle => { path.move_to(at((r.x0,r.y0))); path.line_to(at((r.x1,r.y0))); path.line_to(at((r.x1,r.y1))); path.line_to(at((r.x0,r.y1))); path.close(); }
-                    Tool::Oval => {
-                        for step in 0..=32 {
-                            let angle = step as f32 * std::f32::consts::TAU / 32.0;
-                            let p = ((r.x0+r.x1)/2.0 + (r.x1-r.x0)*angle.cos()/2.0, (r.y0+r.y1)/2.0 + (r.y1-r.y0)*angle.sin()/2.0);
-                            if step == 0 { path.move_to(at(p)); } else { path.line_to(at(p)); }
+        .child(
+            canvas(
+                |_, _, _| (),
+                move |bounds, (), window, _| {
+                    let origin = bounds.origin;
+                    let width = f32::from(bounds.size.width);
+                    let height = f32::from(bounds.size.height);
+                    let at = |p: (f32, f32)| {
+                        point(origin.x + px(p.0 * width), origin.y + px(p.1 * height))
+                    };
+                    for (index, item) in &draw_items {
+                        if matches!(item.tool, Tool::Highlight | Tool::Select | Tool::Text) {
+                            continue;
+                        }
+                        let r = rotation.apply_unit_rect(item.rect);
+                        let mut path = PathBuilder::stroke(px(item.width.max(1.0)));
+                        match item.tool {
+                            Tool::Rectangle | Tool::Oval => continue,
+                            Tool::Line | Tool::Arrow => {
+                                let point_on_page = |normalized: (f32, f32)| {
+                                    let raw = if drawing == Some(*index) {
+                                        normalized
+                                    } else {
+                                        (
+                                            item.rect.x0
+                                                + normalized.0 * (item.rect.x1 - item.rect.x0),
+                                            item.rect.y0
+                                                + normalized.1 * (item.rect.y1 - item.rect.y0),
+                                        )
+                                    };
+                                    let p = rotation.apply_unit_rect(layout::UnitRect {
+                                        x0: raw.0,
+                                        y0: raw.1,
+                                        x1: raw.0,
+                                        y1: raw.1,
+                                    });
+                                    (p.x0, p.y0)
+                                };
+                                let start = item
+                                    .path
+                                    .first()
+                                    .copied()
+                                    .map(point_on_page)
+                                    .unwrap_or((r.x0, r.y0));
+                                let end = item
+                                    .path
+                                    .get(1)
+                                    .copied()
+                                    .map(point_on_page)
+                                    .unwrap_or((r.x1, r.y1));
+                                path.move_to(at(start));
+                                path.line_to(at(end));
+                                if item.tool == Tool::Arrow {
+                                    let dx = (end.0 - start.0) * width;
+                                    let dy = (end.1 - start.1) * height;
+                                    let length = dx.hypot(dy).max(1.0);
+                                    let ux = dx / length;
+                                    let uy = dy / length;
+                                    let tip = at(end);
+                                    path.move_to(tip);
+                                    path.line_to(point(
+                                        tip.x - px(12.0 * ux - 5.0 * uy),
+                                        tip.y - px(12.0 * uy + 5.0 * ux),
+                                    ));
+                                    path.move_to(tip);
+                                    path.line_to(point(
+                                        tip.x - px(12.0 * ux + 5.0 * uy),
+                                        tip.y - px(12.0 * uy - 5.0 * ux),
+                                    ));
+                                }
+                            }
+                            Tool::Sketch | Tool::Signature => {
+                                for (n, &(x, y)) in item.path.iter().enumerate() {
+                                    let raw = if drawing == Some(*index) {
+                                        (x, y)
+                                    } else {
+                                        (
+                                            item.rect.x0 + x * (item.rect.x1 - item.rect.x0),
+                                            item.rect.y0 + y * (item.rect.y1 - item.rect.y0),
+                                        )
+                                    };
+                                    let p = rotation.apply_unit_rect(layout::UnitRect {
+                                        x0: raw.0,
+                                        y0: raw.1,
+                                        x1: raw.0,
+                                        y1: raw.1,
+                                    });
+                                    if n == 0 {
+                                        path.move_to(at((p.x0, p.y0)));
+                                    } else {
+                                        path.line_to(at((p.x0, p.y0)));
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                        if let Ok(path) = path.build() {
+                            window.paint_path(path, rgb(item.color));
                         }
                     }
-                    Tool::Line | Tool::Arrow => {
-                        path.move_to(at((r.x0,r.y0))); path.line_to(at((r.x1,r.y1)));
-                        if item.tool == Tool::Arrow {
-                            let dx = (r.x1-r.x0)*width;
-                            let dy = (r.y1-r.y0)*height;
-                            let length = dx.hypot(dy).max(1.0);
-                            let ux = dx/length; let uy = dy/length;
-                            let tip = at((r.x1,r.y1));
-                            path.move_to(tip);
-                            path.line_to(point(tip.x-px(12.0*ux-5.0*uy), tip.y-px(12.0*uy+5.0*ux)));
-                            path.move_to(tip);
-                            path.line_to(point(tip.x-px(12.0*ux+5.0*uy), tip.y-px(12.0*uy-5.0*ux)));
-                        }
-                    }
-                    Tool::Sketch | Tool::Signature => {
-                        for (n, &(x,y)) in item.path.iter().enumerate() {
-                            let raw = if drawing == Some(*index) { (x,y) } else { (item.rect.x0+x*(item.rect.x1-item.rect.x0), item.rect.y0+y*(item.rect.y1-item.rect.y0)) };
-                            let p = rotation.apply_unit_rect(layout::UnitRect { x0:raw.0, y0:raw.1, x1:raw.0, y1:raw.1 });
-                            if n == 0 { path.move_to(at((p.x0,p.y0))); } else { path.line_to(at((p.x0,p.y0))); }
-                        }
-                    }
-                    _ => {}
-                }
-                if let Ok(path) = path.build() { window.paint_path(path, rgb(item.color)); }
-            }
-        }).absolute().size_full())
+                },
+            )
+            .absolute()
+            .left_0()
+            .top_0()
+            .w(px(rect.width))
+            .h(px(rect.height)),
+        )
         .into_any_element()
 }
 
@@ -2765,20 +3443,35 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &ShowInspector, _, cx| this.toggle_inspector(cx)))
             .on_action(cx.listener(|this, _: &RotateLeft, _, cx| this.rotate(false, cx)))
             .on_action(cx.listener(|this, _: &RotateRight, _, cx| this.rotate(true, cx)))
-            .on_action(cx.listener(|this, _: &ToggleMarkup, _, cx| { this.markup_shown = !this.markup_shown; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &ToggleMarkup, _, cx| {
+                this.markup_shown = !this.markup_shown;
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &SaveMarkup, _, cx| this.save_markup(cx)))
             .on_action(cx.listener(|this, _: &RevertMarkup, _, cx| this.revert_markup(cx)))
-            .on_action(cx.listener(|this, _: &UndoMarkup, _, cx| { if let Some(slot) = this.slot_mut() { slot.markup.undo(); cx.notify(); } }))
-            .on_action(cx.listener(|this, _: &RedoMarkup, _, cx| { if let Some(slot) = this.slot_mut() { slot.markup.redo(); cx.notify(); } }))
+            .on_action(cx.listener(|this, _: &UndoMarkup, _, cx| {
+                if let Some(slot) = this.slot_mut() {
+                    slot.markup.undo();
+                    cx.notify();
+                }
+            }))
+            .on_action(cx.listener(|this, _: &RedoMarkup, _, cx| {
+                if let Some(slot) = this.slot_mut() {
+                    slot.markup.redo();
+                    cx.notify();
+                }
+            }))
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
                 if rmac_ui::ContextMenuState::dismiss(&mut this.menu, window, cx) {
                     cx.notify();
                 }
             }))
-            .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
             .on_action(
-                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+                cx.listener(|this, _: &CloseWindow, window, cx| this.close_with_markup(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                this.close_with_markup(window, cx)
+            }))
             .relative()
             .size_full()
             .overflow_hidden()
@@ -2789,7 +3482,9 @@ impl Render for PreviewView {
             })
             .children(self.render_inspector(palette, width, height))
             .child(self.render_toolbar(palette, width, window, cx))
-            .when(self.markup_shown, |root| root.child(self.render_markup_toolbar(palette, width, cx)))
+            .when(self.markup_shown, |root| {
+                root.child(self.render_markup_toolbar(palette, width, cx))
+            })
             .children(menu)
             .when(self.go_to_page_open, |root| {
                 root.child(self.render_go_to_page(palette, width, height))

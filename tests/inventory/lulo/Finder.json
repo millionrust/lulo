@@ -329,32 +329,40 @@
           "children": []
         },
         {
-          "label": "Sort by Name",
-          "action": "finder::SortByName",
+          "label": "Sort By",
+          "action": "finder::SortMenu",
           "shortcut": "",
           "separator_before": true,
-          "children": []
-        },
-        {
-          "label": "Sort by Date Modified",
-          "action": "finder::SortByDate",
-          "shortcut": "",
-          "separator_before": false,
-          "children": []
-        },
-        {
-          "label": "Sort by Size",
-          "action": "finder::SortBySize",
-          "shortcut": "",
-          "separator_before": false,
-          "children": []
-        },
-        {
-          "label": "Sort by Kind",
-          "action": "finder::SortByKind",
-          "shortcut": "",
-          "separator_before": false,
-          "children": []
+          "children": [
+            {
+              "label": "Name",
+              "action": "finder::SortByName",
+              "shortcut": "⌃⌥⌘1",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Kind",
+              "action": "finder::SortByKind",
+              "shortcut": "⌃⌥⌘2",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Date Modified",
+              "action": "finder::SortByDate",
+              "shortcut": "⌃⌥⌘5",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Size",
+              "action": "finder::SortBySize",
+              "shortcut": "⌃⌥⌘6",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Show Hidden Files",

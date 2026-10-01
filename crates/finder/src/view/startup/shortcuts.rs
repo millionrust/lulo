@@ -63,6 +63,10 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("cmd-3", ViewAsColumns, Some("Finder")),
         KeyBinding::new("cmd-4", ViewAsGallery, Some("Finder")),
         KeyBinding::new("ctrl-cmd-0", UseGroups, Some("Finder")),
+        KeyBinding::new("ctrl-alt-cmd-1", SortByName, Some("Finder")),
+        KeyBinding::new("ctrl-alt-cmd-2", SortByKind, Some("Finder")),
+        KeyBinding::new("ctrl-alt-cmd-5", SortByDate, Some("Finder")),
+        KeyBinding::new("ctrl-alt-cmd-6", SortBySize, Some("Finder")),
         KeyBinding::new("cmd-j", ShowViewOptions, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::OPEN_SELECTION.keystroke,

@@ -593,6 +593,14 @@ impl FinderView {
             self.current_options().group_by != view_options::GroupBy::None,
             cx,
         );
+        for (action, mode) in [
+            ("finder::ViewAsIcons", ViewMode::Icon),
+            ("finder::ViewAsList", ViewMode::List),
+            ("finder::ViewAsColumns", ViewMode::Column),
+            ("finder::ViewAsGallery", ViewMode::Gallery),
+        ] {
+            rmac_ui::set_menu_checked(action, self.view == mode, cx);
+        }
         for action in [
             "finder::CopyAsPathname",
             "finder::CopyAsLink",

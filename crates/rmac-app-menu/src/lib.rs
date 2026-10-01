@@ -639,10 +639,17 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("as Columns", "finder::ViewAsColumns", "⌘3"),
             item!("as Gallery", "finder::ViewAsGallery", "⌘4"),
             item!("Use Groups", "finder::UseGroups", "⌃⌘0"),
-            item!("Sort by Name", "finder::SortByName", "", separator),
-            item!("Sort by Date Modified", "finder::SortByDate", ""),
-            item!("Sort by Size", "finder::SortBySize", ""),
-            item!("Sort by Kind", "finder::SortByKind", ""),
+            submenu!(
+                "Sort By",
+                "finder::SortMenu",
+                [
+                    item!("Name", "finder::SortByName", "⌃⌥⌘1"),
+                    item!("Kind", "finder::SortByKind", "⌃⌥⌘2"),
+                    item!("Date Modified", "finder::SortByDate", "⌃⌥⌘5"),
+                    item!("Size", "finder::SortBySize", "⌃⌥⌘6"),
+                ],
+                separator
+            ),
             item!(
                 "Show Hidden Files",
                 "finder::ToggleHidden",
@@ -2555,6 +2562,10 @@ mod tests {
             ("finder::QuickLook", "⌘Y"),
             ("finder::GoUpInNewWindow", "⌃⌘↑"),
             ("finder::FindByName", "⌃⇧⌘F"),
+            ("finder::SortByName", "⌃⌥⌘1"),
+            ("finder::SortByKind", "⌃⌥⌘2"),
+            ("finder::SortByDate", "⌃⌥⌘5"),
+            ("finder::SortBySize", "⌃⌥⌘6"),
             ("finder::MoveItemHere", "⌥⌘V"),
             ("finder::GoRecents", "⇧⌘F"),
             ("finder::GoDocuments", "⇧⌘O"),

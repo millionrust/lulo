@@ -4934,18 +4934,19 @@ mod linux_wayland {
             "rmac-help-{}.md",
             app_id.trim_start_matches("org.rmac.").to_lowercase()
         );
-        cx.background_executor()
-            .spawn(async move {
-                let path = std::env::temp_dir().join(file_name);
-                if let Err(error) = fs::write(&path, markdown) {
-                    eprintln!("could not write the help page: {error}");
-                    return;
-                }
-                if let Err(error) = Command::new("xdg-open").arg(&path).spawn() {
-                    eprintln!("could not open the help page: {error}");
-                }
-            })
-            .detach();
+        // The child runs on `blocking::unblock`'s pool: spawning it from a
+        // background executor worker can hang (ARCHITECTURE.md).
+        blocking::unblock(move || {
+            let path = std::env::temp_dir().join(file_name);
+            if let Err(error) = fs::write(&path, markdown) {
+                eprintln!("could not write the help page: {error}");
+                return;
+            }
+            if let Err(error) = Command::new("xdg-open").arg(&path).spawn() {
+                eprintln!("could not open the help page: {error}");
+            }
+        })
+        .detach();
     }
 
     /// The bundled per-app help markdown (`shell/assets/help/*.md`), shipped

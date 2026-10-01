@@ -14,7 +14,7 @@
   "drag_steps": [
     {"drag": "Pinned One", "to": "Favourites"},
     {"drag": "Pinned Two", "to": "Favourites"},
-    {"drag": "Pinned One", "from": "Sidebar", "to": "Favourites"},
+    {"drag": "Pinned Two", "from": "Sidebar", "to": "Favourites"},
     {"context": "Pinned One", "choose": "Remove from Sidebar"},
     {"drag": "Pinned Two", "from": "Sidebar", "to": "Content"},
     {"drag": "A Sidebar Desktop Folder", "from": "Desktop", "to": "Favourites"}

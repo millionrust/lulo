@@ -57,7 +57,7 @@ def sidebar_point(run: run_window_move.Run, pid: int, label: str) -> tuple[float
         if app is None or app.get_process_id() != pid:
             continue
         for node in run_lulo.descendants(app):
-            if run_lulo.name(node) != label or run_lulo.role(node) != "list box option":
+            if run_lulo.name(node) != label or run_lulo.role(node) != "list item":
                 continue
             box = run_lulo.extents(node)
             if box and box[0] < 220 and box[2] > 0:
@@ -213,14 +213,14 @@ def inner(args: argparse.Namespace) -> int:
             drag_once(run, files.pid, target.name, heading, steps=8, delay=.04, hold=.15)
             added = run.wait_for(lambda: str(target) in saved_favourites(run), 8)
             run.check(f"Files → sidebar adds {target.name}", bool(added), str(saved_favourites(run)))
-        row = run.wait_for(lambda: sidebar_point(run, files.pid, pinned_one.name), 10)
+        row = run.wait_for(lambda: sidebar_point(run, files.pid, pinned_two.name), 10)
         run.check("Sidebar favourite row accessible", row is not None)
         if row is None:
             return run.finish()
         drag_points(run, row, heading, steps=8, delay=.04, hold=.15)
         reordered = run.wait_for(
-            lambda: saved_favourite_order(run).index(str(pinned_one))
-            < saved_favourite_order(run).index(str(pinned_two)), 8
+            lambda: saved_favourite_order(run).index(str(pinned_two))
+            < saved_favourite_order(run).index(str(pinned_one)), 8
         )
         run.check("Sidebar drag reorders favourites", bool(reordered),
                   str(saved_favourite_order(run)))

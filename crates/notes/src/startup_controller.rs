@@ -24,6 +24,8 @@ impl NotesView {
             KeyBinding::new("cmd-d", DuplicateNote, Some("Notes")),
             KeyBinding::new("alt-cmd-w", CloseAll, Some("Notes")),
             KeyBinding::new("cmd-0", FocusMainWindow, Some("Notes")),
+            KeyBinding::new("alt-cmd-[", PreviousRecentNote, Some("Notes")),
+            KeyBinding::new("alt-cmd-]", NextRecentNote, Some("Notes")),
             // ⌘F is in-note Find; ⌥⌘F is the Mac's Note List Search.
             KeyBinding::new("cmd-f", FindInNote, Some("Notes")),
             KeyBinding::new("shift-cmd-f", FindAndReplace, Some("Notes")),

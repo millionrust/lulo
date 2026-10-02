@@ -502,6 +502,35 @@
       "label": "View",
       "items": [
         {
+          "label": "Recent Notes",
+          "action": "notes::RecentNotesMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Previous Note",
+              "action": "notes::PreviousRecentNote",
+              "shortcut": "⌥⌘[",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Next Note",
+              "action": "notes::NextRecentNote",
+              "shortcut": "⌥⌘]",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Clear Menu",
+              "action": "notes::ClearRecentNotes",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Hide Folders",
           "action": "notes::ToggleFolders",
           "shortcut": "⌃⌘S",
@@ -512,6 +541,13 @@
           "label": "Hide Note Count",
           "action": "notes::ToggleNoteCount",
           "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "notes::ToggleFullScreen",
+          "shortcut": "F",
           "separator_before": false,
           "children": []
         },

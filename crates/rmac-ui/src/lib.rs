@@ -24,7 +24,8 @@ mod window;
 
 pub use accessibility::AccessibleTextInput;
 pub use app_menu::{
-    set_menu_checked, set_menu_enabled, set_menu_label, set_menu_mixed, ShowAboutPanel,
+    set_menu_checked, set_menu_children, set_menu_enabled, set_menu_label, set_menu_mixed,
+    ShowAboutPanel,
 };
 pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{
@@ -51,6 +52,7 @@ pub use feedback::{
 };
 pub use gpui_component::{ActiveTheme, StyledExt};
 pub use menu_target::{register_menu_target, track_key_window};
+pub use rmac_app_menu::Item as MenuItem;
 pub use runtime::{
     defer_content_ready, init_application, install_app_instance, install_app_menu,
     install_surface_idle_exit, mark_content_ready, prepare_surface_window, shell_surface_root,

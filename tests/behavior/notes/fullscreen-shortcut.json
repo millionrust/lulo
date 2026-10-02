@@ -1,0 +1,16 @@
+{
+  "title": "Notes: F toggles full screen without capturing text input",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "f", "settle": 0.7},
+    {"observe": "fullscreen", "facts": ["windows"]},
+    {"key": "f", "settle": 0.7},
+    {"observe": "windowed", "facts": ["windows"]},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "f"},
+    {"observe": "typing", "facts": ["windows", "focus"]}
+  ]
+}

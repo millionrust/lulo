@@ -87,6 +87,32 @@ impl NotesView {
         div()
             .track_focus(&self.focus)
             .key_context("Notes")
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                let key = &event.keystroke;
+                if key.key != "f"
+                    || key.modifiers.platform
+                    || key.modifiers.control
+                    || key.modifiers.alt
+                    || key.modifiers.shift
+                {
+                    return;
+                }
+                let text_field_focused = [
+                    &this.search_query,
+                    &this.folder_name_input,
+                    &this.title,
+                    &this.tags,
+                    &this.body,
+                    &this.note_find_input,
+                    &this.note_replace_input,
+                ]
+                .iter()
+                .any(|input| input.read(cx).focus_handle(cx).is_focused(window));
+                if !text_field_focused {
+                    window.toggle_fullscreen();
+                    cx.stop_propagation();
+                }
+            }))
             .on_action(cx.listener(|this, _: &ComposeNote, _, cx| this.create_note(cx)))
             .on_action(cx.listener(|this, _: &CreateFolder, _, cx| this.create_folder(cx)))
             .on_action(cx.listener(|this, _: &TrashOrRestore, _, cx| this.trash_or_restore(cx)))
@@ -96,6 +122,44 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &CloseAll, window, cx| this.request_close(window, cx)))
             .on_action(cx.listener(|_, _: &FocusMainWindow, window, _| {
                 window.activate_window();
+            }))
+            .on_action(cx.listener(|this, _: &PreviousRecentNote, window, cx| {
+                this.navigate_recent_note(1, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &NextRecentNote, window, cx| {
+                this.navigate_recent_note(-1, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ClearRecentNotes, _, cx| this.clear_recent_notes(cx)))
+            .on_action(cx.listener(|_, _: &ToggleFullScreen, window, _| window.toggle_fullscreen()))
+            .on_action(cx.listener(|this, _: &OpenRecentNote0, window, cx| {
+                this.open_recent_note(0, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote1, window, cx| {
+                this.open_recent_note(1, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote2, window, cx| {
+                this.open_recent_note(2, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote3, window, cx| {
+                this.open_recent_note(3, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote4, window, cx| {
+                this.open_recent_note(4, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote5, window, cx| {
+                this.open_recent_note(5, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote6, window, cx| {
+                this.open_recent_note(6, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote7, window, cx| {
+                this.open_recent_note(7, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote8, window, cx| {
+                this.open_recent_note(8, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote9, window, cx| {
+                this.open_recent_note(9, window, cx)
             }))
             .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
             .on_action(cx.listener(|this, _: &DuplicateNote, _, cx| this.duplicate_note(cx)))

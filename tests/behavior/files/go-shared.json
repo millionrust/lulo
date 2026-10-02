@@ -1,0 +1,13 @@
+{
+  "title": "Go to Shared (⇧⌘S) opens the user's shared folder",
+  "app": "files",
+  "setup": {
+    "home_folders": ["Public"],
+    "files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}
+  },
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-shift-s", "settle": 1.0},
+    {"observe": "shared", "facts": ["selection"]}
+  ]
+}

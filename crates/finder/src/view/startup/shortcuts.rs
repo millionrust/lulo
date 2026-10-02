@@ -35,6 +35,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             Duplicate,
             Some("Finder"),
         ),
+        KeyBinding::new("cmd-e", Eject, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::DELETE.keystroke,
             MoveToTrash,
@@ -57,6 +58,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("cmd-shift-h", GoHome, Some("Finder")),
         KeyBinding::new("cmd-shift-a", GoApplications, Some("Finder")),
         KeyBinding::new("cmd-shift-u", GoUtilities, Some("Finder")),
+        KeyBinding::new("cmd-shift-s", GoShared, Some("Finder")),
         KeyBinding::new("cmd-alt-l", GoDownloads, Some("Finder")),
         KeyBinding::new("cmd-1", ViewAsIcons, Some("Finder")),
         KeyBinding::new("cmd-2", ViewAsList, Some("Finder")),
@@ -113,6 +115,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Finder")),
         KeyBinding::new("alt-cmd-p", TogglePathBar, Some("Finder")),
         KeyBinding::new("cmd-/", ToggleStatusBar, Some("Finder")),
+        KeyBinding::new("cmd-shift-t", ToggleTabBar, Some("Finder")),
         KeyBinding::new("cmd-l", MakeAlias, Some("Finder")),
         KeyBinding::new("ctrl-cmd-n", NewFolderWithSelection, Some("Finder")),
         KeyBinding::new("cmd-r", ShowOriginal, Some("Finder")),

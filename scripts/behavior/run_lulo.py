@@ -583,6 +583,11 @@ class LuloRun:
         if self.sandbox.exists():
             shutil.rmtree(self.sandbox)
         self.sandbox.mkdir(parents=True)
+        for folder in self.scenario.get("setup", {}).get("home_folders", []):
+            relative = Path(folder)
+            if relative.is_absolute() or any(part == ".." for part in relative.parts):
+                raise StepFailed(f"home folder must stay inside the private HOME: {folder!r}")
+            (Path(self.env["HOME"]) / relative).mkdir(parents=True, exist_ok=True)
         for entry, content in self.scenario.get("setup", {}).get("files", {}).items():
             target = self.sandbox / entry
             if entry.endswith("/"):

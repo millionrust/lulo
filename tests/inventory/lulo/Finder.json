@@ -200,6 +200,13 @@
           "children": []
         },
         {
+          "label": "Eject",
+          "action": "finder::Eject",
+          "shortcut": "⌘E",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Delete Immediately…",
           "action": "finder::DeletePermanently",
           "shortcut": "⌥⌘⌫",
@@ -365,16 +372,23 @@
           ]
         },
         {
-          "label": "Show Hidden Files",
-          "action": "finder::ToggleHidden",
-          "shortcut": "⇧⌘.",
-          "separator_before": true,
-          "children": []
-        },
-        {
           "label": "Show View Options",
           "action": "finder::ShowViewOptions",
           "shortcut": "⌘J",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Tab Bar",
+          "action": "finder::ToggleTabBar",
+          "shortcut": "⇧⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "finder::EnterFullScreen",
+          "shortcut": "F",
           "separator_before": false,
           "children": []
         },
@@ -485,6 +499,13 @@
           "label": "Utilities",
           "action": "finder::GoUtilities",
           "shortcut": "⇧⌘U",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Shared",
+          "action": "finder::GoShared",
+          "shortcut": "⇧⌘S",
           "separator_before": false,
           "children": []
         },

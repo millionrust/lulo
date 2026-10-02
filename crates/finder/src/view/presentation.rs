@@ -6,6 +6,15 @@ impl Render for FinderView {
         // active window may publish its window-specific validation state.
         if window.is_window_active() {
             self.publish_app_menu_state(cx);
+            rmac_ui::set_menu_label(
+                "finder::EnterFullScreen",
+                if window.is_fullscreen() {
+                    "Exit Full Screen"
+                } else {
+                    "Enter Full Screen"
+                },
+                cx,
+            );
         }
         let native_window_title = rmac_ui::native_window_title(self.title().as_ref(), "Files");
         if self.native_window_title != native_window_title {
@@ -499,7 +508,9 @@ impl Render for FinderView {
                                 ),
                         )
                     })
-                    .when(multi, |el| el.child(self.render_tabs(cx)))
+                    .when(multi || self.show_tab_bar, |el| {
+                        el.child(self.render_tabs(cx))
+                    })
                     .when(self.trash_view, |el| el.child(self.render_trash_bar(cx)))
                     .child(self.render_list(
                         window_active,
@@ -587,7 +598,17 @@ impl FinderView {
         };
         rmac_ui::set_menu_label("finder::QuickLook", &quick_look_label, cx);
         let has_selection = !selection.is_empty();
+        rmac_ui::set_menu_enabled(
+            "finder::Eject",
+            self.selected_ejectable_volume().is_some(),
+            cx,
+        );
         rmac_ui::set_menu_enabled("finder::QuickLook", has_selection, cx);
+        rmac_ui::set_menu_enabled(
+            "finder::GoShared",
+            rmac_finder::places::shared_folder(&self.home).is_some(),
+            cx,
+        );
         rmac_ui::set_menu_checked(
             "finder::UseGroups",
             self.current_options().group_by != view_options::GroupBy::None,
@@ -649,6 +670,16 @@ impl FinderView {
         rmac_ui::set_menu_label("finder::CloseTab", state.close_label, cx);
         rmac_ui::set_menu_label("finder::ToggleSidebar", state.sidebar_label, cx);
         rmac_ui::set_menu_label("finder::TogglePathBar", state.path_bar_label, cx);
+        rmac_ui::set_menu_label(
+            "finder::ToggleTabBar",
+            if self.show_tab_bar || self.tabs.len() > 1 {
+                "Hide Tab Bar"
+            } else {
+                "Show Tab Bar"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_enabled("finder::ToggleTabBar", self.tabs.len() == 1, cx);
         rmac_ui::set_menu_label(
             "finder::ToggleStatusBar",
             if self.show_status_bar {

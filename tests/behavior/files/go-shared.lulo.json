@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "files/go-shared",
+  "platform": "Lulo local contract",
+  "observations": {
+    "shared": {"selection": {"items": ["Shared"]}}
+  }
+}

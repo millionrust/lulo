@@ -742,6 +742,7 @@ impl FinderView {
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
+            .on_action(cx.listener(|this, _: &Eject, _, cx| this.eject_selected_volume(cx)))
             .on_action(cx.listener(|this, _: &MoveToTrash, _, cx| this.move_to_trash(cx)))
             .on_action(cx.listener(|this, _: &RestoreItems, _, cx| this.restore_selected(cx)))
             .on_action(
@@ -800,6 +801,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoApplications, _, cx| this.applications_click(cx)))
             .on_action(cx.listener(|this, _: &GoUtilities, _, cx| this.utilities_click(cx)))
             .on_action(cx.listener(|this, _: &GoDownloads, _, cx| this.go_downloads(cx)))
+            .on_action(cx.listener(|this, _: &GoShared, _, cx| this.go_shared(cx)))
             .on_action(cx.listener(|this, _: &GoDesktop, _, cx| this.go_desktop(cx)))
             .on_action(cx.listener(|this, _: &GoDocuments, _, cx| this.go_documents(cx)))
             .on_action(cx.listener(|this, _: &GoRecents, _, cx| this.recents_click(cx)))
@@ -867,6 +869,9 @@ impl FinderView {
                 this.navigate(action.path.clone(), cx)
             }))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
+            .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| {
+                window.toggle_fullscreen();
+            }))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
             .on_action(cx.listener(|this, _: &Compress, _, cx| this.compress_selection(cx)))
             .on_action(cx.listener(|this, _: &GetInfo, window, cx| this.get_info(window, cx)))
@@ -899,6 +904,7 @@ impl FinderView {
             }))
             .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.select_adjacent_tab(-1, cx)))
             .on_action(cx.listener(|this, _: &NextTab, _, cx| this.select_adjacent_tab(1, cx)))
+            .on_action(cx.listener(|this, _: &ToggleTabBar, _, cx| this.toggle_tab_bar(cx)))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
             .on_action(cx.listener(|this, _: &TogglePathBar, _, cx| {
                 this.show_path_bar = !this.show_path_bar;
@@ -931,6 +937,19 @@ impl FinderView {
                     if ev.keystroke.key.as_str() == "escape" {
                         this.rename_cancel(window, cx);
                     }
+                    return;
+                }
+                let modifiers = &ev.keystroke.modifiers;
+                if ev.keystroke.key.as_str() == "f"
+                    && !modifiers.platform
+                    && !modifiers.control
+                    && !modifiers.alt
+                    && !modifiers.shift
+                    && !modifiers.function
+                    && this.focus.is_focused(window)
+                {
+                    window.toggle_fullscreen();
+                    cx.stop_propagation();
                     return;
                 }
                 // Column view is a browser: ↑/↓ move within the focused

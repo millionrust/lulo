@@ -202,22 +202,18 @@ impl NotesView {
                 view.clone(),
                 |this, window, cx| this.insert_table(window, cx),
             ))
-            .child(accessible_icon_button(
-                "add-image",
-                "Add Photo…",
-                ready && !deleted && has_note && !note_save_pending && !attachment_busy,
-                glyph_button(
-                    "add-image",
-                    glyphs::ATTACH,
-                    CAPSULE_BUTTON_WIDTH,
-                    "Add Photo…",
-                )
-                .busy(attachment_busy)
-                .disabled(!ready || deleted || !has_note || note_save_pending)
-                .on_click(cx.listener(|this, _, _, cx| this.choose_image_attachment(cx))),
-                view.clone(),
-                |this, _, cx| this.choose_image_attachment(cx),
-            ));
+            .child(
+                PopUpButton::new("note-media", "Media")
+                    .menu_button(glyphs::ATTACH, TOOLBAR_GLYPH)
+                    .w(px(CAPSULE_BUTTON_WIDTH))
+                    .h(px(CAPSULE_HEIGHT - 2.0))
+                    .rounded(px(CAPSULE_HEIGHT / 2.0))
+                    .text_color(toolbar_glyph())
+                    .disabled(
+                        !ready || deleted || !has_note || note_save_pending || attachment_busy,
+                    )
+                    .dropdown_menu(|menu, _, _| menu.menu("Add Photo…", Box::new(AddPhoto))),
+            );
 
         let more = capsule("note-capsule")
             .child(accessible_icon_button(
@@ -340,6 +336,8 @@ impl NotesView {
         let in_trash =
             self.session.folder_selection() == rmac_notes_runtime::FolderSelection::Trash;
         let trash_has_notes = in_trash && !self.session.visible_notes().is_empty();
+        let gallery_view = self.gallery_view;
+        let attachments_browser_visible = self.attachments_browser_visible;
         let sort_order = self
             .session
             .snapshot()
@@ -417,6 +415,25 @@ impl NotesView {
                             .disabled(!ready)
                             .dropdown_menu(move |menu, _, _| {
                                 let menu = menu
+                                    .menu_with_check(
+                                        "as List",
+                                        !gallery_view,
+                                        Box::new(ShowListView),
+                                    )
+                                    .menu_with_check(
+                                        "as Gallery",
+                                        gallery_view,
+                                        Box::new(ShowGalleryView),
+                                    )
+                                    .menu(
+                                        if attachments_browser_visible {
+                                            "Hide Attachments Browser"
+                                        } else {
+                                            "Show Attachments Browser"
+                                        },
+                                        Box::new(ToggleAttachmentsBrowser),
+                                    )
+                                    .separator()
                                     .menu_with_check(
                                         "Sort by Date Edited",
                                         sort_order == SortOrder::Edited,

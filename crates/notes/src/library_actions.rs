@@ -659,9 +659,61 @@ impl NotesView {
             },
             cx,
         );
+        rmac_ui::set_menu_label(
+            "notes::ToggleToolbar",
+            if self.toolbar_visible {
+                "Hide Toolbar"
+            } else {
+                "Show Toolbar"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_checked("notes::ShowListView", !self.gallery_view, cx);
+        rmac_ui::set_menu_checked("notes::ShowGalleryView", self.gallery_view, cx);
+        rmac_ui::set_menu_label(
+            "notes::ToggleAttachmentsBrowser",
+            if self.attachments_browser_visible {
+                "Hide Attachments Browser"
+            } else {
+                "Show Attachments Browser"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::ShowAttachmentInNote",
+            self.attachments_browser_visible && self.selected_attachment.is_some(),
+            cx,
+        );
         rmac_ui::set_menu_enabled("notes::ZoomIn", self.note_zoom < 12, cx);
         rmac_ui::set_menu_enabled("notes::ZoomOut", self.note_zoom > -5, cx);
         rmac_ui::set_menu_enabled("notes::ZoomReset", self.note_zoom != 0, cx);
+        let visible_sections = self.visible_sections(cx);
+        let selected_section = self
+            .selected_section()
+            .filter(|section| visible_sections.contains(section));
+        let selected_collapsed = selected_section
+            .as_ref()
+            .is_some_and(|section| self.collapsed_sections.contains(section));
+        rmac_ui::set_menu_enabled(
+            "notes::CollapseSection",
+            selected_section.is_some() && !selected_collapsed,
+            cx,
+        );
+        rmac_ui::set_menu_enabled("notes::ExpandSection", selected_collapsed, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::CollapseAllSections",
+            visible_sections
+                .iter()
+                .any(|section| !self.collapsed_sections.contains(section)),
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::ExpandAllSections",
+            visible_sections
+                .iter()
+                .any(|section| self.collapsed_sections.contains(section)),
+            cx,
+        );
         let previous = self
             .recent_position
             .is_some_and(|position| position + 1 < self.recent_notes.len());

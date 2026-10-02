@@ -4,6 +4,72 @@ use super::*;
 use crate::toolbar::accessible_icon_button;
 
 impl NotesView {
+    fn section_for_note(&self, note: &NoteRecord) -> Option<String> {
+        let sort = self.session.snapshot()?.sort_order;
+        if sort == SortOrder::Title {
+            return None;
+        }
+        Some(if note.pinned {
+            "Pinned".into()
+        } else if sort == SortOrder::Created {
+            date_section(note.created_unix_ms).to_string()
+        } else {
+            date_section(note.modified_unix_ms).to_string()
+        })
+    }
+
+    pub(super) fn selected_section(&self) -> Option<String> {
+        let selected = self.session.selected_note()?;
+        self.session
+            .visible_notes()
+            .iter()
+            .any(|note| note.id == selected.id)
+            .then(|| self.section_for_note(selected))?
+    }
+
+    pub(super) fn visible_sections(&self, cx: &Context<Self>) -> BTreeSet<String> {
+        if !self.search_query.read(cx).value().trim().is_empty() {
+            return BTreeSet::new();
+        }
+        self.session
+            .visible_notes()
+            .into_iter()
+            .filter_map(|note| self.section_for_note(note))
+            .collect()
+    }
+
+    pub(super) fn set_selected_section_collapsed(
+        &mut self,
+        collapsed: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(section) = self
+            .selected_section()
+            .filter(|section| self.visible_sections(cx).contains(section))
+        {
+            self.set_section_collapsed(section, collapsed, cx);
+        }
+    }
+
+    fn set_section_collapsed(&mut self, section: String, collapsed: bool, cx: &mut Context<Self>) {
+        if collapsed {
+            self.collapsed_sections.insert(section);
+        } else {
+            self.collapsed_sections.remove(&section);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn set_all_sections_collapsed(&mut self, collapsed: bool, cx: &mut Context<Self>) {
+        let sections = self.visible_sections(cx);
+        if collapsed {
+            self.collapsed_sections.extend(sections);
+        } else {
+            self.collapsed_sections.clear();
+        }
+        cx.notify();
+    }
+
     pub(super) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         use rmac_notes_runtime::FolderSelection;
 
@@ -132,7 +198,11 @@ impl NotesView {
         let titlebar = self.toolbar_drag(
             div()
                 .id("notes-sidebar-titlebar")
-                .h(px(TOOLBAR_HEIGHT - SIDEBAR_INSET))
+                .h(px(if self.toolbar_visible {
+                    TOOLBAR_HEIGHT - SIDEBAR_INSET
+                } else {
+                    32.0
+                }))
                 .flex_none()
                 .relative()
                 .child(
@@ -169,13 +239,105 @@ impl NotesView {
             )
     }
 
+    fn render_attachment_browser(&self, cx: &mut Context<Self>) -> AnyElement {
+        let entries = self.session.snapshot().map_or_else(Vec::new, |snapshot| {
+            snapshot
+                .attachments
+                .iter()
+                .filter(|attachment| !attachment.deleted)
+                .filter_map(|attachment| {
+                    let note = snapshot
+                        .notes
+                        .iter()
+                        .find(|note| note.id == attachment.note_id && !note.deleted)?;
+                    Some((
+                        attachment.id,
+                        note.id,
+                        attachment.display_name.clone(),
+                        display_title(&note.title).to_string(),
+                        attachment.byte_len,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        });
+        let count = entries.len();
+        let ready = self.is_interactive_ready();
+        let rows = entries
+            .into_iter()
+            .map(|(attachment_id, note_id, name, title, bytes)| {
+                let selected = self.selected_attachment == Some(attachment_id)
+                    && self.session.selected_note_id() == Some(note_id);
+                div()
+                    .px_2()
+                    .py_1()
+                    .child(
+                        Button::new(("browser-attachment", attachment_id.get()), name)
+                            .w_full()
+                            .selected(selected)
+                            .disabled(!ready)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.session
+                                    .select_folder(rmac_notes_runtime::FolderSelection::All);
+                                this.select_note(note_id, window, cx);
+                                this.select_attachment_preview(attachment_id, cx);
+                            })),
+                    )
+                    .child(
+                        div()
+                            .px_2()
+                            .text_size(rmac_ui::text_px(11.0))
+                            .text_color(mac::text_secondary())
+                            .child(format!("{} · {}", title, format_storage_bytes(bytes))),
+                    )
+                    .into_any_element()
+            })
+            .collect::<Vec<_>>();
+        div()
+            .w(px(LIST_WIDTH))
+            .h_full()
+            .flex_shrink_0()
+            .v_flex()
+            .bg(list_fill())
+            .when(self.toolbar_visible, |element| {
+                element.child(self.render_list_toolbar(
+                    "Attachments".into(),
+                    format!("{count} photos").into(),
+                    cx,
+                ))
+            })
+            .child(
+                div()
+                    .id("notes-attachment-browser")
+                    .role(Role::ListBox)
+                    .aria_label("Attachments")
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
+                    .v_flex()
+                    .when(count == 0, |element| {
+                        element.child(
+                            div()
+                                .p_3()
+                                .text_color(mac::text_secondary())
+                                .child("No Attachments"),
+                        )
+                    })
+                    .children(rows),
+            )
+            .into_any_element()
+    }
+
     pub(super) fn render_note_list(
         &self,
         list_focused: bool,
         _window: &Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> AnyElement {
+        if self.attachments_browser_visible {
+            return self.render_attachment_browser(cx);
+        }
         let search_active = !self.search_query.read(cx).value().trim().is_empty();
+        let gallery = self.gallery_view;
         let selected = if search_active {
             self.search.selected()
         } else {
@@ -246,11 +408,25 @@ impl NotesView {
                 .is_none_or(|next| *next != sections[index]);
             if let Some(section) = sections[index].clone() {
                 if current_section.as_ref() != Some(&section) {
+                    let is_collapsed = self.collapsed_sections.contains(section.as_ref());
+                    let section_name = section.to_string();
                     // A 40 pt section row: the name 15 bold at x 16.5, then a
                     // full-width rule 29 below the row's top.
                     items.push(
                         div()
                             .h(px(SECTION_HEIGHT))
+                            .when(gallery, |element| element.w_full())
+                            .id(format!("note-section-{section_name}"))
+                            .role(Role::Button)
+                            .aria_label(format!(
+                                "{}, {}",
+                                section,
+                                if is_collapsed {
+                                    "collapsed"
+                                } else {
+                                    "expanded"
+                                }
+                            ))
                             .flex_none()
                             .relative()
                             .child(
@@ -262,7 +438,11 @@ impl NotesView {
                                     .line_height(px(18.0))
                                     .font_weight(mac::BOLD)
                                     .text_color(section_text())
-                                    .child(section.clone()),
+                                    .child(format!(
+                                        "{} {}",
+                                        if is_collapsed { "▸" } else { "▾" },
+                                        section
+                                    )),
                             )
                             .child(
                                 div()
@@ -273,10 +453,19 @@ impl NotesView {
                                     .h(px(1.0))
                                     .bg(section_rule()),
                             )
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.set_section_collapsed(section_name.clone(), !is_collapsed, cx)
+                            }))
                             .into_any_element(),
                     );
                     current_section = Some(section);
                 }
+            }
+            if sections[index]
+                .as_ref()
+                .is_some_and(|section| self.collapsed_sections.contains(section.as_ref()))
+            {
+                continue;
             }
             let note_id = note.id;
             let is_selected = selected == Some(note.id);
@@ -394,10 +583,13 @@ impl NotesView {
                 mac::text_secondary()
             };
             // Hairlines separate unselected neighbours, inset from the text.
-            let rule = !is_selected && next_selected != Some(true) && !is_last;
+            let rule = !gallery && !is_selected && next_selected != Some(true) && !is_last;
             items.push(
                 div()
                     .id(("note", note.id.get()))
+                    .when(gallery, |element| {
+                        element.w(px(LIST_WIDTH / 2.0 - 4.0)).h(px(112.0))
+                    })
                     .role(Role::ListBoxOption)
                     .aria_label(accessible_label)
                     .aria_selected(is_selected)
@@ -407,6 +599,13 @@ impl NotesView {
                     .child(
                         div()
                             .min_h(px(NOTE_ROW_HEIGHT - 1.0))
+                            .when(gallery, |element| {
+                                element
+                                    .min_h(px(106.0))
+                                    .bg(mac::window())
+                                    .border_1()
+                                    .border_color(mac::separator())
+                            })
                             .pl(px(NOTE_TEXT_X))
                             .pr(px(12.0))
                             .pt(px(11.25))
@@ -575,7 +774,9 @@ impl NotesView {
             .flex_shrink_0()
             .v_flex()
             .bg(list_fill())
-            .child(self.render_list_toolbar(title, subtitle, cx))
+            .when(self.toolbar_visible, |element| {
+                element.child(self.render_list_toolbar(title, subtitle, cx))
+            })
             .child(
                 div()
                     .id("notes-scroll")
@@ -584,6 +785,7 @@ impl NotesView {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
+                    .when(gallery, |element| element.flex().flex_wrap())
                     .pt(px(LIST_TOP_PADDING))
                     .pb(px(8.0))
                     .children(items),
@@ -601,5 +803,6 @@ impl NotesView {
                     )
                 },
             )
+            .into_any_element()
     }
 }

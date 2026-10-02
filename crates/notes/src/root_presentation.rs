@@ -67,7 +67,9 @@ impl NotesView {
                             .h_full()
                             .v_flex()
                             .bg(editor_fill())
-                            .child(self.render_toolbar(window, cx))
+                            .when(self.toolbar_visible, |element| {
+                                element.child(self.render_toolbar(window, cx))
+                            })
                             .when_some(self.render_status_banner(cx), |element, banner| {
                                 element.child(banner)
                             })
@@ -120,6 +122,12 @@ impl NotesView {
                 this.delete_selected_note_with_undo(cx)
             }))
             .on_action(cx.listener(|this, _: &CloseAll, window, cx| this.request_close(window, cx)))
+            // Notes has exactly one window, which is recreated at launch.
+            // Preserve its durable library through the same reviewed close
+            // path used by the window controls.
+            .on_action(cx.listener(|this, _: &QuitAndKeepWindows, window, cx| {
+                this.request_close(window, cx)
+            }))
             .on_action(cx.listener(|_, _: &FocusMainWindow, window, _| {
                 window.activate_window();
             }))
@@ -306,6 +314,48 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &ToggleNoteCount, _, cx| {
                 this.show_note_count = !this.show_note_count;
                 cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ToggleToolbar, _, cx| {
+                this.toolbar_visible = !this.toolbar_visible;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ShowListView, _, cx| {
+                this.gallery_view = false;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ShowGalleryView, _, cx| {
+                this.gallery_view = true;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ToggleAttachmentsBrowser, _, cx| {
+                this.attachments_browser_visible = !this.attachments_browser_visible;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ShowAttachmentInNote, _, cx| {
+                if this.attachments_browser_visible && this.selected_attachment.is_some() {
+                    this.attachments_browser_visible = false;
+                    cx.notify();
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SetAllAttachmentsSmall, _, cx| {
+                this.attachment_view_large = false;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &SetAllAttachmentsLarge, _, cx| {
+                this.attachment_view_large = true;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &CollapseSection, _, cx| {
+                this.set_selected_section_collapsed(true, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ExpandSection, _, cx| {
+                this.set_selected_section_collapsed(false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CollapseAllSections, _, cx| {
+                this.set_all_sections_collapsed(true, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ExpandAllSections, _, cx| {
+                this.set_all_sections_collapsed(false, cx);
             }))
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| {
                 this.note_zoom = (this.note_zoom + 1).min(12);

@@ -502,6 +502,14 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
 
 const NOTES_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!(
+            "Quit and Keep Windows",
+            "notes::QuitAndKeepWindows",
+            "⌥⌘Q"
+        )],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             item!("New Note", "notes::ComposeNote", "⌘N"),
@@ -623,6 +631,8 @@ const NOTES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
+            item!("as List", "notes::ShowListView", "⌘1"),
+            item!("as Gallery", "notes::ShowGalleryView", "⌘2"),
             submenu!(
                 "Recent Notes",
                 "notes::RecentNotesMenu",
@@ -634,10 +644,33 @@ const NOTES_MENUS: &[MenuSpec] = &[
             ),
             item!("Hide Folders", "notes::ToggleFolders", "⌃⌘S"),
             item!("Hide Note Count", "notes::ToggleNoteCount", ""),
+            submenu!(
+                "Attachment View",
+                "notes::AttachmentViewMenu",
+                [
+                    item!("Set All to Small", "notes::SetAllAttachmentsSmall", ""),
+                    item!("Set All to Large", "notes::SetAllAttachmentsLarge", ""),
+                ]
+            ),
+            item!(
+                "Show Attachments Browser",
+                "notes::ToggleAttachmentsBrowser",
+                "⌘3"
+            ),
+            item!("Show in Note", "notes::ShowAttachmentInNote", ""),
+            item!("Hide Toolbar", "notes::ToggleToolbar", ""),
             item!("Enter Full Screen", "notes::ToggleFullScreen", "F"),
             item!("Zoom In", "notes::ZoomIn", "⇧⌘."),
             item!("Zoom Out", "notes::ZoomOut", "⇧⌘,"),
             item!("Actual Size", "notes::ZoomReset", "⇧⌘0"),
+            item!("Expand Section", "notes::ExpandSection", "⌥⌘"),
+            item!("Expand All Sections", "notes::ExpandAllSections", "⌥⇧⌘"),
+            item!("Collapse Section", "notes::CollapseSection", "⌥⌘"),
+            item!(
+                "Collapse All Sections",
+                "notes::CollapseAllSections",
+                "⌥⇧⌘"
+            ),
         ],
     },
     MenuSpec {

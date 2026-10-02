@@ -1597,6 +1597,7 @@ fn slider_bulge_ease(elapsed_ms: u64, duration_ms: u64) -> f32 {
 pub struct SliderBulge {
     from: f32,
     changed_ms: u64,
+    duration_ms: u64,
     target: f32,
 }
 
@@ -1605,6 +1606,7 @@ impl Default for SliderBulge {
         Self {
             from: 0.0,
             changed_ms: 0,
+            duration_ms: 0,
             target: 0.0,
         }
     }
@@ -1617,8 +1619,12 @@ impl SliderBulge {
     pub fn set_active(&mut self, active: bool, now_ms: u64) {
         let target = if active { 1.0 } else { 0.0 };
         if (target - self.target).abs() > f32::EPSILON {
+            // Undo only as much time as the previous transition had run, so
+            // a quick hover-and-leave shrinks as fast as it grew.
+            let spent = now_ms.saturating_sub(self.changed_ms).min(self.duration_ms);
             self.from = self.progress(now_ms);
             self.changed_ms = now_ms;
+            self.duration_ms = if spent > 0 { spent } else { SLIDER_BULGE_MS };
             self.target = target;
         }
     }
@@ -1626,7 +1632,7 @@ impl SliderBulge {
     /// Current eased progress, 0 (resting) ..= 1 (fully bulged).
     pub fn progress(&self, now_ms: u64) -> f32 {
         let elapsed = now_ms.saturating_sub(self.changed_ms);
-        let eased = slider_bulge_ease(elapsed, SLIDER_BULGE_MS);
+        let eased = slider_bulge_ease(elapsed, self.duration_ms);
         self.from + (self.target - self.from) * eased
     }
 
@@ -1635,7 +1641,7 @@ impl SliderBulge {
     /// is false — the transition is short and then costs nothing.
     pub fn is_animating(&self, now_ms: u64) -> bool {
         (self.target - self.from).abs() > f32::EPSILON
-            && now_ms.saturating_sub(self.changed_ms) < SLIDER_BULGE_MS
+            && now_ms.saturating_sub(self.changed_ms) < self.duration_ms
     }
 }
 
@@ -2807,8 +2813,8 @@ mod tests {
             (just_after - partial).abs() < 1e-6,
             "expected {just_after} to match {partial} at the reversal instant"
         );
-        // The shrink then runs its full duration from the reversal.
-        let settled = SLIDER_BULGE_MS / 2 + SLIDER_BULGE_MS;
+        // The shrink takes as long as the grow had run.
+        let settled = SLIDER_BULGE_MS;
         assert!(bulge.is_animating(settled - 1));
         assert!(!bulge.is_animating(settled));
         assert_eq!(bulge.progress(settled), 0.0);

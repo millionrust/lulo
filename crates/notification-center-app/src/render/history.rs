@@ -117,15 +117,35 @@ impl NotificationCenterView {
         &self,
         id: SharedString,
         target: CloseTarget,
+        application: SharedString,
+        hovered: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
         let view = cx.entity();
+        let a11y_view = view.clone();
+        let a11y_target = target.clone();
+        let label = match &target {
+            CloseTarget::Record(_) => format!("Clear notification from {application}"),
+            CloseTarget::Group { .. } => format!("Clear notifications from {application}"),
+        };
         div()
             .id(id)
+            .role(Role::Button)
+            .aria_label(label)
+            .focusable()
+            .tab_stop(true)
+            .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                let target = a11y_target.clone();
+                a11y_view.update(cx, |this, cx| match target {
+                    CloseTarget::Record(id) => this.remove(id, cx),
+                    CloseTarget::Group { key, app_ids } => this.clear_group(key, app_ids, cx),
+                });
+            })
             .absolute()
             .left(px(card::CLOSE_OFFSET))
             .top(px(card::CLOSE_OFFSET))
             .size(px(card::CLOSE))
+            .opacity(if hovered { 1.0 } else { 0.0 })
             .flex()
             .items_center()
             .justify_center()
@@ -210,9 +230,33 @@ impl NotificationCenterView {
         let hover_target = hover_key.clone();
         let record_id = record.id;
         let close_id = SharedString::from(format!("close-{hover_key}"));
+        let a11y_view = view.clone();
+        let a11y_expand = on_click_expand.clone();
+        let card_name = format!("{}: {}", identity.name, title);
+        let clickable = on_click_expand.is_some() || default_action;
 
         div()
             .id(SharedString::from(format!("card-{hover_key}")))
+            .role(if clickable { Role::Button } else { Role::Group })
+            .aria_label(card_name)
+            .when_some(on_click_expand.as_ref(), |card, _| {
+                card.aria_expanded(false)
+            })
+            .when(clickable, |card| {
+                card.focusable().tab_stop(true).on_a11y_action(
+                    AccessibleAction::Click,
+                    move |_, _, cx| {
+                        let key = a11y_expand.clone();
+                        a11y_view.update(cx, |this, cx| {
+                            if let Some(key) = key {
+                                this.toggle_expanded(&key, cx);
+                            } else {
+                                this.invoke_action(record_id, ActionSelection::Default, cx);
+                            }
+                        });
+                    },
+                )
+            })
             .relative()
             .w(px(card::WIDTH))
             .min_h(px(card::MIN_HEIGHT))
@@ -291,9 +335,7 @@ impl NotificationCenterView {
                         text.child(div().flex().flex_wrap().gap_1().pt_1p5().children(buttons))
                     }),
             )
-            .when(hovered, |card_element| {
-                card_element.child(self.close_button(close_id, close, cx))
-            })
+            .child(self.close_button(close_id, close, identity.name.clone(), hovered, cx))
             .into_any_element()
     }
 
@@ -363,10 +405,15 @@ impl NotificationCenterView {
         }
 
         let collapse_view = cx.entity();
+        let a11y_collapse_view = collapse_view.clone();
         let collapse_key = group.key.clone();
+        let a11y_collapse_key = collapse_key.clone();
         let clear_view = cx.entity();
+        let a11y_clear_view = clear_view.clone();
         let clear_key = group.key.clone();
+        let a11y_clear_key = clear_key.clone();
         let clear_app_ids = group.app_ids.clone();
+        let a11y_clear_app_ids = clear_app_ids.clone();
         let busy = self.busy.is_some();
         let cards = group
             .records
@@ -408,6 +455,16 @@ impl NotificationCenterView {
                     .child(
                         glass(div(), card::HEADER_BUTTON / 2.0, card::CONTROL_FILL)
                             .id(SharedString::from(format!("show-less-{}", group.key)))
+                            .role(Role::Button)
+                            .aria_label(SHOW_LESS_LABEL)
+                            .aria_expanded(true)
+                            .focusable()
+                            .tab_stop(true)
+                            .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                                a11y_collapse_view.update(cx, |this, cx| {
+                                    this.toggle_expanded(&a11y_collapse_key, cx)
+                                });
+                            })
                             .h(px(card::HEADER_BUTTON))
                             .px(px(10.0))
                             .flex()
@@ -426,6 +483,18 @@ impl NotificationCenterView {
                     .child(
                         glass(div(), card::HEADER_BUTTON / 2.0, card::CONTROL_FILL)
                             .id(SharedString::from(format!("clear-{}", group.key)))
+                            .role(Role::Button)
+                            .aria_label(format!("Clear notifications from {}", group.identity.name))
+                            .focusable()
+                            .tab_stop(true)
+                            .when(!busy, |button| {
+                                button.on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                                    let key = a11y_clear_key.clone();
+                                    let app_ids = a11y_clear_app_ids.clone();
+                                    a11y_clear_view
+                                        .update(cx, |this, cx| this.clear_group(key, app_ids, cx));
+                                })
+                            })
                             .size(px(card::HEADER_BUTTON))
                             .flex()
                             .items_center()

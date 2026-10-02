@@ -65,7 +65,7 @@ SURFACES: list[dict[str, Any]] = [
         "status": "planned",
         "mac": {"process": "ControlCenter", "open": "menu-extra", "extra_description": "Clock"},
         "lulo": {"harness": "shell", "open": "topbar-click", "label": "Clock"},
-        "note": "Lulo driver not wired up yet: rmac-notification-center-panel's accessible tree needs exploring first.",
+        "note": "Lulo interaction driver not wired up yet; the separate nested AT-SPI assertion covers its accessible tree.",
     },
     {
         "id": "status-menu-sound",

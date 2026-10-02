@@ -4,6 +4,7 @@ use gpui::ClickEvent;
 use rmac_quick_settings::accessibility::CHANGING_LABEL;
 use rmac_quick_settings::detail::{Detail, Module};
 use rmac_quick_settings::{Command, FocusValue, PowerValue, Tile};
+use std::rc::Rc;
 
 use super::*;
 
@@ -62,8 +63,29 @@ impl QuickSettingsView {
         let pane = pill.pane;
         let detail = pill.detail;
         let ring = self.ring(pill.module);
+        let toggle_view = cx.entity().downgrade();
+        let toggle = Rc::new(toggle);
+        let pointer_toggle = toggle.clone();
+        let label_view = cx.entity().downgrade();
+        let toggle_name = pill.title;
+        let label_name = format!("{} details", pill.title);
         let badge = div()
             .id(SharedString::from(format!("{}-toggle", pill.id)))
+            .role(Role::Switch)
+            .aria_label(toggle_name)
+            .aria_toggled(if pill.on {
+                Toggled::True
+            } else {
+                Toggled::False
+            })
+            .when(pill.enabled, |badge| {
+                badge.focusable().tab_stop(true).on_a11y_action(
+                    AccessibleAction::Click,
+                    move |_, _, cx| {
+                        let _ = toggle_view.update(cx, |this, cx| toggle(this, cx));
+                    },
+                )
+            })
             .absolute()
             .left(px(BADGE_INSET))
             .top(px(BADGE_INSET))
@@ -71,7 +93,9 @@ impl QuickSettingsView {
             .rounded_full()
             .bg(if pill.on { mac::white() } else { circle_off() })
             .when(pill.enabled, |badge| {
-                badge.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| toggle(this, cx)))
+                badge.on_click(
+                    cx.listener(move |this, _: &ClickEvent, _, cx| pointer_toggle(this, cx)),
+                )
             })
             .child(glyph_at(
                 path,
@@ -83,6 +107,16 @@ impl QuickSettingsView {
             ));
         let label = div()
             .id(SharedString::from(format!("{}-label", pill.id)))
+            .role(Role::Button)
+            .aria_label(label_name)
+            .focusable()
+            .tab_stop(true)
+            .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                let _ = label_view.update(cx, |this, cx| match detail {
+                    Some(detail) => this.open_detail(detail, cx),
+                    None => this.open_settings(Some(pane), window, cx),
+                });
+            })
             .absolute()
             .left(px(centre + BADGE / 2.0))
             .top_0()
@@ -233,18 +267,38 @@ impl QuickSettingsView {
     ) -> AnyElement {
         let (path, width, height) = glyph;
         let ring = self.ring(module_kind);
+        let view = cx.entity().downgrade();
+        let action = Rc::new(action);
+        let pointer_action = action.clone();
+        let label = match module_kind {
+            Module::LowPower => "Low Power Mode",
+            Module::Screenshot => "Screenshot",
+            _ => id,
+        };
         module(x, y, CELL, CELL, CELL / 2.0)
             .when(ring, |circle| circle.shadow(mac::focus_ring_shadow()))
             .when(on, |circle| circle.bg(mac::white()))
             .child(
                 layer()
                     .id(id)
+                    .role(if module_kind == Module::LowPower {
+                        Role::Switch
+                    } else {
+                        Role::Button
+                    })
+                    .aria_label(label)
+                    .when(module_kind == Module::LowPower, |circle| {
+                        circle.aria_toggled(if on { Toggled::True } else { Toggled::False })
+                    })
+                    .focusable()
+                    .tab_stop(true)
+                    .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                        let _ = view.update(cx, |this, cx| action(this, window, cx));
+                    })
                     .rounded_full()
-                    .on_click(
-                        cx.listener(move |this, _: &ClickEvent, window, cx| {
-                            action(this, window, cx)
-                        }),
-                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        pointer_action(this, window, cx)
+                    }))
                     .child(glyph_at(
                         path,
                         CELL / 2.0,
@@ -348,17 +402,32 @@ impl QuickSettingsView {
         .into_iter()
         .map(|(id, (path, width, height), centre, command)| {
             let supported = command.supported_by(player);
+            let view = cx.entity().downgrade();
+            let label = match id {
+                "previous" => "Previous Track",
+                "play-pause" if playing => "Pause",
+                "play-pause" => "Play",
+                _ => "Next Track",
+            };
             div()
                 .id(id)
+                .role(Role::Button)
+                .aria_label(label)
                 .absolute()
                 .left(px(centre - 18.0))
                 .top(px(113.0 - 15.0))
                 .w(px(36.0))
                 .h(px(30.0))
                 .when(supported, |button| {
-                    button.on_click(
-                        cx.listener(move |this, _: &ClickEvent, _, cx| this.media(command, cx)),
-                    )
+                    button
+                        .focusable()
+                        .tab_stop(true)
+                        .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                            let _ = view.update(cx, |this, cx| this.media(command, cx));
+                        })
+                        .on_click(
+                            cx.listener(move |this, _: &ClickEvent, _, cx| this.media(command, cx)),
+                        )
                 })
                 .child(glyph_at(
                     path,

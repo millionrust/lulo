@@ -42,10 +42,12 @@ BAR-10, CC-14): both menus genuinely don't close on an outside click or
 Escape, and the second click on an already-open menu title toggles it
 closed on Lulo but is a no-op on the Mac. Control Centre's own
 outside-click/Escape close reliably enough to measure (Escape was flaky:
-~2 of 3 runs stayed open); its sliders' hover reaction could not be
-measured on Lulo this pass - `rmac-quick-settings` exposes no AT-SPI
-children for its content in the nested-shell harness even after a 25 s
-wait, so those two facts are `null` rather than a guess. Everything else in
+~2 of 3 runs stayed open); the original 2026-10-02 run could not measure
+its sliders because `rmac-quick-settings` exposed no AT-SPI children.
+The current nested probe asserts a populated panel and Wi-Fi detail view,
+then targets accessible sliders for hover captures. The 2026-10-03
+Display capture found no hover change (INT-008); Sound was unavailable in
+the private session and remains unmeasured. Everything else in
 `surfaces.py`/`probes.py` (status menus, Spotlight, the Dock, Files'
 context menu, dialogs, lists, tab focus, arrow keys, type-to-select,
 press-and-hold) is declared for the matrix but has no driver yet.

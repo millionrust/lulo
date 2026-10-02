@@ -7,13 +7,14 @@ mod history;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    canvas, div, img, linear_color_stop, linear_gradient, px, rgba, size, AnyElement, App, Context,
-    Entity, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    canvas, div, img, linear_color_stop, linear_gradient, px, rgba, size, AccessibleAction,
+    AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, ParentElement as _, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window,
 };
 use gpui_component::{IconName, StyledExt as _};
 use rmac_notification_center_app::accessibility::{
-    EDIT_WIDGETS_LABEL, EMPTY_TITLE, SHOW_LESS_LABEL, UNAVAILABLE_TITLE,
+    EDIT_WIDGETS_LABEL, EMPTY_TITLE, LOADING_LABEL, SHOW_LESS_LABEL, UNAVAILABLE_TITLE,
 };
 use rmac_notifications::NotificationId;
 use rmac_notifications_linux::center::{ActionSelection, HistoryRecord};
@@ -95,18 +96,31 @@ fn edit_widgets(
     view: Entity<NotificationCenterView>,
 ) -> impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static {
     move |_, window, cx| {
-        cx.stop_propagation();
-        if let Err(error) = rmac_desktop::settings::request_gallery(
-            rmac_desktop::settings::GalleryTarget::NotificationCenter,
-        ) {
-            eprintln!("the widget gallery could not be requested: {error}");
-        }
-        view.update(cx, |this, cx| this.dismiss(window, cx));
+        edit_widgets_action(&view, window, cx);
     }
 }
 
-fn edit_pill(view: Entity<NotificationCenterView>) -> gpui::Div {
+fn edit_widgets_action(view: &Entity<NotificationCenterView>, window: &mut Window, cx: &mut App) {
+    cx.stop_propagation();
+    if let Err(error) = rmac_desktop::settings::request_gallery(
+        rmac_desktop::settings::GalleryTarget::NotificationCenter,
+    ) {
+        eprintln!("the widget gallery could not be requested: {error}");
+    }
+    view.update(cx, |this, cx| this.dismiss(window, cx));
+}
+
+fn edit_pill(view: Entity<NotificationCenterView>) -> gpui::Stateful<gpui::Div> {
+    let a11y_view = view.clone();
     div()
+        .id("notification-center-edit-widgets")
+        .role(Role::Button)
+        .aria_label(EDIT_WIDGETS_LABEL)
+        .focusable()
+        .tab_stop(true)
+        .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+            edit_widgets_action(&a11y_view, window, cx);
+        })
         .w(px(EDIT_WIDTH))
         .h(px(EDIT_HEIGHT))
         .flex()
@@ -134,6 +148,9 @@ fn empty_state(
         .h(px(DIM_HEIGHT))
         .child(
             div()
+                .id("notification-center-empty-title")
+                .role(Role::Status)
+                .aria_label(title)
                 .absolute()
                 .top(px(EMPTY_TITLE_TOP))
                 .right_0()
@@ -180,8 +197,11 @@ fn widget_rows(
         .collect()
 }
 
-fn notice(message: SharedString) -> impl IntoElement {
+fn notice(index: usize, message: SharedString) -> impl IntoElement {
     div()
+        .id(("notification-center-notice", index))
+        .role(Role::Alert)
+        .aria_label(message.clone())
         .w(px(card::WIDTH))
         .px(px(card::PAD_LEFT))
         .py(px(12.0))
@@ -197,11 +217,17 @@ fn notice(message: SharedString) -> impl IntoElement {
 }
 
 impl Render for NotificationCenterView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let a11y_active = window.is_a11y_active();
+        if a11y_active && !self.a11y_active_last_frame {
+            window.request_animation_frame();
+        }
+        self.a11y_active_last_frame = a11y_active;
         let clock = Clock::now();
         let groups = self.groups();
         let has_records = !groups.is_empty();
         let unavailable = self.snapshot.is_none() && self.stream_error.is_some();
+        let loading = self.snapshot.is_none() && self.stream_error.is_none();
         let empty = self.snapshot.is_some() && !has_records;
         let group_elements = groups
             .iter()
@@ -211,7 +237,8 @@ impl Render for NotificationCenterView {
             .into_iter()
             .flatten()
             .filter(|_| !unavailable)
-            .map(notice)
+            .enumerate()
+            .map(|(index, message)| notice(index, message))
             .collect::<Vec<_>>();
         let dismiss_view = cx.entity();
         let edit_view = cx.entity();
@@ -236,6 +263,9 @@ impl Render for NotificationCenterView {
         .inset_0();
 
         div()
+            .id("notification-center")
+            .role(Role::Group)
+            .aria_label("Notification Center")
             .size_full()
             .relative()
             .track_focus(&self.focus)
@@ -254,6 +284,7 @@ impl Render for NotificationCenterView {
             .when(empty, |root| {
                 root.child(empty_state(EMPTY_TITLE, Some(edit_view.clone())))
             })
+            .when(loading, |root| root.child(empty_state(LOADING_LABEL, None)))
             .when(unavailable, |root| {
                 root.child(empty_state(UNAVAILABLE_TITLE, None))
             })

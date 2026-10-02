@@ -10,9 +10,10 @@ mod detail;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, rgba, size, svg, AnyElement, Context, Div, FontWeight, Hsla, InteractiveElement as _,
-    IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent, MouseUpEvent, ParentElement as _,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    accesskit, div, px, rgba, size, svg, AccessibleAction, AnyElement, Context, Div, FontWeight,
+    Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent,
+    MouseUpEvent, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Toggled, Window,
 };
 use rmac_quick_settings::layout;
 use rmac_ui::mac;
@@ -139,6 +140,11 @@ fn layer() -> Div {
 
 impl Render for QuickSettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let a11y_active = window.is_a11y_active();
+        if a11y_active && !self.a11y_active_last_frame {
+            window.request_animation_frame();
+        }
+        self.a11y_active_last_frame = a11y_active;
         // CC-13: keep easing a slider bulge across renders triggered by
         // something else (e.g. a live volume update) without its own
         // request_animation_frame; stops costing anything once settled.
@@ -211,6 +217,8 @@ impl Render for QuickSettingsView {
 
         div()
             .id("control-center")
+            .role(Role::Group)
+            .aria_label("Control Centre")
             .size_full()
             .relative()
             .track_focus(&self.focus)

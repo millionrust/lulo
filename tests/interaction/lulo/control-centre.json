@@ -2,19 +2,20 @@
   "format": 1,
   "surface": "control-centre",
   "platform": "Lulo",
-  "recorded": "2026-10-02",
+  "recorded": "2026-10-03",
   "probes": {
+    "hover:display-brightness-slider": {
+      "changed": false
+    },
+    "hover:sound-volume-slider": {
+      "changed": null,
+      "reason": "slider unavailable"
+    },
     "outside_click": {
       "closed": true
     },
     "escape": {
-      "closed": false
-    },
-    "hover:display-brightness-slider": {
-      "changed": null
-    },
-    "hover:sound-volume-slider": {
-      "changed": null
+      "closed": true
     }
   }
 }

@@ -72,9 +72,15 @@ impl QuickSettingsView {
     ) -> AnyElement {
         let (path, width, height) = row_glyph(row.glyph);
         let action = row.action.clone();
+        let enabled = action.is_some();
         let ring = self.target_ring(target);
+        let view = cx.entity().downgrade();
         div()
             .id(("control-center-detail-row", index))
+            .role(Role::Button)
+            .aria_label(row.label.clone())
+            .aria_selected(row.on)
+            .when(enabled, |row| row.focusable().tab_stop(true))
             .absolute()
             .left(px(g::INSET))
             .top(px(top))
@@ -83,8 +89,13 @@ impl QuickSettingsView {
             .rounded(px(8.0))
             .when(ring, |row| row.shadow(mac::focus_ring_shadow()))
             .when_some(action, |element, action| {
+                let a11y_action = action.clone();
                 element
                     .hover(|style| style.bg(row_hover()))
+                    .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                        let action = a11y_action.clone();
+                        let _ = view.update(cx, |this, cx| this.run_row(action, window, cx));
+                    })
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.run_row(action.clone(), window, cx)
                     }))
@@ -142,8 +153,23 @@ impl QuickSettingsView {
         cx: &Context<Self>,
     ) -> AnyElement {
         let ring = self.target_ring(target);
+        let view = cx.entity().downgrade();
+        let expanded = target == Target::Disclosure && self.others_expanded;
         div()
             .id(id)
+            .role(Role::Button)
+            .aria_label(label.clone())
+            .when(target == Target::Disclosure, |item| {
+                item.aria_expanded(expanded)
+            })
+            .focusable()
+            .tab_stop(true)
+            .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                let _ = view.update(cx, |this, cx| {
+                    this.detail_focus = Some(target);
+                    this.activate_detail_target(target, window, cx);
+                });
+            })
             .absolute()
             .left(px(g::INSET))
             .top(px(top))
@@ -167,8 +193,34 @@ impl QuickSettingsView {
         } else {
             KNOB_INSET
         };
+        let view = cx.entity().downgrade();
+        let switch_name = match self.detail {
+            Some(rmac_quick_settings::detail::Detail::Wifi) => "Wi-Fi",
+            _ => "Bluetooth",
+        };
+        let state = self.state.view();
+        let enabled = match self.detail {
+            Some(rmac_quick_settings::detail::Detail::Wifi) => {
+                state.wifi.available && !state.wifi.busy
+            }
+            Some(rmac_quick_settings::detail::Detail::Bluetooth) => {
+                state.bluetooth.available && !state.bluetooth.busy
+            }
+            _ => false,
+        };
         div()
             .id("control-center-detail-switch")
+            .role(Role::Switch)
+            .aria_label(switch_name)
+            .aria_toggled(if on { Toggled::True } else { Toggled::False })
+            .when(enabled, |element| {
+                element.focusable().tab_stop(true).on_a11y_action(
+                    AccessibleAction::Click,
+                    move |_, _, cx| {
+                        let _ = view.update(cx, |this, cx| this.toggle_detail_switch(cx));
+                    },
+                )
+            })
             .absolute()
             .left(px(g::PANEL_WIDTH - g::INSET - g::SWITCH_WIDTH))
             .top(px(g::SWITCH_TOP))
@@ -177,7 +229,11 @@ impl QuickSettingsView {
             .rounded_full()
             .bg(if on { mac::system_blue() } else { circle_off() })
             .when(ring, |switch| switch.shadow(mac::focus_ring_shadow()))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_detail_switch(cx)))
+            .when(enabled, |element| {
+                element.on_click(
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_detail_switch(cx)),
+                )
+            })
             .child(
                 div()
                     .absolute()
@@ -208,6 +264,8 @@ impl QuickSettingsView {
             TRACK_HEIGHT_BULGED,
             self.slider_bulge(SliderKind::DetailVolume),
         );
+        let increment_view = cx.entity().downgrade();
+        let decrement_view = cx.entity().downgrade();
         layer()
             .child(glyph_at(
                 "cc/speaker.svg",
@@ -228,6 +286,43 @@ impl QuickSettingsView {
             .child(
                 div()
                     .id("control-center-detail-slider")
+                    .role(Role::Slider)
+                    .aria_label("Sound")
+                    .aria_numeric_value(f64::from(volume))
+                    .aria_numeric_value_step(5.0)
+                    .aria_min_numeric_value(0.0)
+                    .aria_max_numeric_value(100.0)
+                    .when(enabled, |hit| {
+                        let set_value_view = cx.entity().downgrade();
+                        hit.focusable()
+                            .tab_stop(true)
+                            .on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
+                                let _ = increment_view.update(cx, |this, cx| {
+                                    this.slide(
+                                        SliderKind::DetailVolume,
+                                        volume.saturating_add(5).min(100),
+                                        cx,
+                                    )
+                                });
+                            })
+                            .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
+                                let _ = decrement_view.update(cx, |this, cx| {
+                                    this.slide(
+                                        SliderKind::DetailVolume,
+                                        volume.saturating_sub(5),
+                                        cx,
+                                    )
+                                });
+                            })
+                            .on_a11y_action(AccessibleAction::SetValue, move |data, _, cx| {
+                                if let Some(accesskit::ActionData::NumericValue(requested)) = data {
+                                    let value = requested.round().clamp(0.0, 100.0) as u8;
+                                    let _ = set_value_view.update(cx, |this, cx| {
+                                        this.slide(SliderKind::DetailVolume, value, cx)
+                                    });
+                                }
+                            })
+                    })
                     .absolute()
                     .left(px(g::SLIDER_LEFT - 8.0))
                     .top(px(centre - 12.0))
@@ -380,6 +475,9 @@ impl QuickSettingsView {
             }
         }
         div()
+            .id("control-center-detail")
+            .role(Role::Group)
+            .aria_label(panel.detail.title())
             .absolute()
             .left(px(g::PANEL_LEFT))
             .top(px(top))

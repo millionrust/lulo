@@ -1,0 +1,10 @@
+{
+  "runner": "scripts/interaction/lulo_probe.py --assert-notification-center control-centre",
+  "panel": "Notification Center",
+  "states": [
+    "Loading Notification Center…",
+    "No recent notifications",
+    "Notification Center Unavailable"
+  ],
+  "edit_button": "Edit Widgets"
+}

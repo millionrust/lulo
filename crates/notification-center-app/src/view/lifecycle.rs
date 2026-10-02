@@ -150,6 +150,7 @@ impl NotificationCenterView {
             busy: None,
             marking_read: false,
             was_active: false,
+            a11y_active_last_frame: false,
             widgets: Vec::new(),
             widget_data: rmac_desktop_widgets::WidgetData::default(),
         }

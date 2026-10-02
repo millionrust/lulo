@@ -203,6 +203,7 @@ actions!(
         ShowWifi,
         EnterFullScreen,
         CloseAll,
+        ArrangeInFront,
         SelectAlert,
         SelectErrorAlert,
         SelectNotificationAlert,

@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "system-monitor/full-screen",
+  "platform": "Lulo local contract",
+  "observations": {
+    "opened": {"windows": {"count": 1, "fullscreen": false}},
+    "full_screen": {"windows": {"count": 1, "fullscreen": true}},
+    "returned": {"windows": {"count": 1, "fullscreen": false}}
+  }
+}

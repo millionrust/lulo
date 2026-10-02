@@ -11,12 +11,13 @@ use crate::columns::ColKey;
 use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab};
 use crate::view_filter::ViewFilter;
 use crate::{
-    process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, FilterProcesses,
-    FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, JumpToSelection,
-    Minimize, QuitProcess, RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds,
-    ShowActiveProcesses, ShowAllProcesses, ShowInactiveProcesses, ShowMyProcesses,
-    ShowOtherUsersProcesses, ShowSystemProcesses, ToggleCpuColumn, ToggleMemoryColumn,
-    TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
+    process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, EnterFullScreen,
+    FilterProcesses, FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess,
+    JumpToSelection, Minimize, QuitProcess, RefreshEveryFiveSeconds, RefreshEverySecond,
+    RefreshEveryTwoSeconds, ShowActiveProcesses, ShowAllProcesses, ShowInactiveProcesses,
+    ShowMainWindow, ShowMyProcesses, ShowOtherUsersProcesses, ShowSelectedProcesses,
+    ShowSystemProcesses, ToggleCpuColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn,
+    ToggleUserColumn, UseSelectionForFind,
 };
 
 use super::MonitorView;
@@ -31,7 +32,7 @@ mod overlays;
 impl Render for MonitorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if window.is_window_active() {
-            self.publish_menu_state(cx);
+            self.publish_menu_state(window, cx);
         }
         let layout =
             super::responsive_layout::toolbar_layout(f32::from(window.bounds().size.width));
@@ -111,6 +112,15 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ShowInactiveProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::InactiveProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowSelectedProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::SelectedProcesses, cx);
+            }))
+            .on_action(cx.listener(|_, _: &ShowMainWindow, window, _| {
+                window.activate_window();
+            }))
+            .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| {
+                window.toggle_fullscreen();
             }))
             .on_action(cx.listener(|this, _: &ConfirmKill, _, cx| {
                 this.confirm_kill(cx);

@@ -884,6 +884,14 @@ const FILES_MENUS: &[MenuSpec] = &[
 
 const MONITOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: WINDOW_MENU,
+        items: &[item!(
+            "Activity Monitor",
+            "activity_monitor::ShowMainWindow",
+            "⌘1"
+        )],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             item!("Close", "activity_monitor::Close", "⌘W"),
@@ -981,6 +989,11 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 ""
             ),
             item!(
+                "Selected Processes",
+                "activity_monitor::ShowSelectedProcesses",
+                ""
+            ),
+            item!(
                 "Filter Processes",
                 "activity_monitor::FilterProcesses",
                 "⌥⌘F",
@@ -994,6 +1007,12 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 "⌘K",
                 separator
             ),
+            item!(
+                "Enter Full Screen",
+                "activity_monitor::EnterFullScreen",
+                "F",
+                separator
+            ),
         ],
     },
 ];
@@ -1004,6 +1023,7 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Close", "rmac_ui::RequestClose", "⌘W"),
             item!("Close All", "system_settings::CloseAll", "⌥⌘W"),
+            item!("Arrange in Front", "system_settings::ArrangeInFront", ""),
         ],
     },
     MenuSpec {

@@ -197,7 +197,16 @@ impl MonitorView {
 
     /// The menu bar's live state for the key window. Process commands are
     /// greyed out without a selection, while view choices carry checkmarks.
-    pub(super) fn publish_menu_state(&self, cx: &mut Context<Self>) {
+    pub(super) fn publish_menu_state(&self, window: &Window, cx: &mut Context<Self>) {
+        rmac_ui::set_menu_label(
+            "activity_monitor::EnterFullScreen",
+            if window.is_fullscreen() {
+                "Exit Full Screen"
+            } else {
+                "Enter Full Screen"
+            },
+            cx,
+        );
         let has_selection = self.selected_proc(cx).is_some();
         rmac_ui::set_menu_enabled("activity_monitor::QuitProcess", has_selection, cx);
         rmac_ui::set_menu_enabled("activity_monitor::InspectProcess", has_selection, cx);
@@ -231,9 +240,14 @@ impl MonitorView {
                 "activity_monitor::ShowInactiveProcesses",
                 ViewFilter::InactiveProcesses,
             ),
+            (
+                "activity_monitor::ShowSelectedProcesses",
+                ViewFilter::SelectedProcesses,
+            ),
         ] {
             rmac_ui::set_menu_checked(action, self.view_filter(cx) == filter, cx);
         }
+        rmac_ui::set_menu_enabled("activity_monitor::ShowSelectedProcesses", has_selection, cx);
         for (action, seconds) in [
             ("activity_monitor::RefreshEverySecond", 1),
             ("activity_monitor::RefreshEveryTwoSeconds", 2),

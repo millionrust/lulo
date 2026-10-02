@@ -5,10 +5,13 @@
   "steps": [
     {"type": "A"},
     {"menu_action": "text_editor::InsertLineBreak"},
+    {"observe": "line", "facts": ["focus"]},
     {"type": "B"},
     {"menu_action": "text_editor::InsertParagraphBreak"},
+    {"observe": "paragraph", "facts": ["focus"]},
     {"type": "C"},
     {"menu_action": "text_editor::InsertPageBreak"},
+    {"observe": "page", "facts": ["focus"]},
     {"type": "D"},
     {"observe": "inserted", "facts": ["focus"]}
   ]

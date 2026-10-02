@@ -3,6 +3,15 @@
   "scenario": "text-editor/insert-breaks",
   "platform": "Lulo local contract",
   "observations": {
+    "line": {
+      "focus": {"value": "A\u2028"}
+    },
+    "paragraph": {
+      "focus": {"value": "A\u2028B\n"}
+    },
+    "page": {
+      "focus": {"value": "A\u2028B\nC\f"}
+    },
     "inserted": {
       "focus": {"value": "A\u2028B\nC\fD"}
     }

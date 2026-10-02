@@ -19,7 +19,7 @@ def assert_tree(app) -> int:
     assert len(nodes) > 2, "Notification Center AT-SPI tree is empty"
     named = {(support.role(node), support.name(node)) for node in nodes}
     assert any(name == "Notification Center" for _, name in named), "panel group is unnamed"
-    content = {"No recent notifications", "Notification Center Unavailable"}
+    content = {"No recent notifications", "Notification Center Unavailable", "Loading Notification Center…"}
     assert any(name in content or (role in {"group", "push button", "button"}
                                    and name != "Notification Center" and bool(name))
                for role, name in named), (

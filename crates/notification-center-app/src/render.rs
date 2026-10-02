@@ -14,7 +14,7 @@ use gpui::{
 };
 use gpui_component::{IconName, StyledExt as _};
 use rmac_notification_center_app::accessibility::{
-    EDIT_WIDGETS_LABEL, EMPTY_TITLE, SHOW_LESS_LABEL, UNAVAILABLE_TITLE,
+    EDIT_WIDGETS_LABEL, EMPTY_TITLE, LOADING_LABEL, SHOW_LESS_LABEL, UNAVAILABLE_TITLE,
 };
 use rmac_notifications::NotificationId;
 use rmac_notifications_linux::center::{ActionSelection, HistoryRecord};
@@ -222,6 +222,7 @@ impl Render for NotificationCenterView {
         let groups = self.groups();
         let has_records = !groups.is_empty();
         let unavailable = self.snapshot.is_none() && self.stream_error.is_some();
+        let loading = self.snapshot.is_none() && self.stream_error.is_none();
         let empty = self.snapshot.is_some() && !has_records;
         let group_elements = groups
             .iter()
@@ -277,6 +278,7 @@ impl Render for NotificationCenterView {
             .when(empty, |root| {
                 root.child(empty_state(EMPTY_TITLE, Some(edit_view.clone())))
             })
+            .when(loading, |root| root.child(empty_state(LOADING_LABEL, None)))
             .when(unavailable, |root| {
                 root.child(empty_state(UNAVAILABLE_TITLE, None))
             })

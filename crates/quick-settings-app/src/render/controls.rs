@@ -62,21 +62,22 @@ impl QuickSettingsView {
             .role(Role::Slider)
             .aria_label(title)
             .aria_numeric_value(f64::from(value))
+            .aria_numeric_value_step(5.0)
             .aria_min_numeric_value(0.0)
             .aria_max_numeric_value(100.0)
-            .focusable()
-            .tab_stop(true)
             .when(enabled, |hit| {
-                hit.on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
-                    let _ = increment_view.update(cx, |this, cx| {
-                        this.slide(kind, value.saturating_add(step).min(100), cx)
-                    });
-                })
-                .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
-                    let _ = decrement_view.update(cx, |this, cx| {
-                        this.slide(kind, value.saturating_sub(step), cx)
-                    });
-                })
+                hit.focusable()
+                    .tab_stop(true)
+                    .on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
+                        let _ = increment_view.update(cx, |this, cx| {
+                            this.slide(kind, value.saturating_add(step).min(100), cx)
+                        });
+                    })
+                    .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
+                        let _ = decrement_view.update(cx, |this, cx| {
+                            this.slide(kind, value.saturating_sub(step), cx)
+                        });
+                    })
             })
             .absolute()
             .left(px(left - 8.0))

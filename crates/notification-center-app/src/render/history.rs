@@ -117,6 +117,7 @@ impl NotificationCenterView {
         &self,
         id: SharedString,
         target: CloseTarget,
+        application: SharedString,
         hovered: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -124,8 +125,8 @@ impl NotificationCenterView {
         let a11y_view = view.clone();
         let a11y_target = target.clone();
         let label = match &target {
-            CloseTarget::Record(_) => "Clear notification",
-            CloseTarget::Group { .. } => "Clear notifications from application",
+            CloseTarget::Record(_) => format!("Clear notification from {application}"),
+            CloseTarget::Group { .. } => format!("Clear notifications from {application}"),
         };
         div()
             .id(id)
@@ -334,7 +335,7 @@ impl NotificationCenterView {
                         text.child(div().flex().flex_wrap().gap_1().pt_1p5().children(buttons))
                     }),
             )
-            .child(self.close_button(close_id, close, hovered, cx))
+            .child(self.close_button(close_id, close, identity.name.clone(), hovered, cx))
             .into_any_element()
     }
 

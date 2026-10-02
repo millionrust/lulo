@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "surface": "lulo-menu",
+  "platform": "Lulo",
+  "recorded": "2026-10-02",
+  "probes": {
+    "outside_click": {
+      "closed": false
+    },
+    "escape": {
+      "closed": false
+    },
+    "reopen_same_title": {
+      "closed": true
+    },
+    "switch_neighbor": {
+      "switched": true
+    }
+  }
+}

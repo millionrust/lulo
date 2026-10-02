@@ -1,5 +1,55 @@
 # Behaviour-parity suite
 
+## Interaction probes
+
+`scripts/interaction/` is a sibling suite to `scripts/inventory` (which
+diffs menu *item lists*) and the rest of this file (which diffs one app's
+reaction to a fixed script): it diffs transient UI's *reaction to input* -
+closing, hovering, switching, focus - which neither of those can see. It
+exists because the owner found two gaps by hand that no menu-item inventory
+could ever catch: top-bar menus and Control Centre not closing on an
+outside click, and Control Centre's sliders not growing on hover.
+
+`scripts/interaction/surfaces.py` declares each surface (a menu, a popover,
+a context menu, …) and `probes.py` declares each probe (outside-click,
+Escape, re-click the same title, switch to a neighbour, hover) with the
+facts it records - booleans only, like this suite's own facts, never a
+screenshot. `mac_probe.py` records the Mac side (holds `/tmp/mac-gui.lock`,
+the coordinator's mkdir protocol, never flock, which this Mac has none of);
+`lulo_probe.py` records the Lulo side, in nested niri with the shipped
+`shell.kdl` for shell chrome (a top-bar menu, Control Centre) or plain
+nested Sway for one app (reusing `run_lulo.py`'s `Nested`/isolation either
+way). `diff.py` compares the two recordings per probe and writes
+`docs/interaction-gaps.md`; a missing recording or an unmeasured fact is
+reported as "not yet probed", never a silent pass or a fabricated gap.
+
+```sh
+python3 scripts/interaction/mac_probe.py --all              # the owner's Mac
+python3 scripts/interaction/lulo_probe.py --bin-dir /usr/bin \
+  --bin-dir /usr/libexec/rmac --shell-bin-dir /usr/bin --all  # the laptop
+python3 scripts/interaction/diff.py
+```
+
+`--explore` on `lulo_probe.py` dumps the AT-SPI tree for a surface instead
+of probing it (the Mac side has no such mode; its AX ground truth was read
+live with short ad hoc AppleScript/JXA snippets under the GUI lock, the
+same way `record_mac.py`'s own scenarios were written).
+
+Three surfaces are recorded both ways as of 2026-10-02 (the Apple/Lulo menu
+and Files' File menu in the top bar, and Control Centre), proving both
+owner-reported gaps plus one more found along the way (see `docs/parity.md`
+BAR-10, CC-14): both menus genuinely don't close on an outside click or
+Escape, and the second click on an already-open menu title toggles it
+closed on Lulo but is a no-op on the Mac. Control Centre's own
+outside-click/Escape close reliably enough to measure (Escape was flaky:
+~2 of 3 runs stayed open); its sliders' hover reaction could not be
+measured on Lulo this pass - `rmac-quick-settings` exposes no AT-SPI
+children for its content in the nested-shell harness even after a 25 s
+wait, so those two facts are `null` rather than a guess. Everything else in
+`surfaces.py`/`probes.py` (status menus, Spotlight, the Dock, Files'
+context menu, dialogs, lists, tab focus, arrow keys, type-to-select,
+press-and-hold) is declared for the matrix but has no driver yet.
+
 ## System Settings View menu
 
 `scripts/behavior/run_lulo.py --check-settings-view-menu` launches one Settings

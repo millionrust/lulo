@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "surface": "lulo-menu",
+  "platform": "macOS 26.2",
+  "recorded": "2026-10-02",
+  "probes": {
+    "outside_click": {
+      "closed": true
+    },
+    "escape": {
+      "closed": true
+    },
+    "reopen_same_title": {
+      "closed": false
+    },
+    "switch_neighbor": {
+      "switched": true
+    }
+  }
+}

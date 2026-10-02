@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "surface": "control-centre",
+  "platform": "macOS 26.2",
+  "recorded": "2026-10-02",
+  "probes": {
+    "outside_click": {
+      "closed": true
+    },
+    "escape": {
+      "closed": true
+    },
+    "hover:display-brightness-slider": {
+      "changed": true
+    },
+    "hover:sound-volume-slider": {
+      "changed": true
+    }
+  }
+}

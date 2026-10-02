@@ -900,8 +900,11 @@ impl Session {
         let target_line = i32::try_from(target)
             .unwrap_or(i32::MAX)
             .saturating_sub(history_line);
+        let cursor_line = i32::try_from(position.line)
+            .unwrap_or(i32::MAX)
+            .saturating_sub(history_line);
         self.ui.selection = Some(Selection {
-            anchor: (term.grid().cursor.point.line.0, position.column),
+            anchor: (cursor_line, position.column),
             head: (target_line, 0),
         });
         let offset = history_size.saturating_sub(target);

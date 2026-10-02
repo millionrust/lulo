@@ -610,7 +610,7 @@
         {
           "label": "Smaller",
           "action": "terminal::ZoomOut",
-          "shortcut": "⌘−",
+          "shortcut": "⌘-",
           "separator_before": false,
           "children": []
         },

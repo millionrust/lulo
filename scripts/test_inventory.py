@@ -88,6 +88,8 @@ class SettingsCaptureTests(unittest.TestCase):
             {"role": "AXCheckBox", "label": "tickbox"},
             {"role": "AXStaticText", "label": "Finder Settings"},
             {"role": "AXCheckBox", "label": "Show all filename extensions"},
+            {"role": "AXColorWell", "label": "rgb 0.9 0 0 1"},
+            {"role": "AXTextField", "label": "text field"},
         ]
         self.assertEqual(
             d._labels_from_mac_controls(controls), {"Show all filename extensions"}

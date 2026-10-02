@@ -402,7 +402,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 "text_editor::FontMenu",
                 [
                     item!("Bigger", "text_editor::IncreaseFont", "⌘+"),
-                    item!("Smaller", "text_editor::DecreaseFont", "⌘−"),
+                    item!("Smaller", "text_editor::DecreaseFont", "⌘-"),
                 ]
             ),
             item!("Monospaced", "text_editor::ToggleMono", "⇧⌘M", separator),
@@ -596,7 +596,7 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             item!("Line Down", "terminal::LineDown", "⌥⌘"),
             item!("Default Font Size", "terminal::ZoomReset", "⌘0"),
             item!("Bigger", "terminal::ZoomIn", "⌘+"),
-            item!("Smaller", "terminal::ZoomOut", "⌘−"),
+            item!("Smaller", "terminal::ZoomOut", "⌘-"),
             item!("Next Profile", "terminal::CycleProfile", "⇧⌘P", separator),
             item!(
                 "Enter Full Screen",

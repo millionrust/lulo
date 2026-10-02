@@ -327,7 +327,7 @@
             {
               "label": "Smaller",
               "action": "text_editor::DecreaseFont",
-              "shortcut": "⌘−",
+              "shortcut": "⌘-",
               "separator_before": false,
               "children": []
             }

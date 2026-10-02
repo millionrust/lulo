@@ -308,6 +308,10 @@ def _labels_from_mac_controls(controls: list[dict]) -> set[str]:
         # These are AX tree scaffolding or window chrome, not settings that
         # someone can configure. Their fallback labels are generated from
         # the role when the node has no accessible name.
+        # A color well's AX name is its current color value, not the name of
+        # the setting it controls. Keep the named color sections in the diff.
+        if c.get("role") == "AXColorWell":
+            continue
         if c.get("role") in {
             "AXGroup", "AXTabGroup", "AXRadioGroup", "AXScrollArea",
             "AXScrollBar", "AXTable", "AXRow", "AXColumn", "AXToolbar",
@@ -319,6 +323,7 @@ def _labels_from_mac_controls(controls: list[dict]) -> set[str]:
             "increment arrow button", "decrement arrow button",
             "increment page button", "decrement page button",
             "action", "text", "Finder Settings",
+            "text field",
         }:
             continue
         if (c.get("role"), c.get("label")) in {

@@ -1,0 +1,37 @@
+#!/bin/sh
+# rmac-skip-in-session: a systemd ExecCondition helper for vendor drop-ins
+# that keep Ubuntu desktop services Lulo does not use (evolution-alarm-notify
+# and its D-Bus-activated evolution-source-registry/-addressbook-factory/
+# -calendar-factory/goa-daemon chain, foot-server) from starting inside the
+# Lulo (rmac) session, without touching the owner's stock Ubuntu GNOME
+# session or any other desktop that shares this systemd --user manager.
+#
+# Installed by rmac-session as /usr/libexec/rmac/rmac-skip-in-session and
+# referenced only from vendor-owned drop-ins at
+# /usr/lib/systemd/user/<unit>.d/rmac-session.conf (never from rmac's own
+# units). The systemd --user manager is one process shared by every login of
+# this user, so $XDG_CURRENT_DESKTOP here is whatever was last imported into
+# the manager's environment with `systemctl --user import-environment`
+# (scripts/linux/start-rmac-session.sh, run from
+# packaging/rmac-session/rmac-wayland-session at login) -- not a per-process
+# variable, and not necessarily this login's own value if another login of
+# the same user imported a different one more recently.
+#
+# Exit 0 (ExecCondition passes; the unit starts normally) for every desktop
+# except rmac. Exit 1 when the current desktop is rmac: systemd treats a
+# nonzero ExecCondition exit as a clean, intentional skip -- the unit is left
+# "inactive", never "failed" -- see systemd.service(5) "ExecCondition=".
+#
+# $XDG_CURRENT_DESKTOP is a colon-separated list (freedesktop.org Desktop
+# Entry Specification); rmac's own value is always the lowercase token
+# "rmac", alone or alongside "niri", so wrapping the value in colons and
+# matching ":rmac:" as a substring correctly finds it in any position.
+set -eu
+case ":${XDG_CURRENT_DESKTOP:-}:" in
+    *:rmac:*)
+        exit 1
+        ;;
+    *)
+        exit 0
+        ;;
+esac

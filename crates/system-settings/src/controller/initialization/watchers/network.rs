@@ -18,7 +18,7 @@ impl Settings {
                             this.wifi_stream_error = None;
                             this.network_stream_error = None;
                             this.vpn_stream_error = None;
-                            cx.notify();
+                            this.notify_if_current_pane(&["Wi-Fi", "Network", "VPN"], cx);
                             (
                                 (!this.wifi_busy && !this.wifi_loading)
                                     .then_some(this.wifi_generation),
@@ -106,7 +106,7 @@ impl Settings {
                                         this.finish_vpn_stream_update(result);
                                     }
                                 }
-                                cx.notify();
+                                this.notify_if_current_pane(&["Wi-Fi", "Network", "VPN"], cx);
                             })
                             .is_err()
                         {
@@ -125,7 +125,7 @@ impl Settings {
                                     Some("Network status isn\u{2019}t available right now".into());
                                 this.vpn_stream_error =
                                     Some("VPN status isn\u{2019}t available right now".into());
-                                cx.notify();
+                                this.notify_if_current_pane(&["Wi-Fi", "Network", "VPN"], cx);
                             })
                             .is_err()
                         {

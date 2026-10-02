@@ -57,6 +57,14 @@ impl Settings {
         &self.sections[self.selected.0][self.selected.1]
     }
 
+    /// Watchers keep their cached data current for hidden panes. Only a pane
+    /// showing that data needs a new frame when its stream reports an update.
+    pub(super) fn notify_if_current_pane(&self, panes: &[&str], cx: &mut Context<Self>) {
+        if panes.contains(&self.current().name.as_ref()) {
+            cx.notify();
+        }
+    }
+
     pub(super) fn application_identity(&self, app_id: &str) -> Option<&rmac_apps::Application> {
         rmac_apps::find_desktop_entry(&self.app_catalog, app_id)
     }

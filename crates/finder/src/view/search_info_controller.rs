@@ -58,7 +58,9 @@ impl FinderView {
     }
 
     fn open_info_entries(&mut self, entries: Vec<Entry>, cx: &mut Context<Self>) {
+        let selection_count = entries.len();
         let owner = cx.entity().downgrade();
+        let mut last_opened = None;
         for entry in entries {
             let thumbnail = self.thumbs.get(&entry.path).cloned();
             let title = format!("{} Info", entry.name);
@@ -84,10 +86,25 @@ impl FinderView {
                 cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
             });
             match opened {
-                Ok(handle) => self.info_windows.push(handle),
+                Ok(handle) => {
+                    self.info_windows.push(handle);
+                    last_opened = Some(handle);
+                }
                 Err(_) => {
                     self.operation_error = Some("Files could not open the Info window".into());
                 }
+            }
+        }
+        // New toplevels map asynchronously on Wayland. Their map order can
+        // differ from the order above, so explicitly bring the last selected
+        // item's Info window forward after the compositor has seen it.
+        if selection_count > 1 {
+            if let Some(last) = last_opened {
+                cx.spawn(async move |_, cx: &mut gpui::AsyncApp| {
+                    async_io::Timer::after(Duration::from_millis(120)).await;
+                    let _ = cx.update_window(last, |_, window, _| window.activate_window());
+                })
+                .detach();
             }
         }
         self.menu_at = None;

@@ -72,6 +72,9 @@ pub(crate) fn release(token: u64, cx: &mut App) {
                 }
                 #[cfg(target_os = "linux")]
                 {
+                    if service.pending_dismiss == Some(token) {
+                        service.pending_dismiss = None;
+                    }
                     if matches {
                         service.catcher.take()
                     } else {
@@ -173,6 +176,10 @@ fn open_launcher(
     let (token, registry, settings, error, clipboard, applications, learning) = cx
         .update_global::<LauncherService, _>(|service, _| {
             service.next_overlay = service.next_overlay.wrapping_add(1).max(1);
+            #[cfg(target_os = "linux")]
+            {
+                service.pending_dismiss = None;
+            }
             (
                 service.next_overlay,
                 service.registry.clone(),
@@ -183,6 +190,55 @@ fn open_launcher(
                 service.learning.clone(),
             )
         });
+    #[cfg(target_os = "linux")]
+    {
+        // The catcher is lightweight; request it before the visible overlay
+        // so the first outside click after Spotlight appears is not lost
+        // while a second GPUI layer surface maps.
+        let display = cx
+            .displays()
+            .into_iter()
+            .find(|display| {
+                excluded.is_some_and(|excluded| {
+                    let screen = display.bounds();
+                    excluded.origin.x >= screen.origin.x
+                        && excluded.origin.x < screen.origin.x + screen.size.width
+                        && excluded.origin.y >= screen.origin.y
+                        && excluded.origin.y < screen.origin.y + screen.size.height
+                })
+            })
+            .or_else(|| cx.primary_display());
+        let catcher = display.and_then(|display| {
+            rmac_ui::open_outside_click_catcher_around(
+                "rmac-launcher-click-catcher",
+                display,
+                px(29.0),
+                excluded,
+                move |cx| {
+                    let active = cx.read_global::<LauncherService, _>(|service, _| {
+                        service
+                            .active
+                            .clone()
+                            .filter(|active| active.token == token)
+                    });
+                    if let Some(active) = active {
+                        if let Some(view) = active.view.upgrade() {
+                            let _ = cx.update_window(active.window, |_, window, cx| {
+                                view.update(cx, |view, cx| view.dismiss(window, cx));
+                            });
+                        }
+                        release(token, cx);
+                    } else {
+                        cx.update_global::<LauncherService, _>(|service, _| {
+                            service.pending_dismiss = Some(token);
+                        });
+                    }
+                },
+                cx,
+            )
+        });
+        cx.update_global::<LauncherService, _>(|service, _| service.catcher = catcher);
+    }
     let mut launcher = None;
     let handle = cx.open_window(options, |window, cx| {
         if let Some(directory) = std::env::var_os("RMAC_SPOTLIGHT_FRAME_DIR") {
@@ -216,12 +272,15 @@ fn open_launcher(
     });
     if let (Ok(handle), Some(view)) = (handle, launcher) {
         #[cfg(target_os = "linux")]
-        let display = handle
-            .update(cx, |_, window, cx| window.display(cx))
-            .ok()
-            .flatten()
-            .or_else(|| cx.primary_display())
-            .or_else(|| cx.displays().into_iter().next());
+        let cancel = cx.update_global::<LauncherService, _>(|service, _| {
+            service.active = Some(ActiveOverlay {
+                token,
+                view,
+                window: handle.into(),
+            });
+            service.pending_dismiss.take() == Some(token)
+        });
+        #[cfg(not(target_os = "linux"))]
         cx.update_global::<LauncherService, _>(|service, _| {
             service.active = Some(ActiveOverlay {
                 token,
@@ -230,31 +289,30 @@ fn open_launcher(
             });
         });
         #[cfg(target_os = "linux")]
-        {
-            let catcher = display.and_then(|display| {
-                rmac_ui::open_outside_click_catcher_around(
-                    "rmac-launcher-click-catcher",
-                    display,
-                    px(29.0),
-                    excluded,
-                    |cx| {
-                        let active = cx
-                            .read_global::<LauncherService, _>(|service, _| service.active.clone());
-                        if let Some(active) = active {
-                            if let Some(view) = active.view.upgrade() {
-                                let _ = cx.update_window(active.window, |_, window, cx| {
-                                    view.update(cx, |view, cx| view.dismiss(window, cx));
-                                });
-                            }
-                            release(active.token, cx);
-                        }
-                    },
-                    cx,
-                )
-            });
-            cx.update_global::<LauncherService, _>(|service, _| service.catcher = catcher);
+        if cancel {
+            let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+            if let Some(active) = active {
+                if let Some(view) = active.view.upgrade() {
+                    let _ = cx.update_window(active.window, |_, window, cx| {
+                        view.update(cx, |view, cx| view.dismiss(window, cx));
+                    });
+                }
+            }
+            release(token, cx);
+            return;
         }
         cx.activate(true);
+    } else {
+        #[cfg(target_os = "linux")]
+        {
+            let catcher = cx.update_global::<LauncherService, _>(|service, _| {
+                service.pending_dismiss = None;
+                service.catcher.take()
+            });
+            if let Some(catcher) = catcher {
+                let _ = catcher.update(cx, |_, window, _| window.remove_window());
+            }
+        }
     }
 }
 

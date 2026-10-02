@@ -2892,7 +2892,7 @@ mod linux_wayland {
                         })
                         .on_mouse_down(MouseButton::Right, {
                             let kind = kind.clone();
-                            cx.listener(move |this, _, _, cx| {
+                            cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 let session = this.status.read(cx).model().and_then(|model| {
                                     model.stack_context_menu(&kind).and_then(|menu| {
@@ -2907,6 +2907,12 @@ mod linux_wayland {
                                     login: None,
                                 });
                                 this.input_region = None;
+                                if this.context_menu.is_some() {
+                                    window.set_input_region(Some(&[Bounds {
+                                        origin: point(px(0.0), px(0.0)),
+                                        size: window.bounds().size,
+                                    }]));
+                                }
                                 cx.notify();
                             })
                         })
@@ -3224,7 +3230,7 @@ mod linux_wayland {
                             == rmac_apps::identity::FILES;
                         item = item.on_mouse_down(
                             MouseButton::Right,
-                            cx.listener(move |this, _, _, cx| {
+                            cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 let session = {
                                     let status = this.status.read(cx);
@@ -3247,6 +3253,12 @@ mod linux_wayland {
                                     login: None,
                                 });
                                 this.input_region = None;
+                                if this.context_menu.is_some() {
+                                    window.set_input_region(Some(&[Bounds {
+                                        origin: point(px(0.0), px(0.0)),
+                                        size: window.bounds().size,
+                                    }]));
+                                }
                                 if !is_finder {
                                     this.load_login_state(&context_app_id, cx);
                                 }
@@ -3432,7 +3444,7 @@ mod linux_wayland {
                         }
                         trash = trash.on_mouse_down(
                             MouseButton::Right,
-                            cx.listener(move |this, _, _, cx| {
+                            cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 let session = {
                                     let status = this.status.read(cx);
@@ -3456,6 +3468,12 @@ mod linux_wayland {
                                     login: None,
                                 });
                                 this.input_region = None;
+                                if this.context_menu.is_some() {
+                                    window.set_input_region(Some(&[Bounds {
+                                        origin: point(px(0.0), px(0.0)),
+                                        size: window.bounds().size,
+                                    }]));
+                                }
                                 cx.notify();
                             }),
                         );

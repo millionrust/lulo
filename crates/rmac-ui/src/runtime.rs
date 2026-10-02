@@ -320,7 +320,7 @@ pub fn open_outside_click_catcher_around(
 ) -> Option<gpui::AnyWindowHandle> {
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
     use gpui::{
-        point, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
+        point, size, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
         WindowOptions,
     };
 

@@ -507,8 +507,11 @@ class Run:
                 self.keys.key("escape")
             else:
                 self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
-            self.check(f"{shortcut}: closes on {method}",
-                       self.wait_for(lambda: not self.has_layer(namespace), 10))
+            closed = self.wait_for(lambda: not self.has_layer(namespace), 10)
+            self.check(f"{shortcut}: closes on {method}", closed)
+            if not closed:
+                self.dispatch(shortcut)
+                self.wait_for(lambda: not self.has_layer(namespace), 5)
 
     def clock_popover_dismissal(self) -> None:
         namespace = "rmac-notification-center"
@@ -528,8 +531,11 @@ class Run:
                 self.keys.key("escape")
             else:
                 self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
-            self.check(f"clock/date popover: closes on {method}",
-                       self.wait_for(lambda: not self.has_layer(namespace), 10))
+            closed = self.wait_for(lambda: not self.has_layer(namespace), 10)
+            self.check(f"clock/date popover: closes on {method}", closed)
+            if not closed:
+                self.dispatch("notification-center")
+                self.wait_for(lambda: not self.has_layer(namespace), 5)
 
     def dock_context_menu_dismissal(self) -> None:
         tile = self.wait_for(lambda: self.find_node(
@@ -555,8 +561,14 @@ class Run:
                 self.keys.key("escape")
             else:
                 self.click_at(200, MENU_SURFACE_HEIGHT + 70)
-            self.check(f"Dock context menu: closes on {method}",
-                       self.wait_for(lambda: self.find_menu("Files") is None, 10))
+            closed = self.wait_for(lambda: self.find_menu("Files") is None, 10)
+            self.check(f"Dock context menu: closes on {method}", closed)
+            if not closed:
+                self.dock.terminate()
+                self.dock.wait(timeout=5)
+                self.dock = self.spawn([str(Path(self.args.bin_dir) / "dock")], "dock-restarted",
+                                       {"VK_ICD_FILENAMES": LAVAPIPE})
+                self.wait_for(lambda: self.find_menu("Files") is None, 5)
 
     def control_center_and_app_menu_close_on_wallpaper_click(self) -> None:
         self.close_everything()

@@ -13,6 +13,13 @@
           "children": []
         },
         {
+          "label": "Settings…",
+          "action": "text_editor::ShowSettings",
+          "shortcut": "⌘,",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Services",
           "action": "app::services",
           "shortcut": "",
@@ -395,9 +402,86 @@
     }
   ],
   "settings": {
-    "present": false,
-    "extraction": "none",
-    "controls": []
+    "present": true,
+    "extraction": "heuristic",
+    "controls": [
+      {
+        "kind": "tab",
+        "label": "New Document"
+      },
+      {
+        "kind": "tab",
+        "label": "Open and Save"
+      },
+      {
+        "kind": "section",
+        "label": "Format"
+      },
+      {
+        "kind": "section",
+        "label": "Window Size"
+      },
+      {
+        "kind": "section",
+        "label": "Font"
+      },
+      {
+        "kind": "section",
+        "label": "Options"
+      },
+      {
+        "kind": "section",
+        "label": "Plain Text Encoding"
+      },
+      {
+        "kind": "control",
+        "label": "Width:"
+      },
+      {
+        "kind": "control",
+        "label": "Height:"
+      },
+      {
+        "kind": "control",
+        "label": "Size:"
+      },
+      {
+        "kind": "control",
+        "label": "Wrap to page"
+      },
+      {
+        "kind": "control",
+        "label": "Restore All Defaults"
+      },
+      {
+        "kind": "control",
+        "label": "Plain text"
+      },
+      {
+        "kind": "control",
+        "label": "✓  Plain text"
+      },
+      {
+        "kind": "control",
+        "label": "Plain text font:"
+      },
+      {
+        "kind": "control",
+        "label": "These defaults apply to new document windows."
+      },
+      {
+        "kind": "control",
+        "label": "New documents use:"
+      },
+      {
+        "kind": "control",
+        "label": "Opening a file still detects its encoding from its contents."
+      },
+      {
+        "kind": "control",
+        "label": "Settings"
+      }
+    ]
   },
   "toolbar": {
     "present": false,

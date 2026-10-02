@@ -604,7 +604,10 @@ class LuloRun:
             else:
                 command += ["--path", str(self.sandbox / launch.get("folder", "."))]
         elif self.app == "preview":
-            command += [str(self.sandbox / launch["file"])]
+            files = launch.get("files")
+            if files is None:
+                files = [launch["file"]]
+            command += [str(self.sandbox / path) for path in files]
         self.log = open(self.nested.logs / f"{self.sid.replace('/', '-')}.log", "w")
         self.process = subprocess.Popen(
             command, env=self.env, stdout=self.log, stderr=subprocess.STDOUT, close_fds=True,

@@ -287,6 +287,10 @@ SETTINGS_FILES = {
         "crates/terminal/src/settings.rs",
         "crates/terminal/src/profiles.rs",
     ],
+    "Text Editor": [
+        "crates/text-editor/src/settings_window.rs",
+        "crates/text-editor/src/settings.rs",
+    ],
 }
 
 
@@ -328,6 +332,12 @@ def read_settings_window(app_display_name: str) -> dict:
             if key not in seen:
                 seen.add(key)
                 labels.append({"kind": "control", "label": m.group(1)})
+        if app_display_name == "Text Editor" and path.name == "settings_window.rs":
+            for m in re.finditer(r'\.(?:aria_label|child)\("([^"]+)"\)', text):
+                key = ("control", m.group(1))
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "control", "label": m.group(1)})
         if app_display_name == "Terminal" and path.name == "settings_window.rs":
             for label in ("Blink cursor", "Use Option as Meta Key"):
                 if f'.child("{label}")' in text:

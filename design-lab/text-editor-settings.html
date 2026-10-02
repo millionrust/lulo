@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Text Editor Settings study</title>
+<style>
+  :root { color-scheme: dark; font: 13px system-ui, sans-serif; }
+  body { margin: 30px; background: #111; color: #e8e8e8; }
+  .window { width: 439px; height: 676px; border: 1px solid #535353; border-radius: 10px; background: #292929; overflow: hidden; display: flex; flex-direction: column; }
+  .title { height: 32px; display: grid; place-items: center; border-bottom: 1px solid #454545; font-weight: 600; }
+  .tabs { display: flex; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #454545; }
+  .tabs span { padding: 5px 10px; border-radius: 6px; }
+  .tabs .selected { background: #464646; }
+  main { flex: 1; padding: 8px 20px; }
+  h2 { font-size: 12px; color: #b8b8b8; margin: 16px 0 9px; }
+  .row { display: flex; align-items: center; gap: 8px; height: 30px; }
+  .label { width: 72px; }
+  button, output { background: #383838; border: 1px solid #666; border-radius: 5px; color: inherit; padding: 3px 9px; }
+  output { min-width: 24px; text-align: center; }
+  footer { border-top: 1px solid #454545; padding: 10px 16px; text-align: right; }
+</style>
+<div class="window">
+  <div class="title">Settings</div>
+  <div class="tabs"><span class="selected">New Document</span><span>Open and Save</span></div>
+  <main>
+    <h2>Format</h2><div>✓ &nbsp; Plain text</div>
+    <h2>Window Size</h2>
+    <div class="row"><span class="label">Width:</span><button>−</button><output>96</output><button>+</button> characters</div>
+    <div class="row"><span class="label">Height:</span><button>−</button><output>30</output><button>+</button> lines</div>
+    <h2>Font</h2><div>Plain text font:</div>
+    <div class="row"><span class="label">Size:</span><button>−</button><output>11</output><button>+</button> pt</div>
+    <h2>Options</h2><label><input type="checkbox"> Wrap to page</label>
+  </main>
+  <footer><button>Restore All Defaults</button></footer>
+</div>
+</html>

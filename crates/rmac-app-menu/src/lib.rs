@@ -311,6 +311,15 @@ pub const PASTE_MATCH_STYLE_ACTION: &str = "rmac_ui::PasteAndMatchStyle";
 
 const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: "Application",
+        items: &[item!(
+            "Settings…",
+            "text_editor::ShowSettings",
+            "⌘,",
+            separator
+        )],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             item!("New", "text_editor::NewFile", "⌘N"),

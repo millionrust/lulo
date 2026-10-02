@@ -10,6 +10,7 @@ impl EditorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let settings = crate::settings::current();
         let input = rmac_editor::multiline("", window, cx);
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
@@ -75,6 +76,7 @@ impl EditorView {
             KeyBinding::new("cmd-shift-g", SaveGoToFolder, Some("Input")),
             KeyBinding::new(rmac_ui::shortcuts::NEW.keystroke, NewFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::OPEN.keystroke, OpenFile, Some(CTX)),
+            KeyBinding::new("cmd-,", ShowSettings, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::SAVE.keystroke, SaveFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::SAVE_AS.keystroke, SaveFileAs, Some(CTX)),
             KeyBinding::new(
@@ -260,8 +262,14 @@ impl EditorView {
             path: None,
             untitled_slot,
             saved_bytes: None,
-            text_format: document::TextFormat::default(),
-            saved_format: document::TextFormat::default(),
+            text_format: document::TextFormat {
+                encoding: settings.default_encoding,
+                ..document::TextFormat::default()
+            },
+            saved_format: document::TextFormat {
+                encoding: settings.default_encoding,
+                ..document::TextFormat::default()
+            },
             saved_text: Rope::new(),
             text_revision: 0,
             saved_revision: 0,
@@ -285,7 +293,9 @@ impl EditorView {
             current: 0,
             // TextEdit's plain-text default: Menlo 11 (JetBrains Mono here).
             mono: true,
-            font_size: 11.0,
+            font_size: f32::from(settings.font_size),
+            wrap_to_page: settings.wrap_to_page,
+            page_width_chars: settings.width_chars,
             rtf_runs: None,
             focus: cx.focus_handle(),
             native_window_title: "Text Editor".into(),

@@ -325,6 +325,12 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(out["focus"], {"role": "text-field"})
         self.assertEqual(out["menu"]["items"], ["Open", "Quick Actions"])
 
+    def test_compare_honors_omits_added_after_a_mac_recording(self):
+        scenario = {"omit": ["goto.focus.selection"]}
+        mac = {"observations": {"goto": {"focus": {"role": "text-field", "selection": [0, 50]}}}}
+        lulo = {"observations": {"goto": {"focus": {"role": "text-field"}}}}
+        self.assertEqual(sc.compare(scenario, mac, lulo), [])
+
     def test_parity_rows_continue_the_section_numbering(self):
         text = "### Files\n\n| ID | Sev |\n|---|---|\n| FILES-09 | P1 |\n| FILES-10 | P2 |\n\n### Settings\n| SET-02 | P1 |\n"
         self.assertEqual(sc.next_ids(text, "files", 2), ["FILES-11", "FILES-12"])

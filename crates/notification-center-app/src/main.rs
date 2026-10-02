@@ -178,7 +178,8 @@ fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
         let display = handle
             .update(cx, |_, window, cx| window.display(cx))
             .ok()
-            .flatten();
+            .flatten()
+            .or_else(|| cx.primary_display());
         cx.update_global::<NotificationCenterService, _>(|service, _| {
             service.active = Some(ActivePanel {
                 token,

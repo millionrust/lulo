@@ -219,7 +219,8 @@ fn open_launcher(
         let display = handle
             .update(cx, |_, window, cx| window.display(cx))
             .ok()
-            .flatten();
+            .flatten()
+            .or_else(|| cx.primary_display());
         cx.update_global::<LauncherService, _>(|service, _| {
             service.active = Some(ActiveOverlay {
                 token,

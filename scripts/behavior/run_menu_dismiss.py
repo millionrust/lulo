@@ -8,22 +8,10 @@
 shell's `cargo build --profile iterate` output share one CARGO_TARGET_DIR on
 the laptop, so one directory has all of them).
 
-The owner reported that clicking anywhere else on screen — the wallpaper,
-another window, the Dock — while a top-bar menu, a status menu or Control
-Center is open does not close it, unlike macOS. Root cause (confirmed by
-reading the code, not guessed): `TopBar`'s own Wayland surface spans a wide
-band (`MENU_SURFACE_HEIGHT`) but narrows its *input region* to just the bar
-strip plus whatever dropdown is open, so a click anywhere else in that band
-falls through to whatever is physically behind it instead of reaching the
-bar's own click-to-close handler; and the Dock's surface is
-`KeyboardInteractivity::None`, so clicking it never signals a focus loss
-either. The fix widens the bar's own input region while a menu is open and
-adds a transparent, keyboard-inert `Layer::Overlay` click catcher — one
-covering the rest of the screen below that band for the bar itself
-(`shell/bins/rmac-menubar/src/main.rs`'s `open_menu_click_catcher`), another
-shared helper for Control Center and the Notification Center panel
-(`rmac_ui::open_outside_click_catcher`) — that catches the pointer press
-itself rather than depending on compositor keyboard-focus semantics.
+The bar's existing transparent surface spans the display. While a dropdown
+is open, its input region accepts clicks across that surface and the root
+handler closes the menu. The other popovers use
+`rmac_ui::open_outside_click_catcher_around`.
 
 Scenarios, each starting from a clean (all-closed) state:
 
@@ -74,9 +62,8 @@ import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
 OUTPUT_W, OUTPUT_H = 1440, 900
-# shell/bins/rmac-menubar/src/main.rs `MENU_SURFACE_HEIGHT`: the bar's own
-# surface covers this whole band; everything below it is the separate
-# click-catcher surface's territory instead.
+# A stable point below all top-bar dropdowns, also used to distinguish the
+# two outside-click locations exercised by this scenario.
 MENU_SURFACE_HEIGHT = 680
 # Top-right corner big enough to contain Control Center's popover regardless
 # of its exact margins (`crates/rmac-quick-settings/src/surface.rs`).
@@ -326,12 +313,9 @@ class Run:
         self.check("Dock click: the Lulo menu opens first", opened)
         if not opened:
             return
-        # The Dock's own shelf, bottom centre: never keyboard-interactive
-        # (`KeyboardInteractivity::None`), so before the fix a click here
-        # never told the menu to close. Retried like the other scenarios:
-        # the click catcher is a layer surface opened the moment the menu
-        # opens, and a click arriving before its first configure/commit is
-        # exactly the kind of lost event `retry_until` exists for.
+        # The Dock's own shelf is never keyboard-interactive, so a blur
+        # callback cannot be relied on here. This is deliberately one click
+        # right after the first menu opens, with no retry or warm-up.
         self.click_at(OUTPUT_W / 2, OUTPUT_H - 8)
         closed = self.wait_for(lambda: self.find_menu_item("About") is None, 10)
         self.check("Dock click: closes the open Lulo menu", closed)
@@ -539,7 +523,9 @@ class Run:
         x, y, w, h = box
         for method in ("outside click", "Escape"):
             self.close_everything()
-            self.click_at(x + w / 2, y + h / 2, "right")
+            # GPUI's AT-SPI tile extent includes its raised shelf slot. The
+            # icon's actual visual/hit area is near the bottom of that slot.
+            self.click_at(x + w / 2, y + h * 0.9, "right")
             opened = self.wait_for(lambda: self.find_menu("Files") is not None, 5)
             self.check(f"Dock context menu: opens for {method}", opened, f"tile={box}")
             if not opened:

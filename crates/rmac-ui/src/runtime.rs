@@ -374,7 +374,7 @@ pub fn open_outside_click_catcher_around(
         is_minimizable: false,
         ..Default::default()
     };
-    cx.open_window(options, move |_, cx| {
+    match cx.open_window(options, move |_, cx| {
         let left = on_click.clone();
         let right = on_click.clone();
         cx.new(|_| OutsideClickCatcher {
@@ -382,9 +382,13 @@ pub fn open_outside_click_catcher_around(
             right,
             input_regions,
         })
-    })
-    .ok()
-    .map(AnyWindowHandle::from)
+    }) {
+        Ok(handle) => Some(AnyWindowHandle::from(handle)),
+        Err(error) => {
+            eprintln!("outside click catcher {namespace} failed to open: {error}");
+            None
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]

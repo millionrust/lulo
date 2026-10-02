@@ -190,7 +190,8 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         let display = handle
             .update(cx, |_, window, cx| window.display(cx))
             .ok()
-            .flatten();
+            .flatten()
+            .or_else(|| cx.primary_display());
         cx.update_global::<AppDrawerService, _>(|service, _| {
             service.active = Some(ActiveDrawer {
                 token,

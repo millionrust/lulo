@@ -66,7 +66,22 @@ impl Settings {
                                     .into(),
                             );
                         }
-                        cx.notify();
+                        if input_config_failed == Some(true) {
+                            cx.notify();
+                        } else {
+                            this.notify_if_current_pane(
+                                &[
+                                    "Displays",
+                                    "Keyboard",
+                                    "Mouse",
+                                    "Trackpad",
+                                    "Touchscreen",
+                                    "Desktop & Dock",
+                                    "Menu Bar",
+                                ],
+                                cx,
+                            );
+                        }
                     })
                     .is_err()
                 {

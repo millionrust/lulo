@@ -125,7 +125,7 @@ impl Settings {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
                         this.apply_lock_policy_stream_update(update);
-                        cx.notify();
+                        this.notify_if_current_pane(&["Lock Screen"], cx);
                     })
                     .is_err()
                 {

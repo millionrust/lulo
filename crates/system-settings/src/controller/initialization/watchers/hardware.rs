@@ -74,7 +74,7 @@ impl Settings {
                     rmac_bluetooth::WatchEvent::Changed => {
                         let generation = match this.update(cx, |this: &mut Settings, cx| {
                             this.bluetooth_stream_error = None;
-                            cx.notify();
+                            this.notify_if_current_pane(&["Bluetooth"], cx);
                             (!this.bluetooth_busy && !this.bluetooth_loading)
                                 .then_some(this.bluetooth_generation)
                         }) {
@@ -97,7 +97,7 @@ impl Settings {
                                     this.bluetooth_loading,
                                 ) {
                                     this.finish_bluetooth_stream_update(result);
-                                    cx.notify();
+                                    this.notify_if_current_pane(&["Bluetooth"], cx);
                                 }
                             })
                             .is_err()
@@ -113,7 +113,7 @@ impl Settings {
                                 );
                                 this.bluetooth_stream_error =
                                     Some("Bluetooth updates aren\u{2019}t available right now".into());
-                                cx.notify();
+                                this.notify_if_current_pane(&["Bluetooth"], cx);
                             })
                             .is_err()
                         {
@@ -220,7 +220,7 @@ impl Settings {
                                 None
                             } else {
                                 this.power_stream_error = None;
-                                cx.notify();
+                                this.notify_if_current_pane(&["Battery"], cx);
                                 Some(this.power_generation)
                             }
                         }) {
@@ -243,7 +243,7 @@ impl Settings {
                                     this.power_loading,
                                 ) {
                                     this.finish_power_stream_update(result);
-                                    cx.notify();
+                                    this.notify_if_current_pane(&["Battery"], cx);
                                 }
                             })
                             .is_err()
@@ -259,7 +259,7 @@ impl Settings {
                                 );
                                 this.power_stream_error =
                                     Some("Battery status isn\u{2019}t available right now".into());
-                                cx.notify();
+                                this.notify_if_current_pane(&["Battery"], cx);
                             })
                             .is_err()
                         {

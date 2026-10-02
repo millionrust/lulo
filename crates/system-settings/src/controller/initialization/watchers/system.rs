@@ -288,7 +288,7 @@ impl Settings {
                                     // above.
                                     this.sharing_error = None;
                                     this.sharing_stream_error = None;
-                                    cx.notify();
+                                    this.notify_if_current_pane(&["Sharing"], cx);
                                 }
                             })
                             .is_err()
@@ -304,7 +304,7 @@ impl Settings {
                                 );
                                 this.sharing_stream_error =
                                     Some("Live Sharing updates are temporarily unavailable".into());
-                                cx.notify();
+                                this.notify_if_current_pane(&["Sharing"], cx);
                             })
                             .is_err()
                         {

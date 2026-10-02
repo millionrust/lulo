@@ -3,6 +3,24 @@
 use super::*;
 
 impl TerminalView {
+    pub(super) fn new_tab_with_profile(
+        &mut self,
+        profile: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if profile >= PROFILES.len() {
+            return;
+        }
+        let previous_count = self.tabs.len();
+        self.new_tab(window, cx);
+        if self.tabs.len() > previous_count {
+            self.profile = profile;
+            self.tab_profiles[self.active] = profile;
+            cx.notify();
+        }
+    }
+
     fn apply_scrollback_limit(&mut self, limit: usize) -> Result<(), SessionWriteError> {
         // Acquire every authority before mutating any, so one poisoned session
         // cannot leave a partially applied cross-tab budget.
@@ -62,6 +80,7 @@ impl TerminalView {
             )
             .unwrap_or_else(|error| Session::failed(c, r, scrollback_lines, error)),
         );
+        self.tab_profiles.push(self.profile);
         self.active = self.tabs.len() - 1;
         self.reset_pointer_routing();
         self.sync_search_editor_to_active(window, cx);
@@ -122,12 +141,14 @@ impl TerminalView {
         let previous_active_id = self.tabs[self.active].id;
         self.capture_active_search_query(cx);
         self.tabs.remove(index);
+        self.tab_profiles.remove(index);
         if self.active > index {
             self.active -= 1;
         }
         if self.active >= self.tabs.len() {
             self.active = self.tabs.len() - 1;
         }
+        self.profile = self.tab_profiles[self.active];
         self.reset_pointer_routing();
         self.sync_search_editor_to_active(window, cx);
         if self.window_active && self.tabs[self.active].id != previous_active_id {
@@ -257,6 +278,7 @@ impl TerminalView {
         }
         self.capture_active_search_query(cx);
         self.active = index;
+        self.profile = self.tab_profiles[index];
         self.reset_pointer_routing();
         self.sync_search_editor_to_active(window, cx);
         if self.window_active {

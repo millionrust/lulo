@@ -132,20 +132,66 @@ gpui::actions!(
         NextPrompt,
         SelectCommand,
         SelectCommandOutput,
-        NewTab,
         CloseTab,
         NextTab,
         PrevTab,
         CycleProfile,
         ShowProfiles,
-        NewWindow,
         ResetTerminal,
         HardResetTerminal,
         ShowSettings,
+        // Shell ▸ New Window ▸ <profile>: ⌘N and the plain "Basic" row open
+        // the same default profile under two distinct actions, matching the
+        // Mac's own duplicate rows.
+        WindowBasicDefault,
+        WindowBasic,
+        WindowClearDark,
+        WindowClearLight,
+        WindowGrass,
+        WindowHomebrew,
+        WindowManPage,
+        WindowNovel,
+        WindowOcean,
+        WindowPro,
+        WindowRedSands,
+        WindowSilverAerogel,
+        WindowSolidColors,
+        // Shell ▸ New Tab ▸ <profile>: same shape as the window submenu.
+        TabBasicDefault,
+        TabBasic,
+        TabClearDark,
+        TabClearLight,
+        TabGrass,
+        TabHomebrew,
+        TabManPage,
+        TabNovel,
+        TabOcean,
+        TabPro,
+        TabRedSands,
+        TabSilverAerogel,
+        TabSolidColors,
     ]
 );
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
+
+/// The index of the one built-in profile named exactly `name`, falling
+/// back to the default profile. The Shell ▸ New Window/New Tab submenus
+/// below name every built-in profile exactly once, so this always finds a
+/// match for them.
+fn profile_named(name: &str) -> usize {
+    PROFILES
+        .iter()
+        .position(|profile| profile.name == name)
+        .unwrap_or(profiles::DEFAULT_PROFILE)
+}
+
+/// Shell ▸ New Window ▸ `<profile>`: a fresh Terminal window pinned to that
+/// profile from the start, independent of whichever profile the window
+/// that opened it is using.
+fn open_window_with_profile(name: &str, cx: &mut gpui::App) {
+    rmac_ui::open_another_window(vec![format!("--profile={}", profile_named(name))], cx);
+}
 
 fn terminal_content_top(tab_count: usize) -> f32 {
     TITLE_BAR_HEIGHT + if tab_count > 1 { TAB_BAR_HEIGHT } else { 0.0 } + PAD_TOP
@@ -225,6 +271,8 @@ pub(super) struct TerminalView {
     hovered_link: Option<SharedString>,
     /// Index into `PROFILES` for the active color scheme.
     profile: usize,
+    /// Color profile for each tab, in the same order as `tabs`.
+    tab_profiles: Vec<usize>,
     /// Whether the profile picker dropdown is open.
     picker_open: bool,
     /// Whether ⌥ sends Meta (an Escape prefix) instead of typing the

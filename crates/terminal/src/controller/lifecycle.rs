@@ -3,7 +3,11 @@
 use super::*;
 
 impl TerminalView {
-    pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        initial_profile: Option<usize>,
+    ) -> Self {
         let (redraw, redraw_rx) = async_channel::bounded(1);
         let (profile, persistence_error) = match load_profile() {
             Ok((profile, legacy_index)) => {
@@ -18,6 +22,7 @@ impl TerminalView {
                 Some(SharedString::from(failure.to_string())),
             ),
         };
+        let profile = initial_profile.unwrap_or(profile);
         let option_as_meta = profiles::load_option_as_meta();
         let font_size = profiles::load_font_size().unwrap_or(FONT_SIZE);
         let (settings, settings_error) = match settings::load() {
@@ -175,7 +180,7 @@ impl TerminalView {
             ),
             KeyBinding::new(
                 rmac_ui::shortcuts::NEW_TAB.keystroke,
-                NewTab,
+                TabBasicDefault,
                 Some("Terminal"),
             ),
             KeyBinding::new(
@@ -206,7 +211,7 @@ impl TerminalView {
             ),
             KeyBinding::new(
                 rmac_ui::shortcuts::NEW_WINDOW.keystroke,
-                NewWindow,
+                WindowBasicDefault,
                 Some("Terminal"),
             ),
             KeyBinding::new("alt-cmd-r", ResetTerminal, Some("Terminal")),
@@ -271,6 +276,7 @@ impl TerminalView {
             last_mouse_report_cell: None,
             hovered_link: None,
             profile,
+            tab_profiles: vec![profile],
             picker_open: false,
             option_as_meta,
             cursor_style: settings.cursor_style,
@@ -333,6 +339,7 @@ impl TerminalView {
     pub(super) fn set_profile(&mut self, i: usize, cx: &mut Context<Self>) {
         if i < PROFILES.len() {
             self.profile = i;
+            self.tab_profiles[self.active] = i;
             self.picker_open = false;
             self.persistence_error = save_profile(i)
                 .err()

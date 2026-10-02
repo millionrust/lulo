@@ -417,8 +417,52 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Shell",
         items: &[
-            item!("New Window", "terminal::NewWindow", "⌘N"),
-            item!("New Tab", "terminal::NewTab", "⌘T"),
+            submenu!(
+                "New Window",
+                "terminal::NewWindowMenu",
+                [
+                    item!(
+                        "New Window with Profile - Basic",
+                        "terminal::WindowBasicDefault",
+                        "⌘N"
+                    ),
+                    item!("Basic", "terminal::WindowBasic", ""),
+                    item!("Clear Dark", "terminal::WindowClearDark", ""),
+                    item!("Clear Light", "terminal::WindowClearLight", ""),
+                    item!("Grass", "terminal::WindowGrass", ""),
+                    item!("Homebrew", "terminal::WindowHomebrew", ""),
+                    item!("Man Page", "terminal::WindowManPage", ""),
+                    item!("Novel", "terminal::WindowNovel", ""),
+                    item!("Ocean", "terminal::WindowOcean", ""),
+                    item!("Pro", "terminal::WindowPro", ""),
+                    item!("Red Sands", "terminal::WindowRedSands", ""),
+                    item!("Silver Aerogel", "terminal::WindowSilverAerogel", ""),
+                    item!("Solid Colors", "terminal::WindowSolidColors", ""),
+                ]
+            ),
+            submenu!(
+                "New Tab",
+                "terminal::NewTabMenu",
+                [
+                    item!(
+                        "New Tab with Profile – Basic",
+                        "terminal::TabBasicDefault",
+                        "⌘T"
+                    ),
+                    item!("Basic", "terminal::TabBasic", ""),
+                    item!("Clear Dark", "terminal::TabClearDark", ""),
+                    item!("Clear Light", "terminal::TabClearLight", ""),
+                    item!("Grass", "terminal::TabGrass", ""),
+                    item!("Homebrew", "terminal::TabHomebrew", ""),
+                    item!("Man Page", "terminal::TabManPage", ""),
+                    item!("Novel", "terminal::TabNovel", ""),
+                    item!("Ocean", "terminal::TabOcean", ""),
+                    item!("Pro", "terminal::TabPro", ""),
+                    item!("Red Sands", "terminal::TabRedSands", ""),
+                    item!("Silver Aerogel", "terminal::TabSilverAerogel", ""),
+                    item!("Solid Colors", "terminal::TabSolidColors", ""),
+                ]
+            ),
             item!("Close Window", "terminal::CloseTab", "⌘W", separator),
             item!("Reset", "terminal::ResetTerminal", "⌥⌘R", separator),
             item!("Hard Reset", "terminal::HardResetTerminal", "⌃⌥⌘R"),
@@ -2443,7 +2487,7 @@ mod tests {
         let terminal = definition(
             rmac_apps::identity::TERMINAL,
             &[
-                "terminal::NewTab",
+                "terminal::TabBasicDefault",
                 "terminal::CloseTab",
                 "terminal::NextTab",
                 "terminal::PrevTab",
@@ -2457,7 +2501,7 @@ mod tests {
         )
         .unwrap();
         let terminal_hints = hints(&terminal);
-        assert_eq!(terminal_hints["terminal::NewTab"], "⌘T");
+        assert_eq!(terminal_hints["terminal::TabBasicDefault"], "⌘T");
         assert_eq!(terminal_hints["terminal::CloseTab"], "⌘W");
         assert_eq!(terminal_hints["terminal::NextTab"], "⇧⌘]");
         assert_eq!(terminal_hints["terminal::PrevTab"], "⇧⌘[");
@@ -2750,7 +2794,7 @@ mod tests {
     #[test]
     fn terminal_and_preview_list_their_new_commands() {
         let terminal = hints(&definition(TERMINAL_ID, &spec_actions(TERMINAL_MENUS)).unwrap());
-        assert_eq!(terminal["terminal::NewWindow"], "⌘N");
+        assert_eq!(terminal["terminal::WindowBasicDefault"], "⌘N");
         assert_eq!(terminal["terminal::ResetTerminal"], "⌥⌘R");
         assert_eq!(terminal["terminal::HardResetTerminal"], "⌃⌥⌘R");
         assert_eq!(terminal["terminal::ShowSettings"], "⌘,");

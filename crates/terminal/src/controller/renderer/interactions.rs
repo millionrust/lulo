@@ -153,14 +153,92 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &SelectCommandOutput, _, cx| {
                 this.select_shell_range(CommandRangeKind::Output, cx)
             }))
-            .on_action(cx.listener(|_, _: &NewWindow, _, cx| {
-                rmac_ui::open_another_window(Vec::new(), cx);
+            // Shell ▸ New Window ▸ <profile>: the ⌘N row and the plain
+            // "Basic" row both open a new window on the default profile,
+            // under their own distinct actions, matching the Mac's own
+            // duplicate rows.
+            .on_action(cx.listener(|_, _: &WindowBasicDefault, _, cx| {
+                open_window_with_profile("Basic", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowBasic, _, cx| {
+                open_window_with_profile("Basic", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowClearDark, _, cx| {
+                open_window_with_profile("Clear Dark", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowClearLight, _, cx| {
+                open_window_with_profile("Clear Light", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowGrass, _, cx| {
+                open_window_with_profile("Grass", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowHomebrew, _, cx| {
+                open_window_with_profile("Homebrew", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowManPage, _, cx| {
+                open_window_with_profile("Man Page", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowNovel, _, cx| {
+                open_window_with_profile("Novel", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowOcean, _, cx| {
+                open_window_with_profile("Ocean", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowPro, _, cx| {
+                open_window_with_profile("Pro", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowRedSands, _, cx| {
+                open_window_with_profile("Red Sands", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowSilverAerogel, _, cx| {
+                open_window_with_profile("Silver Aerogel", cx);
+            }))
+            .on_action(cx.listener(|_, _: &WindowSolidColors, _, cx| {
+                open_window_with_profile("Solid Colors", cx);
             }))
             .on_action(cx.listener(|this, _: &ResetTerminal, _, cx| this.reset(cx)))
             .on_action(cx.listener(|this, _: &HardResetTerminal, _, cx| this.hard_reset(cx)))
             .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
-            .on_action(cx.listener(|this, _: &NewTab, window, cx| {
-                this.new_tab(window, cx);
+            // Shell ▸ New Tab ▸ <profile>: same shape as the window submenu,
+            // but a tab in this window rather than a new window.
+            .on_action(cx.listener(|this, _: &TabBasicDefault, window, cx| {
+                this.new_tab_with_profile(profile_named("Basic"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabBasic, window, cx| {
+                this.new_tab_with_profile(profile_named("Basic"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabClearDark, window, cx| {
+                this.new_tab_with_profile(profile_named("Clear Dark"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabClearLight, window, cx| {
+                this.new_tab_with_profile(profile_named("Clear Light"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabGrass, window, cx| {
+                this.new_tab_with_profile(profile_named("Grass"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabHomebrew, window, cx| {
+                this.new_tab_with_profile(profile_named("Homebrew"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabManPage, window, cx| {
+                this.new_tab_with_profile(profile_named("Man Page"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabNovel, window, cx| {
+                this.new_tab_with_profile(profile_named("Novel"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabOcean, window, cx| {
+                this.new_tab_with_profile(profile_named("Ocean"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabPro, window, cx| {
+                this.new_tab_with_profile(profile_named("Pro"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabRedSands, window, cx| {
+                this.new_tab_with_profile(profile_named("Red Sands"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabSilverAerogel, window, cx| {
+                this.new_tab_with_profile(profile_named("Silver Aerogel"), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabSolidColors, window, cx| {
+                this.new_tab_with_profile(profile_named("Solid Colors"), window, cx);
             }))
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                 this.request_close_tab(this.active, window, cx)

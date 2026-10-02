@@ -20,7 +20,8 @@ use crate::{
     OpenRecent8, OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine,
     SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr,
     SetLineEndingCrLf, SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono, ToggleReplace,
-    ToggleWrapToPage, UseSelectionForFind, ZoomIn, ZoomOut,
+    ToggleWrapToPage, TransformCapitalise, TransformLowercase, TransformUppercase,
+    UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use super::{
@@ -142,6 +143,15 @@ impl Render for EditorView {
             }))
             .on_action(cx.listener(|this, _: &SelectLine, window, cx| {
                 this.select_line(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TransformUppercase, window, cx| {
+                this.transform_selection(rmac_ui::TextTransformation::Uppercase, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TransformLowercase, window, cx| {
+                this.transform_selection(rmac_ui::TextTransformation::Lowercase, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TransformCapitalise, window, cx| {
+                this.transform_selection(rmac_ui::TextTransformation::Capitalise, window, cx)
             }))
             .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
                 if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {

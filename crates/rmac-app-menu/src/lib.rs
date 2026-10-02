@@ -373,6 +373,15 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
+            submenu!(
+                "Transformations",
+                "text_editor::TransformationsMenu",
+                [
+                    item!("Make Uppercase", "text_editor::TransformUppercase", ""),
+                    item!("Make Lowercase", "text_editor::TransformLowercase", ""),
+                    item!("Capitalise", "text_editor::TransformCapitalise", ""),
+                ]
+            ),
         ],
     },
     MenuSpec {

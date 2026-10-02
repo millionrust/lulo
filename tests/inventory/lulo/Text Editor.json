@@ -247,6 +247,35 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Transformations",
+          "action": "text_editor::TransformationsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Make Uppercase",
+              "action": "text_editor::TransformUppercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make Lowercase",
+              "action": "text_editor::TransformLowercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Capitalise",
+              "action": "text_editor::TransformCapitalise",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         }
       ]
     },

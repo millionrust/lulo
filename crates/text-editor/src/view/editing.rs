@@ -148,6 +148,32 @@ impl EditorView {
         cx.notify();
     }
 
+    pub(super) fn transform_selection(
+        &mut self,
+        transformation: rmac_ui::TextTransformation,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let focused_field = [&self.find_input, &self.replace_input]
+            .into_iter()
+            .find(|field| gpui::Focusable::focus_handle(field.read(cx), cx).is_focused(window));
+        let field = if let Some(field) = focused_field {
+            field
+        } else {
+            if self.file_busy
+                || self.file_action_blocked()
+                || self.rtf_runs.is_some()
+                || self.long_lines.is_some()
+            {
+                return;
+            }
+            &self.input
+        };
+        if rmac_ui::transform_selection(field, transformation, window, cx) {
+            cx.notify();
+        }
+    }
+
     pub(super) fn actual_size(&mut self, cx: &mut Context<Self>) {
         self.font_size = f32::from(crate::settings::current().font_size);
         cx.notify();
@@ -390,6 +416,19 @@ impl EditorView {
             self.rtf_runs.is_none() && self.long_lines.is_none(),
             cx,
         );
+        let can_transform = has_selection
+            && (field != &self.input
+                || (!self.file_busy
+                    && !self.file_action_blocked()
+                    && self.rtf_runs.is_none()
+                    && self.long_lines.is_none()));
+        for action in [
+            "text_editor::TransformUppercase",
+            "text_editor::TransformLowercase",
+            "text_editor::TransformCapitalise",
+        ] {
+            rmac_ui::set_menu_enabled(action, can_transform, cx);
+        }
     }
 
     pub(super) fn toggle_mono(&mut self, cx: &mut Context<Self>) {

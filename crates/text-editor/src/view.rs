@@ -41,7 +41,8 @@ use crate::{
     ActualSize, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, FindNext, FindPrev,
     IncreaseFont, JumpToSelection, NewFile, OpenFile, SaveFile, SaveFileAs, SaveGoToFolder,
     SelectLine, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage,
-    UseSelectionForFind, ZoomIn, ZoomOut,
+    TransformCapitalise, TransformLowercase, TransformUppercase, UseSelectionForFind, ZoomIn,
+    ZoomOut,
 };
 
 use document_io::{

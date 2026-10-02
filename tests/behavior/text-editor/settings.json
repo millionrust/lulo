@@ -4,7 +4,7 @@
   "lulo_only": true,
   "launch": {},
   "steps": [
-    {"key": "cmd-,", "settle": 0.8},
+    {"key": "cmd-,", "settle": 1.5},
     {"observe": "settings", "facts": ["windows"]},
     {"select": "Open and Save"},
     {"observe": "open-and-save", "facts": ["windows"]}

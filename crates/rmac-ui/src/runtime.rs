@@ -372,8 +372,8 @@ pub fn open_outside_click_catcher_around(
             namespace: namespace.to_owned(),
             layer: Layer::Overlay,
             anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-            keyboard_interactivity: KeyboardInteractivity::None,
-            exclusive_zone: Some(gpui::px(0.0)),
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            exclusive_zone: Some(gpui::px(-1.0)),
             ..Default::default()
         }),
         is_movable: false,
@@ -415,7 +415,9 @@ impl gpui::Render for OutsideClickCatcher {
         let left = self.left.clone();
         let right = self.right.clone();
         gpui::div()
+            .id("outside-click-catcher")
             .size_full()
+            .bg(gpui::transparent_black())
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 eprintln!("outside click catcher left pressed");
                 window.remove_window();

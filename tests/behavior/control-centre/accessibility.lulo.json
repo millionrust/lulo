@@ -3,6 +3,7 @@
   "panel": "Control Centre",
   "required_sliders": ["Sound"],
   "required_toggles": ["Wi-Fi", "Bluetooth", "Focus"],
+  "required_buttons": ["Wi-Fi details", "Bluetooth details", "Focus details", "Screenshot", "Sound Outputs"],
   "detail_trigger": "Wi-Fi details",
   "detail_panel": "Wi-Fi",
   "slider_minimum": 0,

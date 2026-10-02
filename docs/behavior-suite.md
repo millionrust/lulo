@@ -45,8 +45,9 @@ outside-click/Escape close reliably enough to measure (Escape was flaky:
 ~2 of 3 runs stayed open); the original 2026-10-02 run could not measure
 its sliders because `rmac-quick-settings` exposed no AT-SPI children.
 The current nested probe asserts a populated panel and Wi-Fi detail view,
-then targets accessible sliders for hover captures; unavailable controls
-remain unmeasured rather than being counted as a pass. Everything else in
+then targets accessible sliders for hover captures. The 2026-10-03
+Display capture found no hover change (INT-008); Sound was unavailable in
+the private session and remains unmeasured. Everything else in
 `surfaces.py`/`probes.py` (status menus, Spotlight, the Dock, Files'
 context menu, dialogs, lists, tab focus, arrow keys, type-to-select,
 press-and-hold) is declared for the matrix but has no driver yet.

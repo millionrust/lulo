@@ -48,8 +48,16 @@ def assert_tree(app) -> int:
         assert value.minimumValue <= value.currentValue <= value.maximumValue, f"{support.name(slider)} has wrong value"
         assert value.minimumIncrement == 5, f"{support.name(slider)} has no increment/decrement step"
     for label in SCENARIO["required_toggles"]:
-        matches = [node for node in nodes if support.name(node) == label]
-        assert matches, f"{label} toggle is missing"
+        matches = [node for node in nodes if support.role(node) == "toggle button" and support.name(node) == label]
+        assert matches, f"{label} toggle role/name is missing"
+        for node in matches:
+            if "focusable" in support.states(node):
+                assert "click" in support.actions(node), f"{label} enabled toggle has no click"
+    for label in SCENARIO["required_buttons"]:
+        matches = [node for node in nodes if support.role(node) in {"button", "push button"}
+                   and support.name(node) == label]
+        assert matches, f"{label} button role/name is missing"
+        assert "click" in support.actions(matches[0]), f"{label} button has no click"
     return len(nodes)
 
 

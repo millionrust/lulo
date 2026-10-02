@@ -1208,7 +1208,8 @@ impl Render for WeatherView {
             }))
             .on_action(cx.listener(|this, _: &Refresh, _, cx| this.refresh_all(true, cx)))
             .on_action(cx.listener(|_, _: &ShowSettings, _, cx| {
-                crate::settings_window::show(cx.entity(), cx);
+                let main = cx.entity();
+                cx.defer(move |cx| crate::settings_window::show(main, cx));
             }))
             .on_action(cx.listener(|this, _: &FindCity, window, cx| {
                 if !this.sidebar_visible {

@@ -1342,7 +1342,18 @@ class SessionDesktopFilterTests(unittest.TestCase):
             self.assertEqual(self.run_script(desktop), 0, desktop)
 
     def test_script_is_a_packaged_executable_shell_script(self):
-        self.assertEqual(stat.S_IMODE(self.script.stat().st_mode), 0o755)
+        # The checked-out mode depends on the host's umask (git only ORs in
+        # executable bits where the umask left a read bit); the tracked git
+        # mode is the umask-independent source of truth that this is meant
+        # to be executable.
+        tracked = subprocess.run(
+            ["git", "ls-files", "-s", "--", str(self.script)],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.assertTrue(tracked.startswith("100755 "), tracked)
         self.assertEqual(
             self.script.read_text(encoding="utf-8").splitlines()[0], "#!/bin/sh"
         )

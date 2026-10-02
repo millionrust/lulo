@@ -433,7 +433,20 @@ impl PreviewView {
             .collect()
     }
     fn document_top(&self) -> f32 {
-        metrics::TOOLBAR_HEIGHT + if self.markup_shown { 48.0 } else { 0.0 }
+        self.toolbar_height()
+            + if self.toolbar_shown && self.markup_shown {
+                48.0
+            } else {
+                0.0
+            }
+    }
+
+    fn toolbar_height(&self) -> f32 {
+        if self.toolbar_shown {
+            metrics::TOOLBAR_HEIGHT
+        } else {
+            30.0
+        }
     }
 
     fn signature_path() -> PathBuf {
@@ -2215,7 +2228,7 @@ impl PreviewView {
         let viewport = self.viewport;
         let sidebar = self.sidebar;
         let sidebar_top = -f32::from(self.sidebar_scroll.offset().y);
-        let sidebar_height = f32::from(window.viewport_size().height) - metrics::TOOLBAR_HEIGHT;
+        let sidebar_height = f32::from(window.viewport_size().height) - self.toolbar_height();
         let scroll_top = -f32::from(self.scroll.offset().y);
         let single = self.slots.len() == 1;
         let Some(slot) = self.slots.get_mut(self.selected) else {
@@ -2449,14 +2462,22 @@ impl PreviewView {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let (light_x, light_y) = metrics::TRAFFIC_LIGHT_CENTER;
+        let (light_x, default_light_y) = metrics::TRAFFIC_LIGHT_CENTER;
+        let light_y = if self.toolbar_shown {
+            default_light_y
+        } else {
+            15.0
+        };
         let hit_width = mac::traffic_light_hit_width();
         let hit_height = mac::traffic_light_hit_height();
         let is_pdf = self.slot().and_then(Slot::kind) == Some(Kind::Pdf);
         let ready = self.slot().is_some_and(|slot| slot.loaded().is_some());
         let group = metrics::right_group(width, is_pdf);
         let (title, subtitle) = self.title_and_subtitle();
-        let title_left = if self.sidebar {
+        let subtitle = self.toolbar_shown.then_some(subtitle).flatten();
+        let title_left = if !self.toolbar_shown {
+            100.0
+        } else if self.sidebar {
             metrics::TITLE_LEFT_WITH_SIDEBAR
         } else {
             metrics::TITLE_LEFT
@@ -2563,7 +2584,7 @@ impl PreviewView {
             .left(px(title_left))
             .top_0()
             .w(px((group.zoom - title_left - 12.0).max(0.0)))
-            .h(px(metrics::TOOLBAR_HEIGHT))
+            .h(px(self.toolbar_height()))
             .text_color(rgb(palette.glyph))
             .map(|block| match subtitle {
                 None => block.flex().items_center().child(
@@ -2726,7 +2747,7 @@ impl PreviewView {
             .top_0()
             .left_0()
             .w_full()
-            .h(px(metrics::TOOLBAR_HEIGHT))
+            .h(px(self.toolbar_height()))
             .child(
                 div()
                     .id("preview-drag")
@@ -3009,7 +3030,7 @@ impl PreviewView {
                     .absolute()
                     .left_0()
                     .right_0()
-                    .top(px(metrics::TOOLBAR_HEIGHT - metrics::SIDEBAR_INSET))
+                    .top(px(self.toolbar_height() - metrics::SIDEBAR_INSET))
                     .bottom_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.sidebar_scroll)
@@ -3417,9 +3438,9 @@ impl PreviewView {
             div()
                 .absolute()
                 .left(px(width - metrics::INSPECTOR_WIDTH))
-                .top(px(metrics::TOOLBAR_HEIGHT))
+                .top(px(self.toolbar_height()))
                 .w(px(metrics::INSPECTOR_WIDTH))
-                .h(px(height - metrics::TOOLBAR_HEIGHT))
+                .h(px(height - self.toolbar_height()))
                 .bg(rgb(palette.inspector))
                 .border_l_1()
                 .border_color(rgb(palette.inspector_separator))

@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_786 gaps across 10 apps; 118 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_785 gaps across 10 apps; 118 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Calculator
 
@@ -511,7 +511,6 @@ _786 gaps across 10 apps; 118 Mac-only items were allowlisted (see `tests/invent
 | SET-MENU-005 | missing menu item | Touch ID & Password | View ▸ Touch ID & Password |  |  | missing from Lulo's menu bar |
 | SET-MENU-006 | missing menu item | Transfer or Reset | View ▸ Transfer or Reset |  |  | missing from Lulo's menu bar |
 | SET-MENU-007 | missing menu item | Users & Groups | View ▸ Users & Groups |  |  | missing from Lulo's menu bar |
-| SET-MENU-027 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
 | SET-MENU-025 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
 | SET-MENU-015 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
 | SET-MENU-026 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |

@@ -456,6 +456,13 @@
           "children": []
         },
         {
+          "label": "Arrange in Front",
+          "action": "system_settings::ArrangeInFront",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Bring All to Front",
           "action": "window::bring-all-to-front",
           "shortcut": "",

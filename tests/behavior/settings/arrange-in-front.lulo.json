@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "settings/arrange-in-front",
+  "platform": "Lulo local contract",
+  "observations": {
+    "front": {"windows": {"count": 1, "front": "General"}}
+  }
+}

@@ -1022,6 +1022,7 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Close", "rmac_ui::RequestClose", "⌘W"),
             item!("Close All", "system_settings::CloseAll", "⌥⌘W"),
+            item!("Arrange in Front", "system_settings::ArrangeInFront", ""),
         ],
     },
     MenuSpec {

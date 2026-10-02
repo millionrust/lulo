@@ -1170,6 +1170,7 @@ class LuloRun:
                     "clock": "Clock",
                     "weather": "Weather",
                     "system-monitor": "SystemMonitor",
+                    "settings": "SystemSettings",
                 }[self.app] + ".Menu"
                 call = subprocess.run(
                     ["gdbus", "call", "--session", "--dest", bus,

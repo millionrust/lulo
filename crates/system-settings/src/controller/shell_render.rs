@@ -167,6 +167,9 @@ impl Render for Settings {
             .on_action(cx.listener(|_, _: &CloseAll, window, cx| {
                 window.dispatch_action(Box::new(rmac_ui::RequestClose), cx);
             }))
+            .on_action(cx.listener(|_, _: &ArrangeInFront, window, _| {
+                window.activate_window();
+            }))
             .on_action(
                 cx.listener(|t, _: &ShowAbout, window, cx| t.navigate_to_pane("about", window, cx)),
             )

@@ -2807,8 +2807,11 @@ mod tests {
             (just_after - partial).abs() < 1e-6,
             "expected {just_after} to match {partial} at the reversal instant"
         );
-        assert!(!bulge.is_animating(SLIDER_BULGE_MS));
-        assert_eq!(bulge.progress(SLIDER_BULGE_MS), 0.0);
+        // The shrink then runs its full duration from the reversal.
+        let settled = SLIDER_BULGE_MS / 2 + SLIDER_BULGE_MS;
+        assert!(bulge.is_animating(settled - 1));
+        assert!(!bulge.is_animating(settled));
+        assert_eq!(bulge.progress(settled), 0.0);
     }
 
     #[test]

@@ -751,7 +751,10 @@ mod linux_wayland {
             self.dismiss_keyboard = cx
                 .open_window(options, move |window, cx| {
                     let focus = cx.focus_handle();
-                    focus.focus(window, cx);
+                    let next_frame_focus = focus.clone();
+                    window.on_next_frame(move |window, cx| {
+                        next_frame_focus.focus(window, cx);
+                    });
                     cx.new(|cx| {
                         cx.observe_window_activation(
                             window,
@@ -2668,15 +2671,28 @@ mod linux_wayland {
                         this.leave_keyboard(false, cx);
                     }
                 }))
-                .on_click(cx.listener(|this, _, _, cx| {
-                    let mut changed = this.context_menu.take().is_some();
-                    changed |= this.separator_menu.take().is_some();
-                    changed |= this.stack_popover.take().is_some();
-                    if changed {
-                        this.input_region = None;
-                        cx.notify();
-                    }
-                }))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| {
+                        if this.context_menu.is_some()
+                            || this.separator_menu.is_some()
+                            || this.stack_popover.is_some()
+                        {
+                            this.dismiss_popovers(cx);
+                        }
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, _, _, cx| {
+                        if this.context_menu.is_some()
+                            || this.separator_menu.is_some()
+                            || this.stack_popover.is_some()
+                        {
+                            this.dismiss_popovers(cx);
+                        }
+                    }),
+                )
                 .on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {

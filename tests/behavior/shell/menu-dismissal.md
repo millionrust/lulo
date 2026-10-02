@@ -1,9 +1,9 @@
 # Shell menu dismissal
 
-Run `python3 scripts/behavior/run_menu_dismiss.py --bin-dir ~/rmac-wt/target/iterate`
-inside the nested compositor harness. The runner starts one instance of each
-shell service with temporary XDG directories and sends input only to that
-compositor.
+Run `python3 scripts/behavior/run_menu_dismiss.py --bin-dir DIR` with `DIR`
+containing symlinks to the built root and shell binaries. The runner creates
+its own nested compositor, starts one instance of each shell service with
+temporary XDG directories, and sends input only to that compositor.
 
 The first open of the Lulo menu after the top bar starts must close on one
 Dock click. A second click on the same menu title must keep it open; clicking

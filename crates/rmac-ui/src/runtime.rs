@@ -350,6 +350,7 @@ pub fn open_outside_click_catcher_around(
             region(right, top, width - right, bottom - top),
         ]
     });
+    eprintln!("catcher {namespace}: display={bounds:?} reserved={reserved_top:?} excluded={excluded:?} regions={input_regions:?}");
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds {
             origin: point(gpui::px(0.0), gpui::px(0.0)),
@@ -412,10 +413,12 @@ impl gpui::Render for OutsideClickCatcher {
         gpui::div()
             .size_full()
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                eprintln!("outside click catcher left pressed");
                 window.remove_window();
                 left(cx);
             })
             .on_mouse_down(MouseButton::Right, move |_, window, cx| {
+                eprintln!("outside click catcher right pressed");
                 window.remove_window();
                 right(cx);
             })

@@ -1660,6 +1660,7 @@ impl PreviewView {
         }
         let source = slot.path.clone();
         let id = slot.id;
+        let revision = slot.markup.revision;
         let marked_pdf =
             (slot.kind() == Some(Kind::Pdf) && !slot.markup.items.is_empty()).then(|| {
                 (
@@ -1723,7 +1724,9 @@ impl PreviewView {
                             slot.path = destination.clone();
                             slot.name = document::display_name(&destination);
                             slot.markup_original = backup;
-                            slot.markup.dirty = false;
+                            if slot.markup.revision == revision {
+                                slot.markup.dirty = false;
+                            }
                             record_recent_document(destination, cx);
                         }
                     }

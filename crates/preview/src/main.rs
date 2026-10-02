@@ -199,15 +199,7 @@ fn clipboard_image(cx: &App) -> Option<(Vec<u8>, &'static str)> {
 }
 
 #[cfg(target_os = "linux")]
-fn clipboard_image_type() -> Option<(&'static str, &'static str)> {
-    let output = std::process::Command::new("wl-paste")
-        .arg("--list-types")
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let offered = String::from_utf8_lossy(&output.stdout);
+fn preferred_clipboard_image_type(offered: &str) -> Option<(&'static str, &'static str)> {
     [
         ("image/png", "png"),
         ("image/jpeg", "jpg"),
@@ -218,6 +210,18 @@ fn clipboard_image_type() -> Option<(&'static str, &'static str)> {
     ]
     .into_iter()
     .find(|(mime, _)| offered.lines().any(|line| line.trim() == *mime))
+}
+
+#[cfg(target_os = "linux")]
+fn clipboard_image_type() -> Option<(&'static str, &'static str)> {
+    let output = std::process::Command::new("wl-paste")
+        .arg("--list-types")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    preferred_clipboard_image_type(&String::from_utf8_lossy(&output.stdout))
 }
 
 #[cfg(target_os = "linux")]
@@ -608,6 +612,16 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn clipboard_image_type_prefers_png_and_ignores_text() {
+        assert_eq!(preferred_clipboard_image_type("text/plain\n"), None);
+        assert_eq!(
+            preferred_clipboard_image_type("text/plain\nimage/jpeg\nimage/png\n"),
+            Some(("image/png", "png"))
+        );
+    }
 
     #[test]
     fn a_second_launch_hands_its_documents_to_the_running_preview() {

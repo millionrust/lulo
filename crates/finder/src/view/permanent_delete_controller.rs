@@ -165,6 +165,7 @@ impl FinderView {
         }
         #[cfg(not(any(target_os = "linux", test)))]
         {
+            let _ = confirm;
             self.operation_error = Some("Emptying the Trash is available on Linux".into());
             cx.notify();
         }

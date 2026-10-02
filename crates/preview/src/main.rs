@@ -560,6 +560,7 @@ fn main() {
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
             bind_keys(cx);
+            rmac_ui::set_menu_enabled("preview::NewFromClipboard", false, cx);
             cx.on_window_closed(|cx, _| {
                 let has_document_window = OPEN_VIEWS
                     .with(|views| views.borrow().iter().any(|view| view.upgrade().is_some()));

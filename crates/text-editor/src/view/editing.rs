@@ -189,7 +189,9 @@ impl EditorView {
             return;
         }
         self.input.update(cx, |state, cx| {
-            state.replace_text_in_range(None, text, window, cx);
+            // The editor's own Enter action uses the silent replacement path
+            // for a newline. Use that same undoable path for Insert ▸ breaks.
+            state.replace(text, window, cx);
             state.focus(window, cx);
         });
     }

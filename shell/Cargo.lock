@@ -6011,7 +6011,6 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-shell-ui",
- "rmac-ui",
  "rmac-wallpaper",
  "rmac-wallpaper-image",
  "rmac-wallpaper-runtime",

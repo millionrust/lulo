@@ -15,17 +15,7 @@ impl NotificationCenterView {
         })
         .detach();
         cx.on_release(move |_, cx| {
-            if cx.has_global::<NotificationCenterService>() {
-                cx.update_global::<NotificationCenterService, _>(|service, _| {
-                    if service
-                        .active
-                        .as_ref()
-                        .is_some_and(|active| active.token == token)
-                    {
-                        service.active = None;
-                    }
-                });
-            }
+            crate::clear_active_panel(token, cx);
         })
         .detach();
 

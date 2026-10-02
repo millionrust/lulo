@@ -182,6 +182,31 @@ fn dismiss_active(cx: &mut App) -> bool {
     false
 }
 
+pub(crate) fn clear_active_popover(token: u64, cx: &mut App) {
+    if !cx.has_global::<QuickSettingsService>() {
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    let catcher = cx.update_global::<QuickSettingsService, _>(|service, _| {
+        if service.active.as_ref().is_some_and(|active| active.token == token) {
+            service.active = None;
+            service.catcher.take()
+        } else {
+            None
+        }
+    });
+    #[cfg(not(target_os = "linux"))]
+    cx.update_global::<QuickSettingsService, _>(|service, _| {
+        if service.active.as_ref().is_some_and(|active| active.token == token) {
+            service.active = None;
+        }
+    });
+    #[cfg(target_os = "linux")]
+    if let Some(catcher) = catcher {
+        let _ = catcher.update(cx, |_, window, _| window.remove_window());
+    }
+}
+
 fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
     let token = cx.update_global::<QuickSettingsService, _>(|service, _| {
         service.next_token = service.next_token.wrapping_add(1).max(1);

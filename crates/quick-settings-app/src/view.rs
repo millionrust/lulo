@@ -7,7 +7,6 @@ use rmac_quick_settings::layout::Modules;
 use rmac_quick_settings::{Command, Control, Operation, State};
 use rmac_ui::SliderBulge;
 
-use crate::QuickSettingsService;
 
 /// How often Now Playing re-reads the active MPRIS player while open.
 const MEDIA_POLL: Duration = Duration::from_millis(1000);
@@ -125,17 +124,7 @@ impl QuickSettingsView {
         })
         .detach();
         cx.on_release(move |_, cx| {
-            if cx.has_global::<QuickSettingsService>() {
-                cx.update_global::<QuickSettingsService, _>(|service, _| {
-                    if service
-                        .active
-                        .as_ref()
-                        .is_some_and(|active| active.token == token)
-                    {
-                        service.active = None;
-                    }
-                });
-            }
+            crate::clear_active_popover(token, cx);
         })
         .detach();
 
@@ -732,7 +721,8 @@ impl QuickSettingsView {
         self.dismiss(window, cx);
     }
 
-    pub(crate) fn dismiss(&mut self, window: &mut Window, _cx: &mut Context<Self>) {
+    pub(crate) fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        crate::clear_active_popover(self.token, cx);
         window.remove_window();
     }
 }

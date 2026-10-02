@@ -638,7 +638,16 @@ mod linux_wayland {
         context_menu: Option<DockMenu>,
         dismiss_focus: FocusHandle,
         dismiss_focus_active: bool,
-        input_region: Option<(f32, f32, bool, bool)>,
+        input_region: Option<(
+            f32,
+            f32,
+            bool,
+            bool,
+            f32,
+            f32,
+            f32,
+            rmac_shell_settings::DockPlacement,
+        )>,
         pointer_inside: bool,
         hidden: bool,
         /// Auto-hide slide in progress: (start ms, sliding out).
@@ -2452,7 +2461,19 @@ mod linux_wayland {
             } else if !popover_open {
                 self.dismiss_focus_active = false;
             }
-            let input_region = (shelf_start, shelf_extent, self.hidden, modal);
+            // The output can be resized without changing the shelf's length.
+            // Include the surface geometry so the input region follows the
+            // visible shelf after a work-area/output update.
+            let input_region = (
+                shelf_start,
+                shelf_extent,
+                self.hidden,
+                modal,
+                surface_width,
+                surface_height,
+                metrics.exclusive_zone,
+                self.placement,
+            );
             if self.input_region != Some(input_region) || modal {
                 let shelf_bounds = match (self.placement, self.hidden) {
                     (rmac_shell_settings::DockPlacement::Bottom, true) => Bounds {

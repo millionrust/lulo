@@ -326,7 +326,8 @@ class Run:
         # The Dock's own shelf is never keyboard-interactive, so a blur
         # callback cannot be relied on here. This is deliberately one click
         # right after the first menu opens, with no retry or warm-up.
-        self.click_at(OUTPUT_W / 2, OUTPUT_H - 8)
+        # Aim at a Dock tile, not the shelf's transparent bottom border.
+        self.click_at(OUTPUT_W / 2, OUTPUT_H - 48)
         closed = self.wait_for(lambda: self.find_menu_item("About") is None, 10)
         self.check("Dock click: closes the open Lulo menu", closed)
 

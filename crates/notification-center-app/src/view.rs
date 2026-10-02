@@ -9,7 +9,6 @@ use rmac_notifications_linux::center::{ActionSelection, Snapshot};
 use crate::model::{
     catalog_entries, group_records, ApplicationCatalog, ApplicationIdentity, Busy, RecordGroup,
 };
-use crate::NotificationCenterService;
 
 pub(crate) struct NotificationCenterView {
     pub(crate) focus: FocusHandle,
@@ -211,18 +210,7 @@ impl NotificationCenterView {
     }
 
     pub(crate) fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if cx.has_global::<NotificationCenterService>() {
-            let token = self.token;
-            cx.update_global::<NotificationCenterService, _>(|service, _| {
-                if service
-                    .active
-                    .as_ref()
-                    .is_some_and(|active| active.token == token)
-                {
-                    service.active = None;
-                }
-            });
-        }
+        crate::clear_active_panel(self.token, cx);
         window.remove_window();
     }
 

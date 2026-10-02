@@ -22,21 +22,35 @@ struct ActiveDrawer {
 struct AppDrawerService {
     active: Option<ActiveDrawer>,
     next_token: u64,
+    #[cfg(target_os = "linux")]
+    catcher: Option<AnyWindowHandle>,
 }
 
 impl Global for AppDrawerService {}
 
 pub(crate) fn release(token: u64, cx: &mut GpuiApp) {
     if cx.has_global::<AppDrawerService>() {
-        cx.update_global::<AppDrawerService, _>(|service, _| {
+        let catcher = cx.update_global::<AppDrawerService, _>(|service, _| {
             if service
                 .active
                 .as_ref()
                 .is_some_and(|active| active.token == token)
             {
                 service.active = None;
+                #[cfg(target_os = "linux")]
+                return service.catcher.take();
             }
+            #[cfg(target_os = "linux")]
+            return None;
+            #[cfg(not(target_os = "linux"))]
+            ()
         });
+        #[cfg(target_os = "linux")]
+        if let Some(catcher) = catcher {
+            let _ = catcher.update(cx, |_, window, _| window.remove_window());
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = catcher;
     }
 }
 
@@ -95,12 +109,12 @@ fn dismiss_active(cx: &mut GpuiApp) -> bool {
                     view.update(cx, |view, cx| view.dismiss(window, cx));
                 })
                 .is_ok();
-            cx.update_global::<AppDrawerService, _>(|service, _| service.active = None);
+            release(active.token, cx);
             if dismissed {
                 return true;
             }
         }
-        cx.update_global::<AppDrawerService, _>(|service, _| service.active = None);
+        release(active.token, cx);
     }
     false
 }
@@ -168,6 +182,8 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
     if let (Ok(handle), Some(view)) = (handle, drawer) {
+        #[cfg(target_os = "linux")]
+        let display = handle.update(cx, |_, window, cx| window.display(cx)).ok().flatten();
         cx.update_global::<AppDrawerService, _>(|service, _| {
             service.active = Some(ActiveDrawer {
                 token,
@@ -175,6 +191,14 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
                 window: handle.into(),
             });
         });
+        #[cfg(target_os = "linux")]
+        {
+            let catcher = display.and_then(|display| rmac_ui::open_outside_click_catcher(
+                "rmac-app-drawer-click-catcher", display, px(29.0),
+                |cx| { dismiss_active(cx); }, cx,
+            ));
+            cx.update_global::<AppDrawerService, _>(|service, _| service.catcher = catcher);
+        }
         cx.activate(true);
     }
 }
@@ -223,6 +247,8 @@ pub(crate) fn run(show_on_start: bool) {
             cx.set_global(AppDrawerService {
                 active: None,
                 next_token: 0,
+                #[cfg(target_os = "linux")]
+                catcher: None,
             });
 
             #[cfg(target_os = "linux")]

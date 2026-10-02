@@ -629,6 +629,30 @@ mod linux_wayland {
         }
     }
 
+    /// Pointer-opened Dock menus need a keyboard owner for Escape. This
+    /// surface accepts no pointer input and exists only while a menu is open.
+    struct DockDismissKeyboard {
+        dock: WeakEntity<Dock>,
+        focus: FocusHandle,
+    }
+
+    impl Render for DockDismissKeyboard {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            window.set_input_region(Some(&[]));
+            div()
+                .id("dock-menu-keyboard")
+                .track_focus(&self.focus)
+                .size_full()
+                .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    if event.keystroke.key == "escape" {
+                        cx.stop_propagation();
+                        let _ = this.dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
+                        window.remove_window();
+                    }
+                }))
+        }
+    }
+
     struct Dock {
         display_id: u64,
         placement: rmac_shell_settings::DockPlacement,
@@ -636,6 +660,8 @@ mod linux_wayland {
         status: Entity<DockStatus>,
         hovered_item: Option<(f32, String)>,
         context_menu: Option<DockMenu>,
+        click_catcher: Option<AnyWindowHandle>,
+        dismiss_keyboard: Option<WindowHandle<DockDismissKeyboard>>,
         input_region: Option<(f32, f32, bool, bool)>,
         pointer_inside: bool,
         hidden: bool,
@@ -686,6 +712,20 @@ mod linux_wayland {
     }
 
     impl Dock {
+        fn dismiss_popovers(&mut self, cx: &mut Context<Self>) {
+            self.context_menu = None;
+            self.separator_menu = None;
+            self.stack_popover = None;
+            self.input_region = None;
+            if let Some(catcher) = self.click_catcher.take() {
+                let _ = catcher.update(cx, |_, window, _| window.remove_window());
+            }
+            if let Some(keyboard) = self.dismiss_keyboard.take() {
+                let _ = keyboard.update(cx, |_, window, _| window.remove_window());
+            }
+            cx.notify();
+        }
+
         fn new(
             display_id: DisplayId,
             surface: DockSurface,
@@ -707,6 +747,8 @@ mod linux_wayland {
                 status,
                 hovered_item: None,
                 context_menu: None,
+                click_catcher: None,
+                dismiss_keyboard: None,
                 input_region: None,
                 pointer_inside: false,
                 hidden,
@@ -2431,6 +2473,61 @@ mod linux_wayland {
                 || self.keyboard.is_some()
                 || self.separator_menu.is_some()
                 || self.stack_popover.is_some();
+            let popover_open = self.context_menu.is_some()
+                || self.separator_menu.is_some()
+                || self.stack_popover.is_some();
+            if popover_open && self.click_catcher.is_none() {
+                if let Some(display) = window.display(cx) {
+                    let dock = cx.entity().downgrade();
+                    self.click_catcher = rmac_ui::open_outside_click_catcher(
+                        "rmac-dock-click-catcher",
+                        display,
+                        px(29.0),
+                        move |cx| {
+                            let _ = dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
+                        },
+                        cx,
+                    );
+                }
+            } else if !popover_open {
+                if let Some(catcher) = self.click_catcher.take() {
+                    let _ = catcher.update(cx, |_, window, _| window.remove_window());
+                }
+            }
+            if popover_open && self.keyboard.is_none() && self.dismiss_keyboard.is_none() {
+                let dock = cx.entity().downgrade();
+                let options = WindowOptions {
+                    titlebar: None,
+                    focus: true,
+                    show: true,
+                    window_bounds: Some(WindowBounds::Windowed(Bounds {
+                        origin: point(px(0.0), px(0.0)),
+                        size: Size::new(px(1.0), px(1.0)),
+                    })),
+                    display_id: window.display(cx).map(|display| display.id()),
+                    app_id: Some("dev.rmac.DockMenuKeyboard".to_owned()),
+                    window_background: WindowBackgroundAppearance::Transparent,
+                    kind: WindowKind::LayerShell(LayerShellOptions {
+                        namespace: "rmac-dock-menu-keyboard".to_owned(),
+                        layer: Layer::Overlay,
+                        keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                        ..Default::default()
+                    }),
+                    is_movable: false,
+                    is_resizable: false,
+                    is_minimizable: false,
+                    ..Default::default()
+                };
+                self.dismiss_keyboard = cx.open_window(options, move |window, cx| {
+                    let focus = cx.focus_handle();
+                    focus.focus(window, cx);
+                    cx.new(|_| DockDismissKeyboard { dock, focus })
+                }).ok();
+            } else if !popover_open {
+                if let Some(keyboard) = self.dismiss_keyboard.take() {
+                    let _ = keyboard.update(cx, |_, window, _| window.remove_window());
+                }
+            }
             let input_region = (shelf_start, shelf_extent, self.hidden, modal);
             if self.input_region != Some(input_region) {
                 let shelf_bounds = match (self.placement, self.hidden) {

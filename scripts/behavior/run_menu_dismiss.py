@@ -177,6 +177,14 @@ class Run:
         self.quick_settings = self.spawn(
             [str(bins / "rmac-quick-settings")], "quick-settings", {"VK_ICD_FILENAMES": LAVAPIPE}
         )
+        self.launcher = self.spawn([str(bins / "rmac-launcher")], "launcher",
+                                   {"VK_ICD_FILENAMES": LAVAPIPE})
+        self.app_drawer = self.spawn([str(bins / "rmac-app-drawer"), "--service"], "app-drawer",
+                                     {"VK_ICD_FILENAMES": LAVAPIPE})
+        self.notification_center = self.spawn(
+            [str(bins / "rmac-notification-center-panel")], "notification-center",
+            {"VK_ICD_FILENAMES": LAVAPIPE},
+        )
         self.dispatch_bin = str(bins / "rmac-shortcut-dispatch")
         subprocess.run(["busctl", "--user", "set-property", "org.a11y.Bus", "/org/a11y/bus",
                         "org.a11y.Status", "IsEnabled", "b", "true"],
@@ -193,6 +201,19 @@ class Run:
     def dispatch(self, shortcut: str):
         return subprocess.run([self.dispatch_bin, shortcut], env=self.env, capture_output=True,
                               text=True, timeout=10, check=False)
+
+    def has_layer(self, namespace: str) -> bool:
+        def namespaces(value):
+            if isinstance(value, dict):
+                if isinstance(value.get("namespace"), str):
+                    yield value["namespace"]
+                for child in value.values():
+                    yield from namespaces(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from namespaces(child)
+
+        return namespace in set(namespaces(self.niri("layers")))
 
     # -- AT-SPI ----------------------------------------------------------
 
@@ -302,10 +323,8 @@ class Run:
         # the click catcher is a layer surface opened the moment the menu
         # opens, and a click arriving before its first configure/commit is
         # exactly the kind of lost event `retry_until` exists for.
-        closed = self.retry_until(
-            lambda: self.click_at(OUTPUT_W / 2, OUTPUT_H - 8),
-            lambda: self.find_menu_item("About") is None,
-        )
+        self.click_at(OUTPUT_W / 2, OUTPUT_H - 8)
+        closed = self.wait_for(lambda: self.find_menu_item("About") is None, 10)
         self.check("Dock click: closes the open Lulo menu", closed)
 
     def wallpaper_click_below_band_closes_status_menu(self) -> None:
@@ -438,6 +457,75 @@ class Run:
             clicked,
         )
 
+    def clicking_same_title_keeps_menu(self) -> None:
+        self.close_everything()
+        opened = self.retry_until(self.open_system_menu, lambda: self.find_menu_item("About"))
+        self.check("Same title: the Lulo menu opens first", opened)
+        if opened:
+            self.click_button("menu")
+            self.check("Same title: a second click keeps the menu open",
+                       self.find_menu_item("About") is not None)
+
+    def status_menu_dismissal(self, label: str) -> None:
+        for method in ("outside click", "Escape"):
+            self.close_everything()
+            title = self.wait_for(lambda: self.find_node(
+                ("push button", "button"), lambda name: name == label), 3)
+            if title is None:
+                self.check(f"{label}: title available", False)
+                return
+            opened = self.retry_until(lambda: self.click_node(title),
+                                      lambda: self.find_menu(label) is not None)
+            self.check(f"{label}: opens for {method}", opened)
+            if not opened:
+                continue
+            if method == "Escape":
+                self.keys.key("escape")
+            else:
+                self.click_at(200, MENU_SURFACE_HEIGHT + 70)
+            self.check(f"{label}: closes on {method}",
+                       self.wait_for(lambda: self.find_menu(label) is None, 10))
+
+    def layer_popover_dismissal(self, shortcut: str, namespace: str) -> None:
+        for method in ("outside click", "Escape"):
+            self.close_everything()
+            self.dispatch(shortcut)
+            opened = self.wait_for(lambda: self.has_layer(namespace), 10)
+            self.check(f"{shortcut}: opens for {method}", opened)
+            if not opened:
+                continue
+            if method == "Escape":
+                self.keys.key("escape")
+            else:
+                self.click_at(200, MENU_SURFACE_HEIGHT + 70)
+            self.check(f"{shortcut}: closes on {method}",
+                       self.wait_for(lambda: not self.has_layer(namespace), 10))
+
+    def dock_context_menu_dismissal(self) -> None:
+        tile = self.wait_for(lambda: self.find_node(
+            ("push button", "button"), lambda name: name.startswith("Files")), 5)
+        self.check("Dock context menu: Files tile available", tile is not None)
+        if tile is None:
+            return
+        box = self.extents(tile)
+        if box is None:
+            self.check("Dock context menu: tile has bounds", False)
+            return
+        x, y, w, h = box
+        for method in ("outside click", "Escape"):
+            self.close_everything()
+            self.click_at(x + w / 2, y + h / 2, "right")
+            opened = self.wait_for(lambda: self.find_menu("Files") is not None, 5)
+            self.check(f"Dock context menu: opens for {method}", opened)
+            if not opened:
+                continue
+            if method == "Escape":
+                self.keys.key("escape")
+            else:
+                self.click_at(200, MENU_SURFACE_HEIGHT + 70)
+            self.check(f"Dock context menu: closes on {method}",
+                       self.wait_for(lambda: self.find_menu("Files") is None, 10))
+
     def control_center_and_app_menu_close_on_wallpaper_click(self) -> None:
         self.close_everything()
         # Nothing has touched Control Center before this scenario, so this
@@ -478,32 +566,22 @@ class Run:
             f"opened_changed={opened_pixels}, after_changed={after_pixels}",
         )
 
-    def warm_up(self) -> None:
-        """Opens and closes the Lulo menu once, discarding the result.
-
-        The click catcher (`open_menu_click_catcher`) is a fresh GPUI window
-        every time a menu opens; this process's very first one pays a
-        one-time renderer/font-system setup cost (confirmed with
-        `niri msg -j layers` showing the catcher mapped correctly — this is
-        purely about how long it takes to start accepting input, not a
-        logic bug) that made the very first scenario's click flaky on a
-        loaded machine. The bar is a long-lived daemon in production, so a
-        real user's first click comes long after login; this just moves
-        that one-time cost out of a timed assertion."""
-
-        self.retry_until(self.open_system_menu, lambda: self.find_menu_item("About"))
-        self.close_everything()
-
     def run(self) -> int:
         self.start()
-        self.warm_up()
-        self.debug_layers()
         self.dock_click_closes_app_menu()
         self.wallpaper_click_inside_band_closes_app_menu()
         self.wallpaper_click_below_band_closes_status_menu()
         self.other_window_click_closes_app_menu()
         self.escape_closes_app_menu()
         self.clicking_another_title_switches_menus()
+        self.clicking_same_title_keeps_menu()
+        for label in ("Wi-Fi", "Bluetooth", "Sound"):
+            self.status_menu_dismissal(label)
+        self.dock_context_menu_dismissal()
+        for shortcut, namespace in (("launcher", "rmac-launcher"),
+                                    ("app-drawer", "rmac-app-drawer"),
+                                    ("notification-center", "rmac-notification-center")):
+            self.layer_popover_dismissal(shortcut, namespace)
         self.control_center_and_app_menu_close_on_wallpaper_click()
         # Log Out ends this run's own nested niri for real; nothing after
         # this point runs.

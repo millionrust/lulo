@@ -49,6 +49,7 @@ rmac-shell-status.workspace = true
 rmac-shell-ui.workspace = true
 rmac-shortcuts.workspace = true
 rmac-updates.workspace = true
+rmac-ui.workspace = true
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true
 rmac-wallpaper-runtime.workspace = true

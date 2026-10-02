@@ -32,6 +32,7 @@ mod linux_wayland {
     use gpui_platform::application;
     use rmac_quick_settings_system::{Backend as _, SystemBackend};
     use rmac_shell_ui::tokens;
+    use rmac_ui::{slider_bulge_lerp, SliderBulge};
     use rmac_shell_ui::{
         app_display_name, delay_until_next_clock_tick, top_bar_active_app_name,
         top_bar_clock_parts, top_bar_indicator_labels, top_bar_workspace_label,
@@ -888,6 +889,9 @@ mod linux_wayland {
         /// further moves (within the row) drag the value instead of
         /// requiring another click.
         status_dragging_volume: bool,
+        volume_hovered: bool,
+        volume_bulge: SliderBulge,
+        volume_bulge_epoch: Instant,
         /// The volume slider's track bounds (left, width) in window
         /// coordinates, recorded while painting so a click or drag can turn
         /// an x position into a volume.
@@ -1038,6 +1042,9 @@ mod linux_wayland {
                 sound_menu: None,
                 sound_error: None,
                 status_dragging_volume: false,
+                volume_hovered: false,
+                volume_bulge: SliderBulge::default(),
+                volume_bulge_epoch: Instant::now(),
                 volume_track: Rc::new(RefCell::new((0.0, 1.0))),
                 bluetooth_menu: None,
                 bluetooth_error: None,
@@ -1066,6 +1073,9 @@ mod linux_wayland {
 
         fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
             if self.status_menu.take().is_some() {
+                self.status_dragging_volume = false;
+                self.volume_hovered = false;
+                self.volume_bulge.set_active(false, self.volume_bulge_epoch.elapsed().as_millis() as u64);
                 self.status_selected = None;
                 self.status_option = false;
                 self.status_generation = self.status_generation.saturating_add(1);
@@ -1111,6 +1121,15 @@ mod linux_wayland {
         fn remove_click_catcher(&mut self, cx: &mut App) {
             if let Some(handle) = self.click_catcher.take() {
                 let _ = handle.update(cx, |_, window, _| window.remove_window());
+            }
+        }
+
+        fn sync_volume_bulge(&mut self, window: &mut Window) {
+            let now = self.volume_bulge_epoch.elapsed().as_millis() as u64;
+            self.volume_bulge
+                .set_active(self.volume_hovered || self.status_dragging_volume, now);
+            if self.volume_bulge.is_animating(now) {
+                window.request_animation_frame();
             }
         }
 
@@ -2606,6 +2625,9 @@ mod linux_wayland {
                         .into_any_element()
                 }
                 StatusRow::Slider { value } => {
+                    let bulge = self.volume_bulge.progress(self.volume_bulge_epoch.elapsed().as_millis() as u64);
+                    let track_height = slider_bulge_lerp(menu_model::SLIDER_TRACK_HEIGHT, 8.0, bulge);
+                    let knob_height = slider_bulge_lerp(menu_model::SLIDER_KNOB_HEIGHT, 18.0, bulge);
                     let track = self.volume_track.clone();
                     // The fill lags the track's own measurement by one frame
                     // (the canvas below records it while painting), the same
@@ -2630,9 +2652,10 @@ mod linux_wayland {
                         .cursor_pointer()
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                                 cx.stop_propagation();
                                 this.status_dragging_volume = true;
+                                this.sync_volume_bulge(window);
                                 let value = this.volume_at(event.position.x.into());
                                 this.commit_output_volume(value, cx);
                             }),
@@ -2645,9 +2668,10 @@ mod linux_wayland {
                         }))
                         .on_mouse_up(
                             MouseButton::Left,
-                            cx.listener(move |this, event: &MouseUpEvent, _, cx| {
+                            cx.listener(move |this, event: &MouseUpEvent, window, cx| {
                                 if this.status_dragging_volume {
                                     this.status_dragging_volume = false;
+                                    this.sync_volume_bulge(window);
                                     let value = this.volume_at(event.position.x.into());
                                     this.commit_output_volume(value, cx);
                                 }
@@ -2655,9 +2679,10 @@ mod linux_wayland {
                         )
                         .on_mouse_up_out(
                             MouseButton::Left,
-                            cx.listener(move |this, _: &MouseUpEvent, _, cx| {
+                            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
                                 if this.status_dragging_volume {
                                     this.status_dragging_volume = false;
+                                    this.sync_volume_bulge(window);
                                     let value = this
                                         .sound_menu
                                         .as_ref()
@@ -2666,6 +2691,11 @@ mod linux_wayland {
                                 }
                             }),
                         )
+                        .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
+                            this.volume_hovered = *hovered;
+                            this.sync_volume_bulge(window);
+                            cx.notify();
+                        }))
                         .child(
                             svg()
                                 .flex_none()
@@ -2680,8 +2710,8 @@ mod linux_wayland {
                                 .id(format!("volume-track-{}", self.display_id))
                                 .relative()
                                 .flex_1()
-                                .h(px(menu_model::SLIDER_TRACK_HEIGHT))
-                                .rounded(px(menu_model::SLIDER_TRACK_HEIGHT / 2.0))
+                                .h(px(track_height))
+                                .rounded(px(track_height / 2.0))
                                 .bg(rgba(palette.switch_off))
                                 .child(
                                     canvas(
@@ -2703,21 +2733,19 @@ mod linux_wayland {
                                         .top_0()
                                         .bottom_0()
                                         .w(px(fill_width))
-                                        .rounded(px(menu_model::SLIDER_TRACK_HEIGHT / 2.0))
+                                        .rounded(px(track_height / 2.0))
                                         .bg(rgba(palette.status_text)),
                                 )
                                 .child(
                                     div()
                                         .absolute()
-                                        .top(px(-(menu_model::SLIDER_KNOB_HEIGHT
-                                            - menu_model::SLIDER_TRACK_HEIGHT)
-                                            / 2.0))
+                                        .top(px(-(knob_height - track_height) / 2.0))
                                         .left(px((fill_width
                                             - menu_model::SLIDER_KNOB_WIDTH / 2.0)
                                             .max(0.0)))
                                         .w(px(menu_model::SLIDER_KNOB_WIDTH))
-                                        .h(px(menu_model::SLIDER_KNOB_HEIGHT))
-                                        .rounded(px(menu_model::SLIDER_KNOB_HEIGHT / 2.0))
+                                        .h(px(knob_height))
+                                        .rounded(px(knob_height / 2.0))
                                         .bg(rgba(palette.status_text)),
                                 ),
                         )
@@ -3304,6 +3332,9 @@ mod linux_wayland {
 
     impl Render for TopBar {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            if self.volume_bulge.is_animating(self.volume_bulge_epoch.elapsed().as_millis() as u64) {
+                window.request_animation_frame();
+            }
             self.render_count = self.render_count.saturating_add(1);
             if let Some(index) = self.capture_menu.take() {
                 let app_id = if index == 0 {
@@ -3642,9 +3673,7 @@ mod linux_wayland {
                         .hover(|style| style.bg(rgba(tokens::light_hover())))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
-                            if this.open_menu == Some(index) {
-                                this.close_menu(window, cx);
-                            } else {
+                            if this.open_menu != Some(index) {
                                 this.open_menu(index, app_id.clone(), window, cx);
                             }
                         }))
@@ -4057,9 +4086,7 @@ mod linux_wayland {
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     cx.stop_propagation();
-                                    if this.open_menu == Some(0) {
-                                        this.close_menu(window, cx);
-                                    } else {
+                                    if this.open_menu != Some(0) {
                                         this.open_menu(0, SYSTEM_MENU_ID.to_owned(), window, cx);
                                     }
                                 }))
@@ -4089,9 +4116,7 @@ mod linux_wayland {
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
-                                    if this.open_menu == Some(1) {
-                                        this.close_menu(window, cx);
-                                    } else {
+                                    if this.open_menu != Some(1) {
                                         this.open_menu(1, app_id.clone(), window, cx);
                                     }
                                 }))
@@ -4166,9 +4191,7 @@ mod linux_wayland {
                                                     dispatch_shortcut("quick-settings", cx);
                                                     return;
                                                 };
-                                                if this.status_menu == Some(kind) {
-                                                    this.close_menu(window, cx);
-                                                } else {
+                                                if this.status_menu != Some(kind) {
                                                     let option = event.modifiers().alt
                                                         || window.modifiers().alt;
                                                     this.open_status_menu(kind, option, window, cx);
@@ -5451,6 +5474,46 @@ mod linux_wayland {
         .map(AnyWindowHandle::from)
     }
 
+    /// Create the process's first extra GPUI layer surface at startup. Its
+    /// input region is empty and it removes itself after one frame, so the
+    /// first real menu click does not wait for a second renderer setup.
+    fn warm_up_click_catcher(display: Rc<dyn PlatformDisplay>, cx: &mut App) {
+        let options = WindowOptions {
+            titlebar: None,
+            focus: false,
+            show: true,
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: Size::new(px(1.0), px(1.0)),
+            })),
+            display_id: Some(display.id()),
+            app_id: Some("dev.rmac.MenuCatcherWarmup".to_owned()),
+            window_background: WindowBackgroundAppearance::Transparent,
+            kind: WindowKind::LayerShell(LayerShellOptions {
+                namespace: "rmac-menu-catcher-warmup".to_owned(),
+                layer: Layer::Overlay,
+                keyboard_interactivity: KeyboardInteractivity::None,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        if let Err(error) = cx.open_window(options, |window, cx| {
+            window.set_input_region(Some(&[]));
+            window.on_next_frame(|window, _| window.remove_window());
+            cx.new(|_| MenuCatcherWarmup)
+        }) {
+            eprintln!("menu catcher warmup failed: {error}");
+        }
+    }
+
+    struct MenuCatcherWarmup;
+
+    impl Render for MenuCatcherWarmup {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
+
     struct MenuClickCatcher {
         top_bar: WindowHandle<TopBar>,
     }
@@ -5636,6 +5699,7 @@ mod linux_wayland {
         backdrop_tx: async_channel::Sender<MenuBackdropUpdate>,
         cx: &mut App,
     ) -> AnyWindowHandle {
+        warm_up_click_catcher(display.clone(), cx);
         let display_id = display.id();
         let width = display.bounds().size.width;
         let handle = cx

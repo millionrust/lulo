@@ -61,15 +61,27 @@ pub(super) fn warm_renderer(cx: &mut App) {
 
 pub(crate) fn release(token: u64, cx: &mut App) {
     if cx.has_global::<LauncherService>() {
-        cx.update_global::<LauncherService, _>(|service, _| {
+        let catcher = cx.update_global::<LauncherService, _>(|service, _| {
             if service
                 .active
                 .as_ref()
                 .is_some_and(|active| active.token == token)
             {
                 service.active = None;
+                #[cfg(target_os = "linux")]
+                return service.catcher.take();
             }
+            #[cfg(target_os = "linux")]
+            return None;
+            #[cfg(not(target_os = "linux"))]
+            ()
         });
+        #[cfg(target_os = "linux")]
+        if let Some(catcher) = catcher {
+            let _ = catcher.update(cx, |_, window, _| window.remove_window());
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = catcher;
     }
 }
 
@@ -192,6 +204,8 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
     if let (Ok(handle), Some(view)) = (handle, launcher) {
+        #[cfg(target_os = "linux")]
+        let display = handle.update(cx, |_, window, cx| window.display(cx)).ok().flatten();
         cx.update_global::<LauncherService, _>(|service, _| {
             service.active = Some(ActiveOverlay {
                 token,
@@ -199,6 +213,24 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
                 window: handle.into(),
             });
         });
+        #[cfg(target_os = "linux")]
+        {
+            let catcher = display.and_then(|display| rmac_ui::open_outside_click_catcher(
+                "rmac-launcher-click-catcher", display, px(29.0),
+                |cx| {
+                    let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+                    if let Some(active) = active {
+                        if let Some(view) = active.view.upgrade() {
+                            let _ = cx.update_window(active.window, |_, window, cx| {
+                                view.update(cx, |view, cx| view.dismiss(window, cx));
+                            });
+                        }
+                        release(active.token, cx);
+                    }
+                }, cx,
+            ));
+            cx.update_global::<LauncherService, _>(|service, _| service.catcher = catcher);
+        }
         cx.activate(true);
     }
 }

@@ -354,7 +354,7 @@ impl LauncherView {
         }
     }
 
-    fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let _ = self.coordinator.handle_key(KeyCommand::Escape);
         service::release(self.token, cx);
         window.remove_window();

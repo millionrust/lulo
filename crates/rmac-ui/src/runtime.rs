@@ -356,7 +356,7 @@ struct OutsideClickCatcher {
 #[cfg(target_os = "linux")]
 impl gpui::Render for OutsideClickCatcher {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl gpui::IntoElement {
-        use gpui::MouseButton;
+        use gpui::{InteractiveElement, MouseButton};
 
         let left = self.left.clone();
         let right = self.right.clone();

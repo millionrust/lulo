@@ -298,9 +298,14 @@ class Run:
             return
         # The Dock's own shelf, bottom centre: never keyboard-interactive
         # (`KeyboardInteractivity::None`), so before the fix a click here
-        # never told the menu to close.
-        self.click_at(OUTPUT_W / 2, OUTPUT_H - 8)
-        closed = self.wait_for(lambda: self.find_menu_item("About") is None, 10)
+        # never told the menu to close. Retried like the other scenarios:
+        # the click catcher is a layer surface opened the moment the menu
+        # opens, and a click arriving before its first configure/commit is
+        # exactly the kind of lost event `retry_until` exists for.
+        closed = self.retry_until(
+            lambda: self.click_at(OUTPUT_W / 2, OUTPUT_H - 8),
+            lambda: self.find_menu_item("About") is None,
+        )
         self.check("Dock click: closes the open Lulo menu", closed)
 
     def wallpaper_click_below_band_closes_status_menu(self) -> None:
@@ -320,8 +325,10 @@ class Run:
         self.check("Wallpaper click below the bar: a menu opens first", opened)
         if not opened:
             return
-        self.click_at(200, MENU_SURFACE_HEIGHT + 70)
-        closed = self.wait_for(lambda: not marker(), 10)
+        closed = self.retry_until(
+            lambda: self.click_at(200, MENU_SURFACE_HEIGHT + 70),
+            lambda: not marker(),
+        )
         self.check("Wallpaper click below the bar's own band: closes the open menu", closed)
 
     def wallpaper_click_inside_band_closes_app_menu(self) -> None:
@@ -338,8 +345,10 @@ class Run:
             return
         # Far right, well clear of the Lulo menu's own dropdown (anchored at
         # the left under the logo) but still above MENU_SURFACE_HEIGHT.
-        self.click_at(OUTPUT_W - 40, MENU_SURFACE_HEIGHT - 40)
-        closed = self.wait_for(lambda: self.find_menu_item("About") is None, 10)
+        closed = self.retry_until(
+            lambda: self.click_at(OUTPUT_W - 40, MENU_SURFACE_HEIGHT - 40),
+            lambda: self.find_menu_item("About") is None,
+        )
         self.check("Wallpaper click inside the bar's band: closes the open menu", closed)
 
     def other_window_click_closes_app_menu(self) -> None:
@@ -368,8 +377,10 @@ class Run:
             if not opened:
                 return
             # The lone tiled window fills the working area below the bar.
-            self.click_at(OUTPUT_W / 2, OUTPUT_H / 2)
-            closed = self.wait_for(lambda: self.find_menu_item("About") is None, 10)
+            closed = self.retry_until(
+                lambda: self.click_at(OUTPUT_W / 2, OUTPUT_H / 2),
+                lambda: self.find_menu_item("About") is None,
+            )
             self.check("Other window click: closes the open menu", closed)
         finally:
             dummy.terminate()
@@ -398,50 +409,67 @@ class Run:
         self.check("Title switch: the Lulo menu opens first", opened)
         if not opened:
             return
-        # Index 1: the active app's own title, right of the logo. With
-        # nothing focused this is the desktop's ("Finder"-equivalent) menu;
-        # clicking it must switch straight to it, not just close the first.
+        # Index 1: the active app's own title, right of the logo
+        # (`TopBar::keyboard_titles`'s "{app} menu" label). With nothing
+        # focused this is the desktop's ("Finder"-equivalent) title; the
+        # logo itself is named exactly "menu", so excluding that finds it
+        # without guessing a pixel offset.
+        title = self.wait_for(
+            lambda: self.find_node(
+                ("push button", "button"), lambda name: name != "menu" and name.endswith(" menu")
+            ),
+            10,
+            0.3,
+        )
+        self.check("Title switch: the active app's own title is present", title is not None)
+        if title is None:
+            return
+        title_name = title.name
         clicked = self.retry_until(
-            lambda: self.click_button_by_role_button_after("menu"),
-            lambda: self.find_menu_item("About") is None,
+            lambda: self.click_node(
+                self.find_node(("push button", "button"), lambda name: name == title_name)
+            ),
+            lambda: self.find_menu_item("About") is None
+            and self.find_node(("menu",), lambda name: name == title_name) is not None,
         )
         self.check(
-            "Title switch: clicking the next title closes the Lulo menu",
+            "Title switch: clicking the next title switches straight to its own menu "
+            "instead of just closing the first",
             clicked,
         )
 
-    def click_button_by_role_button_after(self, after_label: str) -> bool:
-        """Clicks the top-bar button immediately right of `after_label` by
-        AT-SPI extents (the active-app title sits right beside the logo)."""
-
-        anchor = self.find_button(after_label)
-        box = self.extents(anchor) if anchor is not None else None
-        if box is None:
-            return False
-        x, y, w, h = box
-        return self.click_at(x + w + 40, y + h / 2)
-
     def control_center_and_app_menu_close_on_wallpaper_click(self) -> None:
         self.close_everything()
-        self.dispatch("quick-settings")
-        time.sleep(0.5)
+        # Nothing has touched Control Center before this scenario, so this
+        # is a true "closed" baseline — unlike opening-then-closing it just
+        # to capture one, which leaves `quick-settings`'s own dismiss
+        # animation (if any) or a stray frame in the shot instead.
         baseline = self.capture("cc-closed")
-        self.dispatch("quick-settings")  # toggle back off before the real run
-        time.sleep(0.5)
 
         opened_menu = self.retry_until(self.open_system_menu, lambda: self.find_menu_item("About"))
         self.check("Control Center: the Lulo menu opens first", opened_menu)
-        self.dispatch("quick-settings")
-        time.sleep(0.6)
-        opened = self.capture("cc-open")
-        opened_pixels = self.changed_pixels(baseline, opened, CONTROL_CENTER_BOX)
+
+        opened_pixels = 0
+        opened = baseline
+        for _ in range(4):
+            self.dispatch("quick-settings")
+            time.sleep(0.6)
+            opened = self.capture("cc-open")
+            opened_pixels = self.changed_pixels(baseline, opened, CONTROL_CENTER_BOX)
+            if opened_pixels > 500:
+                break
+            # Toggle back off before retrying the dispatch — it opens/closes.
+            self.dispatch("quick-settings")
+            time.sleep(0.4)
         self.check("Control Center: opening it changes its corner of the screen",
                    opened_pixels > 500, f"changed={opened_pixels}")
 
-        self.click_at(200, MENU_SURFACE_HEIGHT + 70)
+        menu_closed = self.retry_until(
+            lambda: self.click_at(200, MENU_SURFACE_HEIGHT + 70),
+            lambda: self.find_menu_item("About") is None,
+        )
         time.sleep(0.6)
         after = self.capture("cc-dismissed")
-        menu_closed = self.wait_for(lambda: self.find_menu_item("About") is None, 10)
         self.check("Control Center: wallpaper click also closes the Lulo menu", menu_closed)
         after_pixels = self.changed_pixels(baseline, after, CONTROL_CENTER_BOX)
         self.check(
@@ -450,8 +478,26 @@ class Run:
             f"opened_changed={opened_pixels}, after_changed={after_pixels}",
         )
 
+    def warm_up(self) -> None:
+        """Opens and closes the Lulo menu once, discarding the result.
+
+        The click catcher (`open_menu_click_catcher`) is a fresh GPUI window
+        every time a menu opens; this process's very first one pays a
+        one-time renderer/font-system setup cost (confirmed with
+        `niri msg -j layers` showing the catcher mapped correctly — this is
+        purely about how long it takes to start accepting input, not a
+        logic bug) that made the very first scenario's click flaky on a
+        loaded machine. The bar is a long-lived daemon in production, so a
+        real user's first click comes long after login; this just moves
+        that one-time cost out of a timed assertion."""
+
+        self.retry_until(self.open_system_menu, lambda: self.find_menu_item("About"))
+        self.close_everything()
+
     def run(self) -> int:
         self.start()
+        self.warm_up()
+        self.debug_layers()
         self.dock_click_closes_app_menu()
         self.wallpaper_click_inside_band_closes_app_menu()
         self.wallpaper_click_below_band_closes_status_menu()

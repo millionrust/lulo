@@ -63,6 +63,27 @@ directories.
 python3 scripts/behavior/run_file_drag.py --bin-dir ~/rmac-wt/target/iterate
 ```
 
+## Menu dismissal on an outside click
+
+`scripts/behavior/run_menu_dismiss.py` starts the shipped top-bar, Dock,
+wallpaper and Control Center in a private nested niri and opens the Lulo
+menu, a status menu, and Control Center in turn, then checks that each
+closes on a real pointer click on the Dock, the wallpaper (inside and below
+the bar's own `MENU_SURFACE_HEIGHT` band), another app's window (a dummy
+`foot` window), and on Escape; it also checks that clicking a different
+top-bar title switches menus instead of just closing, and that opening a
+menu alongside Control Center and clicking the wallpaper closes both
+(MENU-15, `docs/parity.md`). Control Center's dismissal is checked with
+`grim` + a pixel-difference crop over its corner, since it is a layer-shell
+popover with no niri "window" entry and no accessible control labels in this
+build to search for by name. `--bin-dir` must hold `top-bar`, `dock`,
+`wallpaper`, `rmac-quick-settings` and `rmac-shortcut-dispatch`.
+
+```sh
+python3 scripts/behavior/run_menu_dismiss.py \
+  --niri /usr/bin/niri --bin-dir ~/rmac-wt/target/iterate
+```
+
 ## Monkey testing
 
 `scripts/behavior/monkey.py` is a seeded random ("monkey") tester, not a

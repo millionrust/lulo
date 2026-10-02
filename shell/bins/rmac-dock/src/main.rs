@@ -645,6 +645,7 @@ mod linux_wayland {
                 .track_focus(&self.focus)
                 .size_full()
                 .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    eprintln!("Dock dismiss keyboard key: {}", event.keystroke.key);
                     if event.keystroke.key == "escape" {
                         cx.stop_propagation();
                         let _ = this.dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
@@ -2598,6 +2599,9 @@ mod linux_wayland {
                     vec![shelf_bounds]
                 };
                 window.set_input_region(Some(&regions));
+                if modal {
+                    eprintln!("Dock modal input region: {:?}", regions);
+                }
                 self.input_region = Some(input_region);
             }
             let tooltip_item = keyboard_focus
@@ -2674,6 +2678,7 @@ mod linux_wayland {
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(|this, _, _, cx| {
+                        eprintln!("Dock root left press");
                         if this.context_menu.is_some()
                             || this.separator_menu.is_some()
                             || this.stack_popover.is_some()
@@ -2685,6 +2690,7 @@ mod linux_wayland {
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(|this, _, _, cx| {
+                        eprintln!("Dock root right press");
                         if this.context_menu.is_some()
                             || this.separator_menu.is_some()
                             || this.stack_popover.is_some()

@@ -510,6 +510,27 @@ class Run:
             self.check(f"{shortcut}: closes on {method}",
                        self.wait_for(lambda: not self.has_layer(namespace), 10))
 
+    def clock_popover_dismissal(self) -> None:
+        namespace = "rmac-notification-center"
+        for method in ("outside click", "inside-band click", "Escape"):
+            self.close_everything()
+            clock = self.wait_for(lambda: self.find_node(
+                ("push button", "button"),
+                lambda name: name.startswith("Date and time:")
+            ), 5)
+            opened = clock is not None and self.click_node(clock) and self.wait_for(
+                lambda: self.has_layer(namespace), 10
+            )
+            self.check(f"clock/date popover: opens for {method}", opened)
+            if not opened:
+                continue
+            if method == "Escape":
+                self.keys.key("escape")
+            else:
+                self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
+            self.check(f"clock/date popover: closes on {method}",
+                       self.wait_for(lambda: not self.has_layer(namespace), 10))
+
     def dock_context_menu_dismissal(self) -> None:
         tile = self.wait_for(lambda: self.find_node(
             ("push button", "button"), lambda name: name.startswith("Files")), 5)
@@ -588,6 +609,8 @@ class Run:
                     self.status_menu_dismissal(label)
             elif self.args.only == "dock":
                 self.dock_context_menu_dismissal()
+            elif self.args.only == "notification-center":
+                self.clock_popover_dismissal()
             else:
                 namespaces = {
                     "quick-settings": "rmac-quick-settings",
@@ -609,9 +632,9 @@ class Run:
         self.dock_context_menu_dismissal()
         for shortcut, namespace in (("quick-settings", "rmac-quick-settings"),
                                     ("launcher", "rmac-launcher"),
-                                    ("app-drawer", "rmac-app-drawer"),
-                                    ("notification-center", "rmac-notification-center")):
+                                    ("app-drawer", "rmac-app-drawer")):
             self.layer_popover_dismissal(shortcut, namespace)
+        self.clock_popover_dismissal()
         self.control_center_and_app_menu_close_on_wallpaper_click()
         # Log Out ends this run's own nested niri for real; nothing after
         # this point runs.

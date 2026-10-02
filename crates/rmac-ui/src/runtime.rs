@@ -320,41 +320,47 @@ pub fn open_outside_click_catcher_around(
 ) -> Option<gpui::AnyWindowHandle> {
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
     use gpui::{
-        point, size, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
+        point, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
         WindowOptions,
     };
 
     let bounds = display.bounds();
-    let height = bounds.size.height - reserved_top;
-    if height <= gpui::px(0.0) {
+    let height = bounds.size.height;
+    if height <= reserved_top {
         return None;
     }
     let on_click = std::rc::Rc::new(on_click);
-    let input_regions = excluded.map(|excluded| {
-        let width = f32::from(bounds.size.width);
-        let height = f32::from(height);
-        let left = f32::from(excluded.origin.x - bounds.origin.x).clamp(0.0, width);
-        let top = f32::from(excluded.origin.y - bounds.origin.y - reserved_top).clamp(0.0, height);
-        let right = (left + f32::from(excluded.size.width)).clamp(left, width);
-        let bottom = (top + f32::from(excluded.size.height)).clamp(top, height);
-        let region = |x: f32, y: f32, w: f32, h: f32| {
-            Bounds::new(
-                point(gpui::px(x), gpui::px(y)),
-                size(gpui::px(w), gpui::px(h)),
-            )
-        };
-        [
-            region(0.0, 0.0, width, top),
+    let width = f32::from(bounds.size.width);
+    let height = f32::from(height);
+    let reserved = f32::from(reserved_top).clamp(0.0, height);
+    let region = |x: f32, y: f32, w: f32, h: f32| {
+        Bounds::new(
+            point(gpui::px(x), gpui::px(y)),
+            size(gpui::px(w), gpui::px(h)),
+        )
+    };
+    let mut input_regions = if let Some(excluded) = excluded {
+        let raw_left = f32::from(excluded.origin.x - bounds.origin.x);
+        let raw_top = f32::from(excluded.origin.y - bounds.origin.y);
+        let left = raw_left.clamp(0.0, width);
+        let top = raw_top.clamp(reserved, height);
+        let right = (raw_left + f32::from(excluded.size.width)).clamp(left, width);
+        let bottom = (raw_top + f32::from(excluded.size.height)).clamp(top, height);
+        vec![
+            region(0.0, reserved, width, top - reserved),
             region(0.0, bottom, width, height - bottom),
             region(0.0, top, left, bottom - top),
             region(right, top, width - right, bottom - top),
         ]
-    });
-    eprintln!("catcher {namespace}: display={bounds:?} reserved={reserved_top:?} excluded={excluded:?} regions={input_regions:?}");
+    } else {
+        vec![region(0.0, reserved, width, height - reserved)]
+    };
+    input_regions
+        .retain(|region| region.size.width > gpui::px(0.0) && region.size.height > gpui::px(0.0));
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds {
             origin: point(gpui::px(0.0), gpui::px(0.0)),
-            size: size(bounds.size.width, height),
+            size: bounds.size,
         })),
         titlebar: None,
         focus: false,
@@ -365,9 +371,9 @@ pub fn open_outside_click_catcher_around(
         kind: WindowKind::LayerShell(LayerShellOptions {
             namespace: namespace.to_owned(),
             layer: Layer::Overlay,
-            anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT | Anchor::BOTTOM,
-            margin: Some((reserved_top, gpui::px(0.0), gpui::px(0.0), gpui::px(0.0))),
+            anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
             keyboard_interactivity: KeyboardInteractivity::None,
+            exclusive_zone: Some(gpui::px(0.0)),
             ..Default::default()
         }),
         is_movable: false,
@@ -396,7 +402,7 @@ pub fn open_outside_click_catcher_around(
 struct OutsideClickCatcher {
     left: std::rc::Rc<dyn Fn(&mut App)>,
     right: std::rc::Rc<dyn Fn(&mut App)>,
-    input_regions: Option<[gpui::Bounds<gpui::Pixels>; 4]>,
+    input_regions: Vec<gpui::Bounds<gpui::Pixels>>,
 }
 
 #[cfg(target_os = "linux")]
@@ -404,9 +410,7 @@ impl gpui::Render for OutsideClickCatcher {
     fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl gpui::IntoElement {
         use gpui::{InteractiveElement, MouseButton};
 
-        if let Some(regions) = &self.input_regions {
-            window.set_input_region(Some(regions));
-        }
+        window.set_input_region(Some(&self.input_regions));
 
         let left = self.left.clone();
         let right = self.right.clone();

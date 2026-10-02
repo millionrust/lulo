@@ -166,7 +166,11 @@ pub(crate) fn clear_active_panel(token: u64, cx: &mut App) {
     }
     #[cfg(target_os = "linux")]
     let catcher = cx.update_global::<NotificationCenterService, _>(|service, _| {
-        if service.active.as_ref().is_some_and(|active| active.token == token) {
+        if service
+            .active
+            .as_ref()
+            .is_some_and(|active| active.token == token)
+        {
             service.active = None;
             service.catcher.take()
         } else {
@@ -175,7 +179,11 @@ pub(crate) fn clear_active_panel(token: u64, cx: &mut App) {
     });
     #[cfg(not(target_os = "linux"))]
     cx.update_global::<NotificationCenterService, _>(|service, _| {
-        if service.active.as_ref().is_some_and(|active| active.token == token) {
+        if service
+            .active
+            .as_ref()
+            .is_some_and(|active| active.token == token)
+        {
             service.active = None;
         }
     });

@@ -54,8 +54,30 @@ impl QuickSettingsView {
         // shift.
         let track_height =
             rmac_ui::slider_bulge_lerp(TRACK_HEIGHT, TRACK_HEIGHT_BULGED, self.slider_bulge(kind));
+        let increment_view = cx.entity().downgrade();
+        let decrement_view = cx.entity().downgrade();
+        let step = 5;
         let hit = div()
             .id(id)
+            .role(Role::Slider)
+            .aria_label(title)
+            .aria_numeric_value(f64::from(value))
+            .aria_min_numeric_value(0.0)
+            .aria_max_numeric_value(100.0)
+            .focusable()
+            .tab_stop(true)
+            .when(enabled, |hit| {
+                hit.on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
+                    let _ = increment_view.update(cx, |this, cx| {
+                        this.slide(kind, value.saturating_add(step).min(100), cx)
+                    });
+                })
+                .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
+                    let _ = decrement_view.update(cx, |this, cx| {
+                        this.slide(kind, value.saturating_sub(step), cx)
+                    });
+                })
+            })
             .absolute()
             .left(px(left - 8.0))
             .top(px(TRACK_CENTRE - 12.0))
@@ -89,6 +111,26 @@ impl QuickSettingsView {
             );
         let accessory = div()
             .id(pane)
+            .role(Role::Button)
+            .aria_label(if kind == SliderKind::Brightness {
+                "Display Settings"
+            } else {
+                "Sound Outputs"
+            })
+            .focusable()
+            .tab_stop(true)
+            .on_a11y_action(AccessibleAction::Click, {
+                let view = cx.entity().downgrade();
+                move |_, window, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        if kind == SliderKind::Brightness {
+                            this.open_settings(Some(pane), window, cx);
+                        } else {
+                            this.open_detail(Detail::Sound, cx);
+                        }
+                    });
+                }
+            })
             .absolute()
             .left(px(ACCESSORY_CENTRE.0 - ACCESSORY / 2.0))
             .top(px(ACCESSORY_CENTRE.1 - ACCESSORY / 2.0))
@@ -179,6 +221,16 @@ impl QuickSettingsView {
     ) -> AnyElement {
         div()
             .id(("control-center-banner", index))
+            .role(Role::Button)
+            .aria_label(format!("Dismiss: {message}"))
+            .focusable()
+            .tab_stop(true)
+            .on_a11y_action(AccessibleAction::Click, {
+                let view = cx.entity().downgrade();
+                move |_, _, cx| {
+                    let _ = view.update(cx, |this, cx| this.dismiss_error(control, cx));
+                }
+            })
             .absolute()
             .left_0()
             .top(px(y))

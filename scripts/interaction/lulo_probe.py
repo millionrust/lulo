@@ -492,7 +492,8 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
         for control in item.get("hover_controls", []):
             label = control["label"]
             open_popover()
-            target = find_showing(current_frames(), control["lulo_name"], {"slider"})
+            target = shell._wait_for(
+                lambda: find_showing(current_frames(), control["lulo_name"], {"slider"}), 8)
             if target is None:
                 out[f"hover:{label}"] = {"changed": None}
                 continue

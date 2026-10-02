@@ -24,6 +24,8 @@ struct AppDrawerService {
     next_token: u64,
     #[cfg(target_os = "linux")]
     catcher: Option<AnyWindowHandle>,
+    #[cfg(target_os = "linux")]
+    pending_dismiss: Option<u64>,
 }
 
 impl Global for AppDrawerService {}
@@ -41,6 +43,9 @@ pub(crate) fn release(token: u64, cx: &mut GpuiApp) {
                 }
                 #[cfg(target_os = "linux")]
                 {
+                    if service.pending_dismiss == Some(token) {
+                        service.pending_dismiss = None;
+                    }
                     if matches {
                         service.catcher.take()
                     } else {
@@ -177,6 +182,44 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         service.next_token = service.next_token.wrapping_add(1).max(1);
         service.next_token
     });
+    #[cfg(target_os = "linux")]
+    {
+        // Map the outside catcher before the visible panel so a quick first
+        // click cannot arrive while only the panel is ready for input.
+        let display = cx
+            .displays()
+            .into_iter()
+            .find(|display| {
+                let screen = display.bounds();
+                bounds.origin.x >= screen.origin.x
+                    && bounds.origin.x < screen.origin.x + screen.size.width
+                    && bounds.origin.y >= screen.origin.y
+                    && bounds.origin.y < screen.origin.y + screen.size.height
+            })
+            .or_else(|| cx.primary_display());
+        let catcher = display.and_then(|display| {
+            rmac_ui::open_outside_click_catcher_around(
+                "rmac-app-drawer-click-catcher",
+                display,
+                px(29.0),
+                Some(bounds),
+                move |cx| {
+                    let active = cx.read_global::<AppDrawerService, _>(|service, _| {
+                        service.active.clone().filter(|active| active.token == token)
+                    });
+                    if active.is_some() {
+                        dismiss_active(cx);
+                    } else {
+                        cx.update_global::<AppDrawerService, _>(|service, _| {
+                            service.pending_dismiss = Some(token);
+                        });
+                    }
+                },
+                cx,
+            )
+        });
+        cx.update_global::<AppDrawerService, _>(|service, _| service.catcher = catcher);
+    }
     let mut drawer = None;
     let handle = cx.open_window(drawer_options(bounds), |window, cx| {
         window.set_window_title("Apps");
@@ -187,12 +230,15 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
     });
     if let (Ok(handle), Some(view)) = (handle, drawer) {
         #[cfg(target_os = "linux")]
-        let display = handle
-            .update(cx, |_, window, cx| window.display(cx))
-            .ok()
-            .flatten()
-            .or_else(|| cx.primary_display())
-            .or_else(|| cx.displays().into_iter().next());
+        let cancel = cx.update_global::<AppDrawerService, _>(|service, _| {
+            service.active = Some(ActiveDrawer {
+                token,
+                view,
+                window: handle.into(),
+            });
+            service.pending_dismiss.take() == Some(token)
+        });
+        #[cfg(not(target_os = "linux"))]
         cx.update_global::<AppDrawerService, _>(|service, _| {
             service.active = Some(ActiveDrawer {
                 token,
@@ -201,22 +247,22 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
             });
         });
         #[cfg(target_os = "linux")]
-        {
-            let catcher = display.and_then(|display| {
-                rmac_ui::open_outside_click_catcher_around(
-                    "rmac-app-drawer-click-catcher",
-                    display,
-                    px(29.0),
-                    Some(bounds),
-                    |cx| {
-                        dismiss_active(cx);
-                    },
-                    cx,
-                )
-            });
-            cx.update_global::<AppDrawerService, _>(|service, _| service.catcher = catcher);
+        if cancel {
+            dismiss_active(cx);
+            return;
         }
         cx.activate(true);
+    } else {
+        #[cfg(target_os = "linux")]
+        {
+            let catcher = cx.update_global::<AppDrawerService, _>(|service, _| {
+                service.pending_dismiss = None;
+                service.catcher.take()
+            });
+            if let Some(catcher) = catcher {
+                let _ = catcher.update(cx, |_, window, _| window.remove_window());
+            }
+        }
     }
 }
 
@@ -266,6 +312,8 @@ pub(crate) fn run(show_on_start: bool) {
                 next_token: 0,
                 #[cfg(target_os = "linux")]
                 catcher: None,
+                #[cfg(target_os = "linux")]
+                pending_dismiss: None,
             });
 
             #[cfg(target_os = "linux")]

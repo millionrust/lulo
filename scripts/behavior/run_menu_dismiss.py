@@ -412,6 +412,10 @@ class Run:
             except subprocess.TimeoutExpired:
                 dummy.kill()
                 dummy.wait(timeout=3)
+            self.wait_for(lambda: not any(
+                item.get("app_id") == "org.rmac.MenuDismissProbe"
+                for item in self.niri("windows") or []
+            ), 10)
 
     def escape_closes_app_menu(self) -> None:
         self.close_everything()
@@ -652,8 +656,8 @@ class Run:
         self.dock_click_closes_app_menu()
         self.wallpaper_click_inside_band_closes_app_menu()
         self.wallpaper_click_below_band_closes_status_menu()
-        self.other_window_click_closes_app_menu()
         self.escape_closes_app_menu()
+        self.other_window_click_closes_app_menu()
         self.clicking_another_title_switches_menus()
         self.clicking_same_title_keeps_menu()
         for label in ("Wi-Fi", "Bluetooth", "Sound"):

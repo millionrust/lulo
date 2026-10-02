@@ -825,7 +825,7 @@ class LuloRun:
         if self.app != "preview" or not filename:
             raise StepFailed("PDF annotation fact needs a launched Preview document")
         data = (self.sandbox / filename).read_bytes()
-        return {"rectangles": data.count(b"/Subtype/Square")}
+        return {"rectangles": len(re.findall(rb"/Subtype\s*/Square\b", data))}
 
     def fact_windows(self) -> dict[str, Any]:
         pyatspi = atspi()

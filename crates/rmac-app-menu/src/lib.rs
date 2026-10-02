@@ -996,7 +996,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Zoom All to Fit", "preview::ZoomAllToFit", "⌥⌘9"),
             item!("Zoom In", "preview::ZoomIn", "⌘+"),
             item!("Zoom All In", "preview::ZoomAllIn", "⌥⌘+"),
-            item!("Zoom Out", "preview::ZoomOut", "⌘-"),
+            item!("Zoom Out", "preview::ZoomOut", "⌘−"),
             item!("Zoom All Out", "preview::ZoomAllOut", "⌥⌘−"),
             item!(
                 "Show Markup Toolbar",

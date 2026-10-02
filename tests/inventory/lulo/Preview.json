@@ -305,7 +305,7 @@
         {
           "label": "Zoom Out",
           "action": "preview::ZoomOut",
-          "shortcut": "⌘-",
+          "shortcut": "⌘−",
           "separator_before": false,
           "children": []
         },

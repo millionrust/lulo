@@ -480,8 +480,26 @@ def diff_app(mac_app_name: str, lulo_app_name: str) -> tuple[list[Gap], list[str
 
     gaps: list[Gap] = []
     if "menu_bar" in mac_data:
+        lulo_menu_bar = lulo_data.get("menu_bar", [])
+        # `mac_inventory.py`'s `dump_menu_bar` reads one top-level menu per
+        # osascript call so one slow/stuck menu (a dynamic window list, a
+        # profile list) does not lose the whole bar; a menu listed here
+        # simply was not captured this run. Diffing it anyway would report
+        # every one of Lulo's items under that menu as "extra" (not every
+        # Mac item as "missing", since the Mac side just has no entry for
+        # that top-level menu at all) — exclude it from both sides instead
+        # and say so, rather than record a false gap.
+        partial_errors = mac_data.get("menu_bar_partial_errors", {})
+        if partial_errors:
+            failed_labels = set(partial_errors)
+            lulo_menu_bar = [m for m in lulo_menu_bar if m.get("label") not in failed_labels]
+            for label, error in partial_errors.items():
+                notes.append(
+                    f"{mac_app_name}'s {label!r} menu was not captured: {error}; "
+                    "excluded from the menu diff"
+                )
         gaps += diff_menu_bars(
-            lulo_app_name, mac_data["menu_bar"], lulo_data.get("menu_bar", []), mac_app_name
+            lulo_app_name, mac_data["menu_bar"], lulo_menu_bar, mac_app_name
         )
     else:
         notes.append(

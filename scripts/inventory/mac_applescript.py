@@ -7,10 +7,26 @@ selecting a System Settings sidebar row to navigate (never toggling a
 control). Nothing here clicks an item or flips a setting.
 """
 
+# A submenu with more items than this is almost always a dynamically
+# populated list — an open-window list, a shell-profile list, a font
+# family list — rather than a static menu declaration, and walking it
+# item-by-item (one AXMenuItemCmd* round trip per entry, recursively) is
+# both slow and not useful: the diff does not try to match a live
+# window/profile/font list entry-for-entry anyway. `dumpMenuItems` records
+# such a submenu's item count instead of walking it. This is in addition
+# to (not instead of) the always-skipped named submenus below, which are
+# skipped regardless of size because they also leak the owner's own
+# documents/account, not just because they are slow.
+MAX_SUBMENU_WIDTH = 20
+
 # Recursively dumps a menu's items as tab-separated lines:
-#   depth \t title \t cmdChar \t cmdVirtualKey \t cmdModifiers \t enabled \t markChar
-# `title` is empty for a separator. Appended to every driver script.
-DUMP_MENU_ITEMS_HANDLER = r"""
+#   depth \t title \t cmdChar \t cmdVirtualKey \t cmdModifiers \t enabled \t markChar \t omitReason
+# `title` is empty for a separator. `omitReason` is non-empty exactly when
+# this item has a submenu that was *not* walked (either because it is one
+# of the always-skipped named submenus, or because it was wider than
+# MAX_SUBMENU_WIDTH) — in which case no deeper-depth lines follow for it.
+# Appended to every driver script.
+DUMP_MENU_ITEMS_HANDLER = rf"""
 on dumpMenuItems(menuRef, depth)
 	set out to ""
 	tell application "System Events"
@@ -45,50 +61,42 @@ on dumpMenuItems(menuRef, depth)
 				set mkv to value of attribute "AXMenuItemMarkChar" of mi
 				if mkv is not missing value then set mk to mkv
 			end try
-			set subCount to 0
-			try
-				set subCount to count of menus of mi
-			end try
-			set out to out & depth & tab & t & tab & cmdChar & tab & cmdVK & tab & cmdMods & tab & enState & tab & mk & linefeed
 			-- Services/Open Recent/Recent Items are populated system-wide
 			-- (every installed app's Info.plist, or the owner's own
 			-- documents) rather than declared by this app's menu, and can
 			-- run to dozens of entries; recursing into them is both slow
 			-- and liable to record the owner's personal document names.
-			-- `mac_inventory.py` already drops their children on the
-			-- Python side (DYNAMIC_PERSONAL_SUBMENUS) — skip the walk here
-			-- too so a Services-heavy app does not time the whole run out.
-			if subCount > 0 and t is not "Services" and t is not "Open Recent" and t is not "Recent Items" and t is not "Apple" then
+			-- `mac_inventory.py` mirrors this list on the Python side
+			-- (DYNAMIC_PERSONAL_SUBMENUS) as a defence-in-depth fallback
+			-- for any raw dump that predates this check — keep both in
+			-- sync.
+			set subItemCount to 0
+			set hasSub to false
+			try
+				set subMenus to menus of mi
+				if (count of subMenus) > 0 then
+					set hasSub to true
+					set subItemCount to count of menu items of (item 1 of subMenus)
+				end if
+			end try
+			set omitReason to ""
+			if hasSub then
+				if t is "Services" or t is "Open Recent" or t is "Recent Items" or t is "Apple" or t is "Import from iPhone" then
+					set omitReason to "dynamic/personal submenu, not read"
+				else if subItemCount > {MAX_SUBMENU_WIDTH} then
+					set omitReason to "dynamic (" & subItemCount & " items), not read"
+				end if
+			end if
+			set out to out & depth & tab & t & tab & cmdChar & tab & cmdVK & tab & cmdMods & tab & enState & tab & mk & tab & omitReason & linefeed
+			if hasSub and omitReason is "" then
 				try
-					set out to out & my dumpMenuItems(menu 1 of mi, depth + 1)
+					set out to out & my dumpMenuItems(item 1 of subMenus, depth + 1)
 				end try
 			end if
 		end repeat
 	end tell
 	return out
 end dumpMenuItems
-"""
-
-DUMP_MENU_BAR_HANDLER = r"""
-on dumpMenuBar(procName)
-	set out to ""
-	tell application "System Events"
-		tell process procName
-			set topItems to menu bar items of menu bar 1
-			repeat with topItem in topItems
-				set topName to ""
-				try
-					set topName to name of topItem
-				end try
-				set out to out & "0" & tab & topName & tab & tab & tab & tab & "1" & tab & linefeed
-				try
-					set out to out & my dumpMenuItems(menu 1 of topItem, 1)
-				end try
-			end repeat
-		end tell
-	end tell
-	return out
-end dumpMenuBar
 """
 
 # Depth-first search for the first AXOutline or AXTable under `elementRef`

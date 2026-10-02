@@ -27,6 +27,12 @@ Safety:
   - Never recurses into "Recent Items", "Open Recent" or "Services": those
     AppKit-provided submenus are populated from the owner's own documents
     and app usage, not from the app's own static menu declaration.
+  - The menu bar is read one top-level menu at a time (its own osascript
+    call, its own timeout — see `dump_menu_bar`), and any submenu wider
+    than `mac_applescript.MAX_SUBMENU_WIDTH` items (an open-window list, a
+    shell-profile list, a font-family list) is recorded as dynamic rather
+    than walked, so one slow or dynamically-populated menu cannot time out
+    the whole app's capture.
 """
 
 from __future__ import annotations
@@ -210,15 +216,15 @@ def build_shortcut(cmd_char: str, cmd_vk: str, cmd_mods: str) -> str:
 
 
 def parse_menu_dump(raw: str) -> list[dict]:
-    """Turn the tab-separated `dumpMenuBar` output into a nested tree."""
+    """Turn `dumpMenuItems`'s tab-separated output into a nested tree."""
     roots: list[dict] = []
     stack: list[tuple[int, list[dict]]] = [(-1, roots)]
     for line in raw.splitlines():
         if not line:
             continue
         fields = line.split("\t")
-        fields += [""] * (7 - len(fields))
-        depth_s, title, cmd_char, cmd_vk, cmd_mods, enabled, mark = fields[:7]
+        fields += [""] * (8 - len(fields))
+        depth_s, title, cmd_char, cmd_vk, cmd_mods, enabled, mark, omit_reason = fields[:8]
         depth = int(depth_s)
         node = {
             "label": title if title else None,  # None marks a separator
@@ -230,31 +236,101 @@ def parse_menu_dump(raw: str) -> list[dict]:
         while stack and stack[-1][0] >= depth:
             stack.pop()
         parent_children = stack[-1][1]
-        if title in DYNAMIC_PERSONAL_SUBMENUS:
-            node["children_omitted"] = "dynamic/personal submenu, not read"
-        else:
-            parent_children = parent_children  # for clarity
+        # `omit_reason` is set by dumpMenuItems itself (named dynamic/
+        # personal submenu, or one wider than MAX_SUBMENU_WIDTH) and is the
+        # normal path now. The `title in DYNAMIC_PERSONAL_SUBMENUS` check is
+        # a defence-in-depth fallback for a raw dump that predates the
+        # 8th field (e.g. an old cached fixture) and so has no omitReason
+        # of its own.
+        effective_omit = omit_reason or (
+            "dynamic/personal submenu, not read" if title in DYNAMIC_PERSONAL_SUBMENUS else ""
+        )
+        if effective_omit:
+            node["children_omitted"] = effective_omit
         parent_children.append(node)
-        if title not in DYNAMIC_PERSONAL_SUBMENUS:
-            stack.append((depth, node["children"]))
-        else:
-            stack.append((depth, []))  # swallow children without recording them
+        # No children were emitted for an omitted submenu (dumpMenuItems
+        # did not recurse into it), but push an empty sink anyway so any
+        # stray deeper-depth line is swallowed rather than mis-attributed.
+        stack.append((depth, [] if effective_omit else node["children"]))
     return roots
 
 
-def dump_menu_bar(process: str) -> list[dict]:
-    script = asc.driver(
-        asc.DUMP_MENU_ITEMS_HANDLER,
-        asc.DUMP_MENU_BAR_HANDLER,
-        body=f'dumpMenuBar("{process}")',
-    )
-    raw = run_osascript(script, timeout=90)
-    tree = parse_menu_dump(raw)
-    # tree[i] is a top-level menu-bar title with its items as children.
-    return [
-        {"label": t["label"], "items": t["children"]}
-        for t in tree
-    ]
+def _menu_bar_titles(process: str, timeout: int = 15) -> list[str]:
+    """Top-level menu-bar item titles, in order. A separate, cheap call so
+    a slow or failing single top-level menu (see `dump_menu_bar`) never
+    stops us from at least knowing how many menus there are and what to
+    label the ones we could not read."""
+    script = f"""
+tell application "System Events"
+	tell process "{process}"
+		set topItems to menu bar items of menu bar 1
+		set out to ""
+		repeat with topItem in topItems
+			set topName to ""
+			try
+				set topName to name of topItem
+			end try
+			set out to out & topName & linefeed
+		end repeat
+		return out
+	end tell
+end tell
+"""
+    raw = run_osascript(script, timeout=timeout)
+    return raw.splitlines()
+
+
+def dump_menu_bar(
+    process: str, per_menu_timeout: int = 30, overall_budget: float = 90.0
+) -> tuple[list[dict], dict[str, str]]:
+    """Reads the menu bar one top-level menu at a time — its own osascript
+    call, its own timeout — instead of one giant call that walks the whole
+    bar in a single Apple-event-heavy script. Terminal's Shell menu (New
+    Window/New Tab profile lists) and TextEdit's Format menu (Font,
+    Spelling) each contain submenus that can be slow or dynamically
+    populated; a single-call, single-timeout read of the *entire* bar can
+    time out and lose everything (see docs/inventory-gaps.md's history for
+    Terminal and TextEdit). Splitting means one slow/stuck menu only costs
+    that menu — every other menu is still recorded — and an overall budget
+    (not per-menu-call timeout alone) bounds the whole thing so a string of
+    slow menus cannot add up to an unbounded run.
+
+    Returns `(menus, errors)`. `menus` is a list of `{"label", "items"}`,
+    one per top-level menu that was read successfully, in the same shape
+    this function always returned. `errors` maps the label (or a
+    `"menu <n>"` placeholder if the label itself could not be read) of
+    each top-level menu that failed to its error message, so the caller
+    can report it — and so `diff.py` can exclude that one menu from the
+    diff instead of silently treating every Lulo item under it as "extra"
+    or every Mac item as "missing", neither of which is true when we
+    simply don't know."""
+    titles = _menu_bar_titles(process)
+    menus: list[dict] = []
+    errors: dict[str, str] = {}
+    deadline = time.monotonic() + overall_budget
+    for index, title in enumerate(titles, start=1):
+        label = title or f"menu {index}"
+        if time.monotonic() >= deadline:
+            errors[label] = f"skipped: overall menu-bar budget of {overall_budget:.0f}s exhausted"
+            continue
+        script = asc.driver(
+            asc.DUMP_MENU_ITEMS_HANDLER,
+            body=f"""
+tell application "System Events"
+	tell process "{process}"
+		set topItem to menu bar item {index} of menu bar 1
+		return my dumpMenuItems(menu 1 of topItem, 1)
+	end tell
+end tell
+""",
+        )
+        try:
+            raw = run_osascript(script, timeout=per_menu_timeout)
+        except RuntimeError as error:
+            errors[label] = str(error)
+            continue
+        menus.append({"label": title, "items": parse_menu_dump(raw)})
+    return menus, errors
 
 
 # ---------------------------------------------------------------------------
@@ -747,7 +823,19 @@ def inventory_app(app_name: str, info: dict) -> dict:
 
     data: dict = {"app": app_name, "source": "mac-accessibility-tree"}
     try:
-        data["menu_bar"] = dump_menu_bar(process)
+        menus, menu_errors = dump_menu_bar(process)
+        if menus:
+            data["menu_bar"] = menus
+            if menu_errors:
+                # Some, but not all, top-level menus failed: keep what we
+                # got rather than discarding it (see `dump_menu_bar`).
+                data["menu_bar_partial_errors"] = menu_errors
+        else:
+            # Every top-level menu failed (or there were none): same
+            # all-or-nothing shape callers/diff.py already expect.
+            data["menu_bar_error"] = "; ".join(f"{k}: {v}" for k, v in menu_errors.items()) or (
+                "no top-level menus found"
+            )
     except RuntimeError as error:
         data["menu_bar_error"] = str(error)
 

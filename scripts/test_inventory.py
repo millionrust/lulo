@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
-"""Unit tests for scripts/inventory/{normalize,diff,rust_menu_parser}.py.
+"""Unit tests for scripts/inventory/{normalize,diff,mac_inventory,rust_menu_parser}.py.
 
-Runs with plain unittest / pytest; no Mac, no Lulo binaries, no GUI.
+Runs with plain unittest / pytest; no Mac, no Lulo binaries, no GUI. The
+mac_inventory.py tests below never call osascript for real — they patch
+`mac_inventory.run_osascript` (and, for the budget test, `time.monotonic`)
+with canned output, and only exercise the parsing/assembly logic.
 """
 
 from __future__ import annotations
 
+import json
+import re
 import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "inventory"))
 
 import diff as d  # noqa: E402
 import lulo_inventory as li  # noqa: E402
+import mac_inventory as mi  # noqa: E402
 import normalize as norm  # noqa: E402
 import rust_menu_parser as rmp  # noqa: E402
 
@@ -485,6 +494,255 @@ class SynthesizedStandardMenusTests(unittest.TestCase):
         self.assertIn("Minimise All", window_items)
         help_items = {item["label"] for item in menus[-1]["items"]}
         self.assertIn("Clock Help", help_items)
+
+
+class ParseMenuDumpTests(unittest.TestCase):
+    """`mac_inventory.parse_menu_dump` turns `dumpMenuItems`'s tab-separated
+    output (8 fields: depth, title, cmdChar, cmdVirtualKey, cmdModifiers,
+    enabled, markChar, omitReason) into the nested tree `mac_inventory.py`
+    writes to tests/inventory/mac/<app>.json."""
+
+    def test_separator_has_none_label(self):
+        tree = mi.parse_menu_dump("1\t\t\t\t\t1\t\t\n")
+        self.assertEqual(len(tree), 1)
+        self.assertIsNone(tree[0]["label"])
+
+    def test_nested_children_recorded_when_not_omitted(self):
+        raw = "1\tFile\t\t\t\t1\t\t\n" "2\tNew\tn\t\t\t1\t\t\n"
+        tree = mi.parse_menu_dump(raw)
+        self.assertEqual(tree[0]["label"], "File")
+        self.assertNotIn("children_omitted", tree[0])
+        self.assertEqual([c["label"] for c in tree[0]["children"]], ["New"])
+
+    def test_shortcut_enabled_and_checked_parsed_from_all_8_fields(self):
+        raw = "1\tCopy\tc\t\t8\t0\t✓\t\n"
+        node = mi.parse_menu_dump(raw)[0]
+        self.assertEqual(node["shortcut"], "c")  # mod 8 = no-command: no ⌘ prefix
+        self.assertFalse(node["enabled"])
+        self.assertTrue(node["checked"])
+
+    def test_omit_reason_field_marks_children_omitted_and_stops_recursion(self):
+        # dumpMenuItems decided this submenu was too wide to walk and so
+        # emitted no deeper-depth lines for it; depth-1 is a false flag
+        # here only to prove nothing deeper got attributed to it.
+        raw = "1\tNew Window\t\t\t\t1\t\tdynamic (42 items), not read\n"
+        tree = mi.parse_menu_dump(raw)
+        self.assertEqual(tree[0]["children_omitted"], "dynamic (42 items), not read")
+        self.assertEqual(tree[0]["children"], [])
+
+    def test_named_dynamic_submenu_omitted_via_its_own_omit_reason(self):
+        raw = "1\tServices\t\t\t\t1\t\tdynamic/personal submenu, not read\n"
+        tree = mi.parse_menu_dump(raw)
+        self.assertEqual(tree[0]["children_omitted"], "dynamic/personal submenu, not read")
+
+    def test_legacy_7_field_raw_without_omit_reason_falls_back_to_named_list(self):
+        # A raw dump shaped like the one dumpMenuItems produced before it
+        # grew the omitReason column: Python-side DYNAMIC_PERSONAL_SUBMENUS
+        # still catches the known named submenus as a defence-in-depth.
+        raw = "1\tServices\t\t\t\t1\t\n"
+        tree = mi.parse_menu_dump(raw)
+        self.assertEqual(tree[0]["children_omitted"], "dynamic/personal submenu, not read")
+
+    def test_unrelated_submenu_title_is_not_treated_as_omitted(self):
+        raw = "1\tFile\t\t\t\t1\t\t\n" "2\tNew\tn\t\t\t1\t\t\n"
+        tree = mi.parse_menu_dump(raw)
+        self.assertNotIn("children_omitted", tree[0])
+
+
+class DumpMenuBarAssemblyTests(unittest.TestCase):
+    """`mac_inventory.dump_menu_bar` reads one top-level menu per osascript
+    call (its own timeout) instead of one giant call for the whole bar, so
+    Terminal's Shell menu or TextEdit's Format menu timing out does not
+    lose the rest of the bar (the original 90s-all-or-nothing bug this
+    fixes — see docs/inventory-gaps.md's history). These tests never touch
+    osascript or a real app; `mi.run_osascript` is replaced with a fake
+    that inspects the script text to decide which call it is answering."""
+
+    @staticmethod
+    def _menu_index(script: str) -> int:
+        match = re.search(r"menu bar item (\d+) of menu bar 1", script)
+        assert match, script
+        return int(match.group(1))
+
+    def test_reads_each_top_level_menu_in_its_own_osascript_call(self):
+        calls: list[str] = []
+
+        def fake_run_osascript(script, timeout=30):
+            calls.append(script)
+            if "on dumpMenuItems" not in script:
+                return "File\nEdit\n"
+            index = self._menu_index(script)
+            return f"1\tItem{index}\t\t\t\t1\t\t\n"
+
+        with mock.patch.object(mi, "run_osascript", side_effect=fake_run_osascript):
+            menus, errors = mi.dump_menu_bar("TextEdit")
+
+        self.assertEqual(errors, {})
+        self.assertEqual([m["label"] for m in menus], ["File", "Edit"])
+        self.assertEqual(menus[0]["items"][0]["label"], "Item1")
+        self.assertEqual(menus[1]["items"][0]["label"], "Item2")
+        # One call for the top-level titles, one more per top-level menu —
+        # never one call that walks the whole bar.
+        self.assertEqual(len(calls), 3)
+
+    def test_one_failing_menu_does_not_lose_the_others(self):
+        def fake_run_osascript(script, timeout=30):
+            if "on dumpMenuItems" not in script:
+                return "File\nWindow\nHelp\n"
+            index = self._menu_index(script)
+            if index == 2:  # Window: e.g. a dynamic/slow open-window list
+                raise RuntimeError("osascript timed out after 30s")
+            return f"1\tItem{index}\t\t\t\t1\t\t\n"
+
+        with mock.patch.object(mi, "run_osascript", side_effect=fake_run_osascript):
+            menus, errors = mi.dump_menu_bar("Terminal")
+
+        self.assertEqual([m["label"] for m in menus], ["File", "Help"])
+        self.assertEqual(errors, {"Window": "osascript timed out after 30s"})
+
+    def test_overall_budget_exhausted_skips_remaining_menus_without_calling_them(self):
+        calls: list[str] = []
+        clock = {"t": 0.0}
+
+        def fake_monotonic():
+            return clock["t"]
+
+        def fake_run_osascript(script, timeout=30):
+            calls.append(script)
+            if "on dumpMenuItems" not in script:
+                return "File\nEdit\n"
+            clock["t"] += 1000.0  # blow the overall budget after this menu
+            return "1\tNew\t\t\t\t1\t\t\n"
+
+        with mock.patch.object(mi, "run_osascript", side_effect=fake_run_osascript), mock.patch.object(
+            time, "monotonic", side_effect=fake_monotonic
+        ):
+            menus, errors = mi.dump_menu_bar("Terminal", overall_budget=90.0)
+
+        self.assertEqual([m["label"] for m in menus], ["File"])
+        self.assertIn("overall menu-bar budget", errors.get("Edit", ""))
+        # The budget-exhausted menu's own osascript call never happens:
+        # just the titles call plus File's.
+        self.assertEqual(len(calls), 2)
+
+    def test_every_menu_failing_returns_no_menus_and_all_the_errors(self):
+        def fake_run_osascript(script, timeout=30):
+            if "on dumpMenuItems" not in script:
+                return "File\n"
+            raise RuntimeError("osascript timed out after 30s")
+
+        with mock.patch.object(mi, "run_osascript", side_effect=fake_run_osascript):
+            menus, errors = mi.dump_menu_bar("Terminal")
+
+        self.assertEqual(menus, [])
+        self.assertEqual(errors, {"File": "osascript timed out after 30s"})
+
+
+class InventoryAppMenuBarMergeTests(unittest.TestCase):
+    """`inventory_app` must keep a partially-successful menu-bar read
+    (some top-level menus captured, some not) rather than discarding
+    everything the way a single `menu_bar_error` used to, and must still
+    fall back to `menu_bar_error` when nothing at all was captured."""
+
+    def _run(self, dump_menu_bar_result):
+        with mock.patch.object(mi, "is_running", return_value=True), mock.patch.object(
+            mi, "dump_menu_bar", return_value=dump_menu_bar_result
+        ), mock.patch.object(
+            mi, "dump_toolbar", return_value={"present": False, "items": []}
+        ), mock.patch.object(
+            mi, "dump_settings_window", return_value={"present": False, "controls": []}
+        ):
+            return mi.inventory_app("Terminal", mi.APPS["Terminal"])
+
+    def test_partial_menu_errors_are_kept_alongside_the_captured_menus(self):
+        data = self._run(
+            ([{"label": "File", "items": []}], {"Window": "osascript timed out after 30s"})
+        )
+        self.assertEqual(data["menu_bar"], [{"label": "File", "items": []}])
+        self.assertEqual(
+            data["menu_bar_partial_errors"], {"Window": "osascript timed out after 30s"}
+        )
+        self.assertNotIn("menu_bar_error", data)
+
+    def test_every_menu_failing_falls_back_to_menu_bar_error(self):
+        data = self._run(([], {"File": "osascript timed out after 30s"}))
+        self.assertNotIn("menu_bar", data)
+        self.assertNotIn("menu_bar_partial_errors", data)
+        self.assertIn("osascript timed out after 30s", data["menu_bar_error"])
+
+    def test_no_partial_errors_omits_the_partial_errors_key(self):
+        data = self._run(([{"label": "File", "items": []}], {}))
+        self.assertEqual(data["menu_bar"], [{"label": "File", "items": []}])
+        self.assertNotIn("menu_bar_partial_errors", data)
+        self.assertNotIn("menu_bar_error", data)
+
+
+class DiffExcludesPartiallyFailedMenusTests(unittest.TestCase):
+    """`diff.py` must not turn a top-level menu `mac_inventory.py` could
+    not capture this run into a pile of false "Lulo-only" gaps for every
+    item under it — it should exclude that menu from both sides and leave
+    a coverage note instead (mirroring the existing contaminated-
+    background-capture handling for Finder's context menus)."""
+
+    def test_failed_top_level_menu_is_excluded_from_both_sides(self):
+        mac = [{"label": "File", "items": [{"label": "New", "shortcut": "⌘N", "children": []}]}]
+        lulo = [
+            {"label": "File", "items": [{"label": "New", "shortcut": "⌘N", "children": []}]},
+            {"label": "Window", "items": [{"label": "Minimise", "shortcut": "⌘M", "children": []}]},
+        ]
+        gaps = d.diff_menu_bars("Terminal", mac, lulo, "Terminal")
+        # Without the exclusion, Lulo's whole Window menu would show up as
+        # TIER_EXTRA_LULO_ONLY simply because the Mac side has no entry for
+        # a menu it never got to capture this run.
+        self.assertTrue(any(g.path.startswith("Window") for g in gaps))
+
+        filtered_lulo = [m for m in lulo if m.get("label") != "Window"]
+        gaps_excluded = d.diff_menu_bars("Terminal", mac, filtered_lulo, "Terminal")
+        self.assertEqual(gaps_excluded, [])
+
+    def test_diff_app_performs_the_exclusion_itself_from_menu_bar_partial_errors(self):
+        mac_data = {
+            "app": "Terminal",
+            "menu_bar": [
+                {
+                    "label": "File",
+                    "items": [{"label": "New Window", "shortcut": "⌘N", "children": []}],
+                },
+            ],
+            "menu_bar_partial_errors": {"Window": "osascript timed out after 30s"},
+            "toolbar": {"present": False, "items": []},
+            "settings": {"present": False, "controls": []},
+        }
+        lulo_data = {
+            "menu_bar": [
+                {
+                    "label": "File",
+                    "items": [{"label": "New Window", "shortcut": "⌘N", "children": []}],
+                },
+                {
+                    "label": "Window",
+                    "items": [{"label": "Minimise", "shortcut": "⌘M", "children": []}],
+                },
+            ],
+            "toolbar": {"present": False, "items": []},
+            "settings": {"present": False, "controls": []},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            mac_dir = Path(tmp) / "mac"
+            lulo_dir = Path(tmp) / "lulo"
+            mac_dir.mkdir()
+            lulo_dir.mkdir()
+            (mac_dir / "Terminal.json").write_text(json.dumps(mac_data))
+            (lulo_dir / "Terminal.json").write_text(json.dumps(lulo_data))
+            with mock.patch.object(d, "MAC_DIR", mac_dir), mock.patch.object(d, "LULO_DIR", lulo_dir):
+                gaps, notes = d.diff_app("Terminal", "Terminal")
+
+        # Lulo's whole Window menu must not show up as TIER_EXTRA_LULO_ONLY
+        # just because the Mac side could not capture it this run.
+        self.assertFalse(any(g.path.startswith("Window") for g in gaps))
+        self.assertTrue(
+            any("Window" in note and "excluded from the menu diff" in note for note in notes)
+        )
 
 
 if __name__ == "__main__":

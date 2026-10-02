@@ -2522,9 +2522,10 @@ mod tests {
                 .iter()
                 .map(|menu| menu.label.as_str())
                 .collect::<Vec<_>>(),
-            ["File", "Edit", "View"]
+            ["Application", "File", "Edit", "View"]
         );
-        assert_eq!(menus[2].items[2].shortcut, "⌘R");
+        assert_eq!(menus[0].items[0].shortcut, "⌘,");
+        assert_eq!(menus[3].items[2].shortcut, "⌘R");
         assert!(validate_menus(&menus).is_ok());
     }
 

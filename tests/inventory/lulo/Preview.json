@@ -185,6 +185,13 @@
           "children": []
         },
         {
+          "label": "Delete",
+          "action": "preview::DeleteSelection",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Select All",
           "action": "preview::SelectAll",
           "shortcut": "⌘A",
@@ -434,6 +441,13 @@
               "label": "Highlight Text",
               "action": "preview::AnnotateHighlight",
               "shortcut": "⌃⌘H",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Rectangle",
+              "action": "preview::AnnotateRectangle",
+              "shortcut": "⌃⌘R",
               "separator_before": false,
               "children": []
             },

@@ -26,7 +26,8 @@ use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
     ActualSize, ActualSizeOnAll, AnnotateArrow, AnnotateHighlight, AnnotateLine, AnnotateOval,
-    AnnotateText, Back, CloseAll, CloseSelected, CloseWindow, Copy, EnterFullScreen, ExportAsPdf,
+    AnnotateRectangle, AnnotateText, Back, CloseAll, CloseSelected, CloseWindow, Copy,
+    DeleteSelection, EnterFullScreen, ExportAsPdf,
     Find, FindNext, FindPrevious, Forward, GoToPage, HideSidebar, JumpToSelection, MoveToTrash,
     NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
     RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll,
@@ -51,6 +52,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::CloseAll",
         "preview::CloseSelected",
         "preview::Copy",
+        "preview::DeleteSelection",
         "preview::Find",
         "preview::FindNext",
         "preview::FindPrevious",
@@ -60,6 +62,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::ShowThumbnails",
         "preview::ShowImageBackground",
         "preview::AnnotateHighlight",
+        "preview::AnnotateRectangle",
         "preview::AnnotateArrow",
         "preview::AnnotateOval",
         "preview::AnnotateLine",
@@ -3887,6 +3890,7 @@ impl Render for PreviewView {
             rmac_ui::set_menu_checked("preview::ShowImageBackground", self.image_background, cx);
             for (action, tool) in [
                 ("preview::AnnotateHighlight", Tool::Highlight),
+                ("preview::AnnotateRectangle", Tool::Rectangle),
                 ("preview::AnnotateArrow", Tool::Arrow),
                 ("preview::AnnotateOval", Tool::Oval),
                 ("preview::AnnotateLine", Tool::Line),
@@ -3960,6 +3964,11 @@ impl Render for PreviewView {
             }
             rmac_ui::set_menu_enabled("preview::MoveToTrash", loaded && !self.markup_save_busy, cx);
             rmac_ui::set_menu_enabled("preview::SaveAs", loaded && !self.save_as_busy, cx);
+            rmac_ui::set_menu_enabled(
+                "preview::DeleteSelection",
+                self.markup_selected.is_some() && !self.markup_save_busy,
+                cx,
+            );
             let pdf = self
                 .slot()
                 .is_some_and(|slot| slot.kind() == Some(Kind::Pdf));
@@ -3988,6 +3997,7 @@ impl Render for PreviewView {
             rmac_ui::set_menu_enabled("preview::GoToPage", pdf, cx);
             for action in [
                 "preview::AnnotateHighlight",
+                "preview::AnnotateRectangle",
                 "preview::AnnotateArrow",
                 "preview::AnnotateOval",
                 "preview::AnnotateLine",
@@ -4064,6 +4074,7 @@ impl Render for PreviewView {
                 this.on_key_down(event, window, cx);
             }))
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
+            .on_action(cx.listener(|this, _: &DeleteSelection, _, cx| this.delete_markup(cx)))
             .on_action(cx.listener(|this, _: &MoveToTrash, window, cx| {
                 this.move_to_bin(window, cx);
             }))
@@ -4120,6 +4131,9 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &AnnotateHighlight, _, cx| {
                 this.choose_annotation(Tool::Highlight, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateRectangle, _, cx| {
+                this.choose_annotation(Tool::Rectangle, cx);
             }))
             .on_action(cx.listener(|this, _: &AnnotateArrow, _, cx| {
                 this.choose_annotation(Tool::Arrow, cx);

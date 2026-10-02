@@ -101,6 +101,7 @@ gpui::actions!(
     [
         Copy,
         CopyPlainText,
+        CopyWithoutBackgroundColour,
         Paste,
         PasteSelection,
         PasteEscapedText,

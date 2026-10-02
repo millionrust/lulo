@@ -38,6 +38,7 @@ impl Render for TerminalView {
             rmac_ui::set_menu_enabled("terminal::Copy", has_selection, cx);
             rmac_ui::set_menu_checked("terminal::ToggleOptionAsMeta", self.option_as_meta, cx);
             rmac_ui::set_menu_enabled("terminal::CopyPlainText", has_selection, cx);
+            rmac_ui::set_menu_enabled("terminal::CopyWithoutBackgroundColour", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::PasteSelection", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::PasteEscapedSelection", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::UseSelectionForFind", has_selection, cx);

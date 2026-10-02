@@ -28,6 +28,7 @@ gpui::actions!(
         FindPrev,
         UseSelectionForFind,
         JumpToSelection,
+        SelectLine,
         SaveGoToFolder,
         CloseBar,
         ToggleMono,

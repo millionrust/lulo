@@ -79,6 +79,11 @@ impl TerminalView {
         cx.bind_keys([
             KeyBinding::new(rmac_ui::shortcuts::COPY.keystroke, Copy, Some("Terminal")),
             KeyBinding::new("alt-shift-cmd-c", CopyPlainText, Some("Terminal")),
+            KeyBinding::new(
+                "ctrl-shift-cmd-c",
+                CopyWithoutBackgroundColour,
+                Some("Terminal"),
+            ),
             KeyBinding::new(rmac_ui::shortcuts::PASTE.keystroke, Paste, Some("Terminal")),
             KeyBinding::new("shift-cmd-v", PasteSelection, Some("Terminal")),
             KeyBinding::new("ctrl-cmd-v", PasteEscapedText, Some("Terminal")),

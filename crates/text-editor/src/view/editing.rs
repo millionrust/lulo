@@ -15,6 +15,22 @@ fn accessible_value_fits(len_bytes: usize) -> bool {
     len_bytes <= MAX_ACCESSIBLE_VALUE_BYTES
 }
 
+/// A one-based logical line, excluding its line break. The final empty line
+/// after a trailing newline is a valid destination.
+fn line_number_range(text: &str, number: usize) -> Option<std::ops::Range<usize>> {
+    if number == 0 {
+        return None;
+    }
+    let mut start = 0;
+    for _ in 1..number {
+        start += text[start..].find('\n')? + 1;
+    }
+    let end = text[start..]
+        .find('\n')
+        .map_or(text.len(), |index| start + index);
+    Some(start..end)
+}
+
 /// Byte offset of every non-overlapping match of `needle`, case-insensitive
 /// as the Mac's Find is by default. Comparing ASCII-lowercased copies keeps
 /// every byte offset valid in the original text: lowercasing never changes a
@@ -93,6 +109,45 @@ impl EditorView {
         });
     }
 
+    pub(super) fn select_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.rtf_runs.is_some() || self.long_lines.is_some() {
+            return;
+        }
+        let current_line = {
+            let input = self.input.read(cx);
+            let text = input.text().to_string();
+            text[..input.selected_range().start]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1
+        };
+        self.select_line_input.update(cx, |input, cx| {
+            input.set_value(current_line.to_string(), window, cx);
+            input.focus(window, cx);
+        });
+        self.find_open = false;
+        self.select_line_open = true;
+        cx.notify();
+    }
+
+    pub(super) fn select_requested_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.select_line_open {
+            return;
+        }
+        let requested = self.select_line_input.read(cx).value().trim().parse().ok();
+        let text = self.input.read(cx).text().to_string();
+        let Some(range) = requested.and_then(|number| line_number_range(&text, number)) else {
+            return;
+        };
+        self.select_line_open = false;
+        self.input.update(cx, |input, cx| {
+            input.set_selected_range(range, cx);
+            input.focus(window, cx);
+        });
+        cx.notify();
+    }
+
     pub(super) fn actual_size(&mut self, cx: &mut Context<Self>) {
         self.font_size = f32::from(crate::settings::current().font_size);
         cx.notify();
@@ -137,6 +192,7 @@ impl EditorView {
             return;
         }
         self.find_open = false;
+        self.select_line_open = false;
         self.replace_mode = false;
         // Once the field is removed from the tree, its focus handle is no
         // longer under the editor's key context. Return focus to the document
@@ -329,6 +385,11 @@ impl EditorView {
         ] {
             rmac_ui::set_menu_enabled(action, has_document_selection, cx);
         }
+        rmac_ui::set_menu_enabled(
+            "text_editor::SelectLine",
+            self.rtf_runs.is_none() && self.long_lines.is_none(),
+            cx,
+        );
     }
 
     pub(super) fn toggle_mono(&mut self, cx: &mut Context<Self>) {
@@ -446,6 +507,15 @@ impl EditorView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selects_numbered_line_with_utf8_and_final_blank_line() {
+        let text = "one\né💙lan\n";
+        assert_eq!(line_number_range(text, 2), Some(4..13));
+        assert_eq!(line_number_range(text, 3), Some(14..14));
+        assert_eq!(line_number_range(text, 4), None);
+        assert_eq!(line_number_range("", 1), Some(0..0));
+    }
 
     #[test]
     fn accessible_value_stops_at_the_copy_limit() {

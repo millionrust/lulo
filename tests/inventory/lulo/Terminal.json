@@ -139,6 +139,13 @@
               "shortcut": "⌥⇧⌘C",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Copy Without Background Colour",
+              "action": "terminal::CopyWithoutBackgroundColour",
+              "shortcut": "⌃⇧⌘C",
+              "separator_before": false,
+              "children": []
             }
           ]
         },

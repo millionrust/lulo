@@ -238,6 +238,13 @@
               "shortcut": "⌘J",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Select Line…",
+              "action": "text_editor::SelectLine",
+              "shortcut": "⌘L",
+              "separator_before": false,
+              "children": []
             }
           ]
         }

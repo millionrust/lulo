@@ -17,10 +17,10 @@ use crate::{
     document, ActualSize, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument,
     ExportPdf, FindNext, FindPrev, IncreaseFont, JumpToSelection, NewFile, OpenFile, OpenRecent0,
     OpenRecent1, OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7,
-    OpenRecent8, OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SetEncodingUtf16Be,
-    SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf,
-    SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage,
-    UseSelectionForFind, ZoomIn, ZoomOut,
+    OpenRecent8, OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine,
+    SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr,
+    SetLineEndingCrLf, SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono, ToggleReplace,
+    ToggleWrapToPage, UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use super::{
@@ -139,6 +139,9 @@ impl Render for EditorView {
             }))
             .on_action(cx.listener(|this, _: &JumpToSelection, window, cx| {
                 this.jump_to_selection(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SelectLine, window, cx| {
+                this.select_line(window, cx)
             }))
             .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
                 if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {
@@ -329,7 +332,9 @@ impl Render for EditorView {
                         ),
                 )
             })
-            .when(self.find_open, |d| d.child(self.render_find_bar(layout, cx)))
+            .when(self.find_open || self.select_line_open, |d| {
+                d.child(self.render_find_bar(layout, cx))
+            })
             .child(if self.rtf_runs.is_some() {
                 self.render_rtf_preview(layout, cx).into_any_element()
             } else if let Some(body) = long_line_body {

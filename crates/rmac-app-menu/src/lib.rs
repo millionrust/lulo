@@ -369,6 +369,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                         "⌘E"
                     ),
                     item!("Jump to Selection", "text_editor::JumpToSelection", "⌘J"),
+                    item!("Select Line…", "text_editor::SelectLine", "⌘L"),
                 ],
                 separator
             ),
@@ -424,7 +425,14 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             submenu!(
                 "Copy Special",
                 "terminal::CopySpecialMenu",
-                [item!("Copy Plain Text", "terminal::CopyPlainText", "⌥⇧⌘C")]
+                [
+                    item!("Copy Plain Text", "terminal::CopyPlainText", "⌥⇧⌘C"),
+                    item!(
+                        "Copy Without Background Colour",
+                        "terminal::CopyWithoutBackgroundColour",
+                        "⌃⇧⌘C"
+                    ),
+                ]
             ),
             item!("Paste", "terminal::Paste", "⌘V"),
             item!("Paste Selection", "terminal::PasteSelection", "⇧⌘V"),

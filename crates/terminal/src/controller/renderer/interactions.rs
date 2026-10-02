@@ -74,6 +74,7 @@ impl TerminalView {
             }))
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &CopyPlainText, _, cx| this.copy(cx)))
+            .on_action(cx.listener(|this, _: &CopyWithoutBackgroundColour, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &Paste, window, cx| this.request_paste(window, cx)))
             .on_action(
                 cx.listener(|this, _: &PasteSelection, window, cx| {

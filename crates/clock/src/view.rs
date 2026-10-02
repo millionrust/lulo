@@ -375,6 +375,8 @@ impl ClockView {
         if self.state.stopwatch_analogue != analogue {
             self.change(Change::SetStopwatchAnalogue(analogue), cx);
         }
+        rmac_ui::set_menu_checked("clock::ShowDigitalStopwatch", !analogue, cx);
+        rmac_ui::set_menu_checked("clock::ShowAnalogueStopwatch", analogue, cx);
     }
 
     // ------------------------------------------------------------ actions

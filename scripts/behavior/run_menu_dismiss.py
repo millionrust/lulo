@@ -621,16 +621,24 @@ class Run:
 
         opened_pixels = 0
         opened = baseline
-        for _ in range(4):
+        namespace = "rmac-quick-settings"
+        self.dispatch("quick-settings")
+        layer_open = self.wait_for(
+            lambda: self.has_layer(namespace)
+            and self.has_layer(f"{namespace}-click-catcher"), 10
+        )
+        if not layer_open and self.popover_gone(namespace):
             self.dispatch("quick-settings")
-            time.sleep(0.6)
+            layer_open = self.wait_for(
+                lambda: self.has_layer(namespace)
+                and self.has_layer(f"{namespace}-click-catcher"), 10
+            )
+        for _ in range(4 if layer_open else 0):
+            time.sleep(0.5)
             opened = self.capture("cc-open")
             opened_pixels = self.changed_pixels(baseline, opened, CONTROL_CENTER_BOX)
             if opened_pixels > 500:
                 break
-            # Toggle back off before retrying the dispatch — it opens/closes.
-            self.dispatch("quick-settings")
-            time.sleep(0.4)
         self.check("Control Center: opening it changes its corner of the screen",
                    opened_pixels > 500, f"changed={opened_pixels}")
 

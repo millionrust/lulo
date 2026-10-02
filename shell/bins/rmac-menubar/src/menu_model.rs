@@ -375,7 +375,7 @@ fn shorten(text: &str, limit: usize) -> String {
 }
 
 /// The Help menu every app gets: a search field that finds the app's menu
-/// commands by name (as the Mac's Help search does), "<App> Help" (⌘?),
+/// commands by name (as the Mac's Help search does), "<App> Help",
 /// which opens that app's bundled help page, then the app's own help
 /// items. Results name the menu each command lives in.
 pub fn help_menu(
@@ -419,7 +419,13 @@ pub fn help_menu(
             items.extend(results);
         }
     }
-    let app_help = Item::new(format!("{app_name} Help"), APP_HELP_ACTION, "⌘?");
+    // TextEdit and Terminal's measured Help rows have no key equivalent.
+    let help_shortcut = if matches!(app_name, "Terminal" | "Text Editor") {
+        ""
+    } else {
+        "⌘?"
+    };
+    let app_help = Item::new(format!("{app_name} Help"), APP_HELP_ACTION, help_shortcut);
     let mut help_items = std::iter::once(app_help).chain(help_items);
     if let Some(first) = help_items.next() {
         items.push(first.separated());
@@ -1912,12 +1918,16 @@ mod tests {
         assert_eq!(help.items[0].label, "find n");
         assert_eq!(help.items[1].label, "Edit ▸ Find ▸ Find Next");
         assert_eq!(help.items[1].action, "test::Find Next");
-        // "<App> Help" (⌘?) follows the search results on every app.
+        // The app's Help row follows search results.
         assert_eq!(help.items[2].label, "Files Help");
         assert_eq!(help.items[2].shortcut, "⌘?");
         assert_eq!(help.items[2].action, APP_HELP_ACTION);
         assert!(help.items[2].separator_before);
         assert_eq!(help.items.len(), 3);
+        for app in ["Terminal", "Text Editor"] {
+            let help = help_menu("", app, &[], Vec::new());
+            assert_eq!(help.items[1].shortcut, "");
+        }
 
         let empty = help_menu(
             "",

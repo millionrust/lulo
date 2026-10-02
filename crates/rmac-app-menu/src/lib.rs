@@ -684,6 +684,12 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ]
             ),
             item!("Table", "notes::InsertTable", "⌥⌘T"),
+            item!(
+                "Show Note with Light Background",
+                "notes::ToggleLightBackground",
+                "",
+                separator
+            ),
             submenu!(
                 "Font",
                 "notes::FontMenu",
@@ -1177,6 +1183,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Copy", "preview::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
             item!("Select All", "preview::SelectAll", "⌘A"),
+            item!("Delete", "preview::DeleteSelection", ""),
             item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(
                 "Find",
@@ -1248,10 +1255,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 "preview::AnnotateMenu",
                 [
                     item!("Highlight Text", "preview::AnnotateHighlight", "⌃⌘H"),
+                    item!("Rectangle", "preview::AnnotateRectangle", "⌃⌘R"),
                     item!("Oval", "preview::AnnotateOval", "⌃⌘O"),
                     item!("Line", "preview::AnnotateLine", "⌃⌘I"),
                     item!("Arrow", "preview::AnnotateArrow", "⌃⌘A"),
                     item!("Text", "preview::AnnotateText", "⌃⌘T", separator),
+                    item!("Signature", "preview::AnnotateSignature", ""),
                 ],
                 separator
             ),

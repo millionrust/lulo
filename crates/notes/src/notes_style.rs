@@ -228,6 +228,41 @@ pub(super) fn editor_text() -> Hsla {
     measured(0xdcdcdc, mac::text())
 }
 
+/// Format ▸ Show Note with Light Background changes the note canvas even
+/// when the rest of the app follows the system's dark appearance.
+pub(super) fn note_editor_fill(force_light: bool) -> Hsla {
+    if force_light {
+        rmac_ui::theme::ThemeTokens::light_default()
+            .colors
+            .window
+            .hsla()
+    } else {
+        editor_fill()
+    }
+}
+
+pub(super) fn note_editor_text(force_light: bool) -> Hsla {
+    if force_light {
+        rmac_ui::theme::ThemeTokens::light_default()
+            .colors
+            .text
+            .hsla()
+    } else {
+        editor_text()
+    }
+}
+
+pub(super) fn note_editor_date(force_light: bool) -> Hsla {
+    if force_light {
+        rmac_ui::theme::ThemeTokens::light_default()
+            .colors
+            .text_secondary
+            .hsla()
+    } else {
+        editor_date()
+    }
+}
+
 pub(super) fn capsule_fill() -> Hsla {
     if dark() {
         white(0.02)

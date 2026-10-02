@@ -66,7 +66,7 @@ impl NotesView {
                             .min_w(px(0.0))
                             .h_full()
                             .v_flex()
-                            .bg(editor_fill())
+                            .bg(note_editor_fill(self.note_has_light_background()))
                             .when(self.toolbar_visible, |element| {
                                 element.child(self.render_toolbar(window, cx))
                             })
@@ -306,6 +306,14 @@ impl NotesView {
             )
             .on_action(cx.listener(|this, _: &ToggleMarkdownPreview, _, cx| {
                 this.toggle_markdown_preview(cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleLightBackground, _, cx| {
+                if let Some(note) = this.session.selected_note() {
+                    if !this.light_background_notes.insert(note.id) {
+                        this.light_background_notes.remove(&note.id);
+                    }
+                    cx.notify();
+                }
             }))
             .on_action(cx.listener(|this, _: &ToggleFolders, _, cx| {
                 this.folders_visible = !this.folders_visible;

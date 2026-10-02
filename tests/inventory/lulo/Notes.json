@@ -453,6 +453,13 @@
           "children": []
         },
         {
+          "label": "Show Note with Light Background",
+          "action": "notes::ToggleLightBackground",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Font",
           "action": "notes::FontMenu",
           "shortcut": "",
@@ -783,7 +790,7 @@
             {
               "label": "Return to Previous Size",
               "action": "window::restore-size",
-              "shortcut": "⌃⌘R",
+              "shortcut": "⌃⇧⌘R",
               "separator_before": true,
               "children": []
             }

@@ -803,6 +803,30 @@ class LuloRun:
                 return {"value": value}
         return {"value": None}
 
+    def fact_note_background(self) -> dict[str, Any]:
+        """Sample blank editor canvas beside the Body field in private niri."""
+        frame = self.active_frame()
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            if name(node) == "Body" and sc.normalize_atspi_role(role(node)) in TEXT_ROLES:
+                box = extents(node)
+                if box is None:
+                    break
+                ox, oy = self.window_origin()
+                path = self.sandbox / "note-background.png"
+                subprocess.run(["grim", str(path)], env=self.env, check=True)
+                red, green, blue = png_pixel_rgb(
+                    path, ox + box[0] + box[2] - 20, oy + box[1] + min(60, box[3] // 2)
+                )
+                return {"light": min(red, green, blue) > 128}
+        raise StepFailed("Notes Body field has no accessible bounds")
+
+    def fact_pdf_annotations(self) -> dict[str, Any]:
+        filename = self.scenario.get("launch", {}).get("file")
+        if self.app != "preview" or not filename:
+            raise StepFailed("PDF annotation fact needs a launched Preview document")
+        data = (self.sandbox / filename).read_bytes()
+        return {"rectangles": data.count(b"/Subtype/Square")}
+
     def fact_windows(self) -> dict[str, Any]:
         pyatspi = atspi()
         plain = [f for f in self.frames() if role(f) not in DIALOG_ROLES
@@ -1162,6 +1186,8 @@ class LuloRun:
                     "calculator": "Calculator",
                     "clock": "Clock",
                     "weather": "Weather",
+                    "preview": "Preview",
+                    "notes": "Notes",
                 }[self.app] + ".Menu"
                 call = subprocess.run(
                     ["gdbus", "call", "--session", "--dest", bus,
@@ -1177,6 +1203,14 @@ class LuloRun:
                 # keys); Lulo's keys do carry a stable aria-label
                 # (`scientific_keypad::key_name`), so click by that instead.
                 self.click_item(step["click_key"], "left")
+            elif "drag_in_window" in step:
+                start, end = step["drag_in_window"]
+                ox, oy = self.window_origin()
+                self.nested.input.drag(
+                    (ox + start[0], oy + start[1]),
+                    (ox + end[0], oy + end[1]),
+                    OUTPUT_W, OUTPUT_H,
+                )
             elif "capture" in step:
                 if self.capture_dir is not None:
                     self.capture_dir.mkdir(parents=True, exist_ok=True)

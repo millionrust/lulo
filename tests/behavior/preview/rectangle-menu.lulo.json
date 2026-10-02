@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "scenario": "preview/rectangle-menu",
+  "observations": {
+    "rectangle_saved": {
+      "pdf_annotations": {
+        "rectangles": 1
+      }
+    },
+    "rectangle_deleted": {
+      "pdf_annotations": {
+        "rectangles": 0
+      }
+    }
+  }
+}

@@ -326,7 +326,7 @@ pub fn window_menu(
                 command(
                     "Return to Previous Size",
                     WindowCommand::ReturnToPreviousSize,
-                    "⌃⌘R",
+                    "⌃⇧⌘R",
                 )
                 .separated(),
             ],

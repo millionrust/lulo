@@ -20,16 +20,18 @@ pub(crate) enum ViewFilter {
     OtherUsersProcesses,
     ActiveProcesses,
     InactiveProcesses,
+    SelectedProcesses,
 }
 
 impl ViewFilter {
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::All,
         Self::MyProcesses,
         Self::SystemProcesses,
         Self::OtherUsersProcesses,
         Self::ActiveProcesses,
         Self::InactiveProcesses,
+        Self::SelectedProcesses,
     ];
 
     /// The label shown in both the filter menu and the window subtitle.
@@ -41,6 +43,7 @@ impl ViewFilter {
             Self::OtherUsersProcesses => "Other Users' Processes",
             Self::ActiveProcesses => "Active Processes",
             Self::InactiveProcesses => "Inactive Processes",
+            Self::SelectedProcesses => "Selected Processes",
         }
     }
 
@@ -64,7 +67,22 @@ impl ViewFilter {
             Self::InactiveProcesses => {
                 matches!(status, "Idle" | "Stopped" | "Zombie" | "Dead" | "Tracing")
             }
+            Self::SelectedProcesses => false,
         }
+    }
+
+    pub(crate) fn matches_row(
+        self,
+        pid: u32,
+        uid: Option<u32>,
+        status: &str,
+        current_uid: Option<u32>,
+        selected_pid: Option<u32>,
+    ) -> bool {
+        if self == Self::SelectedProcesses {
+            return selected_pid == Some(pid);
+        }
+        self.matches(uid, status, current_uid)
     }
 }
 
@@ -133,6 +151,14 @@ mod tests {
         unique.sort_unstable();
         unique.dedup();
         assert_eq!(labels.len(), unique.len());
+    }
+
+    #[test]
+    fn selected_processes_only_shows_the_selected_pid() {
+        let filter = ViewFilter::SelectedProcesses;
+        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), Some(42)));
+        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), Some(42)));
+        assert!(!filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None));
     }
 
     /// `ProcessStatus`'s `Display` impl is what rows actually store

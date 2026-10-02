@@ -231,9 +231,14 @@ impl MonitorView {
                 "activity_monitor::ShowInactiveProcesses",
                 ViewFilter::InactiveProcesses,
             ),
+            (
+                "activity_monitor::ShowSelectedProcesses",
+                ViewFilter::SelectedProcesses,
+            ),
         ] {
             rmac_ui::set_menu_checked(action, self.view_filter(cx) == filter, cx);
         }
+        rmac_ui::set_menu_enabled("activity_monitor::ShowSelectedProcesses", has_selection, cx);
         for (action, seconds) in [
             ("activity_monitor::RefreshEverySecond", 1),
             ("activity_monitor::RefreshEveryTwoSeconds", 2),

@@ -943,6 +943,13 @@ class LuloRun:
                     names.append(label)
         return {"items": names}
 
+    def fact_monitor_rows(self) -> dict[str, Any]:
+        """The process rows visible through the Monitor table's AX tree."""
+        frame = self.active_frame()
+        rows = [name(node) for node in descendants(frame, limit=5000)
+                if role(node) in {"table row", "list item"} and "(PID " in name(node)] if frame is not None else []
+        return {"count": len(set(rows))}
+
     def fact_settings_controls(self) -> dict[str, Any]:
         """Checked state of visible settings checkboxes in the active window."""
         pyatspi = atspi()
@@ -1162,6 +1169,7 @@ class LuloRun:
                     "calculator": "Calculator",
                     "clock": "Clock",
                     "weather": "Weather",
+                    "system-monitor": "SystemMonitor",
                 }[self.app] + ".Menu"
                 call = subprocess.run(
                     ["gdbus", "call", "--session", "--dest", bus,

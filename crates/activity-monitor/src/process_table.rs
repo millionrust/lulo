@@ -418,6 +418,7 @@ impl ProcessTableDelegate {
         let needle = self.filter.to_lowercase();
         let view_filter = self.view_filter;
         let current_uid = self.current_uid;
+        let selected_pid = self.selected_pid;
         Self::sort_rows(&mut self.all_rows, self.sort_key, self.sort_asc);
         self.rows = self
             .all_rows
@@ -427,7 +428,13 @@ impl ProcessTableDelegate {
                     || row.name.to_lowercase().contains(&needle)
                     || row.pid.to_string().contains(&needle)
                     || row.cmd_search.contains(&needle))
-                    && view_filter.matches(row.uid, row.status.as_ref(), current_uid)
+                    && view_filter.matches_row(
+                        row.pid,
+                        row.uid,
+                        row.status.as_ref(),
+                        current_uid,
+                        selected_pid,
+                    )
             })
             .take(300)
             .cloned()

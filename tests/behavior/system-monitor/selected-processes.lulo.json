@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "scenario": "system-monitor/selected-processes",
+  "platform": "Lulo local contract",
+  "observations": {
+    "selected": {"selection": {"items": ["matching process"]}},
+    "filtered": {
+      "monitor_rows": {"count": 1},
+      "selection": {"items": ["matching process"]}
+    }
+  }
+}

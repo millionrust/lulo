@@ -35,6 +35,7 @@ gpui::actions!(
         ShowOtherUsersProcesses,
         ShowActiveProcesses,
         ShowInactiveProcesses,
+        ShowSelectedProcesses,
         TogglePidColumn,
         ToggleUserColumn,
         ToggleCpuColumn,

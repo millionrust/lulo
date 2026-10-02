@@ -980,6 +980,11 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 ""
             ),
             item!(
+                "Selected Processes",
+                "activity_monitor::ShowSelectedProcesses",
+                ""
+            ),
+            item!(
                 "Filter Processes",
                 "activity_monitor::FilterProcesses",
                 "⌥⌘F",

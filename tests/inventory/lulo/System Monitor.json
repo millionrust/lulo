@@ -283,6 +283,13 @@
           "children": []
         },
         {
+          "label": "Selected Processes",
+          "action": "activity_monitor::ShowSelectedProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Filter Processes",
           "action": "activity_monitor::FilterProcesses",
           "shortcut": "⌥⌘F",

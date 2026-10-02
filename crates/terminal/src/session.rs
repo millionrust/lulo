@@ -792,6 +792,66 @@ impl Session {
         self.shell_state.clear_grid_marks();
     }
 
+    pub(super) fn mark_current_line(&self, bookmark: bool) -> bool {
+        let Ok(term) = self.term.lock() else {
+            return false;
+        };
+        let Some(position) =
+            retained_marker_position(&term, self.scrollback_limit.load(Ordering::Acquire))
+        else {
+            return false;
+        };
+        self.shell_state.mark_line(position.line, bookmark);
+        true
+    }
+
+    pub(super) fn unmark_current_line(&self) -> bool {
+        let Ok(term) = self.term.lock() else {
+            return false;
+        };
+        let Some(position) =
+            retained_marker_position(&term, self.scrollback_limit.load(Ordering::Acquire))
+        else {
+            return false;
+        };
+        self.shell_state.unmark_line(position.line);
+        true
+    }
+
+    pub(super) fn has_bookmarks(&self) -> bool {
+        self.shell_state.has_bookmarks()
+    }
+
+    pub(super) fn current_line_is_marked(&self) -> bool {
+        let Ok(term) = self.term.lock() else {
+            return false;
+        };
+        retained_marker_position(&term, self.scrollback_limit.load(Ordering::Acquire))
+            .is_some_and(|position| self.shell_state.has_mark_at(position.line))
+    }
+
+    pub(super) fn scroll_to_bookmark(
+        &self,
+        direction: PromptDirection,
+    ) -> Result<bool, SessionWriteError> {
+        let mut term = self.term.lock().map_err(|_| SessionWriteError::State)?;
+        let grid = term.grid();
+        let Some(offset) = self.shell_state.bookmark_offset(
+            direction,
+            grid.history_size(),
+            grid.display_offset(),
+            self.scrollback_limit.load(Ordering::Acquire),
+        ) else {
+            return Ok(false);
+        };
+        if offset == grid.display_offset() {
+            return Ok(false);
+        }
+        term.scroll_display(Scroll::Bottom);
+        term.scroll_display(Scroll::Delta(i32::try_from(offset).unwrap_or(i32::MAX)));
+        Ok(true)
+    }
+
     pub(super) fn scroll_to_prompt(
         &self,
         direction: PromptDirection,

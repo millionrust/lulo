@@ -376,6 +376,35 @@
           "children": []
         },
         {
+          "label": "Marks",
+          "action": "terminal::MarksMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Mark",
+              "action": "terminal::Mark",
+              "shortcut": "⌘U",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Mark as Bookmark",
+              "action": "terminal::MarkAsBookmark",
+              "shortcut": "⌥⌘U",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Unmark",
+              "action": "terminal::Unmark",
+              "shortcut": "⇧⌘U",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Navigate",
           "action": "terminal::NavigateMenu",
           "shortcut": "",
@@ -392,6 +421,20 @@
               "label": "Jump to Next Mark",
               "action": "terminal::NextPrompt",
               "shortcut": "⌘↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Previous Bookmark",
+              "action": "terminal::PreviousBookmark",
+              "shortcut": "⌥⌘",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Next Bookmark",
+              "action": "terminal::NextBookmark",
+              "shortcut": "⌥⌘",
               "separator_before": false,
               "children": []
             }

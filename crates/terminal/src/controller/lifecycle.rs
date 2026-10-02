@@ -173,6 +173,11 @@ impl TerminalView {
                 NextPrompt,
                 Some("Terminal"),
             ),
+            KeyBinding::new("cmd-u", Mark, Some("Terminal")),
+            KeyBinding::new("alt-cmd-u", MarkAsBookmark, Some("Terminal")),
+            KeyBinding::new("cmd-shift-u", Unmark, Some("Terminal")),
+            KeyBinding::new("alt-cmd-up", PreviousBookmark, Some("Terminal")),
+            KeyBinding::new("alt-cmd-down", NextBookmark, Some("Terminal")),
             KeyBinding::new(
                 rmac_ui::shortcuts::SELECT_COMMAND_OUTPUT.keystroke,
                 SelectCommandOutput,

@@ -60,7 +60,7 @@ APP_BINARIES = {
     "terminal": ["rmac-terminal"],
 }
 KEEP_ENV = {"PATH", "LANG", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DIR", "RUST_BACKTRACE", "RUST_LOG"}
-TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
+TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box", "terminal"}
 DIALOG_ROLES = {"dialog", "alert", "file chooser"}
 HELPER_APPS = {"rmac-file-chooser"}
 

@@ -181,6 +181,11 @@ scenario is not part of CI yet.
    }
    ```
 
+   - **setup**: `files` writes disposable content into the scenario's sandbox folder (as above);
+     `config` writes a fixture under `XDG_CONFIG_HOME` (e.g. `{"rmac/weather.json": "..."}`);
+     `state` writes one under `XDG_STATE_HOME` the same way, for apps that persist settings there
+     (e.g. Files' sidebar favourites, `rmac/files/settings.json`) and whose preconditions a later
+     scenario needs already set rather than toggled through the UI.
    - **launch**: `{"folder": "."}` or `{"reveal": "report.txt"}` for Files;
      `{"file": "guide.pdf"}` for Preview, with that file created in the
      scenario's sandbox. The other apps start with no arguments. Text Editor

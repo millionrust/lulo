@@ -605,6 +605,10 @@ class LuloRun:
                 )
             except (ValueError, subprocess.SubprocessError) as error:
                 raise StepFailed(f"could not seed the private image clipboard: {error}") from error
+        for entry, content in self.scenario.get("setup", {}).get("state", {}).items():
+            target = Path(self.env["XDG_STATE_HOME"]) / entry
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content or "")
         if self.app == "desktop":
             self.before = {p.name + ("/" if p.is_dir() else "") for p in self.files_root.iterdir()}
 

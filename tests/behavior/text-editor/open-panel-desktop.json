@@ -1,6 +1,11 @@
 {
   "title": "Open panel navigates to Desktop with Command-D and cancels",
   "app": "text-editor",
+  "setup": {
+    "state": {
+      "rmac/files/settings.json": "{\"version\":1,\"settings\":{\"sidebar\":{\"show_desktop\":true}}}"
+    }
+  },
   "launch": {},
   "steps": [
     {
@@ -48,5 +53,5 @@
     "open.dialog.present": "ignore",
     "desktop.dialog.present": "ignore"
   },
-  "note": "macOS 26's Open panel is a standalone window that the recorder's dialog heuristic does not report, so dialog.present is ignored while it is open; cancelled.dialog.present must still be false and ⌘D must select Desktop."
+  "note": "macOS 26's Open panel is a standalone window that the recorder's dialog heuristic does not report, so dialog.present is ignored while it is open; cancelled.dialog.present must still be false and ⌘D must select Desktop. The chooser's Desktop favourite mirrors Files' own sidebar visibility setting (crates/finder/src/places.rs sidebar_visibility, default show_desktop=false), and the Mac recording was made with Desktop checked in Finder's sidebar, so `setup.state` seeds that one setting; without it the Desktop row never exists in a fresh sandbox and ⌘D has nothing to select regardless of timing."
 }

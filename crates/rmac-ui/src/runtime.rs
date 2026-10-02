@@ -274,6 +274,105 @@ pub fn shell_surface_root(
         .bg(gpui::transparent_black())
 }
 
+/// A transparent, keyboard-inert layer-shell surface that fills the rest of
+/// the display below `reserved_top` and runs `on_click` — removing itself
+/// first — the instant a pointer button goes down on it.
+///
+/// Control Center and the Notification Center panel each own only the small
+/// rectangle they draw; outside that rectangle a click reaches whatever is
+/// physically there instead (the Dock's own surface never requests keyboard
+/// focus at all, so it never tells the popover to close, and even a surface
+/// that does take focus on click only does so if the compositor transfers
+/// Wayland keyboard focus, which this does not depend on). This closes the
+/// gap by catching the pointer press itself: `Layer::Overlay` sits above the
+/// Dock's `Layer::Top` and above ordinary windows unconditionally (the
+/// wlr-layer-shell stacking order is fixed, not creation-order-dependent),
+/// and `reserved_top` excludes the shared top-bar band
+/// (`shell/bins/rmac-menubar/src/main.rs`'s `MENU_SURFACE_HEIGHT`) so this
+/// never competes with the menu bar's own on-demand surface for a click
+/// meant to switch menus or dismiss a different popover there.
+///
+/// Returns `None` (opening nothing) when the display is shorter than
+/// `reserved_top`, or if the window fails to open.
+#[cfg(target_os = "linux")]
+pub fn open_outside_click_catcher(
+    namespace: &str,
+    display: std::rc::Rc<dyn gpui::PlatformDisplay>,
+    reserved_top: gpui::Pixels,
+    on_click: impl Fn(&mut App) + 'static,
+    cx: &mut App,
+) -> Option<gpui::AnyWindowHandle> {
+    use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
+    use gpui::{
+        point, size, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
+        WindowOptions,
+    };
+
+    let bounds = display.bounds();
+    let height = bounds.size.height - reserved_top;
+    if height <= gpui::px(0.0) {
+        return None;
+    }
+    let on_click = std::rc::Rc::new(on_click);
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds {
+            origin: point(gpui::px(0.0), gpui::px(0.0)),
+            size: size(bounds.size.width, height),
+        })),
+        titlebar: None,
+        focus: false,
+        show: true,
+        display_id: Some(display.id()),
+        app_id: Some("dev.rmac.OutsideClickCatcher".to_owned()),
+        window_background: WindowBackgroundAppearance::Transparent,
+        kind: WindowKind::LayerShell(LayerShellOptions {
+            namespace: namespace.to_owned(),
+            layer: Layer::Overlay,
+            anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT | Anchor::BOTTOM,
+            margin: Some((reserved_top, gpui::px(0.0), gpui::px(0.0), gpui::px(0.0))),
+            keyboard_interactivity: KeyboardInteractivity::None,
+            ..Default::default()
+        }),
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        ..Default::default()
+    };
+    cx.open_window(options, move |_, cx| {
+        let left = on_click.clone();
+        let right = on_click.clone();
+        cx.new(|_| OutsideClickCatcher { left, right })
+    })
+    .ok()
+    .map(AnyWindowHandle::from)
+}
+
+#[cfg(target_os = "linux")]
+struct OutsideClickCatcher {
+    left: std::rc::Rc<dyn Fn(&mut App)>,
+    right: std::rc::Rc<dyn Fn(&mut App)>,
+}
+
+#[cfg(target_os = "linux")]
+impl gpui::Render for OutsideClickCatcher {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl gpui::IntoElement {
+        use gpui::MouseButton;
+
+        let left = self.left.clone();
+        let right = self.right.clone();
+        gpui::div()
+            .size_full()
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.remove_window();
+                left(cx);
+            })
+            .on_mouse_down(MouseButton::Right, move |_, window, cx| {
+                window.remove_window();
+                right(cx);
+            })
+    }
+}
+
 /// Scales an application-owned text size with the live rmac accessibility
 /// preference. Layout dimensions remain independent logical pixels.
 pub fn text_px(base: f32) -> gpui::Pixels {

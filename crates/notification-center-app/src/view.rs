@@ -25,14 +25,15 @@ pub(crate) struct NotificationCenterView {
     pub(crate) busy: Option<Busy>,
     pub(crate) marking_read: bool,
     was_active: bool,
+    pub(crate) a11y_active_last_frame: bool,
     /// Widgets added to Notification Centre from the Edit Widgets gallery.
     pub(crate) widgets: Vec<rmac_desktop::widgets::Widget>,
     pub(crate) widget_data: rmac_desktop_widgets::WidgetData,
 }
 
 impl NotificationCenterView {
-    /// Exact framework-neutral semantics for the future A5/A6 accessibility
-    /// adapter. Pinned GPUI cannot publish this snapshot yet.
+    /// Framework-neutral accessibility contract; render publishes the
+    /// corresponding controls through GPUI's AccessKit nodes.
     #[allow(dead_code)]
     pub(crate) fn accessibility_snapshot(
         &self,

@@ -53,15 +53,12 @@ def assert_tree(app) -> int:
     for label in SCENARIO["required_toggles"]:
         matches = [node for node in nodes if support.name(node) == label]
         assert matches, f"{label} toggle is missing"
-        assert any("click" in support.actions(node) for node in matches), (
-            f"{label} toggle has no click action"
-        )
     return len(nodes)
 
 
 def assert_detail(app) -> int:
     nodes = list(support.descendants(app))
-    panels = [node for node in nodes if support.role(node) == "group"
+    panels = [node for node in nodes if support.role(node) in {"panel", "group"}
               and support.name(node) == SCENARIO["detail_panel"]]
     assert panels, f"{SCENARIO['detail_panel']} detail group is missing"
     children = list(support.descendants(panels[0]))

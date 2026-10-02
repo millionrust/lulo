@@ -88,14 +88,16 @@ pub(crate) struct QuickSettingsView {
     pub(crate) module_focus: Option<Module>,
     pub(crate) detail_focus: Option<Target>,
     pub(crate) keyboard: bool,
+    /// Request one follow-up frame when AccessKit attaches after first paint.
+    pub(crate) a11y_active_last_frame: bool,
     volume_generation: u64,
     brightness_generation: u64,
     was_active: bool,
 }
 
 impl QuickSettingsView {
-    /// Exact framework-neutral semantics for the future A5/A6 accessibility
-    /// adapter. Pinned GPUI cannot publish this snapshot yet.
+    /// Framework-neutral accessibility contract; render publishes the
+    /// corresponding controls through GPUI's AccessKit nodes.
     #[allow(dead_code)]
     pub(crate) fn accessibility_snapshot(
         &self,
@@ -211,6 +213,7 @@ impl QuickSettingsView {
             module_focus: None,
             detail_focus: None,
             keyboard: false,
+            a11y_active_last_frame: false,
             volume_generation: 0,
             brightness_generation: 0,
             was_active: false,

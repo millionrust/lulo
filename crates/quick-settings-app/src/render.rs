@@ -140,6 +140,11 @@ fn layer() -> Div {
 
 impl Render for QuickSettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let a11y_active = window.is_a11y_active();
+        if a11y_active && !self.a11y_active_last_frame {
+            window.request_animation_frame();
+        }
+        self.a11y_active_last_frame = a11y_active;
         // CC-13: keep easing a slider bulge across renders triggered by
         // something else (e.g. a live volume update) without its own
         // request_animation_frame; stops costing anything once settled.

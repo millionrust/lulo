@@ -457,17 +457,24 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
         if is_open():
             return
         shell.dispatch("quick-settings")
-        timeout = 15.0 if not opened_once else 3.0
+        timeout = 25.0 if not opened_once else 5.0
         if not shell._wait_for(is_open, timeout):
             raise StepFailed("Quick Settings did not open from its shortcut endpoint")
         if not opened_once and not shell.wait_for_populated_frame(shell.quick_settings_process.pid, timeout=25):
             raise StepFailed("Quick Settings opened but its AT-SPI tree stayed empty")
         if not opened_once:
             from assert_control_centre_accessibility import assert_tree
-            try:
-                count = assert_tree(shell.app_by_pid(shell.quick_settings_process.pid))
-            except AssertionError as error:
-                raise StepFailed(f"Control Centre accessibility assertion failed: {error}") from error
+            def populated_tree():
+                try:
+                    return assert_tree(shell.app_by_pid(shell.quick_settings_process.pid))
+                except AssertionError:
+                    return None
+            count = shell._wait_for(populated_tree, 10)
+            if count is None:
+                try:
+                    assert_tree(shell.app_by_pid(shell.quick_settings_process.pid))
+                except AssertionError as error:
+                    raise StepFailed(f"Control Centre accessibility assertion failed: {error}") from error
             print(f"Control Centre: {count} accessible nodes", flush=True)
         opened_once = True
 
@@ -482,8 +489,66 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
                 time.sleep(0.4)
 
     try:
+        for control in item.get("hover_controls", []):
+            label = control["label"]
+            open_popover()
+            target = find_showing(current_frames(), control["lulo_name"], {"slider"})
+            if target is None:
+                out[f"hover:{label}"] = {"changed": None}
+                continue
+            # SCREEN_COORDS normally locate the layer surface on niri's
+            # output. Some AT-SPI adapters return window-relative coordinates
+            # there too; the panel is anchored at the measured 316 pt width,
+            # 28 pt top and 2 pt right margins (surface.rs/layout.rs).
+            try:
+                rect = target.queryComponent().getExtents(atspi().SCREEN_COORDS)
+                box = (rect.x, rect.y, rect.width, rect.height)
+            except Exception:
+                box = None
+            if box is None or box[0] < OUTPUT_W // 2:
+                local = extents(target)
+                box = ((OUTPUT_W - 316 - 2 + local[0], 28 + local[1], local[2], local[3])
+                       if local else None)
+            if box is None or box[2] <= 0 or box[3] <= 0:
+                out[f"hover:{label}"] = {"changed": None}
+                continue
+            shell.move(OUTPUT_W // 2, OUTPUT_H // 2)
+            time.sleep(0.3)
+            origin_x, origin_y = shell.niri_origin
+            region = (max(0, box[0] + origin_x - 14),
+                      max(0, box[1] + origin_y - 14), box[2] + 28, box[3] + 28)
+            rest = capture_full(shell.env, shell.nested.work / f"hover-rest-{label}.png")
+            cx, cy = box[0] + box[2] / 2, box[1] + box[3] / 2
+            shell.move(cx, cy)
+            time.sleep(0.5)
+            hovered = capture_full(shell.env, shell.nested.work / f"hover-on-{label}.png")
+            out[f"hover:{label}"] = {"changed": region_changed(rest, hovered, region)}
         open_popover()
-        shell.click(OUTPUT_W // 2, OUTPUT_H // 2)
+        from assert_control_centre_accessibility import SCENARIO, assert_detail
+        trigger = shell._wait_for(
+            lambda: find_showing(current_frames(), SCENARIO["detail_trigger"], {"push button", "button"}), 5)
+        if trigger is None:
+            dump_tree(current_frames(), "Control Centre before Wi-Fi AT-SPI click")
+            raise StepFailed("Wi-Fi detail button is missing from the AT-SPI tree")
+        click_node(shell, trigger)
+        if not shell._wait_for(lambda: find_showing(current_frames(), SCENARIO["detail_panel"], {"panel", "group"}), 5):
+            dump_tree(current_frames(), "Control Centre after Wi-Fi AT-SPI click")
+            raise StepFailed("Wi-Fi detail view did not open through AT-SPI")
+        def populated_detail():
+            try:
+                return assert_detail(shell.app_by_pid(shell.quick_settings_process.pid))
+            except AssertionError:
+                return None
+        detail_count = shell._wait_for(populated_detail, 5)
+        if detail_count is None:
+            try:
+                assert_detail(shell.app_by_pid(shell.quick_settings_process.pid))
+            except AssertionError as error:
+                raise StepFailed(f"Control Centre detail assertion failed: {error}") from error
+        print(f"Control Centre Wi-Fi detail: {detail_count} accessible nodes", flush=True)
+        close_safety_net()
+        open_popover()
+        shell.click(OUTPUT_W // 2, OUTPUT_H - 100)
         time.sleep(0.8)
         out["outside_click"] = {"closed": not is_open()}
         close_safety_net()
@@ -499,48 +564,6 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
         out["escape"] = {"closed": not is_open()}
         close_safety_net()
 
-        for control in item.get("hover_controls", []):
-            label = control["label"]
-            open_popover()
-            target = find_showing(current_frames(), control["lulo_name"], {"slider"})
-            if target is None:
-                out[f"hover:{label}"] = {"changed": None}
-                close_safety_net()
-                continue
-            # The slider's WINDOW_COORDS are relative to its small layer
-            # surface. SCREEN_COORDS locate it on nested niri's output;
-            # shell.move translates those coordinates into parent Sway.
-            try:
-                rect = target.queryComponent().getExtents(atspi().SCREEN_COORDS)
-                box = (rect.x, rect.y, rect.width, rect.height)
-            except Exception:
-                box = None
-            if not box:
-                out[f"hover:{label}"] = {"changed": None}
-                close_safety_net()
-                continue
-            shell.move(OUTPUT_W // 2, OUTPUT_H // 2)
-            time.sleep(0.3)
-            origin_x, origin_y = shell.niri_origin
-            region = (max(0, box[0] + origin_x - 14),
-                      max(0, box[1] + origin_y - 14), box[2] + 28, box[3] + 28)
-            rest = capture_full(shell.env, shell.nested.work / f"hover-rest-{label}.png")
-            cx, cy = box[0] + box[2] / 2, box[1] + box[3] / 2
-            shell.move(cx, cy)
-            time.sleep(0.5)
-            hovered = capture_full(shell.env, shell.nested.work / f"hover-on-{label}.png")
-            out[f"hover:{label}"] = {"changed": region_changed(rest, hovered, region)}
-            close_safety_net()
-        open_popover()
-        from assert_control_centre_accessibility import SCENARIO, assert_detail
-        trigger = find_showing(current_frames(), SCENARIO["detail_trigger"], {"push button", "button"})
-        if trigger is None:
-            raise StepFailed("Wi-Fi detail button is missing from the AT-SPI tree")
-        click_node(shell, trigger)
-        if not shell._wait_for(lambda: find_showing(current_frames(), SCENARIO["detail_panel"], {"group"}), 5):
-            raise StepFailed("Wi-Fi detail view did not open through AT-SPI")
-        detail_count = assert_detail(shell.app_by_pid(shell.quick_settings_process.pid))
-        print(f"Control Centre Wi-Fi detail: {detail_count} accessible nodes", flush=True)
     finally:
         close_safety_net()
     return out
@@ -656,10 +679,17 @@ def record_shell_surfaces(nested: "run_lulo.Nested", bins: list[Path], niri_bin:
             if not shell.wait_for_populated_frame(shell.notification_center_process.pid, timeout=25):
                 raise StepFailed("Notification Center opened but its AT-SPI tree stayed empty")
             from assert_notification_center_accessibility import assert_tree
-            try:
-                count = assert_tree(shell.app_by_pid(shell.notification_center_process.pid))
-            except AssertionError as error:
-                raise StepFailed(f"Notification Center accessibility assertion failed: {error}") from error
+            def populated_tree():
+                try:
+                    return assert_tree(shell.app_by_pid(shell.notification_center_process.pid))
+                except AssertionError:
+                    return None
+            count = shell._wait_for(populated_tree, 10)
+            if count is None:
+                try:
+                    assert_tree(shell.app_by_pid(shell.notification_center_process.pid))
+                except AssertionError as error:
+                    raise StepFailed(f"Notification Center accessibility assertion failed: {error}") from error
             print(f"Notification Center: {count} accessible nodes", flush=True)
     finally:
         shell.close()

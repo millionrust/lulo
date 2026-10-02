@@ -877,6 +877,17 @@ class LuloRun:
                     return {"present": True, "items": items}
         return {"present": False}
 
+    def fact_toolbar(self) -> dict[str, Any]:
+        """Presence of Preview's named markup button in the active window."""
+        frame = self.active_frame()
+        return {
+            "markup_button": frame is not None and any(
+                role(node) in {"push button", "button"}
+                and name(node) == "Show Markup Toolbar"
+                for node in descendants(frame, limit=3000)
+            )
+        }
+
     def fact_selection(self) -> dict[str, Any]:
         pyatspi = atspi()
         frame = self.active_frame()

@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "preview/toolbar-toggle",
+  "observations": {
+    "hidden": {"toolbar": {"markup_button": false}, "windows": {"count": 1}},
+    "restored": {"toolbar": {"markup_button": true}, "windows": {"count": 1}}
+  }
+}

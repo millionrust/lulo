@@ -497,7 +497,6 @@ class Run:
     def run(self) -> int:
         self.start()
         self.warm_up()
-        self.debug_layers()
         self.dock_click_closes_app_menu()
         self.wallpaper_click_inside_band_closes_app_menu()
         self.wallpaper_click_below_band_closes_status_menu()

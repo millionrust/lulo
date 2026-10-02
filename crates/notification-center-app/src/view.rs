@@ -2,7 +2,7 @@ mod lifecycle;
 
 use std::collections::BTreeSet;
 
-use gpui::{BorrowAppContext as _, Context, FocusHandle, SharedString, Window};
+use gpui::{Context, FocusHandle, SharedString, Window};
 use rmac_notifications::NotificationId;
 use rmac_notifications_linux::center::{ActionSelection, Snapshot};
 

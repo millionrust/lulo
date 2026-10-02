@@ -1,7 +1,7 @@
 use std::process::Command as ProcessCommand;
 use std::time::{Duration, Instant};
 
-use gpui::{BorrowAppContext as _, Context, FocusHandle, KeyDownEvent, SharedString, Window};
+use gpui::{Context, FocusHandle, KeyDownEvent, SharedString, Window};
 use rmac_quick_settings::detail::{self, Detail, Module, Panel, RowAction, Target};
 use rmac_quick_settings::layout::Modules;
 use rmac_quick_settings::{Command, Control, Operation, State};
@@ -56,6 +56,7 @@ impl SliderBulges {
 }
 
 pub(crate) struct QuickSettingsView {
+    token: u64,
     pub(crate) state: State,
     pub(crate) stream_error: Option<SharedString>,
     pub(crate) operation_error: Option<SharedString>,
@@ -181,6 +182,7 @@ impl QuickSettingsView {
         .detach();
 
         Self {
+            token,
             state: State::default(),
             stream_error: None,
             operation_error: None,

@@ -77,6 +77,8 @@ def normalize_label(label: str | None) -> str | None:
         text = "Copy as Pathname"
     elif re.fullmatch(r"Quick Look [“\"].+[”\"]", text):
         text = "Quick Look"
+    elif re.fullmatch(r"Slideshow [“\"].+[”\"]", text):
+        text = "Slideshow"
     elif re.fullmatch(r"Compress [“\"].+[”\"]", text):
         text = "Compress"
     elif re.fullmatch(r"Undo (?:Move|Copy|New Folder|Replace|Restore).+", text):

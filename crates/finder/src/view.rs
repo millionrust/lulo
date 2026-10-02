@@ -156,6 +156,7 @@ actions!(
         OpenWith,
         AlwaysOpenWithOther,
         QuickLook,
+        Slideshow,
         Compress,
         GetInfo,
         ViewAsIcons,

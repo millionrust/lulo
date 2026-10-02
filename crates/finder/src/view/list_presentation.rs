@@ -873,6 +873,7 @@ impl FinderView {
                 window.toggle_fullscreen();
             }))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
+            .on_action(cx.listener(|this, _: &Slideshow, _, cx| this.slideshow(cx)))
             .on_action(cx.listener(|this, _: &Compress, _, cx| this.compress_selection(cx)))
             .on_action(cx.listener(|this, _: &GetInfo, window, cx| this.get_info(window, cx)))
             .on_action(

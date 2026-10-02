@@ -1,0 +1,14 @@
+{
+  "title": "Option-Command-Y opens the selected file as a full-screen Quick Look slideshow",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"report.txt": "Slideshow fixture.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "alt-cmd-y", "settle": 1.5},
+    {"observe": "slideshow", "facts": ["windows"]},
+    {"key": "escape", "settle": 0.7},
+    {"observe": "closed", "facts": ["windows"]}
+  ]
+}

@@ -65,8 +65,21 @@ class NormalizeLabelTests(unittest.TestCase):
     def test_finder_selection_labels_match_their_runtime_command(self):
         self.assertEqual(norm.normalize_label('Copy “report.txt” as Pathname'), "Copy as Pathname")
         self.assertEqual(norm.normalize_label('Quick Look “report.txt”'), "Quick Look")
+        self.assertEqual(norm.normalize_label('Slideshow “report.txt”'), "Slideshow")
         self.assertEqual(norm.normalize_label('Compress “report.txt”'), "Compress")
         self.assertEqual(norm.normalize_label('Undo Move of “Untitled”'), "Undo")
+
+    def test_finder_context_inventory_only_lists_single_selection_rows(self):
+        menus = li.read_finder_context_menus()
+        file_labels = {row.get("label") for row in menus["file"]}
+        folder_labels = {row.get("label") for row in menus["folder"]}
+        self.assertIn("Slideshow", file_labels)
+        self.assertIn("Slideshow", folder_labels)
+        self.assertIn("Open", file_labels)
+        self.assertNotIn("Open", folder_labels)
+        self.assertNotIn("New Folder with Selection", file_labels | folder_labels)
+        self.assertNotIn("<handler.name.clone()>", file_labels | folder_labels)
+        self.assertNotIn("Red", file_labels | folder_labels)
 
 
 class NormalizeShortcutTests(unittest.TestCase):
@@ -247,6 +260,24 @@ class DiffMenuBarsTests(unittest.TestCase):
         lulo = [{"label": "File", "items": [{"label": "Open Recent", "shortcut": "",
                  "children": [{"label": "Clear Menu", "shortcut": "", "children": []}]}]}]
         self.assertEqual(d.diff_menu_bars("Text Editor", mac, lulo, "TextEdit"), [])
+
+    def test_finder_installed_app_names_are_not_static_menu_gaps(self):
+        mac = [{"label": "File", "items": [{"label": "Open With", "shortcut": "", "children": [
+            {"label": "Arc", "shortcut": "", "children": []},
+            {"label": "Other…", "shortcut": "", "children": []},
+        ]}]}]
+        lulo = [{"label": "File", "items": []}]
+        gaps = d.diff_menu_bars("Finder", mac, lulo, "Finder")
+        self.assertEqual([gap.label for gap in gaps], ["Open With", "Other…"])
+
+    def test_finder_recent_folder_names_are_not_static_menu_gaps(self):
+        mac = [{"label": "Go", "items": [{"label": "Recent Folders", "shortcut": "", "children": [
+            {"label": "Downloads", "shortcut": "", "children": []},
+            {"label": "Clear Menu", "shortcut": "", "children": []},
+        ]}]}]
+        lulo = [{"label": "Go", "items": []}]
+        gaps = d.diff_menu_bars("Finder", mac, lulo, "Finder")
+        self.assertEqual([gap.label for gap in gaps], ["Recent Folders", "Clear Menu"])
 
     def test_bold_app_menu_aliasing_lines_up_with_application(self):
         mac = [{"label": "Finder", "items": [{"label": "Settings…", "shortcut": "⌘,", "children": []}]}]

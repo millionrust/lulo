@@ -534,7 +534,9 @@ impl Render for FinderView {
                         sort_key,
                         compress_label,
                         SelectionMenuLabels::from_paths(&self.selected_paths()).copy_as_pathname,
+                        slideshow_label(&self.selected_paths()),
                         self.selection_count(),
+                        self.selected_entry().is_some_and(|entry| entry.is_dir),
                         can_open_with,
                         self.open_with_menu
                             .as_ref()
@@ -599,6 +601,7 @@ impl FinderView {
             _ => "Quick Look".to_owned(),
         };
         rmac_ui::set_menu_label("finder::QuickLook", &quick_look_label, cx);
+        rmac_ui::set_menu_label("finder::Slideshow", &slideshow_label(&selection), cx);
         let has_selection = !selection.is_empty();
         rmac_ui::set_menu_enabled(
             "finder::Eject",
@@ -606,6 +609,7 @@ impl FinderView {
             cx,
         );
         rmac_ui::set_menu_enabled("finder::QuickLook", has_selection, cx);
+        rmac_ui::set_menu_enabled("finder::Slideshow", has_selection, cx);
         rmac_ui::set_menu_enabled(
             "finder::GoShared",
             rmac_finder::places::shared_folder(&self.home).is_some(),
@@ -715,6 +719,20 @@ impl FinderView {
 struct SelectionMenuLabels {
     copy: String,
     copy_as_pathname: String,
+}
+
+fn slideshow_label(paths: &[std::path::PathBuf]) -> String {
+    match paths {
+        [path] => {
+            let name = path
+                .file_name()
+                .unwrap_or(path.as_os_str())
+                .to_string_lossy();
+            format!("Slideshow “{}”", sanitize_dialog_name(&name))
+        }
+        paths if paths.len() > 1 => format!("Slideshow {} Items", paths.len()),
+        _ => "Slideshow".to_owned(),
+    }
 }
 
 impl SelectionMenuLabels {

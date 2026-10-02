@@ -144,6 +144,13 @@
           "children": []
         },
         {
+          "label": "Slideshow",
+          "action": "finder::Slideshow",
+          "shortcut": "⌥⌘Y",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Rename",
           "action": "finder::RenameItem",
           "shortcut": "",
@@ -658,14 +665,14 @@
         {
           "label": "Show Previous Tab",
           "action": "finder::PreviousTab",
-          "shortcut": "⌃⇧⇥",
+          "shortcut": "",
           "separator_before": true,
           "children": []
         },
         {
           "label": "Show Next Tab",
           "action": "finder::NextTab",
-          "shortcut": "⌃⇥",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
@@ -874,14 +881,6 @@
         "label": "Open"
       },
       {
-        "type": "item",
-        "label": "New Folder with Selection"
-      },
-      {
-        "type": "item",
-        "label": "<handler.name.clone()>"
-      },
-      {
         "type": "separator"
       },
       {
@@ -889,23 +888,11 @@
         "label": "Open With"
       },
       {
-        "type": "item",
-        "label": "Other…"
-      },
-      {
-        "type": "item",
-        "label": "<handler.name.clone()>"
-      },
-      {
         "type": "separator"
       },
       {
         "type": "submenu",
         "label": "Always Open With"
-      },
-      {
-        "type": "item",
-        "label": "Other…"
       },
       {
         "type": "separator"
@@ -942,6 +929,10 @@
         "label": "Quick Look"
       },
       {
+        "type": "item",
+        "label": "Slideshow"
+      },
+      {
         "type": "separator"
       },
       {
@@ -962,34 +953,6 @@
       {
         "type": "submenu",
         "label": "label"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Red"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Orange"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Yellow"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Green"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Blue"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Purple"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Gray"
       },
       {
         "type": "separator"
@@ -1001,10 +964,6 @@
     ],
     "folder": [
       {
-        "type": "command_item",
-        "label": "Open"
-      },
-      {
         "type": "item",
         "label": "Open in New Tab"
       },
@@ -1013,38 +972,10 @@
         "label": "Open in New Window"
       },
       {
-        "type": "item",
-        "label": "New Folder with Selection"
-      },
-      {
-        "type": "item",
-        "label": "<handler.name.clone()>"
-      },
-      {
         "type": "separator"
       },
       {
-        "type": "submenu",
-        "label": "Open With"
-      },
-      {
-        "type": "item",
-        "label": "Other…"
-      },
-      {
-        "type": "item",
-        "label": "<handler.name.clone()>"
-      },
-      {
         "type": "separator"
-      },
-      {
-        "type": "submenu",
-        "label": "Always Open With"
-      },
-      {
-        "type": "item",
-        "label": "Other…"
       },
       {
         "type": "separator"
@@ -1081,6 +1012,10 @@
         "label": "Quick Look"
       },
       {
+        "type": "item",
+        "label": "Slideshow"
+      },
+      {
         "type": "separator"
       },
       {
@@ -1101,34 +1036,6 @@
       {
         "type": "submenu",
         "label": "label"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Red"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Orange"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Yellow"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Green"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Blue"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Purple"
-      },
-      {
-        "type": "checked_item_with_swatch",
-        "label": "Gray"
       },
       {
         "type": "separator"

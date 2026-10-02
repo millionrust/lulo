@@ -846,6 +846,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Close All", "finder::CloseAll", "⌥⌘W"),
             item!("Get Info", "finder::GetInfo", "⌘I", separator),
             item!("Quick Look", "finder::QuickLook", "⌘Y"),
+            item!("Slideshow", "finder::Slideshow", "⌥⌘Y"),
             item!("Rename", "finder::RenameItem", ""),
             item!("Compress", "finder::Compress", ""),
             item!("Duplicate", "finder::Duplicate", "⌘D"),
@@ -932,8 +933,8 @@ const FILES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Window",
         items: &[
-            item!("Show Previous Tab", "finder::PreviousTab", "⌃⇧⇥"),
-            item!("Show Next Tab", "finder::NextTab", "⌃⇥"),
+            item!("Show Previous Tab", "finder::PreviousTab", ""),
+            item!("Show Next Tab", "finder::NextTab", ""),
         ],
     },
     MenuSpec {
@@ -2731,7 +2732,7 @@ mod tests {
         );
         assert_eq!(menus[0].items[0].label, "as Icons");
         assert_eq!(menus[1].items[0].action, "finder::GoBack");
-        assert_eq!(menus[2].items[1].shortcut, "⌃⇥");
+        assert_eq!(menus[2].items[1].shortcut, "");
         assert!(validate_menus(&menus).is_ok());
     }
 

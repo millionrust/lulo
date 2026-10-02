@@ -73,7 +73,9 @@ impl FinderView {
         sort_key: SortKey,
         compress_label: Option<String>,
         copy_pathname_label: String,
+        slideshow_label: String,
         selection_count: usize,
+        selected_folder: bool,
         can_open_with: bool,
         open_with_association: Option<&rmac_apps::FileAssociation>,
         _can_paste: bool,
@@ -139,12 +141,14 @@ impl FinderView {
         }
         if has_selection {
             let move_to_bin = format!("Move to {}", file_words.bin());
-            m = m.command_item(
-                "Open",
-                rmac_ui::shortcuts::OPEN_SELECTION,
-                Box::new(OpenItems),
-            );
-            if selection_count == 1 && !can_open_with {
+            if !selected_folder {
+                m = m.command_item(
+                    "Open",
+                    rmac_ui::shortcuts::OPEN_SELECTION,
+                    Box::new(OpenItems),
+                );
+            }
+            if selection_count == 1 && selected_folder {
                 m = m
                     .item("Open in New Tab", Box::new(OpenSelectionInNewTab))
                     .item("Open in New Window", Box::new(OpenSelectionInNewWindow));
@@ -209,6 +213,7 @@ impl FinderView {
                 )
                 .item("Make Alias", Box::new(MakeAlias))
                 .command_item("Quick Look", rmac_ui::shortcuts::SPACE, Box::new(QuickLook))
+                .item(slideshow_label, Box::new(Slideshow))
                 .separator()
                 .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems))
                 .command_item(

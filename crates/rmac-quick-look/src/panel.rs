@@ -139,6 +139,15 @@ impl Handle {
             .update(cx, |_, window, _| window.remove_window());
     }
 
+    /// Present the current selection as a full-screen slideshow.
+    pub fn enter_fullscreen(&self, cx: &mut App) {
+        self.with(cx, |_, window, _| {
+            if !window.is_fullscreen() {
+                window.toggle_fullscreen();
+            }
+        });
+    }
+
     fn with(
         &self,
         cx: &mut App,

@@ -3,8 +3,9 @@
   "app": "terminal",
   "lulo_only": true,
   "steps": [
-    {"key": "cmd-,"},
+    {"key": "cmd-,", "settle": 1.0},
     {"observe": "default", "facts": ["settings_controls"]},
+    {"select": "Basic"},
     {"select": "Use bold fonts"},
     {"observe": "bold_off", "facts": ["settings_controls"]},
     {"select": "Use bright colours for bold text"},

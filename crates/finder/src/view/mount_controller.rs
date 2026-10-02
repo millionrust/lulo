@@ -1,6 +1,27 @@
 use super::*;
 
 impl FinderView {
+    /// Finder's File > Eject acts on a selected mounted volume. Keep the
+    /// lookup exact so a folder inside a volume cannot eject it accidentally.
+    pub(super) fn selected_ejectable_volume(&self) -> Option<PathBuf> {
+        let paths = self.selected_paths();
+        let selected = match paths.as_slice() {
+            [selected] => selected,
+            [] if !self.trash_view && !self.applications_view => &self.cwd,
+            _ => return None,
+        };
+        self.mounts
+            .iter()
+            .find(|mount| mount.ejectable && mount.path == *selected)
+            .map(|mount| mount.path.clone())
+    }
+
+    pub(super) fn eject_selected_volume(&mut self, cx: &mut Context<Self>) {
+        if let Some(path) = self.selected_ejectable_volume() {
+            self.eject_volume(path, cx);
+        }
+    }
+
     pub(super) fn refresh_mounts(&mut self, cx: &mut Context<Self>) {
         self.mount_generation = self.mount_generation.wrapping_add(1);
         let generation = self.mount_generation;

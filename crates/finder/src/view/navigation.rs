@@ -176,6 +176,12 @@ impl FinderView {
         }
     }
 
+    pub(super) fn go_shared(&mut self, cx: &mut Context<Self>) {
+        if let Some(shared) = rmac_finder::places::shared_folder(&self.home) {
+            self.navigate(shared.path, cx);
+        }
+    }
+
     /// Go ▸ Desktop, ⇧⌘D.
     pub(super) fn go_desktop(&mut self, cx: &mut Context<Self>) {
         let desktop = self.home.join("Desktop");

@@ -200,6 +200,13 @@
           "children": []
         },
         {
+          "label": "Eject",
+          "action": "finder::Eject",
+          "shortcut": "⌘E",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Delete Immediately…",
           "action": "finder::DeletePermanently",
           "shortcut": "⌥⌘⌫",
@@ -485,6 +492,13 @@
           "label": "Utilities",
           "action": "finder::GoUtilities",
           "shortcut": "⇧⌘U",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Shared",
+          "action": "finder::GoShared",
+          "shortcut": "⇧⌘S",
           "separator_before": false,
           "children": []
         },

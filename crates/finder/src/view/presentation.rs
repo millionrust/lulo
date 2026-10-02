@@ -587,7 +587,17 @@ impl FinderView {
         };
         rmac_ui::set_menu_label("finder::QuickLook", &quick_look_label, cx);
         let has_selection = !selection.is_empty();
+        rmac_ui::set_menu_enabled(
+            "finder::Eject",
+            self.selected_ejectable_volume().is_some(),
+            cx,
+        );
         rmac_ui::set_menu_enabled("finder::QuickLook", has_selection, cx);
+        rmac_ui::set_menu_enabled(
+            "finder::GoShared",
+            rmac_finder::places::shared_folder(&self.home).is_some(),
+            cx,
+        );
         rmac_ui::set_menu_checked(
             "finder::UseGroups",
             self.current_options().group_by != view_options::GroupBy::None,

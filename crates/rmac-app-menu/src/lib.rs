@@ -630,6 +630,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Add to Sidebar", "finder::AddToSidebar", "⌃⌘T"),
             item!("Add to Dock", "finder::AddToDock", ""),
             item!("Move to Trash", "finder::MoveToTrash", "⌘⌫", separator),
+            item!("Eject", "finder::Eject", "⌘E"),
             // The Mac shows this as Move to Bin's ⌥ alternate; the menu bar
             // has no alternates yet, so it is listed after it.
             item!("Delete Immediately…", "finder::DeletePermanently", "⌥⌘⌫"),
@@ -702,6 +703,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Computer", "finder::GoComputer", "⇧⌘C"),
             item!("Applications", "finder::GoApplications", "⇧⌘A"),
             item!("Utilities", "finder::GoUtilities", "⇧⌘U"),
+            item!("Shared", "finder::GoShared", "⇧⌘S"),
             item!("Trash", "finder::GoTrash", ""),
             item!("Go to Folder…", "finder::GoToFolder", "⇧⌘G", separator),
         ],

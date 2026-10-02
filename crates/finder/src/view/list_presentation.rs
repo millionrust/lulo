@@ -742,6 +742,7 @@ impl FinderView {
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
+            .on_action(cx.listener(|this, _: &Eject, _, cx| this.eject_selected_volume(cx)))
             .on_action(cx.listener(|this, _: &MoveToTrash, _, cx| this.move_to_trash(cx)))
             .on_action(cx.listener(|this, _: &RestoreItems, _, cx| this.restore_selected(cx)))
             .on_action(
@@ -800,6 +801,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoApplications, _, cx| this.applications_click(cx)))
             .on_action(cx.listener(|this, _: &GoUtilities, _, cx| this.utilities_click(cx)))
             .on_action(cx.listener(|this, _: &GoDownloads, _, cx| this.go_downloads(cx)))
+            .on_action(cx.listener(|this, _: &GoShared, _, cx| this.go_shared(cx)))
             .on_action(cx.listener(|this, _: &GoDesktop, _, cx| this.go_desktop(cx)))
             .on_action(cx.listener(|this, _: &GoDocuments, _, cx| this.go_documents(cx)))
             .on_action(cx.listener(|this, _: &GoRecents, _, cx| this.recents_click(cx)))

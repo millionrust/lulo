@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "scenario": "weather/sidebar-shortcut",
+  "observations": {
+    "visible": {
+      "sidebar": {
+        "visible": true
+      }
+    },
+    "hidden": {
+      "sidebar": {
+        "visible": false
+      }
+    },
+    "restored": {
+      "sidebar": {
+        "visible": true
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "calculator/history-shortcut",
+  "observations": {
+    "history_open": {"menu": {"present": true}},
+    "history_closed": {"menu": {"present": false}}
+  }
+}

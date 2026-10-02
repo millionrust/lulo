@@ -1,0 +1,20 @@
+{
+  "title": "Weather: F enters and exits full screen outside search",
+  "app": "weather",
+  "launch": {},
+  "lulo_only": true,
+  "setup": {
+    "config": {
+      "rmac/weather.json": "{\"places\": [{\"name\": \"Athivilai\", \"region\": \"India\", \"latitude\": 13.08, \"longitude\": 80.27}], \"selected\": 0}"
+    }
+  },
+  "steps": [
+    { "key": "f", "settle": 0.7 },
+    { "observe": "fullscreen", "facts": ["windows"] },
+    { "key": "f", "settle": 0.7 },
+    { "observe": "windowed", "facts": ["windows"] },
+    { "key": "cmd-f" },
+    { "key": "f" },
+    { "observe": "typing", "facts": ["windows"] }
+  ]
+}

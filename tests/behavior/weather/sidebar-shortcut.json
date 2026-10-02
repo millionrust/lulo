@@ -1,0 +1,37 @@
+{
+  "title": "Weather: sidebar shortcut hides and restores the location list",
+  "app": "weather",
+  "launch": {},
+  "lulo_only": true,
+  "setup": {
+    "config": {
+      "rmac/weather.json": "{\"places\": [{\"name\": \"Athivilai\", \"region\": \"India\", \"latitude\": 13.08, \"longitude\": 80.27}], \"selected\": 0}"
+    }
+  },
+  "steps": [
+    {
+      "observe": "visible",
+      "facts": [
+        "sidebar"
+      ]
+    },
+    {
+      "key": "ctrl-cmd-s"
+    },
+    {
+      "observe": "hidden",
+      "facts": [
+        "sidebar"
+      ]
+    },
+    {
+      "key": "ctrl-cmd-s"
+    },
+    {
+      "observe": "restored",
+      "facts": [
+        "sidebar"
+      ]
+    }
+  ]
+}

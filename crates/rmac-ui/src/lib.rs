@@ -35,7 +35,8 @@ pub use chrome::{
 };
 pub use components::{
     alert, alert_cancel_default, alert_with_icon, dialog, dialog_button, type_select_match,
-    ContextMenu, ContextMenuState, Dialog, DialogButtonKind, DismissMenu, MenuCheck, RequestClose,
+    ContextMenu, ContextMenuState, Dialog, DialogButtonKind, DismissMenu, MenuCheck,
+    PasteAndMatchStyle, RequestClose,
 };
 pub use controls::{tooltip_view, Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use controls::{

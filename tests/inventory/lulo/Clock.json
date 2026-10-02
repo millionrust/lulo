@@ -65,6 +65,13 @@
           "shortcut": "⌘W",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Close All",
+          "action": "rmac_ui::RequestClose",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -103,6 +110,13 @@
           "label": "Paste",
           "action": "input::Paste",
           "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Delete",
+          "action": "input::Delete",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
@@ -313,9 +327,15 @@
     "controls": []
   },
   "toolbar": {
-    "present": false,
-    "extraction": "none",
-    "groups": []
+    "present": true,
+    "extraction": "heuristic",
+    "groups": [
+      "World Clock",
+      "Alarms",
+      "Stopwatch",
+      "Timers",
+      "Clock tabs"
+    ]
   },
   "context_menus": {}
 }

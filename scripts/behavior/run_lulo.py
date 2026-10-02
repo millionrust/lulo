@@ -50,6 +50,8 @@ APP_BINARIES = {
     "text-editor": ["rmac-text-editor"],
     "settings": ["rmac-system-settings"],
     "calculator": ["rmac-calculator"],
+    "clock": ["rmac-clock"],
+    "weather": ["rmac-weather"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
     "preview": ["rmac-preview"],
     "notes": ["rmac-notes"],
@@ -586,6 +588,10 @@ class LuloRun:
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content or "")
+        for entry, content in self.scenario.get("setup", {}).get("config", {}).items():
+            target = Path(self.env["XDG_CONFIG_HOME"]) / entry
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content or "")
         if self.app == "desktop":
             self.before = {p.name + ("/" if p.is_dir() else "") for p in self.files_root.iterdir()}
 
@@ -762,7 +768,11 @@ class LuloRun:
         if front in titles:
             titles.remove(front)
             titles.insert(0, front)
-        return {"count": len(plain), "front": front, "titles": titles}
+        windows = [w for w in self.nested.windows() if self.process is not None
+                   and w.get("pid") == self.process.pid]
+        focused = next((w for w in windows if w.get("focused")), None)
+        return {"count": len(plain), "front": front, "titles": titles,
+                "fullscreen": bool(focused.get("fullscreen_mode")) if focused is not None else None}
 
     def fact_info(self) -> dict[str, Any]:
         """Check the accessible Size row in the frontmost Get Info window."""
@@ -879,10 +889,27 @@ class LuloRun:
 
     def fact_tabs(self) -> dict[str, Any]:
         frame = self.active_frame()
-        tabs = [name(n) for n in descendants(frame, limit=3000) if role(n) == "page tab"] if frame is not None else []
+        pyatspi = atspi()
+        nodes = (
+            [n for n in descendants(frame, limit=3000) if role(n) == "page tab"]
+            if frame is not None else []
+        )
+        tabs = [name(n) for n in nodes]
+        selected = [name(n) for n in nodes if has_state(n, pyatspi.STATE_SELECTED)]
         if not tabs and frame is not None:
             tabs = [name(frame)]
-        return {"count": len(tabs), "titles": tabs}
+        return {"count": len(tabs), "titles": tabs, "selected": selected}
+
+    def fact_sidebar(self) -> dict[str, Any]:
+        """Weather's city list owns the window's only editable search field."""
+        frame = self.active_frame()
+        pyatspi = atspi()
+        visible = frame is not None and any(
+            sc.normalize_atspi_role(role(node)) in TEXT_ROLES
+            and has_state(node, pyatspi.STATE_EDITABLE)
+            for node in descendants(frame, limit=3000)
+        )
+        return {"visible": visible}
 
     def fact_display(self) -> dict[str, Any]:
         frame = self.active_frame()

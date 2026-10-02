@@ -343,6 +343,84 @@
       "label": "Device Management",
       "match": "exact",
       "reason": "This pane manages Apple MDM profiles; Lulo has no Apple MDM enrollment."
+    },
+    {
+      "app": "Calculator",
+      "label": "AutoFill",
+      "match": "exact",
+      "reason": "macOS AutoFill is supplied by Apple Contacts, Passwords, and Wallet services unavailable to Linux apps."
+    },
+    {
+      "app": "Calculator",
+      "label": "Contact…",
+      "match": "exact",
+      "reason": "Opens the macOS Contacts AutoFill picker backed by Apple Contacts."
+    },
+    {
+      "app": "Calculator",
+      "label": "Passwords…",
+      "match": "exact",
+      "reason": "Opens Apple Passwords and iCloud Keychain, which Lulo cannot access."
+    },
+    {
+      "app": "Calculator",
+      "label": "Credit Card…",
+      "match": "exact",
+      "reason": "Opens the protected macOS payment-card AutoFill picker."
+    },
+    {
+      "app": "Clock",
+      "label": "AutoFill",
+      "match": "exact",
+      "reason": "macOS AutoFill is supplied by Apple Contacts, Passwords, and Wallet services unavailable to Linux apps."
+    },
+    {
+      "app": "Clock",
+      "label": "Contact…",
+      "match": "exact",
+      "reason": "Opens the macOS Contacts AutoFill picker backed by Apple Contacts."
+    },
+    {
+      "app": "Clock",
+      "label": "Passwords…",
+      "match": "exact",
+      "reason": "Opens Apple Passwords and iCloud Keychain, which Lulo cannot access."
+    },
+    {
+      "app": "Clock",
+      "label": "Credit Card…",
+      "match": "exact",
+      "reason": "Opens the protected macOS payment-card AutoFill picker."
+    },
+    {
+      "app": "Weather",
+      "label": "AutoFill",
+      "match": "exact",
+      "reason": "macOS AutoFill is supplied by Apple Contacts, Passwords, and Wallet services unavailable to Linux apps."
+    },
+    {
+      "app": "Weather",
+      "label": "Contact…",
+      "match": "exact",
+      "reason": "Opens the macOS Contacts AutoFill picker backed by Apple Contacts."
+    },
+    {
+      "app": "Weather",
+      "label": "Passwords…",
+      "match": "exact",
+      "reason": "Opens Apple Passwords and iCloud Keychain, which Lulo cannot access."
+    },
+    {
+      "app": "Weather",
+      "label": "Credit Card…",
+      "match": "exact",
+      "reason": "Opens the protected macOS payment-card AutoFill picker."
+    },
+    {
+      "app": "Weather",
+      "label": "Reset Identifier…",
+      "match": "exact",
+      "reason": "Resets the Apple Weather app identifier used by Apple services; Lulo uses no Apple identifier."
     }
   ]
 }

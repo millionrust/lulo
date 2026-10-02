@@ -344,6 +344,9 @@ TOOLBAR_FILES = {
     "Notes": ["crates/notes/src/toolbar.rs"],
     "System Settings": ["crates/system-settings/src/controller/chrome.rs"],
     "System Monitor": ["crates/activity-monitor/src/view/render/chrome.rs"],
+    "Calculator": ["crates/calculator/src/view.rs"],
+    "Clock": ["crates/clock/src/view.rs"],
+    "Weather": ["crates/weather/src/view.rs"],
 }
 
 
@@ -363,6 +366,19 @@ def read_toolbar(app_display_name: str) -> dict:
                 r'accessible_icon_button\(\s*"[^"]+"\s*,\s*"([^"]+)"',
                 r'PopUpButton::new\(\s*"[^"]+"\s*,\s*"([^"]+)"',
             ])
+        if app_display_name == "Calculator":
+            # Only the two calls inside render_toolbar are toolbar controls;
+            # the other aria labels in this file name keys and the display.
+            patterns = [r'button\(\s*"[^"]+"\s*,\s*"([^"]+)"']
+        if app_display_name == "Clock":
+            # The tab names are passed through `label`, not a string literal
+            # at the aria_label call. Limit extraction to the TABS table.
+            patterns = [r'\.aria_label\("(Clock tabs)"\)']
+            tabs = re.search(r'const TABS:.*?=\s*\[(.*?)\];', text, re.S)
+            if tabs:
+                for label in re.findall(r'\(Tab::\w+,\s*"([^"]+)"\)', tabs.group(1)):
+                    if label not in groups:
+                        groups.append(label)
         for pattern in patterns:
             for m in re.finditer(pattern, text):
                 if m.group(1) not in groups:

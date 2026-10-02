@@ -53,6 +53,27 @@
       "label": "Edit",
       "items": [
         {
+          "label": "Undo",
+          "action": "input::Undo",
+          "shortcut": "⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "action": "input::Redo",
+          "shortcut": "⇧⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "action": "input::Cut",
+          "shortcut": "⌘X",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Copy",
           "action": "calculator::Copy",
           "shortcut": "⌘C",
@@ -63,6 +84,20 @@
           "label": "Paste",
           "action": "calculator::Paste",
           "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Delete",
+          "action": "input::Delete",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "action": "input::SelectAll",
+          "shortcut": "⌘A",
           "separator_before": false,
           "children": []
         }
@@ -76,6 +111,27 @@
           "action": "calculator::ShowBasic",
           "shortcut": "⌘1",
           "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Scientific",
+          "action": "calculator::ShowScientific",
+          "shortcut": "⌘2",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Hide Thousands Separator",
+          "action": "calculator::ToggleThousandsSeparator",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show History",
+          "action": "calculator::ShowHistory",
+          "shortcut": "⌃⌘S",
+          "separator_before": true,
           "children": []
         }
       ]
@@ -211,6 +267,13 @@
           "children": []
         },
         {
+          "label": "Close All",
+          "action": "rmac_ui::RequestClose",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Bring All to Front",
           "action": "window::bring-all-to-front",
           "shortcut": "",
@@ -238,9 +301,12 @@
     "controls": []
   },
   "toolbar": {
-    "present": false,
-    "extraction": "none",
-    "groups": []
+    "present": true,
+    "extraction": "heuristic",
+    "groups": [
+      "History",
+      "Mode"
+    ]
   },
   "context_menus": {}
 }

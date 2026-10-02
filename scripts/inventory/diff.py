@@ -133,6 +133,7 @@ def flatten_menu_items(
             out[item_path] = {
                 "label": label,
                 "shortcut": item.get("shortcut", ""),
+                "children_omitted": bool(item.get("children_omitted")),
             }
             children = item.get("children") or []
             if children:
@@ -186,6 +187,11 @@ def diff_menu_bars(
                 )
             )
     for path, lulo_item in lulo_flat.items():
+        # A recorded dynamic submenu has no measured children. Its local
+        # children cannot be called extras until the Mac side is captured.
+        if any(mac_flat.get(path[:depth], {}).get("children_omitted")
+               for depth in range(1, len(path))):
+            continue
         if path not in mac_flat:
             gaps.append(
                 Gap(

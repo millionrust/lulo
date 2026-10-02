@@ -21,6 +21,15 @@ impl Render for TerminalView {
         // focused window's directory is a candidate.
         if self.window_active {
             rmac_ui::set_menu_label(
+                "terminal::EnterFullScreen",
+                if window.is_fullscreen() {
+                    "Exit Full Screen"
+                } else {
+                    "Enter Full Screen"
+                },
+                cx,
+            );
+            rmac_ui::set_menu_label(
                 "terminal::CloseTab",
                 if self.tabs.len() > 1 {
                     "Close Tab"

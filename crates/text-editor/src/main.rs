@@ -54,6 +54,7 @@ gpui::actions!(
         ZoomIn,
         ZoomOut,
         ActualSize,
+        EnterFullScreen,
         CloseWindow,
         // File ▸ Open Recent ▸ (TE-02): one action per shown row, up to
         // `rmac_app_menu::recent::MAX_ENTRIES`, plus "Clear Menu".

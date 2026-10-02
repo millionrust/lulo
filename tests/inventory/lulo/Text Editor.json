@@ -372,6 +372,13 @@
           "shortcut": "⇧⌘,",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "text_editor::EnterFullScreen",
+          "shortcut": "F",
+          "separator_before": true,
+          "children": []
         }
       ]
     },

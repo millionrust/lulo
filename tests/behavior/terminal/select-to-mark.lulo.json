@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "terminal/select-to-mark",
+  "platform": "Lulo local contract",
+  "observations": {
+    "selected": {"focus": {"selected_text": "retained output"}}
+  }
+}

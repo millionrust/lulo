@@ -1205,6 +1205,7 @@ class LuloRun:
                     "settings": "SystemSettings",
                     "preview": "Preview",
                     "notes": "Notes",
+                    "terminal": "Terminal",
                 }[self.app] + ".Menu"
                 call = subprocess.run(
                     ["gdbus", "call", "--session", "--dest", bus,

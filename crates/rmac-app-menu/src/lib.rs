@@ -415,6 +415,12 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             item!("Actual Size", "text_editor::ActualSize", "⌘0"),
             item!("Zoom In", "text_editor::ZoomIn", "⇧⌘."),
             item!("Zoom Out", "text_editor::ZoomOut", "⇧⌘,"),
+            item!(
+                "Enter Full Screen",
+                "text_editor::EnterFullScreen",
+                "F",
+                separator
+            ),
         ],
     },
 ];
@@ -489,7 +495,7 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 "Copy Special",
                 "terminal::CopySpecialMenu",
                 [
-                    item!("Copy Plain Text", "terminal::CopyPlainText", "⌥⇧⌘C"),
+                    item!("Plain Text", "terminal::CopyPlainText", ""),
                     item!(
                         "Copy Without Background Colour",
                         "terminal::CopyWithoutBackgroundColour",
@@ -592,6 +598,12 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             item!("Bigger", "terminal::ZoomIn", "⌘+"),
             item!("Smaller", "terminal::ZoomOut", "⌘−"),
             item!("Next Profile", "terminal::CycleProfile", "⇧⌘P", separator),
+            item!(
+                "Enter Full Screen",
+                "terminal::EnterFullScreen",
+                "F",
+                separator
+            ),
         ],
     },
     MenuSpec {

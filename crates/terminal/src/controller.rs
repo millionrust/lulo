@@ -145,6 +145,7 @@ gpui::actions!(
         NextTab,
         PrevTab,
         CycleProfile,
+        EnterFullScreen,
         ShowProfiles,
         ResetTerminal,
         HardResetTerminal,

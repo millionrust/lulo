@@ -278,6 +278,7 @@ impl TerminalView {
                     cx.notify();
                 }
             }))
+            .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| window.toggle_fullscreen()))
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
                 if rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window, cx) {
                     cx.notify();

@@ -399,6 +399,15 @@ impl EditorView {
     /// Monospaced is ticked while it is on, and Cut, Copy and Delete are
     /// greyed out without a selection in the focused field, as in TextEdit.
     pub(super) fn publish_menu_state(&self, window: &Window, cx: &mut Context<Self>) {
+        rmac_ui::set_menu_label(
+            "text_editor::EnterFullScreen",
+            if window.is_fullscreen() {
+                "Exit Full Screen"
+            } else {
+                "Enter Full Screen"
+            },
+            cx,
+        );
         rmac_ui::set_menu_checked("text_editor::ToggleMono", self.mono, cx);
         rmac_ui::set_menu_label(
             "text_editor::ToggleWrapToPage",

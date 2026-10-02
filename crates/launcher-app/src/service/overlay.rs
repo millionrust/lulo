@@ -220,11 +220,8 @@ fn open_launcher(
             .update(cx, |_, window, cx| window.display(cx))
             .ok()
             .flatten()
-            .or_else(|| cx.primary_display());
-        #[cfg(target_os = "linux")]
-        if display.is_none() {
-            eprintln!("launcher outside click catcher has no display");
-        }
+            .or_else(|| cx.primary_display())
+            .or_else(|| cx.displays().into_iter().next());
         cx.update_global::<LauncherService, _>(|service, _| {
             service.active = Some(ActiveOverlay {
                 token,

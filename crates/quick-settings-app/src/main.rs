@@ -201,7 +201,8 @@ fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
             .update(cx, |_, window, cx| window.display(cx))
             .ok()
             .flatten()
-            .or_else(|| cx.primary_display());
+            .or_else(|| cx.primary_display())
+            .or_else(|| cx.displays().into_iter().next());
         cx.update_global::<QuickSettingsService, _>(|service, _| {
             service.active = Some(ActivePopover {
                 token,

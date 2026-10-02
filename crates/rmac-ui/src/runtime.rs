@@ -383,10 +383,7 @@ pub fn open_outside_click_catcher_around(
             input_regions,
         })
     }) {
-        Ok(handle) => {
-            eprintln!("outside click catcher {namespace} opened");
-            Some(AnyWindowHandle::from(handle))
-        }
+        Ok(handle) => Some(AnyWindowHandle::from(handle)),
         Err(error) => {
             eprintln!("outside click catcher {namespace} failed to open: {error}");
             None

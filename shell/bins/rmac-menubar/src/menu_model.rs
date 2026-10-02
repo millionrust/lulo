@@ -419,8 +419,9 @@ pub fn help_menu(
             items.extend(results);
         }
     }
-    // Preview and Terminal expose Help without a key equivalent on macOS 26.
-    let shortcut = if matches!(app_name, "Preview" | "Terminal") {
+    // Preview, Terminal and TextEdit expose Help without a key equivalent
+    // on macOS 26.
+    let shortcut = if matches!(app_name, "Preview" | "Terminal" | "Text Editor") {
         ""
     } else {
         "⌘?"
@@ -1928,6 +1929,10 @@ mod tests {
             assert_eq!(menu.items[1].shortcut, "");
         }
         assert_eq!(help.items.len(), 3);
+        for app in ["Terminal", "Text Editor"] {
+            let help = help_menu("", app, &[], Vec::new());
+            assert_eq!(help.items[1].shortcut, "");
+        }
 
         let empty = help_menu(
             "",

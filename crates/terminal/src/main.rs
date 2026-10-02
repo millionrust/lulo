@@ -31,6 +31,13 @@ fn main() {
         580.0,
         385.0,
         vec![Vec::new()],
-        |_arguments, window, cx| controller::TerminalView::new(window, cx),
+        |arguments, window, cx| {
+            let profile = arguments
+                .first()
+                .and_then(|argument| argument.strip_prefix("--profile="))
+                .and_then(|index| index.parse::<usize>().ok())
+                .filter(|index| *index < profiles::PROFILES.len());
+            controller::TerminalView::new(window, cx, profile)
+        },
     );
 }

@@ -13,6 +13,7 @@ impl EditorView {
         let settings = crate::settings::current();
         let input = rmac_editor::multiline("", window, cx);
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
+        let select_line_input = cx.new(|cx| InputState::new(window, cx).placeholder("Line number"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
         let save_name_input = cx.new(|cx| InputState::new(window, cx).default_value("Untitled"));
         let save_goto_input = cx.new(|cx| InputState::new(window, cx).placeholder("Go to Folder"));
@@ -62,6 +63,15 @@ impl EditorView {
             }
             _ => {}
         });
+        let sub_select_line = cx.subscribe_in(
+            &select_line_input,
+            window,
+            |this, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    this.select_requested_line(window, cx);
+                }
+            },
+        );
         let sub_save_goto = cx.subscribe_in(
             &save_goto_input,
             window,
@@ -98,6 +108,7 @@ impl EditorView {
             ),
             KeyBinding::new("cmd-e", UseSelectionForFind, Some(CTX)),
             KeyBinding::new("cmd-j", JumpToSelection, Some(CTX)),
+            KeyBinding::new("cmd-l", SelectLine, Some(CTX)),
             KeyBinding::new("cmd-0", ActualSize, Some(CTX)),
             KeyBinding::new("cmd-shift-.", ZoomIn, Some(CTX)),
             KeyBinding::new("cmd-shift-,", ZoomOut, Some(CTX)),
@@ -285,6 +296,8 @@ impl EditorView {
             file_busy: false,
             print_busy: false,
             find_open: false,
+            select_line_open: false,
+            select_line_input,
             replace_mode: false,
             find_input,
             replace_input,
@@ -324,7 +337,7 @@ impl EditorView {
             watched_directory: None,
             document_watcher,
             pending_startup_path: initial_path,
-            _subscriptions: vec![sub_main, sub_find, sub_save_goto],
+            _subscriptions: vec![sub_main, sub_find, sub_select_line, sub_save_goto],
         }
     }
 }

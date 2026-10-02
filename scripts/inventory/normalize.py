@@ -32,6 +32,12 @@ LABEL_ALIASES: list[tuple[str, str]] = [
     ("Move to Trash", "Move to Bin"),
     ("Empty Trash", "Empty Bin"),
     ("Empty Trash…", "Empty Bin…"),
+    # The product's name is Text Editor; these synthesized application and
+    # Help commands already have the same behavior as TextEdit's commands.
+    ("About TextEdit", "About Text Editor"),
+    ("Hide TextEdit", "Hide Text Editor"),
+    ("Quit TextEdit", "Quit Text Editor"),
+    ("TextEdit Help", "Text Editor Help"),
 ]
 
 _ALIAS_TO_CANON: dict[str, str] = {}
@@ -91,7 +97,8 @@ def normalize_shortcut(shortcut: str | None) -> str:
     if not shortcut:
         return ""
     text = shortcut.strip()
-    # AX uses a private-use glyph for the Up Arrow key in Finder's Go menu.
+    # AX uses AppKit's private-use arrow glyphs for these physical keys.
     text = text.replace("", "↑")
+    text = text.replace("", "↓")
     text = text.replace("-", "−")  # ASCII hyphen -> U+2212 MINUS SIGN
     return text

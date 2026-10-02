@@ -238,6 +238,42 @@
               "shortcut": "⌘J",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Select Line…",
+              "action": "text_editor::SelectLine",
+              "shortcut": "⌘L",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Transformations",
+          "action": "text_editor::TransformationsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Make Uppercase",
+              "action": "text_editor::TransformUppercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make Lowercase",
+              "action": "text_editor::TransformLowercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Capitalise",
+              "action": "text_editor::TransformCapitalise",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
         }
@@ -448,7 +484,7 @@
         {
           "label": "Text Editor Help",
           "action": "help::app-help",
-          "shortcut": "⌘?",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         }

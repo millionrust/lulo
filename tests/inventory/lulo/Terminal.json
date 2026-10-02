@@ -61,17 +61,201 @@
       "items": [
         {
           "label": "New Window",
-          "action": "terminal::NewWindow",
-          "shortcut": "⌘N",
+          "action": "terminal::NewWindowMenu",
+          "shortcut": "",
           "separator_before": false,
-          "children": []
+          "children": [
+            {
+              "label": "New Window with Profile - Basic",
+              "action": "terminal::WindowBasicDefault",
+              "shortcut": "⌘N",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Basic",
+              "action": "terminal::WindowBasic",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Clear Dark",
+              "action": "terminal::WindowClearDark",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Clear Light",
+              "action": "terminal::WindowClearLight",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Grass",
+              "action": "terminal::WindowGrass",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Homebrew",
+              "action": "terminal::WindowHomebrew",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Man Page",
+              "action": "terminal::WindowManPage",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Novel",
+              "action": "terminal::WindowNovel",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Ocean",
+              "action": "terminal::WindowOcean",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Pro",
+              "action": "terminal::WindowPro",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Red Sands",
+              "action": "terminal::WindowRedSands",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Silver Aerogel",
+              "action": "terminal::WindowSilverAerogel",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Solid Colors",
+              "action": "terminal::WindowSolidColors",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "New Tab",
-          "action": "terminal::NewTab",
-          "shortcut": "⌘T",
+          "action": "terminal::NewTabMenu",
+          "shortcut": "",
           "separator_before": false,
-          "children": []
+          "children": [
+            {
+              "label": "New Tab with Profile – Basic",
+              "action": "terminal::TabBasicDefault",
+              "shortcut": "⌘T",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Basic",
+              "action": "terminal::TabBasic",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Clear Dark",
+              "action": "terminal::TabClearDark",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Clear Light",
+              "action": "terminal::TabClearLight",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Grass",
+              "action": "terminal::TabGrass",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Homebrew",
+              "action": "terminal::TabHomebrew",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Man Page",
+              "action": "terminal::TabManPage",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Novel",
+              "action": "terminal::TabNovel",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Ocean",
+              "action": "terminal::TabOcean",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Pro",
+              "action": "terminal::TabPro",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Red Sands",
+              "action": "terminal::TabRedSands",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Silver Aerogel",
+              "action": "terminal::TabSilverAerogel",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Solid Colors",
+              "action": "terminal::TabSolidColors",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Close Window",
@@ -137,6 +321,13 @@
               "label": "Copy Plain Text",
               "action": "terminal::CopyPlainText",
               "shortcut": "⌥⇧⌘C",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Copy Without Background Colour",
+              "action": "terminal::CopyWithoutBackgroundColour",
+              "shortcut": "⌃⇧⌘C",
               "separator_before": false,
               "children": []
             }
@@ -514,6 +705,20 @@
           "label": "Terminal Help",
           "action": "help::app-help",
           "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Open man Page for Selection",
+          "action": "terminal::OpenManPageForSelection",
+          "shortcut": "⌃⌘?",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Search man Page Index for Selection",
+          "action": "terminal::SearchManPageIndexForSelection",
+          "shortcut": "⌃⌥⌘/",
           "separator_before": false,
           "children": []
         }

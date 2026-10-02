@@ -8,6 +8,43 @@ impl EditorView {
         layout: EditorLayout,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        if self.select_line_open {
+            return div()
+                .id("select-line")
+                .flex()
+                .items_center()
+                .gap_2()
+                .w_full()
+                .px(px(layout.content_padding))
+                .py(px(8.0))
+                .bg(mac::chrome())
+                .border_b_1()
+                .border_color(mac::separator())
+                .child("Select Line:")
+                .child(
+                    div()
+                        .id("select-line-number")
+                        .role(Role::TextInput)
+                        .aria_label("Line number")
+                        .accessible_text_input(&self.select_line_input, cx)
+                        .w(px(100.0))
+                        .child(TextField::new(&self.select_line_input).appearance(true)),
+                )
+                .child(
+                    Button::new("select-line-go", "Go")
+                        .with_size(Size::Small)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.select_requested_line(window, cx)
+                        })),
+                )
+                .child(
+                    Button::new("select-line-cancel", "Cancel")
+                        .ghost()
+                        .with_size(Size::Small)
+                        .on_click(cx.listener(|this, _, window, cx| this.close_bar(window, cx))),
+                )
+                .into_any_element();
+        }
         let query_empty = self.find_input.read(cx).value().is_empty();
         let status: SharedString = if query_empty {
             "".into()
@@ -110,6 +147,6 @@ impl EditorView {
             );
         }
 
-        col
+        col.into_any_element()
     }
 }

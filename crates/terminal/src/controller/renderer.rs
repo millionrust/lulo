@@ -32,12 +32,21 @@ impl Render for TerminalView {
             if let Some(directory) = self.tabs[self.active].working_directory() {
                 crate::working_directory::set_last_front_directory(directory);
             }
-            let has_selection = self
-                .selection_text()
-                .is_some_and(|selection| !selection.is_empty());
+            let selection = self.selection_text();
+            let has_selection = selection.as_ref().is_some_and(|text| !text.is_empty());
+            let has_man_topic = selection
+                .as_ref()
+                .is_some_and(|text| super::input::man_command(text, false).is_some());
             rmac_ui::set_menu_enabled("terminal::Copy", has_selection, cx);
             rmac_ui::set_menu_checked("terminal::ToggleOptionAsMeta", self.option_as_meta, cx);
             rmac_ui::set_menu_enabled("terminal::CopyPlainText", has_selection, cx);
+            rmac_ui::set_menu_enabled("terminal::CopyWithoutBackgroundColour", has_selection, cx);
+            rmac_ui::set_menu_enabled("terminal::OpenManPageForSelection", has_man_topic, cx);
+            rmac_ui::set_menu_enabled(
+                "terminal::SearchManPageIndexForSelection",
+                has_man_topic,
+                cx,
+            );
             rmac_ui::set_menu_enabled("terminal::PasteSelection", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::PasteEscapedSelection", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::UseSelectionForFind", has_selection, cx);

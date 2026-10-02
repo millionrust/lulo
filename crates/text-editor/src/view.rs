@@ -40,8 +40,9 @@ use crate::{document, long_lines, recovery, rtf, storage};
 use crate::{
     ActualSize, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, FindNext, FindPrev,
     IncreaseFont, JumpToSelection, NewFile, OpenFile, SaveFile, SaveFileAs, SaveGoToFolder,
-    ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage, UseSelectionForFind,
-    ZoomIn, ZoomOut,
+    SelectLine, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage,
+    TransformCapitalise, TransformLowercase, TransformUppercase, UseSelectionForFind, ZoomIn,
+    ZoomOut,
 };
 
 use document_io::{
@@ -186,6 +187,8 @@ struct EditorView {
 
     // Find / replace bar
     find_open: bool,
+    select_line_open: bool,
+    select_line_input: Entity<InputState>,
     replace_mode: bool,
     find_input: Entity<InputState>,
     replace_input: Entity<InputState>,

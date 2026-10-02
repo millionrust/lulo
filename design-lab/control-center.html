@@ -46,6 +46,19 @@
                       speaker glyphs 8.5 × 12.5 at x 16.5 and 20 × 14.5 at
                       x 220.5; accessory circle 26, centre (265, 42),
                       white 24.5 %
+    slider hover bulge (CC-13, not measured — see docs/parity.md): on
+                      macOS 26 the Display/Sound track (and the Sound
+                      detail's own slider) grows while the pointer hovers it
+                      or, on touch, while held, then shrinks back on leave.
+                      The reference Mac's resting-vs-hovered track height,
+                      knob size and animation duration were not reachable
+                      this pass (synthetic pointer input was blocked, and the
+                      Mac was the owner's live, actively-used session when a
+                      fallback click landed). rmac estimates the hovered
+                      track at 8 thick (double the measured 4, same centre
+                      line, same pill radius) over a 120 ms cubic ease-out —
+                      see the `.track:hover` rule below for a live demo.
+                      Re-measure and correct once the Mac is reachable.
 
   What rmac leaves out, because nothing backs it: AirDrop, Stage Manager,
   Screen Mirroring, the Light/Dark appearance circle (no appearance setter
@@ -161,8 +174,17 @@
   .np .transport span { position: absolute; transform: translate(-50%, -50%); }
 
   .wide .title { font-weight: 700; left: 16.5px; top: calc(23px - 12.6px); }
-  .track { position: absolute; top: 40px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+  .track { position: absolute; top: 40px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden;
+            transition: height 120ms cubic-bezier(.33,1,.68,1), top 120ms cubic-bezier(.33,1,.68,1),
+                        border-radius 120ms cubic-bezier(.33,1,.68,1); }
   .track i { position: absolute; left: 0; top: 0; bottom: 0; background: #FFFFFF; }
+  /* CC-13: the Mac bulges a slider's track while the pointer hovers it (or,
+     on touch, while held), growing within the same hit box so nothing else
+     shifts, then shrinks back on leave. Live hover geometry on the
+     reference Mac was unreachable this pass (see docs/parity.md); this demo
+     doubles the resting 4 px track to 8 px, centred on the same mid-line, as
+     an estimate pending correction. Hover a Display/Sound module to see it. */
+  .m.wide:hover .track { height: 8px; top: 38px; border-radius: 4px; }
   .glyph { position: absolute; transform: translate(-50%, -50%); top: 42px; }
   .acc { position: absolute; left: 252px; top: 29px; width: 26px; height: 26px; border-radius: 13px;
          background: var(--circle-off); display: flex; align-items: center; justify-content: center; }

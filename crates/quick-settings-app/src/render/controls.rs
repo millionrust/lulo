@@ -11,6 +11,13 @@ const ACCESSORY: f32 = 26.0;
 const ACCESSORY_CENTRE: (f32, f32) = (265.0, 42.0);
 /// Slider tracks are 4 thick and centred 42 below the module top.
 const TRACK_HEIGHT: f32 = 4.0;
+/// Hovered/pressed track thickness (CC-13): macOS 26 grows the track while
+/// the pointer is over it. Not separately measured against the reference
+/// Mac this pass (live hover geometry was unreachable — see docs/parity.md);
+/// this estimate keeps the resting track's pill shape and stays well inside
+/// the existing 24 pt hit box, so the hit target is never smaller than the
+/// bulged track. Re-measure and correct once the Mac is reachable.
+const TRACK_HEIGHT_BULGED: f32 = 8.0;
 const TRACK_CENTRE: f32 = 42.0;
 
 impl QuickSettingsView {
@@ -42,6 +49,11 @@ impl QuickSettingsView {
             Module::Sound
         };
         let ring = self.ring(module_kind);
+        // CC-13: the track bulges while hovered, pressed or (on touch)
+        // held, growing within the hit box so neighbouring controls never
+        // shift.
+        let track_height =
+            rmac_ui::slider_bulge_lerp(TRACK_HEIGHT, TRACK_HEIGHT_BULGED, self.slider_bulge(kind));
         let hit = div()
             .id(id)
             .absolute()
@@ -52,21 +64,25 @@ impl QuickSettingsView {
             .when(enabled, |hit| {
                 hit.on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                         this.dragging = Some(kind);
+                        this.sync_slider_bulge(kind, window);
                         let value = super::slider_value(kind, f32::from(event.position.x));
                         this.slide(kind, value, cx);
                     }),
                 )
+                .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
+                    this.set_slider_hovered(kind, *hovered, window, cx);
+                }))
             })
             .child(
                 div()
                     .absolute()
                     .left(px(8.0))
-                    .top(px(12.0 - TRACK_HEIGHT / 2.0))
+                    .top(px(12.0 - track_height / 2.0))
                     .w(px(width))
-                    .h(px(TRACK_HEIGHT))
-                    .rounded(px(TRACK_HEIGHT / 2.0))
+                    .h(px(track_height))
+                    .rounded(px(track_height / 2.0))
                     .overflow_hidden()
                     .bg(slider_track())
                     .child(div().h_full().w(px(filled)).bg(fill)),

@@ -1569,6 +1569,81 @@ impl RenderOnce for Slider {
     }
 }
 
+/// Duration of a slider's pointer/touch "bulge" (grow, then shrink back),
+/// matching macOS 26: Control Centre's Display and Sound sliders grow while
+/// the pointer is over them (or, on touch, while held) and shrink back once
+/// it leaves. The cubic ease-out matches the Dock's existing slide/settle
+/// tweens (`rmac_dock::reorder::ease_out`); the exact Mac timing was not
+/// separately measured this pass (see docs/parity.md).
+pub const SLIDER_BULGE_MS: u64 = 120;
+
+fn slider_bulge_ease(elapsed_ms: u64, duration_ms: u64) -> f32 {
+    if duration_ms == 0 || elapsed_ms >= duration_ms {
+        return 1.0;
+    }
+    let t = elapsed_ms as f32 / duration_ms as f32;
+    1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
+}
+
+/// Eases a slider's "bulge" progress toward 0 (resting) or 1 (pointer
+/// hovering, or a touch/mouse press down), over [`SLIDER_BULGE_MS`].
+/// Reversing direction mid-transition re-anchors from the current eased
+/// value, so rapid hover/unhover never jumps. Pure data: callers hold one
+/// per slider, advance it with [`SliderBulge::set_active`] from their own
+/// hover/press state, and read [`SliderBulge::progress`] /
+/// [`SliderBulge::is_animating`] at render time — the animation itself
+/// costs nothing once settled, so idle CPU stays at ~0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SliderBulge {
+    from: f32,
+    changed_ms: u64,
+    target: f32,
+}
+
+impl Default for SliderBulge {
+    fn default() -> Self {
+        Self {
+            from: 0.0,
+            changed_ms: 0,
+            target: 0.0,
+        }
+    }
+}
+
+impl SliderBulge {
+    /// Sets whether the slider is active (pointer hovering, or a touch or
+    /// mouse press down) at `now_ms`. A change of direction re-anchors the
+    /// ease from the progress already reached, instead of restarting from 0.
+    pub fn set_active(&mut self, active: bool, now_ms: u64) {
+        let target = if active { 1.0 } else { 0.0 };
+        if (target - self.target).abs() > f32::EPSILON {
+            self.from = self.progress(now_ms);
+            self.changed_ms = now_ms;
+            self.target = target;
+        }
+    }
+
+    /// Current eased progress, 0 (resting) ..= 1 (fully bulged).
+    pub fn progress(&self, now_ms: u64) -> f32 {
+        let elapsed = now_ms.saturating_sub(self.changed_ms);
+        let eased = slider_bulge_ease(elapsed, SLIDER_BULGE_MS);
+        self.from + (self.target - self.from) * eased
+    }
+
+    /// Whether the bulge is still easing toward its target. The caller
+    /// should request another frame while this is true, and stop once it
+    /// is false — the transition is short and then costs nothing.
+    pub fn is_animating(&self, now_ms: u64) -> bool {
+        now_ms.saturating_sub(self.changed_ms) < SLIDER_BULGE_MS
+    }
+}
+
+/// Interpolates a slider's resting and fully-bulged geometry (track height,
+/// knob size, ...) at `progress` (0..=1, from [`SliderBulge::progress`]).
+pub fn slider_bulge_lerp(resting: f32, bulged: f32, progress: f32) -> f32 {
+    resting + (bulged - resting) * progress.clamp(0.0, 1.0)
+}
+
 /// Shared editable text field backed by a gpui-component [`InputState`].
 #[derive(IntoElement)]
 pub struct TextField {
@@ -2693,6 +2768,56 @@ mod tests {
         assert!(regular_w > small_w && small_w > mini_w);
         assert!(regular_h > small_h && small_h > mini_h);
         assert!(regular_thumb > small_thumb && small_thumb > mini_thumb);
+    }
+
+    #[test]
+    fn slider_bulge_rests_at_zero_and_stays_put_until_activated() {
+        let bulge = SliderBulge::default();
+        assert_eq!(bulge.progress(0), 0.0);
+        assert_eq!(bulge.progress(10_000), 0.0);
+        assert!(!bulge.is_animating(0));
+    }
+
+    #[test]
+    fn slider_bulge_grows_then_settles_at_one() {
+        let mut bulge = SliderBulge::default();
+        bulge.set_active(true, 0);
+        assert!(bulge.is_animating(0));
+        let mid = bulge.progress(SLIDER_BULGE_MS / 2);
+        assert!(
+            mid > 0.0 && mid < 1.0,
+            "expected partial progress, got {mid}"
+        );
+        assert!(!bulge.is_animating(SLIDER_BULGE_MS));
+        assert_eq!(bulge.progress(SLIDER_BULGE_MS), 1.0);
+        assert_eq!(bulge.progress(SLIDER_BULGE_MS * 10), 1.0);
+    }
+
+    #[test]
+    fn slider_bulge_reversal_mid_transition_has_no_jump() {
+        let mut bulge = SliderBulge::default();
+        bulge.set_active(true, 0);
+        let partial = bulge.progress(SLIDER_BULGE_MS / 2);
+        // Unhovering halfway through the grow re-anchors from exactly where
+        // the grow had reached, instead of snapping back to 0 first.
+        bulge.set_active(false, SLIDER_BULGE_MS / 2);
+        let just_after = bulge.progress(SLIDER_BULGE_MS / 2);
+        assert!(
+            (just_after - partial).abs() < 1e-6,
+            "expected {just_after} to match {partial} at the reversal instant"
+        );
+        assert!(!bulge.is_animating(SLIDER_BULGE_MS));
+        assert_eq!(bulge.progress(SLIDER_BULGE_MS), 0.0);
+    }
+
+    #[test]
+    fn slider_bulge_lerp_interpolates_between_resting_and_bulged() {
+        assert_eq!(slider_bulge_lerp(4.0, 8.0, 0.0), 4.0);
+        assert_eq!(slider_bulge_lerp(4.0, 8.0, 1.0), 8.0);
+        assert_eq!(slider_bulge_lerp(4.0, 8.0, 0.5), 6.0);
+        // Out-of-range progress is clamped rather than overshooting.
+        assert_eq!(slider_bulge_lerp(4.0, 8.0, 1.5), 8.0);
+        assert_eq!(slider_bulge_lerp(4.0, 8.0, -0.5), 4.0);
     }
 
     #[test]

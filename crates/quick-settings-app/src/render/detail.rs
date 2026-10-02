@@ -14,6 +14,9 @@ const KNOB_HEIGHT: f32 = 20.0;
 const KNOB_INSET: f32 = 2.0;
 /// Detail slider track: 4 thick, centred in its 14 pt row.
 const TRACK_HEIGHT: f32 = 4.0;
+/// Hovered/pressed track thickness (CC-13); see `controls::TRACK_HEIGHT_BULGED`
+/// — same estimate, not separately measured.
+const TRACK_HEIGHT_BULGED: f32 = 8.0;
 
 /// Separators read #48494D over the #383A3F panel: white ≈ 8 %.
 fn separator() -> Hsla {
@@ -200,6 +203,11 @@ impl QuickSettingsView {
         let centre = g::SLIDER_TOP + g::SLIDER_HEIGHT / 2.0;
         let filled = g::SLIDER_WIDTH * f32::from(volume.min(100)) / 100.0;
         let ring = self.target_ring(Target::Slider);
+        let track_height = rmac_ui::slider_bulge_lerp(
+            TRACK_HEIGHT,
+            TRACK_HEIGHT_BULGED,
+            self.slider_bulge(SliderKind::DetailVolume),
+        );
         layer()
             .child(glyph_at(
                 "cc/speaker.svg",
@@ -230,8 +238,9 @@ impl QuickSettingsView {
                     .when(enabled, |hit| {
                         hit.on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                            cx.listener(|this, event: &MouseDownEvent, window, cx| {
                                 this.dragging = Some(SliderKind::DetailVolume);
+                                this.sync_slider_bulge(SliderKind::DetailVolume, window);
                                 let value = super::slider_value(
                                     SliderKind::DetailVolume,
                                     f32::from(event.position.x),
@@ -239,15 +248,25 @@ impl QuickSettingsView {
                                 this.slide(SliderKind::DetailVolume, value, cx);
                             }),
                         )
+                        .on_hover(cx.listener(
+                            |this, hovered: &bool, window, cx| {
+                                this.set_slider_hovered(
+                                    SliderKind::DetailVolume,
+                                    *hovered,
+                                    window,
+                                    cx,
+                                );
+                            },
+                        ))
                     })
                     .child(
                         div()
                             .absolute()
                             .left(px(8.0))
-                            .top(px(12.0 - TRACK_HEIGHT / 2.0))
+                            .top(px(12.0 - track_height / 2.0))
                             .w(px(g::SLIDER_WIDTH))
-                            .h(px(TRACK_HEIGHT))
-                            .rounded(px(TRACK_HEIGHT / 2.0))
+                            .h(px(track_height))
+                            .rounded(px(track_height / 2.0))
                             .overflow_hidden()
                             .bg(slider_track())
                             .child(div().h_full().w(px(filled)).bg(fill)),

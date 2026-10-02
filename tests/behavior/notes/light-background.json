@@ -40,5 +40,10 @@
         "note_background"
       ]
     }
-  ]
+  ],
+  "setup": {
+    "config": {
+      "rmac/theme.json": "{\"version\":1,\"preferences\":{\"color_scheme\":\"dark\"}}"
+    }
+  }
 }

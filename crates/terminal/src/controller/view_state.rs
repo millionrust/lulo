@@ -132,6 +132,16 @@ impl TerminalView {
         }
     }
 
+    pub(super) fn scroll_view(&mut self, scroll: Scroll, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        if let Ok(mut terminal) = self.tabs[self.active].term.lock() {
+            terminal.scroll_display(scroll);
+            cx.notify();
+        }
+    }
+
     /// Shell ▸ Reset (⌥⌘R): the RIS soft reset a wedged program would answer
     /// to — cursor, colors, and modes return to their defaults, but the
     /// screen and scrollback are left alone, as on the Mac.

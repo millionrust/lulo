@@ -476,6 +476,12 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
+            item!("Scroll to Top", "terminal::ScrollToTop", "⌘"),
+            item!("Scroll to Bottom", "terminal::ScrollToBottom", "⌘"),
+            item!("Page Up", "terminal::PageUp", "⌘"),
+            item!("Page Down", "terminal::PageDown", "⌘"),
+            item!("Line Up", "terminal::LineUp", "⌥⌘"),
+            item!("Line Down", "terminal::LineDown", "⌥⌘"),
             item!("Default Font Size", "terminal::ZoomReset", "⌘0"),
             item!("Bigger", "terminal::ZoomIn", "⌘+"),
             item!("Smaller", "terminal::ZoomOut", "⌘−"),

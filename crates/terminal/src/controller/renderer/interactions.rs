@@ -114,6 +114,22 @@ impl TerminalView {
                 this.use_selection_for_find(window, cx)
             }))
             .on_action(cx.listener(|this, _: &JumpToSelection, _, cx| this.jump_to_selection(cx)))
+            .on_action(
+                cx.listener(|this, _: &ScrollToTop, _, cx| this.scroll_view(Scroll::Top, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ScrollToBottom, _, cx| this.scroll_view(Scroll::Bottom, cx)),
+            )
+            .on_action(cx.listener(|this, _: &PageUp, _, cx| this.scroll_view(Scroll::PageUp, cx)))
+            .on_action(
+                cx.listener(|this, _: &PageDown, _, cx| this.scroll_view(Scroll::PageDown, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &LineUp, _, cx| this.scroll_view(Scroll::Delta(1), cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &LineDown, _, cx| this.scroll_view(Scroll::Delta(-1), cx)),
+            )
             .on_action(cx.listener(|this, _: &PreviousPrompt, _, cx| {
                 this.navigate_prompt(PromptDirection::Previous, cx)
             }))

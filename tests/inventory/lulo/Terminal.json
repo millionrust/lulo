@@ -269,6 +269,48 @@
       "label": "View",
       "items": [
         {
+          "label": "Scroll to Top",
+          "action": "terminal::ScrollToTop",
+          "shortcut": "⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Scroll to Bottom",
+          "action": "terminal::ScrollToBottom",
+          "shortcut": "⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Page Up",
+          "action": "terminal::PageUp",
+          "shortcut": "⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Page Down",
+          "action": "terminal::PageDown",
+          "shortcut": "⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Line Up",
+          "action": "terminal::LineUp",
+          "shortcut": "⌥⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Line Down",
+          "action": "terminal::LineDown",
+          "shortcut": "⌥⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Default Font Size",
           "action": "terminal::ZoomReset",
           "shortcut": "⌘0",

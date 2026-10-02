@@ -137,6 +137,12 @@ impl TerminalView {
             KeyBinding::new("cmd-shift-f", HideFindBar, Some("Terminal")),
             KeyBinding::new("cmd-e", UseSelectionForFind, Some("Terminal")),
             KeyBinding::new("cmd-j", JumpToSelection, Some("Terminal")),
+            KeyBinding::new("cmd-home", ScrollToTop, Some("Terminal")),
+            KeyBinding::new("cmd-end", ScrollToBottom, Some("Terminal")),
+            KeyBinding::new("cmd-pageup", PageUp, Some("Terminal")),
+            KeyBinding::new("cmd-pagedown", PageDown, Some("Terminal")),
+            KeyBinding::new("alt-cmd-pageup", LineUp, Some("Terminal")),
+            KeyBinding::new("alt-cmd-pagedown", LineDown, Some("Terminal")),
             KeyBinding::new(
                 rmac_ui::shortcuts::PREVIOUS_MARK.keystroke,
                 PreviousPrompt,

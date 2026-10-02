@@ -11,12 +11,13 @@ use crate::columns::ColKey;
 use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab};
 use crate::view_filter::ViewFilter;
 use crate::{
-    process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, FilterProcesses,
-    EnterFullScreen, FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, JumpToSelection,
-    Minimize, QuitProcess, RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds,
-    ShowActiveProcesses, ShowAllProcesses, ShowInactiveProcesses, ShowMyProcesses,
-    ShowMainWindow, ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleCpuColumn, ToggleMemoryColumn,
-    TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
+    process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, EnterFullScreen,
+    FilterProcesses, FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess,
+    JumpToSelection, Minimize, QuitProcess, RefreshEveryFiveSeconds, RefreshEverySecond,
+    RefreshEveryTwoSeconds, ShowActiveProcesses, ShowAllProcesses, ShowInactiveProcesses,
+    ShowMainWindow, ShowMyProcesses, ShowOtherUsersProcesses, ShowSelectedProcesses,
+    ShowSystemProcesses, ToggleCpuColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn,
+    ToggleUserColumn, UseSelectionForFind,
 };
 
 use super::MonitorView;

@@ -198,7 +198,6 @@ impl MonitorView {
     /// The menu bar's live state for the key window. Process commands are
     /// greyed out without a selection, while view choices carry checkmarks.
     pub(super) fn publish_menu_state(&self, window: &Window, cx: &mut Context<Self>) {
-        rmac_ui::set_menu_checked("activity_monitor::ShowMainWindow", true, cx);
         rmac_ui::set_menu_label(
             "activity_monitor::EnterFullScreen",
             if window.is_fullscreen() {

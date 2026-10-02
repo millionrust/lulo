@@ -205,7 +205,10 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
     });
     if let (Ok(handle), Some(view)) = (handle, launcher) {
         #[cfg(target_os = "linux")]
-        let display = handle.update(cx, |_, window, cx| window.display(cx)).ok().flatten();
+        let display = handle
+            .update(cx, |_, window, cx| window.display(cx))
+            .ok()
+            .flatten();
         cx.update_global::<LauncherService, _>(|service, _| {
             service.active = Some(ActiveOverlay {
                 token,
@@ -215,20 +218,26 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
         });
         #[cfg(target_os = "linux")]
         {
-            let catcher = display.and_then(|display| rmac_ui::open_outside_click_catcher(
-                "rmac-launcher-click-catcher", display, px(29.0),
-                |cx| {
-                    let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
-                    if let Some(active) = active {
-                        if let Some(view) = active.view.upgrade() {
-                            let _ = cx.update_window(active.window, |_, window, cx| {
-                                view.update(cx, |view, cx| view.dismiss(window, cx));
-                            });
+            let catcher = display.and_then(|display| {
+                rmac_ui::open_outside_click_catcher(
+                    "rmac-launcher-click-catcher",
+                    display,
+                    px(29.0),
+                    |cx| {
+                        let active = cx
+                            .read_global::<LauncherService, _>(|service, _| service.active.clone());
+                        if let Some(active) = active {
+                            if let Some(view) = active.view.upgrade() {
+                                let _ = cx.update_window(active.window, |_, window, cx| {
+                                    view.update(cx, |view, cx| view.dismiss(window, cx));
+                                });
+                            }
+                            release(active.token, cx);
                         }
-                        release(active.token, cx);
-                    }
-                }, cx,
-            ));
+                    },
+                    cx,
+                )
+            });
             cx.update_global::<LauncherService, _>(|service, _| service.catcher = catcher);
         }
         cx.activate(true);

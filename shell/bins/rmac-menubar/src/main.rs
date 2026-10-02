@@ -32,12 +32,12 @@ mod linux_wayland {
     use gpui_platform::application;
     use rmac_quick_settings_system::{Backend as _, SystemBackend};
     use rmac_shell_ui::tokens;
-    use rmac_ui::{slider_bulge_lerp, SliderBulge};
     use rmac_shell_ui::{
         app_display_name, delay_until_next_clock_tick, top_bar_active_app_name,
         top_bar_clock_parts, top_bar_indicator_labels, top_bar_workspace_label,
         TopBarIndicatorKind,
     };
+    use rmac_ui::{slider_bulge_lerp, SliderBulge};
     use uuid::Uuid;
 
     use crate::menu_model::{
@@ -1075,7 +1075,8 @@ mod linux_wayland {
             if self.status_menu.take().is_some() {
                 self.status_dragging_volume = false;
                 self.volume_hovered = false;
-                self.volume_bulge.set_active(false, self.volume_bulge_epoch.elapsed().as_millis() as u64);
+                self.volume_bulge
+                    .set_active(false, self.volume_bulge_epoch.elapsed().as_millis() as u64);
                 self.status_selected = None;
                 self.status_option = false;
                 self.status_generation = self.status_generation.saturating_add(1);
@@ -2625,9 +2626,13 @@ mod linux_wayland {
                         .into_any_element()
                 }
                 StatusRow::Slider { value } => {
-                    let bulge = self.volume_bulge.progress(self.volume_bulge_epoch.elapsed().as_millis() as u64);
-                    let track_height = slider_bulge_lerp(menu_model::SLIDER_TRACK_HEIGHT, 8.0, bulge);
-                    let knob_height = slider_bulge_lerp(menu_model::SLIDER_KNOB_HEIGHT, 18.0, bulge);
+                    let bulge = self
+                        .volume_bulge
+                        .progress(self.volume_bulge_epoch.elapsed().as_millis() as u64);
+                    let track_height =
+                        slider_bulge_lerp(menu_model::SLIDER_TRACK_HEIGHT, 8.0, bulge);
+                    let knob_height =
+                        slider_bulge_lerp(menu_model::SLIDER_KNOB_HEIGHT, 18.0, bulge);
                     let track = self.volume_track.clone();
                     // The fill lags the track's own measurement by one frame
                     // (the canvas below records it while painting), the same
@@ -3332,7 +3337,10 @@ mod linux_wayland {
 
     impl Render for TopBar {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-            if self.volume_bulge.is_animating(self.volume_bulge_epoch.elapsed().as_millis() as u64) {
+            if self
+                .volume_bulge
+                .is_animating(self.volume_bulge_epoch.elapsed().as_millis() as u64)
+            {
                 window.request_animation_frame();
             }
             self.render_count = self.render_count.saturating_add(1);

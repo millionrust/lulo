@@ -183,7 +183,10 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
     });
     if let (Ok(handle), Some(view)) = (handle, drawer) {
         #[cfg(target_os = "linux")]
-        let display = handle.update(cx, |_, window, cx| window.display(cx)).ok().flatten();
+        let display = handle
+            .update(cx, |_, window, cx| window.display(cx))
+            .ok()
+            .flatten();
         cx.update_global::<AppDrawerService, _>(|service, _| {
             service.active = Some(ActiveDrawer {
                 token,
@@ -193,10 +196,17 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         });
         #[cfg(target_os = "linux")]
         {
-            let catcher = display.and_then(|display| rmac_ui::open_outside_click_catcher(
-                "rmac-app-drawer-click-catcher", display, px(29.0),
-                |cx| { dismiss_active(cx); }, cx,
-            ));
+            let catcher = display.and_then(|display| {
+                rmac_ui::open_outside_click_catcher(
+                    "rmac-app-drawer-click-catcher",
+                    display,
+                    px(29.0),
+                    |cx| {
+                        dismiss_active(cx);
+                    },
+                    cx,
+                )
+            });
             cx.update_global::<AppDrawerService, _>(|service, _| service.catcher = catcher);
         }
         cx.activate(true);

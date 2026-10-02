@@ -2518,11 +2518,13 @@ mod linux_wayland {
                     is_minimizable: false,
                     ..Default::default()
                 };
-                self.dismiss_keyboard = cx.open_window(options, move |window, cx| {
-                    let focus = cx.focus_handle();
-                    focus.focus(window, cx);
-                    cx.new(|_| DockDismissKeyboard { dock, focus })
-                }).ok();
+                self.dismiss_keyboard = cx
+                    .open_window(options, move |window, cx| {
+                        let focus = cx.focus_handle();
+                        focus.focus(window, cx);
+                        cx.new(|_| DockDismissKeyboard { dock, focus })
+                    })
+                    .ok();
             } else if !popover_open {
                 if let Some(keyboard) = self.dismiss_keyboard.take() {
                     let _ = keyboard.update(cx, |_, window, _| window.remove_window());

@@ -19,7 +19,7 @@ use gpui::{
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
-use rmac_ui::{Root, StyledExt as _};
+use rmac_ui::{Checkbox, Root, StyledExt as _};
 
 use crate::controller::FONT_SIZE;
 use crate::profiles::{self, PROFILES};
@@ -160,6 +160,30 @@ fn section_label(text: &'static str) -> impl IntoElement {
         .child(text)
 }
 
+fn text_checkbox(
+    id: &'static str,
+    label: &'static str,
+    checked: bool,
+    cx: &mut Context<SettingsView>,
+    edit: fn(&mut settings::Settings, bool),
+) -> impl IntoElement {
+    let view = cx.entity();
+    div()
+        .px_3()
+        .pb_2()
+        .child(
+            Checkbox::new(id)
+                .label(label)
+                .checked(checked)
+                .on_change(move |value, _, cx| {
+                    view.update(cx, |this, cx| {
+                        edit(&mut this.settings, *value);
+                        this.save_settings(cx);
+                    });
+                }),
+        )
+}
+
 /// One row of an exclusive-choice list (Profile, Cursor style, Shell exit
 /// behaviour, New-window directory): a label, a leading swatch when given
 /// one, and a trailing ✓ on the selected row.
@@ -286,6 +310,27 @@ impl Render for SettingsView {
                             ),
                     )
                     .child(section_label("Text"))
+                    .child(text_checkbox(
+                        "settings-use-bold-fonts",
+                        "Use bold fonts",
+                        self.settings.use_bold_fonts,
+                        cx,
+                        |settings, value| settings.use_bold_fonts = value,
+                    ))
+                    .child(text_checkbox(
+                        "settings-bright-bold-text",
+                        "Use bright colours for bold text",
+                        self.settings.bright_bold_text,
+                        cx,
+                        |settings, value| settings.bright_bold_text = value,
+                    ))
+                    .child(text_checkbox(
+                        "settings-display-ansi-colours",
+                        "Display ANSI colours",
+                        self.settings.display_ansi_colours,
+                        cx,
+                        |settings, value| settings.display_ansi_colours = value,
+                    ))
                     .child(section_label("Cursor"))
                     .child(
                         div().px_3().v_flex().child(

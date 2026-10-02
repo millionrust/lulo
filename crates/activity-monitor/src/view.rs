@@ -205,6 +205,13 @@ impl MonitorView {
             && !self.table.read(cx).delegate().rows.is_empty();
         rmac_ui::set_menu_enabled("activity_monitor::FindNext", has_matches, cx);
         rmac_ui::set_menu_enabled("activity_monitor::FindPrevious", has_matches, cx);
+        let has_text_selection = !self.search.read(cx).selected_value().is_empty();
+        rmac_ui::set_menu_enabled(
+            "activity_monitor::UseSelectionForFind",
+            has_selection || has_text_selection,
+            cx,
+        );
+        rmac_ui::set_menu_enabled("activity_monitor::JumpToSelection", has_selection, cx);
         for (action, filter) in [
             ("activity_monitor::ShowAllProcesses", ViewFilter::All),
             ("activity_monitor::ShowMyProcesses", ViewFilter::MyProcesses),
@@ -219,6 +226,10 @@ impl MonitorView {
             (
                 "activity_monitor::ShowActiveProcesses",
                 ViewFilter::ActiveProcesses,
+            ),
+            (
+                "activity_monitor::ShowInactiveProcesses",
+                ViewFilter::InactiveProcesses,
             ),
         ] {
             rmac_ui::set_menu_checked(action, self.view_filter(cx) == filter, cx);
@@ -448,6 +459,42 @@ impl MonitorView {
             state.set_selected_row(next, cx);
         });
         cx.notify();
+    }
+
+    /// Search for the name of the selected process, keeping the selected row
+    /// visible as the list narrows. This is the table's selection equivalent
+    /// of Edit ▸ Find ▸ Use Selection for Find in a text view.
+    fn use_selection_for_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let selected_text = self.search.read(cx).selected_value().to_string();
+        let query = if selected_text.is_empty() {
+            self.selected_proc(cx).map(|process| process.name)
+        } else {
+            Some(selected_text)
+        };
+        let Some(query) = query else {
+            return;
+        };
+        self.search_open = true;
+        self.search
+            .update(cx, |search, cx| search.set_value(query, window, cx));
+        cx.notify();
+    }
+
+    /// Scroll the process table back to its selected row.
+    fn jump_to_selection(&mut self, cx: &mut Context<Self>) {
+        self.table.update(cx, |state, cx| {
+            let Some(pid) = state.delegate().selected_pid else {
+                return;
+            };
+            if let Some(row) = state
+                .delegate()
+                .rows
+                .iter()
+                .position(|item| item.pid == pid)
+            {
+                state.set_selected_row(row, cx);
+            }
+        });
     }
 
     fn clear_cpu_history(&mut self, cx: &mut Context<Self>) {

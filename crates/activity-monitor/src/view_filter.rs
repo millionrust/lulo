@@ -19,15 +19,17 @@ pub(crate) enum ViewFilter {
     SystemProcesses,
     OtherUsersProcesses,
     ActiveProcesses,
+    InactiveProcesses,
 }
 
 impl ViewFilter {
-    pub(crate) const ALL: [Self; 5] = [
+    pub(crate) const ALL: [Self; 6] = [
         Self::All,
         Self::MyProcesses,
         Self::SystemProcesses,
         Self::OtherUsersProcesses,
         Self::ActiveProcesses,
+        Self::InactiveProcesses,
     ];
 
     /// The label shown in both the filter menu and the window subtitle.
@@ -38,6 +40,7 @@ impl ViewFilter {
             Self::SystemProcesses => "System Processes",
             Self::OtherUsersProcesses => "Other Users' Processes",
             Self::ActiveProcesses => "Active Processes",
+            Self::InactiveProcesses => "Inactive Processes",
         }
     }
 
@@ -57,6 +60,9 @@ impl ViewFilter {
             // "Runnable" at any single sample.
             Self::ActiveProcesses => {
                 !matches!(status, "Idle" | "Stopped" | "Zombie" | "Dead" | "Tracing")
+            }
+            Self::InactiveProcesses => {
+                matches!(status, "Idle" | "Stopped" | "Zombie" | "Dead" | "Tracing")
             }
         }
     }
@@ -103,6 +109,18 @@ mod tests {
         assert!(!ViewFilter::ActiveProcesses.matches(Some(1000), "Idle", Some(1000)));
         assert!(!ViewFilter::ActiveProcesses.matches(Some(1000), "Zombie", Some(1000)));
         assert!(!ViewFilter::ActiveProcesses.matches(Some(1000), "Stopped", Some(1000)));
+    }
+
+    #[test]
+    fn inactive_processes_are_the_complement_of_active_processes() {
+        for status in [
+            "Running", "Sleeping", "Idle", "Stopped", "Zombie", "Dead", "Tracing",
+        ] {
+            assert_ne!(
+                ViewFilter::ActiveProcesses.matches(Some(1000), status, Some(1000)),
+                ViewFilter::InactiveProcesses.matches(Some(1000), status, Some(1000)),
+            );
+        }
     }
 
     #[test]

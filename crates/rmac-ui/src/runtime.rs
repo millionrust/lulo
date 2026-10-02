@@ -302,6 +302,22 @@ pub fn open_outside_click_catcher(
     on_click: impl Fn(&mut App) + 'static,
     cx: &mut App,
 ) -> Option<gpui::AnyWindowHandle> {
+    open_outside_click_catcher_around(namespace, display, reserved_top, None, on_click, cx)
+}
+
+/// Like [`open_outside_click_catcher`], but leaves `excluded` click-through.
+/// The bounds are in display coordinates and normally enclose the popover
+/// itself. Four input rectangles cover the rest of the display without
+/// stealing pointer events from controls inside the popover.
+#[cfg(target_os = "linux")]
+pub fn open_outside_click_catcher_around(
+    namespace: &str,
+    display: std::rc::Rc<dyn gpui::PlatformDisplay>,
+    reserved_top: gpui::Pixels,
+    excluded: Option<gpui::Bounds<gpui::Pixels>>,
+    on_click: impl Fn(&mut App) + 'static,
+    cx: &mut App,
+) -> Option<gpui::AnyWindowHandle> {
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
     use gpui::{
         point, size, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
@@ -314,6 +330,23 @@ pub fn open_outside_click_catcher(
         return None;
     }
     let on_click = std::rc::Rc::new(on_click);
+    let input_regions = excluded.map(|excluded| {
+        let width = f32::from(bounds.size.width);
+        let height = f32::from(height);
+        let left = f32::from(excluded.origin.x - bounds.origin.x).clamp(0.0, width);
+        let top = f32::from(excluded.origin.y - bounds.origin.y - reserved_top).clamp(0.0, height);
+        let right = (left + f32::from(excluded.size.width)).clamp(left, width);
+        let bottom = (top + f32::from(excluded.size.height)).clamp(top, height);
+        let region = |x: f32, y: f32, w: f32, h: f32| {
+            Bounds::new(point(gpui::px(x), gpui::px(y)), size(gpui::px(w), gpui::px(h)))
+        };
+        [
+            region(0.0, 0.0, width, top),
+            region(0.0, bottom, width, height - bottom),
+            region(0.0, top, left, bottom - top),
+            region(right, top, width - right, bottom - top),
+        ]
+    });
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds {
             origin: point(gpui::px(0.0), gpui::px(0.0)),
@@ -341,7 +374,7 @@ pub fn open_outside_click_catcher(
     cx.open_window(options, move |_, cx| {
         let left = on_click.clone();
         let right = on_click.clone();
-        cx.new(|_| OutsideClickCatcher { left, right })
+        cx.new(|_| OutsideClickCatcher { left, right, input_regions })
     })
     .ok()
     .map(AnyWindowHandle::from)
@@ -351,12 +384,17 @@ pub fn open_outside_click_catcher(
 struct OutsideClickCatcher {
     left: std::rc::Rc<dyn Fn(&mut App)>,
     right: std::rc::Rc<dyn Fn(&mut App)>,
+    input_regions: Option<[gpui::Bounds<gpui::Pixels>; 4]>,
 }
 
 #[cfg(target_os = "linux")]
 impl gpui::Render for OutsideClickCatcher {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl gpui::IntoElement {
+    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl gpui::IntoElement {
         use gpui::{InteractiveElement, MouseButton};
+
+        if let Some(regions) = &self.input_regions {
+            window.set_input_region(Some(regions));
+        }
 
         let left = self.left.clone();
         let right = self.right.clone();

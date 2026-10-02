@@ -61,27 +61,22 @@ pub(super) fn warm_renderer(cx: &mut App) {
 
 pub(crate) fn release(token: u64, cx: &mut App) {
     if cx.has_global::<LauncherService>() {
-        let catcher = cx.update_global::<LauncherService, _>(|service, _| {
-            if service
+        let catcher: Option<AnyWindowHandle> = cx.update_global::<LauncherService, _>(|service, _| {
+            let matches = service
                 .active
                 .as_ref()
-                .is_some_and(|active| active.token == token)
-            {
+                .is_some_and(|active| active.token == token);
+            if matches {
                 service.active = None;
-                #[cfg(target_os = "linux")]
-                return service.catcher.take();
             }
             #[cfg(target_os = "linux")]
-            return None;
+            { if matches { service.catcher.take() } else { None } }
             #[cfg(not(target_os = "linux"))]
-            ()
+            { None }
         });
-        #[cfg(target_os = "linux")]
         if let Some(catcher) = catcher {
             let _ = catcher.update(cx, |_, window, _| window.remove_window());
         }
-        #[cfg(not(target_os = "linux"))]
-        let _ = catcher;
     }
 }
 
@@ -158,7 +153,14 @@ fn route_existing(event: &rmac_shortcuts::Event, cx: &mut App) -> bool {
     false
 }
 
-fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut App) {
+fn open_launcher(
+    event: rmac_shortcuts::Event,
+    options: WindowOptions,
+    excluded: Option<Bounds<gpui::Pixels>>,
+    cx: &mut App,
+) {
+    #[cfg(not(target_os = "linux"))]
+    let _ = excluded;
     let (token, registry, settings, error, clipboard, applications, learning) = cx
         .update_global::<LauncherService, _>(|service, _| {
             service.next_overlay = service.next_overlay.wrapping_add(1).max(1);
@@ -219,10 +221,11 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
         #[cfg(target_os = "linux")]
         {
             let catcher = display.and_then(|display| {
-                rmac_ui::open_outside_click_catcher(
+                rmac_ui::open_outside_click_catcher_around(
                     "rmac-launcher-click-catcher",
                     display,
                     px(29.0),
+                    excluded,
                     |cx| {
                         let active = cx
                             .read_global::<LauncherService, _>(|service, _| service.active.clone());
@@ -249,7 +252,7 @@ pub(super) fn route_shortcut(event: rmac_shortcuts::Event, cx: &mut App) {
     if route_existing(&event, cx) {
         return;
     }
-    open_launcher(event, fallback_options(cx), cx);
+    open_launcher(event, fallback_options(cx), None, cx);
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -290,6 +293,7 @@ pub(super) fn route_activation(
     open_launcher(
         event,
         overlay_options(WindowBounds::Windowed(bounds), description.margin_top),
+        Some(bounds),
         cx,
     );
 }

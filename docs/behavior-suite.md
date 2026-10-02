@@ -115,19 +115,18 @@ python3 scripts/behavior/run_file_drag.py --bin-dir ~/rmac-wt/target/iterate
 
 ## Menu dismissal on an outside click
 
-`scripts/behavior/run_menu_dismiss.py` starts the shipped top-bar, Dock,
-wallpaper and Control Center in a private nested niri and opens the Lulo
-menu, a status menu, and Control Center in turn, then checks that each
-closes on a real pointer click on the Dock, the wallpaper (inside and below
-the bar's own `MENU_SURFACE_HEIGHT` band), another app's window (a dummy
-`foot` window), and on Escape; it also checks that clicking a different
-top-bar title switches menus instead of just closing, and that opening a
-menu alongside Control Center and clicking the wallpaper closes both
-(MENU-15, `docs/parity.md`). Control Center's dismissal is checked with
-`grim` + a pixel-difference crop over its corner, since it is a layer-shell
-popover with no niri "window" entry and no accessible control labels in this
-build to search for by name. `--bin-dir` must hold `top-bar`, `dock`,
-`wallpaper`, `rmac-quick-settings` and `rmac-shortcut-dispatch`.
+`scripts/behavior/run_menu_dismiss.py` starts the shipped shell services in
+a private nested niri and checks the first Lulo menu open without a runner
+warm-up. It exercises outside-click and Escape dismissal for the Lulo menu,
+Wi-Fi, Bluetooth, Sound, the Dock context menu, Spotlight, Apps, Control
+Center, and Notification Center. It also checks title re-click and switching,
+wallpaper clicks on both sides of the top bar's surface boundary, a click on
+another window, and a Dock click. See
+`tests/behavior/shell/menu-dismissal.md` for the scenario. Control Center's
+appearance is checked with a screenshot crop; the other layer popovers are
+checked through niri's layer list. `--bin-dir` must hold `top-bar`, `dock`,
+`wallpaper`, `rmac-quick-settings`, `rmac-launcher`, `rmac-app-drawer`,
+`rmac-notification-center-panel`, and `rmac-shortcut-dispatch`.
 
 ```sh
 python3 scripts/behavior/run_menu_dismiss.py \

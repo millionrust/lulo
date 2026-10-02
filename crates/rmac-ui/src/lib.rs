@@ -57,6 +57,8 @@ pub use menu_target::{register_menu_target, track_key_window};
 pub use rmac_app_menu::Item as MenuItem;
 #[cfg(target_os = "linux")]
 pub use runtime::open_outside_click_catcher;
+#[cfg(target_os = "linux")]
+pub use runtime::open_outside_click_catcher_around;
 pub use runtime::{
     defer_content_ready, init_application, install_app_instance, install_app_menu,
     install_surface_idle_exit, mark_content_ready, prepare_surface_window, shell_surface_root,

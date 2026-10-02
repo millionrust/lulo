@@ -30,27 +30,22 @@ impl Global for AppDrawerService {}
 
 pub(crate) fn release(token: u64, cx: &mut GpuiApp) {
     if cx.has_global::<AppDrawerService>() {
-        let catcher = cx.update_global::<AppDrawerService, _>(|service, _| {
-            if service
+        let catcher: Option<AnyWindowHandle> = cx.update_global::<AppDrawerService, _>(|service, _| {
+            let matches = service
                 .active
                 .as_ref()
-                .is_some_and(|active| active.token == token)
-            {
+                .is_some_and(|active| active.token == token);
+            if matches {
                 service.active = None;
-                #[cfg(target_os = "linux")]
-                return service.catcher.take();
             }
             #[cfg(target_os = "linux")]
-            return None;
+            { if matches { service.catcher.take() } else { None } }
             #[cfg(not(target_os = "linux"))]
-            ()
+            { None }
         });
-        #[cfg(target_os = "linux")]
         if let Some(catcher) = catcher {
             let _ = catcher.update(cx, |_, window, _| window.remove_window());
         }
-        #[cfg(not(target_os = "linux"))]
-        let _ = catcher;
     }
 }
 
@@ -197,10 +192,11 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         #[cfg(target_os = "linux")]
         {
             let catcher = display.and_then(|display| {
-                rmac_ui::open_outside_click_catcher(
+                rmac_ui::open_outside_click_catcher_around(
                     "rmac-app-drawer-click-catcher",
                     display,
                     px(29.0),
+                    Some(bounds),
                     |cx| {
                         dismiss_active(cx);
                     },

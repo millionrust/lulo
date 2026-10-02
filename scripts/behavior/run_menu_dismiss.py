@@ -467,19 +467,35 @@ class Run:
                        self.find_menu_item("About") is not None)
 
     def status_menu_dismissal(self, label: str) -> None:
+        captures = {"Wi-Fi": "wifi", "Bluetooth": "bluetooth", "Sound": "sound"}
         for method in ("outside click", "Escape"):
             self.close_everything()
             title = self.wait_for(lambda: self.find_node(
-                ("push button", "button"), lambda name: name == label), 3)
-            if title is None:
-                self.check(f"{label}: title available", False)
-                return
-            opened = self.retry_until(lambda: self.click_node(title),
-                                      lambda: self.find_menu(label) is not None)
+                ("push button", "button"), lambda name: name.startswith(label)), 3)
+            if title is not None:
+                opened = self.retry_until(lambda: self.click_node(title),
+                                          lambda: self.find_menu(label) is not None)
+            else:
+                # Sound and Bluetooth extras are hidden by default, just as
+                # on the Mac. Reopen the same top-bar binary with its built-in
+                # capture setting to exercise their actual dropdown paths.
+                self.top_bar.terminate()
+                self.top_bar.wait(timeout=5)
+                self.top_bar = self.spawn([str(Path(self.args.bin_dir) / "top-bar")],
+                                          "top-bar-captured", {
+                                              "VK_ICD_FILENAMES": LAVAPIPE,
+                                              "RMAC_CAPTURE_STATUS_MENU": captures[label],
+                                          })
+                opened = self.wait_for(lambda: self.find_menu(label) is not None, 10)
             self.check(f"{label}: opens for {method}", opened)
             if not opened:
                 continue
             if method == "Escape":
+                menu = self.find_menu(label)
+                if menu is not None:
+                    box = self.extents(menu)
+                    if box:
+                        self.click_at(box[0] + 2, box[1] + 2)
                 self.keys.key("escape")
             else:
                 self.click_at(200, MENU_SURFACE_HEIGHT + 70)

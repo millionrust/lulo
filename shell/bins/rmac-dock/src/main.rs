@@ -634,6 +634,7 @@ mod linux_wayland {
     struct DockDismissKeyboard {
         dock: WeakEntity<Dock>,
         focus: FocusHandle,
+        was_active: bool,
     }
 
     impl Render for DockDismissKeyboard {
@@ -660,7 +661,6 @@ mod linux_wayland {
         status: Entity<DockStatus>,
         hovered_item: Option<(f32, String)>,
         context_menu: Option<DockMenu>,
-        click_catcher: Option<AnyWindowHandle>,
         dismiss_keyboard: Option<WindowHandle<DockDismissKeyboard>>,
         input_region: Option<(f32, f32, bool, bool)>,
         pointer_inside: bool,
@@ -717,9 +717,6 @@ mod linux_wayland {
             self.separator_menu = None;
             self.stack_popover = None;
             self.input_region = None;
-            if let Some(catcher) = self.click_catcher.take() {
-                let _ = catcher.update(cx, |_, window, _| window.remove_window());
-            }
             if let Some(keyboard) = self.dismiss_keyboard.take() {
                 let _ = keyboard.update(cx, |_, window, _| window.remove_window());
             }
@@ -747,7 +744,6 @@ mod linux_wayland {
                 status,
                 hovered_item: None,
                 context_menu: None,
-                click_catcher: None,
                 dismiss_keyboard: None,
                 input_region: None,
                 pointer_inside: false,
@@ -2476,24 +2472,6 @@ mod linux_wayland {
             let popover_open = self.context_menu.is_some()
                 || self.separator_menu.is_some()
                 || self.stack_popover.is_some();
-            if popover_open && self.click_catcher.is_none() {
-                if let Some(display) = window.display(cx) {
-                    let dock = cx.entity().downgrade();
-                    self.click_catcher = rmac_ui::open_outside_click_catcher(
-                        "rmac-dock-click-catcher",
-                        display,
-                        px(29.0),
-                        move |cx| {
-                            let _ = dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
-                        },
-                        cx,
-                    );
-                }
-            } else if !popover_open {
-                if let Some(catcher) = self.click_catcher.take() {
-                    let _ = catcher.update(cx, |_, window, _| window.remove_window());
-                }
-            }
             if popover_open && self.keyboard.is_none() && self.dismiss_keyboard.is_none() {
                 let dock = cx.entity().downgrade();
                 let options = WindowOptions {
@@ -2522,7 +2500,17 @@ mod linux_wayland {
                     .open_window(options, move |window, cx| {
                         let focus = cx.focus_handle();
                         focus.focus(window, cx);
-                        cx.new(|_| DockDismissKeyboard { dock, focus })
+                        cx.new(|cx| {
+                            cx.observe_window_activation(window, |this, window, cx| {
+                                if window.is_window_active() {
+                                    this.was_active = true;
+                                } else if this.was_active {
+                                    let _ = this.dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
+                                    window.remove_window();
+                                }
+                            }).detach();
+                            DockDismissKeyboard { dock, focus, was_active: false }
+                        })
                     })
                     .ok();
             } else if !popover_open {

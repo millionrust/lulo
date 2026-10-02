@@ -5,6 +5,7 @@
   "launch": {},
   "steps": [
     {"type": "Unsaved document"},
+    {"key": "cmd-n", "settle": 1.2},
     {"menu_action": "text_editor::CloseAll", "settle": 1.2},
     {"observe": "asked", "facts": ["dialog", "windows"]},
     {"key": "escape"},

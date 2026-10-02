@@ -1,6 +1,29 @@
 //! Text Editor launch argument, document-window, and application startup authority.
 
 use super::*;
+use std::cell::RefCell;
+
+thread_local! {
+    static OPEN_DOCUMENTS: RefCell<Vec<gpui::WeakEntity<EditorView>>> = const { RefCell::new(Vec::new()) };
+}
+
+pub(super) fn document_window_count() -> usize {
+    OPEN_DOCUMENTS.with(|documents| {
+        documents
+            .borrow()
+            .iter()
+            .filter(|view| view.upgrade().is_some())
+            .count()
+    })
+}
+
+fn track_document(view: &Entity<EditorView>) {
+    OPEN_DOCUMENTS.with(|documents| {
+        let mut documents = documents.borrow_mut();
+        documents.retain(|view| view.upgrade().is_some());
+        documents.push(view.downgrade());
+    });
+}
 
 /// TextEdit's plain-text window: 90 Menlo 11 columns by 30 lines plus the
 /// 32 pt title bar, 656 × 422 (measured, design-lab/apps.html).
@@ -69,6 +92,7 @@ pub(super) fn open_editor_window(cx: &mut App, initial_path: Option<PathBuf>) ->
             rmac_ui::observe_window_state(rmac_ui::app_id::TEXT_EDITOR, window, cx);
             EditorView::new_with_path(initial_path, window, cx)
         });
+        track_document(&view);
         cx.new(|cx| Root::new(view, window, cx))
     })
     .map(|_| ())
@@ -92,6 +116,7 @@ pub(super) fn open_duplicate_window(
             view.seed_duplicate_content(content, window, cx);
             view
         });
+        track_document(&view);
         cx.new(|cx| Root::new(view, window, cx))
     })
     .map(|_| ())

@@ -289,7 +289,9 @@ impl NotesView {
                             .text_color(mac::text_secondary())
                             .child(format!("{} · {}", title, format_storage_bytes(bytes))),
                     )
-            });
+                    .into_any_element()
+            })
+            .collect::<Vec<_>>();
         div()
             .w(px(LIST_WIDTH))
             .h_full()

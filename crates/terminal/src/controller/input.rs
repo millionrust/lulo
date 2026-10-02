@@ -60,12 +60,38 @@ impl TerminalView {
     /// Paste clipboard text using the active program's exact bracketed-paste
     /// mode. Unprotected multiline content pauses for private-safe review.
     pub(super) fn request_paste(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.modal_open() {
-            return;
-        }
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
+        self.request_paste_text(text, window, cx);
+    }
+
+    pub(super) fn paste_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = self.selection_text() {
+            self.request_paste_text(text, window, cx);
+        }
+    }
+
+    pub(super) fn paste_escaped_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = cx
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .filter(|text| !text.is_empty())
+        {
+            self.request_paste_text(crate::paste::shell_quote(&text), window, cx);
+        }
+    }
+
+    pub(super) fn paste_escaped_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = self.selection_text().filter(|text| !text.is_empty()) {
+            self.request_paste_text(crate::paste::shell_quote(&text), window, cx);
+        }
+    }
+
+    fn request_paste_text(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
         if text.is_empty() {
             return;
         }

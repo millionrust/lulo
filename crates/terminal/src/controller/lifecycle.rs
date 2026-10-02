@@ -78,7 +78,11 @@ impl TerminalView {
 
         cx.bind_keys([
             KeyBinding::new(rmac_ui::shortcuts::COPY.keystroke, Copy, Some("Terminal")),
+            KeyBinding::new("alt-shift-cmd-c", CopyPlainText, Some("Terminal")),
             KeyBinding::new(rmac_ui::shortcuts::PASTE.keystroke, Paste, Some("Terminal")),
+            KeyBinding::new("shift-cmd-v", PasteSelection, Some("Terminal")),
+            KeyBinding::new("ctrl-cmd-v", PasteEscapedText, Some("Terminal")),
+            KeyBinding::new("ctrl-shift-cmd-v", PasteEscapedSelection, Some("Terminal")),
             KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, Find, Some("Terminal")),
             KeyBinding::new(
                 rmac_ui::shortcuts::FIND_NEXT.keystroke,
@@ -127,6 +131,18 @@ impl TerminalView {
                 Some("Terminal"),
             ),
             KeyBinding::new(rmac_ui::shortcuts::CLEAR.keystroke, Clear, Some("Terminal")),
+            KeyBinding::new("ctrl-cmd-l", ClearScreen, Some("Terminal")),
+            KeyBinding::new("alt-cmd-k", ClearScrollback, Some("Terminal")),
+            KeyBinding::new("alt-cmd-o", ToggleOptionAsMeta, Some("Terminal")),
+            KeyBinding::new("cmd-shift-f", HideFindBar, Some("Terminal")),
+            KeyBinding::new("cmd-e", UseSelectionForFind, Some("Terminal")),
+            KeyBinding::new("cmd-j", JumpToSelection, Some("Terminal")),
+            KeyBinding::new("cmd-home", ScrollToTop, Some("Terminal")),
+            KeyBinding::new("cmd-end", ScrollToBottom, Some("Terminal")),
+            KeyBinding::new("cmd-pageup", PageUp, Some("Terminal")),
+            KeyBinding::new("cmd-pagedown", PageDown, Some("Terminal")),
+            KeyBinding::new("alt-cmd-pageup", LineUp, Some("Terminal")),
+            KeyBinding::new("alt-cmd-pagedown", LineDown, Some("Terminal")),
             KeyBinding::new(
                 rmac_ui::shortcuts::PREVIOUS_MARK.keystroke,
                 PreviousPrompt,

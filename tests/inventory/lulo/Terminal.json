@@ -74,7 +74,7 @@
           "children": []
         },
         {
-          "label": "Close Tab",
+          "label": "Close Window",
           "action": "terminal::CloseTab",
           "shortcut": "⌘W",
           "separator_before": true,
@@ -100,6 +100,27 @@
       "label": "Edit",
       "items": [
         {
+          "label": "Undo",
+          "action": "input::Undo",
+          "shortcut": "⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "action": "input::Redo",
+          "shortcut": "⇧⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "action": "input::Cut",
+          "shortcut": "⌘X",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Copy",
           "action": "terminal::Copy",
           "shortcut": "⌘C",
@@ -107,9 +128,45 @@
           "children": []
         },
         {
+          "label": "Copy Special",
+          "action": "terminal::CopySpecialMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Copy Plain Text",
+              "action": "terminal::CopyPlainText",
+              "shortcut": "⌥⇧⌘C",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Paste",
           "action": "terminal::Paste",
           "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste Selection",
+          "action": "terminal::PasteSelection",
+          "shortcut": "⇧⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste Escaped Text",
+          "action": "terminal::PasteEscapedText",
+          "shortcut": "⌃⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste Escaped Selection",
+          "action": "terminal::PasteEscapedSelection",
+          "shortcut": "⌃⇧⌘V",
           "separator_before": false,
           "children": []
         },
@@ -182,14 +239,98 @@
               "shortcut": "⇧⌘G",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Hide Find Bar",
+              "action": "terminal::HideFindBar",
+              "shortcut": "⇧⌘F",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Use Selection for Find",
+              "action": "terminal::UseSelectionForFind",
+              "shortcut": "⌘E",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Selection",
+              "action": "terminal::JumpToSelection",
+              "shortcut": "⌘J",
+              "separator_before": false,
+              "children": []
             }
           ]
+        },
+        {
+          "label": "Clear Screen",
+          "action": "terminal::ClearScreen",
+          "shortcut": "⌃⌘L",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Clear Scrollback",
+          "action": "terminal::ClearScrollback",
+          "shortcut": "⌥⌘K",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Use Option as Meta Key",
+          "action": "terminal::ToggleOptionAsMeta",
+          "shortcut": "⌥⌘O",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
     {
       "label": "View",
       "items": [
+        {
+          "label": "Scroll to Top",
+          "action": "terminal::ScrollToTop",
+          "shortcut": "⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Scroll to Bottom",
+          "action": "terminal::ScrollToBottom",
+          "shortcut": "⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Page Up",
+          "action": "terminal::PageUp",
+          "shortcut": "⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Page Down",
+          "action": "terminal::PageDown",
+          "shortcut": "⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Line Up",
+          "action": "terminal::LineUp",
+          "shortcut": "⌥⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Line Down",
+          "action": "terminal::LineDown",
+          "shortcut": "⌥⌘",
+          "separator_before": false,
+          "children": []
+        },
         {
           "label": "Default Font Size",
           "action": "terminal::ZoomReset",

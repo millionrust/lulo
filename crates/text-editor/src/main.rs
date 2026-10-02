@@ -26,9 +26,12 @@ gpui::actions!(
         ToggleReplace,
         FindNext,
         FindPrev,
+        UseSelectionForFind,
+        JumpToSelection,
         SaveGoToFolder,
         CloseBar,
         ToggleMono,
+        ToggleWrapToPage,
         SetEncodingUtf8,
         SetEncodingUtf8Bom,
         SetEncodingUtf16Le,
@@ -38,6 +41,7 @@ gpui::actions!(
         SetLineEndingCr,
         IncreaseFont,
         DecreaseFont,
+        ActualSize,
         CloseWindow,
         // File ▸ Open Recent ▸ (TE-02): one action per shown row, up to
         // `rmac_app_menu::recent::MAX_ENTRIES`, plus "Clear Menu".

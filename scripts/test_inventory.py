@@ -295,6 +295,11 @@ class DiffSettingsAndToolbarTests(unittest.TestCase):
         self.assertIn("Blink cursor", labels)
         self.assertIn("▊ Block", labels)
 
+    def test_text_editor_settings_inventory_includes_dynamic_values_and_units(self):
+        controls = li.read_settings_window("Text Editor")["controls"]
+        labels = {control["label"] for control in controls}
+        self.assertTrue({"96", "30", "characters", "lines"} <= labels)
+
     def test_unnamed_ax_scaffolding_is_not_a_settings_control(self):
         mac = {"present": True, "controls": [
             {"role": "AXTable", "label": "table"},
@@ -305,10 +310,10 @@ class DiffSettingsAndToolbarTests(unittest.TestCase):
         gaps = d.diff_settings("Terminal", mac, lulo)
         self.assertEqual([gap.label for gap in gaps], ["Display ANSI colours"])
 
-    def test_terminal_menu_timeout_does_not_make_all_lulo_rows_extra(self):
+    def test_terminal_captured_menu_is_compared(self):
         gaps, notes = d.diff_app("Terminal", "Terminal")
-        self.assertFalse(any(gap.category == "menu" for gap in gaps))
-        self.assertTrue(any("menu diff skipped" in note for note in notes))
+        self.assertTrue(any(gap.category == "menu" for gap in gaps))
+        self.assertFalse(any("menu diff skipped" in note for note in notes))
 
     def test_settings_entirely_missing_in_lulo(self):
         mac = {"present": True, "controls": [{"label": "General"}]}

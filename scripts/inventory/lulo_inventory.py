@@ -331,6 +331,27 @@ def read_settings_window(app_display_name: str) -> dict:
             if key not in seen:
                 seen.add(key)
                 labels.append({"kind": "control", "label": m.group(1)})
+        if app_display_name == "Text Editor" and path.name == "settings_window.rs":
+            # number_row renders its unit through `.child(unit)`, so the
+            # literal scanner above cannot see the visible AX text.
+            for unit in re.findall(
+                r'Self::number_row\(\s*"[^"]+",\s*"[^"]+",\s*[^,]+,\s*"([^"]+)"',
+                text,
+            ):
+                key = ("control", unit)
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "control", "label": unit})
+        if app_display_name == "Text Editor" and path.name == "settings.rs":
+            # The default window dimensions appear as text input values.
+            for field in ("width_chars", "height_lines"):
+                match = re.search(rf'\b{field}:\s*(\d+)\b', text)
+                if match is not None:
+                    value = match.group(1)
+                    key = ("control", value)
+                    if key not in seen:
+                        seen.add(key)
+                        labels.append({"kind": "control", "label": value})
         for m in re.finditer(r'\.label\("([^"]+)"\)', text):
             key = ("control", m.group(1))
             if key not in seen:

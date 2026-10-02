@@ -20,9 +20,33 @@ impl Render for TerminalView {
         // Directory" (⌘N) tracks whichever window was frontmost; only a
         // focused window's directory is a candidate.
         if self.window_active {
+            rmac_ui::set_menu_label(
+                "terminal::CloseTab",
+                if self.tabs.len() > 1 {
+                    "Close Tab"
+                } else {
+                    "Close Window"
+                },
+                cx,
+            );
             if let Some(directory) = self.tabs[self.active].working_directory() {
                 crate::working_directory::set_last_front_directory(directory);
             }
+            let has_selection = self
+                .selection_text()
+                .is_some_and(|selection| !selection.is_empty());
+            rmac_ui::set_menu_enabled("terminal::Copy", has_selection, cx);
+            rmac_ui::set_menu_checked("terminal::ToggleOptionAsMeta", self.option_as_meta, cx);
+            rmac_ui::set_menu_enabled("terminal::CopyPlainText", has_selection, cx);
+            rmac_ui::set_menu_enabled("terminal::PasteSelection", has_selection, cx);
+            rmac_ui::set_menu_enabled("terminal::PasteEscapedSelection", has_selection, cx);
+            rmac_ui::set_menu_enabled("terminal::UseSelectionForFind", has_selection, cx);
+            rmac_ui::set_menu_enabled("terminal::JumpToSelection", has_selection, cx);
+            rmac_ui::set_menu_enabled(
+                "terminal::HideFindBar",
+                self.tabs[self.active].ui.search_open,
+                cx,
+            );
         }
         let layout = responsive_layout::terminal_layout(f32::from(
             rmac_ui::window_content_size(window).width,

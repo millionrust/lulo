@@ -14,12 +14,13 @@ use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
-    document, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, ExportPdf,
-    FindNext, FindPrev, IncreaseFont, NewFile, OpenFile, OpenRecent0, OpenRecent1, OpenRecent2,
-    OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8, OpenRecent9,
-    PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SetEncodingUtf16Be, SetEncodingUtf16Le,
-    SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf,
-    ShowSettings, ToggleFind, ToggleMono, ToggleReplace,
+    document, ActualSize, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument,
+    ExportPdf, FindNext, FindPrev, IncreaseFont, JumpToSelection, NewFile, OpenFile, OpenRecent0,
+    OpenRecent1, OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7,
+    OpenRecent8, OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SetEncodingUtf16Be,
+    SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf,
+    SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage,
+    UseSelectionForFind,
 };
 
 use super::{
@@ -133,6 +134,12 @@ impl Render for EditorView {
                 cx.listener(|this, _: &ToggleReplace, window, cx| this.toggle_replace(window, cx)),
             )
             .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_next(cx)))
+            .on_action(cx.listener(|this, _: &UseSelectionForFind, window, cx| {
+                this.use_selection_for_find(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &JumpToSelection, window, cx| {
+                this.jump_to_selection(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
                 if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {
                     this.open_save_goto(window, cx);
@@ -149,6 +156,10 @@ impl Render for EditorView {
             }))
             .on_action(cx.listener(|this, _: &CloseBar, window, cx| this.close_bar(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
+            .on_action(cx.listener(|this, _: &ToggleWrapToPage, _, cx| {
+                this.wrap_to_page = !this.wrap_to_page;
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &SetEncodingUtf8, _, cx| {
                 this.set_encoding(document::TextEncoding::Utf8, cx)
             }))
@@ -172,6 +183,7 @@ impl Render for EditorView {
             }))
             .on_action(cx.listener(|this, _: &IncreaseFont, _, cx| this.increase_font(cx)))
             .on_action(cx.listener(|this, _: &DecreaseFont, _, cx| this.decrease_font(cx)))
+            .on_action(cx.listener(|this, _: &ActualSize, _, cx| this.actual_size(cx)))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.guarded(Pending::Close, window, cx)
             }))

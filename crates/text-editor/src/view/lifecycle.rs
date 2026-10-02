@@ -96,6 +96,11 @@ impl EditorView {
                 FindPrev,
                 Some(CTX),
             ),
+            KeyBinding::new("cmd-e", UseSelectionForFind, Some(CTX)),
+            KeyBinding::new("cmd-j", JumpToSelection, Some(CTX)),
+            KeyBinding::new("cmd-0", ActualSize, Some(CTX)),
+            KeyBinding::new("cmd-shift-.", IncreaseFont, Some(CTX)),
+            KeyBinding::new("cmd-shift-,", DecreaseFont, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::ESCAPE.keystroke, CloseBar, Some(CTX)),
             KeyBinding::new("cmd-.", CloseBar, Some(CTX)),
             KeyBinding::new(
@@ -118,6 +123,7 @@ impl EditorView {
                 ToggleMono,
                 Some(CTX),
             ),
+            KeyBinding::new("cmd-shift-w", ToggleWrapToPage, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, Some(CTX)),
         ]);
         #[cfg(target_os = "linux")]

@@ -15,13 +15,14 @@ use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
     document, ActualSize, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument,
-    ExportPdf, FindNext, FindPrev, IncreaseFont, JumpToSelection, NewFile, OpenFile, OpenRecent0,
-    OpenRecent1, OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7,
-    OpenRecent8, OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine,
-    SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr,
-    SetLineEndingCrLf, SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono, ToggleReplace,
-    ToggleWrapToPage, TransformCapitalise, TransformLowercase, TransformUppercase,
-    UseSelectionForFind, ZoomIn, ZoomOut,
+    ExportPdf, FindNext, FindPrev, IncreaseFont, InsertLineBreak, InsertPageBreak,
+    InsertParagraphBreak, JumpToSelection, NewFile, OpenFile, OpenRecent0, OpenRecent1,
+    OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8,
+    OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine, SetEncodingUtf16Be,
+    SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf,
+    SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage,
+    TransformCapitalise, TransformLowercase, TransformUppercase, UseSelectionForFind, ZoomIn,
+    ZoomOut,
 };
 
 use super::{
@@ -143,6 +144,15 @@ impl Render for EditorView {
             }))
             .on_action(cx.listener(|this, _: &SelectLine, window, cx| {
                 this.select_line(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &InsertLineBreak, window, cx| {
+                this.insert_break("\u{2028}", window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &InsertParagraphBreak, window, cx| {
+                this.insert_break("\n", window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &InsertPageBreak, window, cx| {
+                this.insert_break("\u{000c}", window, cx)
             }))
             .on_action(cx.listener(|this, _: &TransformUppercase, window, cx| {
                 this.transform_selection(rmac_ui::TextTransformation::Uppercase, window, cx)

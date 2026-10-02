@@ -356,6 +356,16 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             item!("Delete", "input::Delete", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
             submenu!(
+                "Insert",
+                "text_editor::InsertMenu",
+                [
+                    item!("Line Break", "text_editor::InsertLineBreak", ""),
+                    item!("Paragraph Break", "text_editor::InsertParagraphBreak", ""),
+                    item!("Page Break", "text_editor::InsertPageBreak", ""),
+                ],
+                separator
+            ),
+            submenu!(
                 "Find",
                 "text_editor::FindMenu",
                 [

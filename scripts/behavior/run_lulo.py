@@ -1161,6 +1161,7 @@ class LuloRun:
                 bus = "org.rmac." + {
                     "calculator": "Calculator",
                     "clock": "Clock",
+                    "text-editor": "TextEditor",
                     "weather": "Weather",
                 }[self.app] + ".Menu"
                 call = subprocess.run(

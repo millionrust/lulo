@@ -1,0 +1,15 @@
+{
+  "title": "Insert menu adds line, paragraph, and page breaks at the caret",
+  "app": "text-editor",
+  "lulo_only": true,
+  "steps": [
+    {"type": "A"},
+    {"menu_action": "text_editor::InsertLineBreak"},
+    {"type": "B"},
+    {"menu_action": "text_editor::InsertParagraphBreak"},
+    {"type": "C"},
+    {"menu_action": "text_editor::InsertPageBreak"},
+    {"type": "D"},
+    {"observe": "inserted", "facts": ["focus"]}
+  ]
+}

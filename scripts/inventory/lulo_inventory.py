@@ -468,6 +468,8 @@ def _rows_from_block(text: str) -> list[dict]:
             # This dynamic variable is the label returned by
             # compress_menu_label for the selected item(s).
             label = "Compress"
+        elif first == "slideshow_label":
+            label = "Slideshow"
         else:
             # A non-literal expression (a local variable or a computed
             # label): we cannot resolve it statically, so mark it instead
@@ -538,11 +540,22 @@ def read_finder_context_menus() -> dict:
     # does not special-case folders.
     if has_sel_true:
         rows = _rows_from_block(has_sel_true)
+        # The source contains mutually exclusive branches and builders for
+        # nested submenus. Record the single-selection, top-level result in
+        # each category; nested app handlers and tag swatches are not rows of
+        # the selected item's menu itself.
+        nested = {
+            "<handler.name.clone()>", "Other…", "Red", "Orange", "Yellow",
+            "Green", "Blue", "Purple", "Gray", "New Folder with Selection",
+        }
         menus["file"] = [
             row for row in rows
-            if row.get("label") not in {"Open in New Tab", "Open in New Window"}
+            if row.get("label") not in nested | {"Open in New Tab", "Open in New Window"}
         ]
-        menus["folder"] = rows
+        menus["folder"] = [
+            row for row in rows
+            if row.get("label") not in nested | {"Open", "Open With", "Always Open With"}
+        ]
     if has_sel_false:
         menus["background"] = _rows_from_block(has_sel_false)
 

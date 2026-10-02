@@ -4,11 +4,25 @@ impl FinderView {
     /// Space or ⌘Y: open the floating Quick Look panel on the selection, or close
     /// it when it is already open (Space toggles, as on the Mac).
     pub(in crate::view) fn quick_look(&mut self, cx: &mut Context<Self>) {
+        self.open_quick_look(false, cx);
+    }
+
+    pub(in crate::view) fn slideshow(&mut self, cx: &mut Context<Self>) {
+        self.open_quick_look(true, cx);
+    }
+
+    fn open_quick_look(&mut self, fullscreen: bool, cx: &mut Context<Self>) {
         if self
             .quick_look
             .as_ref()
             .is_some_and(|panel| panel.handle.is_open())
         {
+            if fullscreen {
+                if let Some(panel) = &self.quick_look {
+                    panel.handle.enter_fullscreen(cx);
+                }
+                return;
+            }
             self.close_quick_look(cx);
             return;
         }
@@ -34,6 +48,9 @@ impl FinderView {
             cx.notify();
             return;
         };
+        if fullscreen {
+            handle.enter_fullscreen(cx);
+        }
         let events = cx.subscribe(
             &panel,
             |this, _, event: &rmac_quick_look::Event, cx| match event {

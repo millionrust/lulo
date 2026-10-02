@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "files/slideshow",
+  "platform": "Lulo local contract",
+  "observations": {
+    "slideshow": {"windows": {"count": 2, "front": "Quick Look", "fullscreen": true}},
+    "closed": {"windows": {"count": 1}}
+  }
+}

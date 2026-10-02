@@ -65,8 +65,21 @@ class NormalizeLabelTests(unittest.TestCase):
     def test_finder_selection_labels_match_their_runtime_command(self):
         self.assertEqual(norm.normalize_label('Copy “report.txt” as Pathname'), "Copy as Pathname")
         self.assertEqual(norm.normalize_label('Quick Look “report.txt”'), "Quick Look")
+        self.assertEqual(norm.normalize_label('Slideshow “report.txt”'), "Slideshow")
         self.assertEqual(norm.normalize_label('Compress “report.txt”'), "Compress")
         self.assertEqual(norm.normalize_label('Undo Move of “Untitled”'), "Undo")
+
+    def test_finder_context_inventory_only_lists_single_selection_rows(self):
+        menus = li.read_finder_context_menus()
+        file_labels = {row.get("label") for row in menus["file"]}
+        folder_labels = {row.get("label") for row in menus["folder"]}
+        self.assertIn("Slideshow", file_labels)
+        self.assertIn("Slideshow", folder_labels)
+        self.assertIn("Open", file_labels)
+        self.assertNotIn("Open", folder_labels)
+        self.assertNotIn("New Folder with Selection", file_labels | folder_labels)
+        self.assertNotIn("<handler.name.clone()>", file_labels | folder_labels)
+        self.assertNotIn("Red", file_labels | folder_labels)
 
 
 class NormalizeShortcutTests(unittest.TestCase):

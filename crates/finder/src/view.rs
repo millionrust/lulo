@@ -148,6 +148,7 @@ actions!(
         GoShared,
         GoTrash,
         ToggleHidden,
+        EnterFullScreen,
         OpenItems,
         OpenSelectionInNewTab,
         OpenSelectionInNewWindow,

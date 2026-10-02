@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "files/fullscreen",
+  "platform": "Lulo local contract",
+  "observations": {
+    "fullscreen": {"windows": {"fullscreen": true}},
+    "windowed": {"windows": {"fullscreen": false}},
+    "typing": {"windows": {"fullscreen": false}}
+  }
+}

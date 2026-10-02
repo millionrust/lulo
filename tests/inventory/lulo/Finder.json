@@ -372,13 +372,6 @@
           ]
         },
         {
-          "label": "Show Hidden Files",
-          "action": "finder::ToggleHidden",
-          "shortcut": "⇧⌘.",
-          "separator_before": true,
-          "children": []
-        },
-        {
           "label": "Show View Options",
           "action": "finder::ShowViewOptions",
           "shortcut": "⌘J",
@@ -389,6 +382,13 @@
           "label": "Show Tab Bar",
           "action": "finder::ToggleTabBar",
           "shortcut": "⇧⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "finder::EnterFullScreen",
+          "shortcut": "F",
           "separator_before": false,
           "children": []
         },

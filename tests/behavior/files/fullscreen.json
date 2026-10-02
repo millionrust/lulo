@@ -1,0 +1,16 @@
+{
+  "title": "Finder F toggles full screen while the file list has focus",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "f", "settle": 0.7},
+    {"observe": "fullscreen", "facts": ["windows"]},
+    {"key": "f", "settle": 0.7},
+    {"observe": "windowed", "facts": ["windows"]},
+    {"key": "cmd-f"},
+    {"key": "f"},
+    {"observe": "typing", "facts": ["windows"]}
+  ]
+}

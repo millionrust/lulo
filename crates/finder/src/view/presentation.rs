@@ -6,6 +6,15 @@ impl Render for FinderView {
         // active window may publish its window-specific validation state.
         if window.is_window_active() {
             self.publish_app_menu_state(cx);
+            rmac_ui::set_menu_label(
+                "finder::EnterFullScreen",
+                if window.is_fullscreen() {
+                    "Exit Full Screen"
+                } else {
+                    "Enter Full Screen"
+                },
+                cx,
+            );
         }
         let native_window_title = rmac_ui::native_window_title(self.title().as_ref(), "Files");
         if self.native_window_title != native_window_title {

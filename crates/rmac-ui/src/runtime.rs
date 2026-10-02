@@ -338,7 +338,10 @@ pub fn open_outside_click_catcher_around(
         let right = (left + f32::from(excluded.size.width)).clamp(left, width);
         let bottom = (top + f32::from(excluded.size.height)).clamp(top, height);
         let region = |x: f32, y: f32, w: f32, h: f32| {
-            Bounds::new(point(gpui::px(x), gpui::px(y)), size(gpui::px(w), gpui::px(h)))
+            Bounds::new(
+                point(gpui::px(x), gpui::px(y)),
+                size(gpui::px(w), gpui::px(h)),
+            )
         };
         [
             region(0.0, 0.0, width, top),
@@ -374,7 +377,11 @@ pub fn open_outside_click_catcher_around(
     cx.open_window(options, move |_, cx| {
         let left = on_click.clone();
         let right = on_click.clone();
-        cx.new(|_| OutsideClickCatcher { left, right, input_regions })
+        cx.new(|_| OutsideClickCatcher {
+            left,
+            right,
+            input_regions,
+        })
     })
     .ok()
     .map(AnyWindowHandle::from)

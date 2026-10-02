@@ -2505,11 +2505,17 @@ mod linux_wayland {
                                 if window.is_window_active() {
                                     this.was_active = true;
                                 } else if this.was_active {
-                                    let _ = this.dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
+                                    let _ =
+                                        this.dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
                                     window.remove_window();
                                 }
-                            }).detach();
-                            DockDismissKeyboard { dock, focus, was_active: false }
+                            })
+                            .detach();
+                            DockDismissKeyboard {
+                                dock,
+                                focus,
+                                was_active: false,
+                            }
                         })
                     })
                     .ok();

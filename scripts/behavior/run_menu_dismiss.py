@@ -503,7 +503,7 @@ class Run:
                        self.wait_for(lambda: self.find_menu(label) is None, 10))
 
     def layer_popover_dismissal(self, shortcut: str, namespace: str) -> None:
-        for method in ("outside click", "Escape"):
+        for method in ("outside click", "inside-band click", "Escape"):
             self.close_everything()
             self.dispatch(shortcut)
             opened = self.wait_for(lambda: self.has_layer(namespace), 10)
@@ -513,7 +513,7 @@ class Run:
             if method == "Escape":
                 self.keys.key("escape")
             else:
-                self.click_at(200, MENU_SURFACE_HEIGHT + 70)
+                self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
             self.check(f"{shortcut}: closes on {method}",
                        self.wait_for(lambda: not self.has_layer(namespace), 10))
 
@@ -594,7 +594,8 @@ class Run:
         for label in ("Wi-Fi", "Bluetooth", "Sound"):
             self.status_menu_dismissal(label)
         self.dock_context_menu_dismissal()
-        for shortcut, namespace in (("launcher", "rmac-launcher"),
+        for shortcut, namespace in (("quick-settings", "rmac-quick-settings"),
+                                    ("launcher", "rmac-launcher"),
                                     ("app-drawer", "rmac-app-drawer"),
                                     ("notification-center", "rmac-notification-center")):
             self.layer_popover_dismissal(shortcut, namespace)

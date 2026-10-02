@@ -30,19 +30,28 @@ impl Global for AppDrawerService {}
 
 pub(crate) fn release(token: u64, cx: &mut GpuiApp) {
     if cx.has_global::<AppDrawerService>() {
-        let catcher: Option<AnyWindowHandle> = cx.update_global::<AppDrawerService, _>(|service, _| {
-            let matches = service
-                .active
-                .as_ref()
-                .is_some_and(|active| active.token == token);
-            if matches {
-                service.active = None;
-            }
-            #[cfg(target_os = "linux")]
-            { if matches { service.catcher.take() } else { None } }
-            #[cfg(not(target_os = "linux"))]
-            { None }
-        });
+        let catcher: Option<AnyWindowHandle> =
+            cx.update_global::<AppDrawerService, _>(|service, _| {
+                let matches = service
+                    .active
+                    .as_ref()
+                    .is_some_and(|active| active.token == token);
+                if matches {
+                    service.active = None;
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    if matches {
+                        service.catcher.take()
+                    } else {
+                        None
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    None
+                }
+            });
         if let Some(catcher) = catcher {
             let _ = catcher.update(cx, |_, window, _| window.remove_window());
         }

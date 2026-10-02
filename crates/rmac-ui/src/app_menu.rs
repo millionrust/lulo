@@ -161,18 +161,25 @@ fn current_menus(cx: &mut App) -> Vec<Menu> {
         }
         Some(state)
     });
-    fn replace_children(items: &mut [Item], replacements: &BTreeMap<String, Vec<Item>>) {
+    fn replace_children(
+        items: &mut [Item],
+        replacements: &BTreeMap<String, Vec<Item>>,
+        overrides: &BTreeMap<String, ItemState>,
+    ) {
         for item in items {
             if let Some(children) = replacements.get(&item.action) {
                 item.children = children.clone();
-                item.enabled = item.children.iter().any(|child| child.enabled);
+                item.enabled = overrides
+                    .get(&item.action)
+                    .and_then(|state| state.enabled)
+                    .unwrap_or_else(|| item.children.iter().any(|child| child.enabled));
             } else {
-                replace_children(&mut item.children, replacements);
+                replace_children(&mut item.children, replacements, overrides);
             }
         }
     }
     for menu in &mut menus {
-        replace_children(&mut menu.items, &dynamic_children);
+        replace_children(&mut menu.items, &dynamic_children, &overrides);
     }
     // File ▸ Open Recent ▸ (TE-02, PREV-08/PREV-15): built fresh every time
     // a menu is about to open, from whichever documents `app_id` itself

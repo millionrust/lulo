@@ -53,11 +53,19 @@
       "label": "File",
       "items": [
         {
-          "label": "New",
-          "action": "clock::NewItem",
-          "shortcut": "⌘N",
+          "label": "Start Recent Timer",
+          "action": "clock::RecentTimersMenu",
+          "shortcut": "",
           "separator_before": false,
-          "children": []
+          "children": [
+            {
+              "label": "No Recent Timers",
+              "action": "clock::NoRecentTimers",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Close",

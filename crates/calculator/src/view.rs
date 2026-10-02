@@ -18,8 +18,11 @@ use rmac_calculator::scientific_keypad;
 use rmac_ui::mac;
 
 use crate::{
-    CloseWindow, Copy, Paste, ShowBasic, ShowHistory, ShowScientific, ToggleThousandsSeparator,
-    DecimalPlaces0, DecimalPlaces1, DecimalPlaces2, DecimalPlaces3, DecimalPlaces4, DecimalPlaces5, DecimalPlaces6, DecimalPlaces7, DecimalPlaces8, DecimalPlaces9, DecimalPlaces10, DecimalPlaces11, DecimalPlaces12, DecimalPlaces13, DecimalPlaces14, DecimalPlaces15,
+    CloseWindow, Copy, DecimalPlaces0, DecimalPlaces1, DecimalPlaces10, DecimalPlaces11,
+    DecimalPlaces12, DecimalPlaces13, DecimalPlaces14, DecimalPlaces15, DecimalPlaces2,
+    DecimalPlaces3, DecimalPlaces4, DecimalPlaces5, DecimalPlaces6, DecimalPlaces7, DecimalPlaces8,
+    DecimalPlaces9, EnterFullScreen, Paste, ShowBasic, ShowHistory, ShowScientific,
+    ToggleThousandsSeparator,
 };
 
 /// How long a key stays lit after a hardware key press.
@@ -950,23 +953,56 @@ impl Render for CalculatorView {
             .on_action(cx.listener(|this, _: &ToggleThousandsSeparator, _, cx| {
                 this.toggle_thousands_separator(cx);
             }))
-            .on_action(cx.listener(|this, _: &DecimalPlaces0, _, cx| this.set_decimal_places(0, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces1, _, cx| this.set_decimal_places(1, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces2, _, cx| this.set_decimal_places(2, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces3, _, cx| this.set_decimal_places(3, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces4, _, cx| this.set_decimal_places(4, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces5, _, cx| this.set_decimal_places(5, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces6, _, cx| this.set_decimal_places(6, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces7, _, cx| this.set_decimal_places(7, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces8, _, cx| this.set_decimal_places(8, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces9, _, cx| this.set_decimal_places(9, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces10, _, cx| this.set_decimal_places(10, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces11, _, cx| this.set_decimal_places(11, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces12, _, cx| this.set_decimal_places(12, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces13, _, cx| this.set_decimal_places(13, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces14, _, cx| this.set_decimal_places(14, cx)))
-            .on_action(cx.listener(|this, _: &DecimalPlaces15, _, cx| this.set_decimal_places(15, cx)))
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces0, _, cx| this.set_decimal_places(0, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces1, _, cx| this.set_decimal_places(1, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces2, _, cx| this.set_decimal_places(2, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces3, _, cx| this.set_decimal_places(3, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces4, _, cx| this.set_decimal_places(4, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces5, _, cx| this.set_decimal_places(5, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces6, _, cx| this.set_decimal_places(6, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces7, _, cx| this.set_decimal_places(7, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces8, _, cx| this.set_decimal_places(8, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces9, _, cx| this.set_decimal_places(9, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces10, _, cx| this.set_decimal_places(10, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces11, _, cx| this.set_decimal_places(11, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces12, _, cx| this.set_decimal_places(12, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces13, _, cx| this.set_decimal_places(13, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces14, _, cx| this.set_decimal_places(14, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces15, _, cx| this.set_decimal_places(15, cx)),
+            )
             .on_action(cx.listener(|_, _: &CloseWindow, _, cx| cx.quit()))
+            .on_action(cx.listener(|_, _: &EnterFullScreen, _, _| {}))
             .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, _, cx| cx.quit()))
             .relative()
             .w(px(window_width))
@@ -1006,7 +1042,10 @@ mod tests {
     fn decimal_places_round_display_without_changing_value() {
         let value = 1.0 / 3.0;
         assert_eq!(format_decimal_value(value, 2).as_deref(), Some("0.33"));
-        assert_eq!(format_decimal_value(value, 8).as_deref(), Some("0.33333333"));
+        assert_eq!(
+            format_decimal_value(value, 8).as_deref(),
+            Some("0.33333333")
+        );
         assert_eq!(
             format_decimal_value(value, 15).as_deref(),
             Some("0.333333333333333")

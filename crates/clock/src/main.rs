@@ -25,6 +25,15 @@ gpui::actions!(
         NewItem,
         StartStop,
         LapReset,
+        NoRecentTimers,
+        StartRecentTimer0,
+        StartRecentTimer1,
+        StartRecentTimer2,
+        StartRecentTimer3,
+        StartRecentTimer4,
+        StartRecentTimer5,
+        StartRecentTimer6,
+        StartRecentTimer7,
         CloseWindow,
     ]
 );
@@ -63,7 +72,6 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-2", ShowAlarms, context),
         KeyBinding::new("cmd-3", ShowStopwatch, context),
         KeyBinding::new("cmd-4", ShowTimers, context),
-        KeyBinding::new(rmac_ui::shortcuts::NEW.keystroke, NewItem, context),
         KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
         KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, context),
     ]);

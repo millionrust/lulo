@@ -970,6 +970,22 @@ class LuloRun:
                     return {"value": str(value)}
         return {"value": None}
 
+    def fact_clock_timers(self) -> dict[str, Any]:
+        path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/clock.json"
+        if not path.exists():
+            return {"running_count": 0, "recent_durations": []}
+        state = json.loads(path.read_text())
+        return {
+            "running_count": len(state.get("timers", [])),
+            "recent_durations": state.get("recent_timer_durations", []),
+        }
+
+    def fact_weather_settings(self) -> dict[str, Any]:
+        path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/weather.json"
+        if not path.exists():
+            return {"fahrenheit": None}
+        return {"fahrenheit": json.loads(path.read_text()).get("fahrenheit")}
+
     def fact_files(self) -> dict[str, Any]:
         entries = []
         root = self.files_root

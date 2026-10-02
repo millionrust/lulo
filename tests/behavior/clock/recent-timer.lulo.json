@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "clock/recent-timer",
+  "observations": {
+    "first_timer": {"clock_timers": {"running_count": 1, "recent_durations": [900000]}},
+    "recent_timer_started": {"clock_timers": {"running_count": 2, "recent_durations": [900000]}}
+  }
+}

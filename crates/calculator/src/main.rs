@@ -38,6 +38,7 @@ gpui::actions!(
         DecimalPlaces13,
         DecimalPlaces14,
         DecimalPlaces15,
+        EnterFullScreen,
         CloseWindow
     ]
 );
@@ -95,6 +96,9 @@ fn main() {
             // Basic is the only mode, so View ▸ Basic is always the ticked one.
             rmac_ui::set_menu_checked("calculator::ShowBasic", true, cx);
             rmac_ui::set_menu_checked("calculator::DecimalPlaces8", true, cx);
+            // Calculator's fixed Basic and Scientific surfaces cannot enter
+            // full screen on the Mac; the View row is present but greyed.
+            rmac_ui::set_menu_enabled("calculator::EnterFullScreen", false, cx);
 
             // Calculator is fixed-size like on macOS: keep a restored position
             // but never a restored size.

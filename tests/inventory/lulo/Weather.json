@@ -13,6 +13,13 @@
           "children": []
         },
         {
+          "label": "Settings…",
+          "action": "weather::ShowSettings",
+          "shortcut": "⌘,",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Services",
           "action": "app::services",
           "shortcut": "",
@@ -329,9 +336,18 @@
     }
   ],
   "settings": {
-    "present": false,
-    "extraction": "none",
-    "controls": []
+    "present": true,
+    "extraction": "heuristic",
+    "controls": [
+      {
+        "kind": "tab",
+        "label": "General"
+      },
+      {
+        "kind": "tab",
+        "label": "Notifications"
+      }
+    ]
   },
   "toolbar": {
     "present": true,

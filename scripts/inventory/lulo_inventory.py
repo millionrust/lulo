@@ -292,6 +292,9 @@ SETTINGS_FILES = {
         "crates/text-editor/src/settings_window.rs",
         "crates/text-editor/src/settings.rs",
     ],
+    "Weather": [
+        "crates/weather/src/settings_window.rs",
+    ],
 }
 
 

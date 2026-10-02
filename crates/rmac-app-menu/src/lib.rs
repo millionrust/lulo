@@ -200,29 +200,29 @@ pub struct ItemState {
     pub label: Option<String>,
 }
 
-/// The menus with each command's live state from `state`. A submenu is
-/// enabled while any of its items is, as in AppKit.
+/// The menus with each command's live state from `state`. A submenu defaults
+/// to enabled while any child is enabled, but an app may override the parent
+/// (for example, Start Recent Timer stays open over its disabled empty row).
 pub fn apply_state(menus: &[Menu], state: impl Fn(&Item) -> Option<ItemState>) -> Vec<Menu> {
     fn apply(items: &[Item], state: &dyn Fn(&Item) -> Option<ItemState>) -> Vec<Item> {
         items
             .iter()
             .map(|item| {
                 let mut next = item.clone();
-                if item.children.is_empty() {
-                    if let Some(update) = state(item) {
-                        if let Some(enabled) = update.enabled {
-                            next.enabled = enabled;
-                        }
-                        if let Some(checked) = update.checked {
-                            next.checked = checked;
-                        }
-                        if let Some(label) = update.label.filter(|label| valid_label(label)) {
-                            next.label = label;
-                        }
-                    }
-                } else {
+                if !item.children.is_empty() {
                     next.children = apply(&item.children, state);
                     next.enabled = next.children.iter().any(|child| child.enabled);
+                }
+                if let Some(update) = state(item) {
+                    if let Some(enabled) = update.enabled {
+                        next.enabled = enabled;
+                    }
+                    if let Some(checked) = update.checked {
+                        next.checked = checked;
+                    }
+                    if let Some(label) = update.label.filter(|label| valid_label(label)) {
+                        next.label = label;
+                    }
                 }
                 next
             })
@@ -954,6 +954,7 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
                 ]
             ),
             item!("Show History", "calculator::ShowHistory", "⌃⌘S", separator),
+            item!("Enter Full Screen", "calculator::EnterFullScreen", "F"),
         ],
     },
     MenuSpec {
@@ -1082,7 +1083,11 @@ const CLOCK_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "File",
         items: &[
-            item!("New", "clock::NewItem", "⌘N"),
+            submenu!(
+                "Start Recent Timer",
+                "clock::RecentTimersMenu",
+                [item!("No Recent Timers", "clock::NoRecentTimers", "")]
+            ),
             item!("Close", "clock::CloseWindow", "⌘W", separator),
             item!("Close All", "rmac_ui::RequestClose", "⌥⌘W"),
         ],
@@ -1113,6 +1118,10 @@ const CLOCK_MENUS: &[MenuSpec] = &[
 ];
 
 const WEATHER_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!("Settings…", "weather::ShowSettings", "⌘,", separator)],
+    },
     MenuSpec {
         label: "File",
         items: &[
@@ -2199,6 +2208,25 @@ mod tests {
         });
         assert!(
             !none_left
+                .iter()
+                .find(|menu| menu.label == "Format")
+                .unwrap()
+                .items[0]
+                .enabled
+        );
+
+        let parent_override = apply_state(&menus, |item| {
+            matches!(
+                item.action.as_str(),
+                "notes::ToggleBold" | "notes::ToggleItalic" | "notes::FontMenu"
+            )
+            .then(|| ItemState {
+                enabled: Some(item.action == "notes::FontMenu"),
+                ..ItemState::default()
+            })
+        });
+        assert!(
+            parent_override
                 .iter()
                 .find(|menu| menu.label == "Format")
                 .unwrap()

@@ -253,6 +253,13 @@
           "shortcut": "⌃⌘S",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "calculator::EnterFullScreen",
+          "shortcut": "F",
+          "separator_before": false,
+          "children": []
         }
       ]
     },

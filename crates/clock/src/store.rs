@@ -17,6 +17,7 @@ const MAX_STATE_BYTES: usize = 256 * 1024;
 pub const MAX_ALARMS: usize = 64;
 pub const MAX_TIMERS: usize = 16;
 pub const MAX_CITIES: usize = 48;
+pub const MAX_RECENT_TIMERS: usize = 8;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
@@ -26,6 +27,8 @@ pub struct State {
     pub cities: Option<Vec<String>>,
     pub alarms: Vec<Alarm>,
     pub timers: Vec<Countdown>,
+    /// Most recently started timer durations, newest first.
+    pub recent_timer_durations: Vec<u64>,
     pub stopwatch: Stopwatch,
     pub next_id: u64,
 }
@@ -47,6 +50,9 @@ impl State {
     pub fn normalized(mut self) -> Self {
         self.alarms.truncate(MAX_ALARMS);
         self.timers.truncate(MAX_TIMERS);
+        self.recent_timer_durations
+            .retain(|duration| *duration > 0 && *duration < 24 * 60 * 60 * 1000);
+        self.recent_timer_durations.truncate(MAX_RECENT_TIMERS);
         if let Some(cities) = self.cities.as_mut() {
             cities.truncate(MAX_CITIES);
         }

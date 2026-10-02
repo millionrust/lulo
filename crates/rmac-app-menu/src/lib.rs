@@ -1101,6 +1101,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Zoom Out", "preview::ZoomOut", "⌘−"),
             item!("Zoom All Out", "preview::ZoomAllOut", "⌥⌘−"),
             item!(
+                "Show Image Background",
+                "preview::ShowImageBackground",
+                "⌥⌘B",
+                separator
+            ),
+            item!(
                 "Show Markup Toolbar",
                 "preview::ToggleMarkup",
                 "⇧⌘A",
@@ -1113,6 +1119,8 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Go",
         items: &[
+            item!("Back", "preview::Back", "⌘["),
+            item!("Forward", "preview::Forward", "⌘]"),
             item!("Up", "preview::PageUp", ""),
             item!("Previous Document", "preview::PreviousDocument", "⌥"),
             item!("Down", "preview::PageDown", ""),
@@ -1126,6 +1134,18 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         label: "Tools",
         items: &[
             item!("Show Inspector", "preview::ShowInspector", "⌘I"),
+            submenu!(
+                "Annotate",
+                "preview::AnnotateMenu",
+                [
+                    item!("Highlight Text", "preview::AnnotateHighlight", "⌃⌘H"),
+                    item!("Oval", "preview::AnnotateOval", "⌃⌘O"),
+                    item!("Line", "preview::AnnotateLine", "⌃⌘I"),
+                    item!("Arrow", "preview::AnnotateArrow", "⌃⌘A"),
+                    item!("Text", "preview::AnnotateText", "⌃⌘T", separator),
+                ],
+                separator
+            ),
             item!("Rotate Left", "preview::RotateLeft", "⌘L", separator),
             item!("Rotate Right", "preview::RotateRight", "⌘R"),
         ],

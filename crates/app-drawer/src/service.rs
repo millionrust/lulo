@@ -205,7 +205,10 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
                 Some(bounds),
                 move |cx| {
                     let active = cx.read_global::<AppDrawerService, _>(|service, _| {
-                        service.active.clone().filter(|active| active.token == token)
+                        service
+                            .active
+                            .clone()
+                            .filter(|active| active.token == token)
                     });
                     if active.is_some() {
                         dismiss_active(cx);

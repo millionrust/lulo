@@ -211,6 +211,9 @@ class Run:
 
         return namespace in set(namespaces(self.niri("layers")))
 
+    def popover_gone(self, namespace: str) -> bool:
+        return not self.has_layer(namespace) and not self.has_layer(f"{namespace}-click-catcher")
+
     # -- AT-SPI ----------------------------------------------------------
 
     def find_node(self, roles: tuple[str, ...], matches):
@@ -291,6 +294,13 @@ class Run:
         self.keys.key("escape")
         self.keys.key("escape")
         time.sleep(0.2)
+        for shortcut, namespace in (("quick-settings", "rmac-quick-settings"),
+                                    ("launcher", "rmac-launcher"),
+                                    ("app-drawer", "rmac-app-drawer"),
+                                    ("notification-center", "rmac-notification-center")):
+            if self.has_layer(namespace):
+                self.dispatch(shortcut)
+            self.wait_for(lambda namespace=namespace: self.popover_gone(namespace), 5)
 
     def capture(self, name: str) -> Image.Image:
         path = self.work / f"{name}.png"
@@ -507,11 +517,11 @@ class Run:
                 self.keys.key("escape")
             else:
                 self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
-            closed = self.wait_for(lambda: not self.has_layer(namespace), 10)
+            closed = self.wait_for(lambda: self.popover_gone(namespace), 10)
             self.check(f"{shortcut}: closes on {method}", closed)
             if not closed:
                 self.dispatch(shortcut)
-                self.wait_for(lambda: not self.has_layer(namespace), 5)
+                self.wait_for(lambda: self.popover_gone(namespace), 5)
 
     def clock_popover_dismissal(self) -> None:
         namespace = "rmac-notification-center"
@@ -531,11 +541,11 @@ class Run:
                 self.keys.key("escape")
             else:
                 self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
-            closed = self.wait_for(lambda: not self.has_layer(namespace), 10)
+            closed = self.wait_for(lambda: self.popover_gone(namespace), 10)
             self.check(f"clock/date popover: closes on {method}", closed)
             if not closed:
                 self.dispatch("notification-center")
-                self.wait_for(lambda: not self.has_layer(namespace), 5)
+                self.wait_for(lambda: self.popover_gone(namespace), 5)
 
     def dock_context_menu_dismissal(self) -> None:
         tile = self.wait_for(lambda: self.find_node(
@@ -555,9 +565,10 @@ class Run:
                 self.check(f"Dock context menu: tile has bounds for {method}", False)
                 continue
             x, y, w, h = box
-            # GPUI's AT-SPI tile extent includes its raised shelf slot. The
-            # icon's actual visual/hit area is near the bottom of that slot.
-            self.click_at(x + w / 2, y + h * 0.9, "right")
+            # GPUI's AT-SPI Y extent can shift when niri's work area changes
+            # after the dummy window closes. The private output is fixed at
+            # 900 px and the Dock shelf stays against its bottom edge.
+            self.click_at(x + w / 2, OUTPUT_H - 48, "right")
             opened = self.wait_for(lambda: self.find_menu("Files") is not None, 5)
             self.check(f"Dock context menu: opens for {method}", opened, f"tile={box}")
             if not opened:

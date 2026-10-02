@@ -1006,6 +1006,12 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 "⌘K",
                 separator
             ),
+            item!(
+                "Enter Full Screen",
+                "activity_monitor::EnterFullScreen",
+                "F",
+                separator
+            ),
         ],
     },
 ];

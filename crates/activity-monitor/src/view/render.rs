@@ -12,7 +12,7 @@ use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab
 use crate::view_filter::ViewFilter;
 use crate::{
     process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, FilterProcesses,
-    FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, JumpToSelection,
+    EnterFullScreen, FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, JumpToSelection,
     Minimize, QuitProcess, RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds,
     ShowActiveProcesses, ShowAllProcesses, ShowInactiveProcesses, ShowMyProcesses,
     ShowMainWindow, ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleCpuColumn, ToggleMemoryColumn,
@@ -117,6 +117,9 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|_, _: &ShowMainWindow, window, _| {
                 window.activate_window();
+            }))
+            .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| {
+                window.toggle_fullscreen();
             }))
             .on_action(cx.listener(|this, _: &ConfirmKill, _, cx| {
                 this.confirm_kill(cx);

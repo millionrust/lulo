@@ -37,6 +37,7 @@ gpui::actions!(
         ShowInactiveProcesses,
         ShowSelectedProcesses,
         ShowMainWindow,
+        EnterFullScreen,
         TogglePidColumn,
         ToggleUserColumn,
         ToggleCpuColumn,
@@ -112,6 +113,7 @@ fn main() {
                 // light.
                 gpui::KeyBinding::new("cmd-m", Minimize, Some("ActivityMonitor")),
                 gpui::KeyBinding::new("cmd-1", ShowMainWindow, Some("ActivityMonitor")),
+                gpui::KeyBinding::new("f", EnterFullScreen, Some("ActivityMonitor")),
             ]);
             window.focus(&view.focus, cx);
             view

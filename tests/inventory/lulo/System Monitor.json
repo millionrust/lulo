@@ -316,6 +316,13 @@
           "shortcut": "⌘K",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "activity_monitor::EnterFullScreen",
+          "shortcut": "F",
+          "separator_before": true,
+          "children": []
         }
       ]
     },

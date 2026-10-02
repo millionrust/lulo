@@ -1,0 +1,12 @@
+{
+  "title": "View Enter Full Screen toggles the Monitor window",
+  "app": "system-monitor",
+  "lulo_only": true,
+  "steps": [
+    {"observe": "opened", "facts": ["windows"]},
+    {"key": "f"},
+    {"observe": "full_screen", "facts": ["windows"]},
+    {"key": "f"},
+    {"observe": "returned", "facts": ["windows"]}
+  ]
+}

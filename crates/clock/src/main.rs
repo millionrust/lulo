@@ -21,6 +21,8 @@ gpui::actions!(
         ShowWorldClock,
         ShowAlarms,
         ShowStopwatch,
+        ShowDigitalStopwatch,
+        ShowAnalogueStopwatch,
         ShowTimers,
         NewItem,
         StartStop,

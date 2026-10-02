@@ -37,6 +37,7 @@ pub enum Change {
     StopwatchStop(u64),
     StopwatchLap(u64),
     StopwatchReset,
+    SetStopwatchAnalogue(bool),
 }
 
 impl Change {
@@ -106,6 +107,7 @@ impl Change {
             Self::StopwatchStop(now) => state.stopwatch.stop(*now),
             Self::StopwatchLap(now) => state.stopwatch.lap(*now),
             Self::StopwatchReset => state.stopwatch.reset(),
+            Self::SetStopwatchAnalogue(analogue) => state.stopwatch_analogue = *analogue,
         }
     }
 
@@ -225,6 +227,11 @@ mod tests {
     #[test]
     fn stopwatch_changes_and_schedule_relevance() {
         let mut state = State::default();
+        Change::SetStopwatchAnalogue(true).apply(&mut state);
+        assert!(state.stopwatch_analogue);
+        assert!(!Change::SetStopwatchAnalogue(true).affects_schedule());
+        Change::SetStopwatchAnalogue(false).apply(&mut state);
+        assert!(!state.stopwatch_analogue);
         Change::StopwatchStart(0).apply(&mut state);
         Change::StopwatchLap(1_000).apply(&mut state);
         Change::StopwatchStop(2_000).apply(&mut state);

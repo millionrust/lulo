@@ -30,6 +30,8 @@ pub struct State {
     /// Most recently started timer durations, newest first.
     pub recent_timer_durations: Vec<u64>,
     pub stopwatch: Stopwatch,
+    /// View ▸ View Analogue Stopwatch; false selects the digital display.
+    pub stopwatch_analogue: bool,
     pub next_id: u64,
 }
 

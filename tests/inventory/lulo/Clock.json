@@ -167,6 +167,20 @@
           "shortcut": "⌘4",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "View Digital Stopwatch",
+          "action": "clock::ShowDigitalStopwatch",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "View Analogue Stopwatch",
+          "action": "clock::ShowAnalogueStopwatch",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
         }
       ]
     },

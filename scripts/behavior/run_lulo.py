@@ -980,6 +980,16 @@ class LuloRun:
             "recent_durations": state.get("recent_timer_durations", []),
         }
 
+    def fact_clock_stopwatch(self) -> dict[str, Any]:
+        path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/clock.json"
+        state = json.loads(path.read_text()) if path.exists() else {}
+        frame = self.active_frame()
+        face = frame is not None and any(
+            name(node) == "Analogue Stopwatch"
+            for node in descendants(frame, limit=3000)
+        )
+        return {"analogue": state.get("stopwatch_analogue", False), "face_visible": face}
+
     def fact_weather_settings(self) -> dict[str, Any]:
         path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/weather.json"
         if not path.exists():

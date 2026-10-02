@@ -1111,6 +1111,17 @@ const CLOCK_MENUS: &[MenuSpec] = &[
             item!("Alarms", "clock::ShowAlarms", "⌘2"),
             item!("Stopwatch", "clock::ShowStopwatch", "⌘3"),
             item!("Timers", "clock::ShowTimers", "⌘4"),
+            item!(
+                "View Digital Stopwatch",
+                "clock::ShowDigitalStopwatch",
+                "",
+                separator
+            ),
+            item!(
+                "View Analogue Stopwatch",
+                "clock::ShowAnalogueStopwatch",
+                ""
+            ),
         ],
     },
 ];

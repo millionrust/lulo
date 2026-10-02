@@ -1007,6 +1007,15 @@ def inner(args: argparse.Namespace) -> int:
     run_args.bin_dir = args.shell_bin_dir or args.bin_dir
     run = run_window_move.Run(run_args, args.inner)
     run.start()
+    # run_window_move.Run itself tests window geometry, not accessibility,
+    # so unlike run_lulo.py/run_niri_minimize.py it never flips this on --
+    # without it the private a11y-bus launcher never forwards an app's
+    # AccessKit registration, and every launch() times out waiting for one.
+    subprocess.run(
+        ["busctl", "--user", "set-property", "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Status", "IsEnabled",
+         "b", "true"],
+        env=run.env, check=False, capture_output=True, timeout=10,
+    )
     app_dirs = [Path(args.bin_dir)]
     if args.shell_bin_dir:
         app_dirs.append(Path(args.shell_bin_dir))

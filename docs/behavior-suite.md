@@ -76,9 +76,12 @@ a large file) — and watches for a crash, a hang, an error dialog, runaway
 CPU, memory growth (`Pss_Anon+SwapPss`), a stuck window, and journal
 warnings. On a finding it freezes the seed, the action log, the app's
 stderr/stdout tail and a screenshot into `--findings-dir` (outside the repo
-by default: never committed), binary-searches a minimal repro by replaying
-shrinking prefixes against a freshly relaunched app, and writes one
-markdown report per finding. It reuses `run_window_move.py`'s nested
+by default: never committed), verifies that the full log reproduces, then
+binary-searches the shortest reproducing prefix against a fresh private
+HOME. The report includes a working `--replay` command and optional
+`--replay-count` for the prefix. Normal Quit and last-window close restart
+the app and are recorded as replayable actions. Idle CPU sampling starts
+15 seconds after launch so startup work is not classified as idle. It reuses `run_window_move.py`'s nested
 Sway+niri+shell bootstrap and `run_lulo.py`'s AT-SPI helpers, and takes
 `/tmp/lulo-journey.lock` itself like every other runner here.
 

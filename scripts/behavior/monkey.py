@@ -50,7 +50,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import textwrap
 import threading
 import time
 from dataclasses import dataclass, field
@@ -119,6 +118,9 @@ CRASH_MARKERS = ("panicked at", "fatal runtime error", "stack overflow",
                   "RUST_BACKTRACE=1 was not", "memory allocation of")
 DIALOG_ROLES = {"dialog", "alert", "file chooser"}
 ERROR_KEYWORDS = ("error", "panic", "crash", "failed to", "unexpected", "unreachable")
+UNSAFE_MENU_WORDS = ("quit process", "force quit", "shut down", "restart", "sleep", "log out", "lock screen")
+SAFE_NAV_APPS = {"settings", "system-monitor"}
+SAFE_NAV_ROLES = {"list item", "page tab", "tab", "tree item"}
 
 
 # --------------------------------------------------------------------------
@@ -208,7 +210,7 @@ def load_shortcuts(app: str) -> list[tuple[str, str]]:
         for item in items:
             shortcut = item.get("shortcut") or ""
             item_label = item.get("label") or ""
-            if shortcut:
+            if shortcut and not any(word in item_label.lower() for word in UNSAFE_MENU_WORDS):
                 out.append((f"{menu_label} > {item_label}", shortcut))
             children = item.get("children") or []
             if children:
@@ -329,12 +331,14 @@ class Monkey:
         self._app_log_offset = 0
         self.shortcuts = load_shortcuts(app) if app != "shell" else []
         self.extra_processes: dict[str, subprocess.Popen] = {}
+        self._shell_log_offsets: dict[Path, int] = {}
         self.home = home_root
         self.sandbox = home_root / "sandbox"
         self.hertz = os.sysconf("SC_CLK_TCK")
         self._baseline_mem_kib: Optional[int] = None
         self._mem_samples: list[tuple[float, int]] = []
-        self._consecutive_stuck = 0
+        self._window_missing_since: Optional[float] = None
+        self._launched_at = 0.0
 
     # -- process lifecycle --------------------------------------------------
 
@@ -363,6 +367,7 @@ class Monkey:
             build_sandbox(self.sandbox)
         if self.app == "shell":
             self._launch_shell_extras()
+            self._launched_at = time.monotonic()
             return
         command = [str(self.binary())]
         if self.app == "files":
@@ -378,6 +383,7 @@ class Monkey:
         self.process = subprocess.Popen(command, env=self.env, stdout=handle, stderr=subprocess.STDOUT,
                                         close_fds=True, cwd=str(self.sandbox))
         handle.close()
+        self.log(f"launched pid={self.process.pid} binary={command[0]}")
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
@@ -391,6 +397,7 @@ class Monkey:
         if self.app == "calculator":
             self._wait_calculator_settled()
         time.sleep(1.0)
+        self._launched_at = time.monotonic()
 
     def _launch_shell_extras(self) -> None:
         for logical, binary_name in SHELL_EXTRAS:
@@ -401,6 +408,7 @@ class Monkey:
             handle = open(self.run.logs / f"monkey-shell-{logical}.log", "w")
             process = subprocess.Popen([str(path)], env=self.env, stdout=handle, stderr=subprocess.STDOUT,
                                        close_fds=True)
+            handle.close()
             self.extra_processes[logical] = process
         time.sleep(1.5)
 
@@ -415,13 +423,15 @@ class Monkey:
                     return
             time.sleep(0.1)
 
-    def relaunch(self) -> None:
-        """Kill the current app instance (if any) and start a fresh one with
-        a fresh sandbox, for shrink replay."""
+    def relaunch(self, reset_state: bool = False) -> None:
+        """Restart the app, resetting its private HOME only for a fresh replay."""
 
         self.stop()
-        shutil.rmtree(self.sandbox, ignore_errors=True)
-        self._consecutive_stuck = 0
+        if reset_state:
+            shutil.rmtree(self.home, ignore_errors=True)
+        self._window_missing_since = None
+        self._baseline_mem_kib = None
+        self._mem_samples.clear()
         self.launch()
 
     def stop(self) -> None:
@@ -455,7 +465,21 @@ class Monkey:
             return None
         return self.process.pid if self.process else None
 
+    def shell_processes(self) -> dict[str, subprocess.Popen]:
+        processes = dict(self.extra_processes)
+        for process in self.run.children:
+            name = Path(process.args[0]).name
+            if name in ("dock", "mission-control"):
+                processes[name] = process
+        return processes
+
     def tail_log(self, n: int = 2000) -> str:
+        if self.app == "shell":
+            parts = []
+            for path in sorted(self.run.logs.glob("*.log")):
+                if path.name.startswith("monkey-shell-") or path.name in ("dock.log", "mission-control.log"):
+                    parts.append(f"== {path.name} ==\n{path.read_bytes()[-n:].decode('utf-8', 'replace')}")
+            return "\n".join(parts)[-n:]
         if self.app_log is None or not self.app_log.exists():
             return ""
         data = self.app_log.read_bytes()
@@ -539,17 +563,25 @@ class Monkey:
             label = run_lulo.name(node)
             if not label:
                 continue
+            if self.app in SAFE_NAV_APPS and run_lulo.role(node) not in SAFE_NAV_ROLES:
+                continue
             return (wx + box[0] + box[2] / 2, wy + box[1] + box[3] / 2, run_lulo.role(node), label)
         return None
 
     # -- low-level input, shared by decide() and replay -----------------------
 
+    def _bounded_point(self, point: tuple[float, float]) -> tuple[float, float]:
+        x, y = point
+        return (max(1.0, min(float(self.run.width - 1), x)),
+                max(1.0, min(float(self.run.height - 1), y)))
+
     def _click_point(self, x: float, y: float, button: str = "left", count: int = 1) -> None:
+        x, y = self._bounded_point((x, y))
         sx, sy = self.run.parent_point(x, y)
         self.run.pointer.click(sx, sy, self.run.parent_width, self.run.parent_height, button=button, count=count)
 
     def _drag(self, start: tuple[float, float], end: tuple[float, float]) -> None:
-        self.run.drag(start, end)
+        self.run.drag(self._bounded_point(start), self._bounded_point(end))
 
     def _key(self, chord: str) -> None:
         self.run.pointer.key(chord)
@@ -566,12 +598,19 @@ class Monkey:
         ("fileop", 6), ("open-close-window", 4),
     )
     ACTION_WEIGHTS_SHELL = (
-        ("spotlight-toggle", 25), ("spotlight-type", 15), ("notification-center", 15),
-        ("mission-control", 20), ("desktop-click", 15), ("fileop", 10),
+        ("spotlight-toggle", 20), ("spotlight-type", 10), ("notification-center", 10),
+        ("mission-control", 15), ("desktop-click", 10), ("dock-menu", 15),
+        ("menu-bar", 10), ("control-centre", 5), ("fileop", 5),
+    )
+    ACTION_WEIGHTS_SAFE_NAV = (
+        ("click-accessible", 40), ("type-text", 15), ("shortcut", 20),
+        ("window-move", 7), ("window-resize", 7), ("window-toggle", 6),
+        ("fileop", 5),
     )
 
     def decide(self, index: int, rng: random.Random) -> ActionRecord:
-        table = self.ACTION_WEIGHTS_SHELL if self.app == "shell" else self.ACTION_WEIGHTS_APP
+        table = (self.ACTION_WEIGHTS_SHELL if self.app == "shell" else
+                 self.ACTION_WEIGHTS_SAFE_NAV if self.app in SAFE_NAV_APPS else self.ACTION_WEIGHTS_APP)
         kinds = [k for k, _ in table]
         weights = [w for _, w in table]
         kind = rng.choices(kinds, weights=weights, k=1)[0]
@@ -581,7 +620,10 @@ class Monkey:
         if kind == "click-accessible":
             picked = self.pick_accessible_point(rng)
             if picked is None:
-                kind, params = "click-point", {"xy": self.random_point(rng)}
+                if self.app in SAFE_NAV_APPS:
+                    kind, params = "type-text", {"text": random_text(rng)}
+                else:
+                    kind, params = "click-point", {"xy": self.random_point(rng)}
             else:
                 x, y, role, label = picked
                 params = {"xy": (x, y)}
@@ -595,11 +637,11 @@ class Monkey:
                 label, shortcut = rng.choice(self.shortcuts)
                 chord = shortcut_to_chord(shortcut)
                 if chord is None:
-                    kind, params, note = "click-point", {"xy": self.random_point(rng)}, "unparseable shortcut skipped"
+                    kind, params, note = "type-text", {"text": random_text(rng)}, "unparseable shortcut skipped"
                 else:
                     params, note = {"chord": chord}, label
             else:
-                kind, params = "click-point", {"xy": self.random_point(rng)}
+                kind, params = "type-text", {"text": random_text(rng)}
         elif kind in ("window-move", "window-resize"):
             x, y, width, height = self.app_rect()
             if kind == "window-move":
@@ -623,8 +665,15 @@ class Monkey:
         elif kind == "mission-control":
             params = {"chord": rng.choice(["ctrl-up", "ctrl-down", "ctrl-left", "ctrl-right"])}
         elif kind == "desktop-click":
-            params = {"xy": (rng.uniform(40, self.run.width - 40), rng.uniform(40, self.run.height - 40)),
+            params = {"xy": (rng.uniform(40, self.run.width - 40), rng.uniform(40, self.run.height - 120)),
                      "button": rng.choice(["left", "right"])}
+        elif kind == "dock-menu":
+            params = {"xy": (rng.uniform(self.run.width * 0.31, self.run.width * 0.68),
+                             self.run.height - 40)}
+        elif kind == "menu-bar":
+            params = {"xy": (rng.uniform(20, self.run.width * 0.28), 15)}
+        elif kind == "control-centre":
+            params = {"xy": (self.run.width - 75, 15)}
         return ActionRecord(index=index, kind=kind, params=params, note=note)
 
     # -- execute: pure given params, used both live and on replay -----------
@@ -650,6 +699,14 @@ class Monkey:
             self._type(params["text"])
         elif kind == "desktop-click":
             self._click_point(*params["xy"], button=params.get("button", "left"))
+        elif kind in ("dock-menu", "menu-bar", "control-centre"):
+            self._click_point(*params["xy"], button="right" if kind == "dock-menu" else "left")
+            time.sleep(0.2)
+            self._key("escape")
+        elif kind == "relaunch":
+            self.relaunch()
+        elif kind == "wait":
+            time.sleep(min(120.0, max(0.0, float(params["seconds"]))))
         else:
             raise MonkeyError(f"unknown action kind {kind!r}")
 
@@ -677,13 +734,33 @@ class Monkey:
 
     def check_crashed(self) -> Optional[Finding]:
         if self.app == "shell":
+            for name, process in self.shell_processes().items():
+                code = process.poll()
+                if code == 0 and name in ("dock", "mission-control", "menubar"):
+                    return Finding("stuck-window", f"shell {name} exited while its surface should stay resident", -1,
+                                   {"log_tail": self.tail_log()})
+                if code not in (None, 0):
+                    return Finding("crash", f"shell {name} exited with {process.returncode}", -1,
+                                   {"log_tail": self.tail_log()})
             return None
-        if self.process is not None and self.process.poll() is not None:
+        if self.process is not None and self.process.poll() not in (None, 0):
             return Finding("crash", f"process exited with {self.process.returncode}", -1,
                            {"log_tail": self.tail_log()})
         return None
 
     def check_panic_in_log(self) -> Optional[Finding]:
+        if self.app == "shell":
+            for path in sorted(self.run.logs.glob("*.log")):
+                if not (path.name.startswith("monkey-shell-") or path.name in ("dock.log", "mission-control.log")):
+                    continue
+                data = path.read_bytes()
+                new = data[self._shell_log_offsets.get(path, 0):]
+                self._shell_log_offsets[path] = len(data)
+                for marker in CRASH_MARKERS:
+                    if marker.encode() in new:
+                        return Finding("crash", f"{path.name} contains {marker!r}", -1,
+                                       {"log_excerpt": new[-2000:].decode("utf-8", "replace")})
+            return None
         if self.app_log is None or not self.app_log.exists():
             return None
         data = self.app_log.read_bytes()
@@ -693,14 +770,6 @@ class Monkey:
         for marker in CRASH_MARKERS:
             if marker in text:
                 return Finding("crash", f"log contains {marker!r}", -1, {"log_excerpt": text[-2000:]})
-        return None
-
-    def check_hang(self) -> Optional[Finding]:
-        if self.app == "shell" or self.process is None:
-            return None
-        finished, _value = call_with_timeout(self.application, 5.0)
-        if not finished:
-            return Finding("hang", "AT-SPI did not respond within 5 s", -1, {})
         return None
 
     def check_error_dialog(self) -> Optional[Finding]:
@@ -721,6 +790,14 @@ class Monkey:
         return None
 
     def sample(self) -> Optional[dict[str, Any]]:
+        if self.app == "shell":
+            samples = [run_memory_soak.sample_tree(process.pid, self.hertz)
+                       for process in self.shell_processes().values() if process.poll() is None]
+            samples = [sample for sample in samples if sample is not None]
+            if not samples:
+                return None
+            return {key: sum(sample[key] for sample in samples)
+                    for key in ("cpu_seconds", "pss_anon_kib", "swap_pss_kib")}
         pid = self.root_pid()
         if pid is None:
             return None
@@ -730,6 +807,10 @@ class Monkey:
         """Must be called with no actions in flight: samples CPU for
         idle_seconds and flags sustained >50% usage."""
 
+        # Startup snapshots and a relaunch's first paint are active work.
+        # Sampling them as "idle" produced repeatable false positives.
+        if time.monotonic() - self._launched_at < 15.0:
+            return None
         before = self.sample()
         if before is None:
             return None
@@ -738,6 +819,7 @@ class Monkey:
         if after is None:
             return None
         percent = (after["cpu_seconds"] - before["cpu_seconds"]) / idle_seconds * 100
+        self.log(f"idle CPU {percent:.1f}% over {idle_seconds:.0f}s")
         if percent > 50:
             return Finding("runaway-cpu", f"{percent:.0f}% CPU over {idle_seconds:.0f}s idle", -1,
                            {"percent": percent})
@@ -768,26 +850,33 @@ class Monkey:
 
     def check_stuck_window(self) -> Optional[Finding]:
         if self.app == "shell" or self.process is None or self.process.poll() is not None:
-            self._consecutive_stuck = 0
+            self._window_missing_since = None
             return None
         niri_has_window = self.app_window() is not None
         pyatspi = run_lulo.atspi()
         atspi_showing = any(run_lulo.has_state(frame, pyatspi.STATE_SHOWING) for frame in self.frames())
-        if niri_has_window != atspi_showing:
-            self._consecutive_stuck += 1
+        # A hidden, minimized or fullscreen window may disappear from niri's
+        # current window list while its AT-SPI frame still says SHOWING. That
+        # direction produced false findings for almost every app in the first
+        # campaign. The opposite direction means a mapped window has no
+        # accessible surface; require five seconds before calling it stuck.
+        if niri_has_window and not atspi_showing:
+            if self._window_missing_since is None:
+                self._window_missing_since = time.monotonic()
+            elif time.monotonic() - self._window_missing_since > 5:
+                return Finding("stuck-window", "mapped window has no showing AT-SPI frame for >5 s", -1, {})
         else:
-            self._consecutive_stuck = 0
-        if self._consecutive_stuck >= 2:
-            return Finding("stuck-window", f"niri window present={niri_has_window} but AT-SPI showing={atspi_showing}",
-                           -1, {})
+            self._window_missing_since = None
         return None
 
     def check_journal(self, since_epoch: float) -> Optional[Finding]:
-        if shutil.which("journalctl") is None or self.app_log is None:
+        pid = self.root_pid()
+        if shutil.which("journalctl") is None or pid is None:
             return None
         try:
             result = subprocess.run(
-                ["journalctl", "--no-pager", "-q", "--since", f"@{int(since_epoch)}", "-g", "WARNING"],
+                ["journalctl", "--no-pager", "-q", "--since", f"@{int(since_epoch)}",
+                 "-p", "warning", f"_PID={pid}"],
                 env=self.env, capture_output=True, text=True, timeout=5,
             )
         except (OSError, subprocess.TimeoutExpired):
@@ -801,11 +890,17 @@ class Monkey:
         not here: it spawns journalctl and belongs in the periodic idle
         check alongside the CPU/memory samples, not the hot per-action loop."""
 
-        for check in (self.check_crashed, self.check_panic_in_log, self.check_stuck_window, self.check_error_dialog):
+        for check in (self.check_panic_in_log, self.check_crashed, self.check_stuck_window, self.check_error_dialog):
             finding = check()
             if finding:
                 return finding
         return None
+
+    def health_check(self) -> Optional[Finding]:
+        finished, finding = call_with_timeout(self.run_checks, 5.0)
+        if not finished:
+            return Finding("hang", "health check did not respond within 5 s", -1, {})
+        return finding
 
 
 # --------------------------------------------------------------------------
@@ -816,7 +911,7 @@ class Monkey:
 def reproduces(monkey: Monkey, actions: list[ActionRecord], count: int, expect_kind: str,
                since_epoch: float) -> bool:
     del since_epoch  # journal findings are never shrunk (see _handle_finding); kept for a stable signature
-    monkey.relaunch()
+    monkey.relaunch(reset_state=True)
     try:
         for action in actions[:count]:
             try:
@@ -824,23 +919,34 @@ def reproduces(monkey: Monkey, actions: list[ActionRecord], count: int, expect_k
             except Exception:  # noqa: BLE001
                 pass
             time.sleep(0.05)
-            finding = monkey.check_hang() or monkey.run_checks()
+            finding = monkey.health_check()
             if finding and finding.kind == expect_kind:
                 return True
-        finding = monkey.check_hang() or monkey.run_checks()
-        return bool(finding and finding.kind == expect_kind)
+        finding = monkey.health_check()
+        if finding and finding.kind == expect_kind:
+            return True
+        if expect_kind == "runaway-cpu":
+            time.sleep(max(0.0, 15.0 - (time.monotonic() - monkey._launched_at)))
+            finding = monkey.check_idle_cpu(5.0)
+            return bool(finding and finding.kind == expect_kind)
+        return False
     except Exception:  # noqa: BLE001
         return False
 
 
 def shrink(monkey: Monkey, actions: list[ActionRecord], failing_count: int, expect_kind: str,
-           since_epoch: float, log: Callable[[str], None], max_attempts: int = 14) -> int:
+           since_epoch: float, log: Callable[[str], None], max_attempts: int = 14) -> Optional[int]:
     """Binary search for the shortest prefix (1..failing_count) that still
     reproduces `expect_kind`. Assumes (as monkey tools generally do) that a
     finding, once triggered by a prefix, keeps triggering for any longer
     prefix built the same way -- not guaranteed, but a reasonable heuristic
     that a bounded number of relaunches can afford to test."""
 
+    if not reproduces(monkey, actions, failing_count, expect_kind, since_epoch):
+        log("shrink: full action log did not reproduce; preserving original evidence")
+        return None
+    if expect_kind == "runaway-cpu" and reproduces(monkey, actions, 0, expect_kind, since_epoch):
+        return 0
     lo, hi = 0, failing_count
     attempts = 0
     while hi - lo > 1 and attempts < max_attempts:
@@ -862,7 +968,7 @@ def shrink(monkey: Monkey, actions: list[ActionRecord], failing_count: int, expe
 def write_report(findings_dir: Path, app: str, seed: int, finding: Finding, actions: list[ActionRecord],
                  minimal_count: Optional[int], stderr_tail: str, screenshot: Optional[Path]) -> Path:
     findings_dir.mkdir(parents=True, exist_ok=True)
-    stamp = int(time.time())
+    stamp = int(time.time() * 1000)
     stem = f"{app}-{finding.kind}-{seed}-{stamp}"
     actions_path = findings_dir / f"{stem}.actions.json"
     actions_path.write_text(json.dumps(
@@ -871,34 +977,26 @@ def write_report(findings_dir: Path, app: str, seed: int, finding: Finding, acti
     ))
     report_path = findings_dir / f"{stem}.md"
     minimal_text = (f"{minimal_count} action(s)" if minimal_count is not None else "not shrunk")
-    report_path.write_text(textwrap.dedent(f"""\
-        # {app} — {finding.kind}
-
-        - Seed: {seed}
-        - Total actions before the finding: {len(actions)}
-        - Minimal repro: {minimal_text}
-        - Detail: {finding.detail}
-        - Action log: `{actions_path.name}`
-        - Screenshot: `{screenshot.name if screenshot else "none"}`
-
-        ## Evidence
-
-        ```
-        {json.dumps(_jsonable(finding.evidence), indent=2)[:4000]}
-        ```
-
-        ## stderr/stdout tail
-
-        ```
-        {stderr_tail[-4000:]}
-        ```
-
-        ## Repro
-
-        python3 scripts/behavior/monkey.py --bin-dir <dir> --niri <niri> \\
-            --app {app} --seed {seed} --duration 0 \\
-            --replay {actions_path.name}
-        """))
+    report_path.write_text(
+        f"# {app} — {finding.kind}\n\n"
+        f"- Seed: {seed}\n"
+        f"- Total actions before the finding: {len(actions)}\n"
+        f"- Minimal repro: {minimal_text}\n"
+        f"- Detail: {finding.detail}\n"
+        f"- Action log: `{actions_path.name}`\n"
+        f"- Screenshot: `{screenshot.name if screenshot else 'none'}`\n\n"
+        "## Evidence\n\n```\n"
+        f"{json.dumps(_jsonable(finding.evidence), indent=2)[:4000]}\n"
+        "```\n\n## stderr/stdout tail\n\n```\n"
+        f"{stderr_tail[-4000:]}\n"
+        "```\n\n## Repro\n\n"
+        "python3 scripts/behavior/monkey.py --bin-dir <dir> --niri <niri> \\\n"
+        f"    --app {app} --seed {seed} --duration 0 \\\n"
+        f"    --replay {actions_path}"
+        + (f" --replay-count {minimal_count}" if minimal_count is not None else "")
+        + (" --check-idle-cpu" if finding.kind == "runaway-cpu" else "")
+        + "\n"
+    )
     return report_path
 
 
@@ -922,7 +1020,19 @@ def monkey_session(run: run_window_move.Run, app: str, app_dirs: list[Path], see
     rng = random.Random(seed)
     home_root = run.work / "monkey-home"
     monkey = Monkey(run, app, app_dirs, home_root, log)
-    monkey.launch()
+    try:
+        monkey.launch()
+    except MonkeyError as error:
+        if monkey.process is None:
+            raise  # missing binary is a setup failure, not an app finding
+        finding = monkey.check_panic_in_log() or monkey.check_crashed()
+        if finding is None:
+            finding = Finding("hang", f"startup failed: {error}", 0, {})
+        log(f"FINDING {finding.kind}: {finding.detail}")
+        try:
+            return [_handle_finding(run, monkey, app, [], seed, finding, findings_dir, log)]
+        finally:
+            monkey.stop()
     since_epoch = time.time()
     actions: list[ActionRecord] = []
     reports: list[Path] = []
@@ -943,12 +1053,26 @@ def monkey_session(run: run_window_move.Run, app: str, app_dirs: list[Path], see
                         log(f"FINDING {finding.kind}: {finding.detail}")
                         reports.append(_handle_finding(run, monkey, app, actions, seed, finding, findings_dir, log))
             if not monkey.alive() and app != "shell":
-                finding = monkey.check_panic_in_log() or Finding("crash", "process exited", len(actions), {})
-                finding.action_count = len(actions)
+                finding = monkey.check_panic_in_log() or monkey.check_crashed()
+                if finding:
+                    finding.action_count = len(actions)
+                    log(f"FINDING {finding.kind}: {finding.detail}")
+                    reports.append(_handle_finding(run, monkey, app, actions, seed, finding, findings_dir, log))
+                    break
+                # Quit and closing the last window are ordinary user actions.
+                # Record the restart so replay can cross the same boundary.
+                log("app exited normally; relaunching")
+                relaunch = ActionRecord(index=index, kind="relaunch", params={})
+                actions.append(relaunch)
+                index += 1
+                monkey.relaunch()
+                continue
+            finished, action = call_with_timeout(lambda: monkey.decide(index, rng), 5.0)
+            if not finished:
+                finding = Finding("hang", "action selection did not respond within 5 s", len(actions), {})
                 log(f"FINDING {finding.kind}: {finding.detail}")
                 reports.append(_handle_finding(run, monkey, app, actions, seed, finding, findings_dir, log))
                 break
-            action = monkey.decide(index, rng)
             index += 1
             try:
                 monkey.execute(action)
@@ -956,8 +1080,7 @@ def monkey_session(run: run_window_move.Run, app: str, app_dirs: list[Path], see
                 log(f"action {action.index} ({action.kind}) raised {error!r} (not itself a finding)")
             actions.append(action)
             time.sleep(rng.uniform(0.08, 0.3))
-            hang = monkey.check_hang()
-            finding = hang or monkey.run_checks()
+            finding = monkey.health_check()
             if finding:
                 finding.action_count = len(actions)
                 log(f"FINDING {finding.kind}: {finding.detail}")
@@ -969,12 +1092,43 @@ def monkey_session(run: run_window_move.Run, app: str, app_dirs: list[Path], see
     return reports
 
 
+def replay_session(run: run_window_move.Run, app: str, app_dirs: list[Path], replay: Path, count: Optional[int],
+                   check_idle_cpu: bool, idle_seconds: float,
+                   log: Callable[[str], None]) -> bool:
+    """Replay recorded concrete actions in the same private compositor."""
+
+    records = json.loads(replay.read_text())
+    actions = [ActionRecord(**record) for record in records]
+    if count is not None:
+        actions = actions[:count]
+    monkey = Monkey(run, app, app_dirs, run.work / "monkey-home", log)
+    monkey.launch()
+    try:
+        for action in actions:
+            monkey.execute(action)
+            time.sleep(0.1)
+            finding = monkey.health_check()
+            if finding:
+                log(f"REPLAY FINDING after action {action.index}: {finding.kind}: {finding.detail}")
+                return True
+        if check_idle_cpu:
+            time.sleep(max(0.0, 15.0 - (time.monotonic() - monkey._launched_at)))
+            finding = monkey.check_idle_cpu(idle_seconds)
+            if finding:
+                log(f"REPLAY FINDING after idle sample: {finding.kind}: {finding.detail}")
+                return True
+        log(f"REPLAY NO FINDING after {len(actions)} actions")
+        return False
+    finally:
+        monkey.stop()
+
+
 def _handle_finding(run: run_window_move.Run, monkey: Monkey, app: str, actions: list[ActionRecord], seed: int,
                     finding: Finding, findings_dir: Path, log: Callable[[str], None]) -> Path:
-    stderr_tail = monkey.tail_log() if app != "shell" else ""
+    stderr_tail = monkey.tail_log()
     screenshot = None
     try:
-        screenshot_path = findings_dir / f"{app}-{finding.kind}-{seed}-{int(time.time())}.png"
+        screenshot_path = findings_dir / f"{app}-{finding.kind}-{seed}-{int(time.time() * 1000)}.png"
         findings_dir.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(["grim", str(screenshot_path)], env=run.env, capture_output=True, timeout=10)
         if result.returncode == 0:
@@ -982,7 +1136,7 @@ def _handle_finding(run: run_window_move.Run, monkey: Monkey, app: str, actions:
     except (OSError, subprocess.TimeoutExpired):
         pass
     minimal_count = None
-    if app != "shell" and finding.kind in ("crash", "hang", "error-dialog", "stuck-window"):
+    if app != "shell" and actions and finding.kind in ("crash", "hang", "error-dialog", "stuck-window", "runaway-cpu"):
         try:
             minimal_count = shrink(monkey, actions, len(actions), finding.kind, time.time(), log)
         except Exception as error:  # noqa: BLE001
@@ -1024,11 +1178,17 @@ def inner(args: argparse.Namespace) -> int:
         print(f"[{args.app} seed={args.seed}] {message}", flush=True)
 
     findings_dir = Path(args.findings_dir)
-    reports = monkey_session(run, args.app, app_dirs, args.seed, args.duration, findings_dir, args.max_findings, log)
-    for report in reports:
-        print(f"REPORT {report}", flush=True)
-    run.finish()
-    return 1 if reports else 0
+    try:
+        if args.replay:
+            return 1 if replay_session(run, args.app, app_dirs, args.replay, args.replay_count,
+                                       args.check_idle_cpu, args.idle_seconds, log) else 0
+        reports = monkey_session(run, args.app, app_dirs, args.seed, args.duration,
+                                 findings_dir, args.max_findings, log)
+        for report in reports:
+            print(f"REPORT {report}", flush=True)
+        return 1 if reports else 0
+    finally:
+        run.finish()
 
 
 def outer(args: argparse.Namespace) -> int:
@@ -1047,6 +1207,14 @@ def outer(args: argparse.Namespace) -> int:
                 "--findings-dir", args.findings_dir, "--max-findings", str(args.max_findings)]
         if args.shell_bin_dir:
             argv += ["--shell-bin-dir", args.shell_bin_dir]
+        if args.replay:
+            argv += ["--replay", str(args.replay.resolve())]
+        if args.replay_count is not None:
+            argv += ["--replay-count", str(args.replay_count)]
+        if args.check_idle_cpu:
+            argv += ["--check-idle-cpu"]
+        if args.idle_seconds != 5.0:
+            argv += ["--idle-seconds", str(args.idle_seconds)]
         return subprocess.call(argv, env=env)
     finally:
         runtime = Path(env["XDG_RUNTIME_DIR"])
@@ -1074,6 +1242,10 @@ def main() -> int:
     parser.add_argument("--findings-dir", default=str(Path.home() / "lulo-monkey-findings"))
     parser.add_argument("--max-findings", type=int, default=5)
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--replay", type=Path, help="replay an action log inside the private compositor")
+    parser.add_argument("--replay-count", type=int, help="replay only the first N actions")
+    parser.add_argument("--check-idle-cpu", action="store_true", help="sample CPU for five idle seconds after replay")
+    parser.add_argument("--idle-seconds", type=float, default=5.0, help="idle CPU sample length during replay")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.seed is None:

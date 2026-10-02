@@ -91,6 +91,10 @@ class ShortcutInventoryTests(unittest.TestCase):
     def test_unknown_app_returns_empty(self):
         self.assertEqual(monkey.load_shortcuts("shell"), [])
 
+    def test_system_monitor_never_uses_quit_process_shortcut(self):
+        labels = [label for label, _shortcut in monkey.load_shortcuts("system-monitor")]
+        self.assertFalse(any("Quit Process" in label for label in labels))
+
     def test_shortcut_to_chord_parses_mac_glyphs(self):
         self.assertEqual(monkey.shortcut_to_chord("⌘Q"), "⌘Q")
 
@@ -159,6 +163,16 @@ class ShrinkBisectionTests(unittest.TestCase):
             monkey.reproduces = original
         self.assertEqual(minimal, 1)
 
+    def test_does_not_claim_minimal_repro_when_full_log_fails(self):
+        actions = [monkey.ActionRecord(index=0, kind="click-point", params={})]
+        original = monkey.reproduces
+        monkey.reproduces = lambda *_args, **_kwargs: False
+        try:
+            minimal = monkey.shrink(None, actions, 1, "crash", 0.0, lambda _msg: None)
+        finally:
+            monkey.reproduces = original
+        self.assertIsNone(minimal)
+
 
 class JsonableTests(unittest.TestCase):
     def test_rounds_floats_and_recurses(self):
@@ -183,6 +197,7 @@ class ReportTests(unittest.TestCase):
             self.assertIn("calculator", text)
             self.assertIn("crash", text)
             self.assertIn("Seed: 42", text)
+            self.assertIn("--replay", text)
             actions_path = findings_dir / f"{report.stem}.actions.json"
             self.assertTrue(actions_path.exists())
             logged = json.loads(actions_path.read_text())
@@ -191,6 +206,79 @@ class ReportTests(unittest.TestCase):
             # Never written inside the git-tracked tree.
             repo_root = Path(__file__).resolve().parents[1]
             self.assertFalse(str(findings_dir.resolve()).startswith(str(repo_root)))
+
+
+class FindingClassificationTests(unittest.TestCase):
+    def test_replay_resets_home_but_normal_relaunch_preserves_it(self):
+        with TemporaryDirectory() as tmp:
+            subject = monkey.Monkey.__new__(monkey.Monkey)
+            subject.home = Path(tmp) / "home"
+            subject.home.mkdir()
+            subject.sandbox = subject.home / "sandbox"
+            subject.sandbox.mkdir()
+            marker = subject.home / "note-state.db"
+            marker.write_text("saved")
+            subject._mem_samples = []
+            subject.stop = lambda: None
+            subject.launch = lambda: None
+            subject.relaunch()
+            self.assertTrue(marker.exists())
+            subject.relaunch(reset_state=True)
+            self.assertFalse(marker.exists())
+
+    def test_startup_work_is_not_classified_as_idle_cpu(self):
+        import time
+
+        subject = monkey.Monkey.__new__(monkey.Monkey)
+        subject._launched_at = time.monotonic()
+        subject.sample = lambda: self.fail("sampled startup as idle")
+        self.assertIsNone(subject.check_idle_cpu())
+
+    def test_clean_quit_is_not_a_crash(self):
+        class Process:
+            returncode = 0
+
+            def poll(self):
+                return 0
+
+        subject = monkey.Monkey.__new__(monkey.Monkey)
+        subject.app = "notes"
+        subject.process = Process()
+        self.assertIsNone(subject.check_crashed())
+
+    def test_abnormal_exit_is_a_crash(self):
+        class Process:
+            returncode = 134
+
+            def poll(self):
+                return 134
+
+        subject = monkey.Monkey.__new__(monkey.Monkey)
+        subject.app = "notes"
+        subject.process = Process()
+        subject.tail_log = lambda: "panicked at example"
+        finding = subject.check_crashed()
+        self.assertEqual(finding.kind, "crash")
+        self.assertIn("134", finding.detail)
+
+    def test_hidden_window_with_stale_showing_frame_is_not_stuck(self):
+        class Process:
+            def poll(self):
+                return None
+
+        subject = monkey.Monkey.__new__(monkey.Monkey)
+        subject.app = "notes"
+        subject.process = Process()
+        subject._window_missing_since = None
+        subject.app_window = lambda: None
+        subject.frames = lambda: [object()]
+        original_atspi, original_has_state = monkey.run_lulo.atspi, monkey.run_lulo.has_state
+        monkey.run_lulo.atspi = lambda: type("States", (), {"STATE_SHOWING": 1})()
+        monkey.run_lulo.has_state = lambda _frame, _state: True
+        try:
+            self.assertIsNone(subject.check_stuck_window())
+        finally:
+            monkey.run_lulo.atspi, monkey.run_lulo.has_state = original_atspi, original_has_state
 
 
 if __name__ == "__main__":

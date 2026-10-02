@@ -939,6 +939,19 @@ impl FinderView {
                     }
                     return;
                 }
+                let modifiers = &ev.keystroke.modifiers;
+                if ev.keystroke.key.as_str() == "f"
+                    && !modifiers.platform
+                    && !modifiers.control
+                    && !modifiers.alt
+                    && !modifiers.shift
+                    && !modifiers.function
+                    && this.focus.is_focused(window)
+                {
+                    window.toggle_fullscreen();
+                    cx.stop_propagation();
+                    return;
+                }
                 // Column view is a browser: ↑/↓ move within the focused
                 // column, →/← cross into the child/parent column, and
                 // `entries`-based indices (below) don't apply to it.

@@ -59,7 +59,6 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("cmd-shift-a", GoApplications, Some("Finder")),
         KeyBinding::new("cmd-shift-u", GoUtilities, Some("Finder")),
         KeyBinding::new("cmd-shift-s", GoShared, Some("Finder")),
-        KeyBinding::new("f", EnterFullScreen, Some("Finder")),
         KeyBinding::new("cmd-alt-l", GoDownloads, Some("Finder")),
         KeyBinding::new("cmd-1", ViewAsIcons, Some("Finder")),
         KeyBinding::new("cmd-2", ViewAsList, Some("Finder")),

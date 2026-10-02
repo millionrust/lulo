@@ -3,6 +3,8 @@
   "scenario": "weather/settings-shortcut",
   "observations": {
     "fahrenheit": {"weather_settings": {"fahrenheit": true}},
-    "automatic": {"weather_settings": {"fahrenheit": null}}
+    "automatic": {"weather_settings": {"fahrenheit": null}},
+    "single_settings_window": {"windows": {"count": 2}},
+    "settings_closed": {"windows": {"count": 1}}
   }
 }

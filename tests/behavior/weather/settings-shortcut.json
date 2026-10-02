@@ -8,6 +8,10 @@
     {"select": "Fahrenheit"},
     {"observe": "fahrenheit", "facts": ["weather_settings"]},
     {"select": "Automatic"},
-    {"observe": "automatic", "facts": ["weather_settings"]}
+    {"observe": "automatic", "facts": ["weather_settings"]},
+    {"key": "cmd-,"},
+    {"observe": "single_settings_window", "facts": ["windows"]},
+    {"key": "cmd-w"},
+    {"observe": "settings_closed", "facts": ["windows"]}
   ]
 }

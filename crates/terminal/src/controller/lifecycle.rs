@@ -209,11 +209,7 @@ impl TerminalView {
                 Some("Terminal"),
             ),
             // Terminal › Settings… opens the profile list and font size.
-            KeyBinding::new(
-                rmac_ui::shortcuts::SETTINGS.keystroke,
-                ShowSettings,
-                Some("Terminal"),
-            ),
+            KeyBinding::new(rmac_ui::shortcuts::SETTINGS.keystroke, ShowSettings, None),
             KeyBinding::new(
                 rmac_ui::shortcuts::NEW_WINDOW.keystroke,
                 WindowBasicDefault,

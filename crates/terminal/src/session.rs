@@ -805,6 +805,12 @@ impl Session {
         true
     }
 
+    pub(super) fn can_mark_current_line(&self) -> bool {
+        self.term.lock().is_ok_and(|term| {
+            retained_marker_position(&term, self.scrollback_limit.load(Ordering::Acquire)).is_some()
+        })
+    }
+
     pub(super) fn unmark_current_line(&self) -> bool {
         let Ok(term) = self.term.lock() else {
             return false;
@@ -818,13 +824,25 @@ impl Session {
         true
     }
 
-    pub(super) fn has_bookmarks(&self) -> bool {
+    pub(super) fn can_scroll_to_bookmark(&self, direction: PromptDirection) -> bool {
+        if !self.shell_state.has_bookmarks() {
+            return false;
+        }
         let Ok(term) = self.term.lock() else {
             return false;
         };
-        !term.mode().contains(TermMode::ALT_SCREEN)
-            && term.grid().history_size() < self.scrollback_limit.load(Ordering::Acquire)
-            && self.shell_state.has_bookmarks()
+        if term.mode().contains(TermMode::ALT_SCREEN) {
+            return false;
+        }
+        let grid = term.grid();
+        self.shell_state
+            .bookmark_offset(
+                direction,
+                grid.history_size(),
+                grid.display_offset(),
+                self.scrollback_limit.load(Ordering::Acquire),
+            )
+            .is_some_and(|offset| offset != grid.display_offset())
     }
 
     pub(super) fn current_line_is_marked(&self) -> bool {

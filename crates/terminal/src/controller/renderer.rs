@@ -51,14 +51,24 @@ impl Render for TerminalView {
             rmac_ui::set_menu_enabled("terminal::PasteEscapedSelection", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::UseSelectionForFind", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::JumpToSelection", has_selection, cx);
-            let has_bookmarks = self.tabs[self.active].has_bookmarks();
+            let can_mark = self.tabs[self.active].can_mark_current_line();
+            rmac_ui::set_menu_enabled("terminal::Mark", can_mark, cx);
+            rmac_ui::set_menu_enabled("terminal::MarkAsBookmark", can_mark, cx);
             rmac_ui::set_menu_enabled(
                 "terminal::Unmark",
                 self.tabs[self.active].current_line_is_marked(),
                 cx,
             );
-            rmac_ui::set_menu_enabled("terminal::PreviousBookmark", has_bookmarks, cx);
-            rmac_ui::set_menu_enabled("terminal::NextBookmark", has_bookmarks, cx);
+            rmac_ui::set_menu_enabled(
+                "terminal::PreviousBookmark",
+                self.tabs[self.active].can_scroll_to_bookmark(PromptDirection::Previous),
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
+                "terminal::NextBookmark",
+                self.tabs[self.active].can_scroll_to_bookmark(PromptDirection::Next),
+                cx,
+            );
             rmac_ui::set_menu_enabled(
                 "terminal::HideFindBar",
                 self.tabs[self.active].ui.search_open,
@@ -130,6 +140,7 @@ impl Render for TerminalView {
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 this.request_close_window(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
             .child(rmac_ui::title_bar_content(
                 self.render_title(active_title, layout.title_max_width),
             ))

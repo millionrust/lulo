@@ -209,7 +209,6 @@ impl TerminalView {
             }))
             .on_action(cx.listener(|this, _: &ResetTerminal, _, cx| this.reset(cx)))
             .on_action(cx.listener(|this, _: &HardResetTerminal, _, cx| this.hard_reset(cx)))
-            .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
             // Shell ▸ New Tab ▸ <profile>: same shape as the window submenu,
             // but a tab in this window rather than a new window.
             .on_action(cx.listener(|this, _: &TabBasicDefault, window, cx| {

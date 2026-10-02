@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "scenario": "terminal/settings-from-find",
+  "platform": "Lulo local contract",
+  "observations": {
+    "settings": {
+      "settings_controls": {
+        "checked": {
+          "Use bold fonts": true,
+          "Use bright colours for bold text": true,
+          "Display ANSI colours": true
+        }
+      }
+    }
+  }
+}

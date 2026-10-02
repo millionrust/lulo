@@ -317,6 +317,13 @@
           "children": []
         },
         {
+          "label": "Show Image Background",
+          "action": "preview::ShowImageBackground",
+          "shortcut": "⌥⌘B",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Show Markup Toolbar",
           "action": "preview::ToggleMarkup",
           "shortcut": "⇧⌘A",
@@ -342,6 +349,20 @@
     {
       "label": "Go",
       "items": [
+        {
+          "label": "Back",
+          "action": "preview::Back",
+          "shortcut": "⌘[",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Forward",
+          "action": "preview::Forward",
+          "shortcut": "⌘]",
+          "separator_before": false,
+          "children": []
+        },
         {
           "label": "Up",
           "action": "preview::PageUp",
@@ -402,6 +423,49 @@
           "shortcut": "⌘I",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Annotate",
+          "action": "preview::AnnotateMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Highlight Text",
+              "action": "preview::AnnotateHighlight",
+              "shortcut": "⌃⌘H",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Oval",
+              "action": "preview::AnnotateOval",
+              "shortcut": "⌃⌘O",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Line",
+              "action": "preview::AnnotateLine",
+              "shortcut": "⌃⌘I",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Arrow",
+              "action": "preview::AnnotateArrow",
+              "shortcut": "⌃⌘A",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Text",
+              "action": "preview::AnnotateText",
+              "shortcut": "⌃⌘T",
+              "separator_before": true,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Rotate Left",
@@ -557,7 +621,7 @@
         {
           "label": "Preview Help",
           "action": "help::app-help",
-          "shortcut": "⌘?",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         }

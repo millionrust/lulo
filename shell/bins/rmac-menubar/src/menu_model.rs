@@ -67,8 +67,8 @@ pub const HELP_SEARCH_CAPSULE_HEIGHT: f32 = 25.0;
 pub const HELP_SEARCH_INSET: f32 = 9.5;
 /// The synthesized Help menu's search field row. It is never activated.
 pub const HELP_SEARCH_ACTION: &str = "help::search";
-/// The synthesized Help menu's "<App> Help" row (⌘?), the same on every
-/// app: opens that app's bundled help page.
+/// The synthesized Help menu's "<App> Help" row opens that app's bundled
+/// help page; its key equivalent follows that app's recorded menu.
 pub const APP_HELP_ACTION: &str = "help::app-help";
 /// The synthesized Window menu's "Minimise All" row (⌥⌘M). It runs through
 /// `dispatch_app_menu_action` exactly like Hide App does (§2.2's parking
@@ -375,7 +375,7 @@ fn shorten(text: &str, limit: usize) -> String {
 }
 
 /// The Help menu every app gets: a search field that finds the app's menu
-/// commands by name (as the Mac's Help search does), "<App> Help" (⌘?),
+/// commands by name (as the Mac's Help search does), "<App> Help",
 /// which opens that app's bundled help page, then the app's own help
 /// items. Results name the menu each command lives in.
 pub fn help_menu(
@@ -419,7 +419,13 @@ pub fn help_menu(
             items.extend(results);
         }
     }
-    let app_help = Item::new(format!("{app_name} Help"), APP_HELP_ACTION, "⌘?");
+    // Preview and Terminal expose Help without a key equivalent on macOS 26.
+    let shortcut = if matches!(app_name, "Preview" | "Terminal") {
+        ""
+    } else {
+        "⌘?"
+    };
+    let app_help = Item::new(format!("{app_name} Help"), APP_HELP_ACTION, shortcut);
     let mut help_items = std::iter::once(app_help).chain(help_items);
     if let Some(first) = help_items.next() {
         items.push(first.separated());
@@ -1912,11 +1918,15 @@ mod tests {
         assert_eq!(help.items[0].label, "find n");
         assert_eq!(help.items[1].label, "Edit ▸ Find ▸ Find Next");
         assert_eq!(help.items[1].action, "test::Find Next");
-        // "<App> Help" (⌘?) follows the search results on every app.
+        // "<App> Help" follows the search results.
         assert_eq!(help.items[2].label, "Files Help");
         assert_eq!(help.items[2].shortcut, "⌘?");
         assert_eq!(help.items[2].action, APP_HELP_ACTION);
         assert!(help.items[2].separator_before);
+        for app in ["Preview", "Terminal"] {
+            let menu = help_menu("", app, &[], Vec::new());
+            assert_eq!(menu.items[1].shortcut, "");
+        }
         assert_eq!(help.items.len(), 3);
 
         let empty = help_menu(

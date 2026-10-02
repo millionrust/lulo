@@ -206,10 +206,12 @@ def _synthesize_help_menu(
     """The standard Help menu every app gets (`help_menu` in
     shell/bins/rmac-menubar/src/menu_model.rs): a Spotlight-style search
     field (left out here: it is an AXTextField on the Mac, not a menu item,
-    and Lulo's never registers it as one either), then "<App> Help" (⌘?),
+    and Lulo's never registers it as one either), then "<App> Help" (⌘? for
+    apps that expose the key equivalent),
     then the app's own Help items."""
     menu_name = "Activity Monitor" if app_display_name == "System Monitor" else app_display_name
-    items = [_item(f"{menu_name} Help", "help::app-help", "⌘?")]
+    shortcut = "" if app_display_name in {"Preview", "Terminal"} else "⌘?"
+    items = [_item(f"{menu_name} Help", "help::app-help", shortcut)]
     items.extend(exported_items)
     return rmp.Menu(HELP_MENU, items)
 

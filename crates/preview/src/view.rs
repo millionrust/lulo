@@ -25,12 +25,13 @@ use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
-    ActualSize, ActualSizeOnAll, CloseAll, CloseSelected, CloseWindow, Copy, EnterFullScreen,
-    ExportAsPdf, Find, FindNext, FindPrevious, GoToPage, HideSidebar, JumpToSelection, MoveToTrash,
+    ActualSize, ActualSizeOnAll, AnnotateArrow, AnnotateHighlight, AnnotateLine, AnnotateOval,
+    AnnotateText, Back, CloseAll, CloseSelected, CloseWindow, Copy, EnterFullScreen, ExportAsPdf,
+    Find, FindNext, FindPrevious, Forward, GoToPage, HideSidebar, JumpToSelection, MoveToTrash,
     NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
     RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll,
-    ShowInspector, ShowThumbnails, ToggleMarkup, ToggleToolbar, UndoMarkup, UseSelectionForFind,
-    ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
+    ShowImageBackground, ShowInspector, ShowThumbnails, ToggleMarkup, ToggleToolbar, UndoMarkup,
+    UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -57,6 +58,12 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::JumpToSelection",
         "preview::HideSidebar",
         "preview::ShowThumbnails",
+        "preview::ShowImageBackground",
+        "preview::AnnotateHighlight",
+        "preview::AnnotateArrow",
+        "preview::AnnotateOval",
+        "preview::AnnotateLine",
+        "preview::AnnotateText",
         "preview::ActualSize",
         "preview::ZoomToFit",
         "preview::ZoomIn",
@@ -72,6 +79,8 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::PageUp",
         "preview::PageDown",
         "preview::GoToPage",
+        "preview::Back",
+        "preview::Forward",
         "preview::ShowInspector",
         "preview::RotateLeft",
         "preview::RotateRight",
@@ -243,6 +252,13 @@ struct Slot {
     markup_original: Option<PathBuf>,
 }
 
+/// A navigation destination survives reordering of the open-document list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Location {
+    slot_id: u64,
+    page: usize,
+}
+
 impl Slot {
     fn new(id: u64, path: PathBuf) -> Self {
         Self {
@@ -346,10 +362,14 @@ pub(crate) struct PreviewView {
     pub(crate) focus: FocusHandle,
     slots: Vec<Slot>,
     selected: usize,
+    back: Vec<Location>,
+    forward: Vec<Location>,
+    restoring_location: bool,
     next_id: u64,
     /// Images beside a single opened image, for Go ▸ Next / Previous Item.
     folder: Option<Vec<PathBuf>>,
     sidebar: bool,
+    image_background: bool,
     inspector: bool,
     scroll: ScrollHandle,
     sidebar_scroll: ScrollHandle,
@@ -518,6 +538,17 @@ impl PreviewView {
         self.markup_tool = tool;
         self.markup_selected = None;
         cx.notify();
+    }
+
+    fn choose_annotation(&mut self, tool: Tool, cx: &mut Context<Self>) {
+        if self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+            return;
+        }
+        self.choose_markup_tool(tool, cx);
+        self.markup_shown = true;
+        if tool == Tool::Highlight {
+            self.highlight_selection(cx);
+        }
     }
 
     fn choose_signature(&mut self, cx: &mut Context<Self>) {
@@ -956,6 +987,8 @@ impl PreviewView {
         };
         let mut removed = self.slots.remove(index);
         removed.release_images(&mut self.garbage);
+        self.back.retain(|location| location.slot_id != id);
+        self.forward.retain(|location| location.slot_id != id);
         self.folder = None;
         self.document_generation
             .fetch_add(1, std::sync::atomic::Ordering::Release);
@@ -1158,8 +1191,12 @@ impl PreviewView {
         let mut view = Self {
             focus: cx.focus_handle(),
             sidebar: slots.len() > 1,
+            image_background: false,
             slots,
             selected: 0,
+            back: Vec::new(),
+            forward: Vec::new(),
+            restoring_location: false,
             next_id,
             folder: None,
             inspector: false,
@@ -1260,10 +1297,67 @@ impl PreviewView {
 
     // ---- selection and navigation -------------------------------------
 
+    fn location(&self) -> Option<Location> {
+        self.slot().map(|slot| Location {
+            slot_id: slot.id,
+            page: slot.current_page,
+        })
+    }
+
+    fn remember_location(&mut self) {
+        if self.restoring_location {
+            return;
+        }
+        if let Some(location) = self.location() {
+            if self.back.last() != Some(&location) {
+                self.back.push(location);
+            }
+            self.forward.clear();
+        }
+    }
+
+    fn navigate_history(&mut self, backward: bool, cx: &mut Context<Self>) {
+        let current = self.location();
+        let destination = loop {
+            let candidate = if backward {
+                self.back.pop()
+            } else {
+                self.forward.pop()
+            };
+            let Some(candidate) = candidate else { return };
+            if self
+                .slots
+                .iter()
+                .any(|slot| slot.id == candidate.slot_id && slot.loaded().is_some())
+            {
+                break candidate;
+            }
+        };
+        if let Some(current) = current {
+            if backward {
+                self.forward.push(current);
+            } else {
+                self.back.push(current);
+            }
+        }
+        self.restoring_location = true;
+        if let Some(index) = self
+            .slots
+            .iter()
+            .position(|slot| slot.id == destination.slot_id)
+        {
+            self.select(index, cx);
+            self.go_to_page(destination.page, cx);
+        }
+        self.restoring_location = false;
+        cx.notify();
+    }
+
     fn select(&mut self, index: usize, cx: &mut Context<Self>) {
         if index == self.selected || index >= self.slots.len() {
             return;
         }
+        self.remember_location();
         if let Some(old) = self.slots.get_mut(self.selected) {
             // Only the shown document keeps full-size textures.
             old.release_images(&mut self.garbage);
@@ -1345,6 +1439,18 @@ impl PreviewView {
     }
 
     fn go_to_page(&mut self, page: usize, cx: &mut Context<Self>) {
+        let Some((current_page, page_count)) = self.slot().and_then(|slot| {
+            slot.loaded()
+                .map(|loaded| (slot.current_page, loaded.page_count()))
+        }) else {
+            return;
+        };
+        if page >= page_count {
+            return;
+        }
+        if current_page != page {
+            self.remember_location();
+        }
         let Some(slot) = self.slot() else { return };
         let scale = slot.zoom.resolve(slot.fit_scale(self.viewport));
         let layout = layout::continuous(&slot.page_sizes(), scale, self.viewport.0);
@@ -3129,6 +3235,17 @@ impl PreviewView {
                             .relative()
                             .w(px(shown.0.max(viewport.0)))
                             .h(px(shown.1.max(viewport.1)))
+                            .when(self.image_background, |content| {
+                                content.child(
+                                    div()
+                                        .absolute()
+                                        .left(px(origin.0))
+                                        .top(px(origin.1))
+                                        .w(px(shown.0))
+                                        .h(px(shown.1))
+                                        .bg(rgb(0xFFFFFF)),
+                                )
+                            })
                             .when_some(slot.display.clone(), |content, (_, image)| {
                                 content.child(
                                     img(image)
@@ -3767,6 +3884,16 @@ impl Render for PreviewView {
             // View ▸ Hide Sidebar / Thumbnails tick the key window's choice.
             rmac_ui::set_menu_checked("preview::HideSidebar", !self.sidebar, cx);
             rmac_ui::set_menu_checked("preview::ShowThumbnails", self.sidebar, cx);
+            rmac_ui::set_menu_checked("preview::ShowImageBackground", self.image_background, cx);
+            for (action, tool) in [
+                ("preview::AnnotateHighlight", Tool::Highlight),
+                ("preview::AnnotateArrow", Tool::Arrow),
+                ("preview::AnnotateOval", Tool::Oval),
+                ("preview::AnnotateLine", Tool::Line),
+                ("preview::AnnotateText", Tool::Text),
+            ] {
+                rmac_ui::set_menu_checked(action, self.markup_tool == tool, cx);
+            }
             rmac_ui::set_menu_checked("preview::ToggleMarkup", self.markup_shown, cx);
             rmac_ui::set_menu_checked("preview::ToggleToolbar", self.toolbar_shown, cx);
             #[cfg(target_os = "linux")]
@@ -3859,6 +3986,23 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_enabled(action, loaded && multiple, cx);
             }
             rmac_ui::set_menu_enabled("preview::GoToPage", pdf, cx);
+            for action in [
+                "preview::AnnotateHighlight",
+                "preview::AnnotateArrow",
+                "preview::AnnotateOval",
+                "preview::AnnotateLine",
+                "preview::AnnotateText",
+            ] {
+                rmac_ui::set_menu_enabled(action, pdf, cx);
+            }
+            rmac_ui::set_menu_enabled(
+                "preview::ShowImageBackground",
+                self.slot()
+                    .is_some_and(|slot| matches!(slot.kind(), Some(Kind::Image(_)))),
+                cx,
+            );
+            rmac_ui::set_menu_enabled("preview::Back", !self.back.is_empty(), cx);
+            rmac_ui::set_menu_enabled("preview::Forward", !self.forward.is_empty(), cx);
             rmac_ui::set_menu_enabled("preview::ExportAsPdf", pdf, cx);
             rmac_ui::set_menu_enabled("preview::UseSelectionForFind", selected_text, cx);
             rmac_ui::set_menu_enabled("preview::JumpToSelection", selected_text, cx);
@@ -3936,6 +4080,8 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &GoToPage, window, cx| {
                 this.open_go_to_page(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &Back, _, cx| this.navigate_history(true, cx)))
+            .on_action(cx.listener(|this, _: &Forward, _, cx| this.navigate_history(false, cx)))
             .on_action(cx.listener(|this, _: &PrintDocument, window, cx| {
                 this.print_document(window, cx);
             }))
@@ -3963,6 +4109,30 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &HideSidebar, _, cx| this.set_sidebar(false, cx)))
             .on_action(cx.listener(|this, _: &ShowThumbnails, _, cx| this.set_sidebar(true, cx)))
+            .on_action(cx.listener(|this, _: &ShowImageBackground, _, cx| {
+                if this
+                    .slot()
+                    .is_some_and(|slot| matches!(slot.kind(), Some(Kind::Image(_))))
+                {
+                    this.image_background = !this.image_background;
+                    cx.notify();
+                }
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateHighlight, _, cx| {
+                this.choose_annotation(Tool::Highlight, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateArrow, _, cx| {
+                this.choose_annotation(Tool::Arrow, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateOval, _, cx| {
+                this.choose_annotation(Tool::Oval, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateLine, _, cx| {
+                this.choose_annotation(Tool::Line, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateText, _, cx| {
+                this.choose_annotation(Tool::Text, cx);
+            }))
             .on_action(cx.listener(|this, _: &ActualSize, _, cx| this.actual_size(cx)))
             .on_action(cx.listener(|this, _: &ZoomToFit, _, cx| this.zoom_to_fit(cx)))
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom_in(cx)))

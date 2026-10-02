@@ -32,9 +32,21 @@ pub(crate) struct ActivePanel {
 pub(crate) struct NotificationCenterService {
     active: Option<ActivePanel>,
     next_token: u64,
+    /// The full-screen click catcher that closes the panel the instant a
+    /// pointer button goes down anywhere else (`rmac_ui::open_outside_click_catcher`),
+    /// open only while `active` is `Some`.
+    #[cfg(target_os = "linux")]
+    catcher: Option<AnyWindowHandle>,
 }
 
 impl Global for NotificationCenterService {}
+
+/// How much of the display's top the shared top-bar/menu surface
+/// (`shell/bins/rmac-menubar/src/main.rs`'s `MENU_SURFACE_HEIGHT`) already
+/// owns. The click catcher starts below it so it never competes with that
+/// surface's own on-demand focus for a click meant to switch menus there.
+#[cfg(target_os = "linux")]
+const TOP_BAR_RESERVED_HEIGHT: f32 = 680.0;
 
 #[cfg(target_os = "linux")]
 fn panel_options(bounds: Bounds<Pixels>) -> WindowOptions {
@@ -123,6 +135,14 @@ fn notify_ready() -> Result<(), String> {
 }
 
 fn dismiss_active(cx: &mut App) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let catcher =
+            cx.update_global::<NotificationCenterService, _>(|service, _| service.catcher.take());
+        if let Some(catcher) = catcher {
+            let _ = catcher.update(cx, |_, window, _| window.remove_window());
+        }
+    }
     let active =
         cx.read_global::<NotificationCenterService, _>(|service, _| service.active.clone());
     if let Some(active) = active {
@@ -156,6 +176,11 @@ fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
     if let (Ok(handle), Some(view)) = (handle, panel) {
+        #[cfg(target_os = "linux")]
+        let display = handle
+            .update(cx, |_, window, cx| window.display(cx))
+            .ok()
+            .flatten();
         cx.update_global::<NotificationCenterService, _>(|service, _| {
             service.active = Some(ActivePanel {
                 token,
@@ -163,6 +188,23 @@ fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
                 window: handle.into(),
             });
         });
+        #[cfg(target_os = "linux")]
+        {
+            let catcher = display.and_then(|display| {
+                rmac_ui::open_outside_click_catcher(
+                    "rmac-notification-center-click-catcher",
+                    display,
+                    px(TOP_BAR_RESERVED_HEIGHT),
+                    |cx| {
+                        dismiss_active(cx);
+                    },
+                    cx,
+                )
+            });
+            cx.update_global::<NotificationCenterService, _>(|service, _| {
+                service.catcher = catcher;
+            });
+        }
         cx.activate(true);
     }
 }
@@ -242,6 +284,8 @@ fn main() {
             cx.set_global(NotificationCenterService {
                 active: None,
                 next_token: 0,
+                #[cfg(target_os = "linux")]
+                catcher: None,
             });
 
             #[cfg(target_os = "linux")]

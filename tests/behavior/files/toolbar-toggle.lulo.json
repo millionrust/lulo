@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "files/toolbar-toggle",
+  "platform": "Lulo local contract",
+  "observations": {
+    "initial": {"toolbar": {"navigation": true}},
+    "hidden": {"toolbar": {"navigation": false}},
+    "restored": {"toolbar": {"navigation": true}}
+  }
+}

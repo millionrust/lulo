@@ -917,8 +917,15 @@ class LuloRun:
         return {"present": False}
 
     def fact_toolbar(self) -> dict[str, Any]:
-        """Presence of Preview's named markup button in the active window."""
+        """Presence of the app's named toolbar control in the active window."""
         frame = self.active_frame()
+        if self.app == "files":
+            return {
+                "navigation": frame is not None and any(
+                    role(node) == "tool bar" and name(node) == "Back/Forward"
+                    for node in descendants(frame, limit=3000)
+                )
+            }
         return {
             "markup_button": frame is not None and any(
                 role(node) in {"push button", "button"}

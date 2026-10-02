@@ -1,0 +1,15 @@
+{
+  "title": "Show Tab Bar (⇧⌘T) reveals the single tab and toggles it off",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"observe": "hidden", "facts": ["tabs"]},
+    {"key": "cmd-shift-t"},
+    {"observe": "shown", "facts": ["tabs"]},
+    {"key": "cmd-shift-t"},
+    {"observe": "hidden_again", "facts": ["tabs"]}
+  ],
+  "omit": ["hidden.tabs.titles", "shown.tabs.titles", "hidden_again.tabs.titles"]
+}

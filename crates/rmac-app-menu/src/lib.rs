@@ -679,6 +679,7 @@ const FILES_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("Show View Options", "finder::ShowViewOptions", "⌘J"),
+            item!("Show Tab Bar", "finder::ToggleTabBar", "⇧⌘T"),
             item!("Hide Sidebar", "finder::ToggleSidebar", "⌃⌘S", separator),
             item!("Show Path Bar", "finder::TogglePathBar", "⌥⌘P"),
             item!("Hide Status Bar", "finder::ToggleStatusBar", "⌘/"),

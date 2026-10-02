@@ -1,6 +1,14 @@
 use super::*;
 
 impl FinderView {
+    pub(super) fn toggle_tab_bar(&mut self, cx: &mut Context<Self>) {
+        if self.tabs.len() > 1 {
+            return;
+        }
+        self.show_tab_bar = !self.show_tab_bar;
+        cx.notify();
+    }
+
     pub(super) fn selected_folder(&self) -> Option<PathBuf> {
         if self.trash_view || self.applications_view {
             return None;

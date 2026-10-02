@@ -175,6 +175,7 @@ actions!(
         ToggleSidebar,
         TogglePathBar,
         ToggleStatusBar,
+        ToggleTabBar,
         GoComputer,
         NewWindow,
         GoToFolder,
@@ -462,6 +463,7 @@ struct FinderView {
     /// View ▸ Show Path Bar (⌥⌘P); off by default, as on the Mac.
     show_path_bar: bool,
     show_status_bar: bool,
+    show_tab_bar: bool,
     icon_scroll: gpui::ScrollHandle,
     marquee: Option<Marquee>,
     type_select: TypeSelect,

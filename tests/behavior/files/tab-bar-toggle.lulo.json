@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "files/tab-bar-toggle",
+  "platform": "Lulo local contract",
+  "observations": {
+    "hidden": {"tabs": {"count": 1, "selected": []}},
+    "shown": {"tabs": {"count": 1, "selected": ["sandbox"]}},
+    "hidden_again": {"tabs": {"count": 1, "selected": []}}
+  }
+}

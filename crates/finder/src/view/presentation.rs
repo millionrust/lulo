@@ -499,7 +499,9 @@ impl Render for FinderView {
                                 ),
                         )
                     })
-                    .when(multi, |el| el.child(self.render_tabs(cx)))
+                    .when(multi || self.show_tab_bar, |el| {
+                        el.child(self.render_tabs(cx))
+                    })
                     .when(self.trash_view, |el| el.child(self.render_trash_bar(cx)))
                     .child(self.render_list(
                         window_active,
@@ -659,6 +661,16 @@ impl FinderView {
         rmac_ui::set_menu_label("finder::CloseTab", state.close_label, cx);
         rmac_ui::set_menu_label("finder::ToggleSidebar", state.sidebar_label, cx);
         rmac_ui::set_menu_label("finder::TogglePathBar", state.path_bar_label, cx);
+        rmac_ui::set_menu_label(
+            "finder::ToggleTabBar",
+            if self.show_tab_bar || self.tabs.len() > 1 {
+                "Hide Tab Bar"
+            } else {
+                "Show Tab Bar"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_enabled("finder::ToggleTabBar", self.tabs.len() == 1, cx);
         rmac_ui::set_menu_label(
             "finder::ToggleStatusBar",
             if self.show_status_bar {

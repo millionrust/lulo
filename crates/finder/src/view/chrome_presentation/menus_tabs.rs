@@ -350,14 +350,16 @@ impl FinderView {
                             .selected(active)
                             .on_click(cx.listener(move |this, _, _, cx| this.select_tab(i, cx))),
                     )
-                    .child(
-                        Button::new(SharedString::from(format!("tabclose-{i}")), "")
-                            .icon(Icon::new(IconName::Close).text_color(rmac_ui::mac::text()))
-                            .ghost()
-                            .xsmall()
-                            .tooltip("Close Tab")
-                            .on_click(cx.listener(move |this, _, _, cx| this.close_tab(i, cx))),
-                    ),
+                    .when(self.tabs.len() > 1, |el: Stateful<Div>| {
+                        el.child(
+                            Button::new(SharedString::from(format!("tabclose-{i}")), "")
+                                .icon(Icon::new(IconName::Close).text_color(rmac_ui::mac::text()))
+                                .ghost()
+                                .xsmall()
+                                .tooltip("Close Tab")
+                                .on_click(cx.listener(move |this, _, _, cx| this.close_tab(i, cx))),
+                        )
+                    }),
             );
         }
         bar.child(div().flex_1()).child(

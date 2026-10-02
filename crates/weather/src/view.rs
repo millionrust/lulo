@@ -6,9 +6,10 @@ use std::time::Duration;
 
 use gpui::{
     div, linear_color_stop, linear_gradient, prelude::FluentBuilder as _, px, rgb, rgba, svg,
-    AnyElement, AppContext as _, ClickEvent, Context, Entity, FocusHandle, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
+    AnyElement, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable as _,
+    FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _,
+    Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    WindowControlArea,
 };
 use rmac_ui::{mac, InputEvent, InputState, SearchField};
 use rmac_weather::fetch::{self, FetchError};
@@ -19,7 +20,8 @@ use rmac_weather::store::{self, Cached, Settings};
 use rmac_weather::summary::{self, Column, Unit};
 
 use crate::{
-    AddLocationToList, CloseWindow, FindCity, Refresh, ToggleSidebar, UseCelsius, UseFahrenheit,
+    AddLocationToList, CloseWindow, FindCity, Refresh, ToggleFullScreen, ToggleSidebar, UseCelsius,
+    UseFahrenheit,
 };
 
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
@@ -1134,6 +1136,15 @@ fn range_bar(from: f32, to: f32, dot: Option<f32>) -> impl IntoElement {
 
 impl Render for WeatherView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        rmac_ui::set_menu_label(
+            "weather::ToggleFullScreen",
+            if window.is_fullscreen() {
+                "Exit Full Screen"
+            } else {
+                "Enter Full Screen"
+            },
+            cx,
+        );
         rmac_ui::set_menu_enabled("weather::AddLocationToList", !self.results.is_empty(), cx);
         let (has_selection, has_text) = {
             let search = self.search.read(cx);
@@ -1167,6 +1178,21 @@ impl Render for WeatherView {
             .id("weather")
             .track_focus(&self.focus)
             .key_context("Weather")
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.search.read(cx).focus_handle(cx).is_focused(window) {
+                    return;
+                }
+                let key = &event.keystroke;
+                if key.key == "f"
+                    && !key.modifiers.platform
+                    && !key.modifiers.control
+                    && !key.modifiers.alt
+                    && !key.modifiers.shift
+                {
+                    window.toggle_fullscreen();
+                    cx.stop_propagation();
+                }
+            }))
             .on_action(cx.listener(|this, _: &Refresh, _, cx| this.refresh_all(true, cx)))
             .on_action(cx.listener(|this, _: &FindCity, window, cx| {
                 if !this.sidebar_visible {
@@ -1175,6 +1201,7 @@ impl Render for WeatherView {
                 this.search.update(cx, |state, cx| state.focus(window, cx));
             }))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
+            .on_action(cx.listener(|_, _: &ToggleFullScreen, window, _| window.toggle_fullscreen()))
             .on_action(cx.listener(|this, _: &AddLocationToList, _, cx| {
                 if let Some(place) = this.results.first().cloned() {
                     this.add_place(place, cx);

@@ -21,6 +21,7 @@ gpui::actions!(
         UseFahrenheit,
         ToggleSidebar,
         AddLocationToList,
+        ToggleFullScreen,
         CloseWindow
     ]
 );

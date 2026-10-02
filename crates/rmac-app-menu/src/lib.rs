@@ -1063,6 +1063,7 @@ const WEATHER_MENUS: &[MenuSpec] = &[
             item!("Fahrenheit", "weather::UseFahrenheit", ""),
             item!("Refresh", "weather::Refresh", "⌘R", separator),
             item!("Hide Sidebar", "weather::ToggleSidebar", "⌃⌘S"),
+            item!("Enter Full Screen", "weather::ToggleFullScreen", "F"),
         ],
     },
 ];

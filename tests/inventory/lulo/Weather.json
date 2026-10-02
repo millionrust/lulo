@@ -173,6 +173,13 @@
           "shortcut": "⌃⌘S",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "weather::ToggleFullScreen",
+          "shortcut": "F",
+          "separator_before": false,
+          "children": []
         }
       ]
     },

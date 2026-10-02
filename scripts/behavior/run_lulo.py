@@ -768,7 +768,11 @@ class LuloRun:
         if front in titles:
             titles.remove(front)
             titles.insert(0, front)
-        return {"count": len(plain), "front": front, "titles": titles}
+        windows = [w for w in self.nested.windows() if self.process is not None
+                   and w.get("pid") == self.process.pid]
+        focused = next((w for w in windows if w.get("focused")), None)
+        return {"count": len(plain), "front": front, "titles": titles,
+                "fullscreen": bool(focused.get("fullscreen_mode")) if focused is not None else None}
 
     def fact_info(self) -> dict[str, Any]:
         """Check the accessible Size row in the frontmost Get Info window."""

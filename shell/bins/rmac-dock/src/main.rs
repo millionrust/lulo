@@ -712,6 +712,70 @@ mod linux_wayland {
     }
 
     impl Dock {
+        fn ensure_dismiss_keyboard(
+            &mut self,
+            display_id: Option<DisplayId>,
+            cx: &mut Context<Self>,
+        ) {
+            if self.dismiss_keyboard.is_some()
+                || self.keyboard.is_some()
+                || (self.context_menu.is_none()
+                    && self.separator_menu.is_none()
+                    && self.stack_popover.is_none())
+            {
+                return;
+            }
+            let dock = cx.entity().downgrade();
+            let options = WindowOptions {
+                titlebar: None,
+                focus: true,
+                show: true,
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: Size::new(px(1.0), px(1.0)),
+                })),
+                display_id,
+                app_id: Some("dev.rmac.DockMenuKeyboard".to_owned()),
+                window_background: WindowBackgroundAppearance::Transparent,
+                kind: WindowKind::LayerShell(LayerShellOptions {
+                    namespace: "rmac-dock-menu-keyboard".to_owned(),
+                    layer: Layer::Overlay,
+                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                    ..Default::default()
+                }),
+                is_movable: false,
+                is_resizable: false,
+                is_minimizable: false,
+                ..Default::default()
+            };
+            self.dismiss_keyboard = cx
+                .open_window(options, move |window, cx| {
+                    let focus = cx.focus_handle();
+                    focus.focus(window, cx);
+                    cx.new(|cx| {
+                        cx.observe_window_activation(
+                            window,
+                            |this: &mut DockDismissKeyboard, window, cx| {
+                                if window.is_window_active() {
+                                    this.was_active = true;
+                                } else if this.was_active {
+                                    let _ =
+                                        this.dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
+                                    window.remove_window();
+                                }
+                            },
+                        )
+                        .detach();
+                        DockDismissKeyboard {
+                            dock,
+                            focus,
+                            was_active: false,
+                        }
+                    })
+                })
+                .ok();
+        }
+
         fn dismiss_popovers(&mut self, cx: &mut Context<Self>) {
             self.context_menu = None;
             self.separator_menu = None;
@@ -2474,55 +2538,14 @@ mod linux_wayland {
                 || self.stack_popover.is_some();
             if popover_open && self.keyboard.is_none() && self.dismiss_keyboard.is_none() {
                 let dock = cx.entity().downgrade();
-                let options = WindowOptions {
-                    titlebar: None,
-                    focus: true,
-                    show: true,
-                    window_bounds: Some(WindowBounds::Windowed(Bounds {
-                        origin: point(px(0.0), px(0.0)),
-                        size: Size::new(px(1.0), px(1.0)),
-                    })),
-                    display_id: window.display(cx).map(|display| display.id()),
-                    app_id: Some("dev.rmac.DockMenuKeyboard".to_owned()),
-                    window_background: WindowBackgroundAppearance::Transparent,
-                    kind: WindowKind::LayerShell(LayerShellOptions {
-                        namespace: "rmac-dock-menu-keyboard".to_owned(),
-                        layer: Layer::Overlay,
-                        keyboard_interactivity: KeyboardInteractivity::Exclusive,
-                        ..Default::default()
-                    }),
-                    is_movable: false,
-                    is_resizable: false,
-                    is_minimizable: false,
-                    ..Default::default()
-                };
-                self.dismiss_keyboard = cx
-                    .open_window(options, move |window, cx| {
-                        let focus = cx.focus_handle();
-                        focus.focus(window, cx);
-                        cx.new(|cx| {
-                            cx.observe_window_activation(
-                                window,
-                                |this: &mut DockDismissKeyboard, window, cx| {
-                                    if window.is_window_active() {
-                                        this.was_active = true;
-                                    } else if this.was_active {
-                                        let _ = this
-                                            .dock
-                                            .update(cx, |dock, cx| dock.dismiss_popovers(cx));
-                                        window.remove_window();
-                                    }
-                                },
-                            )
-                            .detach();
-                            DockDismissKeyboard {
-                                dock,
-                                focus,
-                                was_active: false,
-                            }
-                        })
-                    })
-                    .ok();
+                let display_id = window.display(cx).map(|display| display.id());
+                // Opening another GPUI window during render invalidates the
+                // current element arena. Defer until this frame finishes.
+                cx.defer(move |cx| {
+                    let _ = dock.update(cx, |dock, cx| {
+                        dock.ensure_dismiss_keyboard(display_id, cx);
+                    });
+                });
             } else if !popover_open {
                 if let Some(keyboard) = self.dismiss_keyboard.take() {
                     let _ = keyboard.update(cx, |_, window, _| window.remove_window());

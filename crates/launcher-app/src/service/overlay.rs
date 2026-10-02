@@ -221,6 +221,10 @@ fn open_launcher(
             .ok()
             .flatten()
             .or_else(|| cx.primary_display());
+        #[cfg(target_os = "linux")]
+        if display.is_none() {
+            eprintln!("launcher outside click catcher has no display");
+        }
         cx.update_global::<LauncherService, _>(|service, _| {
             service.active = Some(ActiveOverlay {
                 token,

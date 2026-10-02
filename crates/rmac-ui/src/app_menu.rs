@@ -28,7 +28,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gpui::{App, Global};
-use rmac_app_menu::{CheckState, ItemState, Menu};
+use rmac_app_menu::{CheckState, Item, ItemState, Menu};
 
 // App ▸ About <App>: the Mac-style About panel. Its name is
 // `rmac_app_menu::ABOUT_ACTION`.
@@ -38,6 +38,7 @@ struct MenuModel {
     app_id: &'static str,
     definition: Vec<Menu>,
     overrides: BTreeMap<String, ItemState>,
+    dynamic_children: BTreeMap<String, Vec<Item>>,
     publisher: Option<rmac_app_menu::Publisher>,
     publish_scheduled: bool,
 }
@@ -69,6 +70,21 @@ pub fn set_menu_label(action: &str, label: &str, cx: &mut App) {
             state.label = Some(label.to_owned());
         }
     });
+}
+
+/// Replace a submenu's children with app-owned rows, such as a live list of
+/// recently visited notes. The parent action must exist in the definition.
+pub fn set_menu_children(action: &str, children: Vec<Item>, cx: &mut App) {
+    let Some(model) = cx.try_global::<MenuModel>() else {
+        return;
+    };
+    if model.dynamic_children.get(action) == Some(&children) {
+        return;
+    }
+    cx.global_mut::<MenuModel>()
+        .dynamic_children
+        .insert(action.to_owned(), children);
+    schedule_publish(cx);
 }
 
 fn update_item(action: &str, cx: &mut App, change: impl FnOnce(&mut ItemState)) {
@@ -121,6 +137,7 @@ fn current_menus(cx: &mut App) -> Vec<Menu> {
     let app_id = model.app_id;
     let definition = model.definition.clone();
     let overrides = model.overrides.clone();
+    let dynamic_children = model.dynamic_children.clone();
     let text_actions = definition
         .iter()
         .flat_map(Menu::leaves)
@@ -144,6 +161,19 @@ fn current_menus(cx: &mut App) -> Vec<Menu> {
         }
         Some(state)
     });
+    fn replace_children(items: &mut [Item], replacements: &BTreeMap<String, Vec<Item>>) {
+        for item in items {
+            if let Some(children) = replacements.get(&item.action) {
+                item.children = children.clone();
+                item.enabled = item.children.iter().any(|child| child.enabled);
+            } else {
+                replace_children(&mut item.children, replacements);
+            }
+        }
+    }
+    for menu in &mut menus {
+        replace_children(&mut menu.items, &dynamic_children);
+    }
     // File ▸ Open Recent ▸ (TE-02, PREV-08/PREV-15): built fresh every time
     // a menu is about to open, from whichever documents `app_id` itself
     // recorded — nothing to poll, and nothing to announce when the store
@@ -207,6 +237,7 @@ pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowReques
             app_id,
             definition: menus.clone(),
             overrides: BTreeMap::new(),
+            dynamic_children: BTreeMap::new(),
             publisher: None,
             publish_scheduled: false,
         });

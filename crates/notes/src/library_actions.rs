@@ -32,14 +32,26 @@ impl NotesView {
         let Some(next) = position.checked_add_signed(offset) else {
             return;
         };
-        let Some(note_id) = self.recent_notes.get(next).copied() else {
+        self.open_recent_note(next, window, cx);
+    }
+
+    pub(super) fn open_recent_note(
+        &mut self,
+        position: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note_id) = self.recent_notes.get(position).copied() else {
             return;
         };
         // A note visited in another folder remains reachable from Recents.
         self.session
             .select_folder(rmac_notes_runtime::FolderSelection::All);
         if self.session.select_note(note_id) {
-            self.recent_position = Some(next);
+            self.recent_position = Some(position);
             self.last_editor_note = Some(note_id);
             self.sync_editor(window, cx);
             cx.notify();
@@ -657,6 +669,47 @@ impl NotesView {
         rmac_ui::set_menu_enabled("notes::PreviousRecentNote", ready && previous, cx);
         rmac_ui::set_menu_enabled("notes::NextRecentNote", ready && next, cx);
         rmac_ui::set_menu_enabled("notes::ClearRecentNotes", !self.recent_notes.is_empty(), cx);
+        let mut recent_items = vec![
+            rmac_ui::MenuItem::new("Previous Note", "notes::PreviousRecentNote", "⌥⌘[")
+                .enabled(ready && previous),
+            rmac_ui::MenuItem::new("Next Note", "notes::NextRecentNote", "⌥⌘]")
+                .enabled(ready && next),
+        ];
+        if let Some(snapshot) = self.session.snapshot() {
+            for (index, note_id) in self.recent_notes.iter().enumerate() {
+                let Some(note) = snapshot
+                    .notes
+                    .iter()
+                    .find(|note| note.id == *note_id && !note.deleted)
+                else {
+                    continue;
+                };
+                let title: String = display_title(&note.title)
+                    .chars()
+                    .map(|ch| if ch.is_control() { ' ' } else { ch })
+                    .collect();
+                let title = if title.len() > 64 {
+                    let mut end = 61;
+                    while !title.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    format!("{}…", &title[..end])
+                } else {
+                    title
+                };
+                recent_items.push(rmac_ui::MenuItem::new(
+                    title,
+                    format!("notes::OpenRecentNote{index}"),
+                    "",
+                ));
+            }
+        }
+        recent_items.push(
+            rmac_ui::MenuItem::new("Clear Menu", "notes::ClearRecentNotes", "")
+                .enabled(!self.recent_notes.is_empty())
+                .separated(),
+        );
+        rmac_ui::set_menu_children("notes::RecentNotesMenu", recent_items, cx);
     }
 
     pub(super) fn set_sort(&mut self, sort_order: SortOrder, cx: &mut Context<Self>) {

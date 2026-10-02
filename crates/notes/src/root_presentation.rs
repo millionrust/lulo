@@ -131,6 +131,36 @@ impl NotesView {
             }))
             .on_action(cx.listener(|this, _: &ClearRecentNotes, _, cx| this.clear_recent_notes(cx)))
             .on_action(cx.listener(|_, _: &ToggleFullScreen, window, _| window.toggle_fullscreen()))
+            .on_action(cx.listener(|this, _: &OpenRecentNote0, window, cx| {
+                this.open_recent_note(0, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote1, window, cx| {
+                this.open_recent_note(1, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote2, window, cx| {
+                this.open_recent_note(2, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote3, window, cx| {
+                this.open_recent_note(3, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote4, window, cx| {
+                this.open_recent_note(4, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote5, window, cx| {
+                this.open_recent_note(5, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote6, window, cx| {
+                this.open_recent_note(6, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote7, window, cx| {
+                this.open_recent_note(7, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote8, window, cx| {
+                this.open_recent_note(8, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecentNote9, window, cx| {
+                this.open_recent_note(9, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
             .on_action(cx.listener(|this, _: &DuplicateNote, _, cx| this.duplicate_note(cx)))
             .on_action(

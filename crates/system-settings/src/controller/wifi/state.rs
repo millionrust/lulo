@@ -3,6 +3,30 @@
 use super::*;
 
 impl Settings {
+    /// Read the current radio state when returning to Wi-Fi. Hidden-pane
+    /// NetworkManager signals do not run a full snapshot in the background.
+    pub(in crate::controller) fn refresh_wifi_state(&mut self, cx: &mut Context<Self>) {
+        if self.wifi_loading || self.wifi_busy || self.wifi_scanning {
+            return;
+        }
+        let generation = self.wifi_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(rmac_network::snapshot).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if wifi_stream_snapshot_is_current(
+                    generation,
+                    this.wifi_generation,
+                    this.wifi_busy,
+                    this.wifi_loading,
+                ) {
+                    this.finish_wifi_stream_update(result);
+                    this.notify_if_current_pane(&["Wi-Fi"], cx);
+                }
+            });
+        })
+        .detach();
+    }
+
     pub(in crate::controller) fn apply_wifi_snapshot(
         &mut self,
         snapshot: rmac_network::WifiSnapshot,

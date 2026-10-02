@@ -209,7 +209,9 @@ impl Settings {
                 match event {
                     rmac_power::WatchEvent::Changed => {
                         let generation = match this.update(cx, |this: &mut Settings, cx| {
-                            if this.power_busy || this.power_loading {
+                            if this.current().name.as_ref() != "Battery" {
+                                None
+                            } else if this.power_busy || this.power_loading {
                                 if power_change_needs_followup(
                                     this.power_busy,
                                     this.power_loading,

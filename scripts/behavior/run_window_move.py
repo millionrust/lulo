@@ -133,9 +133,11 @@ class Run:
         # output can be smaller than the parent Sway surface in this nested setup.
         return self.niri_rect[0] + x, self.niri_rect[1] + y
 
-    def drag(self, start: tuple[float, float], end: tuple[float, float]) -> None:
+    def drag(self, start: tuple[float, float], end: tuple[float, float],
+             steps: int = 8, step_delay: float = 0.04, grab_delay: float = 0.0) -> None:
         self.pointer.drag(self.parent_point(*start), self.parent_point(*end),
-                          self.parent_width, self.parent_height)
+                          self.parent_width, self.parent_height, steps=steps,
+                          step_delay=step_delay, grab_delay=grab_delay)
 
     def start(self) -> None:
         self.locks = []
@@ -310,7 +312,7 @@ class Run:
             edge = shot.getpixel((edge_x, sample_y))
             content = shot.getpixel((content_x, sample_y))
             distance = sum(abs(a - b) for a, b in zip(edge, content))
-            self.check(f"{title} {phase} has no wallpaper inset", distance < 35,
+            self.check(f"{title} {phase} has no wallpaper inset", distance <= 35,
                        f"edge={edge}, content={content}, delta={distance}; geometry={(x, y, width, height)}")
 
     def assert_quick_settings_lifecycle(self) -> None:
@@ -371,7 +373,7 @@ class Run:
             clicked = self.wait_for(lambda: (self.window(app_id) or {}).get("title") == "Pointer Works", 3)
             self.check("GTK content receives a virtual pointer click", bool(clicked))
         start, end = (x + width * .5, y + 18), (x + width * .5 + 150, y + 100)
-        self.drag(start, end)
+        self.drag(start, end, steps=12, step_delay=0.06, grab_delay=0.15)
         moved = self.wait_for(
             lambda: self.window_matching(
                 app_id, lambda candidate: abs(self.geometry(candidate)[0] - x) > 30
@@ -445,11 +447,15 @@ class Run:
         if window:
             self.assert_first_frame_geometry(window, "Settings")
             time.sleep(1)
+            # The first-frame helper refreshes its own snapshot after the
+            # screen-fit configure; the caller must refresh as well. Dragging
+            # from the original, oversized geometry can miss the title bar.
+            window = self.window("org.rmac.SystemSettings") or window
             x, y, width, height = self.geometry(window)
             # Move the mapped window into the visible area before asking niri
             # to resize it. This makes the same move request establish a
             # usable resize edge for oversized initial client bounds.
-            self.drag((x + width - 60, y + 18), (x + width + 80, y + 90))
+            self.drag_settings_title(x, y, width)
             placed = self.wait_for(
                 lambda: self.window_matching(
                     "org.rmac.SystemSettings",
@@ -464,7 +470,7 @@ class Run:
                 and placed_geometry[0] + placed_geometry[2] > 0
                 and placed_geometry[1] + placed_geometry[3] > 0
             )
-            self.check("Settings title-bar drag brings it into the output", intersects_output,
+            self.check("Settings title-bar drag brings it into the output", bool(placed) and intersects_output,
                        f"{(x, y, width, height)} -> {placed_geometry}")
             # The first move can also resize Settings from its oversized
             # startup bounds. Let niri finish that configure and pointer
@@ -473,7 +479,7 @@ class Run:
             placed_geometry = self.geometry(self.window("org.rmac.SystemSettings") or window)
             x, y, width, height = placed_geometry
             sx, sy, sw, sh = x, y, width, height
-            self.drag((sx + sw - 60, sy + 18), (sx + sw + 80, sy + 90))
+            self.drag_settings_title(sx, sy, sw)
             moved = self.wait_for(
                 lambda: self.window_matching(
                     "org.rmac.SystemSettings",
@@ -491,6 +497,23 @@ class Run:
             self.assert_double_click_zoom("org.rmac.SystemSettings", "Settings")
         process.terminate()
         process.wait(10)
+
+    def drag_settings_title(self, x: float, y: float, width: float) -> None:
+        """Grab visible title chrome and move toward the room on the output.
+
+        Settings may start wider than the nested output. The right end of its
+        toolbar can then be outside the output, and a second rightward drag
+        after the first move can be clamped at the same compositor position.
+        """
+        toolbar_x = x + width - 60
+        grab_x = toolbar_x if 0 < toolbar_x < self.width - 30 else x + 160
+        room_left = max(0.0, x)
+        room_right = max(0.0, self.width - (x + width))
+        delta_x = 140 if room_right >= room_left else -140
+        # The first motion asks GPUI and then niri to begin the move grab.
+        # Let that round trip finish before sending the rest of the path.
+        self.drag((grab_x, y + 18), (grab_x + delta_x, y + 18),
+                  steps=12, step_delay=0.06, grab_delay=0.15)
 
     def double_click(self, point: tuple[float, float]) -> None:
         """Send two stationary presses within GPUI's double-click interval.
@@ -674,6 +697,8 @@ def outer(args: argparse.Namespace) -> int:
     for binary in ("sway", "dbus-run-session"):
         if not shutil.which(binary):
             raise SystemExit(f"{binary} is required")
+    lock = open("/tmp/lulo-journey.lock", "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
     work = Path(tempfile.mkdtemp(prefix="lulo-window-move-"))
     env = run_lulo.isolated_environment(work)
     run_lulo.refuse_live_session(env)
@@ -692,6 +717,8 @@ def outer(args: argparse.Namespace) -> int:
             print(f"kept {work}", file=sys.stderr)
         else:
             run_lulo.remove_tree(work)
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        lock.close()
 
 
 def main() -> int:

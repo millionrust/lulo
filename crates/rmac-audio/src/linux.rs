@@ -24,8 +24,73 @@ pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> R
             Err(_) if sender.is_closed() => return Ok(()),
             Err(_) => publish_unavailable(&sender, &mut unavailable_reported).await?,
         }
+        if sender.is_closed() {
+            return Ok(());
+        }
+        // A private session (and an audio service outage) may have no
+        // PipeWire socket. Spawning pw-dump once per second cannot recover
+        // until that socket appears, so park on its directory instead.
+        if let Some(socket) = pipewire_socket_path() {
+            if !socket.exists() && wait_for_pipewire_socket(&sender, &socket).await.is_ok() {
+                continue;
+            }
+        }
         async_io::Timer::after(WATCH_RECONNECT_DELAY).await;
     }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn pipewire_socket_path() -> Option<std::path::PathBuf> {
+    let remote = std::env::var_os("PIPEWIRE_REMOTE")
+        .unwrap_or_else(|| std::ffi::OsString::from("pipewire-0"));
+    let remote = std::path::PathBuf::from(remote);
+    if remote.is_absolute() {
+        Some(remote)
+    } else {
+        std::env::var_os("PIPEWIRE_RUNTIME_DIR")
+            .or_else(|| std::env::var_os("XDG_RUNTIME_DIR"))
+            .map(|runtime| std::path::PathBuf::from(runtime).join(remote))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn wait_for_pipewire_socket(
+    sender: &async_channel::Sender<WatchEvent>,
+    socket: &std::path::Path,
+) -> Result<(), Error> {
+    use futures_util::FutureExt as _;
+    use notify::Watcher as _;
+
+    let directory = socket.parent().ok_or_else(|| {
+        Error::new(
+            "watch PipeWire recovery",
+            "the PipeWire socket has no parent directory",
+        )
+    })?;
+    let (events, received) = async_channel::bounded(1);
+    let socket_path = socket.to_path_buf();
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        if event.is_ok_and(|event| event.paths.iter().any(|path| path == &socket_path)) {
+            let _ = events.try_send(());
+        }
+    })
+    .map_err(|error| Error::new("watch PipeWire recovery", error.to_string()))?;
+    watcher
+        .watch(directory, notify::RecursiveMode::NonRecursive)
+        .map_err(|error| Error::new("watch PipeWire recovery", error.to_string()))?;
+    // Watch first, inspect second: a socket created between the failed
+    // monitor and this subscription must not strand the watcher.
+    if socket.exists() {
+        return Ok(());
+    }
+    let event = received.recv().fuse();
+    let closed = sender.closed().fuse();
+    futures_util::pin_mut!(event, closed);
+    futures_util::select! {
+        _ = event => {},
+        _ = closed => {},
+    }
+    Ok(())
 }
 
 /// Builds the `async_process::Command` that runs `program args...`
@@ -1495,8 +1560,41 @@ pub(super) fn default_device_id(devices: &[Device]) -> Option<&str> {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::build_monitor_command;
+    use super::{build_monitor_command, wait_for_pipewire_socket};
     use futures_lite::io::AsyncReadExt as _;
+
+    #[test]
+    fn missing_pipewire_socket_wakes_when_it_appears() {
+        use futures_util::FutureExt as _;
+
+        let directory = std::env::temp_dir().join(format!(
+            "rmac-audio-socket-watch-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("valid system clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).expect("create private test directory");
+        let socket = directory.join("pipewire-0");
+        let (sender, _receiver) = async_channel::bounded(1);
+        let created = socket.clone();
+        let thread = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::fs::File::create(created).expect("create a PipeWire socket placeholder");
+        });
+        futures_lite::future::block_on(async {
+            let wait = wait_for_pipewire_socket(&sender, &socket).fuse();
+            let timeout = async_io::Timer::after(std::time::Duration::from_secs(3)).fuse();
+            futures_util::pin_mut!(wait, timeout);
+            futures_util::select! {
+                result = wait => result.expect("watch PipeWire socket"),
+                _ = timeout => panic!("socket creation did not wake the watcher"),
+            }
+        });
+        thread.join().expect("socket creator finished");
+        std::fs::remove_dir_all(directory).expect("remove private test directory");
+    }
 
     /// Regression test for the bug fixed alongside this test: wrapping an
     /// already-configured `std::process::Command` in

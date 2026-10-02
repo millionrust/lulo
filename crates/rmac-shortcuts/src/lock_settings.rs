@@ -453,12 +453,25 @@ pub async fn watch(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error
             if sender.is_closed() {
                 return Ok(());
             }
+            let service_unavailable =
+                matches!(result, Err(Error::Connect | Error::Subscribe | Error::Call));
             let message = match result {
                 Ok(()) => "Lock Screen authority stopped; reconnecting".to_owned(),
                 Err(error) => error.to_string(),
             };
             if sender.send(Err(message)).await.is_err() {
                 return Ok(());
+            }
+            // A private session may have no Lock Screen service. Wait for
+            // its D-Bus name to appear instead of reconnecting every second
+            // for the entire lifetime of an idle Settings window.
+            if service_unavailable {
+                if let Ok(true) = wait_for_lock_service(&sender).await {
+                    if sender.is_closed() {
+                        return Ok(());
+                    }
+                    continue;
+                }
             }
             let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
                 std::time::Duration::from_secs(1),
@@ -477,6 +490,53 @@ pub async fn watch(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error
             .send(Err(Error::Connect.to_string()))
             .await
             .map_err(|_| Error::Publish)
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn wait_for_lock_service(sender: &Sender<Result<Snapshot, String>>) -> Result<bool, Error> {
+    use futures_util::{FutureExt as _, StreamExt as _};
+    use zbus::{message::Type, MatchRule, MessageStream};
+
+    let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
+    let rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .sender("org.freedesktop.DBus")
+        .map_err(|_| Error::Subscribe)?
+        .path("/org/freedesktop/DBus")
+        .map_err(|_| Error::Subscribe)?
+        .interface("org.freedesktop.DBus")
+        .map_err(|_| Error::Subscribe)?
+        .member("NameOwnerChanged")
+        .map_err(|_| Error::Subscribe)?
+        .add_arg(BUS_NAME)
+        .map_err(|_| Error::Subscribe)?
+        .build();
+    // Arm the stream before checking ownership so a new service cannot
+    // appear between the check and the subscription.
+    let mut owners = MessageStream::for_match_rule(rule, &connection, Some(4))
+        .await
+        .map_err(|_| Error::Subscribe)?;
+    let dbus = zbus::fdo::DBusProxy::new(&connection)
+        .await
+        .map_err(|_| Error::Connect)?;
+    let name = zbus::names::BusName::try_from(BUS_NAME).map_err(|_| Error::Protocol)?;
+    if dbus.name_has_owner(name).await.map_err(|_| Error::Call)? {
+        return Ok(false);
+    }
+    loop {
+        let closed = sender.closed().fuse();
+        let next = owners.next().fuse();
+        futures_util::pin_mut!(closed, next);
+        let message = futures_util::select! {
+            message = next => message.ok_or(Error::Subscribe)?.map_err(|_| Error::Subscribe)?,
+            _ = closed => return Ok(true),
+        };
+        let (name, _old_owner, new_owner): (String, String, String) =
+            message.body().deserialize().map_err(|_| Error::Protocol)?;
+        if name == BUS_NAME && !new_owner.is_empty() {
+            return Ok(true);
+        }
     }
 }
 

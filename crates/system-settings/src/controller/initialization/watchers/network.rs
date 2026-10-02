@@ -14,17 +14,21 @@ impl Settings {
             while let Ok(event) = wifi_update_rx.recv().await {
                 match event {
                     rmac_network::WifiWatchEvent::Changed => {
-                        let generations = match this.update(cx, |this: &mut Settings, cx| {
+                        let generations = match this.update(cx, |this: &mut Settings, _cx| {
                             this.wifi_stream_error = None;
                             this.network_stream_error = None;
                             this.vpn_stream_error = None;
-                            this.notify_if_current_pane(&["Wi-Fi", "Network", "VPN"], cx);
+                            // A NetworkManager signal can touch several
+                            // objects. Read only the pane on screen; entering
+                            // another pane refreshes its snapshot once.
+                            let pane = this.current().name.as_ref();
                             (
-                                (!this.wifi_busy && !this.wifi_loading)
+                                (pane == "Wi-Fi" && !this.wifi_busy && !this.wifi_loading)
                                     .then_some(this.wifi_generation),
-                                (!this.network_busy && !this.network_loading)
+                                (pane == "Network" && !this.network_busy && !this.network_loading)
                                     .then_some(this.network_generation),
-                                (this.vpn_busy.is_none()
+                                (pane == "VPN"
+                                    && this.vpn_busy.is_none()
                                     && !this.vpn_loading
                                     && !this.vpn_refreshing
                                     && !this.vpn_import_busy

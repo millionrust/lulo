@@ -23,12 +23,26 @@ Monitor, and 0.5% for the shell combined. Context switches are a wake-up
 proxy; inspect timers or syscalls when they indicate unexplained activity.
 
 Focused Search regression for Settings, using the private nested compositor and
-the normal-app 0.3% limit (BUG-01):
+the normal-app 0.3% limit (BUG-01). This runner settles for fifteen seconds
+after launch. Run two 60-second samples with the
+Lock Screen service absent from the private D-Bus session, then repeat with
+the candidate binary. Hold `/tmp/lulo-cargo.lock` through each sample so a
+shared-target build cannot skew the process CPU reading. Close fd 8 in the
+runner so the isolated child cannot inherit the lock:
+
+The private session has no PipeWire socket. Its audio watcher must wait for
+socket creation, and NetworkManager/UPower events for hidden panes must not
+trigger snapshot reads. Opening Wi-Fi, Network, VPN, or Battery refreshes
+its current state once on entry.
 
 ```sh
+exec 8>/tmp/lulo-cargo.lock
+flock 8
 python3 scripts/behavior/monkey.py --bin-dir ~/lulo-monkey-bins \
   --niri /usr/bin/niri --app settings --idle-only \
-  --idle-seconds 60 --max-idle-cpu 0.3
+  --idle-seconds 60 --max-idle-cpu 0.3 8>&-
+flock -u 8
+exec 8>&-
 ```
 
 The shared input component also powers Files Search and Text Editor Find.

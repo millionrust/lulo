@@ -356,6 +356,16 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             item!("Delete", "input::Delete", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
             submenu!(
+                "Insert",
+                "text_editor::InsertMenu",
+                [
+                    item!("Line Break", "text_editor::InsertLineBreak", ""),
+                    item!("Paragraph Break", "text_editor::InsertParagraphBreak", ""),
+                    item!("Page Break", "text_editor::InsertPageBreak", ""),
+                ],
+                separator
+            ),
+            submenu!(
                 "Find",
                 "text_editor::FindMenu",
                 [
@@ -502,11 +512,26 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 "⇧⌘A"
             ),
             submenu!(
+                "Marks",
+                "terminal::MarksMenu",
+                [
+                    item!("Mark", "terminal::Mark", "⌘U"),
+                    item!("Mark as Bookmark", "terminal::MarkAsBookmark", "⌥⌘U"),
+                    item!("Unmark", "terminal::Unmark", "⇧⌘U"),
+                ]
+            ),
+            submenu!(
                 "Navigate",
                 "terminal::NavigateMenu",
                 [
                     item!("Jump to Previous Mark", "terminal::PreviousPrompt", "⌘↑"),
                     item!("Jump to Next Mark", "terminal::NextPrompt", "⌘↓"),
+                    item!(
+                        "Jump to Previous Bookmark",
+                        "terminal::PreviousBookmark",
+                        "⌥⌘"
+                    ),
+                    item!("Jump to Next Bookmark", "terminal::NextBookmark", "⌥⌘"),
                 ],
                 separator
             ),

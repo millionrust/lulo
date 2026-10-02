@@ -147,6 +147,17 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &NextPrompt, _, cx| {
                 this.navigate_prompt(PromptDirection::Next, cx)
             }))
+            .on_action(cx.listener(|this, _: &Mark, _, cx| this.mark_current_line(false, cx)))
+            .on_action(
+                cx.listener(|this, _: &MarkAsBookmark, _, cx| this.mark_current_line(true, cx)),
+            )
+            .on_action(cx.listener(|this, _: &Unmark, _, cx| this.unmark_current_line(cx)))
+            .on_action(cx.listener(|this, _: &PreviousBookmark, _, cx| {
+                this.navigate_bookmark(PromptDirection::Previous, cx)
+            }))
+            .on_action(cx.listener(|this, _: &NextBookmark, _, cx| {
+                this.navigate_bookmark(PromptDirection::Next, cx)
+            }))
             .on_action(cx.listener(|this, _: &SelectCommand, _, cx| {
                 this.select_shell_range(CommandRangeKind::Command, cx)
             }))
@@ -198,7 +209,6 @@ impl TerminalView {
             }))
             .on_action(cx.listener(|this, _: &ResetTerminal, _, cx| this.reset(cx)))
             .on_action(cx.listener(|this, _: &HardResetTerminal, _, cx| this.hard_reset(cx)))
-            .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
             // Shell ▸ New Tab ▸ <profile>: same shape as the window submenu,
             // but a tab in this window rather than a new window.
             .on_action(cx.listener(|this, _: &TabBasicDefault, window, cx| {

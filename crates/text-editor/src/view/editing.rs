@@ -174,6 +174,28 @@ impl EditorView {
         }
     }
 
+    pub(super) fn insert_break(
+        &mut self,
+        text: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.recovery_loading
+            || self.file_busy
+            || self.file_action_blocked()
+            || self.rtf_runs.is_some()
+            || self.long_lines.is_some()
+        {
+            return;
+        }
+        self.input.update(cx, |state, cx| {
+            // The editor's own Enter action uses the silent replacement path
+            // for a newline. Use that same undoable path for Insert ▸ breaks.
+            state.replace(text, window, cx);
+            state.focus(window, cx);
+        });
+    }
+
     pub(super) fn actual_size(&mut self, cx: &mut Context<Self>) {
         self.font_size = f32::from(crate::settings::current().font_size);
         cx.notify();
@@ -428,6 +450,18 @@ impl EditorView {
             "text_editor::TransformCapitalise",
         ] {
             rmac_ui::set_menu_enabled(action, can_transform, cx);
+        }
+        let can_insert = !self.recovery_loading
+            && !self.file_busy
+            && !self.file_action_blocked()
+            && self.rtf_runs.is_none()
+            && self.long_lines.is_none();
+        for action in [
+            "text_editor::InsertLineBreak",
+            "text_editor::InsertParagraphBreak",
+            "text_editor::InsertPageBreak",
+        ] {
+            rmac_ui::set_menu_enabled(action, can_insert, cx);
         }
     }
 

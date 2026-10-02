@@ -1175,6 +1175,7 @@ class LuloRun:
                 bus = "org.rmac." + {
                     "calculator": "Calculator",
                     "clock": "Clock",
+                    "text-editor": "TextEditor",
                     "weather": "Weather",
                     "system-monitor": "SystemMonitor",
                     "settings": "SystemSettings",

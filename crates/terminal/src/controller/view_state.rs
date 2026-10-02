@@ -215,6 +215,32 @@ impl TerminalView {
         }
     }
 
+    pub(super) fn mark_current_line(&mut self, bookmark: bool, cx: &mut Context<Self>) {
+        if !self.modal_open() && self.tabs[self.active].mark_current_line(bookmark) {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn unmark_current_line(&mut self, cx: &mut Context<Self>) {
+        if !self.modal_open() && self.tabs[self.active].unmark_current_line() {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn navigate_bookmark(&mut self, direction: PromptDirection, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        match self.tabs[self.active].scroll_to_bookmark(direction) {
+            Ok(true) => cx.notify(),
+            Ok(false) => {}
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
     pub(super) fn select_shell_range(&mut self, kind: CommandRangeKind, cx: &mut Context<Self>) {
         if self.modal_open() {
             return;

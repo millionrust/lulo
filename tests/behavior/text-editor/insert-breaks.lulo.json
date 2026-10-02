@@ -1,0 +1,25 @@
+{
+  "format": 1,
+  "scenario": "text-editor/insert-breaks",
+  "platform": "Lulo local contract",
+  "observations": {
+    "line": {
+      "focus": {"value": "A\u2028"}
+    },
+    "paragraph": {
+      "focus": {"value": "A\u2028B"}
+    },
+    "page": {
+      "focus": {"value": "A\u2028BC\f"}
+    },
+    "inserted": {
+      "focus": {"value": "A\u2028BC\fD"}
+    },
+    "saved": {
+      "saved_documents": {
+        "entries": ["BreakCheck.txt"],
+        "contents": {"BreakCheck.txt": "A\u2028B\nC\fD"}
+      }
+    }
+  }
+}

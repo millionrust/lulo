@@ -55,11 +55,18 @@ struct CommandRange {
     output_end: MarkerPosition,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ManualMark {
+    line: usize,
+    bookmark: bool,
+}
+
 #[derive(Debug, Default)]
 struct ShellState {
     phase: CommandPhase,
     /// Retained-grid line coordinates only; no prompt or command text is stored.
     prompt_lines: Vec<usize>,
+    manual_marks: Vec<ManualMark>,
     pending_command: Option<PendingCommand>,
     command_ranges: Vec<CommandRange>,
 }
@@ -178,9 +185,72 @@ impl SessionShellState {
     pub(super) fn clear_grid_marks(&self) {
         if let Ok(mut state) = self.state.lock() {
             state.prompt_lines.clear();
+            state.manual_marks.clear();
             state.pending_command = None;
             state.command_ranges.clear();
         }
+    }
+
+    pub(super) fn mark_line(&self, line: usize, bookmark: bool) {
+        if let Ok(mut state) = self.state.lock() {
+            if let Some(mark) = state.manual_marks.iter_mut().find(|mark| mark.line == line) {
+                mark.bookmark |= bookmark;
+                return;
+            }
+            if state.manual_marks.len() == MAX_PROMPT_MARKS {
+                state.manual_marks.remove(0);
+            }
+            state.manual_marks.push(ManualMark { line, bookmark });
+        }
+    }
+
+    pub(super) fn unmark_line(&self, line: usize) {
+        if let Ok(mut state) = self.state.lock() {
+            state.manual_marks.retain(|mark| mark.line != line);
+            state.prompt_lines.retain(|prompt| *prompt != line);
+        }
+    }
+
+    pub(super) fn has_bookmarks(&self) -> bool {
+        self.state
+            .lock()
+            .is_ok_and(|state| state.manual_marks.iter().any(|mark| mark.bookmark))
+    }
+
+    pub(super) fn has_mark_at(&self, line: usize) -> bool {
+        self.state.lock().is_ok_and(|state| {
+            state.prompt_lines.contains(&line)
+                || state.manual_marks.iter().any(|mark| mark.line == line)
+        })
+    }
+
+    pub(super) fn bookmark_offset(
+        &self,
+        direction: PromptDirection,
+        history_size: usize,
+        display_offset: usize,
+        history_limit: usize,
+    ) -> Option<usize> {
+        if history_limit == 0 || history_size >= history_limit {
+            return None;
+        }
+        let viewport_top = history_size.saturating_sub(display_offset);
+        let state = self.state.lock().ok()?;
+        let target = match direction {
+            PromptDirection::Previous => state
+                .manual_marks
+                .iter()
+                .filter(|mark| mark.bookmark && mark.line < viewport_top)
+                .map(|mark| mark.line)
+                .max(),
+            PromptDirection::Next => state
+                .manual_marks
+                .iter()
+                .filter(|mark| mark.bookmark && mark.line > viewport_top)
+                .map(|mark| mark.line)
+                .min(),
+        }?;
+        Some(history_size.saturating_sub(target).min(history_size))
     }
 
     /// Resolve a prompt to an Alacritty display offset without retaining any
@@ -203,12 +273,14 @@ impl SessionShellState {
                 .prompt_lines
                 .iter()
                 .copied()
+                .chain(state.manual_marks.iter().map(|mark| mark.line))
                 .filter(|line| *line < viewport_top)
                 .max(),
             PromptDirection::Next => state
                 .prompt_lines
                 .iter()
                 .copied()
+                .chain(state.manual_marks.iter().map(|mark| mark.line))
                 .filter(|line| *line > viewport_top)
                 .min(),
         }?;
@@ -375,6 +447,46 @@ mod tests {
             shell.prompt_offset(PromptDirection::Previous, 9, 0, 10),
             Some(7)
         );
+    }
+
+    #[test]
+    fn manual_marks_and_bookmarks_navigate_and_unmark_without_retaining_text() {
+        let shell = SessionShellState::default();
+        shell.mark_line(4, false);
+        shell.mark_line(12, true);
+        shell.mark_line(20, true);
+        assert!(shell.has_mark_at(4));
+        assert!(shell.has_bookmarks());
+        assert_eq!(
+            shell.prompt_offset(PromptDirection::Previous, 25, 0, 100),
+            Some(5)
+        );
+        assert_eq!(
+            shell.bookmark_offset(PromptDirection::Previous, 25, 0, 100),
+            Some(5)
+        );
+        assert_eq!(
+            shell.bookmark_offset(PromptDirection::Previous, 25, 5, 100),
+            Some(13)
+        );
+        assert_eq!(
+            shell.bookmark_offset(PromptDirection::Next, 25, 13, 100),
+            Some(5)
+        );
+        shell.unmark_line(20);
+        assert!(!shell.has_mark_at(20));
+        assert_eq!(
+            shell.bookmark_offset(PromptDirection::Previous, 25, 0, 100),
+            Some(13)
+        );
+        shell.unmark_line(12);
+        assert!(!shell.has_bookmarks());
+        assert_eq!(
+            shell.bookmark_offset(PromptDirection::Previous, 25, 0, 100),
+            None
+        );
+        shell.clear_grid_marks();
+        assert!(!shell.has_mark_at(4));
     }
 
     #[test]

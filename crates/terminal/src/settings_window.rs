@@ -52,7 +52,10 @@ pub(crate) fn show(cx: &mut App) {
         cx.new(|cx| Root::new(view, window, cx))
     });
     match opened {
-        Ok(handle) => OPEN.with(|open| open.set(Some(handle))),
+        Ok(handle) => {
+            OPEN.with(|open| open.set(Some(handle)));
+            let _ = handle.update(cx, |_, window, _| window.activate_window());
+        }
         Err(error) => eprintln!("rmac-terminal: could not open Settings: {error}"),
     }
 }

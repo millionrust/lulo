@@ -192,6 +192,35 @@
           "children": []
         },
         {
+          "label": "Insert",
+          "action": "text_editor::InsertMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Line Break",
+              "action": "text_editor::InsertLineBreak",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Paragraph Break",
+              "action": "text_editor::InsertParagraphBreak",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Page Break",
+              "action": "text_editor::InsertPageBreak",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Find",
           "action": "text_editor::FindMenu",
           "shortcut": "",

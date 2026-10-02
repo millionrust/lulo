@@ -644,6 +644,20 @@ const NOTES_MENUS: &[MenuSpec] = &[
             ),
             item!("Hide Folders", "notes::ToggleFolders", "⌃⌘S"),
             item!("Hide Note Count", "notes::ToggleNoteCount", ""),
+            submenu!(
+                "Attachment View",
+                "notes::AttachmentViewMenu",
+                [
+                    item!("Set All to Small", "notes::SetAllAttachmentsSmall", ""),
+                    item!("Set All to Large", "notes::SetAllAttachmentsLarge", ""),
+                ]
+            ),
+            item!(
+                "Show Attachments Browser",
+                "notes::ToggleAttachmentsBrowser",
+                "⌘3"
+            ),
+            item!("Show in Note", "notes::ShowAttachmentInNote", ""),
             item!("Hide Toolbar", "notes::ToggleToolbar", ""),
             item!("Enter Full Screen", "notes::ToggleFullScreen", "F"),
             item!("Zoom In", "notes::ZoomIn", "⇧⌘."),

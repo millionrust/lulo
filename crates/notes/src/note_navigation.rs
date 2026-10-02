@@ -239,12 +239,101 @@ impl NotesView {
             )
     }
 
+    fn render_attachment_browser(&self, cx: &mut Context<Self>) -> AnyElement {
+        let entries = self.session.snapshot().map_or_else(Vec::new, |snapshot| {
+            snapshot
+                .attachments
+                .iter()
+                .filter(|attachment| !attachment.deleted)
+                .filter_map(|attachment| {
+                    let note = snapshot
+                        .notes
+                        .iter()
+                        .find(|note| note.id == attachment.note_id && !note.deleted)?;
+                    Some((
+                        attachment.id,
+                        note.id,
+                        attachment.display_name.clone(),
+                        display_title(&note.title).to_string(),
+                        attachment.byte_len,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        });
+        let count = entries.len();
+        let ready = self.is_interactive_ready();
+        let rows = entries
+            .into_iter()
+            .map(|(attachment_id, note_id, name, title, bytes)| {
+                let selected = self.selected_attachment == Some(attachment_id)
+                    && self.session.selected_note_id() == Some(note_id);
+                div()
+                    .px_2()
+                    .py_1()
+                    .child(
+                        Button::new(("browser-attachment", attachment_id.get()), name)
+                            .w_full()
+                            .selected(selected)
+                            .disabled(!ready)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.session
+                                    .select_folder(rmac_notes_runtime::FolderSelection::All);
+                                this.select_note(note_id, window, cx);
+                                this.select_attachment_preview(attachment_id, cx);
+                            })),
+                    )
+                    .child(
+                        div()
+                            .px_2()
+                            .text_size(rmac_ui::text_px(11.0))
+                            .text_color(mac::text_secondary())
+                            .child(format!("{} · {}", title, format_storage_bytes(bytes))),
+                    )
+            });
+        div()
+            .w(px(LIST_WIDTH))
+            .h_full()
+            .flex_shrink_0()
+            .v_flex()
+            .bg(list_fill())
+            .when(self.toolbar_visible, |element| {
+                element.child(self.render_list_toolbar(
+                    "Attachments".into(),
+                    format!("{count} photos").into(),
+                    cx,
+                ))
+            })
+            .child(
+                div()
+                    .id("notes-attachment-browser")
+                    .role(Role::ListBox)
+                    .aria_label("Attachments")
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
+                    .v_flex()
+                    .when(count == 0, |element| {
+                        element.child(
+                            div()
+                                .p_3()
+                                .text_color(mac::text_secondary())
+                                .child("No Attachments"),
+                        )
+                    })
+                    .children(rows),
+            )
+            .into_any_element()
+    }
+
     pub(super) fn render_note_list(
         &self,
         list_focused: bool,
         _window: &Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> AnyElement {
+        if self.attachments_browser_visible {
+            return self.render_attachment_browser(cx);
+        }
         let search_active = !self.search_query.read(cx).value().trim().is_empty();
         let gallery = self.gallery_view;
         let selected = if search_active {
@@ -712,5 +801,6 @@ impl NotesView {
                     )
                 },
             )
+            .into_any_element()
     }
 }

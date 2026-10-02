@@ -670,6 +670,20 @@ impl NotesView {
         );
         rmac_ui::set_menu_checked("notes::ShowListView", !self.gallery_view, cx);
         rmac_ui::set_menu_checked("notes::ShowGalleryView", self.gallery_view, cx);
+        rmac_ui::set_menu_label(
+            "notes::ToggleAttachmentsBrowser",
+            if self.attachments_browser_visible {
+                "Hide Attachments Browser"
+            } else {
+                "Show Attachments Browser"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::ShowAttachmentInNote",
+            self.attachments_browser_visible && self.selected_attachment.is_some(),
+            cx,
+        );
         rmac_ui::set_menu_enabled("notes::ZoomIn", self.note_zoom < 12, cx);
         rmac_ui::set_menu_enabled("notes::ZoomOut", self.note_zoom > -5, cx);
         rmac_ui::set_menu_enabled("notes::ZoomReset", self.note_zoom != 0, cx);

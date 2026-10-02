@@ -63,6 +63,7 @@ impl NotesView {
             KeyBinding::new("ctrl-cmd-s", ToggleFolders, Some("Notes")),
             KeyBinding::new("cmd-1", ShowListView, Some("Notes")),
             KeyBinding::new("cmd-2", ShowGalleryView, Some("Notes")),
+            KeyBinding::new("cmd-3", ToggleAttachmentsBrowser, Some("Notes")),
             KeyBinding::new("alt-cmd-left", CollapseSection, Some("Notes")),
             KeyBinding::new("alt-shift-cmd-left", CollapseAllSections, Some("Notes")),
             KeyBinding::new("alt-cmd-right", ExpandSection, Some("Notes")),

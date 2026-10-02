@@ -566,6 +566,42 @@
           "children": []
         },
         {
+          "label": "Attachment View",
+          "action": "notes::AttachmentViewMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Set All to Small",
+              "action": "notes::SetAllAttachmentsSmall",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Set All to Large",
+              "action": "notes::SetAllAttachmentsLarge",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Show Attachments Browser",
+          "action": "notes::ToggleAttachmentsBrowser",
+          "shortcut": "⌘3",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show in Note",
+          "action": "notes::ShowAttachmentInNote",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Hide Toolbar",
           "action": "notes::ToggleToolbar",
           "shortcut": "",

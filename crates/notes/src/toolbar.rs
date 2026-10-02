@@ -337,6 +337,7 @@ impl NotesView {
             self.session.folder_selection() == rmac_notes_runtime::FolderSelection::Trash;
         let trash_has_notes = in_trash && !self.session.visible_notes().is_empty();
         let gallery_view = self.gallery_view;
+        let attachments_browser_visible = self.attachments_browser_visible;
         let sort_order = self
             .session
             .snapshot()
@@ -423,6 +424,14 @@ impl NotesView {
                                         "as Gallery",
                                         gallery_view,
                                         Box::new(ShowGalleryView),
+                                    )
+                                    .menu(
+                                        if attachments_browser_visible {
+                                            "Hide Attachments Browser"
+                                        } else {
+                                            "Show Attachments Browser"
+                                        },
+                                        Box::new(ToggleAttachmentsBrowser),
                                     )
                                     .separator()
                                     .menu_with_check(

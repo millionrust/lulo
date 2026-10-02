@@ -327,6 +327,24 @@ impl NotesView {
                 this.gallery_view = true;
                 cx.notify();
             }))
+            .on_action(cx.listener(|this, _: &ToggleAttachmentsBrowser, _, cx| {
+                this.attachments_browser_visible = !this.attachments_browser_visible;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ShowAttachmentInNote, _, cx| {
+                if this.attachments_browser_visible && this.selected_attachment.is_some() {
+                    this.attachments_browser_visible = false;
+                    cx.notify();
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SetAllAttachmentsSmall, _, cx| {
+                this.attachment_view_large = false;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &SetAllAttachmentsLarge, _, cx| {
+                this.attachment_view_large = true;
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &CollapseSection, _, cx| {
                 this.set_selected_section_collapsed(true, cx);
             }))

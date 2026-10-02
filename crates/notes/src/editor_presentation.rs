@@ -88,7 +88,11 @@ impl NotesView {
             div()
                 .mx(px(EDITOR_INSET))
                 .mb_2()
-                .h(px(174.0))
+                .h(px(if self.attachment_view_large {
+                    174.0
+                } else {
+                    120.0
+                }))
                 .flex_none()
                 .flex()
                 .gap_3()
@@ -97,7 +101,16 @@ impl NotesView {
                 .border_1()
                 .border_color(mac::separator())
                 .bg(mac::window())
-                .child(div().w(px(260.0)).h_full().child(preview))
+                .child(
+                    div()
+                        .w(px(if self.attachment_view_large {
+                            260.0
+                        } else {
+                            150.0
+                        }))
+                        .h_full()
+                        .child(preview),
+                )
                 .child(
                     div()
                         .flex_1()

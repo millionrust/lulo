@@ -27,7 +27,7 @@ reported as "not yet probed", never a silent pass or a fabricated gap.
 python3 scripts/interaction/mac_probe.py --all              # the owner's Mac
 python3 scripts/interaction/lulo_probe.py --bin-dir /usr/bin \
   --bin-dir /usr/libexec/rmac --shell-bin-dir /usr/bin --all  # the laptop
-python3 scripts/interaction/diff.py
+python3 scripts/interaction/interaction_diff.py
 ```
 
 `--explore` on `lulo_probe.py` dumps the AT-SPI tree for a surface instead

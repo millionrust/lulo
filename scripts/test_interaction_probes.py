@@ -12,7 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "interaction"))
 
-import diff  # noqa: E402
+import interaction_diff as diff  # noqa: E402
 import probes as pr  # noqa: E402
 import surfaces as sf  # noqa: E402
 

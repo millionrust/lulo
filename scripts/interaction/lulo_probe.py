@@ -20,7 +20,7 @@ run_niri_minimize.py use, just with AT-SPI wired up as well. Surfaces with
 shell.
 
 Writes tests/interaction/lulo/<surface>.json: the exact same fact shapes
-mac_probe.py writes, so diff.py can compare them. Never a screenshot.
+mac_probe.py writes, so interaction_diff.py can compare them. Never a screenshot.
 """
 
 from __future__ import annotations

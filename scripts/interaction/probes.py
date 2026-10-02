@@ -1,5 +1,5 @@
 """The interaction-probe matrix: declarative probes and the pure rules used
-to compare a Mac recording against a Lulo recording (scripts/interaction/diff.py).
+to compare a Mac recording against a Lulo recording (scripts/interaction/interaction_diff.py).
 
 This is a sibling to scripts/inventory (which diffs *item lists*: menu
 entries, shortcuts) and scripts/behavior (which diffs one app's reaction to
@@ -15,7 +15,7 @@ Every probe result is a small dict of booleans/numbers, exactly like
 scripts/behavior/scenario.py's facts: never a screenshot, never an absolute
 path. `status` says whether a probe has a real driver on both platforms yet
 ("automated") or is declared for the matrix but not wired up ("planned");
-diff.py only compares "automated" probes.
+interaction_diff.py only compares "automated" probes.
 """
 
 from __future__ import annotations

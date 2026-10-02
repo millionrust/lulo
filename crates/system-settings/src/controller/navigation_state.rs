@@ -420,6 +420,7 @@ impl Settings {
             return false;
         };
         let catalog_was_visible = self.catalog_pane_visible();
+        let changed_pane = self.selected != target;
         self.selected = target;
         self.nav.clear();
         self.forward.clear();
@@ -428,6 +429,19 @@ impl Settings {
         self.compact_sidebar_open = false;
         self.navigation_persistence.schedule(pane_id);
         self.sync_wifi_pane_scan_on_navigation(cx);
+        if changed_pane {
+            // Stream updates for hidden hardware/network panes skip costly
+            // snapshots. Read once on entry so their first visible frame
+            // catches up with changes made elsewhere while hidden.
+            let pane = self.current().name.to_string();
+            match pane.as_str() {
+                "Wi-Fi" => self.refresh_wifi_state(cx),
+                "Network" => self.refresh_network(cx),
+                "VPN" => self.refresh_vpn(cx),
+                "Battery" => self.refresh_power(cx),
+                _ => {}
+            }
+        }
         self.cancel_storage_scan_if_hidden();
         cx.notify();
         true

@@ -4890,6 +4890,7 @@ dependencies = [
  "async-process",
  "futures-lite",
  "futures-util",
+ "notify",
  "rmac-process",
  "rustix 1.1.4",
  "serde_json",

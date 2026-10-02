@@ -826,6 +826,23 @@ class Monkey:
             return None
         return run_memory_soak.sample_tree(pid, self.hertz)
 
+    def thread_cpu(self) -> dict[int, tuple[str, float]]:
+        """Read per-thread CPU once, to locate an idle wake source."""
+        pid = self.root_pid()
+        if pid is None:
+            return {}
+        result = {}
+        for task in (Path(f"/proc/{pid}/task")).glob("[0-9]*"):
+            try:
+                stat = (task / "stat").read_text()
+                end = stat.rfind(")")
+                fields = stat[end + 2:].split()
+                cpu = (int(fields[11]) + int(fields[12])) / self.hertz
+                result[int(task.name)] = (stat[stat.find("(") + 1:end], cpu)
+            except (OSError, ValueError, IndexError):
+                continue
+        return result
+
     def check_idle_cpu(self, idle_seconds: float = 5.0,
                        threshold_percent: float = 50.0) -> Optional[Finding]:
         """Must be called with no actions in flight: samples CPU for
@@ -838,12 +855,21 @@ class Monkey:
         before = self.sample()
         if before is None:
             return None
+        trace_threads = getattr(self, "app", None) not in (None, "shell")
+        before_threads = self.thread_cpu() if trace_threads else {}
         time.sleep(idle_seconds)
         after = self.sample()
         if after is None:
             return None
+        after_threads = self.thread_cpu() if trace_threads else {}
         percent = (after["cpu_seconds"] - before["cpu_seconds"]) / idle_seconds * 100
         self.log(f"idle CPU {percent:.1f}% over {idle_seconds:.0f}s")
+        thread_usage = sorted(
+            ((round((cpu - before_threads[tid][1]) / idle_seconds * 100, 2), name)
+             for tid, (name, cpu) in after_threads.items() if tid in before_threads),
+            reverse=True,
+        )
+        self.log(f"idle CPU by thread: {thread_usage[:8]}")
         if percent > threshold_percent:
             return Finding("runaway-cpu", f"{percent:.0f}% CPU over {idle_seconds:.0f}s idle", -1,
                            {"percent": percent})

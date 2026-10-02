@@ -622,17 +622,19 @@ class Run:
         opened_pixels = 0
         opened = baseline
         namespace = "rmac-quick-settings"
-        self.dispatch("quick-settings")
-        layer_open = self.wait_for(
-            lambda: self.has_layer(namespace)
-            and self.has_layer(f"{namespace}-click-catcher"), 10
-        )
-        if not layer_open and self.popover_gone(namespace):
-            self.dispatch("quick-settings")
+        layer_open = False
+        for _ in range(4):
+            if self.popover_gone(namespace):
+                self.dispatch("quick-settings")
             layer_open = self.wait_for(
                 lambda: self.has_layer(namespace)
-                and self.has_layer(f"{namespace}-click-catcher"), 10
+                and self.has_layer(f"{namespace}-click-catcher"), 3
             )
+            if layer_open:
+                time.sleep(0.5)
+                layer_open = self.has_layer(namespace)
+            if layer_open:
+                break
         for _ in range(4 if layer_open else 0):
             time.sleep(0.5)
             opened = self.capture("cc-open")
@@ -669,6 +671,8 @@ class Run:
                 self.dock_context_menu_dismissal()
             elif self.args.only == "notification-center":
                 self.clock_popover_dismissal()
+            elif self.args.only == "combined":
+                self.control_center_and_app_menu_close_on_wallpaper_click()
             else:
                 namespaces = {
                     "quick-settings": "rmac-quick-settings",
@@ -765,7 +769,8 @@ def main() -> int:
                                           "rmac-quick-settings and rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
-                                           "launcher", "app-drawer", "notification-center"))
+                                           "launcher", "app-drawer", "notification-center",
+                                           "combined"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

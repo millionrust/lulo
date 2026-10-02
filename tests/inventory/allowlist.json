@@ -139,6 +139,21 @@
     },
     {
       "app": "Finder",
+      "label": "Books",
+      "reason": "Books is Apple's macOS ebook application and is not available on Lulo."
+    },
+    {
+      "app": "Finder",
+      "label": "ColorSync Utility",
+      "reason": "ColorSync Utility is Apple's macOS colour-profile application and is not available on Lulo."
+    },
+    {
+      "app": "Finder",
+      "label": "Safari",
+      "reason": "Safari is Apple's browser and is not available on Lulo."
+    },
+    {
+      "app": "Finder",
       "label": "AutoFill",
       "reason": "This submenu uses Apple's Contacts, Passwords and payment-card providers."
     },

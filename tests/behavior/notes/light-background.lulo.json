@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "scenario": "notes/light-background",
+  "observations": {
+    "default": {
+      "note_background": {
+        "light": false
+      }
+    },
+    "light": {
+      "note_background": {
+        "light": true
+      }
+    },
+    "restored": {
+      "note_background": {
+        "light": false
+      }
+    }
+  }
+}

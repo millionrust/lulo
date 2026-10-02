@@ -263,7 +263,9 @@ binds {
     Mod+Ctrl+Right repeat=false hotkey-overlay-title="Right" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-right"; }
     Mod+Ctrl+Up repeat=false hotkey-overlay-title="Top" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-top"; }
     Mod+Ctrl+Down repeat=false hotkey-overlay-title="Bottom" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-bottom"; }
-    Mod+Ctrl+R repeat=false hotkey-overlay-title="Return to Previous Size" { spawn "/usr/libexec/rmac/rmac-mission-control" "restore-size"; }
+    // Preview uses Control+Command+R for Rectangle. Keep this shell fallback
+    // on an extra modifier so niri does not steal Preview's app shortcut.
+    Mod+Ctrl+Shift+R repeat=false hotkey-overlay-title="Return to Previous Size" { spawn "/usr/libexec/rmac/rmac-mission-control" "restore-size"; }
     // ⌘M minimises the focused window of any app into the Dock, through the
     // same record, thumbnail and park path as an rmac app's yellow button
     // (docs/decisions/0021-niri-minimize-request.md). keyd leaves M

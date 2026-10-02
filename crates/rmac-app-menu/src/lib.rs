@@ -709,6 +709,12 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ]
             ),
             item!("Table", "notes::InsertTable", "⌥⌘T"),
+            item!(
+                "Show Note with Light Background",
+                "notes::ToggleLightBackground",
+                "",
+                separator
+            ),
             submenu!(
                 "Font",
                 "notes::FontMenu",
@@ -1222,6 +1228,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             // an image.
             item!("Copy", "preview::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
+            item!("Delete", "preview::DeleteSelection", ""),
             item!("Select All", "preview::SelectAll", "⌘A"),
             item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(
@@ -1294,10 +1301,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 "preview::AnnotateMenu",
                 [
                     item!("Highlight Text", "preview::AnnotateHighlight", "⌃⌘H"),
+                    item!("Rectangle", "preview::AnnotateRectangle", "⌃⌘R"),
                     item!("Oval", "preview::AnnotateOval", "⌃⌘O"),
                     item!("Line", "preview::AnnotateLine", "⌃⌘I"),
                     item!("Arrow", "preview::AnnotateArrow", "⌃⌘A"),
                     item!("Text", "preview::AnnotateText", "⌃⌘T", separator),
+                    item!("Signature", "preview::AnnotateSignature", ""),
                 ],
                 separator
             ),
@@ -2729,6 +2738,19 @@ mod tests {
         assert_eq!(shortcut("Next Item").as_deref(), Some("⌥"));
         assert_eq!(shortcut("Zoom All to Fit").as_deref(), Some("⌥⌘9"));
         assert_eq!(shortcut("Show Markup Toolbar").as_deref(), Some("⇧⌘A"));
+        let annotate = menus
+            .iter()
+            .find(|menu| menu.label == "Tools")
+            .and_then(|menu| menu.items.iter().find(|item| item.label == "Annotate"))
+            .unwrap();
+        let rectangle = annotate
+            .children
+            .iter()
+            .find(|item| item.label == "Rectangle")
+            .unwrap();
+        assert_eq!(rectangle.shortcut, "⌃⌘R");
+        assert_eq!(rectangle.action, "preview::AnnotateRectangle");
+        assert_eq!(shortcut("Delete").as_deref(), Some(""));
         assert!(validate_menus(&menus).is_ok());
     }
 

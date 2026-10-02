@@ -548,6 +548,14 @@ impl NotesView {
             cx,
         );
         rmac_ui::set_menu_enabled("notes::DuplicateNote", ready && has_note, cx);
+        rmac_ui::set_menu_enabled("notes::ToggleLightBackground", ready && has_note, cx);
+        rmac_ui::set_menu_checked(
+            "notes::ToggleLightBackground",
+            self.session
+                .selected_note()
+                .is_some_and(|note| self.light_background_notes.contains(&note.id)),
+            cx,
+        );
         let body_editable = ready
             && !self.markdown_preview_visible
             && self

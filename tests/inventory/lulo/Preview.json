@@ -185,6 +185,13 @@
           "children": []
         },
         {
+          "label": "Delete",
+          "action": "preview::DeleteSelection",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Select All",
           "action": "preview::SelectAll",
           "shortcut": "⌘A",
@@ -438,6 +445,13 @@
               "children": []
             },
             {
+              "label": "Rectangle",
+              "action": "preview::AnnotateRectangle",
+              "shortcut": "⌃⌘R",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Oval",
               "action": "preview::AnnotateOval",
               "shortcut": "⌃⌘O",
@@ -463,6 +477,13 @@
               "action": "preview::AnnotateText",
               "shortcut": "⌃⌘T",
               "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Signature",
+              "action": "preview::AnnotateSignature",
+              "shortcut": "",
+              "separator_before": false,
               "children": []
             }
           ]
@@ -600,7 +621,7 @@
             {
               "label": "Return to Previous Size",
               "action": "window::restore-size",
-              "shortcut": "⌃⌘R",
+              "shortcut": "⌃⇧⌘R",
               "separator_before": true,
               "children": []
             }

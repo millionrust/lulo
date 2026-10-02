@@ -492,7 +492,7 @@
             {
               "label": "Return to Previous Size",
               "action": "window::restore-size",
-              "shortcut": "⌃⌘R",
+              "shortcut": "⌃⇧⌘R",
               "separator_before": true,
               "children": []
             }

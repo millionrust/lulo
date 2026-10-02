@@ -213,6 +213,9 @@ impl CalculatorView {
     }
 
     fn display_result(&self, text: &str, value: Option<f64>) -> String {
+        if text.contains('e') {
+            return self.display_grouping(text);
+        }
         value
             .and_then(|value| format_decimal_value(value, self.decimal_places))
             .map(|formatted| self.display_grouping(&formatted))

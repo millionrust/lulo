@@ -34,9 +34,11 @@ pub(crate) struct NotificationCenterService {
     next_token: u64,
     /// The full-screen click catcher that closes the panel the instant a
     /// pointer button goes down anywhere else (`rmac_ui::open_outside_click_catcher_around`),
-    /// open only while `active` is `Some`.
+    /// Open just before the panel maps and removed when the panel closes.
     #[cfg(target_os = "linux")]
     catcher: Option<AnyWindowHandle>,
+    #[cfg(target_os = "linux")]
+    pending_dismiss: Option<u64>,
 }
 
 impl Global for NotificationCenterService {}
@@ -172,6 +174,9 @@ pub(crate) fn clear_active_panel(token: u64, cx: &mut App) {
             .is_some_and(|active| active.token == token)
         {
             service.active = None;
+            if service.pending_dismiss == Some(token) {
+                service.pending_dismiss = None;
+            }
             service.catcher.take()
         } else {
             None
@@ -198,6 +203,45 @@ fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
         service.next_token = service.next_token.wrapping_add(1).max(1);
         service.next_token
     });
+    #[cfg(target_os = "linux")]
+    {
+        let display = cx
+            .displays()
+            .into_iter()
+            .find(|display| {
+                let screen = display.bounds();
+                bounds.origin.x >= screen.origin.x
+                    && bounds.origin.x < screen.origin.x + screen.size.width
+                    && bounds.origin.y >= screen.origin.y
+                    && bounds.origin.y < screen.origin.y + screen.size.height
+            })
+            .or_else(|| cx.primary_display());
+        let catcher = display.and_then(|display| {
+            rmac_ui::open_outside_click_catcher_around(
+                "rmac-notification-center-click-catcher",
+                display,
+                px(TOP_BAR_RESERVED_HEIGHT),
+                Some(bounds),
+                move |cx| {
+                    let active = cx.read_global::<NotificationCenterService, _>(|service, _| {
+                        service
+                            .active
+                            .clone()
+                            .filter(|active| active.token == token)
+                    });
+                    if active.is_some() {
+                        dismiss_active(cx);
+                    } else {
+                        cx.update_global::<NotificationCenterService, _>(|service, _| {
+                            service.pending_dismiss = Some(token);
+                        });
+                    }
+                },
+                cx,
+            )
+        });
+        cx.update_global::<NotificationCenterService, _>(|service, _| service.catcher = catcher);
+    }
     let mut panel = None;
     let handle = cx.open_window(panel_options(bounds), |window, cx| {
         window.set_window_title("Notification Center");
@@ -208,12 +252,15 @@ fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
     });
     if let (Ok(handle), Some(view)) = (handle, panel) {
         #[cfg(target_os = "linux")]
-        let display = handle
-            .update(cx, |_, window, cx| window.display(cx))
-            .ok()
-            .flatten()
-            .or_else(|| cx.primary_display())
-            .or_else(|| cx.displays().into_iter().next());
+        let cancel = cx.update_global::<NotificationCenterService, _>(|service, _| {
+            service.active = Some(ActivePanel {
+                token,
+                view,
+                window: handle.into(),
+            });
+            service.pending_dismiss.take() == Some(token)
+        });
+        #[cfg(not(target_os = "linux"))]
         cx.update_global::<NotificationCenterService, _>(|service, _| {
             service.active = Some(ActivePanel {
                 token,
@@ -222,24 +269,22 @@ fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
             });
         });
         #[cfg(target_os = "linux")]
-        {
-            let catcher = display.and_then(|display| {
-                rmac_ui::open_outside_click_catcher_around(
-                    "rmac-notification-center-click-catcher",
-                    display,
-                    px(TOP_BAR_RESERVED_HEIGHT),
-                    Some(bounds),
-                    |cx| {
-                        dismiss_active(cx);
-                    },
-                    cx,
-                )
-            });
-            cx.update_global::<NotificationCenterService, _>(|service, _| {
-                service.catcher = catcher;
-            });
+        if cancel {
+            dismiss_active(cx);
+            return;
         }
         cx.activate(true);
+    } else {
+        #[cfg(target_os = "linux")]
+        {
+            let catcher = cx.update_global::<NotificationCenterService, _>(|service, _| {
+                service.pending_dismiss = None;
+                service.catcher.take()
+            });
+            if let Some(catcher) = catcher {
+                let _ = catcher.update(cx, |_, window, _| window.remove_window());
+            }
+        }
     }
 }
 
@@ -320,6 +365,8 @@ fn main() {
                 next_token: 0,
                 #[cfg(target_os = "linux")]
                 catcher: None,
+                #[cfg(target_os = "linux")]
+                pending_dismiss: None,
             });
 
             #[cfg(target_os = "linux")]

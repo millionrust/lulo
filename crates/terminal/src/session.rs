@@ -819,7 +819,12 @@ impl Session {
     }
 
     pub(super) fn has_bookmarks(&self) -> bool {
-        self.shell_state.has_bookmarks()
+        let Ok(term) = self.term.lock() else {
+            return false;
+        };
+        !term.mode().contains(TermMode::ALT_SCREEN)
+            && term.grid().history_size() < self.scrollback_limit.load(Ordering::Acquire)
+            && self.shell_state.has_bookmarks()
     }
 
     pub(super) fn current_line_is_marked(&self) -> bool {
@@ -835,6 +840,9 @@ impl Session {
         direction: PromptDirection,
     ) -> Result<bool, SessionWriteError> {
         let mut term = self.term.lock().map_err(|_| SessionWriteError::State)?;
+        if term.mode().contains(TermMode::ALT_SCREEN) {
+            return Ok(false);
+        }
         let grid = term.grid();
         let Some(offset) = self.shell_state.bookmark_offset(
             direction,

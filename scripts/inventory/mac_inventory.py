@@ -225,6 +225,10 @@ def parse_menu_dump(raw: str) -> list[dict]:
         fields = line.split("\t")
         fields += [""] * (8 - len(fields))
         depth_s, title, cmd_char, cmd_vk, cmd_mods, enabled, mark, omit_reason = fields[:8]
+        if not depth_s.isdigit():
+            # A continuation of the previous line: a menu title containing a
+            # newline (Terminal's Shell menu lists profile and window names).
+            continue
         depth = int(depth_s)
         node = {
             "label": title if title else None,  # None marks a separator
@@ -281,7 +285,7 @@ end tell
 
 
 def dump_menu_bar(
-    process: str, per_menu_timeout: int = 30, overall_budget: float = 90.0
+    process: str, per_menu_timeout: int = 60, overall_budget: float = 240.0
 ) -> tuple[list[dict], dict[str, str]]:
     """Reads the menu bar one top-level menu at a time — its own osascript
     call, its own timeout — instead of one giant call that walks the whole
@@ -309,7 +313,16 @@ def dump_menu_bar(
     errors: dict[str, str] = {}
     deadline = time.monotonic() + overall_budget
     for index, title in enumerate(titles, start=1):
-        label = title or f"menu {index}"
+        if not title:
+            # A trailing untitled entry that System Events lists but cannot
+            # index (-1719); it is not an app menu.
+            continue
+        label = title
+        if title in DYNAMIC_PERSONAL_SUBMENUS:
+            # The system Apple menu holds "Log Out <full name>…": never
+            # read it, matching the single-call path.
+            menus.append({"label": title, "items": []})
+            continue
         if time.monotonic() >= deadline:
             errors[label] = f"skipped: overall menu-bar budget of {overall_budget:.0f}s exhausted"
             continue

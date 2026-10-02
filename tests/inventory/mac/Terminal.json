@@ -1,7 +1,1538 @@
 {
   "app": "Terminal",
   "source": "mac-accessibility-tree",
-  "menu_bar_error": "osascript timed out after 90s",
+  "menu_bar": [
+    {
+      "label": "Apple",
+      "items": []
+    },
+    {
+      "label": "Terminal",
+      "items": [
+        {
+          "label": "About Terminal",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Settings…",
+          "shortcut": "⌘,",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Secure Keyboard Entry",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [],
+          "children_omitted": "dynamic/personal submenu, not read"
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Terminal",
+          "shortcut": "⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "shortcut": "⌥⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit Terminal",
+          "shortcut": "⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "shortcut": "⌥⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Shell",
+      "items": [
+        {
+          "label": "New Window",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "New Window with Profile - Basic",
+              "shortcut": "⌘N",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "New Window with Same Command",
+              "shortcut": "⌃⌘N",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Basic",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Clear Dark",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Clear Light",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Grass",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Homebrew",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Man Page",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Novel",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Ocean",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Pro",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Red Sands",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Silver Aerogel",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Solid Colors",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "New Tab",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "New Tab with Profile – Basic",
+              "shortcut": "⌘T",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "New Tab with Same Command",
+              "shortcut": "⌃⌘T",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Basic",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Clear Dark",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Clear Light",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Grass",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Homebrew",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Man Page",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Novel",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Ocean",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Pro",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Red Sands",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Silver Aerogel",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Solid Colors",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "New Command…",
+          "shortcut": "⇧⌘N",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "New Remote Connection…",
+          "shortcut": "⇧⌘K",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Open…",
+          "shortcut": "⌘O",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close Window",
+          "shortcut": "⌘W",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "shortcut": "⌥⌘W",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Use Settings as Default",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Export Settings…",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Export Text As…",
+          "shortcut": "⌘S",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Export Selected Text As…",
+          "shortcut": "⇧⌘S",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Inspector",
+          "shortcut": "⌘I",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Edit Title",
+          "shortcut": "⇧⌘I",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Edit Background Colour",
+          "shortcut": "⌥⌘I",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Reset",
+          "shortcut": "⌥⌘R",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hard Reset",
+          "shortcut": "⌃⌥⌘R",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Print Selection…",
+          "shortcut": "⌥⌘P",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Print…",
+          "shortcut": "⌘P",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "shortcut": "⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "shortcut": "⇧⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "shortcut": "⌘X",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "shortcut": "⌘C",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy Special",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Copy Without Background Colour",
+              "shortcut": "⌃⇧⌘C",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Copy Plain Text",
+              "shortcut": "⌥⇧⌘C",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Style for “Copy” Command",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Terminal’s Settings (Default)",
+              "shortcut": "",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            },
+            {
+              "label": "Plain Text",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Basic",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Clear Dark",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Clear Light",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Grass",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Homebrew",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Man Page",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Novel",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Ocean",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Pro",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Red Sands",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Silver Aerogel",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Solid Colors",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Paste",
+          "shortcut": "⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste Escaped Text",
+          "shortcut": "⌃⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste Selection",
+          "shortcut": "⇧⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste Escaped Selection",
+          "shortcut": "⌃⇧⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "shortcut": "⌘A",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Select Between Marks",
+          "shortcut": "⇧⌘A",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Marks",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Automatically Mark Prompt Lines",
+              "shortcut": "",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Mark Line and Send Return",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Send Return Without Marking",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Mark",
+              "shortcut": "⌘U",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Mark as Bookmark",
+              "shortcut": "⌥⌘U",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Unmark",
+              "shortcut": "⇧⌘U",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Bookmarks",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "No Bookmarks",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Navigate",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Jump to Previous Mark",
+              "shortcut": "⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Select to Previous Mark",
+              "shortcut": "⇧⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Next Mark",
+              "shortcut": "⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Select to Next Mark",
+              "shortcut": "⇧⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Previous Bookmark",
+              "shortcut": "⌥⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Select to Previous Bookmark",
+              "shortcut": "⌥⇧⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Next Bookmark",
+              "shortcut": "⌥⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Select to Next Bookmark",
+              "shortcut": "⌥⇧⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Clear to Previous Mark",
+          "shortcut": "⌘L",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Clear to Previous Bookmark",
+          "shortcut": "⌥⌘L",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Clear to Start",
+          "shortcut": "⌘K",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Clear Scrollback",
+          "shortcut": "⌥⌘K",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Clear Screen",
+          "shortcut": "⌃⌘L",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Fill Screen",
+          "shortcut": "⌃⌥⌘L",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Find",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Find…",
+              "shortcut": "⌘F",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Find Next",
+              "shortcut": "⌘G",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Find Previous",
+              "shortcut": "⇧⌘G",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Select All",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Select All in Selection",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Hide Find Bar",
+              "shortcut": "⇧⌘F",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Use Selection for Find",
+              "shortcut": "⌘E",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Selection",
+              "shortcut": "⌘J",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Colours",
+          "shortcut": "⇧⌘C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Use Option as Meta Key",
+          "shortcut": "⌥⌘O",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Num Lock",
+          "shortcut": "⌘⌧",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AutoFill",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Contact…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Passwords…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Credit Card…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Start Dictation…",
+          "shortcut": "🎤",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Emoji & Symbols",
+          "shortcut": "🌐",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Show All Tabs",
+          "shortcut": "⇧⌘\\",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Tab Bar",
+          "shortcut": "⇧⌘T",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Marks",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Alternative Screen",
+          "shortcut": "⇧⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Alternative Screen",
+          "shortcut": "⇧⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Allow Mouse Reporting",
+          "shortcut": "⌘R",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Split Pane",
+          "shortcut": "⌘D",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close Split Pane",
+          "shortcut": "⇧⌘D",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Default Font Size",
+          "shortcut": "⌘0",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bigger",
+          "shortcut": "⌘+",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Smaller",
+          "shortcut": "⌘−",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Scroll to Top",
+          "shortcut": "⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Scroll to Bottom",
+          "shortcut": "⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Page Up",
+          "shortcut": "⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Page Down",
+          "shortcut": "⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Line Up",
+          "shortcut": "⌥⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Line Down",
+          "shortcut": "⌥⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "shortcut": "F",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "shortcut": "⌘M",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "shortcut": "⌥⌘M",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "shortcut": "⌃F",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "shortcut": "⌃C",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [],
+          "children_omitted": "dynamic (24 items), not read"
+        },
+        {
+          "label": "Full-Screen Tile",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": [
+            {
+              "label": "Left of Screen",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right of Screen",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Remove Window from Set",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Cycle Through Windows",
+          "shortcut": "⌘`",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Open Window Group",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "No Window Groups",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Save Windows as Group…",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Previous Tab",
+          "shortcut": "",
+          "enabled": false,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "Show Next Tab",
+          "shortcut": "",
+          "enabled": false,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "Move Tab to New Window",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Merge All Windows",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Return to Default Size",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Return All to Default Size",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Terminal Help",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Open man Page for Selection",
+          "shortcut": "⌃⌘?",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Search man Page Index for Selection",
+          "shortcut": "⌃⌥⌘/",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        }
+      ]
+    }
+  ],
   "toolbar": {
     "present": false,
     "items": []
@@ -526,6 +2057,11 @@
       },
       {
         "depth": 1,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 2,
         "role": "AXGroup",
         "label": "group"
       },

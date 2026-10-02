@@ -426,6 +426,14 @@ fn indexed_color(index: u8) -> (u8, u8, u8) {
     }
 }
 
+fn split(hex: u32) -> (u8, u8, u8) {
+    (
+        ((hex >> 16) & 0xff) as u8,
+        ((hex >> 8) & 0xff) as u8,
+        (hex & 0xff) as u8,
+    )
+}
+
 #[cfg(test)]
 mod colour_preference_tests {
     use super::*;
@@ -441,12 +449,4 @@ mod colour_preference_tests {
         let rgb = Color::Spec(vte::ansi::Rgb { r: 1, g: 2, b: 3 });
         assert_eq!(bright_variant(rgb), rgb);
     }
-}
-
-fn split(hex: u32) -> (u8, u8, u8) {
-    (
-        ((hex >> 16) & 0xff) as u8,
-        ((hex >> 8) & 0xff) as u8,
-        (hex & 0xff) as u8,
-    )
 }

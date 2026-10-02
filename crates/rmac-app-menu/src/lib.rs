@@ -931,6 +931,28 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
                 "calculator::ToggleThousandsSeparator",
                 ""
             ),
+            submenu!(
+                "Decimal Places",
+                "calculator::DecimalPlacesMenu",
+                [
+                    item!("0", "calculator::DecimalPlaces0", ""),
+                    item!("1", "calculator::DecimalPlaces1", ""),
+                    item!("2", "calculator::DecimalPlaces2", ""),
+                    item!("3", "calculator::DecimalPlaces3", ""),
+                    item!("4", "calculator::DecimalPlaces4", ""),
+                    item!("5", "calculator::DecimalPlaces5", ""),
+                    item!("6", "calculator::DecimalPlaces6", ""),
+                    item!("7", "calculator::DecimalPlaces7", ""),
+                    item!("8", "calculator::DecimalPlaces8", ""),
+                    item!("9", "calculator::DecimalPlaces9", ""),
+                    item!("10", "calculator::DecimalPlaces10", ""),
+                    item!("11", "calculator::DecimalPlaces11", ""),
+                    item!("12", "calculator::DecimalPlaces12", ""),
+                    item!("13", "calculator::DecimalPlaces13", ""),
+                    item!("14", "calculator::DecimalPlaces14", ""),
+                    item!("15", "calculator::DecimalPlaces15", ""),
+                ]
+            ),
             item!("Show History", "calculator::ShowHistory", "⌃⌘S", separator),
         ],
     },

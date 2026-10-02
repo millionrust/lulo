@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "calculator/decimal-places",
+  "observations": {
+    "default": {"display": {"value": "0.33333333"}},
+    "two_places": {"display": {"value": "0.33"}},
+    "fifteen_places": {"display": {"value": "0.333333333333333"}},
+    "full_value_retained": {"display": {"value": "1"}}
+  }
+}

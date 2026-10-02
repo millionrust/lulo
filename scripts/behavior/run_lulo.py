@@ -1103,6 +1103,22 @@ class LuloRun:
                 self.nested.input.click(OUTPUT_W // 4, OUTPUT_H // 2, OUTPUT_W, OUTPUT_H)
             elif "menu" in step:
                 raise Unsupported("menu-bar steps need the top bar, which the nested runner does not start yet")
+            elif "menu_action" in step:
+                # Lulo-only scenarios can activate the same published D-Bus
+                # command the menu bar sends, without opening a live menu.
+                bus = "org.rmac." + {
+                    "calculator": "Calculator",
+                    "clock": "Clock",
+                    "weather": "Weather",
+                }[self.app] + ".Menu"
+                call = subprocess.run(
+                    ["gdbus", "call", "--session", "--dest", bus,
+                     "--object-path", "/org/rmac/AppMenu1", "--method",
+                     "org.rmac.AppMenu2.Activate", step["menu_action"]],
+                    env=self.env, capture_output=True, text=True, timeout=5,
+                )
+                if call.returncode:
+                    raise StepFailed(f"menu activation failed: {call.stderr.strip()}")
             elif "click_key" in step:
                 # The Mac side clicks by measured grid position (real macOS
                 # Calculator exposes no usable accessible name for these

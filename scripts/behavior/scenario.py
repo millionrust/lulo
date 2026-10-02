@@ -29,6 +29,7 @@ STEP_KINDS = {
     "wait",
     "observe",
     "menu",
+    "menu_action",
     "context",
     "select",
     "click_key",

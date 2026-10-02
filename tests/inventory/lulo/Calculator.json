@@ -128,6 +128,126 @@
           "children": []
         },
         {
+          "label": "Decimal Places",
+          "action": "calculator::DecimalPlacesMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "0",
+              "action": "calculator::DecimalPlaces0",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "1",
+              "action": "calculator::DecimalPlaces1",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "2",
+              "action": "calculator::DecimalPlaces2",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "3",
+              "action": "calculator::DecimalPlaces3",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "4",
+              "action": "calculator::DecimalPlaces4",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "5",
+              "action": "calculator::DecimalPlaces5",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "6",
+              "action": "calculator::DecimalPlaces6",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "7",
+              "action": "calculator::DecimalPlaces7",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "8",
+              "action": "calculator::DecimalPlaces8",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "9",
+              "action": "calculator::DecimalPlaces9",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "10",
+              "action": "calculator::DecimalPlaces10",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "11",
+              "action": "calculator::DecimalPlaces11",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "12",
+              "action": "calculator::DecimalPlaces12",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "13",
+              "action": "calculator::DecimalPlaces13",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "14",
+              "action": "calculator::DecimalPlaces14",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "15",
+              "action": "calculator::DecimalPlaces15",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Show History",
           "action": "calculator::ShowHistory",
           "shortcut": "⌃⌘S",

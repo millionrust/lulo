@@ -1634,7 +1634,8 @@ impl SliderBulge {
     /// should request another frame while this is true, and stop once it
     /// is false — the transition is short and then costs nothing.
     pub fn is_animating(&self, now_ms: u64) -> bool {
-        now_ms.saturating_sub(self.changed_ms) < SLIDER_BULGE_MS
+        (self.from - self.target).abs() > f32::EPSILON
+            && now_ms.saturating_sub(self.changed_ms) < SLIDER_BULGE_MS
     }
 }
 

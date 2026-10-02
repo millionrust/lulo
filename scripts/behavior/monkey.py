@@ -252,12 +252,14 @@ def random_text(rng: random.Random, max_len: int = 24) -> str:
 
 
 def sanitize_for_typing(text: str) -> str:
-    """Drop characters wlinput's US keymap cannot type rather than crash the
-    monkey loop on an unmappable glyph."""
+    """Drop characters wlinput.text_to_strokes cannot map (mirrors its own
+    acceptance test exactly -- notably, plain `char.isascii()` is NOT a
+    substitute: tab and other C0 controls are ASCII but unmapped, and
+    text_to_strokes raises InjectorError on them)."""
 
     out = []
     for char in text:
-        if char == "\n" or char.isascii() or char in wlinput.SHIFTED or char in wlinput.KEYCODES:
+        if char == "\n" or (char.isascii() and char.isalpha()) or char in wlinput.SHIFTED or char in wlinput.KEYCODES:
             out.append(char)
     return "".join(out)
 
@@ -497,7 +499,7 @@ class Monkey:
         for frame in frames:
             if run_lulo.has_state(frame, pyatspi.STATE_ACTIVE):
                 return frame
-        return frames[0] if len(frames) == 1 else (frames[0] if frames else None)
+        return frames[0] if frames else None
 
     # -- geometry -------------------------------------------------------------
 
@@ -527,10 +529,10 @@ class Monkey:
         frame = self.active_frame()
         if frame is None:
             return None
-        nodes = [n for n in run_lulo.descendants(frame, limit=2000) if n is not frame]
+        nodes = [n for n in run_lulo.descendants(frame, limit=600) if n is not frame]
         rng.shuffle(nodes)
         wx, wy, _w, _h = self.app_rect()
-        for node in nodes[:200]:
+        for node in nodes[:60]:
             box = run_lulo.extents(node)
             if not box or box[2] < 4 or box[3] < 4:
                 continue
@@ -794,12 +796,16 @@ class Monkey:
             return None
         return Finding("journal-warning", result.stdout.strip()[-500:], -1, {})
 
-    def run_checks(self, since_epoch: float) -> Optional[Finding]:
+    def run_checks(self) -> Optional[Finding]:
+        """The cheap checks, run after every single action. check_journal is
+        not here: it spawns journalctl and belongs in the periodic idle
+        check alongside the CPU/memory samples, not the hot per-action loop."""
+
         for check in (self.check_crashed, self.check_panic_in_log, self.check_stuck_window, self.check_error_dialog):
             finding = check()
             if finding:
                 return finding
-        return self.check_journal(since_epoch)
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -809,6 +815,7 @@ class Monkey:
 
 def reproduces(monkey: Monkey, actions: list[ActionRecord], count: int, expect_kind: str,
                since_epoch: float) -> bool:
+    del since_epoch  # journal findings are never shrunk (see _handle_finding); kept for a stable signature
     monkey.relaunch()
     try:
         for action in actions[:count]:
@@ -817,10 +824,10 @@ def reproduces(monkey: Monkey, actions: list[ActionRecord], count: int, expect_k
             except Exception:  # noqa: BLE001
                 pass
             time.sleep(0.05)
-            finding = monkey.run_checks(since_epoch)
+            finding = monkey.check_hang() or monkey.run_checks()
             if finding and finding.kind == expect_kind:
                 return True
-        finding = monkey.run_checks(since_epoch)
+        finding = monkey.check_hang() or monkey.run_checks()
         return bool(finding and finding.kind == expect_kind)
     except Exception:  # noqa: BLE001
         return False
@@ -929,7 +936,8 @@ def monkey_session(run: run_window_move.Run, app: str, app_dirs: list[Path], see
                 idle_finding = monkey.check_idle_cpu(5.0)
                 next_idle_check = time.monotonic() + 15
                 growth_finding = monkey.check_memory_growth()
-                for finding in (idle_finding, growth_finding):
+                journal_finding = monkey.check_journal(since_epoch)
+                for finding in (idle_finding, growth_finding, journal_finding):
                     if finding:
                         finding.action_count = len(actions)
                         log(f"FINDING {finding.kind}: {finding.detail}")
@@ -947,11 +955,9 @@ def monkey_session(run: run_window_move.Run, app: str, app_dirs: list[Path], see
             except Exception as error:  # noqa: BLE001
                 log(f"action {action.index} ({action.kind}) raised {error!r} (not itself a finding)")
             actions.append(action)
-            if len(actions) > 20000:
-                actions = actions[-20000:]  # bound memory of the log itself
             time.sleep(rng.uniform(0.08, 0.3))
             hang = monkey.check_hang()
-            finding = hang or monkey.run_checks(since_epoch)
+            finding = hang or monkey.run_checks()
             if finding:
                 finding.action_count = len(actions)
                 log(f"FINDING {finding.kind}: {finding.detail}")

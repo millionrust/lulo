@@ -18,6 +18,9 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+sys.path.insert(0, str(Path(__file__).parent / "behavior"))
+import wlinput  # noqa: E402
+
 SCRIPT = Path(__file__).parent / "behavior" / "monkey.py"
 SPEC = importlib.util.spec_from_file_location("monkey", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -108,6 +111,24 @@ class RandomTextTests(unittest.TestCase):
         self.assertNotIn("\U0001F389", text)
         self.assertIn("hi", text)
         self.assertIn("bye", text)
+
+    def test_sanitize_drops_tab_even_though_it_is_ascii(self):
+        # A regression check: plain `char.isascii()` is true for tab and
+        # other C0 controls, but wlinput's text_to_strokes has no keycode
+        # for a literal "\t" and raises -- sanitize must filter it too.
+        text = monkey.sanitize_for_typing("a\tb")
+        self.assertNotIn("\t", text)
+        self.assertEqual(text, "ab")
+
+    def test_every_character_sanitize_keeps_is_actually_typeable(self):
+        # Every character that survives sanitize_for_typing must be one
+        # wlinput.text_to_strokes accepts -- the whole point of sanitizing.
+        sample = "".join(chr(c) for c in range(0, 1200)) + monkey._UNICODE_BITS + "\n"
+        kept = monkey.sanitize_for_typing(sample)
+        for char in kept:
+            if char == "\n":
+                continue
+            wlinput.text_to_strokes(char)  # must not raise
 
 
 class ShrinkBisectionTests(unittest.TestCase):

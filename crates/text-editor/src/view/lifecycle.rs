@@ -136,6 +136,7 @@ impl EditorView {
             ),
             KeyBinding::new("cmd-shift-w", ToggleWrapToPage, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, Some(CTX)),
+            KeyBinding::new("alt-cmd-w", CloseAll, Some(CTX)),
         ]);
         #[cfg(target_os = "linux")]
         cx.bind_keys([KeyBinding::new(

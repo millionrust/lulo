@@ -333,6 +333,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 [item!("Clear Menu", "text_editor::ClearRecentMenu", "")]
             ),
             item!("Close", "text_editor::CloseWindow", "⌘W", separator),
+            item!("Close All", "text_editor::CloseAll", "⌥⌘W"),
             item!("Save…", "text_editor::SaveFile", "⌘S", separator),
             item!("Duplicate", "text_editor::DuplicateDocument", "⇧⌘S"),
             item!("Save As…", "text_editor::SaveFileAs", "⌥⇧⌘S"),

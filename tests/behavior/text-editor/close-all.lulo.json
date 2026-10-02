@@ -1,0 +1,13 @@
+{
+  "title": "Close All reviews unsaved Text Editor documents",
+  "app": "text-editor",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"type": "Unsaved document"},
+    {"menu_action": "text_editor::CloseAll", "settle": 1.2},
+    {"observe": "asked", "facts": ["dialog", "windows"]},
+    {"key": "escape"},
+    {"observe": "cancelled", "facts": ["dialog", "windows"]}
+  ]
+}

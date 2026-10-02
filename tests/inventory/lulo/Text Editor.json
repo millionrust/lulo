@@ -96,6 +96,13 @@
           "children": []
         },
         {
+          "label": "Close All",
+          "action": "text_editor::CloseAll",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Save…",
           "action": "text_editor::SaveFile",
           "shortcut": "⌘S",

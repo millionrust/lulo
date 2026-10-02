@@ -10,7 +10,7 @@ mod detail;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, rgba, size, svg, AccessibleAction, AnyElement, Context, Div, FontWeight, Hsla,
+    accesskit, div, px, rgba, size, svg, AccessibleAction, AnyElement, Context, Div, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent, MouseUpEvent,
     ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
     Toggled, Window,

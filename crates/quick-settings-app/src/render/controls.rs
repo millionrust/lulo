@@ -56,6 +56,7 @@ impl QuickSettingsView {
             rmac_ui::slider_bulge_lerp(TRACK_HEIGHT, TRACK_HEIGHT_BULGED, self.slider_bulge(kind));
         let increment_view = cx.entity().downgrade();
         let decrement_view = cx.entity().downgrade();
+        let set_value_view = cx.entity().downgrade();
         let step = 5;
         let hit = div()
             .id(id)
@@ -77,6 +78,12 @@ impl QuickSettingsView {
                         let _ = decrement_view.update(cx, |this, cx| {
                             this.slide(kind, value.saturating_sub(step), cx)
                         });
+                    })
+                    .on_a11y_action(AccessibleAction::SetValue, move |data, _, cx| {
+                        if let Some(accesskit::ActionData::NumericValue(requested)) = data {
+                            let value = requested.round().clamp(0.0, 100.0) as u8;
+                            let _ = set_value_view.update(cx, |this, cx| this.slide(kind, value, cx));
+                        }
                     })
             })
             .absolute()

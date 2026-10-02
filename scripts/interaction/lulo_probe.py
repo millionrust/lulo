@@ -48,6 +48,7 @@ import surfaces as sf  # noqa: E402
 import probes as pr  # noqa: E402
 import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
+import atspi_assert_support as support  # noqa: E402
 
 from run_lulo import (  # noqa: E402
     StepFailed, Unsupported, atspi, descendants, extents, has_state, name, pump, role,
@@ -476,6 +477,12 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
                 except AssertionError as error:
                     raise StepFailed(f"Control Centre accessibility assertion failed: {error}") from error
             print(f"Control Centre: {count} accessible nodes", flush=True)
+            def painted_panel():
+                shot = capture_full(shell.env, shell.nested.work / "panel-ready.png")
+                low, high = shot.crop((OUTPUT_W - 320, 28, OUTPUT_W - 2, 380)).convert("L").getextrema()
+                return high - low > 40
+            if not shell._wait_for(painted_panel, 8):
+                raise StepFailed("Quick Settings exposed controls but did not paint its panel")
         opened_once = True
 
     def close_safety_net() -> None:
@@ -495,7 +502,10 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
             target = shell._wait_for(
                 lambda: find_showing(current_frames(), control["lulo_name"], {"slider"}), 8)
             if target is None:
-                out[f"hover:{label}"] = {"changed": None}
+                out[f"hover:{label}"] = {"changed": None, "reason": "slider not present"}
+                continue
+            if "focusable" not in support.states(target):
+                out[f"hover:{label}"] = {"changed": None, "reason": "slider unavailable"}
                 continue
             # SCREEN_COORDS normally locate the layer surface on niri's
             # output. Some AT-SPI adapters return window-relative coordinates
@@ -511,7 +521,7 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
                 box = ((OUTPUT_W - 316 - 2 + local[0], 28 + local[1], local[2], local[3])
                        if local else None)
             if box is None or box[2] <= 0 or box[3] <= 0:
-                out[f"hover:{label}"] = {"changed": None}
+                out[f"hover:{label}"] = {"changed": None, "reason": "slider bounds unavailable"}
                 continue
             shell.move(OUTPUT_W // 2, OUTPUT_H // 2)
             time.sleep(0.3)
@@ -520,6 +530,8 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
                       max(0, box[1] + origin_y - 14), box[2] + 28, box[3] + 28)
             rest = capture_full(shell.env, shell.nested.work / f"hover-rest-{label}.png")
             cx, cy = box[0] + box[2] / 2, box[1] + box[3] / 2
+            shell.move(cx - 20, cy)
+            time.sleep(0.1)
             shell.move(cx, cy)
             time.sleep(0.5)
             hovered = capture_full(shell.env, shell.nested.work / f"hover-on-{label}.png")

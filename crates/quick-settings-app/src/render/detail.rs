@@ -293,6 +293,7 @@ impl QuickSettingsView {
                     .aria_min_numeric_value(0.0)
                     .aria_max_numeric_value(100.0)
                     .when(enabled, |hit| {
+                        let set_value_view = cx.entity().downgrade();
                         hit.focusable()
                             .tab_stop(true)
                             .on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
@@ -312,6 +313,14 @@ impl QuickSettingsView {
                                         cx,
                                     )
                                 });
+                            })
+                            .on_a11y_action(AccessibleAction::SetValue, move |data, _, cx| {
+                                if let Some(accesskit::ActionData::NumericValue(requested)) = data {
+                                    let value = requested.round().clamp(0.0, 100.0) as u8;
+                                    let _ = set_value_view.update(cx, |this, cx| {
+                                        this.slide(SliderKind::DetailVolume, value, cx)
+                                    });
+                                }
                             })
                     })
                     .absolute()

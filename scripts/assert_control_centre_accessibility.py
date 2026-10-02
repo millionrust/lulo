@@ -41,15 +41,12 @@ def assert_tree(app) -> int:
         assert any(support.name(node) == label for node in sliders), f"{label} slider is missing"
     for slider in sliders:
         assert support.name(slider), "unnamed slider"
-        actions = support.actions(slider)
-        assert ("increment" in actions) == ("decrement" in actions), (
-            f"{support.name(slider)} exposes only one range action: {actions}"
-        )
         value = slider.queryValue()
         assert value.minimumValue == SCENARIO["slider_minimum"] and value.maximumValue == SCENARIO["slider_maximum"], (
             f"{support.name(slider)} has wrong bounds"
         )
         assert value.minimumValue <= value.currentValue <= value.maximumValue, f"{support.name(slider)} has wrong value"
+        assert value.minimumIncrement == 5, f"{support.name(slider)} has no increment/decrement step"
     for label in SCENARIO["required_toggles"]:
         matches = [node for node in nodes if support.name(node) == label]
         assert matches, f"{label} toggle is missing"

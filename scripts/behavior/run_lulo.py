@@ -23,6 +23,7 @@ Isolation (docs/behavior-suite.md):
 from __future__ import annotations
 
 import argparse
+import base64
 import errno
 import json
 import os
@@ -592,6 +593,18 @@ class LuloRun:
             target = Path(self.env["XDG_CONFIG_HOME"]) / entry
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content or "")
+        clipboard_png = self.scenario.get("setup", {}).get("clipboard_png_base64")
+        if clipboard_png:
+            try:
+                subprocess.run(
+                    ["wl-copy", "--type", "image/png"],
+                    input=base64.b64decode(clipboard_png, validate=True),
+                    env=self.env,
+                    check=True,
+                    timeout=5,
+                )
+            except (ValueError, subprocess.SubprocessError) as error:
+                raise StepFailed(f"could not seed the private image clipboard: {error}") from error
         if self.app == "desktop":
             self.before = {p.name + ("/" if p.is_dir() else "") for p in self.files_root.iterdir()}
 

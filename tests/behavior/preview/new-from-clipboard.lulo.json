@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "scenario": "preview/new-from-clipboard",
+  "observations": {
+    "new_image": {
+      "windows": {
+        "count": 2
+      }
+    }
+  }
+}

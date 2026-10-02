@@ -514,10 +514,16 @@ class Run:
         for method in ("outside click", "inside-band click", "Escape"):
             self.close_everything()
             self.dispatch(shortcut)
-            opened = self.wait_for(lambda: self.has_layer(namespace), 10)
+            opened = self.wait_for(
+                lambda: self.has_layer(namespace)
+                and self.has_layer(f"{namespace}-click-catcher"), 10
+            )
             self.check(f"{shortcut}: opens for {method}", opened)
             if not opened:
                 continue
+            # Both layer surfaces can be listed before the catcher's first
+            # input-region commit. Let that frame present before input.
+            time.sleep(0.5)
             if method == "Escape":
                 self.keys.key("escape")
             else:
@@ -537,11 +543,13 @@ class Run:
                 lambda name: name.startswith("Date and time:")
             ), 5)
             opened = clock is not None and self.click_node(clock) and self.wait_for(
-                lambda: self.has_layer(namespace), 10
+                lambda: self.has_layer(namespace)
+                and self.has_layer(f"{namespace}-click-catcher"), 10
             )
             self.check(f"clock/date popover: opens for {method}", opened)
             if not opened:
                 continue
+            time.sleep(0.5)
             if method == "Escape":
                 self.keys.key("escape")
             else:

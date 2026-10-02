@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "text-editor/insert-breaks",
+  "platform": "Lulo local contract",
+  "observations": {
+    "inserted": {
+      "focus": {"value": "A\u2028B\nC\fD"}
+    }
+  }
+}

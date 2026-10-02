@@ -417,6 +417,9 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Edit",
         items: &[
+            item!("Undo", "input::Undo", "⌘Z"),
+            item!("Redo", "input::Redo", "⇧⌘Z"),
+            item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "terminal::Copy", "⌘C"),
             submenu!(
                 "Copy Special",

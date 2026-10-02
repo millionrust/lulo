@@ -2501,7 +2501,7 @@ mod linux_wayland {
                         let focus = cx.focus_handle();
                         focus.focus(window, cx);
                         cx.new(|cx| {
-                            cx.observe_window_activation(window, |this, window, cx| {
+                            cx.observe_window_activation(window, |this: &mut DockDismissKeyboard, window, cx| {
                                 if window.is_window_active() {
                                     this.was_active = true;
                                 } else if this.was_active {

@@ -22,6 +22,23 @@ gpui::actions!(
         ShowScientific,
         ShowHistory,
         ToggleThousandsSeparator,
+        DecimalPlaces0,
+        DecimalPlaces1,
+        DecimalPlaces2,
+        DecimalPlaces3,
+        DecimalPlaces4,
+        DecimalPlaces5,
+        DecimalPlaces6,
+        DecimalPlaces7,
+        DecimalPlaces8,
+        DecimalPlaces9,
+        DecimalPlaces10,
+        DecimalPlaces11,
+        DecimalPlaces12,
+        DecimalPlaces13,
+        DecimalPlaces14,
+        DecimalPlaces15,
+        EnterFullScreen,
         CloseWindow
     ]
 );
@@ -78,6 +95,10 @@ fn main() {
             rmac_ui::install_app_menu(CALCULATOR, cx);
             // Basic is the only mode, so View ▸ Basic is always the ticked one.
             rmac_ui::set_menu_checked("calculator::ShowBasic", true, cx);
+            rmac_ui::set_menu_checked("calculator::DecimalPlaces8", true, cx);
+            // Calculator's fixed Basic and Scientific surfaces cannot enter
+            // full screen on the Mac; the View row is present but greyed.
+            rmac_ui::set_menu_enabled("calculator::EnterFullScreen", false, cx);
 
             // Calculator is fixed-size like on macOS: keep a restored position
             // but never a restored size.

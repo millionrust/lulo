@@ -991,6 +991,32 @@ class LuloRun:
                     return {"value": str(value)}
         return {"value": None}
 
+    def fact_clock_timers(self) -> dict[str, Any]:
+        path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/clock.json"
+        if not path.exists():
+            return {"running_count": 0, "recent_durations": []}
+        state = json.loads(path.read_text())
+        return {
+            "running_count": len(state.get("timers", [])),
+            "recent_durations": state.get("recent_timer_durations", []),
+        }
+
+    def fact_clock_stopwatch(self) -> dict[str, Any]:
+        path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/clock.json"
+        state = json.loads(path.read_text()) if path.exists() else {}
+        frame = self.active_frame()
+        face = frame is not None and any(
+            name(node) == "Analogue Stopwatch"
+            for node in descendants(frame, limit=3000)
+        )
+        return {"analogue": state.get("stopwatch_analogue", False), "face_visible": face}
+
+    def fact_weather_settings(self) -> dict[str, Any]:
+        path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/weather.json"
+        if not path.exists():
+            return {"fahrenheit": None}
+        return {"fahrenheit": json.loads(path.read_text()).get("fahrenheit")}
+
     def fact_files(self) -> dict[str, Any]:
         entries = []
         root = self.files_root
@@ -1124,6 +1150,22 @@ class LuloRun:
                 self.nested.input.click(OUTPUT_W // 4, OUTPUT_H // 2, OUTPUT_W, OUTPUT_H)
             elif "menu" in step:
                 raise Unsupported("menu-bar steps need the top bar, which the nested runner does not start yet")
+            elif "menu_action" in step:
+                # Lulo-only scenarios can activate the same published D-Bus
+                # command the menu bar sends, without opening a live menu.
+                bus = "org.rmac." + {
+                    "calculator": "Calculator",
+                    "clock": "Clock",
+                    "weather": "Weather",
+                }[self.app] + ".Menu"
+                call = subprocess.run(
+                    ["gdbus", "call", "--session", "--dest", bus,
+                     "--object-path", "/org/rmac/AppMenu1", "--method",
+                     "org.rmac.AppMenu2.Activate", step["menu_action"]],
+                    env=self.env, capture_output=True, text=True, timeout=5,
+                )
+                if call.returncode:
+                    raise StepFailed(f"menu activation failed: {call.stderr.strip()}")
             elif "click_key" in step:
                 # The Mac side clicks by measured grid position (real macOS
                 # Calculator exposes no usable accessible name for these

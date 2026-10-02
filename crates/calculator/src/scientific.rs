@@ -385,6 +385,10 @@ impl ScientificCalculator {
     /// that (`"(-5)"`), confirmed on the Mac
     /// (`tests/behavior/calculator/plus-minus.json`,
     /// `.../plus-minus-after-result.json`) — see the `negated` field.
+    pub fn has_settled_result(&self) -> bool {
+        self.entry.is_none() && self.terms.is_empty() && !self.error && !self.negated
+    }
+
     pub fn display(&self) -> String {
         if self.error {
             return ERROR_TEXT.to_owned();

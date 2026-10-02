@@ -6,7 +6,7 @@
 
 use crate::alarms::Alarm;
 use crate::countdown::Countdown;
-use crate::store::{State, MAX_ALARMS, MAX_CITIES, MAX_TIMERS};
+use crate::store::{State, MAX_ALARMS, MAX_CITIES, MAX_RECENT_TIMERS, MAX_TIMERS};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Change {
@@ -37,6 +37,7 @@ pub enum Change {
     StopwatchStop(u64),
     StopwatchLap(u64),
     StopwatchReset,
+    SetStopwatchAnalogue(bool),
 }
 
 impl Change {
@@ -84,6 +85,11 @@ impl Change {
                 {
                     state.timers.push(Countdown::start(*id, *duration, *now));
                     state.next_id = state.next_id.max(*id);
+                    state
+                        .recent_timer_durations
+                        .retain(|recent| recent != duration);
+                    state.recent_timer_durations.insert(0, *duration);
+                    state.recent_timer_durations.truncate(MAX_RECENT_TIMERS);
                 }
             }
             Self::PauseTimer { id, now } => {
@@ -101,6 +107,7 @@ impl Change {
             Self::StopwatchStop(now) => state.stopwatch.stop(*now),
             Self::StopwatchLap(now) => state.stopwatch.lap(*now),
             Self::StopwatchReset => state.stopwatch.reset(),
+            Self::SetStopwatchAnalogue(analogue) => state.stopwatch_analogue = *analogue,
         }
     }
 
@@ -183,17 +190,48 @@ mod tests {
             now: 1_000,
         }
         .apply(&mut state);
+        assert_eq!(state.recent_timer_durations, [60_000]);
         Change::PauseTimer { id: 4, now: 31_000 }.apply(&mut state);
         assert_eq!(state.timers[0].remaining(90_000), 30_000);
         Change::ResumeTimer { id: 4, now: 40_000 }.apply(&mut state);
         assert_eq!(state.timers[0].ends_at(), Some(70_000));
         Change::CancelTimer(4).apply(&mut state);
         assert!(state.timers.is_empty());
+        assert_eq!(state.recent_timer_durations, [60_000]);
+    }
+
+    #[test]
+    fn recent_timers_are_unique_newest_first_and_bounded() {
+        let mut state = State::default();
+        for index in 0..10 {
+            Change::StartTimer {
+                id: index + 1,
+                duration: (index + 1) * 1000,
+                now: 0,
+            }
+            .apply(&mut state);
+        }
+        assert_eq!(state.recent_timer_durations.len(), MAX_RECENT_TIMERS);
+        assert_eq!(state.recent_timer_durations[0], 10_000);
+        assert_eq!(state.recent_timer_durations[7], 3_000);
+        Change::StartTimer {
+            id: 11,
+            duration: 5_000,
+            now: 0,
+        }
+        .apply(&mut state);
+        assert_eq!(state.recent_timer_durations[0], 5_000);
+        assert_eq!(state.recent_timer_durations.len(), MAX_RECENT_TIMERS);
     }
 
     #[test]
     fn stopwatch_changes_and_schedule_relevance() {
         let mut state = State::default();
+        Change::SetStopwatchAnalogue(true).apply(&mut state);
+        assert!(state.stopwatch_analogue);
+        assert!(!Change::SetStopwatchAnalogue(true).affects_schedule());
+        Change::SetStopwatchAnalogue(false).apply(&mut state);
+        assert!(!state.stopwatch_analogue);
         Change::StopwatchStart(0).apply(&mut state);
         Change::StopwatchLap(1_000).apply(&mut state);
         Change::StopwatchStop(2_000).apply(&mut state);

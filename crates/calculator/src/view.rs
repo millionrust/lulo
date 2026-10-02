@@ -18,7 +18,11 @@ use rmac_calculator::scientific_keypad;
 use rmac_ui::mac;
 
 use crate::{
-    CloseWindow, Copy, Paste, ShowBasic, ShowHistory, ShowScientific, ToggleThousandsSeparator,
+    CloseWindow, Copy, DecimalPlaces0, DecimalPlaces1, DecimalPlaces10, DecimalPlaces11,
+    DecimalPlaces12, DecimalPlaces13, DecimalPlaces14, DecimalPlaces15, DecimalPlaces2,
+    DecimalPlaces3, DecimalPlaces4, DecimalPlaces5, DecimalPlaces6, DecimalPlaces7, DecimalPlaces8,
+    DecimalPlaces9, EnterFullScreen, Paste, ShowBasic, ShowHistory, ShowScientific,
+    ToggleThousandsSeparator,
 };
 
 /// How long a key stays lit after a hardware key press.
@@ -51,6 +55,7 @@ pub(crate) struct CalculatorView {
     mode_menu_open: bool,
     history_open: bool,
     hide_thousands_separator: bool,
+    decimal_places: usize,
 }
 
 impl CalculatorView {
@@ -65,6 +70,7 @@ impl CalculatorView {
             mode_menu_open: false,
             history_open: false,
             hide_thousands_separator: false,
+            decimal_places: 8,
         }
     }
 
@@ -195,6 +201,25 @@ impl CalculatorView {
             cx,
         );
         cx.notify();
+    }
+
+    fn set_decimal_places(&mut self, places: usize, cx: &mut Context<Self>) {
+        let old = format!("calculator::DecimalPlaces{}", self.decimal_places);
+        let new = format!("calculator::DecimalPlaces{places}");
+        rmac_ui::set_menu_checked(&old, false, cx);
+        rmac_ui::set_menu_checked(&new, true, cx);
+        self.decimal_places = places;
+        cx.notify();
+    }
+
+    fn display_result(&self, text: &str, value: Option<f64>) -> String {
+        if text.contains('e') {
+            return self.display_grouping(text);
+        }
+        value
+            .and_then(|value| format_decimal_value(value, self.decimal_places))
+            .map(|formatted| self.display_grouping(&formatted))
+            .unwrap_or_else(|| self.display_grouping(text))
     }
 
     fn display_grouping(&self, text: &str) -> String {
@@ -551,7 +576,16 @@ impl CalculatorView {
             ),
         };
         let expression = self.display_grouping(&expression);
-        let result = self.display_grouping(&result);
+        let settled_value = match self.mode {
+            Mode::Basic if self.calculator.has_settled_result() => {
+                Some(self.calculator.current_value())
+            }
+            Mode::Scientific if self.scientific.has_settled_result() => {
+                Some(self.scientific.current_value())
+            }
+            _ => None,
+        };
+        let result = self.display_result(&result, settled_value);
         let expression_size = fitted_font_size(&expression, width, keypad::EXPRESSION_SIZE, 11.0);
         let result_size = fitted_font_size(
             &result,
@@ -753,6 +787,22 @@ impl CalculatorView {
     }
 }
 
+/// Round only the visible, settled result. The calculator keeps its full
+/// internal value so changing precision never changes the next operation.
+fn format_decimal_value(value: f64, places: usize) -> Option<String> {
+    if !value.is_finite() || value.abs() >= 1e9 || places > 15 {
+        return None;
+    }
+    let fixed = format!("{value:.places$}");
+    let trimmed = if fixed.contains('.') {
+        fixed.trim_end_matches('0').trim_end_matches('.')
+    } else {
+        &fixed
+    };
+    let trimmed = if trimmed == "-0" { "0" } else { trimmed };
+    Some(rmac_calculator::engine::format_entry(trimmed))
+}
+
 /// Replace a plain exponent's Unicode superscript digit, and a typeset
 /// minus sign used as the subtract operator, with their ASCII equivalents,
 /// for the accessible text only (the visible glyphs keep the real
@@ -906,7 +956,56 @@ impl Render for CalculatorView {
             .on_action(cx.listener(|this, _: &ToggleThousandsSeparator, _, cx| {
                 this.toggle_thousands_separator(cx);
             }))
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces0, _, cx| this.set_decimal_places(0, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces1, _, cx| this.set_decimal_places(1, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces2, _, cx| this.set_decimal_places(2, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces3, _, cx| this.set_decimal_places(3, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces4, _, cx| this.set_decimal_places(4, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces5, _, cx| this.set_decimal_places(5, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces6, _, cx| this.set_decimal_places(6, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces7, _, cx| this.set_decimal_places(7, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces8, _, cx| this.set_decimal_places(8, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces9, _, cx| this.set_decimal_places(9, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces10, _, cx| this.set_decimal_places(10, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces11, _, cx| this.set_decimal_places(11, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces12, _, cx| this.set_decimal_places(12, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces13, _, cx| this.set_decimal_places(13, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces14, _, cx| this.set_decimal_places(14, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &DecimalPlaces15, _, cx| this.set_decimal_places(15, cx)),
+            )
             .on_action(cx.listener(|_, _: &CloseWindow, _, cx| cx.quit()))
+            .on_action(cx.listener(|_, _: &EnterFullScreen, _, _| {}))
             .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, _, cx| cx.quit()))
             .relative()
             .w(px(window_width))
@@ -940,7 +1039,23 @@ impl Render for CalculatorView {
 
 #[cfg(test)]
 mod tests {
-    use super::{blend, flatten_superscript_digits};
+    use super::{blend, flatten_superscript_digits, format_decimal_value};
+
+    #[test]
+    fn decimal_places_round_display_without_changing_value() {
+        let value = 1.0 / 3.0;
+        assert_eq!(format_decimal_value(value, 2).as_deref(), Some("0.33"));
+        assert_eq!(
+            format_decimal_value(value, 8).as_deref(),
+            Some("0.33333333")
+        );
+        assert_eq!(
+            format_decimal_value(value, 15).as_deref(),
+            Some("0.333333333333333")
+        );
+        assert_eq!(format_decimal_value(1234.5, 2).as_deref(), Some("1,234.5"));
+        assert_eq!(format_decimal_value(-0.0001, 0).as_deref(), Some("0"));
+    }
 
     #[test]
     fn blend_mixes_overlay_by_alpha() {

@@ -13,6 +13,13 @@
           "children": []
         },
         {
+          "label": "Settings…",
+          "action": "weather::ShowSettings",
+          "shortcut": "⌘,",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Services",
           "action": "app::services",
           "shortcut": "",
@@ -158,13 +165,6 @@
           "action": "weather::UseFahrenheit",
           "shortcut": "",
           "separator_before": false,
-          "children": []
-        },
-        {
-          "label": "Refresh",
-          "action": "weather::Refresh",
-          "shortcut": "⌘R",
-          "separator_before": true,
           "children": []
         },
         {
@@ -329,9 +329,18 @@
     }
   ],
   "settings": {
-    "present": false,
-    "extraction": "none",
-    "controls": []
+    "present": true,
+    "extraction": "heuristic",
+    "controls": [
+      {
+        "kind": "tab",
+        "label": "General"
+      },
+      {
+        "kind": "tab",
+        "label": "Notifications"
+      }
+    ]
   },
   "toolbar": {
     "present": true,

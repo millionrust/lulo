@@ -200,29 +200,29 @@ pub struct ItemState {
     pub label: Option<String>,
 }
 
-/// The menus with each command's live state from `state`. A submenu is
-/// enabled while any of its items is, as in AppKit.
+/// The menus with each command's live state from `state`. A submenu defaults
+/// to enabled while any child is enabled, but an app may override the parent
+/// (for example, Start Recent Timer stays open over its disabled empty row).
 pub fn apply_state(menus: &[Menu], state: impl Fn(&Item) -> Option<ItemState>) -> Vec<Menu> {
     fn apply(items: &[Item], state: &dyn Fn(&Item) -> Option<ItemState>) -> Vec<Item> {
         items
             .iter()
             .map(|item| {
                 let mut next = item.clone();
-                if item.children.is_empty() {
-                    if let Some(update) = state(item) {
-                        if let Some(enabled) = update.enabled {
-                            next.enabled = enabled;
-                        }
-                        if let Some(checked) = update.checked {
-                            next.checked = checked;
-                        }
-                        if let Some(label) = update.label.filter(|label| valid_label(label)) {
-                            next.label = label;
-                        }
-                    }
-                } else {
+                if !item.children.is_empty() {
                     next.children = apply(&item.children, state);
                     next.enabled = next.children.iter().any(|child| child.enabled);
+                }
+                if let Some(update) = state(item) {
+                    if let Some(enabled) = update.enabled {
+                        next.enabled = enabled;
+                    }
+                    if let Some(checked) = update.checked {
+                        next.checked = checked;
+                    }
+                    if let Some(label) = update.label.filter(|label| valid_label(label)) {
+                        next.label = label;
+                    }
                 }
                 next
             })
@@ -931,7 +931,30 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
                 "calculator::ToggleThousandsSeparator",
                 ""
             ),
+            submenu!(
+                "Decimal Places",
+                "calculator::DecimalPlacesMenu",
+                [
+                    item!("0", "calculator::DecimalPlaces0", ""),
+                    item!("1", "calculator::DecimalPlaces1", ""),
+                    item!("2", "calculator::DecimalPlaces2", ""),
+                    item!("3", "calculator::DecimalPlaces3", ""),
+                    item!("4", "calculator::DecimalPlaces4", ""),
+                    item!("5", "calculator::DecimalPlaces5", ""),
+                    item!("6", "calculator::DecimalPlaces6", ""),
+                    item!("7", "calculator::DecimalPlaces7", ""),
+                    item!("8", "calculator::DecimalPlaces8", ""),
+                    item!("9", "calculator::DecimalPlaces9", ""),
+                    item!("10", "calculator::DecimalPlaces10", ""),
+                    item!("11", "calculator::DecimalPlaces11", ""),
+                    item!("12", "calculator::DecimalPlaces12", ""),
+                    item!("13", "calculator::DecimalPlaces13", ""),
+                    item!("14", "calculator::DecimalPlaces14", ""),
+                    item!("15", "calculator::DecimalPlaces15", ""),
+                ]
+            ),
             item!("Show History", "calculator::ShowHistory", "⌃⌘S", separator),
+            item!("Enter Full Screen", "calculator::EnterFullScreen", "F"),
         ],
     },
     MenuSpec {
@@ -1060,7 +1083,11 @@ const CLOCK_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "File",
         items: &[
-            item!("New", "clock::NewItem", "⌘N"),
+            submenu!(
+                "Start Recent Timer",
+                "clock::RecentTimersMenu",
+                [item!("No Recent Timers", "clock::NoRecentTimers", "")]
+            ),
             item!("Close", "clock::CloseWindow", "⌘W", separator),
             item!("Close All", "rmac_ui::RequestClose", "⌥⌘W"),
         ],
@@ -1084,13 +1111,26 @@ const CLOCK_MENUS: &[MenuSpec] = &[
             item!("Alarms", "clock::ShowAlarms", "⌘2"),
             item!("Stopwatch", "clock::ShowStopwatch", "⌘3"),
             item!("Timers", "clock::ShowTimers", "⌘4"),
-            item!("Start or Stop", "clock::StartStop", "", separator),
-            item!("Lap or Reset", "clock::LapReset", ""),
+            item!(
+                "View Digital Stopwatch",
+                "clock::ShowDigitalStopwatch",
+                "",
+                separator
+            ),
+            item!(
+                "View Analogue Stopwatch",
+                "clock::ShowAnalogueStopwatch",
+                ""
+            ),
         ],
     },
 ];
 
 const WEATHER_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!("Settings…", "weather::ShowSettings", "⌘,", separator)],
+    },
     MenuSpec {
         label: "File",
         items: &[
@@ -1122,7 +1162,6 @@ const WEATHER_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Celsius", "weather::UseCelsius", ""),
             item!("Fahrenheit", "weather::UseFahrenheit", ""),
-            item!("Refresh", "weather::Refresh", "⌘R", separator),
             item!("Hide Sidebar", "weather::ToggleSidebar", "⌃⌘S"),
             item!("Enter Full Screen", "weather::ToggleFullScreen", "F"),
         ],
@@ -2183,6 +2222,25 @@ mod tests {
                 .items[0]
                 .enabled
         );
+
+        let parent_override = apply_state(&menus, |item| {
+            matches!(
+                item.action.as_str(),
+                "notes::ToggleBold" | "notes::ToggleItalic" | "notes::FontMenu"
+            )
+            .then(|| ItemState {
+                enabled: Some(item.action == "notes::FontMenu"),
+                ..ItemState::default()
+            })
+        });
+        assert!(
+            parent_override
+                .iter()
+                .find(|menu| menu.label == "Format")
+                .unwrap()
+                .items[0]
+                .enabled
+        );
     }
 
     #[test]
@@ -2472,9 +2530,12 @@ mod tests {
                 .iter()
                 .map(|menu| menu.label.as_str())
                 .collect::<Vec<_>>(),
-            ["File", "Edit", "View"]
+            ["Application", "File", "Edit", "View"]
         );
-        assert_eq!(menus[2].items[2].shortcut, "⌘R");
+        assert_eq!(menus[0].items[0].shortcut, "⌘,");
+        assert_eq!(menus[3].items[2].label, "Hide Sidebar");
+        assert_eq!(menus[3].items[2].shortcut, "⌃⌘S");
+        assert_eq!(menus[3].items.len(), 4);
         assert!(validate_menus(&menus).is_ok());
     }
 

@@ -53,11 +53,19 @@
       "label": "File",
       "items": [
         {
-          "label": "New",
-          "action": "clock::NewItem",
-          "shortcut": "⌘N",
+          "label": "Start Recent Timer",
+          "action": "clock::RecentTimersMenu",
+          "shortcut": "",
           "separator_before": false,
-          "children": []
+          "children": [
+            {
+              "label": "No Recent Timers",
+              "action": "clock::NoRecentTimers",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Close",
@@ -161,15 +169,15 @@
           "children": []
         },
         {
-          "label": "Start or Stop",
-          "action": "clock::StartStop",
+          "label": "View Digital Stopwatch",
+          "action": "clock::ShowDigitalStopwatch",
           "shortcut": "",
           "separator_before": true,
           "children": []
         },
         {
-          "label": "Lap or Reset",
-          "action": "clock::LapReset",
+          "label": "View Analogue Stopwatch",
+          "action": "clock::ShowAnalogueStopwatch",
           "shortcut": "",
           "separator_before": false,
           "children": []

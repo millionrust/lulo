@@ -1,0 +1,17 @@
+{
+  "title": "Weather: Settings shortcut opens a working temperature preference",
+  "app": "weather",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"key": "cmd-,"},
+    {"select": "Fahrenheit"},
+    {"observe": "fahrenheit", "facts": ["weather_settings"]},
+    {"select": "Automatic"},
+    {"observe": "automatic", "facts": ["weather_settings"]},
+    {"key": "cmd-,"},
+    {"observe": "single_settings_window", "facts": ["windows"]},
+    {"key": "cmd-w"},
+    {"observe": "settings_closed", "facts": ["windows"]}
+  ]
+}

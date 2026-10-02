@@ -1,0 +1,16 @@
+{
+  "title": "Calculator: Decimal Places rounds the display without changing the result",
+  "app": "calculator",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"type": "1/3="},
+    {"observe": "default", "facts": ["display"]},
+    {"menu_action": "calculator::DecimalPlaces2"},
+    {"observe": "two_places", "facts": ["display"]},
+    {"menu_action": "calculator::DecimalPlaces15"},
+    {"observe": "fifteen_places", "facts": ["display"]},
+    {"type": "*3="},
+    {"observe": "full_value_retained", "facts": ["display"]}
+  ]
+}

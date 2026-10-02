@@ -1,0 +1,13 @@
+{
+  "title": "Clock: Start Recent Timer starts another countdown with the saved duration",
+  "app": "clock",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"key": "cmd-4"},
+    {"key": "enter"},
+    {"observe": "first_timer", "facts": ["clock_timers"]},
+    {"menu_action": "clock::StartRecentTimer0"},
+    {"observe": "recent_timer_started", "facts": ["clock_timers"]}
+  ]
+}

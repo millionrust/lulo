@@ -194,6 +194,12 @@ impl Calculator {
         self.current()
     }
 
+    /// Decimal Places only rounds a settled result; editing a number or
+    /// showing a pending formula must keep every digit the user entered.
+    pub fn has_settled_result(&self) -> bool {
+        self.entry.is_none() && self.pending.is_none() && !self.error && !self.negated
+    }
+
     /// Start this mode at a value without losing its calculation history.
     pub fn restore_value(&mut self, value: f64) {
         let history = std::mem::take(&mut self.history);

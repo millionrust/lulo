@@ -1,6 +1,7 @@
 //! rmac Weather: current conditions, the hourly strip and ten days ahead for
 //! the cities the user adds. No location lookup; data from Open-Meteo.
 
+mod settings_window;
 mod view;
 
 use std::borrow::Cow;
@@ -22,6 +23,7 @@ gpui::actions!(
         ToggleSidebar,
         AddLocationToList,
         ToggleFullScreen,
+        ShowSettings,
         CloseWindow
     ]
 );
@@ -60,12 +62,12 @@ fn main() {
             rmac_ui::init_application(cx);
             let context = Some("Weather");
             cx.bind_keys([
-                KeyBinding::new("cmd-r", Refresh, context),
                 KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, FindCity, context),
                 KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
                 KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, context),
                 KeyBinding::new("ctrl-cmd-s", ToggleSidebar, context),
                 KeyBinding::new("shift-cmd-l", AddLocationToList, context),
+                KeyBinding::new("cmd-,", ShowSettings, context),
             ]);
             rmac_ui::install_app_menu(WEATHER, cx);
             let (width, height) = metrics::WINDOW;

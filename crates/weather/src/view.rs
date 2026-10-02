@@ -20,8 +20,8 @@ use rmac_weather::store::{self, Cached, Settings};
 use rmac_weather::summary::{self, Column, Unit};
 
 use crate::{
-    AddLocationToList, CloseWindow, FindCity, Refresh, ToggleFullScreen, ToggleSidebar, UseCelsius,
-    UseFahrenheit,
+    AddLocationToList, CloseWindow, FindCity, Refresh, ShowSettings, ToggleFullScreen,
+    ToggleSidebar, UseCelsius, UseFahrenheit,
 };
 
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
@@ -319,13 +319,26 @@ impl WeatherView {
         cx.notify();
     }
 
-    fn set_unit(&mut self, unit: Unit, cx: &mut Context<Self>) {
+    pub(crate) fn set_unit_preference(&mut self, preference: Option<bool>, cx: &mut Context<Self>) {
+        let unit = match preference {
+            Some(true) => Unit::Fahrenheit,
+            Some(false) => Unit::Celsius,
+            None => Unit::from_environment(),
+        };
         self.unit = unit;
         rmac_ui::set_menu_checked("weather::UseCelsius", unit == Unit::Celsius, cx);
         rmac_ui::set_menu_checked("weather::UseFahrenheit", unit == Unit::Fahrenheit, cx);
-        self.settings.fahrenheit = Some(unit == Unit::Fahrenheit);
+        self.settings.fahrenheit = preference;
         self.save(cx);
         cx.notify();
+    }
+
+    pub(crate) fn unit_preference(&self) -> Option<bool> {
+        self.settings.fahrenheit
+    }
+
+    fn set_unit(&mut self, unit: Unit, cx: &mut Context<Self>) {
+        self.set_unit_preference(Some(unit == Unit::Fahrenheit), cx);
     }
 
     fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
@@ -1194,6 +1207,10 @@ impl Render for WeatherView {
                 }
             }))
             .on_action(cx.listener(|this, _: &Refresh, _, cx| this.refresh_all(true, cx)))
+            .on_action(cx.listener(|_, _: &ShowSettings, _, cx| {
+                let main = cx.entity();
+                cx.defer(move |cx| crate::settings_window::show(main, cx));
+            }))
             .on_action(cx.listener(|this, _: &FindCity, window, cx| {
                 if !this.sidebar_visible {
                     this.toggle_sidebar(cx);

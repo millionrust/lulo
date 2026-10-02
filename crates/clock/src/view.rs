@@ -28,8 +28,10 @@ use rmac_clock::{now_millis, schedule};
 use rmac_ui::{mac, InputEvent, InputState, SearchField, StyledExt as _, TextField, Toggle};
 
 use crate::{
-    CloseWindow, LapReset, NewItem, ShowAlarms, ShowStopwatch, ShowTimers, ShowWorldClock,
-    StartStop,
+    CloseWindow, LapReset, NewItem, NoRecentTimers, ShowAlarms, ShowAnalogueStopwatch,
+    ShowDigitalStopwatch, ShowStopwatch, ShowTimers, ShowWorldClock, StartRecentTimer0,
+    StartRecentTimer1, StartRecentTimer2, StartRecentTimer3, StartRecentTimer4, StartRecentTimer5,
+    StartRecentTimer6, StartRecentTimer7, StartStop,
 };
 
 const LAND_SVG: &str = include_str!("../assets/world-land.svg");
@@ -368,6 +370,15 @@ impl ClockView {
         cx.notify();
     }
 
+    fn set_stopwatch_analogue(&mut self, analogue: bool, cx: &mut Context<Self>) {
+        self.set_tab(Tab::Stopwatch, cx);
+        if self.state.stopwatch_analogue != analogue {
+            self.change(Change::SetStopwatchAnalogue(analogue), cx);
+        }
+        rmac_ui::set_menu_checked("clock::ShowDigitalStopwatch", !analogue, cx);
+        rmac_ui::set_menu_checked("clock::ShowAnalogueStopwatch", analogue, cx);
+    }
+
     // ------------------------------------------------------------ actions
 
     fn new_item(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -452,6 +463,50 @@ impl ClockView {
             Phase::Paused => self.change(Change::StopwatchReset, cx),
             Phase::Idle => {}
         }
+    }
+
+    fn start_recent_timer(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(duration) = self.state.recent_timer_durations.get(index).copied() else {
+            return;
+        };
+        let id = self.state.clone().allocate_id();
+        self.tab = Tab::Timers;
+        self.timer_setup = false;
+        self.change(
+            Change::StartTimer {
+                id,
+                duration,
+                now: now_millis(),
+            },
+            cx,
+        );
+    }
+
+    fn refresh_recent_timer_menu(&self, cx: &mut Context<Self>) {
+        let children = if self.state.recent_timer_durations.is_empty() {
+            vec![
+                rmac_ui::MenuItem::new("No Recent Timers", "clock::NoRecentTimers", "")
+                    .enabled(false),
+            ]
+        } else {
+            self.state
+                .recent_timer_durations
+                .iter()
+                .enumerate()
+                .map(|(index, duration)| {
+                    let seconds = duration / 1000;
+                    let label = format!(
+                        "{:02}:{:02}:{:02}",
+                        seconds / 3600,
+                        seconds / 60 % 60,
+                        seconds % 60
+                    );
+                    rmac_ui::MenuItem::new(label, format!("clock::StartRecentTimer{index}"), "")
+                })
+                .collect()
+        };
+        rmac_ui::set_menu_children("clock::RecentTimersMenu", children, cx);
+        rmac_ui::set_menu_enabled("clock::RecentTimersMenu", true, cx);
     }
 
     fn start_timer(&mut self, cx: &mut Context<Self>) {
@@ -1263,10 +1318,15 @@ impl ClockView {
             .w(px(width))
             .h(px(height))
             .font_features(mac::tabular_font_features())
-            .child(digits(
-                m::STOPWATCH_DIGITS_TOP,
-                stopwatch::format(watch.elapsed(now)),
-            ))
+            .child(if self.state.stopwatch_analogue {
+                stopwatch_face(width, watch.elapsed(now)).into_any_element()
+            } else {
+                digits(
+                    m::STOPWATCH_DIGITS_TOP,
+                    stopwatch::format(watch.elapsed(now)),
+                )
+                .into_any_element()
+            })
             .child(
                 div()
                     .absolute()
@@ -1693,6 +1753,69 @@ fn pin(name: &'static str, time: &str, x: f32, y: f32) -> impl IntoElement {
         )
 }
 
+/// The stopwatch's analogue view tracks the same elapsed time and lap state
+/// as the digital view. Only the face repaints while it is running.
+fn stopwatch_face(width: f32, elapsed: u64) -> impl IntoElement {
+    let diameter = 136.0;
+    let radius = diameter / 2.0;
+    let seconds = (elapsed % 60_000) as f32 / 1_000.0;
+    let minutes = (elapsed % 3_600_000) as f32 / 60_000.0;
+    div()
+        .id("clock-analogue-stopwatch")
+        .role(Role::Image)
+        .aria_label("Analogue Stopwatch")
+        .absolute()
+        .left(px((width - diameter) / 2.0))
+        .top(px(58.0))
+        .size(px(diameter))
+        .rounded_full()
+        .bg(rgb(0xFFFFFF))
+        .child(
+            canvas(
+                |_, _, _| (),
+                move |bounds: Bounds<Pixels>, (), window, _| {
+                    let center = point(bounds.origin.x + px(radius), bounds.origin.y + px(radius));
+                    let line = |angle: f32,
+                                from: f32,
+                                to: f32,
+                                stroke: f32,
+                                color: Hsla,
+                                window: &mut Window| {
+                        let (sin, cos) = angle.to_radians().sin_cos();
+                        let mut path = PathBuilder::stroke(px(stroke));
+                        path.move_to(point(center.x + px(from * sin), center.y - px(from * cos)));
+                        path.line_to(point(center.x + px(to * sin), center.y - px(to * cos)));
+                        if let Ok(path) = path.build() {
+                            window.paint_path(path, color);
+                        }
+                    };
+                    let ink: Hsla = rgb(0x202020).into();
+                    for tick in 0..60 {
+                        let major = tick % 5 == 0;
+                        line(
+                            tick as f32 * 6.0,
+                            radius - if major { 11.0 } else { 6.0 },
+                            radius - 2.0,
+                            if major { 1.8 } else { 0.8 },
+                            ink,
+                            window,
+                        );
+                    }
+                    line(minutes * 6.0, 0.0, radius * 0.45, 3.0, ink, window);
+                    line(
+                        seconds * 6.0,
+                        -radius * 0.12,
+                        radius * 0.78,
+                        1.8,
+                        rgb(m::SECOND_HAND).into(),
+                        window,
+                    );
+                },
+            )
+            .size_full(),
+        )
+}
+
 /// An analogue face: white disc, numerals, black hands and the orange
 /// second hand.
 fn clock_face(center_x: f32, center_y: f32, diameter: f32, time: WallTime) -> impl IntoElement {
@@ -1839,6 +1962,7 @@ impl Render for ClockView {
         for image in self.garbage.drain(..) {
             cx.drop_image(image, Some(window));
         }
+        self.refresh_recent_timer_menu(cx);
         if window.is_window_active() {
             // View ▸ World Clock … Timers tick the tab on show.
             for (tab, action) in [
@@ -1849,6 +1973,16 @@ impl Render for ClockView {
             ] {
                 rmac_ui::set_menu_checked(action, self.tab == tab, cx);
             }
+            rmac_ui::set_menu_checked(
+                "clock::ShowDigitalStopwatch",
+                !self.state.stopwatch_analogue,
+                cx,
+            );
+            rmac_ui::set_menu_checked(
+                "clock::ShowAnalogueStopwatch",
+                self.state.stopwatch_analogue,
+                cx,
+            );
         }
         let viewport = window.viewport_size();
         let (width, height) = (f32::from(viewport.width), f32::from(viewport.height));
@@ -1892,10 +2026,41 @@ impl Render for ClockView {
             .on_action(
                 cx.listener(|this, _: &ShowStopwatch, _, cx| this.set_tab(Tab::Stopwatch, cx)),
             )
+            .on_action(cx.listener(|this, _: &ShowDigitalStopwatch, _, cx| {
+                this.set_stopwatch_analogue(false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowAnalogueStopwatch, _, cx| {
+                this.set_stopwatch_analogue(true, cx);
+            }))
             .on_action(cx.listener(|this, _: &ShowTimers, _, cx| this.set_tab(Tab::Timers, cx)))
             .on_action(cx.listener(|this, _: &NewItem, window, cx| this.new_item(window, cx)))
             .on_action(cx.listener(|this, _: &StartStop, _, cx| this.start_stop(cx)))
             .on_action(cx.listener(|this, _: &LapReset, _, cx| this.lap_reset(cx)))
+            .on_action(
+                cx.listener(|this, _: &StartRecentTimer0, _, cx| this.start_recent_timer(0, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &StartRecentTimer1, _, cx| this.start_recent_timer(1, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &StartRecentTimer2, _, cx| this.start_recent_timer(2, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &StartRecentTimer3, _, cx| this.start_recent_timer(3, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &StartRecentTimer4, _, cx| this.start_recent_timer(4, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &StartRecentTimer5, _, cx| this.start_recent_timer(5, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &StartRecentTimer6, _, cx| this.start_recent_timer(6, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &StartRecentTimer7, _, cx| this.start_recent_timer(7, cx)),
+            )
+            .on_action(cx.listener(|_, _: &NoRecentTimers, _, _| {}))
             .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
             .on_action(
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),

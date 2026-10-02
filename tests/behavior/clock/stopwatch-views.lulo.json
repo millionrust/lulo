@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "clock/stopwatch-views",
+  "observations": {
+    "digital_default": {"clock_stopwatch": {"analogue": false, "face_visible": false}},
+    "analogue": {"clock_stopwatch": {"analogue": true, "face_visible": true}},
+    "digital_again": {"clock_stopwatch": {"analogue": false, "face_visible": false}}
+  }
+}

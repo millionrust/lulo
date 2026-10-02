@@ -62,7 +62,6 @@ fn main() {
             rmac_ui::init_application(cx);
             let context = Some("Weather");
             cx.bind_keys([
-                KeyBinding::new("cmd-r", Refresh, context),
                 KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, FindCity, context),
                 KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
                 KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, context),

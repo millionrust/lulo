@@ -1111,8 +1111,6 @@ const CLOCK_MENUS: &[MenuSpec] = &[
             item!("Alarms", "clock::ShowAlarms", "⌘2"),
             item!("Stopwatch", "clock::ShowStopwatch", "⌘3"),
             item!("Timers", "clock::ShowTimers", "⌘4"),
-            item!("Start or Stop", "clock::StartStop", "", separator),
-            item!("Lap or Reset", "clock::LapReset", ""),
         ],
     },
 ];
@@ -1153,7 +1151,6 @@ const WEATHER_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Celsius", "weather::UseCelsius", ""),
             item!("Fahrenheit", "weather::UseFahrenheit", ""),
-            item!("Refresh", "weather::Refresh", "⌘R", separator),
             item!("Hide Sidebar", "weather::ToggleSidebar", "⌃⌘S"),
             item!("Enter Full Screen", "weather::ToggleFullScreen", "F"),
         ],
@@ -2525,7 +2522,9 @@ mod tests {
             ["Application", "File", "Edit", "View"]
         );
         assert_eq!(menus[0].items[0].shortcut, "⌘,");
-        assert_eq!(menus[3].items[2].shortcut, "⌘R");
+        assert_eq!(menus[3].items[2].label, "Hide Sidebar");
+        assert_eq!(menus[3].items[2].shortcut, "⌃⌘S");
+        assert_eq!(menus[3].items.len(), 4);
         assert!(validate_menus(&menus).is_ok());
     }
 

@@ -168,13 +168,6 @@
           "children": []
         },
         {
-          "label": "Refresh",
-          "action": "weather::Refresh",
-          "shortcut": "⌘R",
-          "separator_before": true,
-          "children": []
-        },
-        {
           "label": "Hide Sidebar",
           "action": "weather::ToggleSidebar",
           "shortcut": "⌃⌘S",

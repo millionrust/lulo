@@ -167,20 +167,6 @@
           "shortcut": "⌘4",
           "separator_before": false,
           "children": []
-        },
-        {
-          "label": "Start or Stop",
-          "action": "clock::StartStop",
-          "shortcut": "",
-          "separator_before": true,
-          "children": []
-        },
-        {
-          "label": "Lap or Reset",
-          "action": "clock::LapReset",
-          "shortcut": "",
-          "separator_before": false,
-          "children": []
         }
       ]
     },

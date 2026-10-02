@@ -127,6 +127,13 @@ EXPECTED_PATHS = {
     Path("usr/libexec/rmac/rmac-wayland-session"),
     Path("usr/libexec/rmac/rmac-session-start"),
     Path("usr/libexec/rmac/rmac-update-check"),
+    Path("usr/libexec/rmac/rmac-skip-in-session"),
+    Path(
+        "usr/lib/systemd/user/"
+        "app-org.gnome.Evolution\\x2dalarm\\x2dnotify@autostart.service.d/"
+        "rmac-session.conf"
+    ),
+    Path("usr/lib/systemd/user/foot-server.service.d/rmac-session.conf"),
     Path("usr/lib/systemd/system-sleep/rmac-input-resume"),
     Path("usr/share/rmac/niri/config.kdl"),
     Path("usr/share/rmac/niri/shell.kdl"),

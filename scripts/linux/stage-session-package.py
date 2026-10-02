@@ -144,6 +144,30 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(REPO_ROOT / "scripts/linux/rmac-update-check"),
             0o755,
         ),
+        "usr/libexec/rmac/rmac-skip-in-session": (
+            _read_regular(REPO_ROOT / "scripts/linux/rmac-skip-in-session"),
+            0o755,
+        ),
+        # Vendor systemd --user drop-ins that keep Ubuntu desktop services
+        # Lulo does not use (evolution-alarm-notify and its D-Bus-activated
+        # evolution-source-registry/-addressbook-factory/-calendar-factory/
+        # goa chain; foot-server, Lulo ships its own Terminal) from starting
+        # inside the rmac session only (docs/parity.md MEM-02). The
+        # autostart-generated unit name below is systemd-xdg-autostart-
+        # generator's escaping of /etc/xdg/autostart/
+        # org.gnome.Evolution-alarm-notify.desktop: every literal "-" in the
+        # desktop file ID becomes "\x2d" so the escaped string's own "-"
+        # characters can only come from a path separator.
+        "usr/lib/systemd/user/"
+        "app-org.gnome.Evolution\\x2dalarm\\x2dnotify@autostart.service.d/"
+        "rmac-session.conf": (
+            _read_regular(package / "systemd" / "rmac-session-skip.conf"),
+            0o644,
+        ),
+        "usr/lib/systemd/user/foot-server.service.d/rmac-session.conf": (
+            _read_regular(package / "systemd" / "rmac-session-skip.conf"),
+            0o644,
+        ),
         "usr/lib/systemd/system-sleep/rmac-input-resume": (
             _read_regular(package / "system-sleep" / "rmac-input-resume"),
             0o755,

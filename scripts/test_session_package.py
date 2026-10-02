@@ -1304,5 +1304,108 @@ class MacKeyboardRelayTests(unittest.TestCase):
         self.assertIn("disable --now rmac-mac-keyboard-relay.socket", postrm)
 
 
+class SessionDesktopFilterTests(unittest.TestCase):
+    """MEM-02: vendor systemd --user drop-ins skip evolution-alarm-notify and
+    foot-server inside the rmac session only, leaving the owner's stock
+    Ubuntu GNOME session (and any other desktop sharing the one systemd
+    --user manager) untouched."""
+
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts/linux/rmac-skip-in-session"
+
+    def run_script(self, desktop: str | None) -> int:
+        env = dict(os.environ)
+        if desktop is None:
+            env.pop("XDG_CURRENT_DESKTOP", None)
+        else:
+            env["XDG_CURRENT_DESKTOP"] = desktop
+        result = subprocess.run(
+            ["/bin/sh", str(self.script)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+        return result.returncode
+
+    def test_skips_only_inside_the_rmac_session(self):
+        # rmac, alone or alongside niri (or any other token), skips: exit 1
+        # is a clean ExecCondition skip, never a failure.
+        for desktop in ("rmac:niri", "rmac", "niri:rmac", "niri:rmac:extra"):
+            self.assertEqual(self.run_script(desktop), 1, desktop)
+        # The owner's stock GNOME session, Ubuntu's own combined value, an
+        # unrelated desktop, and no desktop at all all run normally.
+        for desktop in ("GNOME", "ubuntu:GNOME", "KDE", "", None):
+            self.assertEqual(self.run_script(desktop), 0, desktop)
+
+    def test_script_is_a_packaged_executable_shell_script(self):
+        # The checked-out mode depends on the host's umask (git only ORs in
+        # executable bits where the umask left a read bit); the tracked git
+        # mode is the umask-independent source of truth that this is meant
+        # to be executable.
+        tracked = subprocess.run(
+            ["git", "ls-files", "-s", "--", str(self.script)],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.assertTrue(tracked.startswith("100755 "), tracked)
+        self.assertEqual(
+            self.script.read_text(encoding="utf-8").splitlines()[0], "#!/bin/sh"
+        )
+
+    def test_staged_package_ships_the_script_and_both_vendor_drop_ins(self):
+        files = stage_package.package_files()
+        script_path = "usr/libexec/rmac/rmac-skip-in-session"
+        self.assertEqual(files[script_path][1], 0o755)
+        self.assertEqual(
+            files[script_path][0],
+            self.script.read_bytes(),
+        )
+        self.assertIn(Path(script_path), verify_package.EXPECTED_PATHS)
+
+        evolution_dropin = (
+            "usr/lib/systemd/user/"
+            "app-org.gnome.Evolution\\x2dalarm\\x2dnotify@autostart.service.d/"
+            "rmac-session.conf"
+        )
+        foot_dropin = "usr/lib/systemd/user/foot-server.service.d/rmac-session.conf"
+        for destination in (evolution_dropin, foot_dropin):
+            self.assertIn(Path(destination), verify_package.EXPECTED_PATHS)
+            contents, mode = files[destination]
+            self.assertEqual(mode, 0o644)
+            text = contents.decode("utf-8")
+            self.assertIn(
+                "ExecCondition=/usr/libexec/rmac/rmac-skip-in-session", text
+            )
+            self.assertIn("[Service]", text)
+        # Both drop-ins carry the identical override: one source file, no
+        # risk of the two mechanisms drifting apart.
+        self.assertEqual(files[evolution_dropin][0], files[foot_dropin][0])
+
+    def test_staged_and_verified_package_includes_the_drop_ins(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "package-root"
+            stage_package.stage(root)
+            verify_package.verify_tree(root)
+            evolution_dropin = (
+                root / "usr/lib/systemd/user"
+                / "app-org.gnome.Evolution\\x2dalarm\\x2dnotify@autostart.service.d"
+                / "rmac-session.conf"
+            )
+            self.assertTrue(evolution_dropin.is_file())
+            foot_dropin = (
+                root
+                / "usr/lib/systemd/user/foot-server.service.d/rmac-session.conf"
+            )
+            self.assertTrue(foot_dropin.is_file())
+            skip_script = root / "usr/libexec/rmac/rmac-skip-in-session"
+            self.assertEqual(stat.S_IMODE(skip_script.stat().st_mode), 0o755)
+
+
 if __name__ == "__main__":
     unittest.main()

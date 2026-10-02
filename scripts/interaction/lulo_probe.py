@@ -42,6 +42,7 @@ from typing import Any, Optional
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "behavior"))
+sys.path.insert(0, str(HERE.parent))
 
 import surfaces as sf  # noqa: E402
 import probes as pr  # noqa: E402
@@ -452,8 +453,15 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
         timeout = 15.0 if not opened_once else 3.0
         if not shell._wait_for(is_open, timeout):
             raise StepFailed("Quick Settings did not open from its shortcut endpoint")
+        if not opened_once and not shell.wait_for_populated_frame(shell.quick_settings_process.pid, timeout=25):
+            raise StepFailed("Quick Settings opened but its AT-SPI tree stayed empty")
         if not opened_once:
-            shell.wait_for_populated_frame(shell.quick_settings_process.pid, timeout=25)
+            from assert_control_centre_accessibility import assert_tree
+            try:
+                count = assert_tree(shell.app_by_pid(shell.quick_settings_process.pid))
+            except AssertionError as error:
+                raise StepFailed(f"Control Centre accessibility assertion failed: {error}") from error
+            print(f"Control Centre: {count} accessible nodes", flush=True)
         opened_once = True
 
     def close_safety_net() -> None:
@@ -492,12 +500,23 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
                 out[f"hover:{label}"] = {"changed": None}
                 close_safety_net()
                 continue
-            box = extents(target)
+            # The slider's WINDOW_COORDS are relative to its small layer
+            # surface. SCREEN_COORDS locate it on nested niri's output;
+            # shell.move translates those coordinates into parent Sway.
+            try:
+                rect = target.queryComponent().getExtents(atspi().SCREEN_COORDS)
+                box = (rect.x, rect.y, rect.width, rect.height)
+            except Exception:
+                box = None
             if not box:
                 out[f"hover:{label}"] = {"changed": None}
                 close_safety_net()
                 continue
-            region = (max(0, box[0] - 14), max(0, box[1] - 14), box[2] + 28, box[3] + 28)
+            shell.move(OUTPUT_W // 2, OUTPUT_H // 2)
+            time.sleep(0.3)
+            origin_x, origin_y = shell.niri_origin
+            region = (max(0, box[0] + origin_x - 14),
+                      max(0, box[1] + origin_y - 14), box[2] + 28, box[3] + 28)
             rest = capture_full(shell.env, shell.nested.work / f"hover-rest-{label}.png")
             cx, cy = box[0] + box[2] / 2, box[1] + box[3] / 2
             shell.move(cx, cy)

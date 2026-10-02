@@ -1,0 +1,8 @@
+{
+  "runner": "scripts/interaction/lulo_probe.py control-centre",
+  "panel": "Control Centre",
+  "required_sliders": ["Sound"],
+  "required_toggles": ["Wi-Fi", "Bluetooth", "Focus"],
+  "slider_minimum": 0,
+  "slider_maximum": 100
+}

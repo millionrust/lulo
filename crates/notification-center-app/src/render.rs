@@ -110,7 +110,7 @@ fn edit_widgets_action(view: &Entity<NotificationCenterView>, window: &mut Windo
     view.update(cx, |this, cx| this.dismiss(window, cx));
 }
 
-fn edit_pill(view: Entity<NotificationCenterView>) -> gpui::Div {
+fn edit_pill(view: Entity<NotificationCenterView>) -> gpui::Stateful<gpui::Div> {
     let a11y_view = view.clone();
     div()
         .id("notification-center-edit-widgets")

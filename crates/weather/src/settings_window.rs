@@ -7,7 +7,7 @@ use gpui::{
 };
 use rmac_ui::{Button, Root, StyledExt as _};
 
-use crate::view::WeatherView;
+use crate::{view::WeatherView, CloseWindow, ShowSettings};
 
 const WIDTH: f32 = 420.0;
 const HEIGHT: f32 = 300.0;
@@ -29,7 +29,9 @@ pub(crate) fn show(main: Entity<WeatherView>, cx: &mut App) {
     match cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Settings");
-        let view = cx.new(|cx| SettingsView::new(main, cx));
+        let view = cx.new(|cx| SettingsView::new(main, window, cx));
+        let focus = view.read(cx).focus.clone();
+        window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
     }) {
         Ok(handle) => OPEN.with(|open| open.set(Some(handle))),
@@ -59,10 +61,13 @@ struct SettingsView {
 }
 
 impl SettingsView {
-    fn new(main: Entity<WeatherView>, cx: &mut Context<Self>) -> Self {
+    fn new(main: Entity<WeatherView>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        rmac_ui::observe_window_state(rmac_ui::app_id::WEATHER, window, cx);
         cx.observe(&main, |_, _, cx| cx.notify()).detach();
+        let focus = cx.focus_handle();
+        rmac_ui::register_menu_target(window, &focus, cx);
         Self {
-            focus: cx.focus_handle(),
+            focus,
             tab: Tab::General,
             main,
         }
@@ -120,6 +125,10 @@ impl Render for SettingsView {
         };
         div()
             .track_focus(&self.focus)
+            .key_context("Weather")
+            .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
+            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, _, cx| cx.quit()))
+            .on_action(cx.listener(|_, _: &ShowSettings, window, _| window.activate_window()))
             .size_full()
             .v_flex()
             .bg(rmac_ui::mac::window())

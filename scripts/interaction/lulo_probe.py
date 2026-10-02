@@ -104,8 +104,8 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         (work / "logs").mkdir(exist_ok=True)
         with open(work / "logs" / "session.log", "w") as log:
             status = subprocess.call(command, env=env, close_fds=True, stderr=log)
-        if status not in (0, 1):
-            print((work / "logs" / "session.log").read_text()[-3000:], file=sys.stderr)
+        if status != 0:
+            print((work / "logs" / "session.log").read_text()[-1500:], file=sys.stderr)
         return status
     finally:
         if run_lulo.reap(work / "runtime"):
@@ -684,6 +684,10 @@ def record_shell_surfaces(nested: "run_lulo.Nested", bins: list[Path], niri_bin:
             except (StepFailed, Unsupported, wlinput.InjectorError) as error:
                 result["error"] = str(error)
             results.append(result)
+            # Preserve completed surface measurements if a later, separate
+            # panel assertion fails in this same private session.
+            OUT_DIR.mkdir(parents=True, exist_ok=True)
+            (OUT_DIR / f"{result['surface']}.json").write_text(json.dumps(result, indent=2) + "\n")
             print(f"{'ERROR' if 'error' in result else 'ok   '} {item['id']}: "
                   f"{result.get('error') or json.dumps(result['probes'])}", flush=True)
         if assert_notification_center:

@@ -1,9 +1,8 @@
 //! Weather ▸ Settings…: the saved temperature-unit preference.
 
 use gpui::{
-    div, px, App, AppContext as _, Context, Entity, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Window,
-    WindowHandle,
+    div, App, AppContext as _, Context, Entity, FocusHandle, FontWeight, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, Styled as _, Window, WindowHandle,
 };
 use rmac_ui::{Button, Root, StyledExt as _};
 

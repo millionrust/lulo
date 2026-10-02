@@ -698,6 +698,12 @@ similar — no plan, not tracked as rows here).
 
 ---
 
+## Bugs found by monkey testing
+
+| ID | Sev | Size | Status | Gap | Where |
+|---|---|---|---|---|---|
+| BUG-01 | P1 | M | Broken | A fresh System Settings window with its Search field focused consumes 27–41% of one CPU core after 15–60 s with no input in the nested Sway+niri software-rendered session; moving focus to a sidebar row drops the same app to 0.0%, as does Calculator at idle. Seed 19 first exposed 55% during startup; the focused-search idle scenario then measured 40.5% over 60 s. Caching repeated Wayland IME cursor rectangles did not help (40.1% in the same scenario) and was reverted. `tests/behavior/idle-cpu.md` sets a 0.3% normal-app target. | `crates/system-settings/src/controller/shell_render.rs`, `vendor/gpui-component/crates/ui/src/input`, `scripts/behavior/monkey.py` |
+
 ## Coverage
 
 Shell states audit, 2026-09-25. Mac: macOS 26.2 on the owner's Mac, read live through System Events AX and screencapture unless marked *ref*. *ref* means taken from the standard macOS 26 behaviour because the state needs a real pointer hover or drag, which AX can't produce. Lulo: the laptop's installed build 0.9.0~beta.1-38 (2026-09-24 16:44), which predates d3a8f776, 918aaa38, 0fad56ed and 44f223ee. *live* means dispatched and grabbed on the laptop. *code* means read from source, because the installed shell registers no AT-SPI (ACC-07) and there's no key or pointer injector, so its menus can't be clicked remotely.

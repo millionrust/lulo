@@ -63,6 +63,42 @@ directories.
 python3 scripts/behavior/run_file_drag.py --bin-dir ~/rmac-wt/target/iterate
 ```
 
+## Monkey testing
+
+`scripts/behavior/monkey.py` is a seeded random ("monkey") tester, not a
+fixed scenario: it drives one app, or the shell (Dock, menu bar, Spotlight,
+Control Centre, Mission Control, no document window), with a long stream of
+weighted-random actions — accessible-tree clicks, keyboard shortcuts drawn
+from `tests/inventory/lulo/<App>.json`, typed text, window move/resize/
+minimise/zoom/close/new, and file operations confined to a private sandbox
+(text, a PDF, a PNG, folders, a long name, a unicode name, a 0-byte file and
+a large file) — and watches for a crash, a hang, an error dialog, runaway
+CPU, memory growth (`Pss_Anon+SwapPss`), a stuck window, and journal
+warnings. On a finding it freezes the seed, the action log, the app's
+stderr/stdout tail and a screenshot into `--findings-dir` (outside the repo
+by default: never committed), verifies that the full log reproduces, then
+binary-searches the shortest reproducing prefix against a fresh private
+HOME. The report includes a working `--replay` command and optional
+`--replay-count` for the prefix. Normal Quit and last-window close restart
+the app and are recorded as replayable actions. Idle CPU sampling starts
+15 seconds after launch so startup work is not classified as idle. It reuses
+`run_window_move.py`'s nested Sway+niri+shell bootstrap and `run_lulo.py`'s AT-SPI helpers, and takes
+`/tmp/lulo-journey.lock` itself like every other runner here.
+Settings and System Monitor random clicks are confined to navigation; the
+System Monitor's Quit Process shortcut is excluded. Terminal text omits
+newlines, so random typing cannot submit a shell command.
+
+```sh
+python3 scripts/behavior/monkey.py --bin-dir ~/lulo-monkey-bins \
+  --niri /usr/bin/niri --app files --duration 1800 \
+  --findings-dir ~/lulo-monkey-findings
+```
+
+`--seed` is printed if omitted, so any run can be reproduced. A triaged
+finding gets a `BUG-*` row in `docs/parity.md`'s "Bugs found by monkey
+testing" section; a fixed one gets a regression test in `tests/behavior` or
+a unit test next to the fix, cited from that row.
+
 ## Parallel visual journeys
 
 `tests/parallel/` contains ten first-hour journeys that use the same JSON

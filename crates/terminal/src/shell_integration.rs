@@ -224,6 +224,37 @@ impl SessionShellState {
         })
     }
 
+    /// Find the nearest retained mark from the cursor, including prompt marks.
+    /// Coordinates are discarded once history reaches its eviction boundary.
+    pub(super) fn selection_mark(
+        &self,
+        direction: PromptDirection,
+        bookmark_only: bool,
+        from_line: usize,
+        history_size: usize,
+        history_limit: usize,
+    ) -> Option<usize> {
+        if history_limit == 0 || history_size >= history_limit {
+            return None;
+        }
+        let state = self.state.lock().ok()?;
+        let marks = state
+            .manual_marks
+            .iter()
+            .filter(move |mark| !bookmark_only || mark.bookmark)
+            .map(|mark| mark.line);
+        let candidates = state
+            .prompt_lines
+            .iter()
+            .copied()
+            .filter(move |_| !bookmark_only)
+            .chain(marks);
+        match direction {
+            PromptDirection::Previous => candidates.filter(|line| *line < from_line).max(),
+            PromptDirection::Next => candidates.filter(|line| *line > from_line).min(),
+        }
+    }
+
     pub(super) fn bookmark_offset(
         &self,
         direction: PromptDirection,
@@ -457,6 +488,22 @@ mod tests {
         shell.mark_line(20, true);
         assert!(shell.has_mark_at(4));
         assert!(shell.has_bookmarks());
+        assert_eq!(
+            shell.selection_mark(PromptDirection::Previous, false, 18, 25, 100),
+            Some(12)
+        );
+        assert_eq!(
+            shell.selection_mark(PromptDirection::Previous, true, 10, 25, 100),
+            None
+        );
+        assert_eq!(
+            shell.selection_mark(PromptDirection::Next, true, 10, 25, 100),
+            Some(12)
+        );
+        assert_eq!(
+            shell.selection_mark(PromptDirection::Next, true, 10, 25, 25),
+            None
+        );
         assert_eq!(
             shell.prompt_offset(PromptDirection::Previous, 25, 0, 100),
             Some(5)

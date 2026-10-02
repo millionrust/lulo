@@ -158,6 +158,18 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &NextBookmark, _, cx| {
                 this.navigate_bookmark(PromptDirection::Next, cx)
             }))
+            .on_action(cx.listener(|this, _: &SelectToPreviousMark, _, cx| {
+                this.select_to_mark(PromptDirection::Previous, false, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SelectToNextMark, _, cx| {
+                this.select_to_mark(PromptDirection::Next, false, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SelectToPreviousBookmark, _, cx| {
+                this.select_to_mark(PromptDirection::Previous, true, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SelectToNextBookmark, _, cx| {
+                this.select_to_mark(PromptDirection::Next, true, cx)
+            }))
             .on_action(cx.listener(|this, _: &SelectCommand, _, cx| {
                 this.select_shell_range(CommandRangeKind::Command, cx)
             }))

@@ -532,6 +532,23 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                         "⌥⌘"
                     ),
                     item!("Jump to Next Bookmark", "terminal::NextBookmark", "⌥⌘"),
+                    item!(
+                        "Select to Previous Mark",
+                        "terminal::SelectToPreviousMark",
+                        "⇧⌘",
+                        separator
+                    ),
+                    item!("Select to Next Mark", "terminal::SelectToNextMark", "⇧⌘"),
+                    item!(
+                        "Select to Previous Bookmark",
+                        "terminal::SelectToPreviousBookmark",
+                        "⌥⇧⌘"
+                    ),
+                    item!(
+                        "Select to Next Bookmark",
+                        "terminal::SelectToNextBookmark",
+                        "⌥⇧⌘"
+                    ),
                 ],
                 separator
             ),

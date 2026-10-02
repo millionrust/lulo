@@ -853,6 +853,63 @@ impl Session {
             .is_some_and(|position| self.shell_state.has_mark_at(position.line))
     }
 
+    pub(super) fn can_select_to_mark(
+        &self,
+        direction: PromptDirection,
+        bookmark_only: bool,
+    ) -> bool {
+        let Ok(term) = self.term.lock() else {
+            return false;
+        };
+        let limit = self.scrollback_limit.load(Ordering::Acquire);
+        let Some(position) = retained_marker_position(&term, limit) else {
+            return false;
+        };
+        self.shell_state
+            .selection_mark(
+                direction,
+                bookmark_only,
+                position.line,
+                term.grid().history_size(),
+                limit,
+            )
+            .is_some()
+    }
+
+    pub(super) fn select_to_mark(
+        &mut self,
+        direction: PromptDirection,
+        bookmark_only: bool,
+    ) -> Result<bool, SessionWriteError> {
+        let mut term = self.term.lock().map_err(|_| SessionWriteError::State)?;
+        let limit = self.scrollback_limit.load(Ordering::Acquire);
+        let Some(position) = retained_marker_position(&term, limit) else {
+            return Ok(false);
+        };
+        let history_size = term.grid().history_size();
+        let Some(target) = self.shell_state.selection_mark(
+            direction,
+            bookmark_only,
+            position.line,
+            history_size,
+            limit,
+        ) else {
+            return Ok(false);
+        };
+        let history_line = i32::try_from(history_size).unwrap_or(i32::MAX);
+        let target_line = i32::try_from(target)
+            .unwrap_or(i32::MAX)
+            .saturating_sub(history_line);
+        self.ui.selection = Some(Selection {
+            anchor: (term.grid().cursor.point.line.0, position.column),
+            head: (target_line, 0),
+        });
+        let offset = history_size.saturating_sub(target);
+        term.scroll_display(Scroll::Bottom);
+        term.scroll_display(Scroll::Delta(i32::try_from(offset).unwrap_or(i32::MAX)));
+        Ok(true)
+    }
+
     pub(super) fn scroll_to_bookmark(
         &self,
         direction: PromptDirection,

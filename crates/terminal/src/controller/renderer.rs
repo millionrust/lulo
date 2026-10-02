@@ -69,6 +69,30 @@ impl Render for TerminalView {
                 self.tabs[self.active].can_scroll_to_bookmark(PromptDirection::Next),
                 cx,
             );
+            for (action, direction, bookmark_only) in [
+                (
+                    "terminal::SelectToPreviousMark",
+                    PromptDirection::Previous,
+                    false,
+                ),
+                ("terminal::SelectToNextMark", PromptDirection::Next, false),
+                (
+                    "terminal::SelectToPreviousBookmark",
+                    PromptDirection::Previous,
+                    true,
+                ),
+                (
+                    "terminal::SelectToNextBookmark",
+                    PromptDirection::Next,
+                    true,
+                ),
+            ] {
+                rmac_ui::set_menu_enabled(
+                    action,
+                    self.tabs[self.active].can_select_to_mark(direction, bookmark_only),
+                    cx,
+                );
+            }
             rmac_ui::set_menu_enabled(
                 "terminal::HideFindBar",
                 self.tabs[self.active].ui.search_open,

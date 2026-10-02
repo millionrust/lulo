@@ -437,6 +437,34 @@
               "shortcut": "⌥⌘",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Select to Previous Mark",
+              "action": "terminal::SelectToPreviousMark",
+              "shortcut": "⇧⌘",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Select to Next Mark",
+              "action": "terminal::SelectToNextMark",
+              "shortcut": "⇧⌘",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Select to Previous Bookmark",
+              "action": "terminal::SelectToPreviousBookmark",
+              "shortcut": "⌥⇧⌘",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Select to Next Bookmark",
+              "action": "terminal::SelectToNextBookmark",
+              "shortcut": "⌥⇧⌘",
+              "separator_before": false,
+              "children": []
             }
           ]
         },

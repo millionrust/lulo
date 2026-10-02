@@ -523,6 +523,20 @@
           "shortcut": "⌘?",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Open man Page for Selection",
+          "action": "terminal::OpenManPageForSelection",
+          "shortcut": "⌃⌘?",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Search man Page Index for Selection",
+          "action": "terminal::SearchManPageIndexForSelection",
+          "shortcut": "⌃⌥⌘/",
+          "separator_before": false,
+          "children": []
         }
       ]
     }

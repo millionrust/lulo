@@ -2,7 +2,47 @@
 
 use super::*;
 
+/// A selected manual topic becomes one shell argument, even if it contains
+/// spaces or quotes. Control characters are never sent as command input.
+pub(super) fn man_command(selection: &str, search_index: bool) -> Option<String> {
+    let topic = selection.trim();
+    if topic.is_empty() || topic.len() > 256 || topic.chars().any(char::is_control) {
+        return None;
+    }
+    let program = if search_index { "apropos" } else { "man" };
+    Some(format!(
+        "{program} -- {}\r",
+        crate::paste::shell_quote(topic)
+    ))
+}
+
 impl TerminalView {
+    pub(super) fn man_page_for_selection(
+        &mut self,
+        search_index: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(command) = self
+            .selection_text()
+            .and_then(|text| man_command(&text, search_index))
+        else {
+            return;
+        };
+        if self.modal_open() || self.tabs.len() >= MAX_TABS {
+            return;
+        }
+        let previous_count = self.tabs.len();
+        self.new_tab(window, cx);
+        if self.tabs.len() == previous_count {
+            return;
+        }
+        if let Err(error) = self.tabs[self.active].write(command.as_bytes()) {
+            self.operation_error = Some(error.to_string().into());
+        }
+        cx.notify();
+    }
+
     pub(super) fn on_key_down(&mut self, event: &KeyDownEvent) -> Result<bool, SessionWriteError> {
         let mode = {
             let term = self.tabs[self.active]
@@ -162,5 +202,23 @@ impl TerminalView {
         let selection = self.tabs[self.active].ui.selection?;
         let term = self.tabs[self.active].term.lock().ok()?;
         Some(selection.text(&term, self.rows, self.cols))
+    }
+}
+
+#[cfg(test)]
+mod man_tests {
+    use super::man_command;
+
+    #[test]
+    fn manual_selection_is_one_quoted_argument() {
+        assert_eq!(
+            man_command("printf", false).as_deref(),
+            Some("man -- printf\r")
+        );
+        assert_eq!(
+            man_command("a'; echo injected", true).as_deref(),
+            Some("apropos -- 'a'\\''; echo injected'\r")
+        );
+        assert!(man_command("bad\ncommand", false).is_none());
     }
 }

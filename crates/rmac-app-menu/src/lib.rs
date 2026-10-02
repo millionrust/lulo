@@ -506,6 +506,21 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             item!("Show Next Tab", "terminal::NextTab", "⇧⌘]"),
         ],
     },
+    MenuSpec {
+        label: "Help",
+        items: &[
+            item!(
+                "Open man Page for Selection",
+                "terminal::OpenManPageForSelection",
+                "⌃⌘?"
+            ),
+            item!(
+                "Search man Page Index for Selection",
+                "terminal::SearchManPageIndexForSelection",
+                "⌃⌥⌘/"
+            ),
+        ],
+    },
 ];
 
 const NOTES_MENUS: &[MenuSpec] = &[

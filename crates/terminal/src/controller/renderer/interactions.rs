@@ -75,6 +75,16 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &CopyPlainText, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &CopyWithoutBackgroundColour, _, cx| this.copy(cx)))
+            .on_action(
+                cx.listener(|this, _: &OpenManPageForSelection, window, cx| {
+                    this.man_page_for_selection(false, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SearchManPageIndexForSelection, window, cx| {
+                    this.man_page_for_selection(true, window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &Paste, window, cx| this.request_paste(window, cx)))
             .on_action(
                 cx.listener(|this, _: &PasteSelection, window, cx| {

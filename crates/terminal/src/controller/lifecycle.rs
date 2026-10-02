@@ -85,6 +85,16 @@ impl TerminalView {
                 Some("Terminal"),
             ),
             KeyBinding::new(rmac_ui::shortcuts::PASTE.keystroke, Paste, Some("Terminal")),
+            KeyBinding::new(
+                "ctrl-shift-cmd-/",
+                OpenManPageForSelection,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                "ctrl-alt-cmd-/",
+                SearchManPageIndexForSelection,
+                Some("Terminal"),
+            ),
             KeyBinding::new("shift-cmd-v", PasteSelection, Some("Terminal")),
             KeyBinding::new("ctrl-cmd-v", PasteEscapedText, Some("Terminal")),
             KeyBinding::new("ctrl-shift-cmd-v", PasteEscapedSelection, Some("Terminal")),

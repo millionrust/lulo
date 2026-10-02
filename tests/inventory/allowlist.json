@@ -287,6 +287,11 @@
     },
     {
       "app": "Notes",
+      "label": "Projects links:",
+      "reason": "This Recent Notes row names a private note in the reference Mac's iCloud library, which Lulo cannot access through Apple Account."
+    },
+    {
+      "app": "Notes",
       "label": "AutoFill",
       "reason": "macOS contact and credential AutoFill uses Apple system data providers."
     },

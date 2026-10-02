@@ -46,6 +46,13 @@
           "shortcut": "⌘Q",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "action": "notes::QuitAndKeepWindows",
+          "shortcut": "⌥⌘Q",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -502,6 +509,20 @@
       "label": "View",
       "items": [
         {
+          "label": "as List",
+          "action": "notes::ShowListView",
+          "shortcut": "⌘1",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "as Gallery",
+          "action": "notes::ShowGalleryView",
+          "shortcut": "⌘2",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Recent Notes",
           "action": "notes::RecentNotesMenu",
           "shortcut": "",
@@ -545,6 +566,13 @@
           "children": []
         },
         {
+          "label": "Hide Toolbar",
+          "action": "notes::ToggleToolbar",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Enter Full Screen",
           "action": "notes::ToggleFullScreen",
           "shortcut": "F",
@@ -569,6 +597,34 @@
           "label": "Actual Size",
           "action": "notes::ZoomReset",
           "shortcut": "⇧⌘0",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Expand Section",
+          "action": "notes::ExpandSection",
+          "shortcut": "⌥⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Expand All Sections",
+          "action": "notes::ExpandAllSections",
+          "shortcut": "⌥⇧⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Collapse Section",
+          "action": "notes::CollapseSection",
+          "shortcut": "⌥⌘",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Collapse All Sections",
+          "action": "notes::CollapseAllSections",
+          "shortcut": "⌥⇧⌘",
           "separator_before": false,
           "children": []
         }
@@ -740,10 +796,10 @@
       "New Note",
       "Checklist",
       "Table",
-      "Add Photo…",
       "Move Note…",
       "Folders",
       "Format",
+      "Media",
       "More",
       "View Options"
     ]

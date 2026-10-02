@@ -318,9 +318,9 @@
           "separator_before": false,
           "children": [
             {
-              "label": "Copy Plain Text",
+              "label": "Plain Text",
               "action": "terminal::CopyPlainText",
-              "shortcut": "⌥⇧⌘C",
+              "shortcut": "",
               "separator_before": false,
               "children": []
             },
@@ -435,6 +435,34 @@
               "label": "Jump to Next Bookmark",
               "action": "terminal::NextBookmark",
               "shortcut": "⌥⌘",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Select to Previous Mark",
+              "action": "terminal::SelectToPreviousMark",
+              "shortcut": "⇧⌘",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Select to Next Mark",
+              "action": "terminal::SelectToNextMark",
+              "shortcut": "⇧⌘",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Select to Previous Bookmark",
+              "action": "terminal::SelectToPreviousBookmark",
+              "shortcut": "⌥⇧⌘",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Select to Next Bookmark",
+              "action": "terminal::SelectToNextBookmark",
+              "shortcut": "⌥⇧⌘",
               "separator_before": false,
               "children": []
             }
@@ -582,7 +610,7 @@
         {
           "label": "Smaller",
           "action": "terminal::ZoomOut",
-          "shortcut": "⌘−",
+          "shortcut": "⌘-",
           "separator_before": false,
           "children": []
         },
@@ -590,6 +618,13 @@
           "label": "Next Profile",
           "action": "terminal::CycleProfile",
           "shortcut": "⇧⌘P",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "terminal::EnterFullScreen",
+          "shortcut": "F",
           "separator_before": true,
           "children": []
         }

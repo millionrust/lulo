@@ -402,7 +402,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 "text_editor::FontMenu",
                 [
                     item!("Bigger", "text_editor::IncreaseFont", "⌘+"),
-                    item!("Smaller", "text_editor::DecreaseFont", "⌘−"),
+                    item!("Smaller", "text_editor::DecreaseFont", "⌘-"),
                 ]
             ),
             item!("Monospaced", "text_editor::ToggleMono", "⇧⌘M", separator),
@@ -415,6 +415,12 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             item!("Actual Size", "text_editor::ActualSize", "⌘0"),
             item!("Zoom In", "text_editor::ZoomIn", "⇧⌘."),
             item!("Zoom Out", "text_editor::ZoomOut", "⇧⌘,"),
+            item!(
+                "Enter Full Screen",
+                "text_editor::EnterFullScreen",
+                "F",
+                separator
+            ),
         ],
     },
 ];
@@ -489,7 +495,7 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 "Copy Special",
                 "terminal::CopySpecialMenu",
                 [
-                    item!("Copy Plain Text", "terminal::CopyPlainText", "⌥⇧⌘C"),
+                    item!("Plain Text", "terminal::CopyPlainText", ""),
                     item!(
                         "Copy Without Background Colour",
                         "terminal::CopyWithoutBackgroundColour",
@@ -532,6 +538,23 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                         "⌥⌘"
                     ),
                     item!("Jump to Next Bookmark", "terminal::NextBookmark", "⌥⌘"),
+                    item!(
+                        "Select to Previous Mark",
+                        "terminal::SelectToPreviousMark",
+                        "⇧⌘",
+                        separator
+                    ),
+                    item!("Select to Next Mark", "terminal::SelectToNextMark", "⇧⌘"),
+                    item!(
+                        "Select to Previous Bookmark",
+                        "terminal::SelectToPreviousBookmark",
+                        "⌥⇧⌘"
+                    ),
+                    item!(
+                        "Select to Next Bookmark",
+                        "terminal::SelectToNextBookmark",
+                        "⌥⇧⌘"
+                    ),
                 ],
                 separator
             ),
@@ -573,8 +596,14 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             item!("Line Down", "terminal::LineDown", "⌥⌘"),
             item!("Default Font Size", "terminal::ZoomReset", "⌘0"),
             item!("Bigger", "terminal::ZoomIn", "⌘+"),
-            item!("Smaller", "terminal::ZoomOut", "⌘−"),
+            item!("Smaller", "terminal::ZoomOut", "⌘-"),
             item!("Next Profile", "terminal::CycleProfile", "⇧⌘P", separator),
+            item!(
+                "Enter Full Screen",
+                "terminal::EnterFullScreen",
+                "F",
+                separator
+            ),
         ],
     },
     MenuSpec {

@@ -241,6 +241,25 @@ impl TerminalView {
         }
     }
 
+    pub(super) fn select_to_mark(
+        &mut self,
+        direction: PromptDirection,
+        bookmark_only: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.modal_open() {
+            return;
+        }
+        match self.tabs[self.active].select_to_mark(direction, bookmark_only) {
+            Ok(true) => cx.notify(),
+            Ok(false) => {}
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
     pub(super) fn select_shell_range(&mut self, kind: CommandRangeKind, cx: &mut Context<Self>) {
         if self.modal_open() {
             return;

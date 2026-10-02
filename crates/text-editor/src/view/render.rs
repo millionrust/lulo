@@ -15,7 +15,7 @@ use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
     document, ActualSize, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument,
-    ExportPdf, FindNext, FindPrev, IncreaseFont, InsertLineBreak, InsertPageBreak,
+    EnterFullScreen, ExportPdf, FindNext, FindPrev, IncreaseFont, InsertLineBreak, InsertPageBreak,
     InsertParagraphBreak, JumpToSelection, NewFile, OpenFile, OpenRecent0, OpenRecent1,
     OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8,
     OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine, SetEncodingUtf16Be,
@@ -209,6 +209,7 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.increase_font(cx)))
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.decrease_font(cx)))
             .on_action(cx.listener(|this, _: &ActualSize, _, cx| this.actual_size(cx)))
+            .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| window.toggle_fullscreen()))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.guarded(Pending::Close, window, cx)
             }))

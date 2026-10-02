@@ -88,6 +88,8 @@ class SettingsCaptureTests(unittest.TestCase):
             {"role": "AXCheckBox", "label": "tickbox"},
             {"role": "AXStaticText", "label": "Finder Settings"},
             {"role": "AXCheckBox", "label": "Show all filename extensions"},
+            {"role": "AXColorWell", "label": "rgb 0.9 0 0 1"},
+            {"role": "AXTextField", "label": "text field"},
         ]
         self.assertEqual(
             d._labels_from_mac_controls(controls), {"Show all filename extensions"}
@@ -238,6 +240,13 @@ class DiffMenuBarsTests(unittest.TestCase):
         gaps = d.diff_menu_bars("Finder", mac, lulo, "Finder")
         self.assertEqual(len(gaps), 1)
         self.assertEqual(gaps[0].tier, d.TIER_EXTRA_LULO_ONLY)
+
+    def test_unread_dynamic_mac_children_are_not_lulo_extras(self):
+        mac = [{"label": "File", "items": [{"label": "Open Recent", "shortcut": "",
+                "children": [], "children_omitted": "dynamic/personal submenu, not read"}]}]
+        lulo = [{"label": "File", "items": [{"label": "Open Recent", "shortcut": "",
+                 "children": [{"label": "Clear Menu", "shortcut": "", "children": []}]}]}]
+        self.assertEqual(d.diff_menu_bars("Text Editor", mac, lulo, "TextEdit"), [])
 
     def test_bold_app_menu_aliasing_lines_up_with_application(self):
         mac = [{"label": "Finder", "items": [{"label": "Settings…", "shortcut": "⌘,", "children": []}]}]

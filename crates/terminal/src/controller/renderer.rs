@@ -21,6 +21,15 @@ impl Render for TerminalView {
         // focused window's directory is a candidate.
         if self.window_active {
             rmac_ui::set_menu_label(
+                "terminal::EnterFullScreen",
+                if window.is_fullscreen() {
+                    "Exit Full Screen"
+                } else {
+                    "Enter Full Screen"
+                },
+                cx,
+            );
+            rmac_ui::set_menu_label(
                 "terminal::CloseTab",
                 if self.tabs.len() > 1 {
                     "Close Tab"
@@ -69,6 +78,30 @@ impl Render for TerminalView {
                 self.tabs[self.active].can_scroll_to_bookmark(PromptDirection::Next),
                 cx,
             );
+            for (action, direction, bookmark_only) in [
+                (
+                    "terminal::SelectToPreviousMark",
+                    PromptDirection::Previous,
+                    false,
+                ),
+                ("terminal::SelectToNextMark", PromptDirection::Next, false),
+                (
+                    "terminal::SelectToPreviousBookmark",
+                    PromptDirection::Previous,
+                    true,
+                ),
+                (
+                    "terminal::SelectToNextBookmark",
+                    PromptDirection::Next,
+                    true,
+                ),
+            ] {
+                rmac_ui::set_menu_enabled(
+                    action,
+                    self.tabs[self.active].can_select_to_mark(direction, bookmark_only),
+                    cx,
+                );
+            }
             rmac_ui::set_menu_enabled(
                 "terminal::HideFindBar",
                 self.tabs[self.active].ui.search_open,
@@ -141,6 +174,19 @@ impl Render for TerminalView {
                 this.request_close_window(window, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
+            .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| window.toggle_fullscreen()))
+            .on_action(cx.listener(|this, _: &SelectToPreviousMark, _, cx| {
+                this.select_to_mark(PromptDirection::Previous, false, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SelectToNextMark, _, cx| {
+                this.select_to_mark(PromptDirection::Next, false, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SelectToPreviousBookmark, _, cx| {
+                this.select_to_mark(PromptDirection::Previous, true, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SelectToNextBookmark, _, cx| {
+                this.select_to_mark(PromptDirection::Next, true, cx)
+            }))
             .child(rmac_ui::title_bar_content(
                 self.render_title(active_title, layout.title_max_width),
             ))

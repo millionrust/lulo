@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "terminal/fullscreen-menu",
+  "platform": "Lulo local contract",
+  "observations": {
+    "entered": {"windows": {"fullscreen": true}},
+    "exited": {"windows": {"fullscreen": false}}
+  }
+}

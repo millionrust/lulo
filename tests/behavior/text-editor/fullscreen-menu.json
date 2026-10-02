@@ -1,0 +1,11 @@
+{
+  "title": "Text Editor View menu toggles full screen",
+  "app": "text-editor",
+  "lulo_only": true,
+  "steps": [
+    {"menu_action": "text_editor::EnterFullScreen", "settle": 1.0},
+    {"observe": "entered", "facts": ["windows"]},
+    {"menu_action": "text_editor::EnterFullScreen", "settle": 1.0},
+    {"observe": "exited", "facts": ["windows"]}
+  ]
+}

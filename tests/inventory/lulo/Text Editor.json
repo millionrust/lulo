@@ -327,7 +327,7 @@
             {
               "label": "Smaller",
               "action": "text_editor::DecreaseFont",
-              "shortcut": "⌘−",
+              "shortcut": "⌘-",
               "separator_before": false,
               "children": []
             }
@@ -371,6 +371,13 @@
           "action": "text_editor::ZoomOut",
           "shortcut": "⇧⌘,",
           "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "text_editor::EnterFullScreen",
+          "shortcut": "F",
+          "separator_before": true,
           "children": []
         }
       ]

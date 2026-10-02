@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_764 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_713 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Calculator
 
@@ -408,8 +408,7 @@ _764 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/invent
 | PRV-MENU-081 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
 | PRV-MENU-082 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | PRV-SETTINGS-001 | missing settings control | Settings window | settings |  |  | the Mac has a Settings window for this app; Lulo has none yet |
-| PRV-MENU-101 | Lulo-only (not on the Mac) | Clear Menu | File ▸ Open Recent ▸ Clear Menu |  |  | present in Lulo but not found on the Mac |
-| PRV-MENU-102 | Lulo-only (not on the Mac) | Revert to Original | File ▸ Revert to Original |  |  | present in Lulo but not found on the Mac |
+| PRV-MENU-101 | Lulo-only (not on the Mac) | Revert to Original | File ▸ Revert to Original |  |  | present in Lulo but not found on the Mac |
 
 ## System Monitor
 
@@ -524,15 +523,12 @@ _764 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/invent
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
 | TRM-MENU-002 | missing menu item (has a shortcut) | Quit and Keep Windows | Application ▸ Quit and Keep Windows | ⌥⌘Q |  | missing from Lulo's menu bar |
-| TRM-MENU-043 | missing menu item (has a shortcut) | Clear to Previous Bookmark | Edit ▸ Clear to Previous Bookmark | ⌥⌘L |  | missing from Lulo's menu bar |
-| TRM-MENU-042 | missing menu item (has a shortcut) | Clear to Previous Mark | Edit ▸ Clear to Previous Mark | ⌘L |  | missing from Lulo's menu bar |
-| TRM-MENU-044 | missing menu item (has a shortcut) | Fill Screen | Edit ▸ Fill Screen | ⌃⌥⌘L |  | missing from Lulo's menu bar |
-| TRM-MENU-041 | missing menu item (has a shortcut) | Select to Next Bookmark | Edit ▸ Navigate ▸ Select to Next Bookmark | ⌥⇧⌘ |  | missing from Lulo's menu bar |
-| TRM-MENU-039 | missing menu item (has a shortcut) | Select to Next Mark | Edit ▸ Navigate ▸ Select to Next Mark | ⇧⌘ |  | missing from Lulo's menu bar |
-| TRM-MENU-040 | missing menu item (has a shortcut) | Select to Previous Bookmark | Edit ▸ Navigate ▸ Select to Previous Bookmark | ⌥⇧⌘ |  | missing from Lulo's menu bar |
-| TRM-MENU-038 | missing menu item (has a shortcut) | Select to Previous Mark | Edit ▸ Navigate ▸ Select to Previous Mark | ⇧⌘ |  | missing from Lulo's menu bar |
-| TRM-MENU-048 | missing menu item (has a shortcut) | Num Lock | Edit ▸ Num Lock | ⌘⌧ |  | missing from Lulo's menu bar |
-| TRM-MENU-047 | missing menu item (has a shortcut) | Show Colours | Edit ▸ Show Colours | ⇧⌘C |  | missing from Lulo's menu bar |
+| TRM-MENU-039 | missing menu item (has a shortcut) | Clear to Previous Bookmark | Edit ▸ Clear to Previous Bookmark | ⌥⌘L |  | missing from Lulo's menu bar |
+| TRM-MENU-038 | missing menu item (has a shortcut) | Clear to Previous Mark | Edit ▸ Clear to Previous Mark | ⌘L |  | missing from Lulo's menu bar |
+| TRM-MENU-018 | missing menu item (has a shortcut) | Copy Plain Text | Edit ▸ Copy Special ▸ Copy Plain Text | ⌥⇧⌘C |  | missing from Lulo's menu bar |
+| TRM-MENU-040 | missing menu item (has a shortcut) | Fill Screen | Edit ▸ Fill Screen | ⌃⌥⌘L |  | missing from Lulo's menu bar |
+| TRM-MENU-044 | missing menu item (has a shortcut) | Num Lock | Edit ▸ Num Lock | ⌘⌧ |  | missing from Lulo's menu bar |
+| TRM-MENU-043 | missing menu item (has a shortcut) | Show Colours | Edit ▸ Show Colours | ⇧⌘C |  | missing from Lulo's menu bar |
 | TRM-MENU-008 | missing menu item (has a shortcut) | Close All | Shell ▸ Close All | ⌥⌘W |  | missing from Lulo's menu bar |
 | TRM-MENU-015 | missing menu item (has a shortcut) | Edit Background Colour | Shell ▸ Edit Background Colour | ⌥⌘I |  | missing from Lulo's menu bar |
 | TRM-MENU-014 | missing menu item (has a shortcut) | Edit Title | Shell ▸ Edit Title | ⇧⌘I |  | missing from Lulo's menu bar |
@@ -546,15 +542,14 @@ _764 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/invent
 | TRM-MENU-016 | missing menu item (has a shortcut) | Print Selection… | Shell ▸ Print Selection… | ⌥⌘P |  | missing from Lulo's menu bar |
 | TRM-MENU-017 | missing menu item (has a shortcut) | Print… | Shell ▸ Print… | ⌘P |  | missing from Lulo's menu bar |
 | TRM-MENU-013 | missing menu item (has a shortcut) | Show Inspector | Shell ▸ Show Inspector | ⌘I |  | missing from Lulo's menu bar |
-| TRM-MENU-054 | missing menu item (has a shortcut) | Allow Mouse Reporting | View ▸ Allow Mouse Reporting | ⌘R |  | missing from Lulo's menu bar |
-| TRM-MENU-056 | missing menu item (has a shortcut) | Close Split Pane | View ▸ Close Split Pane | ⇧⌘D |  | missing from Lulo's menu bar |
-| TRM-MENU-057 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
-| TRM-MENU-053 | missing menu item (has a shortcut) | Hide Alternative Screen | View ▸ Hide Alternative Screen | ⇧⌘ |  | missing from Lulo's menu bar |
-| TRM-MENU-049 | missing menu item (has a shortcut) | Show All Tabs | View ▸ Show All Tabs | ⇧⌘\ |  | missing from Lulo's menu bar |
-| TRM-MENU-052 | missing menu item (has a shortcut) | Show Alternative Screen | View ▸ Show Alternative Screen | ⇧⌘ |  | missing from Lulo's menu bar |
-| TRM-MENU-050 | missing menu item (has a shortcut) | Show Tab Bar | View ▸ Show Tab Bar | ⇧⌘T |  | missing from Lulo's menu bar |
-| TRM-MENU-055 | missing menu item (has a shortcut) | Split Pane | View ▸ Split Pane | ⌘D |  | missing from Lulo's menu bar |
-| TRM-MENU-065 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
+| TRM-MENU-050 | missing menu item (has a shortcut) | Allow Mouse Reporting | View ▸ Allow Mouse Reporting | ⌘R |  | missing from Lulo's menu bar |
+| TRM-MENU-052 | missing menu item (has a shortcut) | Close Split Pane | View ▸ Close Split Pane | ⇧⌘D |  | missing from Lulo's menu bar |
+| TRM-MENU-049 | missing menu item (has a shortcut) | Hide Alternative Screen | View ▸ Hide Alternative Screen | ⇧⌘ |  | missing from Lulo's menu bar |
+| TRM-MENU-045 | missing menu item (has a shortcut) | Show All Tabs | View ▸ Show All Tabs | ⇧⌘\ |  | missing from Lulo's menu bar |
+| TRM-MENU-048 | missing menu item (has a shortcut) | Show Alternative Screen | View ▸ Show Alternative Screen | ⇧⌘ |  | missing from Lulo's menu bar |
+| TRM-MENU-046 | missing menu item (has a shortcut) | Show Tab Bar | View ▸ Show Tab Bar | ⇧⌘T |  | missing from Lulo's menu bar |
+| TRM-MENU-051 | missing menu item (has a shortcut) | Split Pane | View ▸ Split Pane | ⌘D |  | missing from Lulo's menu bar |
+| TRM-MENU-060 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
 | TRM-MENU-001 | missing menu item | Secure Keyboard Entry | Application ▸ Secure Keyboard Entry |  |  | missing from Lulo's menu bar |
 | TRM-MENU-036 | missing menu item | Bookmarks | Edit ▸ Bookmarks |  |  | missing from Lulo's menu bar |
 | TRM-MENU-037 | missing menu item | No Bookmarks | Edit ▸ Bookmarks ▸ No Bookmarks |  |  | missing from Lulo's menu bar |
@@ -566,38 +561,37 @@ _764 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/invent
 | TRM-MENU-026 | missing menu item | Man Page | Edit ▸ Copy Special ▸ Man Page |  |  | missing from Lulo's menu bar |
 | TRM-MENU-027 | missing menu item | Novel | Edit ▸ Copy Special ▸ Novel |  |  | missing from Lulo's menu bar |
 | TRM-MENU-028 | missing menu item | Ocean | Edit ▸ Copy Special ▸ Ocean |  |  | missing from Lulo's menu bar |
-| TRM-MENU-020 | missing menu item | Plain Text | Edit ▸ Copy Special ▸ Plain Text |  |  | missing from Lulo's menu bar |
 | TRM-MENU-029 | missing menu item | Pro | Edit ▸ Copy Special ▸ Pro |  |  | missing from Lulo's menu bar |
 | TRM-MENU-030 | missing menu item | Red Sands | Edit ▸ Copy Special ▸ Red Sands |  |  | missing from Lulo's menu bar |
 | TRM-MENU-031 | missing menu item | Silver Aerogel | Edit ▸ Copy Special ▸ Silver Aerogel |  |  | missing from Lulo's menu bar |
 | TRM-MENU-032 | missing menu item | Solid Colors | Edit ▸ Copy Special ▸ Solid Colors |  |  | missing from Lulo's menu bar |
-| TRM-MENU-018 | missing menu item | Style for “Copy” Command | Edit ▸ Copy Special ▸ Style for “Copy” Command |  |  | missing from Lulo's menu bar |
-| TRM-MENU-019 | missing menu item | Terminal’s Settings (Default) | Edit ▸ Copy Special ▸ Terminal’s Settings (Default) |  |  | missing from Lulo's menu bar |
-| TRM-MENU-045 | missing menu item | Select All | Edit ▸ Find ▸ Select All |  |  | missing from Lulo's menu bar |
-| TRM-MENU-046 | missing menu item | Select All in Selection | Edit ▸ Find ▸ Select All in Selection |  |  | missing from Lulo's menu bar |
+| TRM-MENU-019 | missing menu item | Style for “Copy” Command | Edit ▸ Copy Special ▸ Style for “Copy” Command |  |  | missing from Lulo's menu bar |
+| TRM-MENU-020 | missing menu item | Terminal’s Settings (Default) | Edit ▸ Copy Special ▸ Terminal’s Settings (Default) |  |  | missing from Lulo's menu bar |
+| TRM-MENU-041 | missing menu item | Select All | Edit ▸ Find ▸ Select All |  |  | missing from Lulo's menu bar |
+| TRM-MENU-042 | missing menu item | Select All in Selection | Edit ▸ Find ▸ Select All in Selection |  |  | missing from Lulo's menu bar |
 | TRM-MENU-033 | missing menu item | Automatically Mark Prompt Lines | Edit ▸ Marks ▸ Automatically Mark Prompt Lines |  |  | missing from Lulo's menu bar |
 | TRM-MENU-034 | missing menu item | Mark Line and Send Return | Edit ▸ Marks ▸ Mark Line and Send Return |  |  | missing from Lulo's menu bar |
 | TRM-MENU-035 | missing menu item | Send Return Without Marking | Edit ▸ Marks ▸ Send Return Without Marking |  |  | missing from Lulo's menu bar |
 | TRM-MENU-010 | missing menu item | Export Settings… | Shell ▸ Export Settings… |  |  | missing from Lulo's menu bar |
 | TRM-MENU-009 | missing menu item | Use Settings as Default | Shell ▸ Use Settings as Default |  |  | missing from Lulo's menu bar |
-| TRM-MENU-051 | missing menu item | Show Marks | View ▸ Show Marks |  |  | missing from Lulo's menu bar |
-| TRM-MENU-075 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| TRM-MENU-061 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| TRM-MENU-062 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
-| TRM-MENU-063 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
-| TRM-MENU-072 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
-| TRM-MENU-071 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
-| TRM-MENU-066 | missing menu item | Open Window Group | Window ▸ Open Window Group |  |  | missing from Lulo's menu bar |
-| TRM-MENU-067 | missing menu item | No Window Groups | Window ▸ Open Window Group ▸ No Window Groups |  |  | missing from Lulo's menu bar |
-| TRM-MENU-064 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
-| TRM-MENU-074 | missing menu item | Return All to Default Size | Window ▸ Return All to Default Size |  |  | missing from Lulo's menu bar |
-| TRM-MENU-073 | missing menu item | Return to Default Size | Window ▸ Return to Default Size |  |  | missing from Lulo's menu bar |
-| TRM-MENU-068 | missing menu item | Save Windows as Group… | Window ▸ Save Windows as Group… |  |  | missing from Lulo's menu bar |
-| TRM-MENU-058 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
-| TRM-MENU-060 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
-| TRM-MENU-059 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| TRM-MENU-070 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⇧⌘] | shortcut differs |
-| TRM-MENU-069 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⇧⌘[ | shortcut differs |
+| TRM-MENU-047 | missing menu item | Show Marks | View ▸ Show Marks |  |  | missing from Lulo's menu bar |
+| TRM-MENU-070 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| TRM-MENU-056 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| TRM-MENU-057 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
+| TRM-MENU-058 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
+| TRM-MENU-067 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
+| TRM-MENU-066 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
+| TRM-MENU-061 | missing menu item | Open Window Group | Window ▸ Open Window Group |  |  | missing from Lulo's menu bar |
+| TRM-MENU-062 | missing menu item | No Window Groups | Window ▸ Open Window Group ▸ No Window Groups |  |  | missing from Lulo's menu bar |
+| TRM-MENU-059 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| TRM-MENU-069 | missing menu item | Return All to Default Size | Window ▸ Return All to Default Size |  |  | missing from Lulo's menu bar |
+| TRM-MENU-068 | missing menu item | Return to Default Size | Window ▸ Return to Default Size |  |  | missing from Lulo's menu bar |
+| TRM-MENU-063 | missing menu item | Save Windows as Group… | Window ▸ Save Windows as Group… |  |  | missing from Lulo's menu bar |
+| TRM-MENU-053 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
+| TRM-MENU-055 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
+| TRM-MENU-054 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
+| TRM-MENU-065 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⇧⌘] | shortcut differs |
+| TRM-MENU-064 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⇧⌘[ | shortcut differs |
 | TRM-SETTINGS-001 | missing settings control | ANSI Colours | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-002 | missing settings control | Add | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-003 | missing settings control | Advanced | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
@@ -617,40 +611,9 @@ _764 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/invent
 | TRM-SETTINGS-017 | missing settings control | Profiles | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-018 | missing settings control | Remove | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-019 | missing settings control | Selection | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-020 | missing settings control | System selectedControlColor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-021 | missing settings control | System textBackgroundColor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-022 | missing settings control | System textColor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-023 | missing settings control | Tab | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-024 | missing settings control | Window Groups | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-025 | missing settings control | rgb 0 0 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-026 | missing settings control | rgb 0 0 0.7 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-027 | missing settings control | rgb 0 0 1 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-028 | missing settings control | rgb 0 0.65 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-029 | missing settings control | rgb 0 0.65 0.7 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-030 | missing settings control | rgb 0 0.85 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-031 | missing settings control | rgb 0 0.9 0.9 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-032 | missing settings control | rgb 0.4 0.4 0.4 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-033 | missing settings control | rgb 0.544755 0.544755 0.544755 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-034 | missing settings control | rgb 0.6 0 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-035 | missing settings control | rgb 0.6 0.6 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-036 | missing settings control | rgb 0.7 0 0.7 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-037 | missing settings control | rgb 0.75 0.75 0.75 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-038 | missing settings control | rgb 0.9 0 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-039 | missing settings control | rgb 0.9 0 0.9 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-040 | missing settings control | rgb 0.9 0.9 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-041 | missing settings control | rgb 0.9 0.9 0.9 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-MENU-076 | Lulo-only (not on the Mac) | Next Profile | View ▸ Next Profile |  | ⇧⌘P | present in Lulo but not found on the Mac |
-| TRM-MENU-081 | Lulo-only (not on the Mac) | Bottom | Window ▸ Move & Resize ▸ Bottom |  | ⌃⌘↓ | present in Lulo but not found on the Mac |
-| TRM-MENU-085 | Lulo-only (not on the Mac) | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-086 | Lulo-only (not on the Mac) | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-077 | Lulo-only (not on the Mac) | Halves | Window ▸ Move & Resize ▸ Halves |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-078 | Lulo-only (not on the Mac) | Left | Window ▸ Move & Resize ▸ Left |  | ⌃⌘← | present in Lulo but not found on the Mac |
-| TRM-MENU-082 | Lulo-only (not on the Mac) | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-087 | Lulo-only (not on the Mac) | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size |  | ⌃⇧⌘R | present in Lulo but not found on the Mac |
-| TRM-MENU-079 | Lulo-only (not on the Mac) | Right | Window ▸ Move & Resize ▸ Right |  | ⌃⌘→ | present in Lulo but not found on the Mac |
-| TRM-MENU-080 | Lulo-only (not on the Mac) | Top | Window ▸ Move & Resize ▸ Top |  | ⌃⌘↑ | present in Lulo but not found on the Mac |
-| TRM-MENU-083 | Lulo-only (not on the Mac) | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-084 | Lulo-only (not on the Mac) | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | present in Lulo but not found on the Mac |
+| TRM-SETTINGS-020 | missing settings control | Tab | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-021 | missing settings control | Window Groups | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-MENU-071 | Lulo-only (not on the Mac) | Next Profile | View ▸ Next Profile |  | ⇧⌘P | present in Lulo but not found on the Mac |
 
 ## Text Editor
 
@@ -681,7 +644,6 @@ _764 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/invent
 | TXT-MENU-076 | missing menu item (has a shortcut) | Copy Ruler | Format ▸ Text ▸ Copy Ruler | ⌃⌘C |  | missing from Lulo's menu bar |
 | TXT-MENU-077 | missing menu item (has a shortcut) | Paste Ruler | Format ▸ Text ▸ Paste Ruler | ⌃⌘V |  | missing from Lulo's menu bar |
 | TXT-MENU-075 | missing menu item (has a shortcut) | Show Ruler | Format ▸ Text ▸ Show Ruler | ⌘R |  | missing from Lulo's menu bar |
-| TXT-MENU-088 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
 | TXT-MENU-028 | missing menu item | Speech | Edit ▸ Speech |  |  | missing from Lulo's menu bar |
 | TXT-MENU-029 | missing menu item | Start Speaking | Edit ▸ Speech ▸ Start Speaking |  |  | missing from Lulo's menu bar |
 | TXT-MENU-030 | missing menu item | Stop Speaking | Edit ▸ Speech ▸ Stop Speaking |  |  | missing from Lulo's menu bar |
@@ -744,18 +706,18 @@ _764 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/invent
 | TXT-MENU-086 | missing menu item | Show All Tabs | View ▸ Show All Tabs |  |  | missing from Lulo's menu bar |
 | TXT-MENU-085 | missing menu item | Show Tab Bar | View ▸ Show Tab Bar |  |  | missing from Lulo's menu bar |
 | TXT-MENU-087 | missing menu item | Use Dark Background for Windows | View ▸ Use Dark Background for Windows |  |  | missing from Lulo's menu bar |
-| TXT-MENU-096 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
-| TXT-MENU-092 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| TXT-MENU-093 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
-| TXT-MENU-094 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
-| TXT-MENU-100 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
-| TXT-MENU-099 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
-| TXT-MENU-095 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
-| TXT-MENU-098 | missing menu item | Show Next Tab | Window ▸ Show Next Tab |  |  | missing from Lulo's menu bar |
-| TXT-MENU-097 | missing menu item | Show Previous Tab | Window ▸ Show Previous Tab |  |  | missing from Lulo's menu bar |
-| TXT-MENU-089 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
-| TXT-MENU-091 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
-| TXT-MENU-090 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
+| TXT-MENU-095 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| TXT-MENU-091 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
+| TXT-MENU-092 | missing menu item | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | missing from Lulo's menu bar |
+| TXT-MENU-093 | missing menu item | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | missing from Lulo's menu bar |
+| TXT-MENU-099 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
+| TXT-MENU-098 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
+| TXT-MENU-094 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
+| TXT-MENU-097 | missing menu item | Show Next Tab | Window ▸ Show Next Tab |  |  | missing from Lulo's menu bar |
+| TXT-MENU-096 | missing menu item | Show Previous Tab | Window ▸ Show Previous Tab |  |  | missing from Lulo's menu bar |
+| TXT-MENU-088 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |
+| TXT-MENU-090 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
+| TXT-MENU-089 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
 | TXT-SETTINGS-001 | missing settings control | Author: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TXT-SETTINGS-002 | missing settings control | Change… | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TXT-SETTINGS-003 | missing settings control | Check and correct spelling in rich text documents only | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
@@ -778,20 +740,7 @@ _764 gaps across 10 apps; 124 Mac-only items were allowlisted (see `tests/invent
 | TXT-SETTINGS-020 | missing settings control | Smart quotes and dashes in rich text documents only | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TXT-SETTINGS-021 | missing settings control | Text replacement | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TXT-SETTINGS-022 | missing settings control | Use the Format menu to choose settings for an open document. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-023 | missing settings control | text field | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-MENU-101 | Lulo-only (not on the Mac) | Clear Menu | File ▸ Open Recent ▸ Clear Menu |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-102 | Lulo-only (not on the Mac) | Monospaced | Format ▸ Monospaced |  | ⇧⌘M | present in Lulo but not found on the Mac |
-| TXT-MENU-107 | Lulo-only (not on the Mac) | Bottom | Window ▸ Move & Resize ▸ Bottom |  | ⌃⌘↓ | present in Lulo but not found on the Mac |
-| TXT-MENU-111 | Lulo-only (not on the Mac) | Bottom Left | Window ▸ Move & Resize ▸ Bottom Left |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-112 | Lulo-only (not on the Mac) | Bottom Right | Window ▸ Move & Resize ▸ Bottom Right |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-103 | Lulo-only (not on the Mac) | Halves | Window ▸ Move & Resize ▸ Halves |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-104 | Lulo-only (not on the Mac) | Left | Window ▸ Move & Resize ▸ Left |  | ⌃⌘← | present in Lulo but not found on the Mac |
-| TXT-MENU-108 | Lulo-only (not on the Mac) | Quarters | Window ▸ Move & Resize ▸ Quarters |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-113 | Lulo-only (not on the Mac) | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size |  | ⌃⇧⌘R | present in Lulo but not found on the Mac |
-| TXT-MENU-105 | Lulo-only (not on the Mac) | Right | Window ▸ Move & Resize ▸ Right |  | ⌃⌘→ | present in Lulo but not found on the Mac |
-| TXT-MENU-106 | Lulo-only (not on the Mac) | Top | Window ▸ Move & Resize ▸ Top |  | ⌃⌘↑ | present in Lulo but not found on the Mac |
-| TXT-MENU-109 | Lulo-only (not on the Mac) | Top Left | Window ▸ Move & Resize ▸ Top Left |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-110 | Lulo-only (not on the Mac) | Top Right | Window ▸ Move & Resize ▸ Top Right |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-100 | Lulo-only (not on the Mac) | Monospaced | Format ▸ Monospaced |  | ⇧⌘M | present in Lulo but not found on the Mac |
 
 ## Weather
 

@@ -8,9 +8,13 @@ set to the process started by the test harness.
 from __future__ import annotations
 
 import os
+import json
+from pathlib import Path
 
 import atspi_assert_support as support
 from assert_control_centre_accessibility import app_by_pid
+
+SCENARIO = json.loads((Path(__file__).resolve().parents[1] / "tests/behavior/notification-center/accessibility.lulo.json").read_text())
 
 
 def assert_tree(app) -> int:
@@ -18,15 +22,15 @@ def assert_tree(app) -> int:
     nodes = list(support.descendants(app))
     assert len(nodes) > 2, "Notification Center AT-SPI tree is empty"
     named = {(support.role(node), support.name(node)) for node in nodes}
-    assert any(name == "Notification Center" for _, name in named), "panel group is unnamed"
-    content = {"No recent notifications", "Notification Center Unavailable", "Loading Notification Center…"}
+    assert any(name == SCENARIO["panel"] for _, name in named), "panel group is unnamed"
+    content = set(SCENARIO["states"])
     assert any(name in content or (role in {"group", "push button", "button"}
-                                   and name != "Notification Center" and bool(name))
+                                   and name != SCENARIO["panel"] and bool(name))
                for role, name in named), (
         "Notification Center has no accessible status or notification cards"
     )
     for node in nodes:
-        if support.name(node) == "Edit Widgets":
+        if support.name(node) == SCENARIO["edit_button"]:
             assert "click" in support.actions(node), "Edit Widgets has no AT-SPI click"
     return len(nodes)
 

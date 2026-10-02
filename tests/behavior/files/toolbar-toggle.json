@@ -1,0 +1,13 @@
+{
+  "title": "⌥⌘T hides Finder's toolbar and restores it on the next press",
+  "app": "files",
+  "setup": {"files": {"example.txt": "Toolbar fixture.\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"observe": "initial", "facts": ["toolbar"]},
+    {"key": "alt-cmd-t", "settle": 0.2},
+    {"observe": "hidden", "facts": ["toolbar"]},
+    {"key": "alt-cmd-t", "settle": 0.2},
+    {"observe": "restored", "facts": ["toolbar"]}
+  ]
+}

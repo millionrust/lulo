@@ -386,6 +386,13 @@
           "children": []
         },
         {
+          "label": "Hide Toolbar",
+          "action": "finder::ToggleToolbar",
+          "shortcut": "⌥⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Enter Full Screen",
           "action": "finder::EnterFullScreen",
           "shortcut": "F",

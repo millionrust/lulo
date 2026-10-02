@@ -139,6 +139,12 @@ fn layer() -> Div {
 
 impl Render for QuickSettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // CC-13: keep easing a slider bulge across renders triggered by
+        // something else (e.g. a live volume update) without its own
+        // request_animation_frame; stops costing anything once settled.
+        if self.sliders_are_animating() {
+            window.request_animation_frame();
+        }
         let modules = self.modules();
         let panel = self.panel();
         // A detail view replaces the grid; any banners stay above it.
@@ -213,7 +219,7 @@ impl Render for QuickSettingsView {
                     cx.stop_propagation();
                 }
             }))
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 let Some(kind) = this.dragging else {
                     return;
                 };
@@ -221,16 +227,16 @@ impl Render for QuickSettingsView {
                     let value = slider_value(kind, f32::from(event.position.x));
                     this.slide(kind, value, cx);
                 } else {
-                    this.end_drag(cx);
+                    this.end_drag(window, cx);
                 }
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _: &MouseUpEvent, _, cx| this.end_drag(cx)),
+                cx.listener(|this, _: &MouseUpEvent, window, cx| this.end_drag(window, cx)),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, _: &MouseUpEvent, _, cx| this.end_drag(cx)),
+                cx.listener(|this, _: &MouseUpEvent, window, cx| this.end_drag(window, cx)),
             )
             .overflow_hidden()
             .rounded(px(layout::SURFACE_RADIUS as f32))

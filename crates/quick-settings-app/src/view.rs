@@ -1,10 +1,11 @@
 use std::process::Command as ProcessCommand;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{BorrowAppContext as _, Context, FocusHandle, KeyDownEvent, SharedString, Window};
 use rmac_quick_settings::detail::{self, Detail, Module, Panel, RowAction, Target};
 use rmac_quick_settings::layout::Modules;
 use rmac_quick_settings::{Command, Control, Operation, State};
+use rmac_ui::SliderBulge;
 
 use crate::QuickSettingsService;
 
@@ -22,6 +23,40 @@ pub(crate) enum SliderKind {
     DetailVolume,
 }
 
+/// One pointer/touch "bulge" per slider (CC-13). The grid shows Display and
+/// Sound at once, so each gets its own; the detail view's slider replaces
+/// the grid, so it does not compete with either.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct SliderBulges {
+    brightness: SliderBulge,
+    volume: SliderBulge,
+    detail_volume: SliderBulge,
+}
+
+impl SliderBulges {
+    fn get(&self, kind: SliderKind) -> SliderBulge {
+        match kind {
+            SliderKind::Brightness => self.brightness,
+            SliderKind::Volume => self.volume,
+            SliderKind::DetailVolume => self.detail_volume,
+        }
+    }
+
+    fn get_mut(&mut self, kind: SliderKind) -> &mut SliderBulge {
+        match kind {
+            SliderKind::Brightness => &mut self.brightness,
+            SliderKind::Volume => &mut self.volume,
+            SliderKind::DetailVolume => &mut self.detail_volume,
+        }
+    }
+
+    fn is_animating(&self, now_ms: u64) -> bool {
+        self.brightness.is_animating(now_ms)
+            || self.volume.is_animating(now_ms)
+            || self.detail_volume.is_animating(now_ms)
+    }
+}
+
 pub(crate) struct QuickSettingsView {
     pub(crate) state: State,
     pub(crate) stream_error: Option<SharedString>,
@@ -35,6 +70,13 @@ pub(crate) struct QuickSettingsView {
     /// Volume shown while a drag or its write is in flight.
     pub(crate) volume_preview: Option<u8>,
     pub(crate) dragging: Option<SliderKind>,
+    /// The slider the pointer is currently over, independent of `dragging`
+    /// (a drag can continue once the pointer strays off the hit rect).
+    pub(crate) hovered_slider: Option<SliderKind>,
+    /// Pointer/touch "bulge" progress per slider (CC-13).
+    pub(crate) slider_bulges: SliderBulges,
+    /// Monotonic clock epoch for slider-bulge animation timing.
+    epoch: Instant,
     /// Logical height the layer surface was last sized to.
     pub(crate) surface_height: f32,
     /// The Wi-Fi, Bluetooth or Sound list shown in place of the grid.
@@ -160,6 +202,9 @@ impl QuickSettingsView {
             player: None,
             volume_preview: None,
             dragging: None,
+            hovered_slider: None,
+            slider_bulges: SliderBulges::default(),
+            epoch: Instant::now(),
             surface_height: rmac_quick_settings::surface::LOGICAL_HEIGHT as f32,
             detail: None,
             others_expanded: false,
@@ -543,10 +588,70 @@ impl QuickSettingsView {
         .detach();
     }
 
-    pub(crate) fn end_drag(&mut self, cx: &mut Context<Self>) {
-        if self.dragging.take().is_some() {
+    pub(crate) fn end_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(kind) = self.dragging.take() {
+            self.sync_slider_bulge(kind, window);
             cx.notify();
         }
+    }
+
+    /// Milliseconds since the view was created, for slider-bulge timing
+    /// (CC-13). A monotonic clock, not wall time, so it never jumps.
+    pub(crate) fn now_ms(&self) -> u64 {
+        u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+
+    /// Whether any slider's bulge is still easing toward its target. The
+    /// renderer requests another frame while this is true, and stops once
+    /// it is false — idle CPU returns to ~0 once every bulge has settled.
+    pub(crate) fn sliders_are_animating(&self) -> bool {
+        self.slider_bulges.is_animating(self.now_ms())
+    }
+
+    /// Current eased bulge progress for `kind`'s slider, 0 (resting) ..= 1
+    /// (fully bulged), for the renderer to size the track with.
+    pub(crate) fn slider_bulge(&self, kind: SliderKind) -> f32 {
+        self.slider_bulges.get(kind).progress(self.now_ms())
+    }
+
+    /// A slider is "active" — bulged, per CC-13 — while the pointer is over
+    /// it or it is being dragged (a drag can continue once the pointer
+    /// strays off the hit rect; a touch press never hovers at all, but
+    /// pressing down already sets `dragging`).
+    fn is_slider_active(&self, kind: SliderKind) -> bool {
+        self.hovered_slider == Some(kind) || self.dragging == Some(kind)
+    }
+
+    /// Updates a slider's bulge target from its current hover/drag state
+    /// and requests the frame(s) needed to finish the transition. Once the
+    /// bulge settles, no further frames are requested, so idle CPU returns
+    /// to ~0.
+    pub(crate) fn sync_slider_bulge(&mut self, kind: SliderKind, window: &mut Window) {
+        let now = self.now_ms();
+        let active = self.is_slider_active(kind);
+        self.slider_bulges.get_mut(kind).set_active(active, now);
+        if self.slider_bulges.get(kind).is_animating(now) {
+            window.request_animation_frame();
+        }
+    }
+
+    /// Pointer entered or left a slider's hit rect (CC-13).
+    pub(crate) fn set_slider_hovered(
+        &mut self,
+        kind: SliderKind,
+        hovered: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.hovered_slider = if hovered {
+            Some(kind)
+        } else if self.hovered_slider == Some(kind) {
+            None
+        } else {
+            self.hovered_slider
+        };
+        self.sync_slider_bulge(kind, window);
+        cx.notify();
     }
 
     pub(crate) fn toggle_low_power(&mut self, cx: &mut Context<Self>) {
@@ -629,5 +734,29 @@ impl QuickSettingsView {
 
     pub(crate) fn dismiss(&mut self, window: &mut Window, _cx: &mut Context<Self>) {
         window.remove_window();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmac_ui::SLIDER_BULGE_MS;
+
+    #[test]
+    fn slider_bulges_track_each_slider_independently() {
+        let mut bulges = SliderBulges::default();
+        bulges.get_mut(SliderKind::Brightness).set_active(true, 0);
+        assert!(bulges.get(SliderKind::Brightness).progress(0) >= 0.0);
+        assert_eq!(bulges.get(SliderKind::Volume).progress(0), 0.0);
+        assert_eq!(bulges.get(SliderKind::DetailVolume).progress(0), 0.0);
+        assert!(bulges.is_animating(0));
+        assert!(!bulges.is_animating(SLIDER_BULGE_MS));
+    }
+
+    #[test]
+    fn slider_bulges_default_to_resting_and_not_animating() {
+        let bulges = SliderBulges::default();
+        assert_eq!(bulges.get(SliderKind::Brightness).progress(0), 0.0);
+        assert!(!bulges.is_animating(0));
     }
 }

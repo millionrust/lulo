@@ -518,6 +518,15 @@ class Run:
                 lambda: self.has_layer(namespace)
                 and self.has_layer(f"{namespace}-click-catcher"), 10
             )
+            if not opened and self.popover_gone(namespace):
+                # Activation may race the prior window's final removal in a
+                # rapid scripted sequence. Retry only from a closed state so
+                # a late first open cannot be toggled shut.
+                self.dispatch(shortcut)
+                opened = self.wait_for(
+                    lambda: self.has_layer(namespace)
+                    and self.has_layer(f"{namespace}-click-catcher"), 10
+                )
             self.check(f"{shortcut}: opens for {method}", opened)
             if not opened:
                 continue

@@ -12,9 +12,11 @@ use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab
 use crate::view_filter::ViewFilter;
 use crate::{
     process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, FilterProcesses,
-    FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, Minimize, QuitProcess,
+    FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, JumpToSelection,
+    Minimize, QuitProcess, UseSelectionForFind,
     RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds, ShowActiveProcesses,
-    ShowAllProcesses, ShowMyProcesses, ShowOtherUsersProcesses, ShowSystemProcesses,
+    ShowAllProcesses, ShowInactiveProcesses, ShowMyProcesses, ShowOtherUsersProcesses,
+    ShowSystemProcesses,
     ToggleCpuColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
 };
 
@@ -56,6 +58,12 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &FindPrevious, _, cx| {
                 this.find_match(false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &UseSelectionForFind, window, cx| {
+                this.use_selection_for_find(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &JumpToSelection, _, cx| {
+                this.jump_to_selection(cx);
             }))
             .on_action(cx.listener(|this, _: &InspectProcess, _, cx| {
                 this.inspect_selected(cx);
@@ -101,6 +109,9 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ShowActiveProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::ActiveProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowInactiveProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::InactiveProcesses, cx);
             }))
             .on_action(cx.listener(|this, _: &ConfirmKill, _, cx| {
                 this.confirm_kill(cx);

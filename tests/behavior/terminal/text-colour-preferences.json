@@ -1,0 +1,13 @@
+{
+  "title": "Terminal text preferences persist their checked state",
+  "app": "terminal",
+  "lulo_only": true,
+  "steps": [
+    {"key": "cmd-,"},
+    {"observe": "default", "facts": ["settings_controls"]},
+    {"select": "Use bold fonts"},
+    {"observe": "bold_off", "facts": ["settings_controls"]},
+    {"select": "Use bright colours for bold text"},
+    {"observe": "bright_off", "facts": ["settings_controls"]}
+  ]
+}

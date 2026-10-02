@@ -893,6 +893,16 @@ class LuloRun:
                     names.append(label)
         return {"items": names}
 
+    def fact_settings_controls(self) -> dict[str, Any]:
+        """Checked state of visible settings checkboxes in the active window."""
+        pyatspi = atspi()
+        frame = self.active_frame()
+        controls = {}
+        for node in descendants(frame, limit=3000) if frame is not None else []:
+            if role(node) == "check box" and name(node):
+                controls[name(node)] = has_state(node, pyatspi.STATE_CHECKED)
+        return {"checked": controls}
+
     def fact_tabs(self) -> dict[str, Any]:
         frame = self.active_frame()
         pyatspi = atspi()

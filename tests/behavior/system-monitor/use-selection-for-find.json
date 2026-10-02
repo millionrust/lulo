@@ -1,0 +1,20 @@
+{
+  "title": "Use Selection for Find searches the selected process name",
+  "app": "system-monitor",
+  "lulo_only": true,
+  "steps": [
+    {"key": "alt-cmd-f"},
+    {"type": "rmac"},
+    {"key": "cmd-g"},
+    {"observe": "selected", "facts": ["selection"]},
+    {"key": "cmd-e"},
+    {"key": "alt-cmd-f"},
+    {"observe": "query", "facts": ["focus"]},
+    {"key": "cmd-j"},
+    {"observe": "jumped", "facts": ["selection"]}
+  ],
+  "tolerance": {
+    "selected.selection.items": "count",
+    "jumped.selection.items": "count"
+  }
+}

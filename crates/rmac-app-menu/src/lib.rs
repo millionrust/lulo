@@ -725,6 +725,7 @@ const MONITOR_MENUS: &[MenuSpec] = &[
             item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "input::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
+            item!("Delete", "input::Delete", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
             submenu!(
                 "Find",
@@ -733,6 +734,16 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                     item!("Find…", "activity_monitor::FocusSearch", "⌘F"),
                     item!("Find Next", "activity_monitor::FindNext", "⌘G"),
                     item!("Find Previous", "activity_monitor::FindPrevious", "⇧⌘G"),
+                    item!(
+                        "Use Selection for Find",
+                        "activity_monitor::UseSelectionForFind",
+                        "⌘E"
+                    ),
+                    item!(
+                        "Jump to Selection",
+                        "activity_monitor::JumpToSelection",
+                        "⌘J"
+                    ),
                 ],
                 separator
             ),
@@ -789,6 +800,11 @@ const MONITOR_MENUS: &[MenuSpec] = &[
             item!(
                 "Active Processes",
                 "activity_monitor::ShowActiveProcesses",
+                ""
+            ),
+            item!(
+                "Inactive Processes",
+                "activity_monitor::ShowInactiveProcesses",
                 ""
             ),
             item!(

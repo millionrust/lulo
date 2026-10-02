@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "system-monitor/use-selection-for-find",
+  "platform": "Lulo local contract",
+  "observations": {
+    "selected": {"selection": {"items": ["matching process"]}},
+    "query": {"focus": {"role": "text-field", "value": "rmac-system-monitor"}},
+    "jumped": {"selection": {"items": ["matching process"]}}
+  }
+}

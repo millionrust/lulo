@@ -237,7 +237,15 @@ impl TerminalView {
             for column in 0..self.cols {
                 let cell = &row[Column(column)];
                 let flags = cell.flags;
-                let mut foreground = conv(cell.fg);
+                let mut foreground = if self.display_ansi_colours {
+                    conv(if self.bright_bold_text && flags.contains(Flags::BOLD) {
+                        bright_variant(cell.fg)
+                    } else {
+                        cell.fg
+                    })
+                } else {
+                    hsla(active().fg)
+                };
                 let mut background = conv(cell.bg);
 
                 if flags.contains(Flags::DIM) {
@@ -273,7 +281,7 @@ impl TerminalView {
                 let style = Style {
                     fg: foreground,
                     bg: background,
-                    bold: flags.intersects(Flags::BOLD | Flags::DIM_BOLD),
+                    bold: self.use_bold_fonts && flags.intersects(Flags::BOLD | Flags::DIM_BOLD),
                     italic: flags.contains(Flags::ITALIC),
                     underline: flags.intersects(Flags::ALL_UNDERLINES)
                         || cell.hyperlink().is_some(),
@@ -340,6 +348,27 @@ fn conv(color: Color) -> Hsla {
     gpui::rgb(((red as u32) << 16) | ((green as u32) << 8) | (blue as u32)).into()
 }
 
+/// SGR 1 can use the bright half of the profile's ANSI palette while bold
+/// type remains a separate preference. True RGB colours stay exact.
+fn bright_variant(color: Color) -> Color {
+    use NamedColor::*;
+    match color {
+        Color::Named(name) => Color::Named(match name {
+            Black => BrightBlack,
+            Red => BrightRed,
+            Green => BrightGreen,
+            Yellow => BrightYellow,
+            Blue => BrightBlue,
+            Magenta => BrightMagenta,
+            Cyan => BrightCyan,
+            White => BrightWhite,
+            _ => name,
+        }),
+        Color::Indexed(index @ 0..=7) => Color::Indexed(index + 8),
+        _ => color,
+    }
+}
+
 fn named_color(color: NamedColor) -> (u8, u8, u8) {
     use NamedColor::*;
     let profile = active();
@@ -390,6 +419,23 @@ fn indexed_color(index: u8) -> (u8, u8, u8) {
             let value = 8 + (index - 232) * 10;
             (value, value, value)
         }
+    }
+}
+
+#[cfg(test)]
+mod colour_preference_tests {
+    use super::*;
+
+    #[test]
+    fn bold_brightens_palette_colours_without_changing_true_rgb() {
+        assert_eq!(
+            bright_variant(Color::Named(NamedColor::Red)),
+            Color::Named(NamedColor::BrightRed),
+        );
+        assert_eq!(bright_variant(Color::Indexed(2)), Color::Indexed(10));
+        assert_eq!(bright_variant(Color::Indexed(17)), Color::Indexed(17));
+        let rgb = Color::Spec(vte::ansi::Rgb { r: 1, g: 2, b: 3 });
+        assert_eq!(bright_variant(rgb), rgb);
     }
 }
 

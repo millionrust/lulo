@@ -97,6 +97,9 @@ impl NewWindowWorkingDirectory {
 pub(crate) struct Settings {
     pub(crate) cursor_style: CursorStyle,
     pub(crate) cursor_blink: bool,
+    pub(crate) use_bold_fonts: bool,
+    pub(crate) bright_bold_text: bool,
+    pub(crate) display_ansi_colours: bool,
     pub(crate) columns: u16,
     pub(crate) rows: u16,
     pub(crate) when_shell_exits: ShellExitBehavior,
@@ -108,6 +111,9 @@ impl Default for Settings {
         Self {
             cursor_style: CursorStyle::default(),
             cursor_blink: true,
+            use_bold_fonts: true,
+            bright_bold_text: true,
+            display_ansi_colours: true,
             columns: DEFAULT_COLUMNS,
             rows: DEFAULT_ROWS,
             when_shell_exits: ShellExitBehavior::default(),
@@ -217,6 +223,9 @@ mod tests {
         assert_eq!(settings.rows, 24);
         assert_eq!(settings.cursor_style, CursorStyle::Block);
         assert!(settings.cursor_blink);
+        assert!(settings.use_bold_fonts);
+        assert!(settings.bright_bold_text);
+        assert!(settings.display_ansi_colours);
         assert_eq!(settings.when_shell_exits, ShellExitBehavior::DontClose);
         assert_eq!(
             settings.new_window_directory,
@@ -229,6 +238,9 @@ mod tests {
         let settings = Settings {
             cursor_style: CursorStyle::Bar,
             cursor_blink: false,
+            use_bold_fonts: false,
+            bright_bold_text: false,
+            display_ansi_colours: false,
             columns: 120,
             rows: 40,
             when_shell_exits: ShellExitBehavior::CloseIfCleanExit,

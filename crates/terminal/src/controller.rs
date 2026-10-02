@@ -217,6 +217,9 @@ pub(super) struct TerminalView {
     cursor_style: CursorStyle,
     /// Terminal ▸ Settings… ▸ Text ▸ Blink cursor, read once at creation.
     cursor_blink_enabled: bool,
+    use_bold_fonts: bool,
+    bright_bold_text: bool,
+    display_ansi_colours: bool,
     /// Current phase of the cursor-blink animation; always `true` (visible)
     /// when blink is disabled or the window is not focused. The animation
     /// task that flips this exits the instant focus is lost or blink turns

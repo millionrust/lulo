@@ -425,6 +425,18 @@
       },
       {
         "kind": "control",
+        "label": "Use bold fonts"
+      },
+      {
+        "kind": "control",
+        "label": "Use bright colours for bold text"
+      },
+      {
+        "kind": "control",
+        "label": "Display ANSI colours"
+      },
+      {
+        "kind": "control",
         "label": "Blink cursor"
       },
       {

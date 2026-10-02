@@ -107,6 +107,13 @@
           "children": []
         },
         {
+          "label": "Delete",
+          "action": "input::Delete",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Select All",
           "action": "input::SelectAll",
           "shortcut": "⌘A",
@@ -137,6 +144,20 @@
               "label": "Find Previous",
               "action": "activity_monitor::FindPrevious",
               "shortcut": "⇧⌘G",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Use Selection for Find",
+              "action": "activity_monitor::UseSelectionForFind",
+              "shortcut": "⌘E",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Selection",
+              "action": "activity_monitor::JumpToSelection",
+              "shortcut": "⌘J",
               "separator_before": false,
               "children": []
             }
@@ -250,6 +271,13 @@
         {
           "label": "Active Processes",
           "action": "activity_monitor::ShowActiveProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Inactive Processes",
+          "action": "activity_monitor::ShowInactiveProcesses",
           "shortcut": "",
           "separator_before": false,
           "children": []

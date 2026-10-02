@@ -307,7 +307,9 @@ impl Render for FinderView {
                     .min_w(px(0.0))
                     .h_full()
                     .v_flex()
-                    .when(self.toolbar_visible, |el| el.child(self.render_toolbar(layout, cx)))
+                    .when(self.toolbar_visible, |el| {
+                        el.child(self.render_toolbar(layout, cx))
+                    })
                     .when_some(operation_notice, |el, message| {
                         let checking = message.as_ref() == DIRECTORY_STALL_NOTICE;
                         el.child(
@@ -672,7 +674,11 @@ impl FinderView {
         rmac_ui::set_menu_label("finder::TogglePathBar", state.path_bar_label, cx);
         rmac_ui::set_menu_label(
             "finder::ToggleToolbar",
-            if self.toolbar_visible { "Hide Toolbar" } else { "Show Toolbar" },
+            if self.toolbar_visible {
+                "Hide Toolbar"
+            } else {
+                "Show Toolbar"
+            },
             cx,
         );
         rmac_ui::set_menu_label(

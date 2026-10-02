@@ -7005,6 +7005,7 @@ dependencies = [
  "rmac-theme",
  "rmac-top-bar",
  "rmac-window-state",
+ "unicode-segmentation",
 ]
 
 [[package]]

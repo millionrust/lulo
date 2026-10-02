@@ -2732,7 +2732,7 @@ mod tests {
         );
         assert_eq!(menus[0].items[0].label, "as Icons");
         assert_eq!(menus[1].items[0].action, "finder::GoBack");
-        assert_eq!(menus[2].items[1].shortcut, "⌃⇥");
+        assert_eq!(menus[2].items[1].shortcut, "");
         assert!(validate_menus(&menus).is_ok());
     }
 

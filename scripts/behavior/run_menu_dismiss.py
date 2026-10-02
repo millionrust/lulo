@@ -625,7 +625,10 @@ class Run:
         layer_open = False
         for _ in range(4):
             if self.popover_gone(namespace):
-                self.dispatch("quick-settings")
+                result = self.dispatch("quick-settings")
+                print(f"Control Center dispatch: rc={result.returncode} "
+                      f"stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}",
+                      flush=True)
             layer_open = self.wait_for(
                 lambda: self.has_layer(namespace)
                 and self.has_layer(f"{namespace}-click-catcher"), 3

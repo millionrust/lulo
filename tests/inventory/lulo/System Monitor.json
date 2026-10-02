@@ -443,6 +443,13 @@
           ]
         },
         {
+          "label": "Activity Monitor",
+          "action": "activity_monitor::ShowMainWindow",
+          "shortcut": "⌘1",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Bring All to Front",
           "action": "window::bring-all-to-front",
           "shortcut": "",

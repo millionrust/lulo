@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_788 gaps across 10 apps; 118 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_787 gaps across 10 apps; 118 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Calculator
 
@@ -431,10 +431,9 @@ _788 gaps across 10 apps; 118 Mac-only items were allowlisted (see `tests/invent
 | MON-MENU-041 | missing menu item (has a shortcut) | Enter Full Screen | View ▸ Enter Full Screen | F |  | missing from Lulo's menu bar |
 | MON-MENU-038 | missing menu item (has a shortcut) | Sample Process | View ▸ Sample Process | ⌥⌘S |  | missing from Lulo's menu bar |
 | MON-MENU-040 | missing menu item (has a shortcut) | Show Deltas for Process | View ▸ Show Deltas for Process | ⌥⌘J |  | missing from Lulo's menu bar |
-| MON-MENU-061 | missing menu item (has a shortcut) | Activity Monitor | Window ▸ Activity Monitor | ⌘1 |  | missing from Lulo's menu bar |
-| MON-MENU-063 | missing menu item (has a shortcut) | CPU History | Window ▸ CPU History | ⌘3 |  | missing from Lulo's menu bar |
-| MON-MENU-062 | missing menu item (has a shortcut) | CPU Usage | Window ▸ CPU Usage | ⌘2 |  | missing from Lulo's menu bar |
-| MON-MENU-064 | missing menu item (has a shortcut) | GPU History | Window ▸ GPU History | ⌘4 |  | missing from Lulo's menu bar |
+| MON-MENU-062 | missing menu item (has a shortcut) | CPU History | Window ▸ CPU History | ⌘3 |  | missing from Lulo's menu bar |
+| MON-MENU-061 | missing menu item (has a shortcut) | CPU Usage | Window ▸ CPU Usage | ⌘2 |  | missing from Lulo's menu bar |
+| MON-MENU-063 | missing menu item (has a shortcut) | GPU History | Window ▸ GPU History | ⌘4 |  | missing from Lulo's menu bar |
 | MON-MENU-057 | missing menu item (has a shortcut) | Bottom & Quarters | Window ▸ Move & Resize ▸ Bottom & Quarters | ⌃⌥⇧↓ |  | missing from Lulo's menu bar |
 | MON-MENU-056 | missing menu item (has a shortcut) | Bottom & Top | Window ▸ Move & Resize ▸ Bottom & Top | ⌃⇧↓ |  | missing from Lulo's menu bar |
 | MON-MENU-051 | missing menu item (has a shortcut) | Left & Quarters | Window ▸ Move & Resize ▸ Left & Quarters | ⌃⌥⇧← |  | missing from Lulo's menu bar |
@@ -479,10 +478,10 @@ _788 gaps across 10 apps; 118 Mac-only items were allowlisted (see `tests/invent
 | MON-MENU-037 | missing menu item | Processes, by GPU | View ▸ Processes, by GPU |  |  | missing from Lulo's menu bar |
 | MON-MENU-039 | missing menu item | Send Signal to Process… | View ▸ Send Signal to Process… |  |  | missing from Lulo's menu bar |
 | MON-MENU-035 | missing menu item | Windowed Processes | View ▸ Windowed Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-067 | missing menu item | Activity Monitor (All Processes) | Window ▸ Activity Monitor (All Processes) |  |  | missing from Lulo's menu bar |
-| MON-MENU-066 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
+| MON-MENU-066 | missing menu item | Activity Monitor (All Processes) | Window ▸ Activity Monitor (All Processes) |  |  | missing from Lulo's menu bar |
+| MON-MENU-065 | missing menu item | Arrange in Front | Window ▸ Arrange in Front |  |  | missing from Lulo's menu bar |
 | MON-MENU-059 | missing menu item | Full-Screen Tile | Window ▸ Full-Screen Tile |  |  | missing from Lulo's menu bar |
-| MON-MENU-065 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
+| MON-MENU-064 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
 | MON-MENU-049 | missing menu item | Arrange | Window ▸ Move & Resize ▸ Arrange |  |  | missing from Lulo's menu bar |
 | MON-MENU-060 | missing menu item | Remove Window from Set | Window ▸ Remove Window from Set |  |  | missing from Lulo's menu bar |
 | MON-MENU-042 | missing menu item | Zoom All | Window ▸ Zoom All |  |  | missing from Lulo's menu bar |

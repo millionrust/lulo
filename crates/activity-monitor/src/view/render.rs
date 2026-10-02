@@ -15,7 +15,7 @@ use crate::{
     FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, JumpToSelection,
     Minimize, QuitProcess, RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds,
     ShowActiveProcesses, ShowAllProcesses, ShowInactiveProcesses, ShowMyProcesses,
-    ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleCpuColumn, ToggleMemoryColumn,
+    ShowMainWindow, ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleCpuColumn, ToggleMemoryColumn,
     TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
 };
 
@@ -114,6 +114,9 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ShowSelectedProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::SelectedProcesses, cx);
+            }))
+            .on_action(cx.listener(|_, _: &ShowMainWindow, window, _| {
+                window.activate_window();
             }))
             .on_action(cx.listener(|this, _: &ConfirmKill, _, cx| {
                 this.confirm_kill(cx);

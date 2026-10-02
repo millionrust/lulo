@@ -883,6 +883,14 @@ const FILES_MENUS: &[MenuSpec] = &[
 
 const MONITOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: WINDOW_MENU,
+        items: &[item!(
+            "Activity Monitor",
+            "activity_monitor::ShowMainWindow",
+            "⌘1"
+        )],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             item!("Close", "activity_monitor::Close", "⌘W"),

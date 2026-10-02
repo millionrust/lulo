@@ -36,6 +36,7 @@ gpui::actions!(
         ShowActiveProcesses,
         ShowInactiveProcesses,
         ShowSelectedProcesses,
+        ShowMainWindow,
         TogglePidColumn,
         ToggleUserColumn,
         ToggleCpuColumn,
@@ -110,6 +111,7 @@ fn main() {
                 // ⌘M minimizes the window, the same as the yellow traffic
                 // light.
                 gpui::KeyBinding::new("cmd-m", Minimize, Some("ActivityMonitor")),
+                gpui::KeyBinding::new("cmd-1", ShowMainWindow, Some("ActivityMonitor")),
             ]);
             window.focus(&view.focus, cx);
             view

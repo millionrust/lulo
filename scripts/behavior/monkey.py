@@ -118,7 +118,10 @@ CRASH_MARKERS = ("panicked at", "fatal runtime error", "stack overflow",
                   "RUST_BACKTRACE=1 was not", "memory allocation of")
 DIALOG_ROLES = {"dialog", "alert", "file chooser"}
 ERROR_KEYWORDS = ("error", "panic", "crash", "failed to", "unexpected", "unreachable")
-UNSAFE_MENU_WORDS = ("quit process", "force quit", "shut down", "restart", "sleep", "log out", "lock screen")
+# Printing needs a real printer/portal and cannot produce a meaningful
+# finding in the private headless compositor.
+UNSAFE_MENU_WORDS = ("quit process", "force quit", "shut down", "restart", "sleep",
+                     "log out", "lock screen", "print")
 SAFE_NAV_APPS = {"settings", "system-monitor"}
 SAFE_NAV_ROLES = {"list item", "page tab", "tab", "tree item"}
 

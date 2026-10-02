@@ -86,7 +86,8 @@ the app and are recorded as replayable actions. Idle CPU sampling starts
 `/tmp/lulo-journey.lock` itself like every other runner here.
 Settings and System Monitor random clicks are confined to navigation; the
 System Monitor's Quit Process shortcut is excluded. Terminal text omits
-newlines, so random typing cannot submit a shell command.
+newlines, so random typing cannot submit a shell command. Print shortcuts
+are skipped because the private headless compositor has no printer portal.
 
 ```sh
 python3 scripts/behavior/monkey.py --bin-dir ~/lulo-monkey-bins \

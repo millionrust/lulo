@@ -97,6 +97,10 @@ class ShortcutInventoryTests(unittest.TestCase):
         labels = [label for label, _shortcut in monkey.load_shortcuts("system-monitor")]
         self.assertFalse(any("Quit Process" in label for label in labels))
 
+    def test_headless_run_never_uses_print_shortcut(self):
+        labels = [label for label, _shortcut in monkey.load_shortcuts("text-editor")]
+        self.assertFalse(any("Print" in label for label in labels))
+
     def test_settings_sidebar_allowlist_contains_panes(self):
         labels = monkey.load_settings_sidebar_labels()
         self.assertIn("Spotlight", labels)

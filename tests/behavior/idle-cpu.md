@@ -30,3 +30,18 @@ python3 scripts/behavior/monkey.py --bin-dir ~/lulo-monkey-bins \
   --niri /usr/bin/niri --app settings --idle-only \
   --idle-seconds 60 --max-idle-cpu 0.3
 ```
+
+The shared input component also powers Files Search and Text Editor Find.
+Focus those fields through their normal shortcut, then sample the same idle
+window in the private compositor:
+
+```sh
+printf '%s\n' '[{"index":0,"kind":"shortcut","params":{"chord":"⌘F"},"note":"focus search"}]' \
+  > /tmp/lulo-focused-search-replay.json
+for app in files text-editor; do
+  python3 scripts/behavior/monkey.py --bin-dir ~/lulo-monkey-bins \
+    --niri /usr/bin/niri --app "$app" \
+    --replay /tmp/lulo-focused-search-replay.json --check-idle-cpu \
+    --idle-seconds 60 --max-idle-cpu 0.3
+done
+```

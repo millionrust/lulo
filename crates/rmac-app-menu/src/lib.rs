@@ -568,6 +568,15 @@ const NOTES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
+            submenu!(
+                "Recent Notes",
+                "notes::RecentNotesMenu",
+                [
+                    item!("Previous Note", "notes::PreviousRecentNote", "⌥⌘["),
+                    item!("Next Note", "notes::NextRecentNote", "⌥⌘]"),
+                    item!("Clear Menu", "notes::ClearRecentNotes", "", separator),
+                ]
+            ),
             item!("Hide Folders", "notes::ToggleFolders", "⌃⌘S"),
             item!("Hide Note Count", "notes::ToggleNoteCount", ""),
             item!("Zoom In", "notes::ZoomIn", "⇧⌘."),

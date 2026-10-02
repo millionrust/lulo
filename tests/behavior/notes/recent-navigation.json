@@ -1,0 +1,18 @@
+{
+  "title": "Notes: Recent Notes shortcuts revisit the selected notes",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "First recent note"},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "Second recent note"},
+    {"observe": "second_note", "facts": ["focus"]},
+    {"key": "alt-cmd-["},
+    {"observe": "previous_note", "facts": ["focus"]},
+    {"key": "alt-cmd-]"},
+    {"observe": "next_note", "facts": ["focus"]}
+  ]
+}

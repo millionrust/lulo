@@ -1,6 +1,57 @@
 use super::*;
 
 impl NotesView {
+    pub(super) fn record_recent_note(&mut self) {
+        let selected = self.session.selected_note_id();
+        if selected == self.last_editor_note {
+            return;
+        }
+        self.last_editor_note = selected;
+        let Some(note_id) = selected else {
+            self.recent_position = None;
+            return;
+        };
+        self.recent_notes.retain(|id| *id != note_id);
+        self.recent_notes.insert(0, note_id);
+        self.recent_notes.truncate(10);
+        self.recent_position = Some(0);
+    }
+
+    pub(super) fn navigate_recent_note(
+        &mut self,
+        offset: isize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(position) = self.recent_position else {
+            return;
+        };
+        let Some(next) = position.checked_add_signed(offset) else {
+            return;
+        };
+        let Some(note_id) = self.recent_notes.get(next).copied() else {
+            return;
+        };
+        // A note visited in another folder remains reachable from Recents.
+        self.session
+            .select_folder(rmac_notes_runtime::FolderSelection::All);
+        if self.session.select_note(note_id) {
+            self.recent_position = Some(next);
+            self.last_editor_note = Some(note_id);
+            self.sync_editor(window, cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn clear_recent_notes(&mut self, cx: &mut Context<Self>) {
+        self.recent_notes.clear();
+        self.recent_position = None;
+        cx.notify();
+    }
+
     pub(super) fn select_folder(
         &mut self,
         folder: rmac_notes_runtime::FolderSelection,
@@ -590,6 +641,13 @@ impl NotesView {
         rmac_ui::set_menu_enabled("notes::ZoomIn", self.note_zoom < 12, cx);
         rmac_ui::set_menu_enabled("notes::ZoomOut", self.note_zoom > -5, cx);
         rmac_ui::set_menu_enabled("notes::ZoomReset", self.note_zoom != 0, cx);
+        let previous = self
+            .recent_position
+            .is_some_and(|position| position + 1 < self.recent_notes.len());
+        let next = self.recent_position.is_some_and(|position| position > 0);
+        rmac_ui::set_menu_enabled("notes::PreviousRecentNote", ready && previous, cx);
+        rmac_ui::set_menu_enabled("notes::NextRecentNote", ready && next, cx);
+        rmac_ui::set_menu_enabled("notes::ClearRecentNotes", !self.recent_notes.is_empty(), cx);
     }
 
     pub(super) fn set_sort(&mut self, sort_order: SortOrder, cx: &mut Context<Self>) {

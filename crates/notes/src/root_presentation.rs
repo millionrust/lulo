@@ -97,6 +97,13 @@ impl NotesView {
             .on_action(cx.listener(|_, _: &FocusMainWindow, window, _| {
                 window.activate_window();
             }))
+            .on_action(cx.listener(|this, _: &PreviousRecentNote, window, cx| {
+                this.navigate_recent_note(1, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &NextRecentNote, window, cx| {
+                this.navigate_recent_note(-1, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ClearRecentNotes, _, cx| this.clear_recent_notes(cx)))
             .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
             .on_action(cx.listener(|this, _: &DuplicateNote, _, cx| this.duplicate_note(cx)))
             .on_action(

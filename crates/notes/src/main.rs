@@ -92,6 +92,9 @@ actions!(
         DeleteSelectedNote,
         CloseAll,
         FocusMainWindow,
+        PreviousRecentNote,
+        NextRecentNote,
+        ClearRecentNotes,
         TogglePin,
         DuplicateNote,
         SortByEdited,
@@ -227,6 +230,11 @@ struct NotesView {
     /// The note plain ⌫ most recently moved to Trash, so the status
     /// banner's Undo button can bring back exactly that one.
     pending_undo_trash: Option<(NoteId, u64)>,
+    /// Most recently visited notes, newest first. Navigation leaves this
+    /// order intact so Previous/Next can traverse it in both directions.
+    recent_notes: Vec<NoteId>,
+    recent_position: Option<usize>,
+    last_editor_note: Option<NoteId>,
 }
 
 impl NotesView {
@@ -295,6 +303,9 @@ impl NotesView {
             note_find_matches: Vec::new(),
             note_find_current: 0,
             pending_undo_trash: None,
+            recent_notes: Vec::new(),
+            recent_position: None,
+            last_editor_note: None,
         };
 
         view.start_workers(window, cx);

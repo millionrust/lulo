@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "notes/recent-navigation",
+  "observations": {
+    "second_note": {"focus": {"role": "text-field", "label": "Title", "value": "Second recent note"}},
+    "previous_note": {"focus": {"role": "text-field", "label": "Title", "value": "First recent note"}},
+    "next_note": {"focus": {"role": "text-field", "label": "Title", "value": "Second recent note"}}
+  }
+}

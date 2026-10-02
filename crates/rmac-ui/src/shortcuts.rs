@@ -32,6 +32,7 @@ pub const FIND_NEXT: Shortcut = Shortcut::new("cmd-g", "⌘G");
 pub const FIND_PREVIOUS: Shortcut = Shortcut::new("cmd-shift-g", "⇧⌘G");
 pub const SELECT_ALL: Shortcut = Shortcut::new("cmd-a", "⌘A");
 pub const COPY: Shortcut = Shortcut::new("cmd-c", "⌘C");
+pub const COPY_AS_PATHNAME: Shortcut = Shortcut::new("cmd-alt-c", "⌥⌘C");
 pub const CUT: Shortcut = Shortcut::new("cmd-x", "⌘X");
 pub const PASTE: Shortcut = Shortcut::new("cmd-v", "⌘V");
 pub const UNDO: Shortcut = Shortcut::new("cmd-z", "⌘Z");
@@ -99,6 +100,7 @@ mod tests {
         FIND_PREVIOUS,
         SELECT_ALL,
         COPY,
+        COPY_AS_PATHNAME,
         CUT,
         PASTE,
         UNDO,

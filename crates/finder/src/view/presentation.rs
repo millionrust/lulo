@@ -520,6 +520,7 @@ impl Render for FinderView {
                         state.position(),
                         sort_key,
                         compress_label,
+                        SelectionMenuLabels::from_paths(&self.selected_paths()).copy_as_pathname,
                         self.selection_count(),
                         can_open_with,
                         self.open_with_menu
@@ -573,6 +574,65 @@ impl FinderView {
         let compress_label = archive_controller::compress_menu_label(&selection);
         rmac_ui::set_menu_label("finder::CopyItems", &labels.copy, cx);
         rmac_ui::set_menu_label("finder::CopyAsPathname", &labels.copy_as_pathname, cx);
+        let quick_look_label = match selection.as_slice() {
+            [path] => {
+                let name = path
+                    .file_name()
+                    .unwrap_or(path.as_os_str())
+                    .to_string_lossy();
+                format!("Quick Look “{}”", sanitize_dialog_name(&name))
+            }
+            paths if paths.len() > 1 => format!("Quick Look {} Items", paths.len()),
+            _ => "Quick Look".to_owned(),
+        };
+        rmac_ui::set_menu_label("finder::QuickLook", &quick_look_label, cx);
+        let has_selection = !selection.is_empty();
+        rmac_ui::set_menu_enabled("finder::QuickLook", has_selection, cx);
+        rmac_ui::set_menu_checked(
+            "finder::UseGroups",
+            self.current_options().group_by != view_options::GroupBy::None,
+            cx,
+        );
+        for (action, mode) in [
+            ("finder::ViewAsIcons", ViewMode::Icon),
+            ("finder::ViewAsList", ViewMode::List),
+            ("finder::ViewAsColumns", ViewMode::Column),
+            ("finder::ViewAsGallery", ViewMode::Gallery),
+        ] {
+            rmac_ui::set_menu_checked(action, self.view == mode, cx);
+        }
+        for action in [
+            "finder::CopyAsPathname",
+            "finder::CopyAsLink",
+            "finder::DeselectAll",
+        ] {
+            rmac_ui::set_menu_enabled(action, has_selection, cx);
+        }
+        let has_folder = self.selected_folder().is_some();
+        for action in [
+            "finder::OpenSelectionInNewTab",
+            "finder::OpenSelectionInNewWindowAndClose",
+        ] {
+            rmac_ui::set_menu_enabled(action, has_folder, cx);
+        }
+        rmac_ui::set_menu_enabled("finder::GoUpInNewWindow", self.cwd.parent().is_some(), cx);
+        rmac_ui::set_menu_label(
+            "finder::UndoOperation",
+            self.undo_available
+                .as_ref()
+                .map_or("Undo", |available| available.label.as_str()),
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "finder::UndoOperation",
+            self.undo_available.is_some() && self.undo_operation.is_none(),
+            cx,
+        );
+        #[cfg(any(target_os = "linux", test))]
+        let empty_bin_available = self.trash_store.is_some() && self.trash_operation.is_none();
+        #[cfg(not(any(target_os = "linux", test)))]
+        let empty_bin_available = false;
+        rmac_ui::set_menu_enabled("finder::EmptyTrashImmediately", empty_bin_available, cx);
         rmac_ui::set_menu_label(
             "finder::Compress",
             compress_label.as_deref().unwrap_or("Compress"),

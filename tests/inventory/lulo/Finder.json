@@ -27,6 +27,13 @@
           "children": []
         },
         {
+          "label": "Empty Bin",
+          "action": "finder::EmptyTrashImmediately",
+          "shortcut": "⌥⇧⌘⌫",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Services",
           "action": "app::services",
           "shortcut": "",
@@ -95,9 +102,30 @@
           "children": []
         },
         {
-          "label": "Close Tab",
+          "label": "Open in New Tab",
+          "action": "finder::OpenSelectionInNewTab",
+          "shortcut": "⌃⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Open in New Window and Close",
+          "action": "finder::OpenSelectionInNewWindowAndClose",
+          "shortcut": "⌥⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close Window",
           "action": "finder::CloseTab",
           "shortcut": "⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "action": "finder::CloseAll",
+          "shortcut": "⌥⌘W",
           "separator_before": false,
           "children": []
         },
@@ -106,6 +134,13 @@
           "action": "finder::GetInfo",
           "shortcut": "⌘I",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Quick Look",
+          "action": "finder::QuickLook",
+          "shortcut": "⌘Y",
+          "separator_before": false,
           "children": []
         },
         {
@@ -177,6 +212,13 @@
           "shortcut": "⌘F",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Find by Name…",
+          "action": "finder::FindByName",
+          "shortcut": "⌃⇧⌘F",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -212,6 +254,13 @@
           "children": []
         },
         {
+          "label": "Copy as Link",
+          "action": "finder::CopyAsLink",
+          "shortcut": "⌃⌥⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Paste",
           "action": "finder::PasteItems",
           "shortcut": "⌘V",
@@ -229,6 +278,13 @@
           "label": "Select All",
           "action": "finder::SelectAll",
           "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Deselect All",
+          "action": "finder::DeselectAll",
+          "shortcut": "⌥⌘A",
           "separator_before": false,
           "children": []
         }
@@ -266,45 +322,53 @@
           "children": []
         },
         {
-          "label": "Sort by Name",
-          "action": "finder::SortByName",
+          "label": "Use Groups",
+          "action": "finder::UseGroups",
+          "shortcut": "⌃⌘0",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Sort By",
+          "action": "finder::SortMenu",
           "shortcut": "",
           "separator_before": true,
-          "children": []
-        },
-        {
-          "label": "Sort by Date Modified",
-          "action": "finder::SortByDate",
-          "shortcut": "",
-          "separator_before": false,
-          "children": []
-        },
-        {
-          "label": "Sort by Size",
-          "action": "finder::SortBySize",
-          "shortcut": "",
-          "separator_before": false,
-          "children": []
-        },
-        {
-          "label": "Sort by Kind",
-          "action": "finder::SortByKind",
-          "shortcut": "",
-          "separator_before": false,
-          "children": []
+          "children": [
+            {
+              "label": "Name",
+              "action": "finder::SortByName",
+              "shortcut": "⌃⌥⌘1",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Kind",
+              "action": "finder::SortByKind",
+              "shortcut": "⌃⌥⌘2",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Date Modified",
+              "action": "finder::SortByDate",
+              "shortcut": "⌃⌥⌘5",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Size",
+              "action": "finder::SortBySize",
+              "shortcut": "⌃⌥⌘6",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Show Hidden Files",
           "action": "finder::ToggleHidden",
           "shortcut": "⇧⌘.",
           "separator_before": true,
-          "children": []
-        },
-        {
-          "label": "Quick Look",
-          "action": "finder::QuickLook",
-          "shortcut": "Space",
-          "separator_before": false,
           "children": []
         },
         {
@@ -329,7 +393,7 @@
           "children": []
         },
         {
-          "label": "Show Status Bar",
+          "label": "Hide Status Bar",
           "action": "finder::ToggleStatusBar",
           "shortcut": "⌘/",
           "separator_before": false,
@@ -358,6 +422,13 @@
           "label": "Enclosing Folder",
           "action": "finder::GoUp",
           "shortcut": "⌘↑",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Enclosing Folder in New Window",
+          "action": "finder::GoUpInNewWindow",
+          "shortcut": "⌃⌘↑",
           "separator_before": false,
           "children": []
         },
@@ -765,7 +836,6 @@
       "View",
       "Sort By",
       "Actions",
-      "Search",
       "Toolbar"
     ]
   },
@@ -795,6 +865,21 @@
         "label": "Other…"
       },
       {
+        "type": "item",
+        "label": "<handler.name.clone()>"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "submenu",
+        "label": "Always Open With"
+      },
+      {
+        "type": "item",
+        "label": "Other…"
+      },
+      {
         "type": "separator"
       },
       {
@@ -814,7 +899,7 @@
       },
       {
         "type": "item",
-        "label": "<label>"
+        "label": "Compress"
       },
       {
         "type": "command_item",
@@ -834,6 +919,10 @@
       {
         "type": "command_item",
         "label": "Copy"
+      },
+      {
+        "type": "command_item",
+        "label": "Copy as Pathname"
       },
       {
         "type": "item",
@@ -889,6 +978,14 @@
       },
       {
         "type": "item",
+        "label": "Open in New Tab"
+      },
+      {
+        "type": "item",
+        "label": "Open in New Window"
+      },
+      {
+        "type": "item",
         "label": "New Folder with Selection"
       },
       {
@@ -901,6 +998,21 @@
       {
         "type": "submenu",
         "label": "Open With"
+      },
+      {
+        "type": "item",
+        "label": "Other…"
+      },
+      {
+        "type": "item",
+        "label": "<handler.name.clone()>"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "submenu",
+        "label": "Always Open With"
       },
       {
         "type": "item",
@@ -926,7 +1038,7 @@
       },
       {
         "type": "item",
-        "label": "<label>"
+        "label": "Compress"
       },
       {
         "type": "command_item",
@@ -946,6 +1058,10 @@
       {
         "type": "command_item",
         "label": "Copy"
+      },
+      {
+        "type": "command_item",
+        "label": "Copy as Pathname"
       },
       {
         "type": "item",

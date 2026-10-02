@@ -73,6 +73,18 @@ impl FinderView {
     /// ⌘F, and the search circle's own click: open the search field and
     /// give it the keyboard, as Edit ▸ Find does on the Mac.
     pub(in crate::view) fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_name_only = false;
+        self.search_open = true;
+        self.query.update(cx, |state, cx| state.focus(window, cx));
+        cx.notify();
+    }
+
+    pub(in crate::view) fn open_name_search(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.search_name_only = true;
         self.search_open = true;
         self.query.update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
@@ -199,7 +211,11 @@ impl FinderView {
             // sees, with the query's text and caret.
             capsule("search")
                 .role(Role::SearchInput)
-                .aria_label("Search")
+                .aria_label(if self.search_name_only {
+                    "Search by Name"
+                } else {
+                    "Search"
+                })
                 .accessible_text_input(&self.query, cx)
                 .w(px(layout.search_width))
                 .gap(px(6.0))

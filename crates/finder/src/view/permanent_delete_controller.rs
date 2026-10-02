@@ -77,6 +77,14 @@ impl FinderView {
     /// Finder ▸ Empty Trash… (⇧⌘⌫) from any folder: list the Trash, then
     /// ask with the Mac's alert before erasing everything in it.
     pub(super) fn request_empty_trash(&mut self, cx: &mut Context<Self>) {
+        self.request_empty_trash_with_confirmation(true, cx);
+    }
+
+    pub(super) fn request_empty_trash_immediately(&mut self, cx: &mut Context<Self>) {
+        self.request_empty_trash_with_confirmation(false, cx);
+    }
+
+    fn request_empty_trash_with_confirmation(&mut self, confirm: bool, cx: &mut Context<Self>) {
         #[cfg(any(target_os = "linux", test))]
         {
             if self.transfer.is_some()
@@ -111,7 +119,7 @@ impl FinderView {
                 return;
             }
             self.menu_at = None;
-            let warn = super::settings::current().advanced.warn_before_emptying_bin;
+            let warn = confirm && super::settings::current().advanced.warn_before_emptying_bin;
             cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
                 let listed = cx
                     .background_executor()

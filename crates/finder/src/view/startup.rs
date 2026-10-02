@@ -275,6 +275,7 @@ impl FinderView {
             search_generation: 0,
             search_cancel: None,
             search_open: false,
+            search_name_only: false,
             show_path_bar: false,
             show_status_bar: true,
             icon_scroll: gpui::ScrollHandle::new(),
@@ -284,7 +285,7 @@ impl FinderView {
         };
         view.rebuild_sidebar_sections(cx);
         view.refresh_sidebar_favourites(cx);
-        super::settings::register_window(cx.weak_entity(), cx);
+        super::settings::register_window(cx.weak_entity(), window.window_handle(), cx);
         view.persist_finder_state();
         view.reload(cx);
         view.refresh_pasteboard_state(cx);

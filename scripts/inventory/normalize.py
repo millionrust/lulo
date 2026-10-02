@@ -64,6 +64,17 @@ def normalize_label(label: str | None) -> str | None:
     # AX reports the nonbreaking hyphen in Wi‑Fi while Linux labels use
     # ASCII hyphen; they name the same control.
     text = text.replace("‑", "-")
+    # Finder validates these labels against the current selection at runtime.
+    # The source inventory contains their unselected base names, while the
+    # recorded Mac inventory contains the selected item's name.
+    if re.fullmatch(r"Copy [“\"].+[”\"] as Pathname", text):
+        text = "Copy as Pathname"
+    elif re.fullmatch(r"Quick Look [“\"].+[”\"]", text):
+        text = "Quick Look"
+    elif re.fullmatch(r"Compress [“\"].+[”\"]", text):
+        text = "Compress"
+    elif re.fullmatch(r"Undo (?:Move|Copy|New Folder|Replace|Restore).+", text):
+        text = "Undo"
     base, had_ellipsis = _strip_ellipsis(text)
     canon = _ALIAS_TO_CANON.get(base, base)
     if canon != base:
@@ -80,5 +91,7 @@ def normalize_shortcut(shortcut: str | None) -> str:
     if not shortcut:
         return ""
     text = shortcut.strip()
+    # AX uses a private-use glyph for the Up Arrow key in Finder's Go menu.
+    text = text.replace("", "↑")
     text = text.replace("-", "−")  # ASCII hyphen -> U+2212 MINUS SIGN
     return text

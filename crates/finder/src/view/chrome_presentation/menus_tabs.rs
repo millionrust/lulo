@@ -72,6 +72,7 @@ impl FinderView {
         pos: Point<Pixels>,
         sort_key: SortKey,
         compress_label: Option<String>,
+        copy_pathname_label: String,
         selection_count: usize,
         can_open_with: bool,
         open_with_association: Option<&rmac_apps::FileAssociation>,
@@ -143,6 +144,11 @@ impl FinderView {
                 rmac_ui::shortcuts::OPEN_SELECTION,
                 Box::new(OpenItems),
             );
+            if selection_count == 1 && !can_open_with {
+                m = m
+                    .item("Open in New Tab", Box::new(OpenSelectionInNewTab))
+                    .item("Open in New Window", Box::new(OpenSelectionInNewWindow));
+            }
             if selection_count > 1 {
                 m = m.item(
                     "New Folder with Selection",
@@ -155,12 +161,32 @@ impl FinderView {
                     for (index, handler) in association.handlers.iter().take(16).enumerate() {
                         submenu = submenu.item(
                             handler.name.clone(),
-                            Box::new(OpenWithHandlerAction { index }),
+                            Box::new(OpenWithHandlerAction {
+                                index,
+                                make_default: false,
+                            }),
                         );
                     }
                     submenu = submenu.separator();
                 }
                 m = m.submenu("Open With", submenu.item("Other…", Box::new(OpenWith)));
+                let mut always = rmac_ui::ContextMenu::new(pos);
+                if let Some(association) = open_with_association {
+                    for (index, handler) in association.handlers.iter().take(16).enumerate() {
+                        always = always.item(
+                            handler.name.clone(),
+                            Box::new(OpenWithHandlerAction {
+                                index,
+                                make_default: true,
+                            }),
+                        );
+                    }
+                    always = always.separator();
+                }
+                m = m.submenu(
+                    "Always Open With",
+                    always.item("Other…", Box::new(AlwaysOpenWithOther)),
+                );
             }
             m = m
                 .separator()
@@ -185,6 +211,11 @@ impl FinderView {
                 .command_item("Quick Look", rmac_ui::shortcuts::SPACE, Box::new(QuickLook))
                 .separator()
                 .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems))
+                .command_item(
+                    copy_pathname_label,
+                    rmac_ui::shortcuts::COPY_AS_PATHNAME,
+                    Box::new(CopyAsPathname),
+                )
                 .item("Share…", Box::new(ShareItems))
                 .separator()
                 .submenu(

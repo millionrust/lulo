@@ -30,6 +30,7 @@ mod file_list;
 use std::fmt;
 use std::path::PathBuf;
 
+pub use file_list::file_uri;
 pub use file_list::FileList;
 
 /// A clipboard failure, worded for the Files error banner.

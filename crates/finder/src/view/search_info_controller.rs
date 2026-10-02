@@ -114,6 +114,7 @@ impl FinderView {
         let cwd = self.cwd.clone();
         let title: SharedString = format!("Search: {}", sanitize_dialog_name(&q)).into();
         let include_hidden = self.show_hidden;
+        let name_only = self.search_name_only;
         let (generation, cancel) = self.begin_search();
         self.entries.clear();
         self.selected.clear();
@@ -124,24 +125,34 @@ impl FinderView {
         self.view = ViewMode::List;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    let mut options = rmac_search::Options::new(&cancel);
-                    options.include_hidden = include_hidden;
-                    let mut report = rmac_search::ranked(&cwd, &q, options)?;
-                    let reported_matches = report.matches.len();
-                    let entries = std::mem::take(&mut report.matches)
+            let result = blocking::unblock(move || {
+                let mut options = rmac_search::Options::new(&cancel);
+                options.include_hidden = include_hidden;
+                if name_only {
+                    let paths = rmac_search::filenames(&cwd, &q, options)?;
+                    let entries = paths
                         .into_iter()
-                        .filter_map(|search_match| search_entry_for(&cwd, search_match))
+                        .filter_map(|path| entry_for(&path))
                         .collect::<Vec<_>>();
-                    report.skipped_errors = report
-                        .skipped_errors
-                        .saturating_add(reported_matches.saturating_sub(entries.len()));
-                    let summary = ranked_search_summary(&report, entries.len());
-                    Ok::<_, rmac_search::Error>((entries, summary))
-                })
-                .await;
+                    let count = entries.len();
+                    return Ok((
+                        entries,
+                        format!("{count} name match{}", if count == 1 { "" } else { "es" }),
+                    ));
+                }
+                let mut report = rmac_search::ranked(&cwd, &q, options)?;
+                let reported_matches = report.matches.len();
+                let entries = std::mem::take(&mut report.matches)
+                    .into_iter()
+                    .filter_map(|search_match| search_entry_for(&cwd, search_match))
+                    .collect::<Vec<_>>();
+                report.skipped_errors = report
+                    .skipped_errors
+                    .saturating_add(reported_matches.saturating_sub(entries.len()));
+                let summary = ranked_search_summary(&report, entries.len());
+                Ok::<_, rmac_search::Error>((entries, summary))
+            })
+            .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 if this.search_generation != generation {
                     return;

@@ -1,0 +1,14 @@
+{
+  "title": "Control-Command-O opens the selected folder in a new tab",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"Subfolder/item.txt": "Fixture\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-2"},
+    {"select": "Subfolder"},
+    {"key": "ctrl-cmd-o", "settle": 1.2},
+    {"observe": "opened", "facts": ["tabs", "windows"]}
+  ],
+  "omit": ["opened.tabs.titles", "opened.windows.front", "opened.windows.titles"]
+}

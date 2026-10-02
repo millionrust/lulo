@@ -1,0 +1,14 @@
+{
+  "title": "Option-Command-W closes every Finder window",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"item.txt": "Fixture\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-n", "settle": 1.2},
+    {"observe": "before", "facts": ["windows"]},
+    {"key": "alt-cmd-w", "settle": 1.2},
+    {"observe": "closed", "facts": ["windows"]}
+  ],
+  "omit": ["before.windows.front", "before.windows.titles", "closed.windows.front", "closed.windows.titles"]
+}

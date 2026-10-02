@@ -168,6 +168,18 @@ impl FinderView {
         )));
     }
 
+    /// ⌃⌥⌘C copies local file URLs as text, as Finder's Copy as Link does.
+    pub(super) fn copy_as_link(&mut self, cx: &mut Context<Self>) {
+        let links = self
+            .selected_paths()
+            .iter()
+            .filter_map(|path| rmac_pasteboard::file_uri(path))
+            .collect::<Vec<_>>();
+        if !links.is_empty() {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(links.join("\n")));
+        }
+    }
+
     pub(super) fn cut(&mut self, cx: &mut Context<Self>) {
         if self.applications_view {
             self.operation_error = Some("Applications cannot be moved from this view".into());
@@ -349,6 +361,13 @@ impl FinderView {
             .filter(|(_, entry)| query.is_empty() || entry.name.to_lowercase().contains(&query))
             .map(|(index, _)| index)
             .collect();
+        cx.notify();
+    }
+
+    pub(super) fn deselect_all(&mut self, cx: &mut Context<Self>) {
+        self.selected.clear();
+        self.column_selection = None;
+        self.anchor = None;
         cx.notify();
     }
 

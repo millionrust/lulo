@@ -68,6 +68,66 @@
       "reason": "AppKit's own Recent Items submenu under the Apple menu (the app's own File > Open Recent is tracked separately and is NOT allowlisted)."
     },
     {
+      "app": "Finder",
+      "label": "AirDrop",
+      "reason": "AirDrop requires Apple's nearby-device transfer service."
+    },
+    {
+      "app": "Finder",
+      "label": "iCloud Drive",
+      "reason": "iCloud Drive requires Apple Account cloud storage."
+    },
+    {
+      "app": "Finder",
+      "label": "Store your Desktop & Documents folders in iCloud Drive and access them from your other devices.",
+      "reason": "This setting moves local folders into Apple Account iCloud storage."
+    },
+    {
+      "app": "Finder",
+      "label": "Import from iPhone",
+      "reason": "Continuity import requires Apple's iPhone device services."
+    },
+    {
+      "app": "Finder",
+      "label": "Select Startup Disk",
+      "reason": "This selects a macOS boot volume through Apple's Startup Disk service."
+    },
+    {
+      "app": "Finder",
+      "label": "Mac User Guide",
+      "reason": "This opens Apple's macOS user guide."
+    },
+    {
+      "app": "Finder",
+      "label": "Tips for Your Mac",
+      "reason": "This opens Apple's Mac tips service."
+    },
+    {
+      "app": "Finder",
+      "label": "App Store…",
+      "reason": "This searches Apple's App Store for an application to open the selected file."
+    },
+    {
+      "app": "Finder",
+      "label": "AutoFill",
+      "reason": "This submenu uses Apple's Contacts, Passwords and payment-card providers."
+    },
+    {
+      "app": "Finder",
+      "label": "Contact…",
+      "reason": "Contact AutoFill reads the Apple Contacts store."
+    },
+    {
+      "app": "Finder",
+      "label": "Passwords…",
+      "reason": "Password AutoFill reads Apple's Passwords and Keychain stores."
+    },
+    {
+      "app": "Finder",
+      "label": "Credit Card…",
+      "reason": "Payment-card AutoFill reads Apple's protected card store."
+    },
+    {
       "app": "*",
       "label": "Start Dictation…",
       "match": "exact",

@@ -1,6 +1,69 @@
 use super::*;
 
 impl FinderView {
+    pub(super) fn selected_folder(&self) -> Option<PathBuf> {
+        if self.trash_view || self.applications_view {
+            return None;
+        }
+        let path = self.selected_entry()?.path.clone();
+        path.is_dir().then_some(path)
+    }
+
+    pub(super) fn open_selection_in_new_tab(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.selected_folder() else {
+            return;
+        };
+        if self.tabs.len() >= MAX_RESTORED_TABS {
+            self.operation_error = Some("A Files window can contain up to 16 tabs".into());
+            cx.notify();
+            return;
+        }
+        self.new_tab(cx);
+        self.navigate(path, cx);
+    }
+
+    fn open_selected_folder_window(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(path) = self.selected_folder() else {
+            return false;
+        };
+        let Some(path) = path.to_str().map(str::to_owned) else {
+            self.operation_error = Some("The folder path cannot open a new window".into());
+            cx.notify();
+            return false;
+        };
+        if rmac_ui::open_another_window(vec!["--path".to_owned(), path], cx) {
+            true
+        } else {
+            self.operation_error = Some("Files could not open another window".into());
+            cx.notify();
+            false
+        }
+    }
+
+    pub(super) fn open_selection_in_new_window(&mut self, cx: &mut Context<Self>) {
+        self.open_selected_folder_window(cx);
+    }
+
+    pub(super) fn open_selection_in_new_window_and_close(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.open_selected_folder_window(cx) {
+            self.close_finder_window(window, cx);
+        }
+    }
+
+    pub(super) fn open_parent_in_new_window(&mut self, cx: &mut Context<Self>) {
+        let Some(parent) = self.cwd.parent().and_then(Path::to_str) else {
+            return;
+        };
+        if !rmac_ui::open_another_window(vec!["--path".to_owned(), parent.to_owned()], cx) {
+            self.operation_error = Some("Files could not open another window".into());
+            cx.notify();
+        }
+    }
+
     /// Persist the active tab's live navigation state into the tab list.
     fn save_tab(&mut self) {
         if let Some(tab) = self.tabs.get_mut(self.active) {

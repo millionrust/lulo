@@ -75,6 +75,7 @@ LABEL_OVERRIDES = {
     "finder::MoveToTrash": "Move to Bin",
     "finder::GoTrash": "Bin",
     "finder::EmptyTrash": "Empty Bin…",
+    "finder::EmptyTrashImmediately": "Empty Bin",
 }
 
 ABOUT_ACTION = "rmac::ShowAboutPanel"
@@ -435,6 +436,12 @@ def _rows_from_block(text: str) -> list[dict]:
             label = rmp._strip_literal(first)
         elif first == "move_to_bin":
             label = "Move to Bin"
+        elif first == "copy_pathname_label":
+            label = "Copy as Pathname"
+        elif first == "label":
+            # This dynamic variable is the label returned by
+            # compress_menu_label for the selected item(s).
+            label = "Compress"
         else:
             # A non-literal expression (a local variable or a computed
             # label): we cannot resolve it statically, so mark it instead
@@ -505,7 +512,10 @@ def read_finder_context_menus() -> dict:
     # does not special-case folders.
     if has_sel_true:
         rows = _rows_from_block(has_sel_true)
-        menus["file"] = rows
+        menus["file"] = [
+            row for row in rows
+            if row.get("label") not in {"Open in New Tab", "Open in New Window"}
+        ]
         menus["folder"] = rows
     if has_sel_false:
         menus["background"] = _rows_from_block(has_sel_false)

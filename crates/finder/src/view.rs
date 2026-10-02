@@ -139,6 +139,7 @@ actions!(
         GoBack,
         GoForward,
         GoUp,
+        GoUpInNewWindow,
         GoHome,
         GoApplications,
         GoUtilities,
@@ -146,7 +147,11 @@ actions!(
         GoTrash,
         ToggleHidden,
         OpenItems,
+        OpenSelectionInNewTab,
+        OpenSelectionInNewWindow,
+        OpenSelectionInNewWindowAndClose,
         OpenWith,
+        AlwaysOpenWithOther,
         QuickLook,
         Compress,
         GetInfo,
@@ -161,6 +166,7 @@ actions!(
         SortByKind,
         NewTab,
         CloseTab,
+        CloseAll,
         PreviousTab,
         NextTab,
         ShowHelp,
@@ -171,8 +177,12 @@ actions!(
         NewWindow,
         GoToFolder,
         EmptyTrash,
+        EmptyTrashImmediately,
         Find,
+        FindByName,
         CopyAsPathname,
+        CopyAsLink,
+        DeselectAll,
         AddToSidebar,
         SidebarRemove,
         SidebarOpenWindow,
@@ -209,6 +219,7 @@ struct DraggedSidebarItem(PathBuf);
 #[action(namespace = finder, no_json)]
 struct OpenWithHandlerAction {
     index: usize,
+    make_default: bool,
 }
 
 #[derive(Clone, PartialEq, gpui::Action)]
@@ -445,6 +456,7 @@ struct FinderView {
     search_cancel: Option<Arc<AtomicBool>>,
     /// The toolbar search circle has been opened into a field.
     search_open: bool,
+    search_name_only: bool,
     /// View ▸ Show Path Bar (⌥⌘P); off by default, as on the Mac.
     show_path_bar: bool,
     show_status_bar: bool,

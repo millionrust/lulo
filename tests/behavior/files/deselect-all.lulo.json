@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "files/deselect-all",
+  "platform": "Lulo",
+  "observations": {
+    "selected": {"selection": {"items": ["a.txt", "b.txt"]}},
+    "cleared": {"selection": {"items": []}}
+  }
+}

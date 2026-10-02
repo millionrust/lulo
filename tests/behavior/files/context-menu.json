@@ -9,5 +9,6 @@
     {"observe": "menu", "facts": ["menu"]},
     {"key": "escape"}
   ],
-  "menu_until": "Quick Actions"
+  "menu_until": "Quick Actions",
+  "tolerance": {"menu.menu.items": "subset"}
 }

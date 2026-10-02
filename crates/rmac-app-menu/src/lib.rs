@@ -587,6 +587,7 @@ const FILES_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Settings…", "finder::ShowSettings", "⌘,", separator),
             item!("Empty Trash…", "finder::EmptyTrash", "⇧⌘⌫"),
+            item!("Empty Trash", "finder::EmptyTrashImmediately", "⌥⇧⌘⌫"),
         ],
     },
     MenuSpec {
@@ -601,8 +602,16 @@ const FILES_MENUS: &[MenuSpec] = &[
             ),
             item!("New Tab", "finder::NewTab", "⌘T"),
             item!("Open", "finder::OpenItems", "⌘O"),
-            item!("Close Tab", "finder::CloseTab", "⌘W"),
+            item!("Open in New Tab", "finder::OpenSelectionInNewTab", "⌃⌘O"),
+            item!(
+                "Open in New Window and Close",
+                "finder::OpenSelectionInNewWindowAndClose",
+                "⌥⌘O"
+            ),
+            item!("Close Window", "finder::CloseTab", "⌘W"),
+            item!("Close All", "finder::CloseAll", "⌥⌘W"),
             item!("Get Info", "finder::GetInfo", "⌘I", separator),
+            item!("Quick Look", "finder::QuickLook", "⌘Y"),
             item!("Rename", "finder::RenameItem", ""),
             item!("Compress", "finder::Compress", ""),
             item!("Duplicate", "finder::Duplicate", "⌘D"),
@@ -615,6 +624,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             // has no alternates yet, so it is listed after it.
             item!("Delete Immediately…", "finder::DeletePermanently", "⌥⌘⌫"),
             item!("Find", "finder::Find", "⌘F", separator),
+            item!("Find by Name…", "finder::FindByName", "⌃⇧⌘F"),
         ],
     },
     MenuSpec {
@@ -625,9 +635,11 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Copy", "finder::CopyItems", "⌘C"),
             // ⌥ alternates of Copy and Paste on the Mac.
             item!("Copy as Pathname", "finder::CopyAsPathname", "⌥⌘C"),
+            item!("Copy as Link", "finder::CopyAsLink", "⌃⌥⌘C"),
             item!("Paste", "finder::PasteItems", "⌘V"),
             item!("Move Item Here", "finder::MoveItemHere", "⌥⌘V"),
             item!("Select All", "finder::SelectAll", "⌘A"),
+            item!("Deselect All", "finder::DeselectAll", "⌥⌘A"),
         ],
     },
     MenuSpec {
@@ -637,21 +649,28 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("as List", "finder::ViewAsList", "⌘2"),
             item!("as Columns", "finder::ViewAsColumns", "⌘3"),
             item!("as Gallery", "finder::ViewAsGallery", "⌘4"),
-            item!("Sort by Name", "finder::SortByName", "", separator),
-            item!("Sort by Date Modified", "finder::SortByDate", ""),
-            item!("Sort by Size", "finder::SortBySize", ""),
-            item!("Sort by Kind", "finder::SortByKind", ""),
+            item!("Use Groups", "finder::UseGroups", "⌃⌘0"),
+            submenu!(
+                "Sort By",
+                "finder::SortMenu",
+                [
+                    item!("Name", "finder::SortByName", "⌃⌥⌘1"),
+                    item!("Kind", "finder::SortByKind", "⌃⌥⌘2"),
+                    item!("Date Modified", "finder::SortByDate", "⌃⌥⌘5"),
+                    item!("Size", "finder::SortBySize", "⌃⌥⌘6"),
+                ],
+                separator
+            ),
             item!(
                 "Show Hidden Files",
                 "finder::ToggleHidden",
                 "⇧⌘.",
                 separator
             ),
-            item!("Quick Look", "finder::QuickLook", "Space"),
             item!("Show View Options", "finder::ShowViewOptions", "⌘J"),
             item!("Hide Sidebar", "finder::ToggleSidebar", "⌃⌘S", separator),
             item!("Show Path Bar", "finder::TogglePathBar", "⌥⌘P"),
-            item!("Show Status Bar", "finder::ToggleStatusBar", "⌘/"),
+            item!("Hide Status Bar", "finder::ToggleStatusBar", "⌘/"),
         ],
     },
     MenuSpec {
@@ -660,6 +679,11 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Back", "finder::GoBack", "⌘["),
             item!("Forward", "finder::GoForward", "⌘]"),
             item!("Enclosing Folder", "finder::GoUp", "⌘↑"),
+            item!(
+                "Enclosing Folder in New Window",
+                "finder::GoUpInNewWindow",
+                "⌃⌘↑"
+            ),
             item!("Recents", "finder::GoRecents", "⇧⌘F", separator),
             item!("Documents", "finder::GoDocuments", "⇧⌘O"),
             item!("Desktop", "finder::GoDesktop", "⇧⌘D"),
@@ -1273,6 +1297,7 @@ fn resolve_items(
                 "finder::MoveToTrash" => format!("Move to {}", file_words.bin()),
                 "finder::GoTrash" => file_words.bin().to_owned(),
                 "finder::EmptyTrash" => format!("Empty {}…", file_words.bin()),
+                "finder::EmptyTrashImmediately" => format!("Empty {}", file_words.bin()),
                 _ => spec.label.to_owned(),
             },
             action: spec.action.to_owned(),
@@ -2579,6 +2604,18 @@ mod tests {
             ("finder::Duplicate", "⌘D"),
             ("finder::DeletePermanently", "⌥⌘⌫"),
             ("finder::CopyAsPathname", "⌥⌘C"),
+            ("finder::CopyAsLink", "⌃⌥⌘C"),
+            ("finder::DeselectAll", "⌥⌘A"),
+            ("finder::OpenSelectionInNewTab", "⌃⌘O"),
+            ("finder::OpenSelectionInNewWindowAndClose", "⌥⌘O"),
+            ("finder::CloseAll", "⌥⌘W"),
+            ("finder::QuickLook", "⌘Y"),
+            ("finder::GoUpInNewWindow", "⌃⌘↑"),
+            ("finder::FindByName", "⌃⇧⌘F"),
+            ("finder::SortByName", "⌃⌥⌘1"),
+            ("finder::SortByKind", "⌃⌥⌘2"),
+            ("finder::SortByDate", "⌃⌥⌘5"),
+            ("finder::SortBySize", "⌃⌥⌘6"),
             ("finder::MoveItemHere", "⌥⌘V"),
             ("finder::GoRecents", "⇧⌘F"),
             ("finder::GoDocuments", "⇧⌘O"),
@@ -2592,8 +2629,9 @@ mod tests {
             .iter()
             .map(|item| item.label.as_str())
             .collect::<Vec<_>>();
+        let recents = labels.iter().position(|label| *label == "Recents").unwrap();
         assert_eq!(
-            &labels[3..6],
+            &labels[recents..recents + 3],
             ["Recents", "Documents", "Desktop"],
             "Finder's Go order"
         );

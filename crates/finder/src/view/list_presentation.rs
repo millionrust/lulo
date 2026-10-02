@@ -789,9 +789,13 @@ impl FinderView {
                 this.menu_unavailable("No iPhone is available to import from", cx)
             }))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &DeselectAll, _, cx| this.deselect_all(cx)))
             .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
             .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
+            .on_action(
+                cx.listener(|this, _: &GoUpInNewWindow, _, cx| this.open_parent_in_new_window(cx)),
+            )
             .on_action(cx.listener(|this, _: &GoHome, _, cx| this.go_home(cx)))
             .on_action(cx.listener(|this, _: &GoApplications, _, cx| this.applications_click(cx)))
             .on_action(cx.listener(|this, _: &GoUtilities, _, cx| this.utilities_click(cx)))
@@ -800,10 +804,25 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoDocuments, _, cx| this.go_documents(cx)))
             .on_action(cx.listener(|this, _: &GoRecents, _, cx| this.recents_click(cx)))
             .on_action(cx.listener(|this, _: &Find, window, cx| this.open_search(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &FindByName, window, cx| this.open_name_search(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &CopyAsPathname, _, cx| this.copy_as_pathname(cx)))
+            .on_action(cx.listener(|this, _: &CopyAsLink, _, cx| this.copy_as_link(cx)))
             .on_action(cx.listener(|this, _: &MoveItemHere, _, cx| this.move_item_here(cx)))
             .on_action(cx.listener(|this, _: &GoTrash, _, cx| this.trash_click(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
+            .on_action(cx.listener(|this, _: &OpenSelectionInNewTab, _, cx| {
+                this.open_selection_in_new_tab(cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenSelectionInNewWindow, _, cx| {
+                this.open_selection_in_new_window(cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &OpenSelectionInNewWindowAndClose, window, cx| {
+                    this.open_selection_in_new_window_and_close(window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &AddToSidebar, _, cx| {
                 for path in this.selected_paths() {
                     this.add_sidebar_favourite(path, cx);
@@ -836,8 +855,13 @@ impl FinderView {
                 this.add_paths_to_dock(this.selected_paths(), cx)
             }))
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
+            .on_action(
+                cx.listener(|this, _: &AlwaysOpenWithOther, _, cx| {
+                    this.request_always_open_with(cx)
+                }),
+            )
             .on_action(cx.listener(|this, action: &OpenWithHandlerAction, _, cx| {
-                this.open_with_menu_handler(action.index, cx)
+                this.open_with_menu_handler(action.index, action.make_default, cx)
             }))
             .on_action(cx.listener(|this, action: &GoToTitlePathAction, _, cx| {
                 this.navigate(action.path.clone(), cx)
@@ -870,6 +894,9 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                 this.close_tab_or_window(window, cx);
             }))
+            .on_action(cx.listener(|_, _: &CloseAll, _, cx| {
+                cx.defer(super::settings::close_all_windows);
+            }))
             .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.select_adjacent_tab(-1, cx)))
             .on_action(cx.listener(|this, _: &NextTab, _, cx| this.select_adjacent_tab(1, cx)))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
@@ -891,6 +918,9 @@ impl FinderView {
                 cx.listener(|this, _: &GoToFolder, window, cx| this.open_go_to_folder(window, cx)),
             )
             .on_action(cx.listener(|this, _: &EmptyTrash, _, cx| this.request_empty_trash(cx)))
+            .on_action(cx.listener(|this, _: &EmptyTrashImmediately, _, cx| {
+                this.request_empty_trash_immediately(cx)
+            }))
             .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
             .on_action(cx.listener(|this, _: &ShowHelp, _, cx| {
                 this.help_open = true;

@@ -312,7 +312,12 @@ def _labels_from_mac_controls(controls: list[dict]) -> set[str]:
             "close button", "minimise button", "zoom button",
             "increment arrow button", "decrement arrow button",
             "increment page button", "decrement page button",
-            "action", "text",
+            "action", "text", "Finder Settings",
+        }:
+            continue
+        if (c.get("role"), c.get("label")) in {
+            ("AXHeading", "heading"),
+            ("AXCheckBox", "tickbox"),
         }:
             continue
         label = c.get("label")

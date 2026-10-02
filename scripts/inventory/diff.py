@@ -152,8 +152,20 @@ def diff_menu_bars(
     mac_flat = flatten_menu_items(mac_menus, bold_menu_alias=mac_app_display_name)
     lulo_flat = flatten_menu_items(lulo_menus)
 
+    def machine_specific_finder_child(path: tuple[str, ...]) -> bool:
+        if app != "Finder" or len(path) != 3:
+            return False
+        parent = path[:2]
+        if parent in {("File", "Open With"), ("File", "Always Open With")}:
+            return path[2] != "Other…"
+        if parent == ("Go", "Recent Folders"):
+            return path[2] != "Clear Menu"
+        return False
+
     gaps: list[Gap] = []
     for path, mac_item in mac_flat.items():
+        if machine_specific_finder_child(path):
+            continue
         path_str = " ▸ ".join(path)
         if path not in lulo_flat:
             has_shortcut = bool(mac_item["shortcut"])
@@ -187,6 +199,8 @@ def diff_menu_bars(
                 )
             )
     for path, lulo_item in lulo_flat.items():
+        if machine_specific_finder_child(path):
+            continue
         # A recorded dynamic submenu has no measured children. Its local
         # children cannot be called extras until the Mac side is captured.
         if any(mac_flat.get(path[:depth], {}).get("children_omitted")

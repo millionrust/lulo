@@ -3,6 +3,6 @@
   "scenario": "files/go-shared",
   "platform": "Lulo local contract",
   "observations": {
-    "shared": {"windows": {"count": 1, "front": "Public", "titles": ["Public"]}}
+    "shared": {"selection": {"items": ["Shared"]}}
   }
 }

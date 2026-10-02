@@ -8,7 +8,6 @@
   "launch": {"folder": "."},
   "steps": [
     {"key": "cmd-shift-s", "settle": 1.0},
-    {"observe": "shared", "facts": ["windows"]}
-  ],
-  "omit": ["shared.windows.fullscreen"]
+    {"observe": "shared", "facts": ["selection"]}
+  ]
 }

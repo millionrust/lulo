@@ -13,6 +13,10 @@
     {"menu_action": "text_editor::InsertPageBreak"},
     {"observe": "page", "facts": ["focus"]},
     {"type": "D"},
-    {"observe": "inserted", "facts": ["focus"]}
+    {"observe": "inserted", "facts": ["focus"]},
+    {"key": "cmd-s", "settle": 1.5},
+    {"type": "BreakCheck"},
+    {"key": "return", "settle": 1.5},
+    {"observe": "saved", "facts": ["saved_documents"]}
   ]
 }

@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use gpui::{
     App, AppContext as _, AssetSource, KeyBinding, QuitMode, Result, SharedString, WeakEntity,
 };
+#[cfg(not(target_os = "linux"))]
+use gpui::{ClipboardEntry, ImageFormat};
 use gpui_component::Root;
 use rmac_preview::document::{self, Kind};
 use rmac_preview::markup;
@@ -21,6 +23,7 @@ gpui::actions!(
     preview,
     [
         OpenFile,
+        NewFromClipboard,
         QuitAndKeepWindows,
         CloseWindow,
         CloseAll,
@@ -55,6 +58,8 @@ gpui::actions!(
         GoToPage,
         PrintDocument,
         ExportAsPdf,
+        SaveAs,
+        ToggleToolbar,
         ToggleMarkup,
         EnterFullScreen,
         SaveMarkup,
@@ -116,6 +121,7 @@ fn bind_keys(cx: &mut App) {
     use rmac_ui::shortcuts;
     cx.bind_keys([
         KeyBinding::new(shortcuts::OPEN.keystroke, OpenFile, None),
+        KeyBinding::new("cmd-n", NewFromClipboard, None),
         KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, None),
         KeyBinding::new(shortcuts::CLOSE.keystroke, CloseWindow, context),
         KeyBinding::new("alt-cmd-w", CloseAll, None),
@@ -127,6 +133,8 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new(shortcuts::PRINT.keystroke, PrintDocument, context),
         KeyBinding::new("shift-cmd-a", ToggleMarkup, context),
         KeyBinding::new("cmd-s", SaveMarkup, context),
+        KeyBinding::new("alt-shift-cmd-s", SaveAs, context),
+        KeyBinding::new("alt-cmd-t", ToggleToolbar, context),
         KeyBinding::new("cmd-z", UndoMarkup, context),
         KeyBinding::new("shift-cmd-z", RedoMarkup, context),
         KeyBinding::new(shortcuts::FIND.keystroke, Find, context),
@@ -168,6 +176,120 @@ fn initial_size(paths: &[PathBuf]) -> (f32, f32) {
             .map(|(width, height)| metrics::image_window_size((width as f32, height as f32)))
             .unwrap_or(metrics::DEFAULT_WINDOW),
         _ => metrics::DEFAULT_WINDOW,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn clipboard_image(cx: &App) -> Option<(Vec<u8>, &'static str)> {
+    cx.read_from_clipboard()?.into_entries().find_map(|entry| {
+        let ClipboardEntry::Image(image) = entry else {
+            return None;
+        };
+        let extension = match image.format {
+            ImageFormat::Png => "png",
+            ImageFormat::Jpeg => "jpg",
+            ImageFormat::Webp => "webp",
+            ImageFormat::Gif => "gif",
+            ImageFormat::Bmp => "bmp",
+            ImageFormat::Tiff => "tiff",
+            _ => return None,
+        };
+        Some((image.bytes, extension))
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn clipboard_image_type() -> Option<(&'static str, &'static str)> {
+    let output = std::process::Command::new("wl-paste")
+        .arg("--list-types")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let offered = String::from_utf8_lossy(&output.stdout);
+    [
+        ("image/png", "png"),
+        ("image/jpeg", "jpg"),
+        ("image/webp", "webp"),
+        ("image/gif", "gif"),
+        ("image/bmp", "bmp"),
+        ("image/tiff", "tiff"),
+    ]
+    .into_iter()
+    .find(|(mime, _)| offered.lines().any(|line| line.trim() == *mime))
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn clipboard_image_available() -> bool {
+    clipboard_image_type().is_some()
+}
+
+#[cfg(target_os = "linux")]
+fn clipboard_image() -> Option<(Vec<u8>, &'static str)> {
+    use std::io::Read as _;
+
+    let (mime, extension) = clipboard_image_type()?;
+    let mut child = std::process::Command::new("wl-paste")
+        .args(["--type", mime])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .ok()?;
+    const MAX_CLIPBOARD_IMAGE: u64 = 64 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    let read = child
+        .stdout
+        .take()?
+        .take(MAX_CLIPBOARD_IMAGE + 1)
+        .read_to_end(&mut bytes);
+    if read.is_err() || bytes.len() as u64 > MAX_CLIPBOARD_IMAGE {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    }
+    child.wait().ok()?.success().then_some((bytes, extension))
+}
+
+/// A clipboard image is an independent document. Keep its backing bytes in
+/// the app cache until Save As gives it a permanent location.
+fn open_clipboard_image(bytes: Vec<u8>, extension: &'static str, cx: &mut App) {
+    static NEXT_CLIPBOARD_DOCUMENT: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(1);
+    let cache = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+        .unwrap_or_else(std::env::temp_dir);
+    let id = NEXT_CLIPBOARD_DOCUMENT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = cache
+        .join("rmac-preview/clipboard")
+        .join(format!("{}-{id}/Untitled.{extension}", std::process::id()));
+    cx.spawn(async move |cx| {
+        let result = blocking::unblock(move || -> std::io::Result<PathBuf> {
+            std::fs::create_dir_all(path.parent().expect("clipboard path has a parent"))?;
+            std::fs::write(&path, bytes)?;
+            Ok(path)
+        })
+        .await;
+        match result {
+            Ok(path) => cx.update(|cx| open_window(vec![path], cx)),
+            Err(error) => eprintln!("rmac-preview: could not open clipboard image: {error}"),
+        }
+    })
+    .detach();
+}
+
+fn new_from_clipboard(cx: &mut App) {
+    #[cfg(target_os = "linux")]
+    cx.spawn(async move |cx| {
+        if let Some((bytes, extension)) = blocking::unblock(clipboard_image).await {
+            cx.update(|cx| open_clipboard_image(bytes, extension, cx));
+        }
+    })
+    .detach();
+
+    #[cfg(not(target_os = "linux"))]
+    if let Some((bytes, extension)) = clipboard_image(cx) {
+        open_clipboard_image(bytes, extension, cx);
     }
 }
 
@@ -444,6 +566,7 @@ fn main() {
             .detach();
             cx.on_action(|_: &QuitAndKeepWindows, cx| quit_and_keep_windows(cx));
             cx.on_action(|_: &OpenFile, cx| choose_and_open(false, cx));
+            cx.on_action(|_: &NewFromClipboard, cx| new_from_clipboard(cx));
             cx.on_action(|_: &OpenRecent0, cx| open_recent_menu_entry(0, cx));
             cx.on_action(|_: &OpenRecent1, cx| open_recent_menu_entry(1, cx));
             cx.on_action(|_: &OpenRecent2, cx| open_recent_menu_entry(2, cx));

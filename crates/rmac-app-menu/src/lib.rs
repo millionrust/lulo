@@ -930,6 +930,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "File",
         items: &[
+            item!("New from Clipboard", "preview::NewFromClipboard", "⌘N"),
             item!("Open…", "preview::OpenFile", "⌘O"),
             // PREV-08/PREV-15: the static child only keeps this submenu
             // registered; `recent::refresh` replaces it with the real,
@@ -943,9 +944,9 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Close All", "preview::CloseAll", "⌥⌘W"),
             item!("Close Selected", "preview::CloseSelected", "⇧⌘W"),
             item!("Save", "preview::SaveMarkup", "⌘S"),
+            item!("Save As…", "preview::SaveAs", "⌥⇧⌘S"),
             item!("Revert to Original", "preview::RevertMarkup", "", separator),
-            // PREV-15: the Mac's File menu also has New from Clipboard,
-            // Save As…, Duplicate, Rename…, Move To…,
+            // PREV-15: the Mac's File menu also has Duplicate, Rename…, Move To…,
             // Enter Password…, Edit Permissions…, Import from
             // Camera/Scanner, Take Screenshot ▸, Export…, Share ▸ — none of
             // those has a working implementation to wire up yet, so none is
@@ -995,7 +996,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Zoom All to Fit", "preview::ZoomAllToFit", "⌥⌘9"),
             item!("Zoom In", "preview::ZoomIn", "⌘+"),
             item!("Zoom All In", "preview::ZoomAllIn", "⌥⌘+"),
-            item!("Zoom Out", "preview::ZoomOut", "⌘−"),
+            item!("Zoom Out", "preview::ZoomOut", "⌘-"),
             item!("Zoom All Out", "preview::ZoomAllOut", "⌥⌘−"),
             item!(
                 "Show Markup Toolbar",
@@ -1004,6 +1005,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("Enter Full Screen", "preview::EnterFullScreen", "F"),
+            item!("Show Toolbar", "preview::ToggleToolbar", "⌥⌘T", separator),
         ],
     },
     MenuSpec {

@@ -393,8 +393,8 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
         label: "View",
         items: &[
             item!("Actual Size", "text_editor::ActualSize", "⌘0"),
-            item!("Zoom In", "text_editor::IncreaseFont", "⇧⌘."),
-            item!("Zoom Out", "text_editor::DecreaseFont", "⇧⌘,"),
+            item!("Zoom In", "text_editor::ZoomIn", "⇧⌘."),
+            item!("Zoom Out", "text_editor::ZoomOut", "⇧⌘,"),
         ],
     },
 ];
@@ -2175,7 +2175,7 @@ mod tests {
             &["text_editor::FindNext", "text_editor::IncreaseFont"],
         )
         .unwrap();
-        assert_eq!(labels(&menus), ["Edit", "Format", "View"]);
+        assert_eq!(labels(&menus), ["Edit", "Format"]);
         let find = &menus[0].items[0];
         assert_eq!(find.label, "Find");
         assert!(find.is_submenu());
@@ -2185,7 +2185,6 @@ mod tests {
         // Format keeps Font ▸ but not the absent Monospaced row.
         assert_eq!(menus[1].items.len(), 1);
         assert_eq!(menus[1].items[0].children[0].label, "Bigger");
-        assert_eq!(menus[2].items[0].label, "Zoom In");
     }
 
     #[test]

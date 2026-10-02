@@ -296,14 +296,14 @@
         },
         {
           "label": "Zoom In",
-          "action": "text_editor::IncreaseFont",
+          "action": "text_editor::ZoomIn",
           "shortcut": "⇧⌘.",
           "separator_before": false,
           "children": []
         },
         {
           "label": "Zoom Out",
-          "action": "text_editor::DecreaseFont",
+          "action": "text_editor::ZoomOut",
           "shortcut": "⇧⌘,",
           "separator_before": false,
           "children": []

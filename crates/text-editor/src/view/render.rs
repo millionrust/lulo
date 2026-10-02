@@ -20,7 +20,7 @@ use crate::{
     OpenRecent8, OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SetEncodingUtf16Be,
     SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf,
     SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage,
-    UseSelectionForFind,
+    UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use super::{
@@ -183,6 +183,8 @@ impl Render for EditorView {
             }))
             .on_action(cx.listener(|this, _: &IncreaseFont, _, cx| this.increase_font(cx)))
             .on_action(cx.listener(|this, _: &DecreaseFont, _, cx| this.decrease_font(cx)))
+            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.increase_font(cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.decrease_font(cx)))
             .on_action(cx.listener(|this, _: &ActualSize, _, cx| this.actual_size(cx)))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.guarded(Pending::Close, window, cx)

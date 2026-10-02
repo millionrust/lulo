@@ -41,6 +41,11 @@ gpui::actions!(
         SetLineEndingCr,
         IncreaseFont,
         DecreaseFont,
+        // View ▸ Zoom In / Zoom Out: the same scaling as Format ▸ Font ▸
+        // Bigger / Smaller, under their own actions so each menu row is
+        // distinct on the wire.
+        ZoomIn,
+        ZoomOut,
         ActualSize,
         CloseWindow,
         // File ▸ Open Recent ▸ (TE-02): one action per shown row, up to

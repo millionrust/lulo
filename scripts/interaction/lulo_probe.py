@@ -240,6 +240,13 @@ class ShellSession:
         if not self._wait_for(endpoint.exists, 20):
             raise StepFailed("Quick Settings did not register its shortcut endpoint")
 
+    def start_notification_center(self) -> None:
+        panel = find_bin(self.bins, "rmac-notification-center-panel")
+        self.notification_center_process = self._spawn([str(panel)], "notification-center")
+        endpoint = Path(self.env["XDG_RUNTIME_DIR"]) / "rmac" / "shortcut-notification-center.sock"
+        if not self._wait_for(endpoint.exists, 20):
+            raise StepFailed("Notification Center did not register its shortcut endpoint")
+
     def dispatch(self, shortcut: str) -> None:
         dispatcher = find_bin(self.bins, "rmac-shortcut-dispatch")
         result = subprocess.run([str(dispatcher), shortcut], env=self.env,
@@ -617,7 +624,7 @@ def explore(shell: ShellSession, items: list[dict[str, Any]]) -> None:
 
 
 def record_shell_surfaces(nested: "run_lulo.Nested", bins: list[Path], niri_bin: Optional[Path],
-                          items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                          items: list[dict[str, Any]], assert_notification_center: bool = False) -> list[dict[str, Any]]:
     results = []
     shell = ShellSession(nested, bins, niri_bin)
     try:
@@ -633,6 +640,17 @@ def record_shell_surfaces(nested: "run_lulo.Nested", bins: list[Path], niri_bin:
             results.append(result)
             print(f"{'ERROR' if 'error' in result else 'ok   '} {item['id']}: "
                   f"{result.get('error') or json.dumps(result['probes'])}", flush=True)
+        if assert_notification_center:
+            shell.start_notification_center()
+            shell.dispatch("notification-center")
+            if not shell.wait_for_populated_frame(shell.notification_center_process.pid, timeout=25):
+                raise StepFailed("Notification Center opened but its AT-SPI tree stayed empty")
+            from assert_notification_center_accessibility import assert_tree
+            try:
+                count = assert_tree(shell.app_by_pid(shell.notification_center_process.pid))
+            except AssertionError as error:
+                raise StepFailed(f"Notification Center accessibility assertion failed: {error}") from error
+            print(f"Notification Center: {count} accessible nodes", flush=True)
     finally:
         shell.close()
     return results
@@ -662,7 +680,8 @@ def inner(args: argparse.Namespace) -> int:
     results = []
     try:
         if wanted:
-            results.extend(record_shell_surfaces(nested, bins, niri_bin, wanted))
+            results.extend(record_shell_surfaces(nested, bins, niri_bin, wanted,
+                                                 args.assert_notification_center))
     finally:
         nested.close()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -681,6 +700,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--niri", default=None, help="path to niri (default: $PATH)")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--explore", action="store_true", help="dump the AT-SPI tree instead of probing")
+    parser.add_argument("--assert-notification-center", action="store_true",
+                        help="also assert Notification Center's populated AT-SPI tree")
     parser.add_argument("--inner", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.inner:
@@ -698,6 +719,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt.append("--keep")
     if args.explore:
         rebuilt.append("--explore")
+    if args.assert_notification_center:
+        rebuilt.append("--assert-notification-center")
     if args.all:
         rebuilt.append("--all")
     rebuilt += args.surfaces

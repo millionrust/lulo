@@ -135,7 +135,7 @@ impl NotificationCenterView {
             .tab_stop(true)
             .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
                 let target = a11y_target.clone();
-                let _ = a11y_view.update(cx, |this, cx| match target {
+                a11y_view.update(cx, |this, cx| match target {
                     CloseTarget::Record(id) => this.remove(id, cx),
                     CloseTarget::Group { key, app_ids } => this.clear_group(key, app_ids, cx),
                 });
@@ -246,7 +246,7 @@ impl NotificationCenterView {
                     AccessibleAction::Click,
                     move |_, _, cx| {
                         let key = a11y_expand.clone();
-                        let _ = a11y_view.update(cx, |this, cx| {
+                        a11y_view.update(cx, |this, cx| {
                             if let Some(key) = key {
                                 this.toggle_expanded(&key, cx);
                             } else {
@@ -460,7 +460,7 @@ impl NotificationCenterView {
                             .focusable()
                             .tab_stop(true)
                             .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
-                                let _ = a11y_collapse_view.update(cx, |this, cx| {
+                                a11y_collapse_view.update(cx, |this, cx| {
                                     this.toggle_expanded(&a11y_collapse_key, cx)
                                 });
                             })
@@ -490,7 +490,7 @@ impl NotificationCenterView {
                                 button.on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
                                     let key = a11y_clear_key.clone();
                                     let app_ids = a11y_clear_app_ids.clone();
-                                    let _ = a11y_clear_view
+                                    a11y_clear_view
                                         .update(cx, |this, cx| this.clear_group(key, app_ids, cx));
                                 })
                             })

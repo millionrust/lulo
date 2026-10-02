@@ -102,7 +102,7 @@ impl FinderView {
             if let Some(last) = last_opened {
                 cx.spawn(async move |_, cx: &mut gpui::AsyncApp| {
                     async_io::Timer::after(Duration::from_millis(120)).await;
-                    let _ = cx.update_window(last, |_, window, _| window.activate_window());
+                    let _ = cx.update_window(*last, |_, window, _| window.activate_window());
                 })
                 .detach();
             }

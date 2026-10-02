@@ -513,7 +513,7 @@
         {
           "label": "Terminal Help",
           "action": "help::app-help",
-          "shortcut": "⌘?",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         }

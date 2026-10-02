@@ -78,12 +78,13 @@ impl QuickSettingsView {
             } else {
                 Toggled::False
             })
-            .focusable()
-            .tab_stop(true)
             .when(pill.enabled, |badge| {
-                badge.on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
-                    let _ = toggle_view.update(cx, |this, cx| toggle(this, cx));
-                })
+                badge.focusable().tab_stop(true).on_a11y_action(
+                    AccessibleAction::Click,
+                    move |_, _, cx| {
+                        let _ = toggle_view.update(cx, |this, cx| toggle(this, cx));
+                    },
+                )
             })
             .absolute()
             .left(px(BADGE_INSET))
@@ -412,8 +413,6 @@ impl QuickSettingsView {
                 .id(id)
                 .role(Role::Button)
                 .aria_label(label)
-                .focusable()
-                .tab_stop(true)
                 .absolute()
                 .left(px(centre - 18.0))
                 .top(px(113.0 - 15.0))
@@ -421,6 +420,8 @@ impl QuickSettingsView {
                 .h(px(30.0))
                 .when(supported, |button| {
                     button
+                        .focusable()
+                        .tab_stop(true)
                         .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
                             let _ = view.update(cx, |this, cx| this.media(command, cx));
                         })

@@ -531,6 +531,16 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
             hovered = capture_full(shell.env, shell.nested.work / f"hover-on-{label}.png")
             out[f"hover:{label}"] = {"changed": region_changed(rest, hovered, region)}
             close_safety_net()
+        open_popover()
+        from assert_control_centre_accessibility import SCENARIO, assert_detail
+        trigger = find_showing(current_frames(), SCENARIO["detail_trigger"], {"push button", "button"})
+        if trigger is None:
+            raise StepFailed("Wi-Fi detail button is missing from the AT-SPI tree")
+        click_node(shell, trigger)
+        if not shell._wait_for(lambda: find_showing(current_frames(), SCENARIO["detail_panel"], {"group"}), 5):
+            raise StepFailed("Wi-Fi detail view did not open through AT-SPI")
+        detail_count = assert_detail(shell.app_by_pid(shell.quick_settings_process.pid))
+        print(f"Control Centre Wi-Fi detail: {detail_count} accessible nodes", flush=True)
     finally:
         close_safety_net()
     return out

@@ -197,9 +197,9 @@ fn widget_rows(
         .collect()
 }
 
-fn notice(message: SharedString) -> impl IntoElement {
+fn notice(index: usize, message: SharedString) -> impl IntoElement {
     div()
-        .id("notification-center-notice")
+        .id(("notification-center-notice", index))
         .role(Role::Alert)
         .aria_label(message.clone())
         .w(px(card::WIDTH))
@@ -232,7 +232,8 @@ impl Render for NotificationCenterView {
             .into_iter()
             .flatten()
             .filter(|_| !unavailable)
-            .map(notice)
+            .enumerate()
+            .map(|(index, message)| notice(index, message))
             .collect::<Vec<_>>();
         let dismiss_view = cx.entity();
         let edit_view = cx.entity();

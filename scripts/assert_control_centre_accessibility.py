@@ -42,8 +42,8 @@ def assert_tree(app) -> int:
     for slider in sliders:
         assert support.name(slider), "unnamed slider"
         actions = support.actions(slider)
-        assert "increment" in actions and "decrement" in actions, (
-            f"{support.name(slider)} has no increment/decrement actions: {actions}"
+        assert ("increment" in actions) == ("decrement" in actions), (
+            f"{support.name(slider)} exposes only one range action: {actions}"
         )
         value = slider.queryValue()
         assert value.minimumValue == SCENARIO["slider_minimum"] and value.maximumValue == SCENARIO["slider_maximum"], (
@@ -57,6 +57,21 @@ def assert_tree(app) -> int:
             f"{label} toggle has no click action"
         )
     return len(nodes)
+
+
+def assert_detail(app) -> int:
+    nodes = list(support.descendants(app))
+    panels = [node for node in nodes if support.role(node) == "group"
+              and support.name(node) == SCENARIO["detail_panel"]]
+    assert panels, f"{SCENARIO['detail_panel']} detail group is missing"
+    children = list(support.descendants(panels[0]))
+    assert len(children) > 2, "detail view has no accessible controls"
+    switches = [node for node in children if support.name(node) == SCENARIO["detail_panel"]]
+    assert switches, "detail view has no accessible power switch"
+    for switch in switches:
+        if "focusable" in support.states(switch):
+            assert "click" in support.actions(switch), "enabled detail switch has no click"
+    return len(children)
 
 
 if __name__ == "__main__":

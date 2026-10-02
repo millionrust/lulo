@@ -72,6 +72,7 @@ impl QuickSettingsView {
     ) -> AnyElement {
         let (path, width, height) = row_glyph(row.glyph);
         let action = row.action.clone();
+        let enabled = action.is_some();
         let ring = self.target_ring(target);
         let view = cx.entity().downgrade();
         div()
@@ -79,8 +80,7 @@ impl QuickSettingsView {
             .role(Role::Button)
             .aria_label(row.label.clone())
             .aria_selected(row.on)
-            .focusable()
-            .tab_stop(true)
+            .when(enabled, |row| row.focusable().tab_stop(true))
             .absolute()
             .left(px(g::INSET))
             .top(px(top))
@@ -198,15 +198,28 @@ impl QuickSettingsView {
             Some(rmac_quick_settings::detail::Detail::Wifi) => "Wi-Fi",
             _ => "Bluetooth",
         };
+        let state = self.state.view();
+        let enabled = match self.detail {
+            Some(rmac_quick_settings::detail::Detail::Wifi) => {
+                state.wifi.available && !state.wifi.busy
+            }
+            Some(rmac_quick_settings::detail::Detail::Bluetooth) => {
+                state.bluetooth.available && !state.bluetooth.busy
+            }
+            _ => false,
+        };
         div()
             .id("control-center-detail-switch")
             .role(Role::Switch)
             .aria_label(switch_name)
             .aria_toggled(if on { Toggled::True } else { Toggled::False })
-            .focusable()
-            .tab_stop(true)
-            .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
-                let _ = view.update(cx, |this, cx| this.toggle_detail_switch(cx));
+            .when(enabled, |element| {
+                element.focusable().tab_stop(true).on_a11y_action(
+                    AccessibleAction::Click,
+                    move |_, _, cx| {
+                        let _ = view.update(cx, |this, cx| this.toggle_detail_switch(cx));
+                    },
+                )
             })
             .absolute()
             .left(px(g::PANEL_WIDTH - g::INSET - g::SWITCH_WIDTH))
@@ -216,7 +229,11 @@ impl QuickSettingsView {
             .rounded_full()
             .bg(if on { mac::system_blue() } else { circle_off() })
             .when(ring, |switch| switch.shadow(mac::focus_ring_shadow()))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_detail_switch(cx)))
+            .when(enabled, |element| {
+                element.on_click(
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_detail_switch(cx)),
+                )
+            })
             .child(
                 div()
                     .absolute()

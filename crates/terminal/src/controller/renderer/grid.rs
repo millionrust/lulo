@@ -246,7 +246,11 @@ impl TerminalView {
                 } else {
                     hsla(active().fg)
                 };
-                let mut background = conv(cell.bg);
+                let mut background = if self.display_ansi_colours {
+                    conv(cell.bg)
+                } else {
+                    hsla(active().bg)
+                };
 
                 if flags.contains(Flags::DIM) {
                     foreground.a *= 0.65;

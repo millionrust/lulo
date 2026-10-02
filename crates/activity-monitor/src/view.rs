@@ -205,7 +205,12 @@ impl MonitorView {
             && !self.table.read(cx).delegate().rows.is_empty();
         rmac_ui::set_menu_enabled("activity_monitor::FindNext", has_matches, cx);
         rmac_ui::set_menu_enabled("activity_monitor::FindPrevious", has_matches, cx);
-        rmac_ui::set_menu_enabled("activity_monitor::UseSelectionForFind", has_selection, cx);
+        let has_text_selection = !self.search.read(cx).selected_value().is_empty();
+        rmac_ui::set_menu_enabled(
+            "activity_monitor::UseSelectionForFind",
+            has_selection || has_text_selection,
+            cx,
+        );
         rmac_ui::set_menu_enabled("activity_monitor::JumpToSelection", has_selection, cx);
         for (action, filter) in [
             ("activity_monitor::ShowAllProcesses", ViewFilter::All),
@@ -460,12 +465,18 @@ impl MonitorView {
     /// visible as the list narrows. This is the table's selection equivalent
     /// of Edit ▸ Find ▸ Use Selection for Find in a text view.
     fn use_selection_for_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(process) = self.selected_proc(cx) else {
+        let selected_text = self.search.read(cx).selected_value().to_string();
+        let query = if selected_text.is_empty() {
+            self.selected_proc(cx).map(|process| process.name)
+        } else {
+            Some(selected_text)
+        };
+        let Some(query) = query else {
             return;
         };
         self.search_open = true;
         self.search
-            .update(cx, |search, cx| search.set_value(process.name, window, cx));
+            .update(cx, |search, cx| search.set_value(query, window, cx));
         cx.notify();
     }
 

@@ -15,6 +15,7 @@ import importlib.util
 import json
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -77,6 +78,7 @@ class SandboxTests(unittest.TestCase):
             monkey.build_sandbox(first)
             monkey.build_sandbox(second)
             self.assertEqual(sorted(p.name for p in first.iterdir()), sorted(p.name for p in second.iterdir()))
+            self.assertEqual((first / "large.bin").read_bytes(), (second / "large.bin").read_bytes())
 
 
 class ShortcutInventoryTests(unittest.TestCase):
@@ -94,6 +96,11 @@ class ShortcutInventoryTests(unittest.TestCase):
     def test_system_monitor_never_uses_quit_process_shortcut(self):
         labels = [label for label, _shortcut in monkey.load_shortcuts("system-monitor")]
         self.assertFalse(any("Quit Process" in label for label in labels))
+
+    def test_settings_sidebar_allowlist_contains_panes(self):
+        labels = monkey.load_settings_sidebar_labels()
+        self.assertIn("Spotlight", labels)
+        self.assertNotIn("Forget This Network", labels)
 
     def test_shortcut_to_chord_parses_mac_glyphs(self):
         self.assertEqual(monkey.shortcut_to_chord("⌘Q"), "⌘Q")
@@ -209,6 +216,19 @@ class ReportTests(unittest.TestCase):
 
 
 class FindingClassificationTests(unittest.TestCase):
+    def test_terminal_random_text_cannot_submit_a_command(self):
+        class Pointer:
+            typed = None
+
+            def type_text(self, value, delay):
+                self.typed = value
+
+        subject = monkey.Monkey.__new__(monkey.Monkey)
+        subject.app = "terminal"
+        subject.run = type("Run", (), {"pointer": Pointer()})()
+        subject._type("echo hello\n")
+        self.assertEqual(subject.run.pointer.typed, "echo hello")
+
     def test_replay_resets_home_but_normal_relaunch_preserves_it(self):
         with TemporaryDirectory() as tmp:
             subject = monkey.Monkey.__new__(monkey.Monkey)
@@ -233,6 +253,19 @@ class FindingClassificationTests(unittest.TestCase):
         subject._launched_at = time.monotonic()
         subject.sample = lambda: self.fail("sampled startup as idle")
         self.assertIsNone(subject.check_idle_cpu())
+
+    def test_replay_can_enforce_a_tighter_idle_cpu_budget(self):
+        import time
+
+        subject = monkey.Monkey.__new__(monkey.Monkey)
+        subject._launched_at = time.monotonic() - 60
+        subject.log = lambda _message: None
+        values = iter([{"cpu_seconds": 0.0}, {"cpu_seconds": 0.38}])
+        subject.sample = lambda: next(values)
+        with mock.patch.object(monkey.time, "sleep"):
+            finding = subject.check_idle_cpu(1.0, threshold_percent=5.0)
+        self.assertEqual(finding.kind, "runaway-cpu")
+        self.assertIn("38%", finding.detail)
 
     def test_clean_quit_is_not_a_crash(self):
         class Process:

@@ -171,7 +171,7 @@ def build_sandbox(root: Path) -> None:
     (root / "notes.txt").write_text("The quick brown fox jumps over the lazy dog.\n" * 20)
     (root / "empty.txt").write_bytes(b"")
     with (root / "large.bin").open("wb") as handle:
-        chunk = os.urandom(1 << 20)
+        chunk = bytes(range(256)) * 4096
         for _ in range(12):
             handle.write(chunk)
     (root / "picture.png").write_bytes(_MINIMAL_PNG)
@@ -219,6 +219,15 @@ def load_shortcuts(app: str) -> list[tuple[str, str]]:
     for menu in data.get("menu_bar", []):
         walk(menu.get("label", ""), menu.get("items", []))
     return out
+
+
+def load_settings_sidebar_labels() -> set[str]:
+    path = INVENTORY_DIR / "System Settings.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return set()
+    return {item["label"] for item in data.get("sidebar", []) if isinstance(item.get("label"), str)}
 
 
 def shortcut_to_chord(shortcut: str) -> Optional[str]:
@@ -330,6 +339,7 @@ class Monkey:
         self.app_log: Optional[Path] = None
         self._app_log_offset = 0
         self.shortcuts = load_shortcuts(app) if app != "shell" else []
+        self.settings_sidebar_labels = load_settings_sidebar_labels() if app == "settings" else set()
         self.extra_processes: dict[str, subprocess.Popen] = {}
         self._shell_log_offsets: dict[Path, int] = {}
         self.home = home_root
@@ -563,9 +573,12 @@ class Monkey:
             label = run_lulo.name(node)
             if not label:
                 continue
-            if self.app in SAFE_NAV_APPS and run_lulo.role(node) not in SAFE_NAV_ROLES:
+            role = run_lulo.role(node)
+            if self.app in SAFE_NAV_APPS and role not in SAFE_NAV_ROLES:
                 continue
-            return (wx + box[0] + box[2] / 2, wy + box[1] + box[3] / 2, run_lulo.role(node), label)
+            if self.app == "settings" and role in ("list item", "tree item") and label not in self.settings_sidebar_labels:
+                continue
+            return (wx + box[0] + box[2] / 2, wy + box[1] + box[3] / 2, role, label)
         return None
 
     # -- low-level input, shared by decide() and replay -----------------------
@@ -587,7 +600,10 @@ class Monkey:
         self.run.pointer.key(chord)
 
     def _type(self, text: str) -> None:
-        self.run.pointer.type_text(sanitize_for_typing(text), delay=0.02)
+        typed = sanitize_for_typing(text)
+        if self.app == "terminal":
+            typed = typed.replace("\n", "")
+        self.run.pointer.type_text(typed, delay=0.02)
 
     # -- decide: produce a concrete, replayable ActionRecord -----------------
 
@@ -698,7 +714,11 @@ class Monkey:
         elif kind == "spotlight-type":
             self._type(params["text"])
         elif kind == "desktop-click":
-            self._click_point(*params["xy"], button=params.get("button", "left"))
+            button = params.get("button", "left")
+            self._click_point(*params["xy"], button=button)
+            if button == "right":
+                time.sleep(0.2)
+                self._key("escape")
         elif kind in ("dock-menu", "menu-bar", "control-centre"):
             self._click_point(*params["xy"], button="right" if kind == "dock-menu" else "left")
             time.sleep(0.2)
@@ -712,7 +732,7 @@ class Monkey:
 
     def _file_op(self, op: str, seed: float) -> None:
         rng = random.Random(seed)
-        entries = [p for p in self.sandbox.iterdir()] if self.sandbox.exists() else []
+        entries = sorted(self.sandbox.iterdir()) if self.sandbox.exists() else []
         try:
             if op == "mkdir":
                 (self.sandbox / f"dir-{int(rng.random() * 1e6)}").mkdir(exist_ok=True)
@@ -803,7 +823,8 @@ class Monkey:
             return None
         return run_memory_soak.sample_tree(pid, self.hertz)
 
-    def check_idle_cpu(self, idle_seconds: float = 5.0) -> Optional[Finding]:
+    def check_idle_cpu(self, idle_seconds: float = 5.0,
+                       threshold_percent: float = 50.0) -> Optional[Finding]:
         """Must be called with no actions in flight: samples CPU for
         idle_seconds and flags sustained >50% usage."""
 
@@ -820,7 +841,7 @@ class Monkey:
             return None
         percent = (after["cpu_seconds"] - before["cpu_seconds"]) / idle_seconds * 100
         self.log(f"idle CPU {percent:.1f}% over {idle_seconds:.0f}s")
-        if percent > 50:
+        if percent > threshold_percent:
             return Finding("runaway-cpu", f"{percent:.0f}% CPU over {idle_seconds:.0f}s idle", -1,
                            {"percent": percent})
         return None
@@ -1093,7 +1114,7 @@ def monkey_session(run: run_window_move.Run, app: str, app_dirs: list[Path], see
 
 
 def replay_session(run: run_window_move.Run, app: str, app_dirs: list[Path], replay: Path, count: Optional[int],
-                   check_idle_cpu: bool, idle_seconds: float,
+                   check_idle_cpu: bool, idle_seconds: float, max_idle_cpu: float,
                    log: Callable[[str], None]) -> bool:
     """Replay recorded concrete actions in the same private compositor."""
 
@@ -1113,11 +1134,31 @@ def replay_session(run: run_window_move.Run, app: str, app_dirs: list[Path], rep
                 return True
         if check_idle_cpu:
             time.sleep(max(0.0, 15.0 - (time.monotonic() - monkey._launched_at)))
-            finding = monkey.check_idle_cpu(idle_seconds)
+            finding = monkey.check_idle_cpu(idle_seconds, max_idle_cpu)
             if finding:
                 log(f"REPLAY FINDING after idle sample: {finding.kind}: {finding.detail}")
                 return True
         log(f"REPLAY NO FINDING after {len(actions)} actions")
+        return False
+    finally:
+        monkey.stop()
+
+
+def idle_session(run: run_window_move.Run, app: str, app_dirs: list[Path],
+                 idle_seconds: float, max_idle_cpu: float, log: Callable[[str], None]) -> bool:
+    """Measure a fresh, untouched app with its normal initial keyboard focus."""
+
+    monkey = Monkey(run, app, app_dirs, run.work / "monkey-home", log)
+    monkey.launch()
+    try:
+        time.sleep(max(0.0, 15.0 - (time.monotonic() - monkey._launched_at)))
+        if monkey.sample() is None:
+            raise MonkeyError("no process sample available for idle CPU check")
+        finding = monkey.check_idle_cpu(idle_seconds, max_idle_cpu)
+        if finding:
+            log(f"IDLE FINDING: {finding.kind}: {finding.detail}")
+            return True
+        log("IDLE PASS")
         return False
     finally:
         monkey.stop()
@@ -1179,9 +1220,12 @@ def inner(args: argparse.Namespace) -> int:
 
     findings_dir = Path(args.findings_dir)
     try:
+        if args.idle_only:
+            return 1 if idle_session(run, args.app, app_dirs, args.idle_seconds,
+                                     args.max_idle_cpu, log) else 0
         if args.replay:
             return 1 if replay_session(run, args.app, app_dirs, args.replay, args.replay_count,
-                                       args.check_idle_cpu, args.idle_seconds, log) else 0
+                                       args.check_idle_cpu, args.idle_seconds, args.max_idle_cpu, log) else 0
         reports = monkey_session(run, args.app, app_dirs, args.seed, args.duration,
                                  findings_dir, args.max_findings, log)
         for report in reports:
@@ -1207,6 +1251,8 @@ def outer(args: argparse.Namespace) -> int:
                 "--findings-dir", args.findings_dir, "--max-findings", str(args.max_findings)]
         if args.shell_bin_dir:
             argv += ["--shell-bin-dir", args.shell_bin_dir]
+        if args.idle_only:
+            argv += ["--idle-only"]
         if args.replay:
             argv += ["--replay", str(args.replay.resolve())]
         if args.replay_count is not None:
@@ -1215,6 +1261,8 @@ def outer(args: argparse.Namespace) -> int:
             argv += ["--check-idle-cpu"]
         if args.idle_seconds != 5.0:
             argv += ["--idle-seconds", str(args.idle_seconds)]
+        if args.max_idle_cpu != 50.0:
+            argv += ["--max-idle-cpu", str(args.max_idle_cpu)]
         return subprocess.call(argv, env=env)
     finally:
         runtime = Path(env["XDG_RUNTIME_DIR"])
@@ -1245,9 +1293,13 @@ def main() -> int:
     parser.add_argument("--replay", type=Path, help="replay an action log inside the private compositor")
     parser.add_argument("--replay-count", type=int, help="replay only the first N actions")
     parser.add_argument("--check-idle-cpu", action="store_true", help="sample CPU for five idle seconds after replay")
+    parser.add_argument("--idle-only", action="store_true", help="measure an untouched app with its initial focus")
     parser.add_argument("--idle-seconds", type=float, default=5.0, help="idle CPU sample length during replay")
+    parser.add_argument("--max-idle-cpu", type=float, default=50.0, help="CPU percent above which replay fails")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.idle_only and args.replay:
+        parser.error("--idle-only and --replay cannot be combined")
     if args.seed is None:
         args.seed = random.SystemRandom().randrange(1, 2**31 - 1)
     print(f"seed={args.seed}", flush=True)

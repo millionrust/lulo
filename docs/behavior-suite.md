@@ -81,9 +81,12 @@ binary-searches the shortest reproducing prefix against a fresh private
 HOME. The report includes a working `--replay` command and optional
 `--replay-count` for the prefix. Normal Quit and last-window close restart
 the app and are recorded as replayable actions. Idle CPU sampling starts
-15 seconds after launch so startup work is not classified as idle. It reuses `run_window_move.py`'s nested
-Sway+niri+shell bootstrap and `run_lulo.py`'s AT-SPI helpers, and takes
+15 seconds after launch so startup work is not classified as idle. It reuses
+`run_window_move.py`'s nested Sway+niri+shell bootstrap and `run_lulo.py`'s AT-SPI helpers, and takes
 `/tmp/lulo-journey.lock` itself like every other runner here.
+Settings and System Monitor random clicks are confined to navigation; the
+System Monitor's Quit Process shortcut is excluded. Terminal text omits
+newlines, so random typing cannot submit a shell command.
 
 ```sh
 python3 scripts/behavior/monkey.py --bin-dir ~/lulo-monkey-bins \

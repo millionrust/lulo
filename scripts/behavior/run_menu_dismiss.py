@@ -101,6 +101,15 @@ class Run:
             f"{'PASS' if ok else 'FAIL'} {name} {detail if not ok else ''}".rstrip(),
             flush=True,
         )
+        if not ok and hasattr(self, "keys"):
+            identifier = f"failure-{len(self.results):03d}"
+            try:
+                self.capture(identifier)
+                (self.work / f"{identifier}-layers.json").write_text(
+                    json.dumps(self.niri("layers"), indent=2), encoding="utf-8"
+                )
+            except Exception as error:  # noqa: BLE001
+                print(f"debug capture failed: {error}", flush=True)
 
     def spawn(self, argv: list[str], name: str, extra: dict[str, str] | None = None) -> subprocess.Popen:
         env = {**self.env, **(extra or {})}
@@ -532,7 +541,7 @@ class Run:
             self.close_everything()
             self.click_at(x + w / 2, y + h / 2, "right")
             opened = self.wait_for(lambda: self.find_menu("Files") is not None, 5)
-            self.check(f"Dock context menu: opens for {method}", opened)
+            self.check(f"Dock context menu: opens for {method}", opened, f"tile={box}")
             if not opened:
                 continue
             if method == "Escape":
@@ -584,6 +593,24 @@ class Run:
 
     def run(self) -> int:
         self.start()
+        if self.args.only:
+            if self.args.only == "topbar":
+                self.dock_click_closes_app_menu()
+                self.clicking_same_title_keeps_menu()
+            elif self.args.only == "status":
+                for label in ("Wi-Fi", "Bluetooth", "Sound"):
+                    self.status_menu_dismissal(label)
+            elif self.args.only == "dock":
+                self.dock_context_menu_dismissal()
+            else:
+                namespaces = {
+                    "quick-settings": "rmac-quick-settings",
+                    "launcher": "rmac-launcher",
+                    "app-drawer": "rmac-app-drawer",
+                    "notification-center": "rmac-notification-center",
+                }
+                self.layer_popover_dismissal(self.args.only, namespaces[self.args.only])
+            return self.finish()
         self.dock_click_closes_app_menu()
         self.wallpaper_click_inside_band_closes_app_menu()
         self.wallpaper_click_below_band_closes_status_menu()
@@ -670,6 +697,8 @@ def main() -> int:
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, wallpaper, "
                                           "rmac-quick-settings and rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
+                                           "launcher", "app-drawer", "notification-center"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

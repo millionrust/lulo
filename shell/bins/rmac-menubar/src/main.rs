@@ -929,15 +929,6 @@ mod linux_wayland {
         /// same for a status menu.
         capture_status: Option<(StatusMenuKind, bool)>,
         _blur: Subscription,
-        /// A transparent, keyboard-inert layer surface covering everything
-        /// below the bar's own `MENU_SURFACE_HEIGHT` band, open only while
-        /// `open_menu` or `status_menu` is `Some`. The bar's own surface
-        /// claims a wider input region while a menu is open (see `render`),
-        /// so together the two catch a click anywhere else on screen —
-        /// desktop, Dock (never keyboard-interactive, so it never signals a
-        /// focus loss) or another window — and close the menu, matching
-        /// macOS. See `ensure_click_catcher`/`remove_click_catcher`.
-        click_catcher: Option<AnyWindowHandle>,
     }
 
     /// Re-read the audio snapshot whenever PipeWire reports a change (a
@@ -1067,7 +1058,6 @@ mod linux_wayland {
                 keyboard: None,
                 focus,
                 _blur: blur,
-                click_catcher: None,
             }
         }
 
@@ -1100,28 +1090,6 @@ mod linux_wayland {
             }
             if self.fullscreen && !self.pointer_inside {
                 self.schedule_fullscreen_hide(cx);
-            }
-            self.remove_click_catcher(cx);
-        }
-
-        /// Opens (if not already open) the click catcher below the bar's own
-        /// `MENU_SURFACE_HEIGHT` band — see `click_catcher`'s field doc.
-        fn ensure_click_catcher(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-            if self.click_catcher.is_some() {
-                return;
-            }
-            let Some(display) = window.display(cx) else {
-                return;
-            };
-            let Some(top_bar) = window.window_handle().downcast::<TopBar>() else {
-                return;
-            };
-            self.click_catcher = open_menu_click_catcher(display, top_bar, cx);
-        }
-
-        fn remove_click_catcher(&mut self, cx: &mut App) {
-            if let Some(handle) = self.click_catcher.take() {
-                let _ = handle.update(cx, |_, window, _| window.remove_window());
             }
         }
 
@@ -1183,7 +1151,6 @@ mod linux_wayland {
                             this.hover_generation = this.hover_generation.saturating_add(1);
                             this.menu_window = None;
                             this.help_query.clear();
-                            this.remove_click_catcher(cx);
                             cx.notify();
                             if let Some(confirmed) =
                                 menu_model::confirmation_default_action(&action)
@@ -1224,7 +1191,6 @@ mod linux_wayland {
             self.open_menu_content(index, app_id, cx);
             window.focus(&self.focus, cx);
             window.refresh();
-            self.ensure_click_catcher(window, cx);
         }
 
         /// Everything `open_menu` does except taking the bar's own window
@@ -1810,7 +1776,6 @@ mod linux_wayland {
             self.load_status_menu(kind, true, cx);
             window.focus(&self.focus, cx);
             window.refresh();
-            self.ensure_click_catcher(window, cx);
             cx.notify();
         }
 
@@ -3197,7 +3162,6 @@ mod linux_wayland {
                 self.menu_window = None;
                 self.help_query.clear();
             }
-            self.remove_click_catcher(cx);
             if let (true, Some(window)) = (restore, mode.previous_window) {
                 cx.spawn(async move |_, _| {
                     let action = rmac_compositor::Action::FocusWindow { window };
@@ -3383,13 +3347,6 @@ mod linux_wayland {
                 self.open_app_id = None;
                 self.selected_item = NO_ITEM;
                 self.submenu_rows.clear();
-            }
-            // Safety net for the two resets above (and any future one that
-            // clears `open_menu`/`status_menu` without going through
-            // `close_menu`): nothing should ever leave the click catcher
-            // open once both are gone.
-            if self.open_menu.is_none() && self.status_menu.is_none() {
-                self.remove_click_catcher(cx);
             }
             let now = Local::now();
             let status = self.status.read(cx);
@@ -3638,19 +3595,19 @@ mod linux_wayland {
                     // A click anywhere else in the bar's own surface — the
                     // wallpaper or another window showing through the
                     // transparent area around the dropdown — reaches no
-                    // handler at all unless the whole band accepts input:
+                    // handler at all unless the whole surface accepts input:
                     // outside the two regions above, nothing here claims
                     // it, so niri just passes it through to whatever is
                     // physically underneath instead of to `root`'s own
                     // `on_click` (which closes the menu). Claiming the
-                    // whole band while a menu is open makes every such
+                    // whole display while a menu is open makes every such
                     // click land on that handler, as macOS does; the
                     // click-through behaviour above returns the moment
-                    // nothing is open. `open_menu_click_catcher` covers
-                    // the rest of the screen below this band.
+                    // nothing is open. This surface covers the display, so
+                    // the same input region catches clicks below the menu.
                     input_regions.push(Bounds {
                         origin: point(px(0.0), px(0.0)),
-                        size: Size::new(window.bounds().size.width, px(MENU_SURFACE_HEIGHT)),
+                        size: window.bounds().size,
                     });
                 }
             }
@@ -5436,114 +5393,6 @@ mod linux_wayland {
         cx.new(|cx| ShellStatus::new(status_rx, cx))
     }
 
-    /// A transparent, keyboard-inert layer surface filling everything below
-    /// `MENU_SURFACE_HEIGHT`. See `TopBar::click_catcher`'s field doc for why
-    /// this exists: it catches a pointer press anywhere else on screen and
-    /// closes whatever menu is open, which the bar's own surface — bounded
-    /// to that band — cannot reach by itself.
-    fn open_menu_click_catcher(
-        display: Rc<dyn PlatformDisplay>,
-        top_bar: WindowHandle<TopBar>,
-        cx: &mut App,
-    ) -> Option<AnyWindowHandle> {
-        let bounds = display.bounds();
-        let height = bounds.size.height - px(MENU_SURFACE_HEIGHT);
-        if height <= px(0.0) {
-            return None;
-        }
-        let options = WindowOptions {
-            titlebar: None,
-            focus: false,
-            show: true,
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: Size::new(bounds.size.width, height),
-            })),
-            display_id: Some(display.id()),
-            app_id: Some("dev.rmac.MenuClickCatcher".to_owned()),
-            window_background: WindowBackgroundAppearance::Transparent,
-            kind: WindowKind::LayerShell(LayerShellOptions {
-                namespace: format!("rmac-menu-click-catcher-{}", u64::from(display.id())),
-                layer: Layer::Overlay,
-                anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
-                margin: Some((px(MENU_SURFACE_HEIGHT), px(0.0), px(0.0), px(0.0))),
-                keyboard_interactivity: KeyboardInteractivity::None,
-                ..Default::default()
-            }),
-            is_movable: false,
-            is_resizable: false,
-            is_minimizable: false,
-            ..Default::default()
-        };
-        cx.open_window(options, move |_, cx| {
-            cx.new(|_| MenuClickCatcher { top_bar })
-        })
-        .ok()
-        .map(AnyWindowHandle::from)
-    }
-
-    /// Create the process's first extra GPUI layer surface at startup. Its
-    /// input region is empty and it removes itself after one frame, so the
-    /// first real menu click does not wait for a second renderer setup.
-    fn warm_up_click_catcher(display: Rc<dyn PlatformDisplay>, cx: &mut App) {
-        let options = WindowOptions {
-            titlebar: None,
-            focus: false,
-            show: true,
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: Size::new(px(1.0), px(1.0)),
-            })),
-            display_id: Some(display.id()),
-            app_id: Some("dev.rmac.MenuCatcherWarmup".to_owned()),
-            window_background: WindowBackgroundAppearance::Transparent,
-            kind: WindowKind::LayerShell(LayerShellOptions {
-                namespace: "rmac-menu-catcher-warmup".to_owned(),
-                layer: Layer::Overlay,
-                keyboard_interactivity: KeyboardInteractivity::None,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        if let Err(error) = cx.open_window(options, |window, cx| {
-            window.set_input_region(Some(&[]));
-            window.on_next_frame(|window, _| window.remove_window());
-            cx.new(|_| MenuCatcherWarmup)
-        }) {
-            eprintln!("menu catcher warmup failed: {error}");
-        }
-    }
-
-    struct MenuCatcherWarmup;
-
-    impl Render for MenuCatcherWarmup {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div()
-        }
-    }
-
-    struct MenuClickCatcher {
-        top_bar: WindowHandle<TopBar>,
-    }
-
-    impl Render for MenuClickCatcher {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            let top_bar = self.top_bar;
-            div()
-                .size_full()
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                    window.remove_window();
-                    let _ =
-                        top_bar.update(cx, |top_bar, window, cx| top_bar.close_menu(window, cx));
-                })
-                .on_mouse_down(MouseButton::Right, move |_, window, cx| {
-                    window.remove_window();
-                    let _ =
-                        top_bar.update(cx, |top_bar, window, cx| top_bar.close_menu(window, cx));
-                })
-        }
-    }
-
     struct MenuBackdrop {
         radius: f32,
         tint: u32,
@@ -5707,9 +5556,9 @@ mod linux_wayland {
         backdrop_tx: async_channel::Sender<MenuBackdropUpdate>,
         cx: &mut App,
     ) -> AnyWindowHandle {
-        warm_up_click_catcher(display.clone(), cx);
         let display_id = display.id();
         let width = display.bounds().size.width;
+        let height = display.bounds().size.height;
         let handle = cx
             .open_window(
                 WindowOptions {
@@ -5717,7 +5566,7 @@ mod linux_wayland {
                     focus: false,
                     window_bounds: Some(WindowBounds::Windowed(Bounds {
                         origin: point(px(0.), px(0.)),
-                        size: Size::new(width, px(MENU_SURFACE_HEIGHT)),
+                        size: Size::new(width, height),
                     })),
                     display_id: Some(display_id),
                     app_id: Some("dev.rmac.TopBar".to_owned()),

@@ -35,13 +35,12 @@ of probing it (the Mac side has no such mode; its AX ground truth was read
 live with short ad hoc AppleScript/JXA snippets under the GUI lock, the
 same way `record_mac.py`'s own scenarios were written).
 
-Three surfaces are recorded both ways as of 2026-10-02 (the Apple/Lulo menu
-and Files' File menu in the top bar, and Control Centre), proving both
-owner-reported gaps plus one more found along the way (see `docs/parity.md`
-BAR-10, CC-14): both menus genuinely don't close on an outside click or
-Escape, and the second click on an already-open menu title toggles it
-closed on Lulo but is a no-op on the Mac. Control Centre's own
-outside-click/Escape close reliably enough to measure (Escape was flaky:
+Three surfaces were recorded both ways on 2026-10-02 (the Apple/Lulo menu
+and Files' File menu in the top bar, and Control Centre). Those recordings
+captured the gaps later fixed under BAR-10 and MENU-15: both Lulo menus stayed
+open on an outside click or Escape, and a second click on an already-open
+title toggled it closed while the Mac left it open. Control Centre's own
+outside-click/Escape closed reliably enough to measure (Escape was flaky:
 ~2 of 3 runs stayed open); its sliders' hover reaction could not be
 measured on Lulo this pass - `rmac-quick-settings` exposes no AT-SPI
 children for its content in the nested-shell harness even after a 25 s

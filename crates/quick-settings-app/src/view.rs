@@ -7,7 +7,6 @@ use rmac_quick_settings::layout::Modules;
 use rmac_quick_settings::{Command, Control, Operation, State};
 use rmac_ui::SliderBulge;
 
-
 /// How often Now Playing re-reads the active MPRIS player while open.
 const MEDIA_POLL: Duration = Duration::from_millis(1000);
 /// Coalesce slider drags into one system write per pause.

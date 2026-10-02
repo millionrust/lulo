@@ -113,7 +113,9 @@ mod tests {
 
     #[test]
     fn inactive_processes_are_the_complement_of_active_processes() {
-        for status in ["Running", "Sleeping", "Idle", "Stopped", "Zombie", "Dead", "Tracing"] {
+        for status in [
+            "Running", "Sleeping", "Idle", "Stopped", "Zombie", "Dead", "Tracing",
+        ] {
             assert_ne!(
                 ViewFilter::ActiveProcesses.matches(Some(1000), status, Some(1000)),
                 ViewFilter::InactiveProcesses.matches(Some(1000), status, Some(1000)),

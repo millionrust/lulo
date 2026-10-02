@@ -168,17 +168,20 @@ fn text_checkbox(
     edit: fn(&mut settings::Settings, bool),
 ) -> impl IntoElement {
     let view = cx.entity();
-    div().px_3().pb_2().child(
-        Checkbox::new(id)
-            .label(label)
-            .checked(checked)
-            .on_change(move |value, _, cx| {
-                view.update(cx, |this, cx| {
-                    edit(&mut this.settings, *value);
-                    this.save_settings(cx);
-                });
-            }),
-    )
+    div()
+        .px_3()
+        .pb_2()
+        .child(
+            Checkbox::new(id)
+                .label(label)
+                .checked(checked)
+                .on_change(move |value, _, cx| {
+                    view.update(cx, |this, cx| {
+                        edit(&mut this.settings, *value);
+                        this.save_settings(cx);
+                    });
+                }),
+        )
 }
 
 /// One row of an exclusive-choice list (Profile, Cursor style, Shell exit

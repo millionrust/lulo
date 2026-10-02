@@ -13,11 +13,10 @@ use crate::view_filter::ViewFilter;
 use crate::{
     process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, FilterProcesses,
     FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, JumpToSelection,
-    Minimize, QuitProcess, UseSelectionForFind,
-    RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds, ShowActiveProcesses,
-    ShowAllProcesses, ShowInactiveProcesses, ShowMyProcesses, ShowOtherUsersProcesses,
-    ShowSystemProcesses,
-    ToggleCpuColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
+    Minimize, QuitProcess, RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds,
+    ShowActiveProcesses, ShowAllProcesses, ShowInactiveProcesses, ShowMyProcesses,
+    ShowOtherUsersProcesses, ShowSystemProcesses, ToggleCpuColumn, ToggleMemoryColumn,
+    TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
 };
 
 use super::MonitorView;

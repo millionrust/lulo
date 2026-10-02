@@ -475,7 +475,12 @@ impl MonitorView {
             let Some(pid) = state.delegate().selected_pid else {
                 return;
             };
-            if let Some(row) = state.delegate().rows.iter().position(|item| item.pid == pid) {
+            if let Some(row) = state
+                .delegate()
+                .rows
+                .iter()
+                .position(|item| item.pid == pid)
+            {
                 state.set_selected_row(row, cx);
             }
         });

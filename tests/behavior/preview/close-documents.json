@@ -21,6 +21,9 @@
       ]
     },
     {
+      "wait": 1.5
+    },
+    {
       "key": "shift-cmd-w",
       "settle": 0.6
     },

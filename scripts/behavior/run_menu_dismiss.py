@@ -539,14 +539,16 @@ class Run:
 
     def dock_context_menu_dismissal(self) -> None:
         tile = self.wait_for(lambda: self.find_node(
-            ("push button", "button"), lambda name: name.startswith("Files")), 5)
+            ("push button", "button"),
+            lambda name: name.startswith("Files") and not name.endswith(" menu")), 5)
         self.check("Dock context menu: Files tile available", tile is not None)
         if tile is None:
             return
         for method in ("outside click", "Escape"):
             self.close_everything()
             tile = self.wait_for(lambda: self.find_node(
-                ("push button", "button"), lambda name: name.startswith("Files")
+                ("push button", "button"),
+                lambda name: name.startswith("Files") and not name.endswith(" menu")
             ), 5)
             box = self.extents(tile) if tile is not None else None
             if box is None:

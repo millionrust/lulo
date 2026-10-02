@@ -109,7 +109,7 @@ fn overlay_options(bounds: WindowBounds, margin_top: f64) -> WindowOptions {
             // margin, results growing downwards without moving the bar.
             anchor: Anchor::TOP,
             margin: Some((px(margin_top as f32), px(0.0), px(0.0), px(0.0))),
-            keyboard_interactivity: KeyboardInteractivity::Exclusive,
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
             ..Default::default()
         }),
         is_movable: false,

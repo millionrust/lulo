@@ -67,6 +67,7 @@ impl NotesView {
                             .h_full()
                             .v_flex()
                             .bg(note_editor_fill(self.note_has_light_background()))
+                            .text_color(note_editor_text(self.note_has_light_background()))
                             .when(self.toolbar_visible, |element| {
                                 element.child(self.render_toolbar(window, cx))
                             })

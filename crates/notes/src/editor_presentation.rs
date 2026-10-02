@@ -197,6 +197,7 @@ impl NotesView {
             .size_full()
             .v_flex()
             .bg(note_editor_fill(light_background))
+            .text_color(note_editor_text(light_background))
             .child(
                 div()
                     .pt(px(DATE_TOP))
@@ -268,8 +269,12 @@ impl NotesView {
                     .border_t_1()
                     .border_color(row_rule())
                     .text_size(rmac_ui::text_px(12.0))
-                    .text_color(mac::text_secondary())
-                    .child(div().text_color(sidebar_selected_text()).child("#"))
+                    .text_color(note_editor_date(light_background))
+                    .child(
+                        div()
+                            .text_color(note_editor_text(light_background))
+                            .child("#"),
+                    )
                     .child(
                         div().flex_1().min_w(px(0.0)).child(
                             TextField::new(&self.tags)

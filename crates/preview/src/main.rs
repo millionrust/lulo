@@ -136,7 +136,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, None),
         KeyBinding::new(shortcuts::CLOSE.keystroke, CloseWindow, context),
         KeyBinding::new("alt-cmd-w", CloseAll, None),
-        KeyBinding::new("shift-cmd-w", CloseSelected, context),
+        KeyBinding::new("shift-cmd-w", CloseSelected, None),
         KeyBinding::new(shortcuts::COPY.keystroke, Copy, context),
         KeyBinding::new("cmd-backspace", MoveToTrash, context),
         KeyBinding::new(shortcuts::SELECT_ALL.keystroke, SelectAll, context),

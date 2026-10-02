@@ -154,6 +154,7 @@ actions!(
         DeleteNotePermanently,
         EmptyRecentlyDeleted,
         ToggleMarkdownPreview,
+        ToggleLightBackground,
         ToggleFolders,
         ToggleNoteCount,
         ToggleToolbar,
@@ -190,6 +191,7 @@ struct NotesView {
     preview: NotesPreviewSession,
     markdown_preview: NotesMarkdownPreviewSession,
     markdown_preview_visible: bool,
+    light_background_notes: BTreeSet<NoteId>,
     folders_visible: bool,
     show_note_count: bool,
     toolbar_visible: bool,
@@ -266,6 +268,12 @@ struct NotesView {
 }
 
 impl NotesView {
+    fn note_has_light_background(&self) -> bool {
+        self.session
+            .selected_note()
+            .is_some_and(|note| self.light_background_notes.contains(&note.id))
+    }
+
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let inputs = Self::initialize_inputs(window, cx);
         let mut view = Self {
@@ -278,6 +286,7 @@ impl NotesView {
             preview: NotesPreviewSession::new(),
             markdown_preview: NotesMarkdownPreviewSession::new(),
             markdown_preview_visible: false,
+            light_background_notes: BTreeSet::new(),
             folders_visible: true,
             show_note_count: true,
             toolbar_visible: true,

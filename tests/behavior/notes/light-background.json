@@ -1,0 +1,49 @@
+{
+  "title": "Notes: light note background toggles while the library stays open",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "key": "cmd-n",
+      "settle": 1
+    },
+    {
+      "type": "Light background note"
+    },
+    {
+      "observe": "default",
+      "facts": [
+        "note_background"
+      ]
+    },
+    {
+      "menu_action": "notes::ToggleLightBackground",
+      "settle": 0.5
+    },
+    {
+      "observe": "light",
+      "facts": [
+        "note_background"
+      ]
+    },
+    {
+      "menu_action": "notes::ToggleLightBackground",
+      "settle": 0.5
+    },
+    {
+      "observe": "restored",
+      "facts": [
+        "note_background"
+      ]
+    }
+  ],
+  "setup": {
+    "config": {
+      "rmac/theme.json": "{\"version\":1,\"preferences\":{\"color_scheme\":\"dark\"}}"
+    }
+  }
+}

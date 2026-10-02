@@ -478,6 +478,13 @@
               "shortcut": "⌃⌘T",
               "separator_before": true,
               "children": []
+            },
+            {
+              "label": "Signature",
+              "action": "preview::AnnotateSignature",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
         },
@@ -614,7 +621,7 @@
             {
               "label": "Return to Previous Size",
               "action": "window::restore-size",
-              "shortcut": "⌃⌘R",
+              "shortcut": "⌃⇧⌘R",
               "separator_before": true,
               "children": []
             }

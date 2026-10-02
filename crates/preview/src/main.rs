@@ -58,6 +58,7 @@ gpui::actions!(
         RotateRight,
         AnnotateHighlight,
         AnnotateRectangle,
+        AnnotateSignature,
         AnnotateArrow,
         AnnotateOval,
         AnnotateLine,

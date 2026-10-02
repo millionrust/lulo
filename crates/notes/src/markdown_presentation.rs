@@ -12,6 +12,7 @@ use super::{centered_state, NotesView};
 
 pub(super) fn render_markdown_document(
     document: &MarkdownPreviewDocument,
+    light_background: bool,
     cx: &mut Context<NotesView>,
 ) -> AnyElement {
     if document.blocks().is_empty() {
@@ -47,12 +48,17 @@ pub(super) fn render_markdown_document(
             document
                 .blocks()
                 .iter()
-                .map(|block| render_markdown_block(block, cx)),
+                .map(|block| render_markdown_block(block, light_background, cx)),
         )
         .into_any_element()
 }
 
-fn render_markdown_block(block: &MarkdownPreviewBlock, cx: &mut Context<NotesView>) -> AnyElement {
+fn render_markdown_block(
+    block: &MarkdownPreviewBlock,
+    light_background: bool,
+    cx: &mut Context<NotesView>,
+) -> AnyElement {
+    let light = rmac_ui::theme::ThemeTokens::light_default().colors;
     if matches!(block.kind(), MarkdownPreviewBlockKind::ThematicBreak) {
         return div()
             .h(px(1.0))
@@ -79,14 +85,26 @@ fn render_markdown_block(block: &MarkdownPreviewBlock, cx: &mut Context<NotesVie
         text_runs.push(TextRun {
             len: range.len(),
             font: text_font,
-            color: if style.inert_placeholder {
+            color: if light_background && style.inert_placeholder {
+                light.text_secondary.hsla()
+            } else if light_background && style.link_label {
+                light.accent.hsla()
+            } else if light_background {
+                light.text.hsla()
+            } else if style.inert_placeholder {
                 mac::text_secondary()
             } else if style.link_label {
                 mac::notes_accent()
             } else {
                 mac::text()
             },
-            background_color: style.code.then(mac::control_fill),
+            background_color: style.code.then(|| {
+                if light_background {
+                    light.control_fill.hsla()
+                } else {
+                    mac::control_fill()
+                }
+            }),
             underline: None,
             strikethrough: style.strikethrough.then(|| StrikethroughStyle {
                 thickness: px(1.0),

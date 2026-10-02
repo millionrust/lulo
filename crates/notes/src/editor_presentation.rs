@@ -152,6 +152,7 @@ impl NotesView {
         };
         let editable =
             self.is_interactive_ready() && !note.deleted && !self.markdown_preview_visible;
+        let light_background = self.note_has_light_background();
         let body_size = BODY_SIZE + f32::from(self.note_zoom);
         let body_line = BODY_LINE + f32::from(self.note_zoom);
         let title_size = TITLE_SIZE + f32::from(self.note_zoom);
@@ -176,7 +177,7 @@ impl NotesView {
                 .pb_4()
                 .text_size(rmac_ui::text_px(body_size))
                 .line_height(px(body_line))
-                .text_color(editor_text())
+                .text_color(note_editor_text(light_background))
                 .child(
                     TextField::new(&self.body)
                         .h_full()
@@ -195,7 +196,8 @@ impl NotesView {
         div()
             .size_full()
             .v_flex()
-            .bg(editor_fill())
+            .bg(note_editor_fill(light_background))
+            .text_color(note_editor_text(light_background))
             .child(
                 div()
                     .pt(px(DATE_TOP))
@@ -205,7 +207,7 @@ impl NotesView {
                     .justify_center()
                     .text_size(rmac_ui::text_px(DATE_SIZE))
                     .line_height(px(DATE_LINE))
-                    .text_color(editor_date())
+                    .text_color(note_editor_date(light_background))
                     .child(full_date_label(note.modified_unix_ms)),
             )
             .child(
@@ -228,7 +230,7 @@ impl NotesView {
                     .text_size(rmac_ui::text_px(title_size))
                     .line_height(px(title_line))
                     .font_weight(mac::BOLD)
-                    .text_color(editor_text())
+                    .text_color(note_editor_text(light_background))
                     .child(
                         TextField::new(&self.title)
                             .appearance(false)
@@ -267,8 +269,12 @@ impl NotesView {
                     .border_t_1()
                     .border_color(row_rule())
                     .text_size(rmac_ui::text_px(12.0))
-                    .text_color(mac::text_secondary())
-                    .child(div().text_color(sidebar_selected_text()).child("#"))
+                    .text_color(note_editor_date(light_background))
+                    .child(
+                        div()
+                            .text_color(note_editor_text(light_background))
+                            .child("#"),
+                    )
                     .child(
                         div().flex_1().min_w(px(0.0)).child(
                             TextField::new(&self.tags)
@@ -323,7 +329,9 @@ impl NotesView {
                         ),
                 )
                 .into_any_element(),
-            MarkdownPreviewState::Ready { document, .. } => render_markdown_document(document, cx),
+            MarkdownPreviewState::Ready { document, .. } => {
+                render_markdown_document(document, self.note_has_light_background(), cx)
+            }
         }
     }
 }

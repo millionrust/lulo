@@ -684,6 +684,12 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ]
             ),
             item!("Table", "notes::InsertTable", "⌥⌘T"),
+            item!(
+                "Show Note with Light Background",
+                "notes::ToggleLightBackground",
+                "",
+                separator
+            ),
             submenu!(
                 "Font",
                 "notes::FontMenu",
@@ -1254,6 +1260,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                     item!("Line", "preview::AnnotateLine", "⌃⌘I"),
                     item!("Arrow", "preview::AnnotateArrow", "⌃⌘A"),
                     item!("Text", "preview::AnnotateText", "⌃⌘T", separator),
+                    item!("Signature", "preview::AnnotateSignature", ""),
                 ],
                 separator
             ),

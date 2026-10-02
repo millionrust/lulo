@@ -178,7 +178,7 @@ def _synthesize_window_menu(exported_items: list[rmp.MenuItem]) -> rmp.Menu:
             _item(
                 "Return to Previous Size",
                 "window::restore-size",
-                "⌃⌘R",
+                "⌃⇧⌘R",
                 separator_before=True,
             ),
         ],

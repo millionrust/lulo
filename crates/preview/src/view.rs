@@ -26,13 +26,13 @@ use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
     ActualSize, ActualSizeOnAll, AnnotateArrow, AnnotateHighlight, AnnotateLine, AnnotateOval,
-    AnnotateRectangle, AnnotateText, Back, CloseAll, CloseSelected, CloseWindow, Copy,
-    DeleteSelection, EnterFullScreen, ExportAsPdf,
-    Find, FindNext, FindPrevious, Forward, GoToPage, HideSidebar, JumpToSelection, MoveToTrash,
-    NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
-    RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll,
-    ShowImageBackground, ShowInspector, ShowThumbnails, ToggleMarkup, ToggleToolbar, UndoMarkup,
-    UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
+    AnnotateRectangle, AnnotateSignature, AnnotateText, Back, CloseAll, CloseSelected, CloseWindow,
+    Copy, DeleteSelection, EnterFullScreen, ExportAsPdf, Find, FindNext, FindPrevious, Forward,
+    GoToPage, HideSidebar, JumpToSelection, MoveToTrash, NextDocument, NextItem, PageDown, PageUp,
+    PreviousDocument, PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft,
+    RotateRight, SaveAs, SaveMarkup, SelectAll, ShowImageBackground, ShowInspector, ShowThumbnails,
+    ToggleMarkup, ToggleToolbar, UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut,
+    ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -63,6 +63,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::ShowImageBackground",
         "preview::AnnotateHighlight",
         "preview::AnnotateRectangle",
+        "preview::AnnotateSignature",
         "preview::AnnotateArrow",
         "preview::AnnotateOval",
         "preview::AnnotateLine",
@@ -3891,6 +3892,7 @@ impl Render for PreviewView {
             for (action, tool) in [
                 ("preview::AnnotateHighlight", Tool::Highlight),
                 ("preview::AnnotateRectangle", Tool::Rectangle),
+                ("preview::AnnotateSignature", Tool::Signature),
                 ("preview::AnnotateArrow", Tool::Arrow),
                 ("preview::AnnotateOval", Tool::Oval),
                 ("preview::AnnotateLine", Tool::Line),
@@ -3962,13 +3964,16 @@ impl Render for PreviewView {
             ] {
                 rmac_ui::set_menu_enabled(action, loaded, cx);
             }
-            rmac_ui::set_menu_enabled("preview::MoveToTrash", loaded && !self.markup_save_busy, cx);
-            rmac_ui::set_menu_enabled("preview::SaveAs", loaded && !self.save_as_busy, cx);
             rmac_ui::set_menu_enabled(
                 "preview::DeleteSelection",
-                self.markup_selected.is_some() && !self.markup_save_busy,
+                self.markup_selected
+                    .and_then(|index| self.slot()?.markup.items.get(index))
+                    .is_some()
+                    && !self.markup_save_busy,
                 cx,
             );
+            rmac_ui::set_menu_enabled("preview::MoveToTrash", loaded && !self.markup_save_busy, cx);
+            rmac_ui::set_menu_enabled("preview::SaveAs", loaded && !self.save_as_busy, cx);
             let pdf = self
                 .slot()
                 .is_some_and(|slot| slot.kind() == Some(Kind::Pdf));
@@ -3998,6 +4003,7 @@ impl Render for PreviewView {
             for action in [
                 "preview::AnnotateHighlight",
                 "preview::AnnotateRectangle",
+                "preview::AnnotateSignature",
                 "preview::AnnotateArrow",
                 "preview::AnnotateOval",
                 "preview::AnnotateLine",
@@ -4074,7 +4080,9 @@ impl Render for PreviewView {
                 this.on_key_down(event, window, cx);
             }))
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
-            .on_action(cx.listener(|this, _: &DeleteSelection, _, cx| this.delete_markup(cx)))
+            .on_action(cx.listener(|this, _: &DeleteSelection, _, cx| {
+                this.delete_markup(cx);
+            }))
             .on_action(cx.listener(|this, _: &MoveToTrash, window, cx| {
                 this.move_to_bin(window, cx);
             }))
@@ -4134,6 +4142,12 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &AnnotateRectangle, _, cx| {
                 this.choose_annotation(Tool::Rectangle, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateSignature, _, cx| {
+                if this.slot().and_then(Slot::kind) == Some(Kind::Pdf) {
+                    this.choose_signature(cx);
+                    this.markup_shown = true;
+                }
             }))
             .on_action(cx.listener(|this, _: &AnnotateArrow, _, cx| {
                 this.choose_annotation(Tool::Arrow, cx);

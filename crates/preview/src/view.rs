@@ -28,9 +28,9 @@ use crate::{
     ActualSize, ActualSizeOnAll, CloseAll, CloseSelected, CloseWindow, Copy, EnterFullScreen,
     ExportAsPdf, Find, FindNext, FindPrevious, GoToPage, HideSidebar, JumpToSelection, MoveToTrash,
     NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
-    RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveMarkup, SelectAll, ShowInspector,
-    ShowThumbnails, ToggleMarkup, UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut,
-    ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
+    RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll,
+    ShowInspector, ShowThumbnails, ToggleMarkup, ToggleToolbar, UndoMarkup, UseSelectionForFind,
+    ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -78,6 +78,8 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::SelectAll",
         "preview::PrintDocument",
         "preview::ExportAsPdf",
+        "preview::SaveAs",
+        "preview::ToggleToolbar",
         "preview::ToggleMarkup",
         "preview::SaveMarkup",
         "preview::RevertMarkup",
@@ -365,6 +367,7 @@ pub(crate) struct PreviewView {
     /// True while the left button is held dragging a text selection.
     text_selecting: bool,
     markup_shown: bool,
+    toolbar_shown: bool,
     markup_tool: Tool,
     markup_color: u32,
     markup_width: f32,
@@ -389,6 +392,9 @@ pub(crate) struct PreviewView {
     print_busy: bool,
     /// File ▸ Export as PDF… (PREV-15) in progress.
     export_busy: bool,
+    save_as_busy: bool,
+    #[cfg(target_os = "linux")]
+    clipboard_checked: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -427,7 +433,20 @@ impl PreviewView {
             .collect()
     }
     fn document_top(&self) -> f32 {
-        metrics::TOOLBAR_HEIGHT + if self.markup_shown { 48.0 } else { 0.0 }
+        self.toolbar_height()
+            + if self.toolbar_shown && self.markup_shown {
+                48.0
+            } else {
+                0.0
+            }
+    }
+
+    fn toolbar_height(&self) -> f32 {
+        if self.toolbar_shown {
+            metrics::TOOLBAR_HEIGHT
+        } else {
+            30.0
+        }
     }
 
     fn signature_path() -> PathBuf {
@@ -1156,6 +1175,7 @@ impl PreviewView {
             text_selection: None,
             text_selecting: false,
             markup_shown: false,
+            toolbar_shown: true,
             markup_tool: Tool::Select,
             markup_color: palette().find,
             markup_width: 2.0,
@@ -1174,6 +1194,9 @@ impl PreviewView {
             document_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             print_busy: false,
             export_busy: false,
+            save_as_busy: false,
+            #[cfg(target_os = "linux")]
+            clipboard_checked: false,
         };
         for index in 0..view.slots.len() {
             view.start_load(index, cx);
@@ -1217,7 +1240,15 @@ impl PreviewView {
                 if slots_len == 1 && pages > 1 {
                     view.sidebar = true;
                 }
-                if let Some(path) = opened_path {
+                if let Some(path) = opened_path.filter(|path| {
+                    !path.ancestors().any(|ancestor| {
+                        ancestor.file_name().is_some_and(|name| name == "clipboard")
+                            && ancestor
+                                .parent()
+                                .and_then(Path::file_name)
+                                .is_some_and(|name| name == "rmac-preview")
+                    })
+                }) {
                     record_recent_document(path, cx);
                 }
                 view.ensure_text(cx);
@@ -1517,6 +1548,7 @@ impl PreviewView {
                 );
                 if !text.is_empty() {
                     cx.write_to_clipboard(ClipboardItem::new_string(text));
+                    rmac_ui::set_menu_enabled("preview::NewFromClipboard", false, cx);
                 }
             }
             return;
@@ -1536,7 +1568,8 @@ impl PreviewView {
                     cx.write_to_clipboard(ClipboardItem::new_image(&Image::from_bytes(
                         ImageFormat::Png,
                         bytes,
-                    )))
+                    )));
+                    rmac_ui::set_menu_enabled("preview::NewFromClipboard", true, cx);
                 }),
                 Err(error) => eprintln!("rmac-preview: copy failed: {error}"),
             }
@@ -1626,6 +1659,97 @@ impl PreviewView {
     }
 
     // ---- export -------------------------------------------------------------
+
+    /// File ▸ Save As… writes a new document and makes it the active path.
+    /// A PDF with markup keeps a clean backing copy so later saves do not
+    /// append the same annotations twice.
+    fn save_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.save_as_busy || self.markup_save_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        if slot.loaded().is_none() {
+            return;
+        }
+        let source = slot.path.clone();
+        let id = slot.id;
+        let revision = slot.markup.revision;
+        let marked_pdf =
+            (slot.kind() == Some(Kind::Pdf) && !slot.markup.items.is_empty()).then(|| {
+                (
+                    slot.markup_original
+                        .clone()
+                        .unwrap_or_else(|| source.clone()),
+                    slot.markup.items.clone(),
+                )
+            });
+        let directory = source.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let suggested_name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled");
+        self.save_as_busy = true;
+        cx.notify();
+        let receiver = cx.prompt_for_new_path(&directory, Some(suggested_name));
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(destination))) = receiver.await else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.save_as_busy = false;
+                    cx.notify();
+                });
+                return;
+            };
+            let result =
+                blocking::unblock(move || -> Result<(PathBuf, Option<PathBuf>), String> {
+                    if source == destination {
+                        return Err("choose a different path for Save As".to_owned());
+                    }
+                    let temporary = destination
+                        .with_extension(format!("lulo-saving-{}.tmp", std::process::id()));
+                    let backup = if let Some((base, items)) = marked_pdf {
+                        markup::write_pdf(&base, &temporary, &items)?;
+                        let backup = destination
+                            .with_extension(format!("lulo-original-{}.pdf", std::process::id()));
+                        if let Err(error) = std::fs::copy(&base, &backup) {
+                            let _ = std::fs::remove_file(&temporary);
+                            return Err(error.to_string());
+                        }
+                        Some(backup)
+                    } else {
+                        std::fs::copy(&source, &temporary).map_err(|error| error.to_string())?;
+                        None
+                    };
+                    if let Err(error) = std::fs::rename(&temporary, &destination) {
+                        let _ = std::fs::remove_file(&temporary);
+                        if let Some(backup) = &backup {
+                            let _ = std::fs::remove_file(backup);
+                        }
+                        return Err(error.to_string());
+                    }
+                    Ok((destination, backup))
+                })
+                .await;
+            let _ = this.update_in(cx, |this, _, cx| {
+                this.save_as_busy = false;
+                match result {
+                    Ok((destination, backup)) => {
+                        if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                            slot.path = destination.clone();
+                            slot.name = document::display_name(&destination);
+                            slot.markup_original = backup;
+                            if slot.markup.revision == revision {
+                                slot.markup.dirty = false;
+                            }
+                            record_recent_document(destination, cx);
+                        }
+                    }
+                    Err(error) => eprintln!("rmac-preview: Save As failed: {error}"),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
 
     /// File ▸ Export as PDF… (PREV-15): the PDF's own bytes go straight to
     /// the chosen destination — the same "send the file, don't re-render
@@ -2104,7 +2228,7 @@ impl PreviewView {
         let viewport = self.viewport;
         let sidebar = self.sidebar;
         let sidebar_top = -f32::from(self.sidebar_scroll.offset().y);
-        let sidebar_height = f32::from(window.viewport_size().height) - metrics::TOOLBAR_HEIGHT;
+        let sidebar_height = f32::from(window.viewport_size().height) - self.toolbar_height();
         let scroll_top = -f32::from(self.scroll.offset().y);
         let single = self.slots.len() == 1;
         let Some(slot) = self.slots.get_mut(self.selected) else {
@@ -2338,14 +2462,22 @@ impl PreviewView {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let (light_x, light_y) = metrics::TRAFFIC_LIGHT_CENTER;
+        let (light_x, default_light_y) = metrics::TRAFFIC_LIGHT_CENTER;
+        let light_y = if self.toolbar_shown {
+            default_light_y
+        } else {
+            15.0
+        };
         let hit_width = mac::traffic_light_hit_width();
         let hit_height = mac::traffic_light_hit_height();
         let is_pdf = self.slot().and_then(Slot::kind) == Some(Kind::Pdf);
         let ready = self.slot().is_some_and(|slot| slot.loaded().is_some());
         let group = metrics::right_group(width, is_pdf);
         let (title, subtitle) = self.title_and_subtitle();
-        let title_left = if self.sidebar {
+        let subtitle = self.toolbar_shown.then_some(subtitle).flatten();
+        let title_left = if !self.toolbar_shown {
+            100.0
+        } else if self.sidebar {
             metrics::TITLE_LEFT_WITH_SIDEBAR
         } else {
             metrics::TITLE_LEFT
@@ -2452,7 +2584,7 @@ impl PreviewView {
             .left(px(title_left))
             .top_0()
             .w(px((group.zoom - title_left - 12.0).max(0.0)))
-            .h(px(metrics::TOOLBAR_HEIGHT))
+            .h(px(self.toolbar_height()))
             .text_color(rgb(palette.glyph))
             .map(|block| match subtitle {
                 None => block.flex().items_center().child(
@@ -2615,7 +2747,7 @@ impl PreviewView {
             .top_0()
             .left_0()
             .w_full()
-            .h(px(metrics::TOOLBAR_HEIGHT))
+            .h(px(self.toolbar_height()))
             .child(
                 div()
                     .id("preview-drag")
@@ -2635,29 +2767,31 @@ impl PreviewView {
                     .top(px(light_y - hit_height / 2.0))
                     .child(rmac_ui::traffic_lights_active(window.is_window_active())),
             )
-            .child(sidebar_toggle)
+            .when(self.toolbar_shown, |toolbar| toolbar.child(sidebar_toggle))
             .child(title_block)
-            .child(zoom_group)
-            .child(
-                capsule("preview-toggle-markup", group.zoom - 48.0, 36.0)
-                    .role(Role::Button)
-                    .aria_label("Show Markup Toolbar")
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .when(self.markup_shown, |button| {
-                        button.bg(rgb(palette.selection))
-                    })
-                    .text_color(rgb(palette.glyph))
-                    .child("✎")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.markup_shown = !this.markup_shown;
-                        cx.notify();
-                    })),
-            )
-            .child(rotate)
-            .child(info)
-            .children(search)
+            .when(self.toolbar_shown, |toolbar| toolbar.child(zoom_group))
+            .when(self.toolbar_shown, |toolbar| {
+                toolbar.child(
+                    capsule("preview-toggle-markup", group.zoom - 48.0, 36.0)
+                        .role(Role::Button)
+                        .aria_label("Show Markup Toolbar")
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .when(self.markup_shown, |button| {
+                            button.bg(rgb(palette.selection))
+                        })
+                        .text_color(rgb(palette.glyph))
+                        .child("✎")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.markup_shown = !this.markup_shown;
+                            cx.notify();
+                        })),
+                )
+            })
+            .when(self.toolbar_shown, |toolbar| toolbar.child(rotate))
+            .when(self.toolbar_shown, |toolbar| toolbar.child(info))
+            .when(self.toolbar_shown, |toolbar| toolbar.children(search))
     }
 
     fn render_markup_toolbar(
@@ -2896,7 +3030,7 @@ impl PreviewView {
                     .absolute()
                     .left_0()
                     .right_0()
-                    .top(px(metrics::TOOLBAR_HEIGHT - metrics::SIDEBAR_INSET))
+                    .top(px(self.toolbar_height() - metrics::SIDEBAR_INSET))
                     .bottom_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.sidebar_scroll)
@@ -3304,9 +3438,9 @@ impl PreviewView {
             div()
                 .absolute()
                 .left(px(width - metrics::INSPECTOR_WIDTH))
-                .top(px(metrics::TOOLBAR_HEIGHT))
+                .top(px(self.toolbar_height()))
                 .w(px(metrics::INSPECTOR_WIDTH))
-                .h(px(height - metrics::TOOLBAR_HEIGHT))
+                .h(px(height - self.toolbar_height()))
                 .bg(rgb(palette.inspector))
                 .border_l_1()
                 .border_color(rgb(palette.inspector_separator))
@@ -3634,6 +3768,26 @@ impl Render for PreviewView {
             rmac_ui::set_menu_checked("preview::HideSidebar", !self.sidebar, cx);
             rmac_ui::set_menu_checked("preview::ShowThumbnails", self.sidebar, cx);
             rmac_ui::set_menu_checked("preview::ToggleMarkup", self.markup_shown, cx);
+            rmac_ui::set_menu_checked("preview::ToggleToolbar", self.toolbar_shown, cx);
+            #[cfg(target_os = "linux")]
+            if !self.clipboard_checked {
+                self.clipboard_checked = true;
+                cx.spawn_in(window, async move |this, cx| {
+                    let available = blocking::unblock(crate::clipboard_image_available).await;
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        if window.is_window_active() {
+                            rmac_ui::set_menu_enabled("preview::NewFromClipboard", available, cx);
+                        }
+                    });
+                })
+                .detach();
+            }
+            #[cfg(not(target_os = "linux"))]
+            rmac_ui::set_menu_enabled(
+                "preview::NewFromClipboard",
+                crate::clipboard_image(cx).is_some(),
+                cx,
+            );
             rmac_ui::set_menu_enabled("preview::CloseWindow", true, cx);
             rmac_ui::set_menu_enabled("preview::CloseAll", true, cx);
             rmac_ui::set_menu_enabled(
@@ -3673,10 +3827,12 @@ impl Render for PreviewView {
                 "preview::MoveToTrash",
                 "preview::EnterFullScreen",
                 "preview::Copy",
+                "preview::ToggleToolbar",
             ] {
                 rmac_ui::set_menu_enabled(action, loaded, cx);
             }
             rmac_ui::set_menu_enabled("preview::MoveToTrash", loaded && !self.markup_save_busy, cx);
+            rmac_ui::set_menu_enabled("preview::SaveAs", loaded && !self.save_as_busy, cx);
             let pdf = self
                 .slot()
                 .is_some_and(|slot| slot.kind() == Some(Kind::Pdf));
@@ -3706,6 +3862,11 @@ impl Render for PreviewView {
             rmac_ui::set_menu_enabled("preview::ExportAsPdf", pdf, cx);
             rmac_ui::set_menu_enabled("preview::UseSelectionForFind", selected_text, cx);
             rmac_ui::set_menu_enabled("preview::JumpToSelection", selected_text, cx);
+        } else {
+            #[cfg(target_os = "linux")]
+            {
+                self.clipboard_checked = false;
+            }
         }
         let palette = palette();
         let size = window.viewport_size();
@@ -3780,6 +3941,11 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &ExportAsPdf, window, cx| {
                 this.export_as_pdf(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save_as(window, cx)))
+            .on_action(cx.listener(|this, _: &ToggleToolbar, _, cx| {
+                this.toolbar_shown = !this.toolbar_shown;
+                cx.notify();
             }))
             .on_action(cx.listener(|this, _: &Find, window, cx| {
                 if this.slot().and_then(Slot::kind) == Some(Kind::Pdf) {
@@ -3857,7 +4023,7 @@ impl Render for PreviewView {
             })
             .children(self.render_inspector(palette, width, height))
             .child(self.render_toolbar(palette, width, window, cx))
-            .when(self.markup_shown, |root| {
+            .when(self.toolbar_shown && self.markup_shown, |root| {
                 root.child(self.render_markup_toolbar(palette, width, cx))
             })
             .children(menu)

@@ -60,6 +60,13 @@
       "label": "File",
       "items": [
         {
+          "label": "New from Clipboard",
+          "action": "preview::NewFromClipboard",
+          "shortcut": "⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Open…",
           "action": "preview::OpenFile",
           "shortcut": "⌘O",
@@ -106,6 +113,13 @@
           "label": "Save",
           "action": "preview::SaveMarkup",
           "shortcut": "⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Save As…",
+          "action": "preview::SaveAs",
+          "shortcut": "⌥⇧⌘S",
           "separator_before": false,
           "children": []
         },
@@ -314,6 +328,13 @@
           "action": "preview::EnterFullScreen",
           "shortcut": "F",
           "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Toolbar",
+          "action": "preview::ToggleToolbar",
+          "shortcut": "⌥⌘T",
+          "separator_before": true,
           "children": []
         }
       ]

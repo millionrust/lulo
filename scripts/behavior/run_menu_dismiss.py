@@ -543,13 +543,16 @@ class Run:
         self.check("Dock context menu: Files tile available", tile is not None)
         if tile is None:
             return
-        box = self.extents(tile)
-        if box is None:
-            self.check("Dock context menu: tile has bounds", False)
-            return
-        x, y, w, h = box
         for method in ("outside click", "Escape"):
             self.close_everything()
+            tile = self.wait_for(lambda: self.find_node(
+                ("push button", "button"), lambda name: name.startswith("Files")
+            ), 5)
+            box = self.extents(tile) if tile is not None else None
+            if box is None:
+                self.check(f"Dock context menu: tile has bounds for {method}", False)
+                continue
+            x, y, w, h = box
             # GPUI's AT-SPI tile extent includes its raised shelf slot. The
             # icon's actual visual/hit area is near the bottom of that slot.
             self.click_at(x + w / 2, y + h * 0.9, "right")

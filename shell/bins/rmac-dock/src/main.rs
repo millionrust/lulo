@@ -754,6 +754,7 @@ mod linux_wayland {
                     let focus = cx.focus_handle();
                     let next_frame_focus = focus.clone();
                     window.on_next_frame(move |window, cx| {
+                        eprintln!("Dock dismiss keyboard next frame focus");
                         next_frame_focus.focus(window, cx);
                     });
                     cx.new(|cx| {
@@ -761,8 +762,10 @@ mod linux_wayland {
                             window,
                             |this: &mut DockDismissKeyboard, window, cx| {
                                 if window.is_window_active() {
+                                    eprintln!("Dock dismiss keyboard active");
                                     this.was_active = true;
                                 } else if this.was_active {
+                                    eprintln!("Dock dismiss keyboard inactive");
                                     let _ =
                                         this.dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
                                     window.remove_window();
@@ -2556,7 +2559,7 @@ mod linux_wayland {
                 }
             }
             let input_region = (shelf_start, shelf_extent, self.hidden, modal);
-            if self.input_region != Some(input_region) {
+            if self.input_region != Some(input_region) || modal {
                 let shelf_bounds = match (self.placement, self.hidden) {
                     (rmac_shell_settings::DockPlacement::Bottom, true) => Bounds {
                         origin: point(px(shelf_start), px(surface_height - 2.0)),

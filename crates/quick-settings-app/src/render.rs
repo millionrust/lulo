@@ -10,10 +10,10 @@ mod detail;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    accesskit, div, px, rgba, size, svg, AccessibleAction, AnyElement, Context, Div, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent, MouseUpEvent,
-    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Toggled, Window,
+    accesskit, div, px, rgba, size, svg, AccessibleAction, AnyElement, Context, Div, FontWeight,
+    Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent,
+    MouseUpEvent, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Toggled, Window,
 };
 use rmac_quick_settings::layout;
 use rmac_ui::mac;

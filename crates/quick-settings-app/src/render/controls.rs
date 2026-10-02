@@ -82,7 +82,8 @@ impl QuickSettingsView {
                     .on_a11y_action(AccessibleAction::SetValue, move |data, _, cx| {
                         if let Some(accesskit::ActionData::NumericValue(requested)) = data {
                             let value = requested.round().clamp(0.0, 100.0) as u8;
-                            let _ = set_value_view.update(cx, |this, cx| this.slide(kind, value, cx));
+                            let _ =
+                                set_value_view.update(cx, |this, cx| this.slide(kind, value, cx));
                         }
                     })
             })

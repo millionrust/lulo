@@ -568,6 +568,7 @@ class LuloRun:
         self.before: set[str] = set()
         self.process: Optional[subprocess.Popen] = None
         self.log = None
+        self.shared_state: list[tuple[Path, Optional[bytes]]] = []
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -609,6 +610,14 @@ class LuloRun:
             target = Path(self.env["XDG_STATE_HOME"]) / entry
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content or "")
+            # The file chooser portal runs once for the whole nested session
+            # with the session's own home, not this scenario's, so mirror
+            # the state there too and put it back in restore_shared_state.
+            shared = Path(self.nested.env["XDG_STATE_HOME"]) / entry
+            if shared != target:
+                self.shared_state.append((shared, shared.read_bytes() if shared.is_file() else None))
+                shared.parent.mkdir(parents=True, exist_ok=True)
+                shared.write_text(content or "")
         if self.app == "desktop":
             self.before = {p.name + ("/" if p.is_dir() else "") for p in self.files_root.iterdir()}
 
@@ -678,6 +687,14 @@ class LuloRun:
             else:
                 raise StepFailed(f"Calculator did not settle to Basic size: {windows}")
         time.sleep(max(self.settle, 1.0))
+
+    def restore_shared_state(self) -> None:
+        for path, previous in reversed(self.shared_state):
+            if previous is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(previous)
+        self.shared_state.clear()
 
     def stop(self) -> None:
         if self.process and self.process.poll() is None:
@@ -1533,6 +1550,7 @@ def inner(args: argparse.Namespace) -> int:
                 actual["error"] = str(error)
             finally:
                 run.stop()
+                run.restore_shared_state()
             if args.explore:
                 if "error" in actual:
                     print(f"== {sid}: {actual['error']}")

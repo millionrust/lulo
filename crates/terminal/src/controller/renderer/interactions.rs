@@ -73,7 +73,19 @@ impl TerminalView {
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
+            .on_action(cx.listener(|this, _: &CopyPlainText, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &Paste, window, cx| this.request_paste(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &PasteSelection, window, cx| {
+                    this.paste_selection(window, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &PasteEscapedText, window, cx| {
+                this.paste_escaped_text(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &PasteEscapedSelection, window, cx| {
+                this.paste_escaped_selection(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &Find, window, cx| this.toggle_find(window, cx)))
             .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_step(true, cx)))
             .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.find_step(false, cx)))
@@ -90,6 +102,18 @@ impl TerminalView {
             }))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &Clear, _, cx| this.clear(cx)))
+            .on_action(cx.listener(|this, _: &ClearScreen, _, cx| this.clear_screen(cx)))
+            .on_action(cx.listener(|this, _: &ClearScrollback, _, cx| this.clear_scrollback(cx)))
+            .on_action(
+                cx.listener(|this, _: &ToggleOptionAsMeta, _, cx| this.toggle_option_as_meta(cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &HideFindBar, window, cx| this.hide_find_bar(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &UseSelectionForFind, window, cx| {
+                this.use_selection_for_find(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &JumpToSelection, _, cx| this.jump_to_selection(cx)))
             .on_action(cx.listener(|this, _: &PreviousPrompt, _, cx| {
                 this.navigate_prompt(PromptDirection::Previous, cx)
             }))

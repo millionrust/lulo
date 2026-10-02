@@ -38,9 +38,9 @@ use rmac_ui::{InputEvent, InputState, Position, Rope, RopeExt as _};
 use crate::PrintFile;
 use crate::{document, long_lines, recovery, rtf, storage};
 use crate::{
-    CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont,
-    NewFile, OpenFile, SaveFile, SaveFileAs, SaveGoToFolder, ShowSettings, ToggleFind, ToggleMono,
-    ToggleReplace,
+    ActualSize, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, FindNext, FindPrev,
+    IncreaseFont, JumpToSelection, NewFile, OpenFile, SaveFile, SaveFileAs, SaveGoToFolder,
+    ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage, UseSelectionForFind,
 };
 
 use document_io::{

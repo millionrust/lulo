@@ -55,6 +55,83 @@ impl TerminalView {
         cx.notify();
     }
 
+    pub(super) fn clear_screen(&mut self, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        if let Ok(mut terminal) = self.tabs[self.active].term.lock() {
+            terminal.clear_screen(ClearMode::All);
+        }
+        self.tabs[self.active].ui.selection = None;
+        cx.notify();
+    }
+
+    pub(super) fn clear_scrollback(&mut self, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        if let Ok(mut terminal) = self.tabs[self.active].term.lock() {
+            terminal.grid_mut().clear_history();
+            terminal.scroll_display(Scroll::Bottom);
+        }
+        self.tabs[self.active].clear_shell_marks();
+        self.tabs[self.active].ui.selection = None;
+        cx.notify();
+    }
+
+    pub(super) fn toggle_option_as_meta(&mut self, cx: &mut Context<Self>) {
+        let next = !self.option_as_meta;
+        match profiles::save_option_as_meta(next) {
+            Ok(()) => {
+                self.option_as_meta = next;
+                cx.notify();
+            }
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    pub(super) fn hide_find_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs[self.active].ui.search_open {
+            self.capture_active_search_query(cx);
+            self.tabs[self.active].ui.search_open = false;
+            window.focus(&self.focus, cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn use_selection_for_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(selection) = self.selection_text().filter(|text| !text.is_empty()) else {
+            return;
+        };
+        let query = bounded_search_query(&selection);
+        self.search
+            .update(cx, |state, cx| state.set_value(query.clone(), window, cx));
+        self.tabs[self.active].ui.search_query = query;
+        cx.notify();
+    }
+
+    pub(super) fn jump_to_selection(&mut self, cx: &mut Context<Self>) {
+        let Some(selection) = self.tabs[self.active].ui.selection else {
+            return;
+        };
+        let line = selection.anchor.0.min(selection.head.0);
+        if let Ok(mut terminal) = self.tabs[self.active].term.lock() {
+            let grid = terminal.grid();
+            let offset = find::display_offset_for(
+                line,
+                self.rows,
+                grid.history_size(),
+                grid.display_offset(),
+            );
+            terminal.scroll_display(Scroll::Bottom);
+            terminal.scroll_display(Scroll::Delta(i32::try_from(offset).unwrap_or(i32::MAX)));
+            cx.notify();
+        }
+    }
+
     /// Shell ▸ Reset (⌥⌘R): the RIS soft reset a wedged program would answer
     /// to — cursor, colors, and modes return to their defaults, but the
     /// screen and scrollback are left alone, as on the Mac.

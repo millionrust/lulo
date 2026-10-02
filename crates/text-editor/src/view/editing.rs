@@ -63,6 +63,41 @@ fn replace_at_offsets(
 }
 
 impl EditorView {
+    pub(super) fn use_selection_for_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let query = {
+            let state = self.input.read(cx);
+            let range = state.selected_range();
+            let text = state.text().to_string();
+            let Some(selection) = text.get(range).filter(|selection| !selection.is_empty()) else {
+                return;
+            };
+            selection.to_owned()
+        };
+        self.find_input
+            .update(cx, |input, cx| input.set_value(query, window, cx));
+        self.current = 0;
+        self.recompute_matches(cx);
+        cx.notify();
+    }
+
+    pub(super) fn jump_to_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let range = self.input.read(cx).selected_range();
+        if range.is_empty() {
+            return;
+        }
+        let position = self.input.read(cx).text().offset_to_position(range.start);
+        self.input.update(cx, |input, cx| {
+            input.set_cursor_position(position, window, cx);
+            input.set_selected_range(range, cx);
+            input.focus(window, cx);
+        });
+    }
+
+    pub(super) fn actual_size(&mut self, cx: &mut Context<Self>) {
+        self.font_size = f32::from(crate::settings::current().font_size);
+        cx.notify();
+    }
+
     pub(super) fn toggle_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.find_open && !self.replace_mode {
             self.close_bar(window, cx);
@@ -261,6 +296,24 @@ impl EditorView {
     /// greyed out without a selection in the focused field, as in TextEdit.
     pub(super) fn publish_menu_state(&self, window: &Window, cx: &mut Context<Self>) {
         rmac_ui::set_menu_checked("text_editor::ToggleMono", self.mono, cx);
+        rmac_ui::set_menu_label(
+            "text_editor::ToggleWrapToPage",
+            if self.wrap_to_page {
+                "Wrap to Window"
+            } else {
+                "Wrap to Page"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_label(
+            "text_editor::SaveFile",
+            if self.path.is_some() {
+                "Save"
+            } else {
+                "Save…"
+            },
+            cx,
+        );
         let field = [&self.find_input, &self.replace_input]
             .into_iter()
             .find(|field| gpui::Focusable::focus_handle(field.read(cx), cx).is_focused(window))
@@ -268,6 +321,13 @@ impl EditorView {
         let has_selection = !field.read(cx).selected_range().is_empty();
         for action in ["input::Cut", "input::Copy", "input::Delete"] {
             rmac_ui::set_menu_enabled(action, has_selection, cx);
+        }
+        let has_document_selection = !self.input.read(cx).selected_range().is_empty();
+        for action in [
+            "text_editor::UseSelectionForFind",
+            "text_editor::JumpToSelection",
+        ] {
+            rmac_ui::set_menu_enabled(action, has_document_selection, cx);
         }
     }
 

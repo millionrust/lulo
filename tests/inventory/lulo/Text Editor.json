@@ -96,7 +96,7 @@
           "children": []
         },
         {
-          "label": "Save",
+          "label": "Save…",
           "action": "text_editor::SaveFile",
           "shortcut": "⌘S",
           "separator_before": true,
@@ -171,6 +171,13 @@
           "children": []
         },
         {
+          "label": "Paste and Match Style",
+          "action": "rmac_ui::PasteAndMatchStyle",
+          "shortcut": "⌥⇧⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Delete",
           "action": "input::Delete",
           "shortcut": "",
@@ -217,6 +224,20 @@
               "shortcut": "⇧⌘G",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Use Selection for Find",
+              "action": "text_editor::UseSelectionForFind",
+              "shortcut": "⌘E",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Selection",
+              "action": "text_editor::JumpToSelection",
+              "shortcut": "⌘J",
+              "separator_before": false,
+              "children": []
             }
           ]
         }
@@ -252,6 +273,39 @@
           "action": "text_editor::ToggleMono",
           "shortcut": "⇧⌘M",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Wrap to Page",
+          "action": "text_editor::ToggleWrapToPage",
+          "shortcut": "⇧⌘W",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Actual Size",
+          "action": "text_editor::ActualSize",
+          "shortcut": "⌘0",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom In",
+          "action": "text_editor::IncreaseFont",
+          "shortcut": "⇧⌘.",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom Out",
+          "action": "text_editor::DecreaseFont",
+          "shortcut": "⇧⌘,",
+          "separator_before": false,
           "children": []
         }
       ]
@@ -455,6 +509,18 @@
       },
       {
         "kind": "control",
+        "label": "characters"
+      },
+      {
+        "kind": "control",
+        "label": "lines"
+      },
+      {
+        "kind": "control",
+        "label": "pt"
+      },
+      {
+        "kind": "control",
         "label": "Plain text"
       },
       {
@@ -480,6 +546,14 @@
       {
         "kind": "control",
         "label": "Settings"
+      },
+      {
+        "kind": "control",
+        "label": "96"
+      },
+      {
+        "kind": "control",
+        "label": "30"
       }
     ]
   },

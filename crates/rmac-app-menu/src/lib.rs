@@ -333,7 +333,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 [item!("Clear Menu", "text_editor::ClearRecentMenu", "")]
             ),
             item!("Close", "text_editor::CloseWindow", "⌘W", separator),
-            item!("Save", "text_editor::SaveFile", "⌘S", separator),
+            item!("Save…", "text_editor::SaveFile", "⌘S", separator),
             item!("Duplicate", "text_editor::DuplicateDocument", "⇧⌘S"),
             item!("Save As…", "text_editor::SaveFileAs", "⌥⇧⌘S"),
             item!("Export as PDF…", "text_editor::ExportPdf", "", separator),
@@ -348,6 +348,11 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "input::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
+            item!(
+                "Paste and Match Style",
+                "rmac_ui::PasteAndMatchStyle",
+                "⌥⇧⌘V"
+            ),
             item!("Delete", "input::Delete", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
             submenu!(
@@ -358,6 +363,12 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                     item!("Find and Replace…", "text_editor::ToggleReplace", "⌥⌘F"),
                     item!("Find Next", "text_editor::FindNext", "⌘G"),
                     item!("Find Previous", "text_editor::FindPrev", "⇧⌘G"),
+                    item!(
+                        "Use Selection for Find",
+                        "text_editor::UseSelectionForFind",
+                        "⌘E"
+                    ),
+                    item!("Jump to Selection", "text_editor::JumpToSelection", "⌘J"),
                 ],
                 separator
             ),
@@ -375,6 +386,15 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 ]
             ),
             item!("Monospaced", "text_editor::ToggleMono", "⇧⌘M", separator),
+            item!("Wrap to Page", "text_editor::ToggleWrapToPage", "⇧⌘W"),
+        ],
+    },
+    MenuSpec {
+        label: "View",
+        items: &[
+            item!("Actual Size", "text_editor::ActualSize", "⌘0"),
+            item!("Zoom In", "text_editor::IncreaseFont", "⇧⌘."),
+            item!("Zoom Out", "text_editor::DecreaseFont", "⇧⌘,"),
         ],
     },
 ];
@@ -389,7 +409,7 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
         items: &[
             item!("New Window", "terminal::NewWindow", "⌘N"),
             item!("New Tab", "terminal::NewTab", "⌘T"),
-            item!("Close Tab", "terminal::CloseTab", "⌘W", separator),
+            item!("Close Window", "terminal::CloseTab", "⌘W", separator),
             item!("Reset", "terminal::ResetTerminal", "⌥⌘R", separator),
             item!("Hard Reset", "terminal::HardResetTerminal", "⌃⌥⌘R"),
         ],
@@ -398,7 +418,19 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
         label: "Edit",
         items: &[
             item!("Copy", "terminal::Copy", "⌘C"),
+            submenu!(
+                "Copy Special",
+                "terminal::CopySpecialMenu",
+                [item!("Copy Plain Text", "terminal::CopyPlainText", "⌥⇧⌘C")]
+            ),
             item!("Paste", "terminal::Paste", "⌘V"),
+            item!("Paste Selection", "terminal::PasteSelection", "⇧⌘V"),
+            item!("Paste Escaped Text", "terminal::PasteEscapedText", "⌃⌘V"),
+            item!(
+                "Paste Escaped Selection",
+                "terminal::PasteEscapedSelection",
+                "⌃⇧⌘V"
+            ),
             item!("Select All", "terminal::SelectAll", "⌘A", separator),
             item!(
                 "Select Between Marks",
@@ -422,8 +454,22 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                     item!("Find…", "terminal::Find", "⌘F"),
                     item!("Find Next", "terminal::FindNext", "⌘G"),
                     item!("Find Previous", "terminal::FindPrevious", "⇧⌘G"),
+                    item!("Hide Find Bar", "terminal::HideFindBar", "⇧⌘F"),
+                    item!(
+                        "Use Selection for Find",
+                        "terminal::UseSelectionForFind",
+                        "⌘E"
+                    ),
+                    item!("Jump to Selection", "terminal::JumpToSelection", "⌘J"),
                 ],
                 separator
+            ),
+            item!("Clear Screen", "terminal::ClearScreen", "⌃⌘L", separator),
+            item!("Clear Scrollback", "terminal::ClearScrollback", "⌥⌘K"),
+            item!(
+                "Use Option as Meta Key",
+                "terminal::ToggleOptionAsMeta",
+                "⌥⌘O"
             ),
         ],
     },
@@ -2083,7 +2129,7 @@ mod tests {
             &["text_editor::FindNext", "text_editor::IncreaseFont"],
         )
         .unwrap();
-        assert_eq!(labels(&menus), ["Edit", "Format"]);
+        assert_eq!(labels(&menus), ["Edit", "Format", "View"]);
         let find = &menus[0].items[0];
         assert_eq!(find.label, "Find");
         assert!(find.is_submenu());
@@ -2093,6 +2139,7 @@ mod tests {
         // Format keeps Font ▸ but not the absent Monospaced row.
         assert_eq!(menus[1].items.len(), 1);
         assert_eq!(menus[1].items[0].children[0].label, "Bigger");
+        assert_eq!(menus[2].items[0].label, "Zoom In");
     }
 
     #[test]
@@ -2257,7 +2304,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(menus.len(), 2);
-        assert_eq!(menus[0].items[0].label, "Save");
+        assert_eq!(menus[0].items[0].label, "Save…");
         // Edit ▸ Find ▸ Find…
         assert_eq!(
             menus[1].items[0].children[0].action,

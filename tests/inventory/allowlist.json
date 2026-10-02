@@ -3,6 +3,36 @@
   "entries": [
     {
       "app": "*",
+      "label": "AutoFill",
+      "match": "exact",
+      "reason": "AppKit's AutoFill submenu uses macOS Contacts, Passwords and protected payment-card providers."
+    },
+    {
+      "app": "*",
+      "label": "Contact…",
+      "match": "exact",
+      "reason": "Contact AutoFill reads the Apple Contacts store."
+    },
+    {
+      "app": "*",
+      "label": "Passwords…",
+      "match": "exact",
+      "reason": "Password AutoFill reads Apple Passwords and iCloud Keychain."
+    },
+    {
+      "app": "*",
+      "label": "Credit Card…",
+      "match": "exact",
+      "reason": "Payment-card AutoFill reads Apple's protected card store."
+    },
+    {
+      "app": "Text Editor",
+      "label": "<<Import From Device - unlocalized>>",
+      "match": "exact",
+      "reason": "TextEdit's Import From Device invokes Apple's Continuity service for an iPhone or iPad."
+    },
+    {
+      "app": "*",
       "label": "Apple",
       "match": "exact",
       "reason": "The system Apple menu is OS chrome (About This Mac, System Settings…, Sleep/Restart/Shut Down, Recent Items, App Store updates), not part of any app's own menu bar. Lulo's shell has no per-app equivalent slot for it."

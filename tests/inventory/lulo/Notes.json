@@ -545,6 +545,13 @@
           "children": []
         },
         {
+          "label": "Enter Full Screen",
+          "action": "notes::ToggleFullScreen",
+          "shortcut": "F",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Zoom In",
           "action": "notes::ZoomIn",
           "shortcut": "⇧⌘.",

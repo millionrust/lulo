@@ -579,6 +579,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
             ),
             item!("Hide Folders", "notes::ToggleFolders", "⌃⌘S"),
             item!("Hide Note Count", "notes::ToggleNoteCount", ""),
+            item!("Enter Full Screen", "notes::ToggleFullScreen", "F"),
             item!("Zoom In", "notes::ZoomIn", "⇧⌘."),
             item!("Zoom Out", "notes::ZoomOut", "⇧⌘,"),
             item!("Actual Size", "notes::ZoomReset", "⇧⌘0"),

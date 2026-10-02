@@ -38,8 +38,8 @@ use std::thread;
 use gpui::{
     accesskit, actions, div, img, prelude::FluentBuilder as _, px, AccessibleAction, AnyElement,
     AppContext as _, Context, Div, Entity, FocusHandle, Focusable as _, InteractiveElement as _,
-    IntoElement, KeyBinding, ObjectFit, ParentElement, Render, RenderImage, Role, SharedString,
-    Stateful, StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
+    IntoElement, KeyBinding, KeyDownEvent, ObjectFit, ParentElement, Render, RenderImage, Role,
+    SharedString, Stateful, StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_editor::InputState;
@@ -95,6 +95,7 @@ actions!(
         PreviousRecentNote,
         NextRecentNote,
         ClearRecentNotes,
+        ToggleFullScreen,
         TogglePin,
         DuplicateNote,
         SortByEdited,

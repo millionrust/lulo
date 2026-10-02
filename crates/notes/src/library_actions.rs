@@ -505,6 +505,15 @@ impl NotesView {
     /// File ▸ Pin Note says Unpin for a pinned note, and commands that need
     /// a note, the library or no pending change are greyed out without.
     pub(super) fn publish_menu_state(&self, window: &Window, cx: &mut Context<Self>) {
+        rmac_ui::set_menu_label(
+            "notes::ToggleFullScreen",
+            if window.is_fullscreen() {
+                "Exit Full Screen"
+            } else {
+                "Enter Full Screen"
+            },
+            cx,
+        );
         let ready = self.is_interactive_ready();
         let pending = self.latest_local_generation.is_some();
         let sort_order = self.session.snapshot().map(|snapshot| snapshot.sort_order);

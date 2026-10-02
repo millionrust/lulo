@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "scenario": "notes/fullscreen-shortcut",
+  "observations": {
+    "fullscreen": {"windows": {"fullscreen": true}},
+    "windowed": {"windows": {"fullscreen": false}},
+    "typing": {
+      "windows": {"fullscreen": false},
+      "focus": {"role": "text-field", "label": "Title", "value": "f"}
+    }
+  }
+}

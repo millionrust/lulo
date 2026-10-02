@@ -89,7 +89,6 @@ pub(crate) struct QuickSettingsView {
     pub(crate) keyboard: bool,
     volume_generation: u64,
     brightness_generation: u64,
-    was_active: bool,
 }
 
 impl QuickSettingsView {
@@ -115,14 +114,8 @@ impl QuickSettingsView {
     pub(crate) fn new(token: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         focus.focus(window, cx);
-        cx.observe_window_activation(window, |this, window, cx| {
-            if window.is_window_active() {
-                this.was_active = true;
-            } else if this.was_active {
-                this.dismiss(window, cx);
-            }
-        })
-        .detach();
+        // The outside catcher handles pointer dismissal. Compositor focus can
+        // move back to an open menu-bar menu while this panel remains visible.
         cx.on_release(move |_, cx| {
             crate::clear_active_popover(token, cx);
         })
@@ -203,7 +196,6 @@ impl QuickSettingsView {
             keyboard: false,
             volume_generation: 0,
             brightness_generation: 0,
-            was_active: false,
         }
     }
 

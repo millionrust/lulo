@@ -739,6 +739,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ]
             ),
             item!("Table", "notes::InsertTable", "⌥⌘T"),
+            item!("Convert to Text", "notes::ConvertToText", ""),
             item!(
                 "Show Note with Light Background",
                 "notes::ToggleLightBackground",
@@ -1239,7 +1240,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Close Selected", "preview::CloseSelected", "⇧⌘W"),
             item!("Save", "preview::SaveMarkup", "⌘S"),
             item!("Save As…", "preview::SaveAs", "⌥⇧⌘S"),
-            item!("Revert to Original", "preview::RevertMarkup", "", separator),
+            submenu!(
+                "Revert To",
+                "preview::RevertToMenu",
+                [item!("No Document", "preview::RevertMarkup", "")],
+                separator
+            ),
             // PREV-15: the Mac's File menu also has Duplicate, Rename…, Move To…,
             // Enter Password…, Edit Permissions…, Import from
             // Camera/Scanner, Take Screenshot ▸, Export…, Share ▸ — none of
@@ -1332,6 +1338,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 "preview::AnnotateMenu",
                 [
                     item!("Highlight Text", "preview::AnnotateHighlight", "⌃⌘H"),
+                    item!("Underline Text", "preview::AnnotateUnderline", "⌃⌘U"),
+                    item!(
+                        "Strike Through Text",
+                        "preview::AnnotateStrikeThrough",
+                        "⌃⌘S"
+                    ),
                     item!("Rectangle", "preview::AnnotateRectangle", "⌃⌘R"),
                     item!("Oval", "preview::AnnotateOval", "⌃⌘O"),
                     item!("Line", "preview::AnnotateLine", "⌃⌘I"),

@@ -135,6 +135,7 @@ actions!(
         MoveItemUp,
         MoveItemDown,
         InsertTable,
+        ConvertToText,
         ToggleBold,
         ToggleItalic,
         ToggleStrikethrough,

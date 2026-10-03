@@ -827,6 +827,16 @@ class LuloRun:
         data = (self.sandbox / filename).read_bytes()
         return {"rectangles": len(re.findall(rb"/Subtype\s*/Square\b", data))}
 
+    def fact_pdf_text_marks(self) -> dict[str, Any]:
+        filename = self.scenario.get("launch", {}).get("file")
+        if self.app != "preview" or not filename:
+            raise StepFailed("PDF text-mark fact needs a launched Preview document")
+        data = (self.sandbox / filename).read_bytes()
+        return {
+            "underlines": len(re.findall(rb"/Subtype\s*/Underline\b", data)),
+            "strikeouts": len(re.findall(rb"/Subtype\s*/StrikeOut\b", data)),
+        }
+
     def fact_windows(self) -> dict[str, Any]:
         pyatspi = atspi()
         plain = [f for f in self.frames() if role(f) not in DIALOG_ROLES

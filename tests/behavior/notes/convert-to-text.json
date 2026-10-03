@@ -1,0 +1,40 @@
+{
+  "title": "Notes: Convert to Text removes a checklist marker",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "key": "cmd-n",
+      "settle": 1
+    },
+    {
+      "type": "Plain text conversion"
+    },
+    {
+      "key": "tab"
+    },
+    {
+      "type": "- [ ] Buy milk"
+    },
+    {
+      "observe": "checklist",
+      "facts": [
+        "note_body"
+      ]
+    },
+    {
+      "menu_action": "notes::ConvertToText",
+      "settle": 0.5
+    },
+    {
+      "observe": "plain_text",
+      "facts": [
+        "note_body"
+      ]
+    }
+  ]
+}

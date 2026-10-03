@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "scenario": "preview/revert-to",
+  "observations": {
+    "rectangle_saved": {
+      "pdf_annotations": {
+        "rectangles": 1
+      }
+    },
+    "reverted": {
+      "pdf_annotations": {
+        "rectangles": 0
+      }
+    }
+  }
+}

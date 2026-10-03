@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "scenario": "notes/convert-to-text",
+  "observations": {
+    "checklist": {
+      "note_body": {
+        "value": "- [ ] Buy milk"
+      }
+    },
+    "plain_text": {
+      "note_body": {
+        "value": "Buy milk"
+      }
+    }
+  }
+}

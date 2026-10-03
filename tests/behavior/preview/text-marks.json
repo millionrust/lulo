@@ -1,0 +1,54 @@
+{
+  "title": "Preview: underline and strike through shortcuts write PDF text annotations",
+  "app": "preview",
+  "lulo_only": true,
+  "setup": {
+    "files": {
+      "selection.pdf": "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 51 >>\nstream\nBT /F1 24 Tf 72 700 Td (Preview search term) Tj ET\nendstream\nendobj\n5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\nxref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000241 00000 n \n0000000341 00000 n \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n411\n%%EOF\n"
+    }
+  },
+  "launch": {
+    "file": "selection.pdf"
+  },
+  "steps": [
+    {
+      "wait": 1.5
+    },
+    {
+      "key": "cmd-a",
+      "settle": 0.3
+    },
+    {
+      "key": "ctrl-cmd-u",
+      "settle": 0.3
+    },
+    {
+      "key": "cmd-s",
+      "settle": 1.0
+    },
+    {
+      "observe": "underlined",
+      "facts": [
+        "pdf_text_marks"
+      ]
+    },
+    {
+      "key": "cmd-a",
+      "settle": 0.3
+    },
+    {
+      "key": "ctrl-cmd-s",
+      "settle": 0.3
+    },
+    {
+      "key": "cmd-s",
+      "settle": 1.0
+    },
+    {
+      "observe": "struck_through",
+      "facts": [
+        "pdf_text_marks"
+      ]
+    }
+  ]
+}

@@ -124,11 +124,19 @@
           "children": []
         },
         {
-          "label": "Revert to Original",
-          "action": "preview::RevertMarkup",
+          "label": "Revert To",
+          "action": "preview::RevertToMenu",
           "shortcut": "",
           "separator_before": true,
-          "children": []
+          "children": [
+            {
+              "label": "No Document",
+              "action": "preview::RevertMarkup",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Export as PDF…",
@@ -441,6 +449,20 @@
               "label": "Highlight Text",
               "action": "preview::AnnotateHighlight",
               "shortcut": "⌃⌘H",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Underline Text",
+              "action": "preview::AnnotateUnderline",
+              "shortcut": "⌃⌘U",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Strike Through Text",
+              "action": "preview::AnnotateStrikeThrough",
+              "shortcut": "⌃⌘S",
               "separator_before": false,
               "children": []
             },

@@ -21,8 +21,10 @@ desktop stays installed, so you can always log back into it.
 Lulo OS was called rmac until September 2026. The code, packages and settings
 still use the `rmac` name while the rename is in progress.
 
-> **Status:** early and moving fast. Lulo OS isn't ready for daily use yet. See
-> [known limitations](docs/known-limitations.md) and the [plan](PLAN_NEW.md).
+> **Status:** Lulo OS 0.9 Beta 1 — early access. Try it on a spare PC or a
+> second login session; expect rough edges. See
+> [known limitations](docs/known-limitations.md) for what's untested and how
+> to remove it, and the [plan](PLAN_NEW.md) for what's next.
 
 ## What's in it
 

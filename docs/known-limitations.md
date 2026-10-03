@@ -86,6 +86,11 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 
 ## Feature limits
 
+- Clicking the Dock while a menu (the app/system menu, a status menu,
+  Control Center, or the Notification Center panel) is open doesn't close
+  that menu yet. Clicking the wallpaper, another window, pressing Escape, or
+  switching to a different menu title all close/switch it correctly — only
+  a Dock click doesn't. A fix is in progress (parity row `MENU-15`).
 - Open item: the top-bar logo slot still draws the "R" glyph inherited from
   the rmac name. It needs a real Lulo mark before release; that is a design
   task (new artwork), not a text rename, and is intentionally not addressed

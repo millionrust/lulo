@@ -12,9 +12,10 @@ built on Ubuntu 26.04 and niri.
   Settings, every pane backed by a real Linux service.
 - Mac keyboard shortcuts, ⌘M minimise for every app, keyboard access to the
   menu bar (⌃F2) and the Dock (⌃F3), and window tiling.
-- Files, Terminal and Notes now expose real accessible text content to
-  screen readers. Typing into a search or rename field over assistive
-  technology isn't supported yet -- an upstream limitation, not an app bug.
+- Files, Terminal, Notes, Control Center and Notification Center now expose
+  real accessible content to screen readers. Typing into a search or rename
+  field over assistive technology isn't supported yet -- an upstream
+  limitation, not an app bug.
 - Software Update in System Settings, with updates installed at restart.
 
 This is an early-access Beta, not a finished daily driver: expect rough

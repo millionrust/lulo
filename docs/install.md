@@ -1,12 +1,19 @@
 # Install Lulo OS
 
-> Lulo OS is not released for general installation yet.
+> **Lulo OS 0.9 Beta 1 — early access.** Try it on a spare PC or a second
+> login session; expect rough edges. This Beta publishes `.deb` packages
+> from a tagged GitHub Release that you install and later remove by hand
+> (see "Install from a GitHub Release" below) -- the signed APT repository
+> and a clean-PC install/upgrade/uninstall run are still pending. See
+> [Known limitations](known-limitations.md) for what's untested.
 
 The repository contains the applications, session integration payload, and
 native package assembly contract, but the signed APT repository and clean-PC
-install gates are still pending. Do not install Lulo OS on a primary machine or
-replace the stock Ubuntu desktop. Use a separate test account on a disposable
-Ubuntu 26.04 machine and keep the Ubuntu/GNOME Wayland session available.
+install gates are still pending. Do not install Lulo OS on your only machine
+or over your primary Ubuntu/GNOME desktop. Use a separate test account on a
+disposable Ubuntu 26.04 machine (or a spare partition/VM) and keep the
+Ubuntu/GNOME Wayland session available -- it's how you remove Lulo OS and get
+back to your normal desktop if anything goes wrong.
 
 ## Before you start
 

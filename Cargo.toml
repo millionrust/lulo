@@ -98,6 +98,7 @@ rmac-lock-provider-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-lock
 rmac-login-items = { version = "=0.9.0-beta.1", path = "crates/rmac-login-items" }
 rmac-login-items-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-login-items-linux" }
 rmac-mail-store = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-store" }
+rmac-mail-imap = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-imap" }
 rmac-locale = { version = "=0.9.0-beta.1", path = "crates/rmac-locale" }
 rmac-locale-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-locale-linux" }
 rmac-power = { version = "=0.9.0-beta.1", path = "crates/rmac-power" }

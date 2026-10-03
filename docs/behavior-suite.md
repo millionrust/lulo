@@ -116,6 +116,12 @@ recordings use only a local "On My Mac" calendar and mailbox: never send mail,
 sign in, or confirm a deletion on the owner's Mac. The Lulo side runs against
 in-tree fixture IMAP/SMTP/CalDAV servers and a fake goa-daemon on a private bus.
 
+MAIL-2's protocol behaviour is exercised by the local TLS IMAP fixture in
+`crates/rmac-mail-imap/src/tests.rs`: it checks authentication, QRESYNC,
+CONDSTORE, SPECIAL-USE, UID MOVE/EXPUNGE, message literals and IDLE. A JSON
+mail scenario stays pending until MAIL-5 provides an app for the behaviour
+runner to launch.
+
 ## Terminal profiles
 
 `docs/behavior-pending/terminal/profile-settings.json` describes the Settings

@@ -179,6 +179,16 @@ Order: ACC-1 → ACC-2 → (ACC-3 ∥ CAL-1 ∥ MAIL-1) → CAL-2 ∥ MAIL-2 →
 (≈ 6 agent-weeks), Mail ~10 (≈ 8 agent-weeks), accounts 4 (≈ 3 agent-weeks). Calendar's
 critical path is CAL-1/CAL-2; Mail's is MAIL-2/MAIL-3/MAIL-5.
 
+### MAIL-2 dependency review
+
+The IMAP client uses `imap-codec` 1.0.0 for ordinary tagged response validation,
+with bounded parsing for extension replies such as QRESYNC `VANISHED` and
+CONDSTORE `MODSEQ`. It is MIT OR Apache-2.0, as are its new transitive crates
+`imap-types` 1.0.0, `abnf-core` 0.6.0 and `base64` 0.21.7. The connection uses
+rustls 0.23.45 with the ring provider and native root certificates; this
+version fixes RUSTSEC-2026-0285, which CI caught in the previously locked
+0.23.41. No GPL/LGPL crate or new Git source enters the graph.
+
 ## 6. Risks and blockers
 
 1. **Using GNOME's OAuth clients** from Lulo's own UI (ADR 0022 §2): owner approval needed; the

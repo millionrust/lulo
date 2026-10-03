@@ -13,8 +13,8 @@ use rmac_accounts::{
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use url::Url;
 use ureq::tls::{RootCerts, TlsConfig};
+use url::Url;
 
 use crate::Error;
 

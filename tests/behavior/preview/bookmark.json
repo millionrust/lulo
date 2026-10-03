@@ -53,6 +53,23 @@
       "facts": [
         "preview_bookmarks"
       ]
+    },
+    {
+      "key": "alt-cmd-q",
+      "settle": 0.8
+    },
+    {
+      "relaunch": true
+    },
+    {
+      "key": "alt-cmd-5",
+      "settle": 0.5
+    },
+    {
+      "observe": "persisted",
+      "facts": [
+        "preview_bookmarks"
+      ]
     }
   ]
 }

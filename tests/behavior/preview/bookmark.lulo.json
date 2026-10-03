@@ -25,6 +25,13 @@
           "Page 1"
         ]
       }
+    },
+    "persisted": {
+      "preview_bookmarks": {
+        "pages": [
+          "Page 1"
+        ]
+      }
     }
   }
 }

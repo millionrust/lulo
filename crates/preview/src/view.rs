@@ -1285,9 +1285,9 @@ impl PreviewView {
         };
         let (id, path) = (slot.id, slot.path.clone());
         cx.spawn(async move |this, cx| {
-            let result = cx
+            let (result, bookmarks) = cx
                 .background_executor()
-                .spawn(async move { render::load(&path) })
+                .spawn(async move { (render::load(&path), crate::load_bookmarks(&path)) })
                 .await;
             let _ = this.update(cx, |view, cx| {
                 let slots_len = view.slots.len();
@@ -1299,6 +1299,7 @@ impl PreviewView {
                     Ok(loaded) => SlotState::Ready(loaded),
                     Err(error) => SlotState::Failed(error.into()),
                 };
+                slot.bookmarks = bookmarks;
                 // A PDF with several pages opens with its thumbnails, like
                 // Preview; a single image or one-page PDF does not.
                 let pages = slot.loaded().map(Loaded::page_count).unwrap_or(0);
@@ -1668,7 +1669,18 @@ impl PreviewView {
         else {
             return;
         };
-        slot.bookmarks.insert(slot.current_page);
+        if slot.bookmarks.insert(slot.current_page) {
+            let path = slot.path.clone();
+            let pages = slot.bookmarks.iter().copied().collect::<Vec<_>>();
+            cx.spawn(async move |_, _| {
+                if let Err(error) =
+                    blocking::unblock(move || crate::save_bookmarks(&path, &pages)).await
+                {
+                    eprintln!("rmac-preview: could not save bookmarks: {error}");
+                }
+            })
+            .detach();
+        }
         self.show_bookmarks(cx);
     }
 

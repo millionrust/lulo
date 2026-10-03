@@ -3,12 +3,15 @@
 
 use std::collections::HashMap;
 
-use rmac_accounts::model::{Service, Services};
 use rmac_accounts::Secret;
+use rmac_accounts::{
+    model::{email_domain, Service, Services},
+    provider::SocketSecurity,
+};
 use zbus::blocking::{Connection, MessageIterator, Proxy};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Str};
 
-use crate::{AccountChange, Error, GoaAccount, GoaApi, OAuthAccount};
+use crate::{AccountChange, Error, GoaAccount, GoaApi, OAuthAccount, PasswordMailAccount};
 
 const SERVICE: &str = "org.gnome.OnlineAccounts";
 const ROOT: &str = "/org/gnome/OnlineAccounts";
@@ -62,6 +65,29 @@ fn account_from_interfaces(path: &str, interfaces: &Interfaces) -> Option<GoaAcc
 
 fn string_value(value: &str) -> OwnedValue {
     OwnedValue::from(Str::from(value.to_owned()))
+}
+
+fn server_address(
+    host: &str,
+    port: u16,
+    security: SocketSecurity,
+    imap: bool,
+) -> Result<String, Error> {
+    let url = url::Url::parse(&format!("https://{host}")).map_err(|_| Error::InvalidResponse)?;
+    if url.host_str() != Some(host) || url.port().is_some() || url.path() != "/" || port == 0 {
+        return Err(Error::InvalidResponse);
+    }
+    let default = match (imap, security) {
+        (true, SocketSecurity::Tls) => 993,
+        (true, SocketSecurity::StartTls) => 143,
+        (false, SocketSecurity::Tls) => 465,
+        (false, SocketSecurity::StartTls) => 587,
+    };
+    Ok(if port == default {
+        host.to_owned()
+    } else {
+        format!("{host}:{port}")
+    })
 }
 
 impl GoaApi for GoaBus {
@@ -169,6 +195,80 @@ impl GoaApi for GoaBus {
         Ok(path.to_string())
     }
 
+    fn add_password_mail(&self, account: &PasswordMailAccount<'_>) -> Result<String, Error> {
+        if email_domain(account.address).is_none()
+            || account.display_name.trim().is_empty()
+            || account.imap_password.expose().is_empty()
+            || account.smtp_password.expose().is_empty()
+            || account.config.imap.username.is_empty()
+            || account.config.smtp.username.is_empty()
+        {
+            return Err(Error::InvalidResponse);
+        }
+        let imap = &account.config.imap;
+        let smtp = &account.config.smtp;
+        let imap_host = server_address(&imap.host, imap.port, imap.security, true)?;
+        let smtp_host = server_address(&smtp.host, smtp.port, smtp.security, false)?;
+        let credentials = HashMap::from([
+            (
+                "imap-password".to_owned(),
+                string_value(account.imap_password.expose()),
+            ),
+            (
+                "smtp-password".to_owned(),
+                string_value(account.smtp_password.expose()),
+            ),
+        ]);
+        let mut details = HashMap::from([
+            ("Enabled".to_owned(), "true".to_owned()),
+            ("EmailAddress".to_owned(), account.address.to_owned()),
+            ("Name".to_owned(), account.display_name.to_owned()),
+            ("ImapHost".to_owned(), imap_host),
+            ("ImapUserName".to_owned(), imap.username.clone()),
+            ("SmtpHost".to_owned(), smtp_host),
+            ("SmtpUserName".to_owned(), smtp.username.clone()),
+            ("SmtpUseAuth".to_owned(), "true".to_owned()),
+            ("SmtpAuthPlain".to_owned(), "true".to_owned()),
+            ("SmtpAuthLogin".to_owned(), "true".to_owned()),
+            ("ImapAcceptSslErrors".to_owned(), "false".to_owned()),
+            ("SmtpAcceptSslErrors".to_owned(), "false".to_owned()),
+        ]);
+        let enabled = |value: bool| if value { "true" } else { "false" }.to_owned();
+        details.insert(
+            "ImapUseSsl".into(),
+            enabled(imap.security == SocketSecurity::Tls),
+        );
+        details.insert(
+            "ImapUseTls".into(),
+            enabled(imap.security == SocketSecurity::StartTls),
+        );
+        details.insert(
+            "SmtpUseSsl".into(),
+            enabled(smtp.security == SocketSecurity::Tls),
+        );
+        details.insert(
+            "SmtpUseTls".into(),
+            enabled(smtp.security == SocketSecurity::StartTls),
+        );
+        let manager = self.proxy(
+            "/org/gnome/OnlineAccounts/Manager",
+            "org.gnome.OnlineAccounts.Manager",
+        )?;
+        let path: OwnedObjectPath = manager
+            .call(
+                "AddAccount",
+                &(
+                    "imap_smtp",
+                    account.address,
+                    account.address,
+                    credentials,
+                    details,
+                ),
+            )
+            .map_err(|_| Error::SignInFailed)?;
+        Ok(path.to_string())
+    }
+
     fn remove(&self, path: &str) -> Result<(), Error> {
         self.account(path)?
             .call("Remove", &())
@@ -197,10 +297,10 @@ impl GoaApi for GoaBus {
         Ok(Secret::new(token))
     }
 
-    fn password(&self, path: &str) -> Result<Secret, Error> {
+    fn password(&self, path: &str, id: &str) -> Result<Secret, Error> {
         let password: String = self
             .proxy(path, "org.gnome.OnlineAccounts.PasswordBased")?
-            .call("GetPassword", &())
+            .call("GetPassword", &(id,))
             .map_err(|_| Error::SignInFailed)?;
         Ok(Secret::new(password))
     }

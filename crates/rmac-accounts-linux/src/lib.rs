@@ -8,6 +8,7 @@ pub mod oauth;
 pub mod goa;
 
 use rmac_accounts::{
+    autoconfig::MailConfig,
     model::{Service, Services},
     provider::Provider,
     Secret,
@@ -56,10 +57,12 @@ pub trait GoaApi {
     /// Blocks on ObjectManager and PropertiesChanged signals. Run on a worker.
     fn watch(&self, emit: &mut dyn FnMut(AccountChange)) -> Result<(), Error>;
     fn add_oauth(&self, account: &OAuthAccount<'_>) -> Result<String, Error>;
+    fn add_password_mail(&self, account: &PasswordMailAccount<'_>) -> Result<String, Error>;
     fn remove(&self, path: &str) -> Result<(), Error>;
     fn set_service(&self, path: &str, service: Service, enabled: bool) -> Result<(), Error>;
     fn access_token(&self, path: &str) -> Result<Secret, Error>;
-    fn password(&self, path: &str) -> Result<Secret, Error>;
+    /// `id` is `imap-password`, `smtp-password`, or a provider-specific key.
+    fn password(&self, path: &str, id: &str) -> Result<Secret, Error>;
 }
 
 pub struct OAuthAccount<'a> {
@@ -75,5 +78,113 @@ pub struct OAuthAccount<'a> {
 impl std::fmt::Debug for OAuthAccount<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("OAuthAccount([redacted])")
+    }
+}
+
+pub struct PasswordMailAccount<'a> {
+    pub address: &'a str,
+    pub display_name: &'a str,
+    pub config: &'a MailConfig,
+    pub imap_password: &'a Secret,
+    pub smtp_password: &'a Secret,
+}
+
+impl std::fmt::Debug for PasswordMailAccount<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PasswordMailAccount([redacted])")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct FakeGoa {
+        account: Mutex<Option<GoaAccount>>,
+    }
+
+    impl GoaApi for FakeGoa {
+        fn accounts(&self) -> Result<Vec<GoaAccount>, Error> {
+            Ok(self.account.lock().unwrap().iter().cloned().collect())
+        }
+        fn watch(&self, emit: &mut dyn FnMut(AccountChange)) -> Result<(), Error> {
+            for account in self.accounts()? {
+                emit(AccountChange::Added(account));
+            }
+            Ok(())
+        }
+        fn add_oauth(&self, input: &OAuthAccount<'_>) -> Result<String, Error> {
+            let path = "/org/gnome/OnlineAccounts/Accounts/fake".to_owned();
+            *self.account.lock().unwrap() = Some(GoaAccount {
+                path: path.clone(),
+                id: "fake".into(),
+                provider: input.provider.info().goa_ids[0].into(),
+                identity: input.identity.into(),
+                services: input.services,
+            });
+            Ok(path)
+        }
+        fn add_password_mail(&self, _account: &PasswordMailAccount<'_>) -> Result<String, Error> {
+            Ok("/org/gnome/OnlineAccounts/Accounts/password-fake".into())
+        }
+        fn remove(&self, _path: &str) -> Result<(), Error> {
+            *self.account.lock().unwrap() = None;
+            Ok(())
+        }
+        fn set_service(&self, _path: &str, service: Service, enabled: bool) -> Result<(), Error> {
+            self.account
+                .lock()
+                .unwrap()
+                .as_mut()
+                .unwrap()
+                .services
+                .set(service, enabled);
+            Ok(())
+        }
+        fn access_token(&self, _path: &str) -> Result<Secret, Error> {
+            Ok(Secret::new("planted-token".into()))
+        }
+        fn password(&self, _path: &str, _id: &str) -> Result<Secret, Error> {
+            Ok(Secret::new("planted-password".into()))
+        }
+    }
+
+    #[test]
+    fn account_lifecycle_with_fake_goa_and_redacted_diagnostics() {
+        let fake = FakeGoa::default();
+        let access = Secret::new("planted-token".into());
+        let input = OAuthAccount {
+            provider: Provider::Google,
+            identity: "planted@example.com",
+            presentation_identity: "planted@example.com",
+            access_token: &access,
+            refresh_token: None,
+            expires_at: 123,
+            services: Services::ALL,
+        };
+        let path = fake.add_oauth(&input).unwrap();
+        let mut events = Vec::new();
+        fake.watch(&mut |event| events.push(event)).unwrap();
+        assert_eq!(events.len(), 1);
+        fake.set_service(&path, Service::Calendar, false).unwrap();
+        assert!(!fake.accounts().unwrap()[0].services.calendar);
+        assert_eq!(fake.access_token(&path).unwrap().expose(), "planted-token");
+        assert_eq!(
+            fake.password(&path, "imap-password").unwrap().expose(),
+            "planted-password"
+        );
+        let diagnostic = format!(
+            "{input:?} {:?} {:?}",
+            fake.accounts().unwrap()[0],
+            fake.access_token(&path).unwrap()
+        );
+        for secret in ["planted-token", "planted@example.com", "planted-password"] {
+            assert!(!diagnostic.contains(secret));
+        }
+        fake.remove(&path).unwrap();
+        assert!(fake.accounts().unwrap().is_empty());
     }
 }

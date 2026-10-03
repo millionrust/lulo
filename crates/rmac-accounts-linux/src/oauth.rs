@@ -55,6 +55,32 @@ pub trait OAuthHttp {
 
 pub struct SystemOAuthHttp;
 
+#[cfg(target_os = "linux")]
+pub fn verify_installed_provider(provider: Provider) -> Result<(), Error> {
+    let architecture = std::env::consts::ARCH;
+    let triplet = match architecture {
+        "x86_64" => "x86_64-linux-gnu",
+        "aarch64" => "aarch64-linux-gnu",
+        _ => return Err(Error::Unavailable),
+    };
+    let path = format!("/usr/lib/{triplet}/libgoa-backend-1.0.so.2");
+    let binary = std::fs::read(path).map_err(|_| Error::Unavailable)?;
+    let config = provider.info().oauth.ok_or(Error::InvalidResponse)?;
+    let contains = |needle: &str| {
+        binary
+            .windows(needle.len())
+            .any(|part| part == needle.as_bytes())
+    };
+    if !contains(config.client_id)
+        || !contains(config.scopes)
+        || (provider == Provider::Google
+            && (!contains(config.authorization_uri) || !contains(config.token_uri)))
+    {
+        return Err(Error::Unavailable);
+    }
+    Ok(())
+}
+
 impl OAuthHttp for SystemOAuthHttp {
     fn exchange(
         &self,
@@ -251,7 +277,8 @@ pub mod callback {
     }
 
     impl OAuthReceiver {
-        pub fn begin() -> Result<Self, Error> {
+        pub fn begin(provider: rmac_accounts::provider::Provider) -> Result<Self, Error> {
+            super::verify_installed_provider(provider)?;
             let connection = Connection::session().map_err(|_| Error::Unavailable)?;
             let (sender, receiver) = mpsc::channel();
             connection
@@ -339,5 +366,15 @@ mod tests {
             assert!(!debug.contains(secret));
         }
         assert!(tokens.expires_at > 0);
+    }
+
+    /// Laptop only: `cargo test -p rmac-accounts-linux -- --ignored
+    /// installed_goa_provider_table_matches_pinned_clients`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires the reference laptop's installed libgoa-backend"]
+    fn installed_goa_provider_table_matches_pinned_clients() {
+        verify_installed_provider(Provider::Google).unwrap();
+        verify_installed_provider(Provider::Microsoft).unwrap();
     }
 }

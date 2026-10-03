@@ -63,12 +63,16 @@ for dock in docks:
             "a Dock must expose at least one named application and exactly one Trash; "
             f"found {roles!r}"
         )
-    focusable = [
+    # The toolbar root deliberately accepts focus while a context menu is open
+    # so Escape can dismiss it. Tiles must remain actions, not Tab stops.
+    focusable_tiles = [
         node
         for node in nodes
+        if node.getRoleName() != "tool bar"
         if node.getState().contains(pyatspi.STATE_FOCUSABLE)
     ]
-    if focusable:
-        raise AssertionError("the non-keyboard-interactive Dock added focus stops")
+    if focusable_tiles:
+        names = [(node.getRoleName(), node.name) for node in focusable_tiles]
+        raise AssertionError(f"the passive Dock added focusable tiles: {names!r}")
 
 print(f"AT-SPI exposed {EXPECTED_DOCKS} passive Docks with named app and Trash actions")

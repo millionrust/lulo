@@ -48,7 +48,7 @@ pub fn layout_day(
             .then_with(|| a.0.id.cmp(&b.0.id))
     });
 
-    let mut result = Vec::with_capacity(visible.len());
+    let mut result: Vec<LayoutSlot> = Vec::with_capacity(visible.len());
     let mut group_start = 0;
     let mut group_end = day_start;
     let mut active: Vec<(usize, DateTime<Utc>)> = Vec::new();

@@ -62,11 +62,16 @@
         150,
         100
       ],
-      "scope": "full"
+      "scope": "full",
+      "anchor": [
+        160,
+        14
+      ]
     },
     {
       "shot": "window-moved",
-      "scope": "full"
+      "scope": "full",
+      "expect_window": "org.rmac.Calculator"
     }
   ],
   "setup": {

@@ -50,6 +50,10 @@ RESIDENT = (
     ("rmac-launcher", [], "rmac/shortcut-launcher.sock"),
     ("rmac-app-switcher", ["--service"], "rmac/app-switcher.sock"),
 )
+# Lulo names for controls a journey names after the Mac. Control Centre's
+# Sound module title is the volume slider on Lulo; its detail (the output
+# list the Mac opens) is behind the module's Sound Outputs button.
+LULO_LABELS = {"Sound": "Sound Outputs"}
 FORBIDDEN = {"Shut Down", "Restart", "Log Out", "Sleep", "Empty Bin", "Empty Trash", "Wi-Fi On", "Wi-Fi Off"}
 
 
@@ -301,6 +305,7 @@ class Driver:
     def click(self, label: str, target: str | None = None, attempt: int = 0):
         if label in FORBIDDEN:
             raise RuntimeError(f"refusing destructive or toggle control {label!r}")
+        label = LULO_LABELS.get(label, label)
         if target == "Dock":
             self.current = next((app for app, name in DOCK_NAMES.items() if name == label), self.current)
         if label == "Save" and self.current == "text-editor":
@@ -361,8 +366,12 @@ class Driver:
         if candidates:
             _rank, _area, node, box, origin = min(candidates, key=lambda item: item[:2])
             if origin is None:
-                action = node.queryAction()
-                if action.nActions < 1:
+                try:
+                    action = node.queryAction()
+                    count = action.nActions
+                except Exception:  # noqa: BLE001 - pyatspi raises NotImplementedError
+                    count = 0
+                if count < 1:
                     raise RuntimeError(f"{label!r} is on a layer surface and has no accessible action")
                 action.doAction(0)
                 return

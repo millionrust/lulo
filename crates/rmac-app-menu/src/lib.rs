@@ -503,8 +503,6 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                         "terminal::CopyWithoutBackgroundColour",
                         "⌃⇧⌘C"
                     ),
-                    item!("Style for “Copy” Command", "terminal::CopyStyleHeading", ""),
-                    item!("Plain Text", "terminal::CopyStylePlainText", ""),
                 ]
             ),
             item!("Paste", "terminal::Paste", "⌘V"),

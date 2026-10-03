@@ -55,8 +55,6 @@ impl Render for TerminalView {
                 cx,
             );
             rmac_ui::set_menu_enabled("terminal::CopyPlainText", has_selection, cx);
-            rmac_ui::set_menu_checked("terminal::CopyStylePlainText", true, cx);
-            rmac_ui::set_menu_enabled("terminal::CopyStyleHeading", false, cx);
             rmac_ui::set_menu_enabled("terminal::CopyWithoutBackgroundColour", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::OpenManPageForSelection", has_man_topic, cx);
             rmac_ui::set_menu_enabled(

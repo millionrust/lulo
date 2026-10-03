@@ -337,20 +337,6 @@
               "shortcut": "⌃⇧⌘C",
               "separator_before": false,
               "children": []
-            },
-            {
-              "label": "Style for “Copy” Command",
-              "action": "terminal::CopyStyleHeading",
-              "shortcut": "",
-              "separator_before": false,
-              "children": []
-            },
-            {
-              "label": "Plain Text",
-              "action": "terminal::CopyStylePlainText",
-              "shortcut": "",
-              "separator_before": false,
-              "children": []
             }
           ]
         },

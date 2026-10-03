@@ -74,9 +74,6 @@ impl TerminalView {
             }))
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &CopyPlainText, _, cx| this.copy(cx)))
-            // The clipboard output is always plain text today, so selecting
-            // that checked copy style leaves the effective style unchanged.
-            .on_action(cx.listener(|_, _: &CopyStylePlainText, _, _| {}))
             .on_action(cx.listener(|this, _: &CopyWithoutBackgroundColour, _, cx| this.copy(cx)))
             .on_action(
                 cx.listener(|this, _: &OpenManPageForSelection, window, cx| {

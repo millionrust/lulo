@@ -903,6 +903,15 @@ class LuloRun:
             )
         }
 
+    def fact_preview_bookmarks(self) -> dict[str, Any]:
+        """Accessible page buttons in Preview's Bookmarks sidebar."""
+        frame = self.active_frame()
+        pages = [] if frame is None else [
+            name(node) for node in descendants(frame, limit=3000)
+            if role(node) == "push button" and re.fullmatch(r"Page \d+", name(node))
+        ]
+        return {"pages": pages}
+
     def fact_file_chooser(self) -> dict[str, Any]:
         """Whether the private file chooser opened an Open window."""
         return {"present": any(name(frame) == "Open" for frame in self.helper_frames())}

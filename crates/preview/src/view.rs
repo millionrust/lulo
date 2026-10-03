@@ -4,7 +4,7 @@
 //! PDF markup is kept in page-relative coordinates and painted as a separate
 //! overlay. Saving adds standard PDF annotations without changing page data.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -25,15 +25,15 @@ use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
-    ActualSize, ActualSizeOnAll, AnnotateArrow, AnnotateHighlight, AnnotateLine, AnnotateOval,
-    AnnotateRectangle, AnnotateSignature, AnnotateStrikeThrough, AnnotateText, AnnotateUnderline,
-    Back, CloseAll, CloseSelected, CloseWindow, Copy, DeleteSelection, EnterFullScreen,
-    ExportAsPdf, Find, FindNext, FindPrevious, Forward, GoToPage, HideSidebar, JumpToSelection,
-    MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem,
-    PrintDocument, RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs, SaveMarkup,
-    SelectAll, ShowImageBackground, ShowInspector, ShowThumbnails, ToggleMarkup, ToggleToolbar,
-    UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut,
-    ZoomToFit,
+    ActualSize, ActualSizeOnAll, AddBookmark, AnnotateArrow, AnnotateHighlight, AnnotateLine,
+    AnnotateOval, AnnotateRectangle, AnnotateSignature, AnnotateStrikeThrough, AnnotateText,
+    AnnotateUnderline, Back, CloseAll, CloseSelected, CloseWindow, Copy, DeleteSelection,
+    EnterFullScreen, ExportAsPdf, Find, FindNext, FindPrevious, Forward, GoToPage, HideSidebar,
+    JumpToSelection, MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument,
+    PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs,
+    SaveMarkup, SelectAll, ShowBookmarks, ShowImageBackground, ShowInspector, ShowThumbnails,
+    ToggleMarkup, ToggleToolbar, UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut,
+    ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -61,6 +61,8 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::JumpToSelection",
         "preview::HideSidebar",
         "preview::ShowThumbnails",
+        "preview::ShowBookmarks",
+        "preview::AddBookmark",
         "preview::ShowImageBackground",
         "preview::AnnotateHighlight",
         "preview::AnnotateUnderline",
@@ -255,6 +257,7 @@ struct Slot {
     thumbs: HashMap<usize, (Rotation, Arc<RenderImage>)>,
     pending: HashSet<(usize, bool)>,
     current_page: usize,
+    bookmarks: BTreeSet<usize>,
     text: TextState,
     markup: Markup,
     markup_original: Option<PathBuf>,
@@ -282,6 +285,7 @@ impl Slot {
             thumbs: HashMap::new(),
             pending: HashSet::new(),
             current_page: 0,
+            bookmarks: BTreeSet::new(),
             text: TextState::NotLoaded,
             markup: Markup::default(),
             markup_original: None,
@@ -378,6 +382,7 @@ pub(crate) struct PreviewView {
     /// Images beside a single opened image, for Go ▸ Next / Previous Item.
     folder: Option<Vec<PathBuf>>,
     sidebar: bool,
+    sidebar_mode: SidebarMode,
     image_background: bool,
     inspector: bool,
     scroll: ScrollHandle,
@@ -424,6 +429,12 @@ pub(crate) struct PreviewView {
     save_as_busy: bool,
     #[cfg(target_os = "linux")]
     clipboard_checked: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SidebarMode {
+    Thumbnails,
+    Bookmarks,
 }
 
 #[derive(Clone, Copy)]
@@ -550,7 +561,7 @@ impl PreviewView {
     }
 
     fn choose_annotation(&mut self, tool: Tool, cx: &mut Context<Self>) {
-        if self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+        if self.slots.len() != 1 || self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
             return;
         }
         self.choose_markup_tool(tool, cx);
@@ -1207,6 +1218,7 @@ impl PreviewView {
             focus: cx.focus_handle(),
             page_focus: cx.focus_handle(),
             sidebar: slots.len() > 1,
+            sidebar_mode: SidebarMode::Thumbnails,
             image_background: false,
             slots,
             selected: 0,
@@ -1631,7 +1643,33 @@ impl PreviewView {
 
     fn set_sidebar(&mut self, shown: bool, cx: &mut Context<Self>) {
         self.sidebar = shown;
+        if shown {
+            self.sidebar_mode = SidebarMode::Thumbnails;
+        }
         cx.notify();
+    }
+
+    fn show_bookmarks(&mut self, cx: &mut Context<Self>) {
+        if self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+            return;
+        }
+        self.sidebar = true;
+        self.sidebar_mode = SidebarMode::Bookmarks;
+        cx.notify();
+    }
+
+    fn add_bookmark(&mut self, cx: &mut Context<Self>) {
+        if self.slots.len() != 1 {
+            return;
+        }
+        let Some(slot) = self
+            .slot_mut()
+            .filter(|slot| slot.kind() == Some(Kind::Pdf))
+        else {
+            return;
+        };
+        slot.bookmarks.insert(slot.current_page);
+        self.show_bookmarks(cx);
     }
 
     fn toggle_inspector(&mut self, cx: &mut Context<Self>) {
@@ -3169,6 +3207,55 @@ impl PreviewView {
         height: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        if self.sidebar_mode == SidebarMode::Bookmarks && self.slots.len() == 1 {
+            let current_page = self.slot().map_or(0, |slot| slot.current_page);
+            let pages = self
+                .slot()
+                .map(|slot| slot.bookmarks.iter().copied().collect::<Vec<_>>())
+                .unwrap_or_default();
+            return div()
+                .absolute()
+                .left(px(metrics::SIDEBAR_INSET))
+                .top(px(metrics::SIDEBAR_INSET))
+                .w(px(metrics::SIDEBAR_WIDTH))
+                .h(px(height - 2.0 * metrics::SIDEBAR_INSET))
+                .rounded(px(metrics::SIDEBAR_RADIUS))
+                .bg(rgb(palette.sidebar))
+                .border_1()
+                .border_color(rgb(palette.sidebar_edge))
+                .overflow_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .top(px(self.toolbar_height() - metrics::SIDEBAR_INSET))
+                        .bottom_0()
+                        .overflow_y_scroll()
+                        .child(if pages.is_empty() {
+                            div().p_3().child("No Bookmarks").into_any_element()
+                        } else {
+                            div()
+                                .v_flex()
+                                .children(pages.into_iter().map(|page| {
+                                    div()
+                                        .id(("preview-bookmark", page))
+                                        .role(Role::Button)
+                                        .aria_label(format!("Page {}", page + 1))
+                                        .px_3()
+                                        .py_2()
+                                        .when(page == current_page, |row| {
+                                            row.bg(rgb(palette.selection))
+                                        })
+                                        .child(format!("Page {}", page + 1))
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.go_to_page(page, cx);
+                                        }))
+                                }))
+                                .into_any_element()
+                        }),
+                );
+        }
         // Items: documents when several are open, otherwise the pages.
         let several = self.slots.len() > 1;
         let (entries, selected): (Vec<SidebarEntry>, usize) = if several {
@@ -4017,7 +4104,16 @@ impl Render for PreviewView {
         if window.is_window_active() {
             // View ▸ Hide Sidebar / Thumbnails tick the key window's choice.
             rmac_ui::set_menu_checked("preview::HideSidebar", !self.sidebar, cx);
-            rmac_ui::set_menu_checked("preview::ShowThumbnails", self.sidebar, cx);
+            rmac_ui::set_menu_checked(
+                "preview::ShowThumbnails",
+                self.sidebar && self.sidebar_mode == SidebarMode::Thumbnails,
+                cx,
+            );
+            rmac_ui::set_menu_checked(
+                "preview::ShowBookmarks",
+                self.sidebar && self.sidebar_mode == SidebarMode::Bookmarks,
+                cx,
+            );
             rmac_ui::set_menu_checked("preview::ShowImageBackground", self.image_background, cx);
             for (action, tool) in [
                 ("preview::AnnotateHighlight", Tool::Highlight),
@@ -4084,6 +4180,8 @@ impl Render for PreviewView {
             for action in [
                 "preview::HideSidebar",
                 "preview::ShowThumbnails",
+                "preview::ShowBookmarks",
+                "preview::AddBookmark",
                 "preview::ActualSize",
                 "preview::ZoomToFit",
                 "preview::ZoomIn",
@@ -4163,6 +4261,8 @@ impl Render for PreviewView {
             rmac_ui::set_menu_enabled("preview::Back", !self.back.is_empty(), cx);
             rmac_ui::set_menu_enabled("preview::Forward", !self.forward.is_empty(), cx);
             rmac_ui::set_menu_enabled("preview::ExportAsPdf", pdf, cx);
+            rmac_ui::set_menu_enabled("preview::ShowBookmarks", pdf && !multiple, cx);
+            rmac_ui::set_menu_enabled("preview::AddBookmark", pdf && !multiple, cx);
             rmac_ui::set_menu_enabled("preview::UseSelectionForFind", selected_text, cx);
             rmac_ui::set_menu_enabled("preview::JumpToSelection", selected_text, cx);
         } else {
@@ -4210,7 +4310,16 @@ impl Render for PreviewView {
             };
             rmac_ui::ContextMenu::new(state.position())
                 .checked_item("Hide Sidebar", check(!self.sidebar), Box::new(HideSidebar))
-                .checked_item("Thumbnails", check(self.sidebar), Box::new(ShowThumbnails))
+                .checked_item(
+                    "Thumbnails",
+                    check(self.sidebar && self.sidebar_mode == SidebarMode::Thumbnails),
+                    Box::new(ShowThumbnails),
+                )
+                .checked_item(
+                    "Bookmarks",
+                    check(self.sidebar && self.sidebar_mode == SidebarMode::Bookmarks),
+                    Box::new(ShowBookmarks),
+                )
                 .render(state)
         });
 
@@ -4271,6 +4380,8 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &HideSidebar, _, cx| this.set_sidebar(false, cx)))
             .on_action(cx.listener(|this, _: &ShowThumbnails, _, cx| this.set_sidebar(true, cx)))
+            .on_action(cx.listener(|this, _: &ShowBookmarks, _, cx| this.show_bookmarks(cx)))
+            .on_action(cx.listener(|this, _: &AddBookmark, _, cx| this.add_bookmark(cx)))
             .on_action(cx.listener(|this, _: &ShowImageBackground, _, cx| {
                 if this
                     .slot()

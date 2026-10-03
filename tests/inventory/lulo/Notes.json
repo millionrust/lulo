@@ -948,7 +948,36 @@
   "settings": {
     "present": true,
     "extraction": "heuristic",
-    "controls": []
+    "controls": [
+      {
+        "kind": "control",
+        "label": "Notes Settings"
+      },
+      {
+        "kind": "control",
+        "label": "Sort notes by:"
+      },
+      {
+        "kind": "control",
+        "label": "Text size:"
+      },
+      {
+        "kind": "control",
+        "label": "Date Edited"
+      },
+      {
+        "kind": "control",
+        "label": "Date Created"
+      },
+      {
+        "kind": "control",
+        "label": "Title"
+      },
+      {
+        "kind": "control",
+        "label": "Notes Settings"
+      }
+    ]
   },
   "toolbar": {
     "present": true,

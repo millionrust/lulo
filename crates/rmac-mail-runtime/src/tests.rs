@@ -118,3 +118,16 @@ fn reconnect_backoff_caps_at_five_minutes() {
     assert!(Error::StaleUidValidity.needs_user_event());
     assert!(!Error::Account.needs_user_event());
 }
+
+#[test]
+fn new_mail_debug_redacts_private_content() {
+    let notice = NewMail {
+        account: Uuid::new_v4(),
+        message_id: 1,
+        sender: "planted-sender".into(),
+        subject: "planted-subject".into(),
+        preview: "planted-preview".into(),
+    };
+    let printed = format!("{notice:?}");
+    assert!(!printed.contains("planted-"));
+}

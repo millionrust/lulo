@@ -55,13 +55,23 @@ pub fn account_id(account: &GoaAccount) -> Uuid {
     Uuid::from_bytes(bytes)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct NewMail {
     pub account: Uuid,
     pub message_id: i64,
     pub sender: String,
     pub subject: String,
     pub preview: String,
+}
+
+impl std::fmt::Debug for NewMail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewMail")
+            .field("account", &self.account)
+            .field("message_id", &self.message_id)
+            .field("content", &"[redacted]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

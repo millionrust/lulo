@@ -162,9 +162,32 @@ def diff_menu_bars(
             return path[2] != "Clear Menu"
         return False
 
+    # Every app's standard Window menu ends, on the real Mac, with "Bring
+    # All to Front", "Arrange in Front" and then the live list of that
+    # app's own open windows (their titles, whatever they happen to be on
+    # the reference Mac at capture time). `lulo_inventory.py` deliberately
+    # leaves that list out (it is a runtime fact, not something static
+    # source analysis can read — see its own `_synthesize_window_menu`
+    # docstring), so any direct "Window" child positioned after "Arrange
+    # in Front" in the Mac's own menu order is one of those window titles,
+    # not a missing command.
+    mac_window_paths = [path for path in mac_flat if path[:1] == ("Window",)]
+    arrange_in_front_path = next(
+        (path for path in mac_window_paths if path == ("Window", "Arrange in Front")),
+        None,
+    )
+    window_title_tail: set[tuple[str, ...]] = set()
+    if arrange_in_front_path is not None:
+        after_anchor = False
+        for path in mac_window_paths:
+            if after_anchor and len(path) == 2:
+                window_title_tail.add(path)
+            if path == arrange_in_front_path:
+                after_anchor = True
+
     gaps: list[Gap] = []
     for path, mac_item in mac_flat.items():
-        if machine_specific_finder_child(path):
+        if machine_specific_finder_child(path) or path in window_title_tail:
             continue
         path_str = " ▸ ".join(path)
         if path not in lulo_flat:

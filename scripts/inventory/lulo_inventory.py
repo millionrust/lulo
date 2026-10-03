@@ -152,51 +152,105 @@ def _synthesize_app_menu(
     return rmp.Menu(APPLICATION_MENU, items)
 
 
-def _synthesize_window_menu(exported_items: list[rmp.MenuItem]) -> rmp.Menu:
+# The 8 "Arrange" combinations Window ▸ Move & Resize offers, in the Mac's
+# own order, mirroring `COMBO_TILES` in
+# shell/bins/rmac-menubar/src/menu_model.rs.
+_COMBO_TILES = [
+    ("Left & Right", "⌃⇧←"),
+    ("Left & Quarters", "⌃⌥⇧←"),
+    ("Right & Left", "⌃⇧→"),
+    ("Right & Quarters", "⌃⌥⇧→"),
+    ("Top & Bottom", "⌃⇧↑"),
+    ("Top & Quarters", "⌃⌥⇧↑"),
+    ("Bottom & Top", "⌃⇧↓"),
+    ("Bottom & Quarters", "⌃⌥⇧↓"),
+]
+
+# Calculator's window is fixed-size (CALC-01/02): it cannot be zoomed,
+# filled, or put in full-screen Split View, and (observed on the reference
+# Mac with no Calculator window open) its Minimise All has no key
+# equivalent there either, unlike every other app's.
+_FIXED_SIZE_WINDOW_APPS = {"Calculator"}
+
+
+def _synthesize_window_menu(
+    app_display_name: str, exported_items: list[rmp.MenuItem]
+) -> rmp.Menu:
     """The standard Window menu every app gets (`window_menu` in
     shell/bins/rmac-menubar/src/menu_model.rs): Minimise, Minimise All,
-    Zoom, Fill, Centre, Move & Resize, the app's own Window items (Files'
-    tabs), then Bring All to Front. The live window list is left out: it is
-    a runtime fact (open windows), not something static source analysis can
-    read."""
+    Zoom, Zoom All, Fill, Centre, Move & Resize (halves, quarters, the 8
+    "Arrange" combinations, Return to Previous Size), Full-Screen Tile,
+    Remove Window from Set, the app's own Window items (Files' tabs),
+    Always on Top (Calculator only), Bring All to Front, then Arrange in
+    Front. The live window list is left out: it is a runtime fact (open
+    windows), not something static source analysis can read."""
+    is_fixed_size = app_display_name in _FIXED_SIZE_WINDOW_APPS
+    move_and_resize_children = [
+        _item("Halves", "window::heading-halves"),
+        _item("Left", "window::tile-left", "⌃⌘←"),
+        _item("Right", "window::tile-right", "⌃⌘→"),
+        _item("Top", "window::tile-top", "⌃⌘↑"),
+        _item("Bottom", "window::tile-bottom", "⌃⌘↓"),
+        _item("Quarters", "window::heading-quarters", separator_before=True),
+        _item("Top Left", "window::tile-top-left"),
+        _item("Top Right", "window::tile-top-right"),
+        _item("Bottom Left", "window::tile-bottom-left"),
+        _item("Bottom Right", "window::tile-bottom-right"),
+        _item("Arrange", "window::heading-arrange", separator_before=True),
+    ]
+    for label, shortcut in _COMBO_TILES:
+        slug = label.lower().replace(" & ", "-")
+        move_and_resize_children.append(_item(label, f"window::combo-{slug}", shortcut))
+    move_and_resize_children.append(
+        _item(
+            "Return to Previous Size",
+            "window::restore-size",
+            "⌃⇧⌘R",
+            separator_before=True,
+        )
+    )
     move_and_resize = rmp.MenuItem(
         label="Move & Resize",
         action="window::move-and-resize",
         shortcut="",
         separator_before=True,
-        children=[
-            _item("Halves", "window::heading-halves"),
-            _item("Left", "window::tile-left", "⌃⌘←"),
-            _item("Right", "window::tile-right", "⌃⌘→"),
-            _item("Top", "window::tile-top", "⌃⌘↑"),
-            _item("Bottom", "window::tile-bottom", "⌃⌘↓"),
-            _item("Quarters", "window::heading-quarters", separator_before=True),
-            _item("Top Left", "window::tile-top-left"),
-            _item("Top Right", "window::tile-top-right"),
-            _item("Bottom Left", "window::tile-bottom-left"),
-            _item("Bottom Right", "window::tile-bottom-right"),
-            _item(
-                "Return to Previous Size",
-                "window::restore-size",
-                "⌃⇧⌘R",
-                separator_before=True,
-            ),
-        ],
+        children=move_and_resize_children,
     )
+    if is_fixed_size:
+        # The Mac's own Full-Screen Tile row has no children for a
+        # fixed-size window either.
+        full_screen_tile = _item("Full-Screen Tile", "window::full-screen-tile")
+    else:
+        full_screen_tile = rmp.MenuItem(
+            label="Full-Screen Tile",
+            action="window::full-screen-tile",
+            shortcut="",
+            separator_before=False,
+            children=[
+                _item("Left of Screen", "window::full-screen-tile-left"),
+                _item("Right of Screen", "window::full-screen-tile-right"),
+            ],
+        )
     items = [
         _item("Minimise", "window::minimise", "⌘M"),
-        _item("Minimise All", "app::minimise-all", "⌥⌘M"),
+        _item("Minimise All", "app::minimise-all", "" if is_fixed_size else "⌥⌘M"),
         _item("Zoom", "window::zoom"),
+        _item("Zoom All", "window::zoom-all"),
         _item("Fill", "window::fill", "⌃⇧⌘F"),
         _item("Centre", "window::centre", "⌃⌘C"),
         move_and_resize,
+        full_screen_tile,
+        _item("Remove Window from Set", "window::remove-from-set", separator_before=True),
     ]
+    if is_fixed_size:
+        items.append(_item("Always on Top", "window::always-on-top", separator_before=True))
     if exported_items:
         exported_items[0].separator_before = True
         items.extend(exported_items)
     items.append(
         _item("Bring All to Front", "window::bring-all-to-front", "", separator_before=True)
     )
+    items.append(_item("Arrange in Front", "window::arrange-in-front"))
     return rmp.Menu(WINDOW_MENU, items)
 
 
@@ -231,7 +285,7 @@ def read_menu_bar(app_display_name: str, table_name: str) -> list[dict]:
     window_items = _take_menu(menus, WINDOW_MENU)
     help_items = _take_menu(menus, HELP_MENU)
     menus.insert(0, _synthesize_app_menu(app_display_name, application_items))
-    menus.append(_synthesize_window_menu(window_items))
+    menus.append(_synthesize_window_menu(app_display_name, window_items))
     menus.append(_synthesize_help_menu(app_display_name, help_items))
     return [m.to_dict() for m in menus]
 

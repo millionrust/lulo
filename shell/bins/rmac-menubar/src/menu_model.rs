@@ -189,11 +189,44 @@ pub struct MenuWindow {
 pub enum WindowCommand {
     Minimise,
     Zoom,
+    /// Window ▸ Zoom All: fill every window of the app, the way Minimise
+    /// All minimises every one of them.
+    ZoomAll,
     Fill,
     Centre,
     Tile(WindowRegion),
+    /// Window ▸ Move & Resize's "Arrange" group (WIN-01): tile the window
+    /// the menu was opened over into `.0` and, when the app has a second
+    /// window, tile that one into `.1`. The Mac's "… & Quarters" variants
+    /// offer a two-more-window quarter picker; Lulo places just the one
+    /// other window into the first of those quarters as a simpler,
+    /// still-real stand-in (documented at its call site).
+    ComboTile(WindowRegion, WindowRegion),
     ReturnToPreviousSize,
+    /// Window ▸ Full-Screen Tile's "Left of Screen"/"Right of Screen":
+    /// macOS puts the window into a full-screen Space split with another
+    /// app's window. Lulo has no multi-app full-screen Space yet, so this
+    /// runs the equivalent non-full-screen half tile (WIN-01).
+    FullScreenTileSide(WindowRegion),
+    /// Window ▸ Full-Screen Tile itself, for a fixed-size window that can
+    /// never go full screen (Calculator): always disabled, never run.
+    FullScreenTileUnavailable,
+    /// Window ▸ Remove Window from Set: always disabled until Lulo has a
+    /// window-tab-set feature to remove a window from, matching the Mac's
+    /// own greyed state when no window belongs to a set.
+    RemoveFromSet,
+    /// Window ▸ Always on Top (Calculator only, CALC-08): raises the
+    /// window immediately. A persistent pin that keeps re-raising it as
+    /// focus moves elsewhere needs compositor support rmac-compositor-niri
+    /// does not have yet, so this is a one-shot raise rather than a true
+    /// toggle (documented at its dispatch site).
+    AlwaysOnTop,
     BringAllToFront,
+    /// Window ▸ Arrange in Front: raises every window of the app without
+    /// changing which one is frontmost among them. macOS also cascades
+    /// their positions; Lulo does not reposition windows yet, so this
+    /// reuses Bring All to Front's raise.
+    ArrangeInFront,
     Focus(rmac_compositor::WindowId),
 }
 
@@ -212,15 +245,92 @@ pub enum WindowRegion {
 
 const WINDOW_ACTION_PREFIX: &str = "window::";
 
+/// A region's name as it appears inside a `window::` action string.
+fn region_name(region: WindowRegion) -> &'static str {
+    match region {
+        WindowRegion::Left => "left",
+        WindowRegion::Right => "right",
+        WindowRegion::Top => "top",
+        WindowRegion::Bottom => "bottom",
+        WindowRegion::TopLeft => "top-left",
+        WindowRegion::TopRight => "top-right",
+        WindowRegion::BottomLeft => "bottom-left",
+        WindowRegion::BottomRight => "bottom-right",
+    }
+}
+
+/// The 8 "Arrange" combinations Window ▸ Move & Resize offers, in the
+/// Mac's own order, paired with the primary/secondary regions
+/// [`WindowCommand::ComboTile`] runs (see its doc comment for the
+/// secondary-window simplification).
+const COMBO_TILES: &[(&str, &str, WindowRegion, WindowRegion)] = &[
+    (
+        "Left & Right",
+        "left-right",
+        WindowRegion::Left,
+        WindowRegion::Right,
+    ),
+    (
+        "Left & Quarters",
+        "left-quarters",
+        WindowRegion::Left,
+        WindowRegion::Right,
+    ),
+    (
+        "Right & Left",
+        "right-left",
+        WindowRegion::Right,
+        WindowRegion::Left,
+    ),
+    (
+        "Right & Quarters",
+        "right-quarters",
+        WindowRegion::Right,
+        WindowRegion::Left,
+    ),
+    (
+        "Top & Bottom",
+        "top-bottom",
+        WindowRegion::Top,
+        WindowRegion::Bottom,
+    ),
+    (
+        "Top & Quarters",
+        "top-quarters",
+        WindowRegion::Top,
+        WindowRegion::Bottom,
+    ),
+    (
+        "Bottom & Top",
+        "bottom-top",
+        WindowRegion::Bottom,
+        WindowRegion::Top,
+    ),
+    (
+        "Bottom & Quarters",
+        "bottom-quarters",
+        WindowRegion::Bottom,
+        WindowRegion::Top,
+    ),
+];
+
 impl WindowCommand {
     pub fn action(self) -> String {
         let name = match self {
             Self::Minimise => "minimise",
             Self::Zoom => "zoom",
+            Self::ZoomAll => "zoom-all",
             Self::Fill => "fill",
             Self::Centre => "centre",
             Self::ReturnToPreviousSize => "restore-size",
             Self::BringAllToFront => "bring-all-to-front",
+            Self::ArrangeInFront => "arrange-in-front",
+            Self::AlwaysOnTop => "always-on-top",
+            Self::RemoveFromSet => "remove-from-set",
+            Self::FullScreenTileUnavailable => "full-screen-tile",
+            Self::FullScreenTileSide(WindowRegion::Left) => "full-screen-tile-left",
+            Self::FullScreenTileSide(WindowRegion::Right) => "full-screen-tile-right",
+            Self::FullScreenTileSide(_) => "full-screen-tile-left",
             Self::Tile(WindowRegion::Left) => "tile-left",
             Self::Tile(WindowRegion::Right) => "tile-right",
             Self::Tile(WindowRegion::Top) => "tile-top",
@@ -229,6 +339,13 @@ impl WindowCommand {
             Self::Tile(WindowRegion::TopRight) => "tile-top-right",
             Self::Tile(WindowRegion::BottomLeft) => "tile-bottom-left",
             Self::Tile(WindowRegion::BottomRight) => "tile-bottom-right",
+            Self::ComboTile(primary, secondary) => {
+                return format!(
+                    "{WINDOW_ACTION_PREFIX}combo-{}-{}",
+                    region_name(primary),
+                    region_name(secondary)
+                )
+            }
             Self::Focus(window) => return format!("{WINDOW_ACTION_PREFIX}focus.{}", window.0),
         };
         format!("{WINDOW_ACTION_PREFIX}{name}")
@@ -242,13 +359,26 @@ impl WindowCommand {
                 .ok()
                 .map(|id| Self::Focus(rmac_compositor::WindowId(id)));
         }
+        if let Some(combo) = name.strip_prefix("combo-") {
+            return COMBO_TILES
+                .iter()
+                .find(|entry| entry.1 == combo)
+                .map(|entry| Self::ComboTile(entry.2, entry.3));
+        }
         Some(match name {
             "minimise" => Self::Minimise,
             "zoom" => Self::Zoom,
+            "zoom-all" => Self::ZoomAll,
             "fill" => Self::Fill,
             "centre" => Self::Centre,
             "restore-size" => Self::ReturnToPreviousSize,
             "bring-all-to-front" => Self::BringAllToFront,
+            "arrange-in-front" => Self::ArrangeInFront,
+            "always-on-top" => Self::AlwaysOnTop,
+            "remove-from-set" => Self::RemoveFromSet,
+            "full-screen-tile" => Self::FullScreenTileUnavailable,
+            "full-screen-tile-left" => Self::FullScreenTileSide(WindowRegion::Left),
+            "full-screen-tile-right" => Self::FullScreenTileSide(WindowRegion::Right),
             "tile-left" => Self::Tile(WindowRegion::Left),
             "tile-right" => Self::Tile(WindowRegion::Right),
             "tile-top" => Self::Tile(WindowRegion::Top),
@@ -262,7 +392,10 @@ impl WindowCommand {
     }
 
     /// The `rmac-mission-control` command that sizes the focused window,
-    /// for the commands that go that way.
+    /// for the commands that go that way. The new multi-window and
+    /// always-greyed commands run through [`dispatch_window_command`]'s
+    /// own direct compositor actions instead (they are not focused-window
+    /// sizing, or they need more than one window), so this stays `None`.
     pub fn mission_control_command(self) -> Option<&'static str> {
         Some(match self {
             // The green button's Zoom fills the working area, as Fill does.
@@ -277,63 +410,148 @@ impl WindowCommand {
             Self::Tile(WindowRegion::TopRight) => "tile-top-right",
             Self::Tile(WindowRegion::BottomLeft) => "tile-bottom-left",
             Self::Tile(WindowRegion::BottomRight) => "tile-bottom-right",
-            Self::Minimise | Self::BringAllToFront | Self::Focus(_) => return None,
+            Self::Minimise
+            | Self::ZoomAll
+            | Self::BringAllToFront
+            | Self::ArrangeInFront
+            | Self::AlwaysOnTop
+            | Self::RemoveFromSet
+            | Self::FullScreenTileUnavailable
+            | Self::FullScreenTileSide(_)
+            | Self::ComboTile(..)
+            | Self::Focus(_) => return None,
         })
     }
 }
 
 /// The Window menu every app gets, as on the Mac: the window commands, Move
-/// & Resize, the app's own Window items (Files' tabs), Bring All to Front
-/// and the app's windows with a check on the current one.
+/// & Resize, Full-Screen Tile, Remove Window from Set, the app's own
+/// Window items (Files' tabs), Bring All to Front, Arrange in Front and
+/// the app's windows with a check on the current one.
 ///
 /// The hints are the session's keys for the same commands (niri binds
-/// them; a PC has no Globe key, so the Mac's fn⌃ is ⌃⌘ here). Full-Screen
-/// Tile and multi-window Arrange have no command yet and are left out.
+/// them; a PC has no Globe key, so the Mac's fn⌃ is ⌃⌘ here — WIN-01,
+/// ADR 0017). The 8 "Arrange" combinations and "Left of Screen"/"Right of
+/// Screen" are free of that conflict (niri reserves bare ⌃←/→/↑/↓ for
+/// Mission Control's Spaces, not ⌃⇧ or ⌃⌥⇧), so they carry the Mac's own
+/// shortcut text.
 pub fn window_menu(
     windows: &[MenuWindow],
     focused: Option<rmac_compositor::WindowId>,
     app_items: Vec<Item>,
     words: rmac_locale::FileVocabulary,
+    app_id: Option<&str>,
 ) -> rmac_app_menu::Menu {
     let has_focus = focused.is_some();
+    // Calculator's window is fixed-size (CALC-01/02): it cannot be zoomed,
+    // filled, or put in full-screen Split View, and (observed on the
+    // reference Mac with no Calculator window open) Minimise All shows no
+    // key equivalent there either, unlike every other app's.
+    let is_calculator = app_id == Some(rmac_apps::identity::CALCULATOR);
     let command = |label: &str, command: WindowCommand, shortcut: &str| {
         Item::new(label, command.action(), shortcut).enabled(has_focus)
     };
     let tile =
         |label: &str, half, shortcut: &str| command(label, WindowCommand::Tile(half), shortcut);
+    let combo = |entry: &(&str, &str, WindowRegion, WindowRegion), shortcut: &str| {
+        command(
+            entry.0,
+            WindowCommand::ComboTile(entry.2, entry.3),
+            shortcut,
+        )
+    };
+    let combo_shortcuts = ["⌃⇧←", "⌃⌥⇧←", "⌃⇧→", "⌃⌥⇧→", "⌃⇧↑", "⌃⌥⇧↑", "⌃⇧↓", "⌃⌥⇧↓"];
+    let mut move_and_resize_children = vec![
+        Item::new("Halves", "window::heading-halves", "").enabled(false),
+        tile("Left", WindowRegion::Left, "⌃⌘←"),
+        tile("Right", WindowRegion::Right, "⌃⌘→"),
+        tile("Top", WindowRegion::Top, "⌃⌘↑"),
+        tile("Bottom", WindowRegion::Bottom, "⌃⌘↓"),
+        Item::new("Quarters", "window::heading-quarters", "")
+            .enabled(false)
+            .separated(),
+        tile("Top Left", WindowRegion::TopLeft, ""),
+        tile("Top Right", WindowRegion::TopRight, ""),
+        tile("Bottom Left", WindowRegion::BottomLeft, ""),
+        tile("Bottom Right", WindowRegion::BottomRight, ""),
+        Item::new("Arrange", "window::heading-arrange", "")
+            .enabled(false)
+            .separated(),
+    ];
+    move_and_resize_children.extend(
+        COMBO_TILES
+            .iter()
+            .zip(combo_shortcuts)
+            .map(|(entry, shortcut)| combo(entry, shortcut)),
+    );
+    move_and_resize_children.push(
+        command(
+            "Return to Previous Size",
+            WindowCommand::ReturnToPreviousSize,
+            "⌃⇧⌘R",
+        )
+        .separated(),
+    );
+    let minimise_all_shortcut = if is_calculator { "" } else { "⌥⌘M" };
+    let full_screen_tile = if is_calculator {
+        // A fixed-size window can never go full screen on the Mac either
+        // (its own Full-Screen Tile row has no children there).
+        Item::new(
+            "Full-Screen Tile",
+            WindowCommand::FullScreenTileUnavailable.action(),
+            "",
+        )
+        .enabled(false)
+    } else {
+        Item::submenu(
+            "Full-Screen Tile",
+            "window::full-screen-tile",
+            vec![
+                command(
+                    "Left of Screen",
+                    WindowCommand::FullScreenTileSide(WindowRegion::Left),
+                    "",
+                ),
+                command(
+                    "Right of Screen",
+                    WindowCommand::FullScreenTileSide(WindowRegion::Right),
+                    "",
+                ),
+            ],
+        )
+        .enabled(has_focus)
+    };
     let mut items = vec![
         command(words.minimise(), WindowCommand::Minimise, "⌘M"),
-        Item::new("Minimise All", MINIMISE_ALL_ACTION, "⌥⌘M").enabled(!windows.is_empty()),
+        Item::new("Minimise All", MINIMISE_ALL_ACTION, minimise_all_shortcut)
+            .enabled(!windows.is_empty()),
         command("Zoom", WindowCommand::Zoom, ""),
+        Item::new("Zoom All", WindowCommand::ZoomAll.action(), "").enabled(!windows.is_empty()),
         command("Fill", WindowCommand::Fill, "⌃⇧⌘F"),
         command(words.centre(), WindowCommand::Centre, "⌃⌘C"),
         Item::submenu(
             "Move & Resize",
             "window::move-and-resize",
-            vec![
-                Item::new("Halves", "window::heading-halves", "").enabled(false),
-                tile("Left", WindowRegion::Left, "⌃⌘←"),
-                tile("Right", WindowRegion::Right, "⌃⌘→"),
-                tile("Top", WindowRegion::Top, "⌃⌘↑"),
-                tile("Bottom", WindowRegion::Bottom, "⌃⌘↓"),
-                Item::new("Quarters", "window::heading-quarters", "")
-                    .enabled(false)
-                    .separated(),
-                tile("Top Left", WindowRegion::TopLeft, ""),
-                tile("Top Right", WindowRegion::TopRight, ""),
-                tile("Bottom Left", WindowRegion::BottomLeft, ""),
-                tile("Bottom Right", WindowRegion::BottomRight, ""),
-                command(
-                    "Return to Previous Size",
-                    WindowCommand::ReturnToPreviousSize,
-                    "⌃⇧⌘R",
-                )
-                .separated(),
-            ],
+            move_and_resize_children,
         )
         .enabled(has_focus)
         .separated(),
+        full_screen_tile,
+        Item::new(
+            "Remove Window from Set",
+            WindowCommand::RemoveFromSet.action(),
+            "",
+        )
+        .enabled(false)
+        .separated(),
     ];
+    if is_calculator {
+        items.push(
+            Item::new("Always on Top", WindowCommand::AlwaysOnTop.action(), "")
+                .enabled(has_focus)
+                .separated(),
+        );
+    }
     let mut app_items = app_items.into_iter();
     if let Some(first) = app_items.next() {
         items.push(first.separated());
@@ -347,6 +565,14 @@ pub fn window_menu(
         )
         .enabled(!windows.is_empty())
         .separated(),
+    );
+    items.push(
+        Item::new(
+            "Arrange in Front",
+            WindowCommand::ArrangeInFront.action(),
+            "",
+        )
+        .enabled(!windows.is_empty()),
     );
     for (index, window) in windows.iter().enumerate() {
         let title = if window.title.trim().is_empty() {
@@ -1814,6 +2040,7 @@ mod tests {
             Some(rmac_compositor::WindowId(9)),
             tabs,
             words,
+            Some("org.rmac.Finder"),
         );
         let labels = menu
             .items
@@ -1826,11 +2053,15 @@ mod tests {
                 "Minimise",
                 "Minimise All",
                 "Zoom",
+                "Zoom All",
                 "Fill",
                 "Centre",
                 "Move & Resize",
+                "Full-Screen Tile",
+                "Remove Window from Set",
                 "Show Next Tab",
                 "Bring All to Front",
+                "Arrange in Front",
                 "Documents",
                 "Untitled",
             ]
@@ -1839,32 +2070,101 @@ mod tests {
         assert_eq!(menu.items[1].shortcut, "⌥⌘M");
         assert_eq!(menu.items[1].action, MINIMISE_ALL_ACTION);
         assert!(menu.items[1].enabled);
-        assert_eq!(menu.items[3].shortcut, "⌃⇧⌘F");
-        assert_eq!(menu.items[4].shortcut, "⌃⌘C");
-        assert!(menu.items[5].is_submenu());
-        assert!(!menu.items[5].children[0].enabled);
-        assert_eq!(menu.items[5].children[1].shortcut, "⌃⌘←");
-        assert_eq!(menu.items[5].children[6].label, "Top Left");
-        assert_eq!(menu.items[5].children[6].action, "window::tile-top-left");
+        assert!(menu.items[3].enabled);
         assert_eq!(
-            WindowCommand::parse(&menu.items[5].children[10].action),
+            WindowCommand::parse(&menu.items[3].action),
+            Some(WindowCommand::ZoomAll)
+        );
+        assert_eq!(menu.items[4].shortcut, "⌃⇧⌘F");
+        assert_eq!(menu.items[5].shortcut, "⌃⌘C");
+        assert!(menu.items[6].is_submenu());
+        assert!(!menu.items[6].children[0].enabled);
+        assert_eq!(menu.items[6].children[1].shortcut, "⌃⌘←");
+        assert_eq!(menu.items[6].children[6].label, "Top Left");
+        assert_eq!(menu.items[6].children[6].action, "window::tile-top-left");
+        assert!(!menu.items[6].children[10].enabled);
+        assert_eq!(menu.items[6].children[10].label, "Arrange");
+        assert_eq!(menu.items[6].children[11].label, "Left & Right");
+        assert_eq!(menu.items[6].children[11].shortcut, "⌃⇧←");
+        assert_eq!(
+            WindowCommand::parse(&menu.items[6].children[11].action),
+            Some(WindowCommand::ComboTile(
+                WindowRegion::Left,
+                WindowRegion::Right
+            ))
+        );
+        assert_eq!(menu.items[6].children[18].label, "Bottom & Quarters");
+        assert_eq!(
+            WindowCommand::parse(&menu.items[6].children[19].action),
             Some(WindowCommand::ReturnToPreviousSize)
         );
-        assert!(menu.items[6].separator_before);
-        assert_eq!(menu.items[9].checked, rmac_app_menu::CheckState::On);
-        assert_eq!(menu.items[8].checked, rmac_app_menu::CheckState::Off);
+        assert!(menu.items[7].is_submenu());
+        assert_eq!(menu.items[7].children[0].label, "Left of Screen");
+        assert!(!menu.items[8].enabled);
         assert_eq!(
             WindowCommand::parse(&menu.items[8].action),
+            Some(WindowCommand::RemoveFromSet)
+        );
+        assert!(menu.items[9].separator_before);
+        assert_eq!(
+            WindowCommand::parse(&menu.items[11].action),
+            Some(WindowCommand::ArrangeInFront)
+        );
+        assert_eq!(menu.items[13].checked, rmac_app_menu::CheckState::On);
+        assert_eq!(menu.items[12].checked, rmac_app_menu::CheckState::Off);
+        assert_eq!(
+            WindowCommand::parse(&menu.items[12].action),
             Some(WindowCommand::Focus(rmac_compositor::WindowId(7)))
         );
         assert!(rmac_app_menu::validate_menus(std::slice::from_ref(&menu)).is_ok());
 
         // With no window focused, the window commands are greyed out, and
         // Minimise All is greyed out too since there is nothing to minimise.
-        let idle = window_menu(&[], None, Vec::new(), words);
+        let idle = window_menu(&[], None, Vec::new(), words, Some("org.rmac.Finder"));
         assert!(!idle.items[0].enabled);
         assert!(!idle.items[1].enabled);
         assert!(!idle.items.last().unwrap().enabled);
+    }
+
+    #[test]
+    fn calculators_fixed_size_window_gets_the_mac_exceptions() {
+        let words = rmac_locale::FileVocabulary::for_locale("en_GB.UTF-8");
+        // CALC-08/MENU-13: Calculator's own Window menu has no Minimise
+        // All key equivalent (observed on the reference Mac) and no
+        // Full-Screen Tile children (its window is fixed-size), but it
+        // does get Always on Top, which no other app has.
+        let menu = window_menu(
+            &[],
+            None,
+            Vec::new(),
+            words,
+            Some(rmac_apps::identity::CALCULATOR),
+        );
+        let minimise_all = menu
+            .items
+            .iter()
+            .find(|item| item.label == "Minimise All")
+            .unwrap();
+        assert_eq!(minimise_all.shortcut, "");
+        let full_screen_tile = menu
+            .items
+            .iter()
+            .find(|item| item.label == "Full-Screen Tile")
+            .unwrap();
+        assert!(!full_screen_tile.is_submenu());
+        assert!(!full_screen_tile.enabled);
+        let always_on_top = menu
+            .items
+            .iter()
+            .find(|item| item.label == "Always on Top")
+            .expect("Calculator has Always on Top");
+        assert_eq!(
+            WindowCommand::parse(&always_on_top.action),
+            Some(WindowCommand::AlwaysOnTop)
+        );
+        // No window is focused in this test, so Always on Top is greyed out.
+        assert!(!always_on_top.enabled);
+        assert!(rmac_app_menu::validate_menus(std::slice::from_ref(&menu)).is_ok());
     }
 
     #[test]
@@ -1872,16 +2172,37 @@ mod tests {
         for command in [
             WindowCommand::Minimise,
             WindowCommand::Zoom,
+            WindowCommand::ZoomAll,
             WindowCommand::Fill,
             WindowCommand::Centre,
             WindowCommand::ReturnToPreviousSize,
             WindowCommand::BringAllToFront,
+            WindowCommand::ArrangeInFront,
+            WindowCommand::AlwaysOnTop,
+            WindowCommand::RemoveFromSet,
+            WindowCommand::FullScreenTileUnavailable,
+            WindowCommand::FullScreenTileSide(WindowRegion::Left),
+            WindowCommand::FullScreenTileSide(WindowRegion::Right),
             WindowCommand::Tile(WindowRegion::Bottom),
             WindowCommand::Tile(WindowRegion::TopLeft),
             WindowCommand::Tile(WindowRegion::BottomRight),
+            WindowCommand::ComboTile(WindowRegion::Left, WindowRegion::Right),
+            WindowCommand::ComboTile(WindowRegion::Right, WindowRegion::Left),
+            WindowCommand::ComboTile(WindowRegion::Top, WindowRegion::Bottom),
+            WindowCommand::ComboTile(WindowRegion::Bottom, WindowRegion::Top),
             WindowCommand::Focus(rmac_compositor::WindowId(42)),
         ] {
             assert_eq!(WindowCommand::parse(&command.action()), Some(command));
+        }
+        // All 8 "Arrange" combinations round-trip, including the two that
+        // share the same primary/secondary pair as a plain half tile
+        // (Left & Quarters reuses Left & Right's pair, see its doc comment).
+        for (_, slug, primary, secondary) in COMBO_TILES {
+            let command = WindowCommand::ComboTile(*primary, *secondary);
+            assert_eq!(
+                WindowCommand::parse(&format!("window::combo-{slug}")),
+                Some(command)
+            );
         }
         // Sizing goes through Mission Control's own command words.
         assert_eq!(
@@ -1894,7 +2215,18 @@ mod tests {
             Some("restore-size")
         );
         assert_eq!(WindowCommand::Minimise.mission_control_command(), None);
+        assert_eq!(WindowCommand::ZoomAll.mission_control_command(), None);
+        assert_eq!(
+            WindowCommand::ArrangeInFront.mission_control_command(),
+            None
+        );
+        assert_eq!(
+            WindowCommand::ComboTile(WindowRegion::Left, WindowRegion::Right)
+                .mission_control_command(),
+            None
+        );
         assert_eq!(WindowCommand::parse("window::focus.x"), None);
+        assert_eq!(WindowCommand::parse("window::combo-nonsense"), None);
         assert_eq!(WindowCommand::parse("finder::NextTab"), None);
     }
 

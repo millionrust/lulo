@@ -494,24 +494,41 @@ class SynthesizedStandardMenusTests(unittest.TestCase):
         self.assertNotIn("Quit Finder", labels)
 
     def test_window_menu_has_minimise_all(self):
-        menu = li._synthesize_window_menu([])
+        menu = li._synthesize_window_menu("Finder", [])
         by_label = {item.label: item for item in menu.items}
         self.assertEqual(by_label["Minimise All"].shortcut, "⌥⌘M")
         self.assertEqual(by_label["Minimise"].shortcut, "⌘M")
+        self.assertIn("Zoom All", by_label)
+        self.assertIn("Full-Screen Tile", by_label)
+        self.assertIn("Remove Window from Set", by_label)
         self.assertIn("Bring All to Front", by_label)
+        self.assertIn("Arrange in Front", by_label)
         move_and_resize = by_label["Move & Resize"]
         self.assertEqual(
             [child.label for child in move_and_resize.children],
             [
                 "Halves", "Left", "Right", "Top", "Bottom", "Quarters",
                 "Top Left", "Top Right", "Bottom Left", "Bottom Right",
+                "Arrange",
+                "Left & Right", "Left & Quarters", "Right & Left", "Right & Quarters",
+                "Top & Bottom", "Top & Quarters", "Bottom & Top", "Bottom & Quarters",
                 "Return to Previous Size",
             ],
         )
 
+    def test_window_menu_fixed_size_calculator_exceptions(self):
+        menu = li._synthesize_window_menu("Calculator", [])
+        by_label = {item.label: item for item in menu.items}
+        self.assertEqual(by_label["Minimise All"].shortcut, "")
+        self.assertFalse(by_label["Full-Screen Tile"].children)
+        self.assertIn("Always on Top", by_label)
+        other = li._synthesize_window_menu("Weather", [])
+        self.assertTrue({item.label: item for item in other.items}["Full-Screen Tile"].children)
+        self.assertNotIn("Always on Top", {item.label for item in other.items})
+
     def test_window_menu_keeps_the_apps_own_window_items(self):
         tab = li._item("Show Next Tab", "finder::NextTab", "⌃⇥")
-        menu = li._synthesize_window_menu([tab])
+        menu = li._synthesize_window_menu("Finder", [tab])
         labels = [item.label for item in menu.items]
         self.assertIn("Show Next Tab", labels)
         self.assertLess(labels.index("Show Next Tab"), labels.index("Bring All to Front"))

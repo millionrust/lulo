@@ -24,7 +24,8 @@ gpui::actions!(
         AddLocationToList,
         ToggleFullScreen,
         ShowSettings,
-        CloseWindow
+        CloseWindow,
+        QuitAndKeepWindows
     ]
 );
 
@@ -68,7 +69,14 @@ fn main() {
                 KeyBinding::new("ctrl-cmd-s", ToggleSidebar, context),
                 KeyBinding::new("shift-cmd-l", AddLocationToList, context),
                 KeyBinding::new("cmd-,", ShowSettings, context),
+                KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, context),
             ]);
+            // Application ▸ Quit and Keep Windows (⌥⌘Q): Weather has no
+            // per-window document state to restore (unlike Preview's
+            // open-file list — its forecast locations are saved
+            // continuously as settings, not on quit), so this is the same
+            // quit as ⌘Q.
+            cx.on_action(|_: &QuitAndKeepWindows, cx| cx.quit());
             rmac_ui::install_app_menu(WEATHER, cx);
             let (width, height) = metrics::WINDOW;
             let mut options = rmac_ui::window_options_for_app(WEATHER, width, height, cx);

@@ -37,6 +37,7 @@ gpui::actions!(
         StartRecentTimer6,
         StartRecentTimer7,
         CloseWindow,
+        QuitAndKeepWindows,
     ]
 );
 
@@ -76,6 +77,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-4", ShowTimers, context),
         KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
         KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, context),
+        KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, context),
     ]);
 }
 
@@ -88,6 +90,11 @@ fn main() -> std::process::ExitCode {
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
             bind_keys(cx);
+            // Application ▸ Quit and Keep Windows (⌥⌘Q): Clock has a
+            // single window and no per-window document state to restore
+            // (unlike Preview's open-file list), so this is the same quit
+            // as ⌘Q.
+            cx.on_action(|_: &QuitAndKeepWindows, cx| cx.quit());
             rmac_ui::install_app_menu(CLOCK, cx);
             let (width, height) = metrics::WINDOW;
             let mut options = rmac_ui::window_options_for_app(CLOCK, width, height, cx);

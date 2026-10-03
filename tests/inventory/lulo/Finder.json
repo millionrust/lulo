@@ -564,6 +564,13 @@
           "children": []
         },
         {
+          "label": "Zoom All",
+          "action": "window::zoom-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Fill",
           "action": "window::fill",
           "shortcut": "⌃⇧⌘F",
@@ -654,6 +661,69 @@
               "children": []
             },
             {
+              "label": "Arrange",
+              "action": "window::heading-arrange",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Left & Right",
+              "action": "window::combo-left-right",
+              "shortcut": "⌃⇧←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Left & Quarters",
+              "action": "window::combo-left-quarters",
+              "shortcut": "⌃⌥⇧←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right & Left",
+              "action": "window::combo-right-left",
+              "shortcut": "⌃⇧→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right & Quarters",
+              "action": "window::combo-right-quarters",
+              "shortcut": "⌃⌥⇧→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top & Bottom",
+              "action": "window::combo-top-bottom",
+              "shortcut": "⌃⇧↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top & Quarters",
+              "action": "window::combo-top-quarters",
+              "shortcut": "⌃⌥⇧↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Top",
+              "action": "window::combo-bottom-top",
+              "shortcut": "⌃⇧↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Quarters",
+              "action": "window::combo-bottom-quarters",
+              "shortcut": "⌃⌥⇧↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Return to Previous Size",
               "action": "window::restore-size",
               "shortcut": "⌃⇧⌘R",
@@ -661,6 +731,35 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Full-Screen Tile",
+          "action": "window::full-screen-tile",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Left of Screen",
+              "action": "window::full-screen-tile-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right of Screen",
+              "action": "window::full-screen-tile-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Remove Window from Set",
+          "action": "window::remove-from-set",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
         },
         {
           "label": "Show Previous Tab",
@@ -681,6 +780,13 @@
           "action": "window::bring-all-to-front",
           "shortcut": "",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "action": "window::arrange-in-front",
+          "shortcut": "",
+          "separator_before": false,
           "children": []
         }
       ]

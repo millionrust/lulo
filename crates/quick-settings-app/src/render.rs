@@ -227,7 +227,7 @@ impl Render for QuickSettingsView {
                     cx.stop_propagation();
                 }
             }))
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
                 let Some(kind) = this.dragging else {
                     return;
                 };

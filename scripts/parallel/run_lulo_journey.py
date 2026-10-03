@@ -610,6 +610,7 @@ def outer(args) -> int:
                 for alias, source in (("dock", "rmac-dock"), ("mission-control", "rmac-mission-control")):
                     # Point at the link so --override-bin-dir also covers these.
                     (links / alias).symlink_to(links / source)
+                run_lulo.install_shortcut_dispatcher(env, links)
                 # The launcher discovers desktop entries through XDG. Populate
                 # only this run's private data home, pointing Exec/TryExec at
                 # the selected binaries so search can launch a real app.

@@ -859,6 +859,7 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
     try:
         env = run_lulo.isolated_environment(work)
         run_lulo.refuse_live_session(env)
+        run_lulo.install_shortcut_dispatcher(env, Path(args.bin_dir))
         for key in ("WLR_BACKENDS", "WLR_HEADLESS_OUTPUTS", "WLR_LIBINPUT_NO_DEVICES", "WLR_RENDERER",
                     "LIBGL_ALWAYS_SOFTWARE", "VK_ICD_FILENAMES"):
             env.pop(key, None)

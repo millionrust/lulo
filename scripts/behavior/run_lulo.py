@@ -157,6 +157,16 @@ def refuse_live_session(environ: dict[str, str]) -> None:
         raise SystemExit("refusing to run: this environment is the live session (wayland-1 or /run/user)")
 
 
+def install_shortcut_dispatcher(environ: dict[str, str], bins: Path) -> None:
+    """Expose the built dispatcher at the path the top bar uses in a session."""
+
+    refuse_live_session(environ)
+    source = (bins / "rmac-shortcut-dispatch").resolve(strict=True)
+    destination = Path(environ["HOME"]) / ".local/libexec/rmac/rmac-shortcut-dispatch"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.symlink_to(source)
+
+
 def reap(runtime: Path) -> list[int]:
     """Stop every process still using this run's runtime dir: D-Bus services
     the private bus activated (rmac-focus-service, rmac-notification-center,

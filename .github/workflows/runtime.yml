@@ -160,6 +160,7 @@ jobs:
           python3 scripts/behavior/runtime_ci.py prepare runtime-bin
           result="$RUNNER_TEMP/runtime-results/$SUITE"
           niri="$RUNNER_TEMP/niri-package/usr/bin/niri"
+          export PATH="$(dirname "$niri"):$PATH"
           mkdir -p "$result"
           set +e
           case "$SUITE" in

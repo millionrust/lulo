@@ -285,7 +285,11 @@ impl MailState {
 
     pub fn select_mailbox(&mut self, mailbox: Mailbox) {
         self.mailbox = mailbox;
-        self.selected = self.visible().first().map(|&index| self.messages[index].id);
+        if let Some(id) = self.visible().first().map(|&index| self.messages[index].id) {
+            self.select(id);
+        } else {
+            self.selected = None;
+        }
     }
 
     pub fn thread_count(&self, thread_id: &str) -> usize {
@@ -344,7 +348,8 @@ mod tests {
         state.unread_only = true;
         assert!(state.visible().is_empty());
         state.select_mailbox(Mailbox::GoogleInbox);
-        assert_eq!(state.visible().len(), 3);
+        assert_eq!(state.visible().len(), 2);
+        assert!(!state.selected_message().unwrap().unread);
     }
 
     #[test]

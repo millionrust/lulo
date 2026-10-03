@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_500 gaps across 10 apps; 139 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_499 gaps across 10 apps; 139 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Calculator
 
@@ -436,11 +436,10 @@ _500 gaps across 10 apps; 139 Mac-only items were allowlisted (see `tests/invent
 | TRM-SETTINGS-014 | missing settings control | Help | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-015 | missing settings control | Image: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-016 | missing settings control | Normal | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-017 | missing settings control | Profiles | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-018 | missing settings control | Remove | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-019 | missing settings control | Selection | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-020 | missing settings control | Tab | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-021 | missing settings control | Window Groups | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-017 | missing settings control | Remove | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-018 | missing settings control | Selection | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-019 | missing settings control | Tab | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-020 | missing settings control | Window Groups | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 
 ## Text Editor
 

@@ -36,7 +36,10 @@ pub(crate) fn show(main: Entity<NotesView>, cx: &mut App) {
         window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
     }) {
-        Ok(handle) => OPEN.with(|open| open.set(Some(handle))),
+        Ok(handle) => {
+            let _ = handle.update(cx, |_, window, _| window.activate_window());
+            OPEN.with(|open| open.set(Some(handle)));
+        }
         Err(error) => eprintln!("rmac-notes: could not open Settings: {error}"),
     }
 }

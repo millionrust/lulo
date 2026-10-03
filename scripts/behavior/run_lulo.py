@@ -908,7 +908,7 @@ class LuloRun:
         frame = self.active_frame()
         pages = [] if frame is None else [
             name(node) for node in descendants(frame, limit=3000)
-            if role(node) == "push button" and re.fullmatch(r"Page \d+", name(node))
+            if role(node) in {"button", "push button"} and re.fullmatch(r"Page \d+", name(node))
         ]
         return {"pages": pages}
 

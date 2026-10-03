@@ -3,7 +3,7 @@
 use std::io::Read;
 use std::time::Duration;
 
-use rmac_accounts::autoconfig::{parse_ispdb, Discovery, DiscoveryStep, MailConfig};
+use rmac_accounts::autoconfig::{parse_ispdb, Discovery, DiscoveryStep, MailConfig, MailServer};
 use rmac_accounts::model::email_domain;
 
 use crate::Error;
@@ -49,7 +49,19 @@ impl DiscoveryNetwork for SystemDiscovery {
 pub fn discover(network: &impl DiscoveryNetwork, address: &str) -> Result<Discovery, Error> {
     let mut discovery = Discovery::new(address.to_owned()).map_err(|_| Error::InvalidResponse)?;
     let domain = email_domain(address).ok_or(Error::InvalidResponse)?;
-    if matches!(discovery.step, DiscoveryStep::BuiltIn(_)) {
+    if let DiscoveryStep::BuiltIn(provider) = discovery.step {
+        if let Some(preset) = provider.info().servers {
+            let server = |host: &str, port: u16, security| MailServer {
+                host: host.to_owned(),
+                port,
+                security,
+                username: address.to_owned(),
+            };
+            discovery.config = Some(MailConfig {
+                imap: server(preset.imap_host, preset.imap_port, preset.imap_security),
+                smtp: server(preset.smtp_host, preset.smtp_port, preset.smtp_security),
+            });
+        }
         discovery.accept_builtin();
         return Ok(discovery);
     }
@@ -220,5 +232,33 @@ mod tests {
     fn built_in_provider_avoids_network() {
         let result = discover(&Fake, "a@gmail.com").unwrap();
         assert_eq!(result.step, DiscoveryStep::OAuth(Provider::Google));
+        assert_eq!(result.config.unwrap().imap.host, "imap.gmail.com");
+    }
+
+    #[test]
+    fn icloud_has_secure_password_mail_servers() {
+        let result = discover(&Fake, "a@icloud.com").unwrap();
+        assert_eq!(result.step, DiscoveryStep::Configured);
+        let config = result.config.unwrap();
+        assert_eq!(config.imap.host, "imap.mail.me.com");
+        assert_eq!(config.smtp.username, "a@icloud.com");
+    }
+
+    #[test]
+    fn parses_mx_and_rejects_compression_loops() {
+        let mut packet = vec![0, 0, 0x81, 0x80, 0, 1, 0, 1, 0, 0, 0, 0];
+        packet.extend_from_slice(b"\x07example\x03com\x00\x00\x0f\x00\x01");
+        packet.extend_from_slice(&[0xc0, 0x0c, 0, 15, 0, 1, 0, 0, 0, 60]);
+        let target = b"\x04mail\x0aprotection\x07outlook\x03com\x00";
+        packet.extend_from_slice(&((target.len() + 2) as u16).to_be_bytes());
+        packet.extend_from_slice(&[0, 10]);
+        packet.extend_from_slice(target);
+        assert_eq!(
+            parse_mx_response(&packet).unwrap(),
+            vec!["mail.protection.outlook.com"]
+        );
+        packet[12] = 0xc0;
+        packet[13] = 0x0c;
+        assert_eq!(parse_mx_response(&packet), Err(Error::InvalidResponse));
     }
 }

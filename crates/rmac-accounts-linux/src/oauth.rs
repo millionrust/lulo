@@ -72,11 +72,19 @@ pub fn verify_installed_provider(provider: Provider) -> Result<(), Error> {
             .windows(needle.len())
             .any(|part| part == needle.as_bytes())
     };
-    if !contains(config.client_id)
-        || !contains(config.scopes)
-        || (provider == Provider::Google
-            && (!contains(config.authorization_uri) || !contains(config.token_uri)))
-    {
+    let endpoints_match = match provider {
+        Provider::Google => {
+            contains(config.client_secret)
+                && contains(config.authorization_uri)
+                && contains(config.token_uri)
+        }
+        Provider::Microsoft => {
+            contains("https://login.microsoftonline.com/%s/oauth2/v2.0/authorize")
+                && contains("https://login.microsoftonline.com/%s/oauth2/v2.0/token")
+        }
+        _ => false,
+    };
+    if !contains(config.client_id) || !contains(config.scopes) || !endpoints_match {
         return Err(Error::Unavailable);
     }
     Ok(())

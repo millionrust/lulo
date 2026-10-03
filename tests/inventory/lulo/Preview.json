@@ -124,11 +124,19 @@
           "children": []
         },
         {
-          "label": "Revert to Original",
-          "action": "preview::RevertMarkup",
+          "label": "Revert To",
+          "action": "preview::RevertToMenu",
           "shortcut": "",
           "separator_before": true,
-          "children": []
+          "children": [
+            {
+              "label": "No Document",
+              "action": "preview::RevertMarkup",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Export as PDF…",

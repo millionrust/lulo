@@ -108,6 +108,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
     rmac_ui::set_menu_checked("preview::HideSidebar", false, cx);
     rmac_ui::set_menu_checked("preview::ShowThumbnails", false, cx);
     rmac_ui::set_menu_label("preview::EnterFullScreen", "Enter Full Screen", cx);
+    rmac_ui::set_menu_label("preview::RevertMarkup", "No Document", cx);
 }
 
 static NEXT_WINDOW_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -3975,6 +3976,15 @@ impl Render for PreviewView {
                 cx,
             );
             let loaded = self.slot().is_some_and(|slot| slot.loaded().is_some());
+            rmac_ui::set_menu_label(
+                "preview::RevertMarkup",
+                if loaded {
+                    "Revert to Original"
+                } else {
+                    "No Document"
+                },
+                cx,
+            );
             let selected_text = self.text_selection.is_some_and(|(a, b)| a != b);
             let multiple = self.slots.len() > 1;
             for action in [

@@ -1239,7 +1239,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Close Selected", "preview::CloseSelected", "⇧⌘W"),
             item!("Save", "preview::SaveMarkup", "⌘S"),
             item!("Save As…", "preview::SaveAs", "⌥⇧⌘S"),
-            item!("Revert to Original", "preview::RevertMarkup", "", separator),
+            submenu!(
+                "Revert To",
+                "preview::RevertToMenu",
+                [item!("No Document", "preview::RevertMarkup", "")],
+                separator
+            ),
             // PREV-15: the Mac's File menu also has Duplicate, Rename…, Move To…,
             // Enter Password…, Edit Permissions…, Import from
             // Camera/Scanner, Take Screenshot ▸, Export…, Share ▸ — none of

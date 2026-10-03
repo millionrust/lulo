@@ -454,11 +454,14 @@ pub fn window_menu(
     let tile =
         |label: &str, half, shortcut: &str| command(label, WindowCommand::Tile(half), shortcut);
     let combo = |entry: &(&str, &str, WindowRegion, WindowRegion), shortcut: &str| {
-        command(
+        // Quarter variants currently dispatch to the same simplified tile
+        // command, but each menu row still needs its own wire action.
+        Item::new(
             entry.0,
-            WindowCommand::ComboTile(entry.2, entry.3),
+            format!("{WINDOW_ACTION_PREFIX}combo-{}", entry.1),
             shortcut,
         )
+        .enabled(has_focus)
     };
     let combo_shortcuts = ["⌃⇧←", "⌃⌥⇧←", "⌃⇧→", "⌃⌥⇧→", "⌃⇧↑", "⌃⌥⇧↑", "⌃⇧↓", "⌃⌥⇧↓"];
     let mut move_and_resize_children = vec![

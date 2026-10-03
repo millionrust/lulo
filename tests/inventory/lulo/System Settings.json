@@ -600,7 +600,8 @@
     "extraction": "heuristic",
     "groups": [
       "Toolbar",
-      "Search"
+      "Search",
+      "Settings Categories"
     ]
   },
   "context_menus": {},

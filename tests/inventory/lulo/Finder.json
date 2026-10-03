@@ -901,10 +901,6 @@
       },
       {
         "kind": "control",
-        "label": "Bin"
-      },
-      {
-        "kind": "control",
         "label": "Tags…"
       },
       {
@@ -914,14 +910,6 @@
       {
         "kind": "control",
         "label": "Show warning before changing an extension"
-      },
-      {
-        "kind": "control",
-        "label": "Show warning before emptying the Bin"
-      },
-      {
-        "kind": "control",
-        "label": "Remove items from the Bin after 30 days"
       },
       {
         "kind": "control",

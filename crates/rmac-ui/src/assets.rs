@@ -17,11 +17,6 @@ pub fn layered_assets<A: AssetSource>(app: A) -> LayeredAssets<A> {
     LayeredAssets { app }
 }
 
-/// The shared icon and font asset source for an app with no private assets.
-pub fn shared_assets() -> impl AssetSource {
-    gpui_component_assets::Assets
-}
-
 impl<A: AssetSource> AssetSource for LayeredAssets<A> {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         if let Some(asset) = self.app.load(path)? {

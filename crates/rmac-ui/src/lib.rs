@@ -28,7 +28,7 @@ pub use app_menu::{
     set_menu_checked, set_menu_children, set_menu_enabled, set_menu_label, set_menu_mixed,
     ShowAboutPanel,
 };
-pub use assets::{layered_assets, shared_assets, LayeredAssets};
+pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{
     body_bg, double_click_title_bar_action, minimize_focused_window, page, title_bar,
     title_bar_content, title_bar_drag_region, toolbar, toolbar_group, toolbar_title,

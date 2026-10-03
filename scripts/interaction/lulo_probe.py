@@ -1021,6 +1021,11 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
         time.sleep(0.6)
         out["escape"] = {"closed": run.dialog_node() is None}
         print(f"DIAG windows after escape: {run.fact_windows()}", flush=True)
+        print(f"DIAG focus after escape: {run.fact_focus()}", flush=True)
+        run.nested.input.key("cmd-w")
+        time.sleep(1.0)
+        print(f"DIAG dialog after one more cmd-w: {run.fact_dialog()}", flush=True)
+        print(f"DIAG windows after one more cmd-w: {run.fact_windows()}", flush=True)
 
         if not ensure_alert():
             out["tab_focus"] = {"moved": None, "reason": "the alert did not reopen for the Tab probe"}

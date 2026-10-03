@@ -312,7 +312,7 @@ impl Settings {
                     let view = view.clone();
                     body = body.child(switch_row(
                         format!("account-new-{title}"), title, None,
-                        sheet.model.services.enabled(service), !busy && !(service == Service::Contacts && matches!(sheet.model.choice, Some(Choice::ICloud | Choice::Yahoo))),
+                        sheet.model.services.enabled(service), !(busy || service == Service::Contacts && matches!(sheet.model.choice, Some(Choice::ICloud | Choice::Yahoo))),
                         move |enabled, _, cx| view.update(cx, |settings, cx| {
                             if let Some(sheet) = settings.internet_account_sheet.as_mut() {
                                 sheet.model.services.set(service, enabled);

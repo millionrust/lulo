@@ -75,6 +75,7 @@ pub trait EventSink: Send + Sync + 'static {
     fn snapshot(&self, value: Snapshot);
     fn new_mail(&self, value: NewMail);
     fn failure(&self, _account: Uuid, _error: &Error) {}
+    fn removed(&self, _account: Uuid) {}
 }
 
 /// MAIL-9 supplies the Graph implementation through this boundary. Graph
@@ -365,6 +366,7 @@ fn run_worker(
             }
         }
     }
+    sink.removed(account.id);
 }
 
 #[cfg(test)]

@@ -138,6 +138,7 @@ pub enum UiEvent {
     NewMail(NewMail),
     Failure { account: Uuid, message: String },
     OpenMessage { account: Uuid, message_id: i64 },
+    AccountRemoved(Uuid),
 }
 
 /// Posts to the same freedesktop service owned by Lulo Notification Centre.
@@ -202,7 +203,37 @@ fn watch_notification_actions(
     }
 }
 
+fn publish_badge(count: i64) {
+    if let Ok(connection) = Connection::session() {
+        let mut properties = HashMap::new();
+        properties.insert("count", Value::I64(count));
+        properties.insert("count-visible", Value::Bool(count > 0));
+        let _ = connection.emit_signal(
+            None::<&str>,
+            "/com/canonical/Unity/LauncherEntry",
+            "com.canonical.Unity.LauncherEntry",
+            "Update",
+            &("application://org.rmac.Mail.desktop", properties),
+        );
+    }
+}
+
 impl EventSink for DesktopSink {
+    fn removed(&self, account: Uuid) {
+        let count = {
+            let mut unread = self.unread.lock().expect("mail unread lock poisoned");
+            unread.remove(&account);
+            unread.values().copied().sum::<i64>()
+        };
+        self.notification_targets
+            .lock()
+            .expect("mail notification lock poisoned")
+            .retain(|_, target| target.0 != account);
+        if let Some(ui) = &self.ui {
+            let _ = ui.send(UiEvent::AccountRemoved(account));
+        }
+        publish_badge(count);
+    }
     fn failure(&self, account: Uuid, error: &Error) {
         if let Some(ui) = &self.ui {
             let _ = ui.send(UiEvent::Failure {
@@ -220,18 +251,7 @@ impl EventSink for DesktopSink {
         if let Some(ui) = &self.ui {
             let _ = ui.send(UiEvent::Snapshot(value));
         }
-        if let Ok(connection) = Connection::session() {
-            let mut properties = HashMap::new();
-            properties.insert("count", Value::I64(count));
-            properties.insert("count-visible", Value::Bool(count > 0));
-            let _ = connection.emit_signal(
-                None::<&str>,
-                "/com/canonical/Unity/LauncherEntry",
-                "com.canonical.Unity.LauncherEntry",
-                "Update",
-                &("application://org.rmac.Mail.desktop", properties),
-            );
-        }
+        publish_badge(count);
     }
 
     fn new_mail(&self, value: NewMail) {

@@ -224,7 +224,19 @@ impl QuickSettingsView {
 
     /// Replace the grid with a module's list. Opening Wi-Fi asks for a fresh
     /// scan; the results arrive through the live Wi-Fi watch.
-    pub(crate) fn open_detail(&mut self, detail: Detail, cx: &mut Context<Self>) {
+    ///
+    /// The control that opened the list (a pill, the Sound Outputs button)
+    /// is not drawn any more, and GPUI sends keys for an undrawn focus to
+    /// the window root, past the panel's own key handling: Esc, arrows and
+    /// Return did nothing in the list. The panel takes keyboard focus
+    /// instead; `detail_focus` tracks the highlighted row.
+    pub(crate) fn open_detail(
+        &mut self,
+        detail: Detail,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.focus.focus(window, cx);
         self.detail = Some(detail);
         self.others_expanded = false;
         self.detail_focus = None;
@@ -311,7 +323,7 @@ impl QuickSettingsView {
 
     fn activate_module(&mut self, module: Module, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(detail) = module.detail() {
-            self.open_detail(detail, cx);
+            self.open_detail(detail, window, cx);
             return;
         }
         match module {

@@ -135,7 +135,7 @@ impl QuickSettingsView {
                         if kind == SliderKind::Brightness {
                             this.open_settings(Some(pane), window, cx);
                         } else {
-                            this.open_detail(Detail::Sound, cx);
+                            this.open_detail(Detail::Sound, window, cx);
                         }
                     });
                 }
@@ -151,7 +151,7 @@ impl QuickSettingsView {
                 if kind == SliderKind::Brightness {
                     this.open_settings(Some(pane), window, cx)
                 } else {
-                    this.open_detail(Detail::Sound, cx)
+                    this.open_detail(Detail::Sound, window, cx)
                 }
             }))
             .child(glyph_at(

@@ -116,7 +116,7 @@ impl QuickSettingsView {
             .tab_stop(true)
             .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
                 let _ = label_view.update(cx, |this, cx| match detail {
-                    Some(detail) => this.open_detail(detail, cx),
+                    Some(detail) => this.open_detail(detail, window, cx),
                     None => this.open_settings(Some(pane), window, cx),
                 });
             })
@@ -127,7 +127,7 @@ impl QuickSettingsView {
             .h(px(CELL))
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, window, cx| match detail {
-                    Some(detail) => this.open_detail(detail, cx),
+                    Some(detail) => this.open_detail(detail, window, cx),
                     None => this.open_settings(Some(pane), window, cx),
                 }),
             );

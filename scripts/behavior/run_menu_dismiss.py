@@ -547,6 +547,48 @@ class Run:
                 self.dispatch(shortcut)
                 self.wait_for(lambda: self.popover_gone(namespace), 5)
 
+    def control_centre_detail_escape(self) -> None:
+        """Esc inside a Control Centre list (Sound's outputs) backs out to
+        the grid, and a second Esc closes Control Centre, as on the Mac.
+        The list replaces the control that opened it, so the panel itself
+        must hold keyboard focus or Esc is lost."""
+
+        namespace = "rmac-quick-settings"
+        self.close_everything()
+        self.dispatch("quick-settings")
+        opened = self.wait_for(lambda: self.has_layer(namespace), 10)
+        def sound_outputs():
+            return self.find_node(("push button", "button"), lambda name: name == "Sound Outputs")
+
+        outputs = sound_outputs() if opened and self.wait_for(
+            lambda: sound_outputs() is not None, 10) else None
+        listed = False
+        if outputs is not None:
+            try:
+                outputs.queryAction().doAction(0)
+                listed = self.wait_for(
+                    lambda: self.find_node(("push button", "button", "menu item", "list item", "label"),
+                                           lambda name: name == "Sound Settings\u2026") is not None, 10)
+            except Exception:  # noqa: BLE001
+                listed = False
+        self.check("Control Centre list: Sound Outputs opens the output list", listed)
+        if not listed:
+            self.dispatch("quick-settings")
+            self.wait_for(lambda: self.popover_gone(namespace), 5)
+            return
+        time.sleep(0.3)
+        self.keys.key("escape")
+        back = self.wait_for(
+            lambda: self.find_node(("push button", "button", "menu item", "list item", "label"),
+                                   lambda name: name == "Sound Settings\u2026") is None, 5)
+        self.check("Control Centre list: Esc returns to the grid", back and self.has_layer(namespace))
+        self.keys.key("escape")
+        closed = self.wait_for(lambda: self.popover_gone(namespace), 5)
+        self.check("Control Centre list: a second Esc closes Control Centre", closed)
+        if not closed:
+            self.dispatch("quick-settings")
+            self.wait_for(lambda: self.popover_gone(namespace), 5)
+
     def clock_popover_dismissal(self) -> None:
         namespace = "rmac-notification-center"
         for method in ("outside click", "inside-band click", "Escape"):
@@ -739,6 +781,8 @@ class Run:
                 self.clock_popover_dismissal()
             elif self.args.only == "combined":
                 self.control_center_and_app_menu_close_on_wallpaper_click()
+            elif self.args.only == "control-centre-list":
+                self.control_centre_detail_escape()
             else:
                 namespaces = {
                     "quick-settings": "rmac-quick-settings",
@@ -762,6 +806,7 @@ class Run:
                                     ("launcher", "rmac-launcher"),
                                     ("app-drawer", "rmac-app-drawer")):
             self.layer_popover_dismissal(shortcut, namespace)
+        self.control_centre_detail_escape()
         self.clock_popover_dismissal()
         self.control_center_and_app_menu_close_on_wallpaper_click()
         # Log Out ends this run's own nested niri for real; nothing after
@@ -836,7 +881,7 @@ def main() -> int:
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
                                            "launcher", "app-drawer", "notification-center",
-                                           "combined"))
+                                           "combined", "control-centre-list"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

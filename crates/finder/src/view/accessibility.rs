@@ -310,6 +310,11 @@ impl FinderView {
         } else {
             permanent_delete_prompt(count, name.as_deref())
         };
+        let confirm_label = if confirmation.empty_trash {
+            format!("Empty {}", self.file_words.bin())
+        } else {
+            "Delete".to_string()
+        };
         Some(AccessibleDialog {
             kind: DialogKind::PermanentDelete,
             title,
@@ -322,11 +327,7 @@ impl FinderView {
                 ),
                 dialog_action(
                     "permanent-delete-confirm",
-                    if confirmation.empty_trash {
-                        &format!("Empty {}", self.file_words.bin())
-                    } else {
-                        "Delete"
-                    },
+                    &confirm_label,
                     DialogActionKind::Destructive,
                 ),
             ],

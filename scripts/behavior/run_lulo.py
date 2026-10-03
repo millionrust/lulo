@@ -52,6 +52,7 @@ APP_BINARIES = {
     "settings": ["rmac-system-settings"],
     "calculator": ["rmac-calculator"],
     "calendar": ["rmac-calendar"],
+    "mail": ["rmac-mail"],
     "clock": ["rmac-clock"],
     "weather": ["rmac-weather"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
@@ -1085,6 +1086,15 @@ class LuloRun:
                 return {"present": True, "selected_day_offset": (selected - date.today()).days}
         return {"present": False}
 
+    def fact_mail_messages(self) -> dict[str, Any]:
+        """Conversation and unread totals shown above Mail's virtual list."""
+        frame = self.active_frame()
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            match = re.fullmatch(r"(\d+) conversations, (\d+) unread", name(node))
+            if match:
+                return {"count": int(match.group(1)), "unread": int(match.group(2))}
+        return {"count": 0, "unread": 0}
+
     def fact_sidebar(self) -> dict[str, Any]:
         """Weather's city list owns the window's only editable search field."""
         frame = self.active_frame()
@@ -1289,6 +1299,7 @@ class LuloRun:
                     "preview": "Preview",
                     "notes": "Notes",
                     "terminal": "Terminal",
+                    "mail": "Mail",
                 }[self.app] + ".Menu"
                 layout = subprocess.run(
                     ["gdbus", "call", "--session", "--dest", bus,

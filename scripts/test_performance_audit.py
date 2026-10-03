@@ -38,7 +38,7 @@ class PerformanceAuditTests(unittest.TestCase):
     def test_committed_budgets_cover_release_dimensions(self):
         budgets = verify.load_budgets()
         specs = verify.result_specs(budgets)
-        self.assertEqual(len(specs), 119)
+        self.assertEqual(len(specs), 124)
         metrics = {spec["metric"] for spec in specs}
         self.assertIn("startup-p95", metrics)
         self.assertIn("idle-wakeups", metrics)

@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "mail/open-message-marks-read",
+  "observations": {
+    "inbox": {"mail_messages": {"count": 8, "unread": 3}},
+    "opened": {"mail_messages": {"count": 8, "unread": 2}}
+  }
+}

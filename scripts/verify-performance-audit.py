@@ -22,6 +22,7 @@ MAX_BYTES = 1024 * 1024
 APPLICATIONS = (
     ("rmac-clock", 500, 0.3, 12),
     ("rmac-calendar", 500, 0.3, 12),
+    ("rmac-mail", 500, 0.3, 12),
     ("rmac-activity-monitor", 500, 2.5, 60),
     ("rmac-app-drawer", 500, 0.3, 12),
     ("rmac-finder", 900, 0.3, 12),

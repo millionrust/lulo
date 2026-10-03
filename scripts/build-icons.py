@@ -140,6 +140,13 @@ LULO_CHAMBERS = (
 )
 
 ICONS: dict[str, tuple[tuple[str, str] | None, str, str]] = {
+    "mail": (("#6AB3FF", "#286ED2"), "", """
+  <rect x="234" y="312" width="556" height="400" rx="58" fill="url(#frost)"
+        stroke="url(#edge)" stroke-width="6" filter="url(#lift)"/>
+  <path d="M258 352L512 530L766 352" fill="none" stroke="#4589DA"
+        stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M258 672L422 522M766 672L602 522" fill="none" stroke="#A7C8EE"
+        stroke-width="22" stroke-linecap="round"/>"""),
     "files": (("#3CC4BE", "#0C6E76"), grad("tag", "#1AA09F", "#0C6A72"), """
   <path d="M282 312h140c16 0 31 7 41 19l34 41h245c28 0 50 22 50 50v256H232V362
            c0-28 22-50 50-50z" fill="#FFFFFF" fill-opacity=".5"/>
@@ -364,6 +371,7 @@ PACKAGED = {
     "org.rmac.Weather": "weather",
     "org.rmac.Player": "player",
     "org.rmac.ArchiveUtility": "archive-utility",
+    "org.rmac.Mail": "mail",
 }
 
 # The Dock's embedded artwork -> icon name (Application is the fallback for

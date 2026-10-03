@@ -1,0 +1,11 @@
+{
+  "title": "Mail: selecting an unread fixture message marks it read",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "inbox", "facts": ["mail_messages"]},
+    {"key": "down"},
+    {"observe": "opened", "facts": ["mail_messages"]}
+  ]
+}

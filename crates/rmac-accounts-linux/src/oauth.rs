@@ -75,7 +75,7 @@ pub(crate) fn https_agent(timeout: Duration) -> ureq::Agent {
         .new_agent()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", test))]
 pub fn verify_installed_provider(provider: Provider) -> Result<(), Error> {
     let architecture = std::env::consts::ARCH;
     let triplet = match architecture {
@@ -306,7 +306,7 @@ pub async fn start_sign_in(
     provider: Provider,
 ) -> Result<(OAuthAttempt, callback::OAuthReceiver), Error> {
     let attempt = OAuthAttempt::new(provider)?;
-    let receiver = callback::OAuthReceiver::begin(&attempt)?;
+    let receiver = callback::OAuthReceiver::begin()?;
     attempt.open_in_browser().await?;
     Ok((attempt, receiver))
 }
@@ -343,8 +343,7 @@ pub mod callback {
     }
 
     impl OAuthReceiver {
-        pub fn begin(attempt: &OAuthAttempt) -> Result<Self, Error> {
-            super::verify_installed_provider(attempt.provider)?;
+        pub fn begin() -> Result<Self, Error> {
             let connection = Connection::session().map_err(|_| Error::Unavailable)?;
             let (sender, receiver) = mpsc::channel();
             connection

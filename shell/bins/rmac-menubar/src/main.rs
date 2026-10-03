@@ -51,6 +51,10 @@ mod linux_wayland {
 
     // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): the bar
     // occupies rows 0–28 and is fully transparent.
+    /// The Lulo mark's accessible name, so Orca reads what it opens. The
+    /// nested behaviour runners find the mark by this exact name
+    /// (scripts/test_shell_accessible_names.py keeps them in step).
+    const LULO_MENU_LABEL: &str = "Lulo menu";
     const BAR_HEIGHT: f32 = 29.0;
     /// Tall enough for the longest status menu (Option-click Wi-Fi with
     /// Other Networks expanded); input regions keep the rest click-through.
@@ -3035,7 +3039,7 @@ mod linux_wayland {
                 .map(|(index, menu)| match index {
                     0 => TitleTarget {
                         app_id: SYSTEM_MENU_ID.to_owned(),
-                        accessible_label: "Lulo menu".into(),
+                        accessible_label: LULO_MENU_LABEL.into(),
                         letter: None,
                     },
                     1 => TitleTarget {
@@ -4038,7 +4042,7 @@ mod linux_wayland {
                             div()
                                 .id(format!("desktop-mark-{}", self.display_id))
                                 .role(Role::Button)
-                                .aria_label("Lulo menu")
+                                .aria_label(LULO_MENU_LABEL)
                                 .w(px(LOGO_SLOT))
                                 .h(px(SLOT_HEIGHT))
                                 .flex()

@@ -64,6 +64,10 @@ import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
+# The top bar's leftmost item (the Lulo mark). Its accessible name is
+# "Lulo menu" (shell/bins/rmac-menubar/src/main.rs `LULO_MENU_LABEL`), so
+# Orca announces what it opens rather than a bare "menu".
+LULO_MENU = "Lulo menu"
 GTK_APP_ID = "org.example.ShutdownTest"
 OUTPUT_W, OUTPUT_H = 1440, 900
 
@@ -439,7 +443,7 @@ class Run:
         its own "Shut Down" button must still reach `quit_all_then`."""
 
         before_calls = len(self.systemctl_calls())
-        logo = self.wait_for(lambda: self.find_button("menu"), 10, 0.3)
+        logo = self.wait_for(lambda: self.find_button(LULO_MENU), 10, 0.3)
         self.check("Menu: the logo menu is on the bar (AT-SPI)", logo)
         if logo is None:
             return
@@ -474,7 +478,7 @@ class Run:
         harmless here: it only ends this test's own nested niri). Must be
         the last scenario in a run — niri exiting ends everything after it."""
 
-        logo = self.wait_for(lambda: self.find_button("menu"), 10, 0.3)
+        logo = self.wait_for(lambda: self.find_button(LULO_MENU), 10, 0.3)
         self.check("Log Out: the logo menu is on the bar (AT-SPI)", logo)
         if logo is None:
             return

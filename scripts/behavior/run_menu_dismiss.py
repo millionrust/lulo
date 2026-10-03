@@ -61,6 +61,10 @@ import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
+# The top bar's leftmost item (the Lulo mark). Its accessible name is
+# "Lulo menu" (shell/bins/rmac-menubar/src/main.rs `LULO_MENU_LABEL`), so
+# Orca announces what it opens rather than a bare "menu".
+LULO_MENU = "Lulo menu"
 OUTPUT_W, OUTPUT_H = 1440, 900
 # A stable point below all top-bar dropdowns, also used to distinguish the
 # two outside-click locations exercised by this scenario.
@@ -285,10 +289,10 @@ class Run:
         """A real click on the logo, opening the Lulo menu the same way a
         mouse user would."""
 
-        logo = self.wait_for(lambda: self.find_button("menu"), 10, 0.3)
+        logo = self.wait_for(lambda: self.find_button(LULO_MENU), 10, 0.3)
         if logo is None:
             return False
-        return self.click_button("menu")
+        return self.click_button(LULO_MENU)
 
     def close_everything(self) -> None:
         self.keys.key("escape")
@@ -439,11 +443,11 @@ class Run:
         # Index 1: the active app's own title, right of the logo
         # (`TopBar::keyboard_titles`'s "{app} menu" label). With nothing
         # focused this is the desktop's ("Finder"-equivalent) title; the
-        # logo itself is named exactly "menu", so excluding that finds it
+        # logo itself is named LULO_MENU, so excluding that finds it
         # without guessing a pixel offset.
         title = self.wait_for(
             lambda: self.find_node(
-                ("push button", "button"), lambda name: name != "menu" and name.endswith(" menu")
+                ("push button", "button"), lambda name: name != LULO_MENU and name.endswith(" menu")
             ),
             10,
             0.3,
@@ -470,7 +474,7 @@ class Run:
         opened = self.retry_until(self.open_system_menu, lambda: self.find_menu_item("About"))
         self.check("Same title: the Lulo menu opens first", opened)
         if opened:
-            self.click_button("menu")
+            self.click_button(LULO_MENU)
             self.check("Same title: a second click keeps the menu open",
                        self.find_menu_item("About") is not None)
 

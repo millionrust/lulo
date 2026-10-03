@@ -145,7 +145,12 @@ pub fn expand(
     if !overrides.is_empty() {
         return Err(CalendarError("detached VEVENT has no master".into()));
     }
-    result.sort_by(|a, b| a.start.cmp(&b.start).then_with(|| a.uid.cmp(&b.uid)));
+    result.sort_by(|a, b| {
+        a.start
+            .cmp(&b.start)
+            .then_with(|| a.uid.cmp(&b.uid))
+            .then_with(|| a.recurrence_id.cmp(&b.recurrence_id))
+    });
     Ok(result)
 }
 

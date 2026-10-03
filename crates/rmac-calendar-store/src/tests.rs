@@ -60,6 +60,18 @@ fn rfc5545_every_ten_days_five_times() {
 }
 
 #[test]
+fn rfc5545_daily_until_december_24() {
+    let result = occurrences("DTSTART;TZID=America/New_York:19970902T090000\r\nDTEND;TZID=America/New_York:19970902T100000\r\nRRULE:FREQ=DAILY;UNTIL=19971224T000000Z", "1997-09-01T00:00:00Z", "1997-12-26T00:00:00Z");
+    assert_eq!(result.len(), 113);
+    assert_eq!(result.last().unwrap().start, utc("1997-12-23T14:00:00Z"));
+    assert!(result.iter().all(|event| event
+        .start
+        .with_timezone(&chrono_tz::America::New_York)
+        .hour()
+        == 9));
+}
+
+#[test]
 fn rfc5545_tuesday_thursday_for_five_weeks() {
     let result = occurrences("DTSTART;TZID=America/New_York:19970902T090000\r\nDTEND;TZID=America/New_York:19970902T100000\r\nRRULE:FREQ=WEEKLY;COUNT=10;WKST=SU;BYDAY=TU,TH", "1997-09-01T00:00:00Z", "1997-10-05T00:00:00Z");
     let days: Vec<_> = result.iter().map(|event| event.start.day()).collect();

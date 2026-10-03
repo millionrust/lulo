@@ -560,7 +560,7 @@ impl CalculatorView {
             // `a11y_synthetic_children` hook and would replace this one).
             builder.parent_node().set_description("Display");
             builder.parent_node().set_live(accesskit::Live::Polite);
-            builder.parent_node().set_live_atomic(true);
+            builder.parent_node().set_live_atomic();
         }
     }
 

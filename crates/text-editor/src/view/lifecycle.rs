@@ -7,6 +7,7 @@ static NEXT_WINDOW_GENERATION: AtomicU64 = AtomicU64::new(1);
 impl EditorView {
     pub(super) fn new_with_path(
         initial_path: Option<PathBuf>,
+        open_picker_on_ready: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -194,6 +195,7 @@ impl EditorView {
                     if let Some(path) = this.pending_startup_path.take() {
                         this.load_document_path(path, "The file could not be opened.", window, cx);
                     }
+                    this.open_pending_picker(window, cx);
                 }
                 cx.notify();
             });
@@ -338,6 +340,7 @@ impl EditorView {
             watched_directory: None,
             document_watcher,
             pending_startup_path: initial_path,
+            pending_open_picker: open_picker_on_ready,
             _subscriptions: vec![sub_main, sub_find, sub_select_line, sub_save_goto],
         }
     }

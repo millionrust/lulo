@@ -99,12 +99,9 @@ fn open_editor_window_with_picker(
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| {
             rmac_ui::observe_window_state(rmac_ui::app_id::TEXT_EDITOR, window, cx);
-            EditorView::new_with_path(initial_path, window, cx)
+            EditorView::new_with_path(initial_path, show_picker, window, cx)
         });
         track_document(&view);
-        if show_picker {
-            view.update(cx, |view, cx| view.open(window, cx));
-        }
         cx.new(|cx| Root::new(view, window, cx))
     })
     .map(|_| ())
@@ -159,7 +156,7 @@ pub(super) fn open_duplicate_window(
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| {
             rmac_ui::observe_window_state(rmac_ui::app_id::TEXT_EDITOR, window, cx);
-            let mut view = EditorView::new_with_path(None, window, cx);
+            let mut view = EditorView::new_with_path(None, false, window, cx);
             view.seed_duplicate_content(content, window, cx);
             view
         });

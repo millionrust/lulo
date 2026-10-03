@@ -107,6 +107,7 @@ impl EditorView {
             Some(ActiveAlert::Error { .. }) | None => {}
         }
         self.refocus_document_after_alert(window, cx);
+        self.open_pending_picker(window, cx);
         cx.notify();
     }
 
@@ -131,6 +132,7 @@ impl EditorView {
             _ => {}
         }
         self.refocus_document_after_alert(window, cx);
+        self.open_pending_picker(window, cx);
         cx.notify();
     }
 
@@ -139,6 +141,7 @@ impl EditorView {
         self.alert = None;
         self.save_goto_open = false;
         self.refocus_document_after_alert(window, cx);
+        self.open_pending_picker(window, cx);
         cx.notify();
     }
 

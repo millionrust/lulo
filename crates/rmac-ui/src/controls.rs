@@ -56,6 +56,7 @@ pub enum ToggleState {
 }
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+type ActionHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>;
 
 /// Add a stable Tab stop and keyboard activation to an existing styled
@@ -64,7 +65,7 @@ type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) ->
 pub struct KeyboardAction {
     id: ElementId,
     element: Stateful<gpui::Div>,
-    activate: Rc<dyn Fn(&mut Window, &mut App)>,
+    activate: ActionHandler,
     enabled: bool,
 }
 

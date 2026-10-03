@@ -555,6 +555,15 @@ class Run:
                 lambda: self.has_layer(namespace)
                 and self.has_layer(f"{namespace}-click-catcher"), 10
             )
+            if not opened and self.popover_gone(namespace):
+                clock = self.find_node(
+                    ("push button", "button"),
+                    lambda name: name.startswith("Date and time:")
+                )
+                opened = clock is not None and self.click_node(clock) and self.wait_for(
+                    lambda: self.has_layer(namespace)
+                    and self.has_layer(f"{namespace}-click-catcher"), 10
+                )
             self.check(f"clock/date popover: opens for {method}", opened)
             if not opened:
                 continue

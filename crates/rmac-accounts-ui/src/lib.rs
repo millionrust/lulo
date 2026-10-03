@@ -55,6 +55,14 @@ impl Choice {
         }
     }
 
+    pub fn password_help_url(self) -> Option<&'static str> {
+        match self {
+            Self::ICloud => Some("https://account.apple.com/"),
+            Self::Yahoo => Some("https://login.yahoo.com/account/security"),
+            _ => None,
+        }
+    }
+
     pub fn from_address(address: &str) -> Option<Self> {
         let domain = email_domain(address)?;
         Some(match Provider::from_domain(domain) {
@@ -131,6 +139,11 @@ impl AddSheet {
         }
         self.choice = Some(choice);
         self.services = match choice {
+            Choice::ICloud | Choice::Yahoo => rmac_accounts::model::Services {
+                mail: true,
+                calendar: true,
+                contacts: false,
+            },
             Choice::OtherMail => rmac_accounts::model::Services::MAIL_ONLY,
             Choice::OtherCalendar => rmac_accounts::model::Services {
                 mail: false,
@@ -185,6 +198,99 @@ pub fn service_summary(account: &GoaAccount) -> String {
     }
 }
 
+/// One visible account. Password providers use two GOA objects, one for mail
+/// and one for CalDAV, but have one row and one delete action in Settings.
+#[derive(Clone)]
+pub struct AccountRow {
+    pub identity: String,
+    pub label: &'static str,
+    pub paths: Vec<String>,
+    pub services: rmac_accounts::model::Services,
+    pub mail_path: Option<String>,
+    pub calendar_path: Option<String>,
+    pub contacts_path: Option<String>,
+}
+
+impl AccountRow {
+    pub fn service_path(&self, service: rmac_accounts::model::Service) -> Option<&str> {
+        use rmac_accounts::model::Service;
+        match service {
+            Service::Mail => self.mail_path.as_deref(),
+            Service::Calendar => self.calendar_path.as_deref(),
+            Service::Contacts => self.contacts_path.as_deref(),
+        }
+    }
+
+    pub fn summary(&self) -> String {
+        let account = GoaAccount {
+            path: String::new(),
+            id: String::new(),
+            provider: String::new(),
+            identity: String::new(),
+            services: self.services,
+        };
+        service_summary(&account)
+    }
+}
+
+pub fn account_rows(accounts: &[GoaAccount]) -> Vec<AccountRow> {
+    let mut rows = Vec::new();
+    let mut used = vec![false; accounts.len()];
+    for (index, account) in accounts.iter().enumerate() {
+        if used[index] {
+            continue;
+        }
+        used[index] = true;
+        let choice = Choice::from_address(&account.identity);
+        let pair = if matches!(choice, Some(Choice::ICloud | Choice::Yahoo))
+            && matches!(account.provider.as_str(), "imap_smtp" | "webdav")
+        {
+            accounts.iter().enumerate().find(|(other_index, other)| {
+                !used[*other_index]
+                    && other.identity == account.identity
+                    && matches!(
+                        (account.provider.as_str(), other.provider.as_str()),
+                        ("imap_smtp", "webdav") | ("webdav", "imap_smtp")
+                    )
+            })
+        } else {
+            None
+        };
+        let mut members = vec![account];
+        if let Some((other_index, other)) = pair {
+            used[other_index] = true;
+            members.push(other);
+        }
+        let services = rmac_accounts::model::Services {
+            mail: members.iter().any(|item| item.services.mail),
+            calendar: members.iter().any(|item| item.services.calendar),
+            contacts: members.iter().any(|item| item.services.contacts),
+        };
+        let find_path = |provider: &str| {
+            members
+                .iter()
+                .find(|item| item.provider == provider)
+                .map(|item| item.path.clone())
+        };
+        let oauth = matches!(account.provider.as_str(), "google" | "ms_graph");
+        let oauth_path = oauth.then(|| account.path.clone());
+        rows.push(AccountRow {
+            identity: account.identity.clone(),
+            label: match choice {
+                Some(Choice::ICloud) if members.len() == 2 => "iCloud",
+                Some(Choice::Yahoo) if members.len() == 2 => "Yahoo",
+                _ => provider_label(account),
+            },
+            paths: members.iter().map(|item| item.path.clone()).collect(),
+            services,
+            mail_path: find_path("imap_smtp").or_else(|| oauth_path.clone()),
+            calendar_path: find_path("webdav").or_else(|| oauth_path.clone()),
+            contacts_path: find_path("webdav").or(oauth_path),
+        });
+    }
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,5 +324,41 @@ mod tests {
         assert!(!sheet.credentials_valid());
         sheet.caldav_uri = "https://calendar.example.com/".into();
         assert!(sheet.credentials_valid());
+    }
+
+    #[test]
+    fn password_provider_goa_objects_share_one_row() {
+        use rmac_accounts::model::Services;
+        let account = |path: &str, provider: &str, services| GoaAccount {
+            path: path.into(),
+            id: path.into(),
+            provider: provider.into(),
+            identity: "person@icloud.com".into(),
+            services,
+        };
+        let rows = account_rows(&[
+            account("/mail", "imap_smtp", Services::MAIL_ONLY),
+            account(
+                "/calendar",
+                "webdav",
+                Services {
+                    mail: false,
+                    calendar: true,
+                    contacts: false,
+                },
+            ),
+        ]);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "iCloud");
+        assert_eq!(rows[0].summary(), "Mail, Calendars");
+        assert_eq!(
+            rows[0].service_path(rmac_accounts::model::Service::Mail),
+            Some("/mail")
+        );
+        assert_eq!(
+            rows[0].service_path(rmac_accounts::model::Service::Calendar),
+            Some("/calendar")
+        );
+        assert_eq!(rows[0].paths.len(), 2);
     }
 }

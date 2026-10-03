@@ -1,7 +1,15 @@
 use super::*;
 
-fn field(label_text: &'static str, editor: &Entity<InputState>, busy: bool) -> Div {
-    div()
+fn field(
+    label_text: &'static str,
+    editor: &Entity<InputState>,
+    busy: bool,
+    cx: &Context<Settings>,
+) -> impl IntoElement {
+    let field = div()
+        .id(("internet-account-field", label_text))
+        .role(Role::TextInput)
+        .aria_label(label_text)
         .v_flex()
         .gap_1()
         .child(
@@ -10,18 +18,23 @@ fn field(label_text: &'static str, editor: &Entity<InputState>, busy: bool) -> D
                 .text_color(secondary())
                 .child(label_text),
         )
-        .child(TextField::new(editor).disabled(busy).w_full())
+        .child(TextField::new(editor).disabled(busy).w_full());
+    if label_text == "Password" {
+        field
+    } else {
+        field.accessible_text_input(editor, cx)
+    }
 }
 
 impl Settings {
     pub(in crate::controller) fn render_internet_accounts(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let mut cards: Vec<Div> = Vec::new();
+        let account_rows = rmac_accounts_ui::account_rows(&self.internet_accounts);
         if let Some(path) = &self.internet_account_selected {
-            if let Some(account) = self
-                .internet_accounts
+            if let Some(account) = account_rows
                 .iter()
-                .find(|account| &account.path == path)
+                .find(|account| account.paths.contains(path))
             {
                 let account = account.clone();
                 let mut rows = Vec::new();
@@ -36,10 +49,12 @@ impl Settings {
                     (Service::Calendar, "Calendars"),
                     (Service::Contacts, "Contacts"),
                 ] {
-                    let path = account.path.clone();
+                    let Some(path) = account.service_path(service).map(str::to_owned) else {
+                        continue;
+                    };
                     let view = view.clone();
                     rows.push(switch_row(
-                        format!("account-{}-{title}", account.id),
+                        format!("account-{}-{title}", account.paths[0]),
                         title,
                         None,
                         account.services.enabled(service),
@@ -88,15 +103,15 @@ impl Settings {
             });
         } else {
             let mut rows = Vec::new();
-            for account in &self.internet_accounts {
-                let path = account.path.clone();
+            for account in &account_rows {
+                let path = account.paths[0].clone();
                 let view = view.clone();
                 rows.push(large_nav_row(
-                    format!("internet-account-{}", account.id),
+                    format!("internet-account-{}", account.paths[0]),
                     tile26("icons/globe.svg", accent()),
-                    rmac_accounts_ui::provider_label(account),
+                    account.label,
                     Some(subtitle_text(account.identity.clone())),
-                    Some(rmac_accounts_ui::service_summary(account).into()),
+                    Some(account.summary().into()),
                     move |_, cx| {
                         view.update(cx, |settings, cx| {
                             settings.internet_account_selected = Some(path.clone());
@@ -199,13 +214,14 @@ impl Settings {
             Step::Choose => {
                 let mut body = body
                     .child(div().text_size(rmac_ui::text_px(12.0)).text_color(secondary()).child("Enter your email address, or choose a provider."))
-                    .child(field("Email address", &sheet.address, busy));
+                    .child(field("Email address", &sheet.address, busy, cx));
                 for choice in Choice::ALL {
                     let selected = sheet.model.choice == Some(choice);
                     let view = view.clone();
                     body = body.child(
-                        Button::new(format!("account-provider-{choice:?}"), choice.label())
+                        Button::new(format!("account-provider-{choice:?}"), format!("{} · {}", choice.label(), choice.hint()))
                             .selected(selected)
+                            .h(px(40.0))
                             .w_full()
                             .on_click(move |_, _, cx| view.update(cx, |settings, cx| {
                                 if let Some(sheet) = settings.internet_account_sheet.as_mut() {
@@ -222,15 +238,20 @@ impl Settings {
                 let mut body = body;
                 if matches!(sheet.model.choice, Some(Choice::ICloud | Choice::Yahoo)) {
                     body = body.child(div().text_size(rmac_ui::text_px(12.0)).text_color(secondary()).child("Use an app-specific password from your account provider."));
+                    if let Some(choice) = sheet.model.choice {
+                        let help = view.clone();
+                        body = body.child(push_button("account-password-help", "Get an App-Specific Password…")
+                            .on_click(move |_, _, cx| help.update(cx, |settings, cx| settings.open_account_password_help(choice, cx))));
+                    }
                 }
-                body = body.child(field("Name", &sheet.name, busy))
-                    .child(field("Email address", &sheet.address, busy))
-                    .child(field("Password", &sheet.password, busy));
+                body = body.child(field("Name", &sheet.name, busy, cx))
+                    .child(field("Email address", &sheet.address, busy, cx))
+                    .child(field("Password", &sheet.password, busy, cx));
                 if sheet.model.choice == Some(Choice::OtherCalendar) {
-                    body = body.child(field("CalDAV URL", &sheet.caldav, busy));
+                    body = body.child(field("CalDAV URL", &sheet.caldav, busy, cx));
                 } else if sheet.manual {
-                    body = body.child(field("IMAP server", &sheet.imap, busy))
-                        .child(field("SMTP server", &sheet.smtp, busy));
+                    body = body.child(field("IMAP server", &sheet.imap, busy, cx))
+                        .child(field("SMTP server", &sheet.smtp, busy, cx));
                 }
                 body
             }
@@ -241,11 +262,11 @@ impl Settings {
                 let mut body = body.child(div().text_size(rmac_ui::text_px(12.0)).text_color(secondary()).child(sheet.model.address.clone()));
                 for (service, title) in [(Service::Mail, "Mail"), (Service::Calendar, "Calendars"), (Service::Contacts, "Contacts")] {
                     if sheet.model.choice == Some(Choice::OtherCalendar) && service != Service::Calendar { continue; }
-                    if sheet.model.choice == Some(Choice::OtherMail) && service == Service::Contacts { continue; }
+                    if sheet.model.choice == Some(Choice::OtherMail) && service != Service::Mail { continue; }
                     let view = view.clone();
                     body = body.child(switch_row(
                         format!("account-new-{title}"), title, None,
-                        sheet.model.services.enabled(service), !busy,
+                        sheet.model.services.enabled(service), !busy && !(service == Service::Contacts && matches!(sheet.model.choice, Some(Choice::ICloud | Choice::Yahoo))),
                         move |enabled, _, cx| view.update(cx, |settings, cx| {
                             if let Some(sheet) = settings.internet_account_sheet.as_mut() {
                                 sheet.model.services.set(service, enabled);

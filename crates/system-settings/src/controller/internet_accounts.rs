@@ -79,6 +79,25 @@ fn read_accounts() -> Result<Vec<GoaAccount>, rmac_accounts_linux::Error> {
 }
 
 impl Settings {
+    fn open_account_password_help(&mut self, choice: Choice, cx: &mut Context<Self>) {
+        let Some(url) = choice.password_help_url() else {
+            return;
+        };
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = rmac_portal::open_uri(url).await;
+            if result.is_err() {
+                let _ = this.update(cx, |this: &mut Settings, cx| {
+                    if let Some(sheet) = this.internet_account_sheet.as_mut() {
+                        sheet.model.error =
+                            Some("Lulo couldn't open the account provider's website.");
+                        cx.notify();
+                    }
+                });
+            }
+        })
+        .detach();
+    }
+
     pub(super) fn refresh_internet_accounts(&mut self, cx: &mut Context<Self>) {
         self.internet_accounts_loading = true;
         cx.notify();
@@ -261,6 +280,11 @@ impl Settings {
         let Some(sheet) = self.internet_account_sheet.as_mut() else {
             return;
         };
+        if !sheet.model.services.any() {
+            sheet.model.error = Some("Choose at least one app for this account.");
+            cx.notify();
+            return;
+        }
         let Some(choice) = sheet.model.choice else {
             return;
         };
@@ -289,13 +313,18 @@ impl Settings {
                             this.internet_account_sheet = None;
                             this.refresh_internet_accounts(cx);
                         }
+                        #[cfg(target_os = "linux")]
                         Err(SaveError::Manual) => {
                             sheet.manual = true;
                             sheet.model.step = Step::Credentials;
                             sheet.model.error = Some("Lulo couldn't find the mail servers. Enter the IMAP and SMTP server names.");
                         }
                         Err(SaveError::Goa(error)) => {
-                            sheet.model.step = Step::Credentials;
+                            sheet.model.step = if choice.provider().info().oauth.is_some() {
+                                Step::Choose
+                            } else {
+                                Step::Credentials
+                            };
                             sheet.model.error = Some(account_error(error));
                         }
                     }
@@ -328,10 +357,13 @@ impl Settings {
                 Err(rmac_accounts_linux::Error::Unavailable);
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.internet_accounts_busy = false;
-                if let Err(error) = result {
-                    this.internet_accounts_error = Some(account_error(error).into());
+                match result {
+                    Ok(()) => this.refresh_internet_accounts(cx),
+                    Err(error) => {
+                        this.internet_accounts_error = Some(account_error(error).into());
+                        cx.notify();
+                    }
                 }
-                this.refresh_internet_accounts(cx);
             });
         })
         .detach();
@@ -341,26 +373,41 @@ impl Settings {
         let Some(path) = self.internet_account_selected.clone() else {
             return;
         };
+        let paths = rmac_accounts_ui::account_rows(&self.internet_accounts)
+            .into_iter()
+            .find(|row| row.paths.contains(&path))
+            .map(|row| row.paths)
+            .unwrap_or_else(|| vec![path]);
         self.internet_account_delete = false;
         self.internet_accounts_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             #[cfg(target_os = "linux")]
             let result = blocking::unblock(move || {
-                rmac_accounts_linux::goa::GoaBus::session()?.remove(&path)
+                let bus = rmac_accounts_linux::goa::GoaBus::session()?;
+                for path in &paths {
+                    bus.remove(path)?;
+                }
+                Ok(())
             })
             .await;
             #[cfg(not(target_os = "linux"))]
             let result: Result<(), rmac_accounts_linux::Error> =
                 Err(rmac_accounts_linux::Error::Unavailable);
+            #[cfg(not(target_os = "linux"))]
+            let _ = paths;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.internet_accounts_busy = false;
-                if let Err(error) = result {
-                    this.internet_accounts_error = Some(account_error(error).into());
-                } else {
-                    this.internet_account_selected = None;
+                match result {
+                    Ok(()) => {
+                        this.internet_account_selected = None;
+                        this.refresh_internet_accounts(cx);
+                    }
+                    Err(error) => {
+                        this.internet_accounts_error = Some(account_error(error).into());
+                        cx.notify();
+                    }
                 }
-                this.refresh_internet_accounts(cx);
             });
         })
         .detach();
@@ -369,6 +416,7 @@ impl Settings {
 
 enum SaveError {
     Goa(rmac_accounts_linux::Error),
+    #[cfg(target_os = "linux")]
     Manual,
 }
 

@@ -4,9 +4,9 @@
   "lulo_only": true,
   "steps": [
     {"observe": "opened", "facts": ["windows"]},
-    {"key": "f"},
+    {"key": "ctrl-cmd-f"},
     {"observe": "full_screen", "facts": ["windows"]},
-    {"key": "f"},
+    {"key": "ctrl-cmd-f"},
     {"observe": "returned", "facts": ["windows"]}
   ]
 }

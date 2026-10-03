@@ -645,9 +645,15 @@ class Run:
                 self.check("Dock focus: Files tile has bounds", False)
                 return
             x, _, w, _ = box
-            self.click_at(x + w / 2, OUTPUT_H - 48, "right")
-            opened = self.wait_for(lambda: self.find_menu("Files") is not None
-                                   and self.has_layer("rmac-dock-menu-keyboard"), 5)
+            # A new toplevel can consume the nested virtual pointer's first
+            # press while pointer focus transfers to the Dock layer.
+            opened = self.retry_until(
+                lambda: self.click_at(x + w / 2, OUTPUT_H - 48, "right"),
+                lambda: self.find_menu("Files") is not None
+                and self.has_layer("rmac-dock-menu-keyboard"),
+                attempts=2,
+                step=2.0,
+            )
             self.check("Dock focus: context menu takes Escape", opened)
             if not opened:
                 return

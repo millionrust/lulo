@@ -1,0 +1,10 @@
+{
+  "title": "Calendar: local EDS events appear and update without polling",
+  "app": "calendar",
+  "launch": {},
+  "pending": "Requires the Calendar app (CAL-3) and calendar in scenario.APPS. The adapter's private EDS CRUD/view behavior runs through tests/behavior/run_private_eds.sh with temporary XDG directories.",
+  "steps": [
+    {"observe": "local-calendar", "facts": ["calendar_sources", "calendar_events"]},
+    {"observe": "event-updated", "facts": ["calendar_events"]}
+  ]
+}

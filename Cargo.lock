@@ -5892,6 +5892,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-calendar-eds"
+version = "0.9.0-beta.1"
+dependencies = [
+ "futures-lite",
+ "rmac-dbus",
+ "zbus",
+]
+
+[[package]]
+name = "rmac-calendar-runtime"
+version = "0.9.0-beta.1"
+dependencies = [
+ "rmac-calendar-eds",
+ "rmac-calendar-store",
+]
+
+[[package]]
 name = "rmac-calendar-store"
 version = "0.9.0-beta.1"
 dependencies = [

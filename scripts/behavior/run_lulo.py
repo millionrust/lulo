@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Play behaviour scenarios on Lulo inside a nested, headless compositor.
 
-    python3 scripts/behavior/run_lulo.py --bin-dir DIR [--shell-bin-dir DIR] [SCENARIO…]
+    python3 scripts/behavior/run_lulo.py --bin-dir DIR [--shell-bin-dir DIR] [--shard I/N] [SCENARIO…]
 
 Every scenario with a recorded <name>.mac.json or an explicitly Lulo-only
 <name>.lulo.json runs against the Lulo apps in
---bin-dir (rmac-files, rmac-text-editor, rmac-system-settings,
-rmac-calculator; the desktop is the shell's `wallpaper` binary). Results go
+--bin-dir (the desktop is the shell's `wallpaper` binary). Results go
 to --output (JSON) and a readable report goes to stdout; see compare.py.
 
 Isolation (docs/behavior-suite.md):
@@ -160,6 +159,16 @@ def refuse_live_session(environ: dict[str, str]) -> None:
         raise SystemExit("refusing to run: this environment is the live session (wayland-1 or /run/user)")
 
 
+def install_shortcut_dispatcher(environ: dict[str, str], bins: Path) -> None:
+    """Expose the built dispatcher at the path the top bar uses in a session."""
+
+    refuse_live_session(environ)
+    source = (bins / "rmac-shortcut-dispatch").resolve(strict=True)
+    destination = Path(environ["HOME"]) / ".local/libexec/rmac/rmac-shortcut-dispatch"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.symlink_to(source)
+
+
 def reap(runtime: Path) -> list[int]:
     """Stop every process still using this run's runtime dir: D-Bus services
     the private bus activated (rmac-focus-service, rmac-notification-center,
@@ -253,8 +262,13 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         (work / "logs").mkdir(exist_ok=True)
         with open(work / "logs" / "session.log", "w") as log:
             status = subprocess.call(command, env=env, close_fds=True, stderr=log)
-        if status not in (0, 1):
-            print((work / "logs" / "session.log").read_text()[-3000:], file=sys.stderr)
+        if status != 0 and (not args.output or not Path(args.output).exists()):
+            # An early Sway/D-Bus/AT-SPI exit otherwise leaves an empty CI
+            # runner log and no result JSON to explain the missing shard.
+            for name in ("session.log", "sway.log"):
+                log = work / "logs" / name
+                if log.exists():
+                    print(f"{name}:\n{log.read_text(errors='replace')[-3000:]}", file=sys.stderr)
         return status
     finally:
         if reap(work / "runtime"):
@@ -656,7 +670,8 @@ class LuloRun:
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
-                raise StepFailed(f"{command[0]} exited with {self.process.returncode}")
+                detail = Path(self.log.name).read_text(errors="replace")[-500:]
+                raise StepFailed(f"{command[0]} exited with {self.process.returncode}: {detail}")
             if self.app == "desktop":
                 if self.application() is not None:
                     break
@@ -1144,7 +1159,8 @@ class LuloRun:
 
     def ensure_alive(self) -> None:
         if self.process.poll() is not None:
-            raise StepFailed(f"the app exited ({self.process.returncode}) during the scenario")
+            detail = Path(self.log.name).read_text(errors="replace")[-500:]
+            raise StepFailed(f"the app exited ({self.process.returncode}) during the scenario: {detail}")
 
     def window_origin(self, frame=None) -> tuple[int, int]:
         helpers = self.helper_frames() if frame is not None else []
@@ -1684,7 +1700,11 @@ def inner(args: argparse.Namespace) -> int:
         if args.preview_markup_capture:
             capture_preview_markup(nested, bins, args.settle, Path(args.preview_markup_capture))
             return 0
-        for path in sc.scenario_paths(only=args.scenarios):
+        paths = runnable_scenarios(args.scenarios)
+        if args.shard:
+            index, count = parse_shard(args.shard)
+            paths = [path for position, path in enumerate(paths) if position % count == index]
+        for path in paths:
             sid = sc.scenario_id(path)
             scenario = sc.load(path)
             local_contract = bool(scenario.get("lulo_only"))
@@ -1733,6 +1753,23 @@ def inner(args: argparse.Namespace) -> int:
     passed = sum(r["status"] == "pass" for r in results)
     print(f"\n{passed}/{len(results)} scenarios passed")
     return 0 if passed == len(results) else 1
+
+
+def runnable_scenarios(only: list[str]) -> list[Path]:
+    """Keep shard assignment stable across runs and omit unrecorded cases."""
+    return [path for path in sc.scenario_paths(only=only)
+            if sc.expectation_path(path, "mac").exists()
+            or sc.expectation_path(path, "lulo").exists()]
+
+
+def parse_shard(value: str) -> tuple[int, int]:
+    try:
+        index, count = (int(part) for part in value.split("/"))
+    except (ValueError, TypeError) as error:
+        raise ValueError("--shard must be INDEX/COUNT (zero based)") from error
+    if count < 1 or not 0 <= index < count:
+        raise ValueError("--shard must be INDEX/COUNT with 0 <= INDEX < COUNT")
+    return index, count
 
 
 def check_settings_view_menu(nested: Nested, bins: list[Path], settle: float) -> None:
@@ -1915,6 +1952,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--bin-dir", action="append", default=[], help="directory with rmac-files etc. (repeatable)")
     parser.add_argument("--shell-bin-dir", action="append", default=[], help="directory with the shell's wallpaper binary")
     parser.add_argument("--output", help="write results JSON here (compare.py reads it)")
+    parser.add_argument("--shard", help="run zero-based INDEX/COUNT of recorded scenarios")
     parser.add_argument("--capture-dir", help="save scenario capture steps with grim into this directory")
     parser.add_argument("--settle", type=float, default=0.8)
     parser.add_argument("--keep", action="store_true", help="keep the temporary directory and logs")
@@ -1929,6 +1967,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--preview-markup-capture", help=argparse.SUPPRESS)
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.shard:
+        try:
+            parse_shard(args.shard)
+        except ValueError as error:
+            parser.error(str(error))
     if not sys.platform.startswith("linux"):
         parser.error("run_lulo.py runs on Linux (the reference laptop or CI)")
     # A timeout's SIGTERM still runs the cleanup (reap, then remove the tree).
@@ -1950,6 +1993,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt += ["--shell-bin-dir", directory]
     if args.output:
         rebuilt += ["--output", args.output]
+    if args.shard:
+        rebuilt += ["--shard", args.shard]
     if args.capture_dir:
         rebuilt += ["--capture-dir", args.capture_dir]
     rebuilt += ["--settle", str(args.settle), "--explore-steps", str(args.explore_steps)]

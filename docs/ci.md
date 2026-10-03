@@ -2,9 +2,10 @@
 
 > Adopted: 2026-09-24
 >
-> Scope: `.github/workflows/ci.yml` and `.github/workflows/ci-quality.yml`
+> Scope: `.github/workflows/ci.yml`, `.github/workflows/runtime.yml`, and `.github/workflows/ci-quality.yml`
 
-Two workflow files. `ci.yml` is the per-PR merge gate; `ci-quality.yml` adds
+`ci.yml` is the per-PR merge gate; `runtime.yml` runs private nested desktop
+checks; `ci-quality.yml` adds
 MSRV drift and an aarch64 cross-build check to every PR, and moves the
 heavier dependency/security audit and the fuzz smoke runs to a weekly
 schedule so per-PR CI stays disk- and time-bounded (see `AGENTS.md`).
@@ -25,7 +26,49 @@ detail), `docs/journey-suite.md` (the package-scoped fixture runner).
 | `linux-2604` | `linux`'s formatting/Clippy/tests/Python-suite steps (not its repo-specific boundary scripts) on `ubuntu-26.04` instead of `ubuntu-24.04`. **Non-blocking** (`continue-on-error: true`) — see [Ubuntu 26.04](#ubuntu-2604) | Same `cargo`/`python3` commands as `linux`, below |
 | `macos` | Clippy, tests, and the Python suite on `macos-15` | Same commands as `linux`, minus the Linux-only boundary scripts |
 | `upstream-gpui-linux` | The separately locked `shell/` workspace: formatting, its own `cargo deny`, `cargo test --lib`, Clippy on the `wayland` feature, and a nested-Wayland smoke check | See `shell/` steps below |
-| `behavior-parity` | Plays every `tests/behavior` scenario with a recorded `.mac.json` against this commit's apps in a private headless Sway and compares with the Mac; the pass/fail table goes to the job summary. **Non-blocking** | [docs/behavior-suite.md](behavior-suite.md) |
+
+## `runtime.yml` — every push and pull request
+
+The `build` job compiles every root workspace app binary and every shell
+workspace binary with `--features wayland` using the debug profile without
+debug symbols. It strips and compresses one artifact of the installed binary
+names; playback jobs restore the short shell entry points after download.
+Eight `scenarios` jobs divide all recorded Mac and Lulo behavior
+cases with `run_lulo.py --shard INDEX/8`; each gets its own private D-Bus,
+Sway, XDG directories and app processes. Thirteen `checks` jobs run menu
+dismissal, power dialogs, window movement and the ten everyday journeys in
+private nested Sway/niri sessions. They download the same binaries. Only Lulo
+screenshots are uploaded, together with result JSON and logs.
+The menu bar journey covers controls available on a headless host; CI has no
+battery or audio output, so it stops after opening Control Centre. The separate
+menu-dismiss runner checks the other shell popovers and their dismissal.
+
+Ubuntu 26.04 does not package niri in its archive (the project's
+`packaging/third-party/niri/debian/control` records this). The nested niri
+jobs download and checksum-pin the Resolute `26.04ppa3` package from
+`ppa:avengemedia/danklinux`, then extract its compositor binary into the
+job's temporary directory. The PPA package is no longer in its current apt
+index, so an `apt install niri` cannot be used.
+It lacks Lulo's minimize-request patch, so shell journeys that exercise that
+patch may report a known compositor difference until CI uses Lulo's package.
+Orca is not installed or started by this workflow.
+
+The `summary` job checks that every recorded scenario appears exactly once,
+merges pass/fail counts and runner exit codes, and fails on missing artifacts
+or regressions. It is currently **non-blocking** (`continue-on-error: true`).
+After two consecutive complete green runs, remove that setting so runtime
+regressions block merges. Runtime jobs have 25 minute timeouts; binaries are
+built once, and all playback jobs run in parallel. An `agent/*` push invokes
+the same workflow; `.claude/ci-branch.sh wait <name>` prints its merged runtime
+report even while the summary job is non-blocking.
+New pushes cancel older runtime runs for the same branch, so an agent's
+iteration does not queue a second full playback behind obsolete results.
+
+Run the partition and merger tests without a compositor:
+
+```sh
+python3 -m unittest scripts.test_runtime_ci
+```
 
 To run what `linux`/`macos` run, from the repo root:
 

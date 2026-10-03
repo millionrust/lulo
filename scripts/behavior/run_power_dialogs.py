@@ -863,6 +863,7 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
     try:
         env = run_lulo.isolated_environment(work)
         run_lulo.refuse_live_session(env)
+        run_lulo.install_shortcut_dispatcher(env, Path(args.bin_dir))
         for key in ("WLR_BACKENDS", "WLR_HEADLESS_OUTPUTS", "WLR_LIBINPUT_NO_DEVICES", "WLR_RENDERER",
                     "LIBGL_ALWAYS_SOFTWARE", "VK_ICD_FILENAMES"):
             env.pop(key, None)
@@ -893,6 +894,11 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
                    str(Path(__file__).resolve()), "--inner", str(work), *argv]
         with open(work / "logs" / "session.log", "w") as log:
             result = subprocess.call(command, env=env, close_fds=True, stderr=log)
+        if result:
+            for name in ("top-bar", "niri", "session"):
+                log = work / "logs" / f"{name}.log"
+                if log.exists():
+                    print(f"{name} log tail:\n{log.read_text(errors='replace')[-2000:]}")
         print(f"\nsystemctl calls: {systemctl_log.read_text().splitlines()}")
         return result
     finally:

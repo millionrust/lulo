@@ -132,9 +132,11 @@ class Driver:
         bins = Path(self.args.bin_dir)
         for binary, arguments, socket in RESIDENT:
             if (bins / binary).exists():
-                self.session.spawn([str(bins / binary), *arguments], binary)
+                process = self.session.spawn([str(bins / binary), *arguments], binary)
                 if socket and not self.session.wait_for(lambda: (self.session.runtime / socket).exists(), 10):
-                    raise RuntimeError(f"{binary} did not open {socket}")
+                    log = self.session.logs / f"{binary}.log"
+                    detail = log.read_text(errors="replace")[-700:] if log.exists() else "no process log"
+                    raise RuntimeError(f"{binary} did not open {socket} (exit={process.poll()}): {detail}")
         time.sleep(1)
 
     def window(self):
@@ -336,6 +338,7 @@ class Driver:
         # accessible action, which is what assistive tech does.
         top_bar = next((p.pid for p in self.session.children
                         if isinstance(p.args, list) and Path(p.args[0]).name == "rmac-top-bar"), None)
+        top_bar_control = label in {"Wi-Fi", "Control Centre"}
         dock = next((p for p in self.session.children
                      if isinstance(p.args, list) and Path(p.args[0]).name == "dock"), None)
         while stack:
@@ -359,7 +362,8 @@ class Driver:
                     owned = [w for w in windows if w.get("pid") == pid]
                     owner = (next((w for w in owned if w.get("is_focused")), None)
                              or (owned[0] if owned else None))
-                    box = node.queryComponent().getExtents(pyatspi.WINDOW_COORDS)
+                    space = pyatspi.DESKTOP_COORDS if top_bar_control else pyatspi.WINDOW_COORDS
+                    box = node.queryComponent().getExtents(space)
                     if box.width > 2 and box.height > 2 and box.x >= 0 and box.y >= 0:
                         role = node.getRoleName()
                         rank = 0 if role in {"list item", "tree item", "table row", "table cell"} else 1
@@ -422,7 +426,17 @@ class Driver:
         elif kind == "key":
             if step[kind] in {"power", "ctrl-power", "cmd-alt-escape", "cmd-alt-s"}:
                 raise RuntimeError("refusing session or device-control shortcut")
-            self.session.pointer.key(step[kind])
+            if step[kind] == "cmd-m":
+                focused = next((w.get("id") for w in self.session.windows()
+                                if w.get("is_focused")), None)
+                for _ in range(3):
+                    self.session.pointer.key("cmd-m")
+                    if focused is None or self.session.wait_for(
+                            lambda: not any(w.get("id") == focused and w.get("is_focused")
+                                            for w in self.session.windows()), 2.5):
+                        break
+            else:
+                self.session.pointer.key(step[kind])
             if step[kind] == "cmd-space":
                 # The private nested bus has no GlobalShortcuts portal. Route
                 # the same shortcut to the resident launcher after injection.
@@ -602,7 +616,7 @@ def outer(args) -> int:
                 links = work / "bins"
                 links.mkdir()
                 for source in bins.iterdir():
-                    if source.is_file():
+                    if source.is_file() and source.name not in {"dock", "mission-control"}:
                         (links / source.name).symlink_to(source)
                 if args.override_bin_dir:
                     overrides = Path(args.override_bin_dir).expanduser().resolve()
@@ -615,6 +629,7 @@ def outer(args) -> int:
                 for alias, source in (("dock", "rmac-dock"), ("mission-control", "rmac-mission-control")):
                     # Point at the link so --override-bin-dir also covers these.
                     (links / alias).symlink_to(links / source)
+                run_lulo.install_shortcut_dispatcher(env, links)
                 # The launcher discovers desktop entries through XDG. Populate
                 # only this run's private data home, pointing Exec/TryExec at
                 # the selected binaries so search can launch a real app.

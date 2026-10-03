@@ -7,5 +7,5 @@ authors.workspace = true
 publish = false
 
 [dependencies]
-rmac-calendar-eds = { path = "../rmac-calendar-eds" }
-rmac-calendar-store = { path = "../rmac-calendar-store" }
+rmac-calendar-eds.workspace = true
+rmac-calendar-store.workspace = true

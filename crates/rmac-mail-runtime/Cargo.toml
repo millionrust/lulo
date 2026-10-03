@@ -17,3 +17,6 @@ uuid.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus.workspace = true
+
+[dev-dependencies]
+rustls.workspace = true

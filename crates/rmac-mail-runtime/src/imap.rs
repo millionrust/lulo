@@ -364,6 +364,176 @@ impl Backend for ImapBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rustls::{
+        pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
+        ServerConfig, ServerConnection, StreamOwned,
+    };
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+
+    const CERT: &[u8] = include_bytes!("../../rmac-mail-imap/tests/fixtures/server.cert.der");
+    const KEY: &[u8] = include_bytes!("../../rmac-mail-imap/tests/fixtures/server.key.der");
+    const CA: &[u8] = include_bytes!("../../rmac-mail-imap/tests/fixtures/ca.der");
+
+    fn line(stream: &mut impl Read) -> Option<String> {
+        let mut bytes = Vec::new();
+        loop {
+            let mut byte = [0];
+            if stream.read_exact(&mut byte).is_err() {
+                return None;
+            }
+            bytes.push(byte[0]);
+            if bytes.ends_with(b"\r\n") {
+                return String::from_utf8(bytes).ok();
+            }
+        }
+    }
+
+    fn send(stream: &mut impl Write, response: &str) {
+        stream.write_all(response.as_bytes()).unwrap();
+        stream.flush().unwrap();
+    }
+
+    fn literal(stream: &mut impl Write, tag: &str, uid: u32, part: &str, bytes: &[u8]) {
+        send(
+            stream,
+            &format!("* 1 FETCH (UID {uid} BODY[{part}] {{{}}}\r\n", bytes.len()),
+        );
+        stream.write_all(bytes).unwrap();
+        send(stream, &format!(")\r\n{tag} OK done\r\n"));
+    }
+
+    #[test]
+    fn fixture_sync_replays_flags_and_reconciles_deletion_without_qresync() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let config = Arc::new(
+                ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_single_cert(
+                        vec![CertificateDer::from(CERT)],
+                        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(KEY)),
+                    )
+                    .unwrap(),
+            );
+            let mut stream = StreamOwned::new(ServerConnection::new(config).unwrap(), socket);
+            send(&mut stream, "* OK ready\r\n");
+            let mut round = 0;
+            while let Some(command) = line(&mut stream) {
+                let (tag, rest) = command.trim_end().split_once(' ').unwrap();
+                match rest {
+                    "CAPABILITY" => send(
+                        &mut stream,
+                        &format!("* CAPABILITY IMAP4rev1 MOVE UIDPLUS\r\n{tag} OK done\r\n"),
+                    ),
+                    "LIST \"\" \"*\"" => {
+                        round += 1;
+                        send(&mut stream, &format!("* LIST (\\HasNoChildren) \"/\" INBOX\r\n* LIST (\\Trash) \"/\" Trash\r\n{tag} OK done\r\n"));
+                    }
+                    "SELECT \"INBOX\"" => {
+                        let count = if round == 1 || round == 4 { 1 } else { 2 };
+                        send(&mut stream, &format!("* {count} EXISTS\r\n* OK [UIDVALIDITY 42] valid\r\n{tag} OK done\r\n"));
+                    }
+                    "SELECT \"Trash\"" => send(
+                        &mut stream,
+                        &format!("* 0 EXISTS\r\n* OK [UIDVALIDITY 43] valid\r\n{tag} OK done\r\n"),
+                    ),
+                    "UID FETCH 1:* (UID FLAGS)" => {
+                        if round == 4 {
+                            send(
+                                &mut stream,
+                                &format!("* 1 FETCH (UID 8 FLAGS (\\Seen))\r\n{tag} OK done\r\n"),
+                            );
+                        } else if round >= 3 {
+                            send(&mut stream, &format!("* 1 FETCH (UID 7 FLAGS ())\r\n* 2 FETCH (UID 8 FLAGS (\\Seen))\r\n{tag} OK done\r\n"));
+                        } else if round == 2 {
+                            send(&mut stream, &format!("* 1 FETCH (UID 7 FLAGS ())\r\n* 2 FETCH (UID 8 FLAGS ())\r\n{tag} OK done\r\n"));
+                        } else {
+                            send(
+                                &mut stream,
+                                &format!("* 1 FETCH (UID 7 FLAGS ())\r\n{tag} OK done\r\n"),
+                            );
+                        }
+                    }
+                    "UID FETCH 7 (UID BODY.PEEK[HEADER])" => literal(
+                        &mut stream,
+                        tag,
+                        7,
+                        "HEADER",
+                        b"From: Ada <ada@example.test>\r\nSubject: Existing\r\n\r\n",
+                    ),
+                    "UID FETCH 8 (UID BODY.PEEK[])" => literal(
+                        &mut stream,
+                        tag,
+                        8,
+                        "",
+                        b"From: Bob <bob@example.test>\r\nSubject: New\r\n\r\nHello from fixture",
+                    ),
+                    "UID STORE 8 -FLAGS.SILENT (\\Seen \\Answered \\Flagged \\Draft)"
+                    | "UID STORE 8 +FLAGS.SILENT (\\Seen)" => {
+                        send(&mut stream, &format!("{tag} OK done\r\n"))
+                    }
+                    _ => panic!("unexpected fixture command"),
+                }
+            }
+            assert_eq!(round, 4);
+        });
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(CertificateDer::from(CA)).unwrap();
+        let client = Client::connect_with_roots(
+            &Config {
+                host: "127.0.0.1".into(),
+                port,
+                tls: TlsMode::Implicit,
+                timeout: Duration::from_secs(3),
+            },
+            roots,
+        )
+        .unwrap();
+        let mut backend = ImapBackend {
+            client,
+            trash: None,
+        };
+        let root = std::env::temp_dir().join(format!("mail-imap-runtime-{}", Uuid::new_v4()));
+        let account = Uuid::new_v4();
+        let mut store = MailStorage::open(&root, account).unwrap();
+        assert!(backend.sync(&mut store, account).unwrap().is_empty());
+        let inbox = store.mailbox("INBOX").unwrap().unwrap();
+        assert!(store
+            .message_by_uid(inbox.id, 7)
+            .unwrap()
+            .unwrap()
+            .body_hash
+            .is_none());
+        let arrivals = backend.sync(&mut store, account).unwrap();
+        assert_eq!(arrivals.len(), 1);
+        assert_eq!(arrivals[0].subject, "New");
+        assert!(store
+            .message_by_uid(inbox.id, 8)
+            .unwrap()
+            .unwrap()
+            .body_hash
+            .is_some());
+        store
+            .queue_change(arrivals[0].message_id, Change::SetFlags(FLAG_SEEN))
+            .unwrap();
+        assert!(backend.sync(&mut store, account).unwrap().is_empty());
+        assert!(store.pending_changes().unwrap().is_empty());
+        assert!(backend.sync(&mut store, account).unwrap().is_empty());
+        assert_eq!(store.cached_uids(inbox.id).unwrap(), vec![8]);
+        drop(backend);
+        server.join().unwrap();
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn standard_flags_round_trip_and_uid_sets_are_bounded() {

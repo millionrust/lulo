@@ -128,6 +128,12 @@ impl QuickSettingsView {
         .detach();
         cx.on_release(move |_, cx| {
             if cx.has_global::<QuickSettingsService>() {
+                // Every way this window can close (Escape, focus loss, a
+                // button that opens Settings, the toggle) ends here, so the
+                // outside-click catcher goes with it; otherwise an orphaned
+                // catcher would swallow the next click anywhere on screen.
+                #[cfg(target_os = "linux")]
+                let mut catcher = None;
                 cx.update_global::<QuickSettingsService, _>(|service, _| {
                     if service
                         .active
@@ -135,8 +141,18 @@ impl QuickSettingsView {
                         .is_some_and(|active| active.token == token)
                     {
                         service.active = None;
+                        #[cfg(target_os = "linux")]
+                        {
+                            catcher = service.catcher.take();
+                        }
                     }
                 });
+                #[cfg(target_os = "linux")]
+                if let Some(catcher) = catcher {
+                    cx.defer(move |cx| {
+                        let _ = catcher.update(cx, |_, window, _| window.remove_window());
+                    });
+                }
             }
         })
         .detach();

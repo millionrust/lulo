@@ -149,7 +149,7 @@ impl Eds {
             FACTORY_PATH,
             "org.gnome.evolution.dataserver.CalendarFactory",
         )?;
-        let (bus_name, object_path): (String, String) = factory.call("OpenCalendar", &(uid,))?;
+        let (object_path, bus_name): (String, String) = factory.call("OpenCalendar", &(uid,))?;
         let calendar = Calendar {
             connection: self.connection.clone(),
             bus_name,

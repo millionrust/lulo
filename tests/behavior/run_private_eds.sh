@@ -3,7 +3,7 @@
 set -euo pipefail
 repo_root=$(cd "$(dirname "$0")/../.." && pwd)
 private_root=$(mktemp -d /tmp/rmac-eds-private-XXXXXXXX)
-trap 'rm -rf "$private_root"' EXIT
+trap 'if mountpoint -q "$private_root/runtime/gvfs"; then fusermount3 -u "$private_root/runtime/gvfs" 2>/dev/null || true; fi; rm -rf "$private_root"' EXIT
 mkdir -p "$private_root/config/evolution/sources" "$private_root/data" "$private_root/cache" "$private_root/state" "$private_root/runtime" "$private_root/home"
 chmod 700 "$private_root/runtime"
 cat > "$private_root/config/evolution/sources/cal2-local.source" <<'SOURCE'
@@ -18,6 +18,7 @@ export XDG_CACHE_HOME="$private_root/cache" XDG_STATE_HOME="$private_root/state"
 export XDG_RUNTIME_DIR="$private_root/runtime"
 export CARGO_HOME="$HOME/.cargo" RUSTUP_HOME="$HOME/.rustup"
 export HOME="$private_root/home"
+export GIO_USE_VFS=local GSETTINGS_BACKEND=memory
 export RMAC_EDS_PRIVATE_BUS=1
 export CARGO_TARGET_DIR="$(dirname "$repo_root")/rmac-wt/target"
 cd "$repo_root"

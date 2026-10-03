@@ -654,14 +654,14 @@ fn desktop_overlays_are_linux_layer_surfaces_without_window_chrome() {
     ];
 
     for (source, namespace_declaration) in overlays {
-        let linux_options = source
-            .split_once("#[cfg(target_os = \"linux\")]")
-            .expect("overlay has Linux-specific window options")
-            .1
-            .split("#[cfg(not(target_os = \"linux\"))]")
-            .next()
-            .expect("Linux window options precede the non-Linux fallback");
-        assert!(linux_options.contains("WindowKind::LayerShell"));
+        let kind = source
+            .find("kind: WindowKind::LayerShell(LayerShellOptions {")
+            .expect("overlay has layer-shell window options");
+        assert!(source[..kind].contains("#[cfg(target_os = \"linux\")]"));
+        let linux_options = source[kind..]
+            .split_once("}),")
+            .expect("layer-shell options have a closing brace")
+            .0;
         assert!(linux_options.contains("Layer::Overlay"));
         assert!(linux_options.contains(namespace_declaration));
         assert!(!linux_options.contains("WindowDecorations::Client"));

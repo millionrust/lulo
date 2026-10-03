@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "text-editor/prevent-editing",
+  "platform": "Lulo local contract",
+  "observations": {
+    "before": {"focus": {"value": "A"}},
+    "prevented": {"focus": {"value": "A"}},
+    "restored": {"focus": {"value": "AC"}}
+  }
+}

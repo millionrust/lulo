@@ -341,16 +341,16 @@
           ]
         },
         {
-          "label": "Monospaced",
-          "action": "text_editor::ToggleMono",
-          "shortcut": "⇧⌘M",
-          "separator_before": true,
-          "children": []
-        },
-        {
           "label": "Wrap to Page",
           "action": "text_editor::ToggleWrapToPage",
           "shortcut": "⇧⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Prevent Editing",
+          "action": "text_editor::PreventEditing",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         }

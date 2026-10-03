@@ -1,0 +1,12 @@
+{
+  "title": "Terminal Show Tab Bar toggles the single-window tab strip",
+  "app": "terminal",
+  "lulo_only": true,
+  "steps": [
+    {"observe": "automatic", "facts": ["tabs"]},
+    {"key": "shift-cmd-t"},
+    {"observe": "shown", "facts": ["tabs"]},
+    {"menu_action": "terminal::ShowTabBar"},
+    {"observe": "hidden", "facts": ["tabs"]}
+  ]
+}

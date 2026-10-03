@@ -259,7 +259,7 @@ impl Render for SettingsView {
                     .id("settings-scroll")
                     .flex_1()
                     .overflow_y_scroll()
-                    .child(section_label("Profile"))
+                    .child(section_label("Profiles"))
                     .child(
                         div().px_3().v_flex().child(
                             div()

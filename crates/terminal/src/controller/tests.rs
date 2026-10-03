@@ -1,14 +1,24 @@
 use super::*;
 
 #[test]
+fn disabling_mouse_reporting_preserves_terminal_modes_without_forwarding_mouse_events() {
+    let requested = TermMode::MOUSE_DRAG | TermMode::SGR_MOUSE | TermMode::ALT_SCREEN;
+    let allowed = pointer::mouse_reporting_mode(requested, true);
+    assert!(allowed.contains(TermMode::MOUSE_DRAG));
+    let blocked = pointer::mouse_reporting_mode(requested, false);
+    assert!(!blocked.intersects(TermMode::MOUSE_MODE));
+    assert!(blocked.contains(TermMode::ALT_SCREEN));
+}
+
+#[test]
 fn terminal_resources_have_explicit_bounds() {
     assert_eq!(MAX_SEARCH_QUERY_BYTES, 4096);
     assert_eq!(MAX_SEARCH_QUERY_BYTES, 4096);
     assert_eq!(FOCUS_IN_REPORT.len(), 3);
     assert_eq!(FOCUS_OUT_REPORT.len(), 3);
     assert_eq!(MAX_TABS, 16);
-    assert_eq!(terminal_content_top(1), 39.0);
-    assert_eq!(terminal_content_top(2), 75.0);
+    assert_eq!(terminal_content_top(false), 39.0);
+    assert_eq!(terminal_content_top(true), 75.0);
 }
 
 #[test]

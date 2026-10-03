@@ -406,8 +406,8 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                     item!("Smaller", "text_editor::DecreaseFont", "⌘-"),
                 ]
             ),
-            item!("Monospaced", "text_editor::ToggleMono", "⇧⌘M", separator),
             item!("Wrap to Page", "text_editor::ToggleWrapToPage", "⇧⌘W"),
+            item!("Prevent Editing", "text_editor::PreventEditing", ""),
         ],
     },
     MenuSpec {
@@ -481,6 +481,7 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 ]
             ),
             item!("Close Window", "terminal::CloseTab", "⌘W", separator),
+            item!("Close All", "terminal::CloseAll", "⌥⌘W"),
             item!("Reset", "terminal::ResetTerminal", "⌥⌘R", separator),
             item!("Hard Reset", "terminal::HardResetTerminal", "⌃⌥⌘R"),
         ],
@@ -496,7 +497,7 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 "Copy Special",
                 "terminal::CopySpecialMenu",
                 [
-                    item!("Plain Text", "terminal::CopyPlainText", ""),
+                    item!("Copy Plain Text", "terminal::CopyPlainText", "⌥⇧⌘C"),
                     item!(
                         "Copy Without Background Colour",
                         "terminal::CopyWithoutBackgroundColour",
@@ -589,16 +590,22 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
-            item!("Scroll to Top", "terminal::ScrollToTop", "⌘"),
+            item!("Show Tab Bar", "terminal::ShowTabBar", "⇧⌘T"),
+            item!(
+                "Allow Mouse Reporting",
+                "terminal::AllowMouseReporting",
+                "⌘R",
+                separator
+            ),
+            item!("Default Font Size", "terminal::ZoomReset", "⌘0", separator),
+            item!("Bigger", "terminal::ZoomIn", "⌘+"),
+            item!("Smaller", "terminal::ZoomOut", "⌘-"),
+            item!("Scroll to Top", "terminal::ScrollToTop", "⌘", separator),
             item!("Scroll to Bottom", "terminal::ScrollToBottom", "⌘"),
             item!("Page Up", "terminal::PageUp", "⌘"),
             item!("Page Down", "terminal::PageDown", "⌘"),
             item!("Line Up", "terminal::LineUp", "⌥⌘"),
             item!("Line Down", "terminal::LineDown", "⌥⌘"),
-            item!("Default Font Size", "terminal::ZoomReset", "⌘0"),
-            item!("Bigger", "terminal::ZoomIn", "⌘+"),
-            item!("Smaller", "terminal::ZoomOut", "⌘-"),
-            item!("Next Profile", "terminal::CycleProfile", "⇧⌘P", separator),
             item!(
                 "Enter Full Screen",
                 "terminal::EnterFullScreen",
@@ -2693,9 +2700,13 @@ mod tests {
             &[
                 "terminal::TabBasicDefault",
                 "terminal::CloseTab",
+                "terminal::CloseAll",
                 "terminal::NextTab",
                 "terminal::PrevTab",
                 "terminal::Copy",
+                "terminal::CopyPlainText",
+                "terminal::ShowTabBar",
+                "terminal::AllowMouseReporting",
                 "terminal::Paste",
                 "terminal::SelectAll",
                 "terminal::Find",
@@ -2707,9 +2718,13 @@ mod tests {
         let terminal_hints = hints(&terminal);
         assert_eq!(terminal_hints["terminal::TabBasicDefault"], "⌘T");
         assert_eq!(terminal_hints["terminal::CloseTab"], "⌘W");
+        assert_eq!(terminal_hints["terminal::CloseAll"], "⌥⌘W");
         assert_eq!(terminal_hints["terminal::NextTab"], "⇧⌘]");
         assert_eq!(terminal_hints["terminal::PrevTab"], "⇧⌘[");
         assert_eq!(terminal_hints["terminal::Copy"], "⌘C");
+        assert_eq!(terminal_hints["terminal::CopyPlainText"], "⌥⇧⌘C");
+        assert_eq!(terminal_hints["terminal::ShowTabBar"], "⇧⌘T");
+        assert_eq!(terminal_hints["terminal::AllowMouseReporting"], "⌘R");
         assert_eq!(terminal_hints["terminal::Paste"], "⌘V");
         assert_eq!(terminal_hints["terminal::SelectAll"], "⌘A");
         assert_eq!(terminal_hints["terminal::Find"], "⌘F");
@@ -2733,8 +2748,9 @@ mod tests {
         let editor_hints = hints(&editor);
         assert_eq!(editor_hints["text_editor::FindPrev"], "⇧⌘G");
         assert_eq!(editor_hints["text_editor::ToggleReplace"], "⌥⌘F");
-        // Bound to ⇧⌘M, which the menu now says (MENU-07).
-        assert_eq!(editor_hints["text_editor::ToggleMono"], "⇧⌘M");
+        // The app retains its private font toggle, but the Mac has no
+        // Monospaced menu row to advertise it.
+        assert!(!editor_hints.contains_key("text_editor::ToggleMono"));
         assert_eq!(editor_hints["input::Undo"], "⌘Z");
         assert_eq!(editor_hints["input::Redo"], "⇧⌘Z");
 

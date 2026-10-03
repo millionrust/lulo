@@ -317,6 +317,7 @@ impl EditorView {
             mono: true,
             font_size: f32::from(settings.font_size),
             wrap_to_page: settings.wrap_to_page,
+            prevent_editing: false,
             page_width_chars: settings.width_chars,
             rtf_runs: None,
             focus: cx.focus_handle(),

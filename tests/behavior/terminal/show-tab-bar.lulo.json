@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "terminal/show-tab-bar",
+  "platform": "Lulo local contract",
+  "observations": {
+    "automatic": {"tabs": {"tab_bar_visible": false}},
+    "shown": {"tabs": {"tab_bar_visible": true}},
+    "hidden": {"tabs": {"tab_bar_visible": false}}
+  }
+}

@@ -1032,7 +1032,12 @@ class LuloRun:
         selected = [name(n) for n in nodes if has_state(n, pyatspi.STATE_SELECTED)]
         if not tabs and frame is not None:
             tabs = [name(frame)]
-        return {"count": len(tabs), "titles": tabs, "selected": selected}
+        return {
+            "count": len(tabs),
+            "titles": tabs,
+            "selected": selected,
+            "tab_bar_visible": bool(nodes),
+        }
 
     def fact_calendar_week(self) -> dict[str, Any]:
         """Whether Calendar's accessible week grid includes the current week."""

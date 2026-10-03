@@ -160,7 +160,10 @@ fn tls(stream: Stream, host: &str) -> Result<Stream, Error> {
     if certs.certs.is_empty() {
         return Err(Error::Tls);
     }
-    let roots = RootCertStore::from_iter(certs.certs);
+    let mut roots = RootCertStore::empty();
+    for certificate in certs.certs {
+        roots.add(certificate).map_err(|_| Error::Tls)?;
+    }
     let config = Arc::new(
         ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
             .with_safe_default_protocol_versions()

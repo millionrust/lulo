@@ -566,6 +566,13 @@
       "label": "View",
       "items": [
         {
+          "label": "Allow Mouse Reporting",
+          "action": "terminal::AllowMouseReporting",
+          "shortcut": "⌘R",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Scroll to Top",
           "action": "terminal::ScrollToTop",
           "shortcut": "⌘",

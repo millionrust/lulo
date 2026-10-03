@@ -591,6 +591,11 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
+            item!(
+                "Allow Mouse Reporting",
+                "terminal::AllowMouseReporting",
+                "⌘R"
+            ),
             item!("Scroll to Top", "terminal::ScrollToTop", "⌘"),
             item!("Scroll to Bottom", "terminal::ScrollToBottom", "⌘"),
             item!("Page Up", "terminal::PageUp", "⌘"),

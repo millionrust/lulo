@@ -4,6 +4,13 @@ use super::*;
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 
+pub(super) fn mouse_reporting_mode(mut mode: TermMode, allow: bool) -> TermMode {
+    if !allow {
+        mode.remove(TermMode::MOUSE_MODE);
+    }
+    mode
+}
+
 impl TerminalView {
     pub(super) fn reset_pointer_routing(&mut self) {
         self.selecting = false;
@@ -152,7 +159,7 @@ impl TerminalView {
         self.tabs[self.active]
             .term
             .lock()
-            .map(|term| *term.mode())
+            .map(|term| mouse_reporting_mode(*term.mode(), self.allow_mouse_reporting))
             .map_err(|_| SessionWriteError::State)
     }
 

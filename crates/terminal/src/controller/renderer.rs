@@ -49,6 +49,11 @@ impl Render for TerminalView {
             rmac_ui::set_menu_enabled("terminal::Copy", has_selection, cx);
             rmac_ui::set_menu_checked("terminal::ToggleOptionAsMeta", self.option_as_meta, cx);
             rmac_ui::set_menu_checked("terminal::ShowTabBar", self.tab_bar_visible(), cx);
+            rmac_ui::set_menu_checked(
+                "terminal::AllowMouseReporting",
+                self.allow_mouse_reporting,
+                cx,
+            );
             rmac_ui::set_menu_enabled("terminal::CopyPlainText", has_selection, cx);
             rmac_ui::set_menu_checked("terminal::CopyStylePlainText", true, cx);
             rmac_ui::set_menu_enabled("terminal::CopyStyleHeading", false, cx);
@@ -178,6 +183,11 @@ impl Render for TerminalView {
             }))
             .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
             .on_action(cx.listener(|this, _: &ShowTabBar, _, cx| this.toggle_tab_bar(cx)))
+            .on_action(cx.listener(|this, _: &AllowMouseReporting, _, cx| {
+                this.allow_mouse_reporting = !this.allow_mouse_reporting;
+                this.reset_pointer_routing();
+                cx.notify();
+            }))
             .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| window.toggle_fullscreen()))
             .on_action(cx.listener(|this, _: &SelectToPreviousMark, _, cx| {
                 this.select_to_mark(PromptDirection::Previous, false, cx)

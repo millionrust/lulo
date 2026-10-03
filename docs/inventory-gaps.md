@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_500 gaps across 10 apps; 139 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_499 gaps across 10 apps; 139 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Calculator
 
@@ -378,13 +378,12 @@ _500 gaps across 10 apps; 139 Mac-only items were allowlisted (see `tests/invent
 | TRM-MENU-016 | missing menu item (has a shortcut) | Print Selection… | Shell ▸ Print Selection… | ⌥⌘P |  | missing from Lulo's menu bar |
 | TRM-MENU-017 | missing menu item (has a shortcut) | Print… | Shell ▸ Print… | ⌘P |  | missing from Lulo's menu bar |
 | TRM-MENU-013 | missing menu item (has a shortcut) | Show Inspector | Shell ▸ Show Inspector | ⌘I |  | missing from Lulo's menu bar |
-| TRM-MENU-047 | missing menu item (has a shortcut) | Allow Mouse Reporting | View ▸ Allow Mouse Reporting | ⌘R |  | missing from Lulo's menu bar |
-| TRM-MENU-049 | missing menu item (has a shortcut) | Close Split Pane | View ▸ Close Split Pane | ⇧⌘D |  | missing from Lulo's menu bar |
+| TRM-MENU-048 | missing menu item (has a shortcut) | Close Split Pane | View ▸ Close Split Pane | ⇧⌘D |  | missing from Lulo's menu bar |
 | TRM-MENU-046 | missing menu item (has a shortcut) | Hide Alternative Screen | View ▸ Hide Alternative Screen | ⇧⌘ |  | missing from Lulo's menu bar |
 | TRM-MENU-043 | missing menu item (has a shortcut) | Show All Tabs | View ▸ Show All Tabs | ⇧⌘\ |  | missing from Lulo's menu bar |
 | TRM-MENU-045 | missing menu item (has a shortcut) | Show Alternative Screen | View ▸ Show Alternative Screen | ⇧⌘ |  | missing from Lulo's menu bar |
-| TRM-MENU-048 | missing menu item (has a shortcut) | Split Pane | View ▸ Split Pane | ⌘D |  | missing from Lulo's menu bar |
-| TRM-MENU-052 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
+| TRM-MENU-047 | missing menu item (has a shortcut) | Split Pane | View ▸ Split Pane | ⌘D |  | missing from Lulo's menu bar |
+| TRM-MENU-051 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
 | TRM-MENU-001 | missing menu item | Secure Keyboard Entry | Application ▸ Secure Keyboard Entry |  |  | missing from Lulo's menu bar |
 | TRM-MENU-034 | missing menu item | Bookmarks | Edit ▸ Bookmarks |  |  | missing from Lulo's menu bar |
 | TRM-MENU-035 | missing menu item | No Bookmarks | Edit ▸ Bookmarks ▸ No Bookmarks |  |  | missing from Lulo's menu bar |
@@ -409,17 +408,17 @@ _500 gaps across 10 apps; 139 Mac-only items were allowlisted (see `tests/invent
 | TRM-MENU-010 | missing menu item | Export Settings… | Shell ▸ Export Settings… |  |  | missing from Lulo's menu bar |
 | TRM-MENU-009 | missing menu item | Use Settings as Default | Shell ▸ Use Settings as Default |  |  | missing from Lulo's menu bar |
 | TRM-MENU-044 | missing menu item | Show Marks | View ▸ Show Marks |  |  | missing from Lulo's menu bar |
-| TRM-MENU-059 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
-| TRM-MENU-058 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
-| TRM-MENU-053 | missing menu item | Open Window Group | Window ▸ Open Window Group |  |  | missing from Lulo's menu bar |
-| TRM-MENU-054 | missing menu item | No Window Groups | Window ▸ Open Window Group ▸ No Window Groups |  |  | missing from Lulo's menu bar |
-| TRM-MENU-061 | missing menu item | Return All to Default Size | Window ▸ Return All to Default Size |  |  | missing from Lulo's menu bar |
-| TRM-MENU-060 | missing menu item | Return to Default Size | Window ▸ Return to Default Size |  |  | missing from Lulo's menu bar |
-| TRM-MENU-055 | missing menu item | Save Windows as Group… | Window ▸ Save Windows as Group… |  |  | missing from Lulo's menu bar |
-| TRM-MENU-051 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
-| TRM-MENU-050 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
-| TRM-MENU-057 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⇧⌘] | shortcut differs |
-| TRM-MENU-056 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⇧⌘[ | shortcut differs |
+| TRM-MENU-058 | missing menu item | Merge All Windows | Window ▸ Merge All Windows |  |  | missing from Lulo's menu bar |
+| TRM-MENU-057 | missing menu item | Move Tab to New Window | Window ▸ Move Tab to New Window |  |  | missing from Lulo's menu bar |
+| TRM-MENU-052 | missing menu item | Open Window Group | Window ▸ Open Window Group |  |  | missing from Lulo's menu bar |
+| TRM-MENU-053 | missing menu item | No Window Groups | Window ▸ Open Window Group ▸ No Window Groups |  |  | missing from Lulo's menu bar |
+| TRM-MENU-060 | missing menu item | Return All to Default Size | Window ▸ Return All to Default Size |  |  | missing from Lulo's menu bar |
+| TRM-MENU-059 | missing menu item | Return to Default Size | Window ▸ Return to Default Size |  |  | missing from Lulo's menu bar |
+| TRM-MENU-054 | missing menu item | Save Windows as Group… | Window ▸ Save Windows as Group… |  |  | missing from Lulo's menu bar |
+| TRM-MENU-050 | wrong/missing shortcut | Centre | Window ▸ Centre | ⌃C | ⌃⌘C | shortcut differs |
+| TRM-MENU-049 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
+| TRM-MENU-056 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⇧⌘] | shortcut differs |
+| TRM-MENU-055 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⇧⌘[ | shortcut differs |
 | TRM-SETTINGS-001 | missing settings control | ANSI Colours | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-002 | missing settings control | Add | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-003 | missing settings control | Advanced | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |

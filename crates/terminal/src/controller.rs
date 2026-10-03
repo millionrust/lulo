@@ -147,6 +147,7 @@ gpui::actions!(
         PrevTab,
         CycleProfile,
         ShowTabBar,
+        AllowMouseReporting,
         EnterFullScreen,
         ShowProfiles,
         ResetTerminal,
@@ -336,6 +337,8 @@ pub(super) struct TerminalView {
     /// A menu override for automatic tab-strip visibility (normally shown
     /// when there are multiple tabs).
     show_tab_bar: Option<bool>,
+    /// Whether application-requested xterm mouse events may leave this window.
+    allow_mouse_reporting: bool,
     /// Whether the profile picker dropdown is open.
     picker_open: bool,
     /// Whether ⌥ sends Meta (an Escape prefix) instead of typing the

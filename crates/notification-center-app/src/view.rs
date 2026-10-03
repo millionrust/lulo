@@ -13,6 +13,7 @@ use crate::model::{
 pub(crate) struct NotificationCenterView {
     pub(crate) focus: FocusHandle,
     token: u64,
+    previous_window: Option<rmac_compositor::WindowId>,
     pub(crate) snapshot: Option<Snapshot>,
     pub(crate) applications: ApplicationCatalog,
     /// Group keys whose stacks are expanded ("Show Less" collapses them).
@@ -213,6 +214,25 @@ impl NotificationCenterView {
     pub(crate) fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         crate::clear_active_panel(self.token, cx);
         window.remove_window();
+    }
+
+    pub(crate) fn dismiss_and_restore_focus(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.dismiss(window, cx);
+        if let Some(previous_window) = self.previous_window {
+            cx.spawn(async move |_, _| {
+                let action = rmac_compositor::Action::FocusWindow {
+                    window: previous_window,
+                };
+                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                    eprintln!("could not return focus from Notification Centre: {error:?}");
+                }
+            })
+            .detach();
+        }
     }
 
     pub(crate) fn groups(&self) -> Vec<RecordGroup<'_>> {

@@ -726,6 +726,17 @@ impl Render for LauncherView {
             })
             .collect::<Vec<_>>();
         let rows = self.visible_rows();
+        let selected_announcement = if self.keyboard_selection {
+            rows.iter()
+                .find(|row| row.selected)
+                .map(|row| match &row.subtitle {
+                    Some(subtitle) => format!("{}, {subtitle}", row.title),
+                    None => row.title.clone(),
+                })
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         let query = snapshot.query.clone();
         let compact = self.compact;
         // A typed query outside the Apps/Files browse modes: the bar grows
@@ -740,6 +751,16 @@ impl Render for LauncherView {
             .v_flex()
             .gap(px(metrics::RESULTS_GAP))
             .text_color(mac::text())
+            .child(
+                div()
+                    .id("spotlight-selected-result")
+                    .role(Role::Status)
+                    .a11y_synthetic_children(move |builder| {
+                        builder.parent_node().set_live(accesskit::Live::Polite);
+                        builder.parent_node().set_live_atomic(true);
+                        builder.parent_node().set_label(selected_announcement);
+                    }),
+            )
             // Presses that reach the surface itself missed every shape:
             // Spotlight closes, as on macOS.
             .on_mouse_down(

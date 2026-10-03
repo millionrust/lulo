@@ -3,7 +3,12 @@
 use super::*;
 
 impl NotificationCenterView {
-    pub(crate) fn new(token: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        token: u64,
+        previous_window: Option<rmac_compositor::WindowId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         cx.observe_window_activation(window, |this, window, cx| {
@@ -131,6 +136,7 @@ impl NotificationCenterView {
         Self {
             focus,
             token,
+            previous_window,
             snapshot: None,
             applications: ApplicationCatalog::default(),
             expanded: BTreeSet::new(),

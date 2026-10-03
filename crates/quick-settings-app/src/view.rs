@@ -57,11 +57,13 @@ impl SliderBulges {
 
 pub(crate) struct QuickSettingsView {
     token: u64,
+    previous_window: Option<rmac_compositor::WindowId>,
     pub(crate) state: State,
     pub(crate) stream_error: Option<SharedString>,
     pub(crate) operation_error: Option<SharedString>,
     pub(crate) received_snapshot: bool,
     pub(crate) focus: FocusHandle,
+    pub(crate) initial_control_focus: FocusHandle,
     /// Backlight level in percent; `None` hides the Display module.
     pub(crate) brightness: Option<u8>,
     /// The player Now Playing shows; `None` hides the module.
@@ -113,9 +115,15 @@ impl QuickSettingsView {
         )
     }
 
-    pub(crate) fn new(token: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        token: u64,
+        previous_window: Option<rmac_compositor::WindowId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus = cx.focus_handle();
-        focus.focus(window, cx);
+        let initial_control_focus = cx.focus_handle();
+        initial_control_focus.focus(window, cx);
         // The outside catcher handles pointer dismissal. Compositor focus can
         // move back to an open menu-bar menu while this panel remains visible.
         cx.on_release(move |_, cx| {
@@ -178,11 +186,13 @@ impl QuickSettingsView {
 
         Self {
             token,
+            previous_window,
             state: State::default(),
             stream_error: None,
             operation_error: None,
             received_snapshot: false,
             focus,
+            initial_control_focus,
             brightness: None,
             player: None,
             volume_preview: None,
@@ -367,7 +377,7 @@ impl QuickSettingsView {
             if self.detail.is_some() {
                 self.close_detail(cx);
             } else {
-                self.dismiss(window, cx);
+                self.dismiss_and_restore_focus(window, cx);
             }
             return true;
         }
@@ -720,6 +730,21 @@ impl QuickSettingsView {
     pub(crate) fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         crate::clear_active_popover(self.token, cx);
         window.remove_window();
+    }
+
+    fn dismiss_and_restore_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.dismiss(window, cx);
+        if let Some(previous_window) = self.previous_window {
+            cx.spawn(async move |_, _| {
+                let action = rmac_compositor::Action::FocusWindow {
+                    window: previous_window,
+                };
+                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                    eprintln!("could not return focus from Control Centre: {error:?}");
+                }
+            })
+            .detach();
+        }
     }
 }
 

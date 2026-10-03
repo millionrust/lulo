@@ -322,6 +322,12 @@ impl LauncherView {
             });
         div()
             .id(SharedString::from(format!("spotlight-result-{index}")))
+            .role(Role::Button)
+            .aria_label(match &row.subtitle {
+                Some(subtitle) => format!("{}, {subtitle}", row.title),
+                None => row.title.clone(),
+            })
+            .aria_selected(row.selected)
             .relative()
             .flex_none()
             .h(px(qm::ROW))

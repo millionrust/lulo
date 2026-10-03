@@ -255,6 +255,16 @@ impl Render for MonitorView {
                         .text_size(rmac_ui::text_px(13.0))
                         .child(
                             Table::new(&self.table)
+                                .accessibility_row_key(|delegate, index| {
+                                    delegate.rows[index].accessibility_key()
+                                })
+                                .accessibility_row_name(|delegate, index| {
+                                    format!(
+                                        "{} (PID {})",
+                                        delegate.rows[index].name, delegate.rows[index].pid
+                                    )
+                                    .into()
+                                })
                                 .stripe(true)
                                 .bordered(false)
                                 .row_height(TABLE_ROW_HEIGHT),

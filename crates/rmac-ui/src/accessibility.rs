@@ -317,6 +317,8 @@ pub const MAX_ACCESSIBLE_TABLE_ROWS: usize = 4096;
 pub struct AccessibleTableRow {
     /// The row's index into the table's full model (0-based).
     pub index: usize,
+    /// Stable model identity, unchanged when rows are sorted.
+    pub key: u64,
     /// The row's name, read from its first column.
     pub name: SharedString,
     /// Whether this row is the table's selected row.
@@ -334,16 +336,16 @@ pub fn offscreen_table_row_indices(row_count: usize, painted: Range<usize>) -> V
 }
 
 /// A deterministic AccessKit node id for a synthetic table row, stable
-/// across frames (so a screen reader keeps tracking the same row as it
-/// scrolls into and out of the painted range) and unique per table
+/// across sort and refresh changes when the caller supplies a model key,
+/// and unique per table
 /// instance. `salt` should be the hosting `Entity`'s id
 /// (`Entity::entity_id().as_u64()`), so two `Table`s on screen at once
 /// never collide.
-pub fn table_row_node_id(salt: u64, row_index: usize) -> accesskit::NodeId {
+pub fn table_row_node_id(salt: u64, row_key: u64) -> accesskit::NodeId {
     let mut hasher = DefaultHasher::new();
     salt.hash(&mut hasher);
     "rmac_ui::accessibility::table_row".hash(&mut hasher);
-    row_index.hash(&mut hasher);
+    row_key.hash(&mut hasher);
     accesskit::NodeId(hasher.finish())
 }
 
@@ -364,7 +366,7 @@ pub fn push_offscreen_table_rows(
     bounds: Option<accesskit::Rect>,
 ) {
     for row in rows {
-        let id = table_row_node_id(salt, row.index);
+        let id = table_row_node_id(salt, row.key);
         let mut node = accesskit::Node::new(accesskit::Role::Row);
         node.set_label(row.name.to_string());
         node.set_selected(row.selected);
@@ -491,8 +493,7 @@ mod tests {
 
     #[test]
     fn row_node_ids_are_stable_and_distinct() {
-        // Stable: the same salt and row index always hash the same way, so a
-        // screen reader keeps tracking a row across frames.
+        // The same salt and stable model key always hash the same way.
         assert_eq!(table_row_node_id(1, 5), table_row_node_id(1, 5));
         // Distinct per row...
         assert_ne!(table_row_node_id(1, 5), table_row_node_id(1, 6));

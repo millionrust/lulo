@@ -107,6 +107,9 @@ impl QuickSettingsView {
             ));
         let label = div()
             .id(SharedString::from(format!("{}-label", pill.id)))
+            .when(pill.module == Module::Wifi, |label| {
+                label.track_focus(&self.initial_control_focus)
+            })
             .role(Role::Button)
             .aria_label(label_name)
             .focusable()

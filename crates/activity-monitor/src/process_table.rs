@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -94,6 +95,13 @@ pub(crate) struct ProcRow {
 }
 
 impl ProcRow {
+    pub(crate) fn accessibility_key(&self) -> u64 {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        self.pid.hash(&mut hash);
+        self.start_time.hash(&mut hash);
+        hash.finish()
+    }
+
     fn cell_text(&self, key: ColKey) -> String {
         match key {
             ColKey::Pid => self.pid.to_string(),
@@ -652,21 +660,15 @@ impl TableDelegate for ProcessTableDelegate {
             .map(|row| row.label.clone())
             .or_else(|| self.rows.get(row_index).map(|row| row.name.to_string()))
             .unwrap_or_default();
-        let description = self
+        let key = self
             .rows
             .get(row_index)
-            .map(|row| format!("{:.1}% CPU, {}", row.cpu, format_mem(row.mem)))
-            .unwrap_or_default();
-        let accessible_name = if description.is_empty() {
-            name
-        } else {
-            format!("{name}, {description}")
-        };
+            .map_or(row_index as u64, ProcRow::accessibility_key);
         let view = cx.entity();
         div()
-            .id(("row", row_index))
+            .id(("row", key as usize))
             .role(Role::Row)
-            .aria_label(SharedString::from(accessible_name))
+            .aria_label(SharedString::from(name))
             .aria_selected(selected)
             // Matches the row index/count `rmac_ui::Table` gives the
             // off-screen rows it publishes synthetically (ACC, journey 6),
@@ -837,6 +839,16 @@ mod tests {
             threads: 1,
             uid: None,
         }
+    }
+
+    #[test]
+    fn accessibility_identity_ignores_changing_metrics_but_detects_pid_reuse() {
+        let original = row(1.0, true);
+        let mut refreshed = row(99.0, true);
+        refreshed.mem = 1024;
+        assert_eq!(original.accessibility_key(), refreshed.accessibility_key());
+        refreshed.start_time = 42;
+        assert_ne!(original.accessibility_key(), refreshed.accessibility_key());
     }
 
     #[test]

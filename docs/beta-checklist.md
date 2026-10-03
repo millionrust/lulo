@@ -1,111 +1,94 @@
 # Beta release checklist — 0.9.0-beta.1
 
-## Beta 1 go/no-go (updated 2026-10-01)
+## Beta 1 go/no-go (updated 2026-10-03)
 
-**Still no-go, but materially closer than the 2026-09-27 pass.** Since then,
-`integ` picked up 279 commits (2026-09-29 through 2026-10-01, HEAD `1c9ce60d`)
-that closed real, user-visible gaps: real Wayland touchscreen input
-(TOUCH-01, with a dedicated Settings pane), a whole-repo fix for
-`std::process::Command` calls hanging GPUI's background executor
-(LINUX-HW-07 — this silently froze Mouse/Trackpad/Wi-Fi/VPN/thumbnails/
-hostname/lock-request/Weather/Clock panes and more), hardware-aware Settings
-panes that only show hardware you actually have (LINUX-HW-01..06), the
-15 px wallpaper/blur border that showed around newly opened windows until a
-click (WIN-11), and five owner-reported bugs in one pass (Terminal's close
-button, the Force-Quit-named title bug, Settings sidebar width, Wi-Fi pane
-stuck loading, screenshot first-press flakiness). **None of this has an
-installed-package or fresh-CI result yet** — it's all live/nested evidence
-against source builds; see the updated tables below for exactly what's
-proven and what isn't.
+**Still no-go, but close.** `dev` is at `fcafa5e4`. CI and the GitHub-built
+candidate packages are green for recent `dev` commits, and a GitHub-built
+install works on the reference laptop (`0.9.0~beta.1-38`). Against
+`fcafa5e4`'s tree: the full nested behaviour suite passes **160/160**,
+power-dialog checks pass **51/51**, window-move checks pass **19/19**, and
+menu-dismiss checks pass **17/18** — the one failure is a known, already-
+tracked gap (`MENU-15`, Partial: a Dock click still doesn't close an open
+menu; fix in progress, see item 1 below). `BUG-01` (System Settings burning
+41–48% of a core with Search focused) is fixed: two fresh samples measured
+0.1–0.2%, below the 0.3% target. `docs/inventory-gaps.md` is down to 672
+menu-item gaps across System Settings, Files, Terminal, Text Editor and the
+rest. Control Centre and Notification Center now expose populated AT-SPI
+trees, not empty frames (`ACC-11`). The Lulo session now skips the two
+Evolution/`foot` autostart services it never uses (`MEM-02`).
 
 Two owner-reported P0s remain open and are **not** confirmed fixed: desktop
 icons that can stay hidden until a click after login (`DESK-12`), and the
 Dock's Bin icon vanishing then the Dock lagging/disappearing after a delete
 (`DOCK-27`). Both reproduce live but not in the nested test compositor, so
-they're narrowed, not closed.
+they're narrowed, not closed, and need a recheck on the current installed
+build.
 
-The behaviour suite itself grew during this pass: `tests/behavior/` now has
-117 scenario fixtures (up from the 96–112 counted in earlier passes), of
-which **114 have a recorded Mac `.mac.json` expectation** (confirmed by
-`python3 -m pytest scripts/test_behavior_suite.py`, which fails exactly one
-subtest: `hardware-touchscreen.json has no .mac.json`). The last **full**
-nested-compositor run with a pass/fail count against a now-slightly-smaller
-scenario set was **112/112** (TOUCH-01's pass, 2026-09-30), with the only
-known mismatch (Files View Options) itself fixed in a later commit
-(`666cbb30`) — so the owner's reported 114/114 is plausible and consistent
-with the evidence, but **no committed evidence file reflects a full run at
-the current 114-scenario HEAD**; `docs/behavior-results/*.json` is still
-dated 2026-09-28/29. Re-running the full suite at current HEAD and recording
-the result is the single highest-value piece of missing evidence for this
-checklist (see "Path to Beta 1" below).
+**What's done this pass:** the 160/160 full behaviour run, the
+51/51 power-dialog and 19/19 window-move reruns, `BUG-01`'s idle-CPU fix,
+`MEM-02`'s autostart-service skip, Control Centre/Notification Center's
+populated AT-SPI trees, the inventory-gaps reduction to 672, and green
+CI/candidate-package builds for recent `dev` commits.
 
-**No fresh CI result exists for current HEAD.** The CI links below are
-pinned to source `8ba31b82`, which is 279 commits and 3 calendar days behind
-`1c9ce60d`. No commit message in that window references a new Actions run.
-CI status for `integ`/`beta-readiness` is simply unknown until it's run.
+**What's still open, in order:**
+
+1. **Dock-click menu dismissal (`MENU-15`).** Three live reruns on
+   2026-10-03 (`run_menu_dismiss.py`) still show a Dock click not closing an
+   open menu (3/3 failures); every other dismissal path (wallpaper click,
+   another window, Escape, title-switch, Control Centre) passes. Fix in
+   progress.
+2. **Owner re-check of `DESK-12`/`DOCK-27` on the new install.** Neither
+   reproduces in the nested test compositor, so only a live recheck on the
+   currently installed build can confirm or re-open them.
+3. **An 8-hour soak against the installed package**, not just source
+   binaries.
+4. **The Orca accessibility audit (journey 9).** An automated run is in
+   progress; the owner still needs to do the final listen.
+5. **Security-review native-station evidence (24 of 80 checks).** Needs
+   three stations: the reference laptop, a disposable install, and an
+   NVIDIA desktop that doesn't exist yet.
+6. **NVIDIA testing.** Needs NVIDIA hardware, which the project doesn't
+   have yet.
+7. **A real GitHub Actions release-workflow run on the actual tag.** There
+   is no release-candidate tag — `v0.9.0-beta.1` itself is the first run of
+   the release workflow.
+8. **Owner sign-off on the README/`docs/install.md` early-access wording**
+   (drafted this pass; the owner approves in review).
+
+Per the owner's 2026-10-03 decision, items 4–6 (the Orca audit, the
+security-station runs, and NVIDIA testing) **stay Beta 1 gates**: the owner
+declined the proposed move of those three to Beta 2 (see "Proposed Beta 1 /
+Beta 2 split" below, now a record of a declined proposal, not an open
+option).
 
 ### Path to Beta 1 (ordered)
 
-**Agent work remaining (closeable without the owner):**
+The numbered list above **is** the current path to Beta 1 — every closeable
+piece of agent work (full behaviour suite, idle-CPU fix, autostart-service
+fix, accessibility-tree fixes, inventory-gap cleanup, green CI) landed this
+pass or earlier ones. What's left is either hardware-bound (NVIDIA), time-
+bound (the 8-hour soak, the release-workflow's first real run), or owner-
+only (the Orca final listen, the security-station runs, the wording
+sign-off) — plus the one still-open code fix, `MENU-15`'s Dock-click
+dismissal.
 
-1. **(S)** Run the full nested behaviour suite at current HEAD and commit
-   the result JSON — replaces the stale 2026-09-29 evidence and settles the
-   112/112 vs. 114/114 question above.
-2. **(S)** Record Mac `.mac.json` expectations for the 3 unrecorded
-   scenarios: `tests/behavior/settings/hardware-touchscreen.json`,
-   `settings/storage-refresh.json`, `text-editor/save-with-find-focus.json`
-   (the last is deliberately unrecorded per its parity row, TE-22 — confirm
-   that's still intended before recording it).
-3. **(S)** Fixed this pass: `scripts/build-icons.py`'s `trash-full` output
-   had drifted from the hand-edited, already-shipped
-   `crates/rmac-dock/assets/icons/trash-full.svg` (the `915ceb55` Dock
-   Bin-icon fix moved `<clipPath id="mouth">` into `<defs>` by hand without
-   updating the generator), and `scripts/linux/sweep-settings-errors.py`'s
-   `PANE_ROUTES` copy was missing the new `touchscreen` pane added by
-   LINUX-HW-02. Both would have failed `python3 -m pytest
-   scripts/test_application_icons.py scripts/test_sweep_settings_errors.py`
-   (and the former is a Release-contracts CI gate); both are fixed on this
-   branch (see commit history) and the generator now regenerates
-   byte-identical output.
-4. **(M)** Re-run the 5-app idle-CPU candidate and the 8-hour soak against
-   an **installed** package (not just live source binaries) — the
-   2026-09-29 pass numbers are good but have never been measured post-install.
-5. **(M)** Install the current `integ` HEAD (or a fresh native candidate
-   built with the new `--profile iterate` fast path) on the reference PC and
-   re-run the installed-binary regression set (startup, power-dialog,
-   shutdown, behaviour suite) — every "(live reinstall pending)" tag in
-   `docs/parity.md` (WIN-11, CC-13, SESSION-08, SET-14, TERM-19 and others)
-   needs this before it can be called closed.
-6. **(M)** Diagnose `DESK-12` (desktop icons hidden until a click) and
-   `DOCK-27` (Dock Bin icon/Dock disappearing) live, since neither
-   reproduces in the nested compositor — these are the only two open P0s.
-7. **(L)** Work the first-hour-visible P1 queue below in priority order.
-8. **(L)** Run a real GitHub Actions release-workflow dry run (tag a
-   pre-release candidate, e.g. `v0.9.0-beta.1-rc`) to exercise the
-   never-yet-run container build, `rmac-source` package, and provenance
-   attestation path before the real tag.
+**Deferred past this Beta (owner-only, not blocking):**
 
-**Owner-only steps (deferred to the very end, per the brief):**
+- Decide and create the APT archive signing key (`docs/release-process.md`,
+  "Switching on signed updates") — needed for the in-place-update
+  follow-up, not for this Beta.
+- GitHub admin: confirm repo/Pages settings for the eventual signed APT
+  repository — not blocking this Beta.
 
-9. Decide and create the APT archive signing key (`docs/release-process.md`,
-   "Switching on signed updates") — **not required for this Beta**, only for
-   the in-place-update follow-up.
-10. Run the formal Orca/200%-scaling accessibility audit (journey 9) on the
-    reference laptop — only the owner can enable Orca.
-11. Approve README/`docs/install.md` readiness-banner wording (currently
-    "isn't ready for daily use yet"; needs an early-access rewrite once the
-    release is confirmed going out).
-12. GitHub admin: confirm repo/Pages settings needed for the eventual signed
-    APT repository (not blocking this Beta).
+**Release steps (after the items above are done):**
 
-**Release steps (after 1–8 are done and 9–12 are owner-confirmed):**
-
-13. Tag `v0.9.0-beta.1`, watch the Release workflow, verify every asset
-    attaches (`.deb`s, `SHA256SUMS`, SBOM, provenance).
-14. Publish the refreshed release notes (drafted this pass, not yet
-    published — see `packaging/release-notes/0.9.0~beta.1.txt` and
+9. Tag `v0.9.0-beta.1` — this is the first run of the Release workflow, not
+   a dry run behind it; watch it and verify every asset attaches (`.deb`s,
+   `SHA256SUMS`, SBOM, provenance).
+10. Publish the refreshed release notes (this pass — see
+    `packaging/release-notes/0.9.0~beta.1.txt` and
     `docs/release-notes/0.9.0-beta1.md`).
-15. Announce with the "early access, not the daily-driver Beta cohort"
+11. Announce with the "early access, not the daily-driver Beta cohort"
     subtitle (see "Read this first" below).
 
 ### Priority work queue: open P0s and first-hour-visible P1s
@@ -136,8 +119,9 @@ for those.
    not a quick fix.
 4. **CC-11 (P1, S)** — Control Centre isn't frosted glass on the installed
    `0.9.0~beta.1-38` build even though the source fix (`918aaa38`) predates
-   it. Plan: confirmed fixed in source; just needs the reinstall-and-recheck
-   from Path-to-Beta-1 item 5.
+   it. Plan: confirmed fixed in source; just needs the owner's
+   `DESK-12`/`DOCK-27`-style recheck on the new install (see "What's still
+   open, in order", item 2).
 5. **DOCK-26 (P1, M)** — Dragging a file from Files onto the Dock's Trash
    doesn't work (GPUI's Linux Wayland backend has no `wl_data_device`
    drag-and-drop source at all). Plan: needs upstream GPUI drag-source
@@ -197,132 +181,51 @@ for those.
 
 ### Candidate-build history (2026-09-24–29, superseded by the above)
 
-The narrative below is the previous pass's detailed package/CI evidence,
-kept for the record. It predates all 279 commits summarized at the top of
-this file and no longer reflects `integ` HEAD — nothing in it should be read
-as the current candidate.
+Kept condensed for the record; none of it reflects current `dev` HEAD
+(`fcafa5e4`) or the figures at the top of this document — see those for the
+current, dated list. In order, this period moved through four amd64
+candidates: `0e3fa470` (installed on the reference PC 2026-09-27 as
+`0.9.0~beta.1-38`, 24/27 Mac-behavior scenarios, 28/28 shutdown and 41/41
+power-dialog checks, live Shut-Down-Cancel confirmed, 9/9 startup checks —
+[report](https://github.com/millionrust/lulo/actions/runs/36312045023)),
+`e8b589ac` (staged only, 25/27 behavior, 9/9 startup,
+[CI](https://github.com/millionrust/lulo/actions/runs/36327602027)), and
+`8ba31b82` (staged only, 25/27 behavior, 28/28 shutdown, 37/37 power-dialog,
+[CI](https://github.com/millionrust/lulo/actions/runs/36334082582); its
+[eleven-app idle-CPU sample](perf/reference-laptop-2026-09-28-candidate-8ba31b82.json)
+found five apps over budget, later corrected in the
+[2026-09-29 release-binary candidate](perf/idle-cpu-2026-09-29.md), which
+passed but was never packaged). The two recurring mismatches across all
+three installed/staged reruns were the Files item/background context menu
+(Share, Quick Actions, grouping, View Options) and Get Info's window
+behaviour — both since fixed in source (see `docs/parity.md` FILES-15/23/49).
+Visual parity was not established in this period: one local Mac/Lulo
+screenshot pair under `target/evidence/visual-comparisons/` passed the
+provenance audit but did not establish overall desktop parity; see the
+[comparison protocol](visual-comparison.md). The security and accessibility
+gates named in this period's evidence (`EditableText`, 24/80 native-station
+checks, three accepted Low findings) are unchanged — see §3 and §4.
 
-[Main CI run 36312045023](https://github.com/millionrust/lulo/actions/runs/36312045023)
-and [quality CI run 36312045008](https://github.com/millionrust/lulo/actions/runs/36312045008)
-succeeded on source `0e3fa470`. An amd64 package set built from that exact
-commit was installed on the reference PC on 2026-09-27. The 27-scenario nested
-behavior rerun on installed binaries matched 24 Mac recordings; its three mismatches are the Files item menu
-(Share/tags/Quick Actions), Get Info window behavior, and the new background
-Get Info scenario (remaining menu rows plus that same window behavior). The new
-Preview PDF Find scenario passes in the full release-binary rerun.
-CI success does not establish release readiness:
-these product, accessibility, security, and packaging gates remain open.
-
-The reference PC now has the `0e3fa470` `rmac-apps` and `rmac-session`
-`0.9.0~beta.1-38` package set. The installed Files, Preview, and top-bar
-binary hashes match their staged package contents. The installed binaries
-passed 28/28 nested shutdown checks and 41/41 power-dialog checks with fake
-`systemctl`. On the live installed session, AT-SPI opened the Lulo menu,
-activated Shut Down…, found its confirmation, and clicked Cancel; the dialog
-closed without a power request. Actual pointer activation and poweroff remain
-unverified. The repeatable
-[`probe_live_shutdown_cancel.py`](../scripts/linux/probe_live_shutdown_cancel.py)
-also passed on the active session: it opened the same dialog, activated only
-Cancel, verified closure, and closed the menu. The isolated startup smoke passed
-9/9 apps against the installed binaries, proving startup readiness only. A
-private Terminal typed-command roundtrip also passed: the marker appeared in
-both the echoed command and its executed output. The
-sequential run and binary hashes are in `/tmp/lulo-installed-report-20260927`
-on the reference PC; `scripts/behavior/run_installed_suite.py` reproduces it.
-
-The `dev` source now has separate non-modal Files Get Info windows and a
-persistent seven-colour item-menu tag control. Focused Files tests and a
-private Get Info scenario passed. A private UI run against the `8e31d9dc`
-release binary also selected Blue, observed the `user.rmac.tag=blue` attribute
-and checked menu row, then cleared it by clicking the row again. These commits
-are newer than the installed package set, and the installed 24/27 behavior
-result remains the valid installed-binary result.
-The staged candidate selected by `./install-lulo.sh` now contains these source
-changes. It has not been installed on the reference PC.
-
-The previous amd64 candidate with `rmac-apps` and `rmac-session` built from source
-`e8b589ac` and the pinned niri/xwayland-satellite packages remains staged at
-`~/rmac-release/packages-install10-e8b589ac` on the reference PC. Its four
-Debian package SHA-256 checks and native package verifier passed.
-[Main CI run 36327602027](https://github.com/millionrust/lulo/actions/runs/36327602027)
-and [quality run 36327602104](https://github.com/millionrust/lulo/actions/runs/36327602104)
-passed for the exact source. The candidate is staged but **not installed**;
-the installed-build results above still refer to `0e3fa470`. The exact
-`e8b589ac` release binaries passed a private
-[27-scenario rerun](behavior-results/source-e8b589ac-27.json) at 25/27:
-Get Info now matches its Mac behavior; the item and background context menus
-remain mismatches. No scenario that passed on the installed 24/27 run
-regressed. The candidate also passed
-[9/9 private startup checks](behavior-results/source-e8b589ac-startup-smoke.json),
-including App Drawer and Preview through their proper launch paths. Its top bar
-passed
-45/45 scoped unit tests and 37/37 private menu/power-dialog checks. The latter
-includes a regression that focuses Notes then Files without a Files menu
-publisher: the installed top bar lacked File/Edit/View/Go, while the candidate
-shows all four.
-
-The current candidate is the 38-binary amd64 set built from exact source
-`8ba31b82`, with the same pinned niri/xwayland-satellite packages, at
-`~/rmac-release/packages-install11-8ba31b82`. Its four SHA-256 checks and
-native package verifier pass; `~/install-lulo.sh` and its installer checkout
-are pinned to this set. It is **not installed**: the active reference session
-still runs `0e3fa470`. [Main CI](https://github.com/millionrust/lulo/actions/runs/36334082582)
-and [quality CI](https://github.com/millionrust/lulo/actions/runs/36334082589)
-passed for `8ba31b82`. The exact binaries pass
-[9/9 startup checks](behavior-results/source-8ba31b82-startup-smoke.json),
-[25/27 Mac behavior scenarios](behavior-results/source-8ba31b82-27.json),
-37/37 private power-dialog checks, and 28/28 private shutdown checks with a
-fake `systemctl`. Focused private Files checks also pass for View and Sort By
-flyouts, checked sorting, all seven visible tag swatches, and applying and
-removing a tag xattr. The two behavior mismatches remain the Files item and
-background menus: Share, Quick Actions, grouping, View Options, and iPhone
-import lack their underlying services or presentation model. Text Editor's
-stale parent redraw observer was removed, but one paired 30-second private
-[probe](perf/reference-laptop-2026-09-27-text-editor-parent-invalidation.md)
-changed idle CPU from 40.5% to 39.1%, an inconclusive difference; the idle
-performance gate is still open. A sequential
-[eleven-app candidate sample](perf/reference-laptop-2026-09-28-candidate-8ba31b82.json)
-against the staged binaries finds five apps above the 0.3% idle CPU target in
-private software-rendered Sway: Text Editor 40.53%, Weather 39.93%, Clock
-32.43%, System Monitor 19.63%, and Files 0.80%. Each is one 30-second idle
-window, not an installed-desktop percentile; the result confirms the gate
-needs further work and an installed rerun. The later 2026-09-29
-[release-binary candidate](perf/idle-cpu-2026-09-29.md) passes the corrected
-five-app idle budgets in the live session, but has not been packaged.
-Neither fake power checks nor private UI
-checks prove real host poweroff or full visual parity.
-
-Visual parity is not established by the behavior or startup passes. One local
-Mac/Lulo screenshot-pair record under `target/evidence/visual-comparisons/`
-documents the installed build's missing Files menus; its originals differ in
-scale, wallpaper and desktop state. It passes the provenance audit but does
-not establish overall desktop parity. The
-[comparison protocol](visual-comparison.md) and
-`scripts/audit-visual-comparisons.py` can validate future pairs and their
-provenance, but a human must still review their visible differences.
-
-This candidate-build history's own blocker table (as of 2026-09-27) is
-superseded by "Path to Beta 1" and the "Priority work queue" earlier in this
-section — see those for the current, dated list. The security and
-accessibility gates named in the narrative above (`EditableText`, 24/80
-native-station checks, three accepted Low findings) are unchanged as of
-2026-10-01; see §3 and §4.
-
-### Proposed Beta 1 / Beta 2 split (2026-09-29, needs the owner's yes)
+### Proposed Beta 1 / Beta 2 split (2026-09-29 proposal, declined 2026-10-03)
 
 Beta 1 is an early-access build for a small cohort on the reference class of
-hardware. These gates need hardware or a person that Beta 1 does not have.
-The owner's direction (2026-09-29): Beta 1 must be genuinely good, so every
-product-quality and performance gate, including the 8-hour soak, stays in Beta 1. The proposal is to report them honestly as **Not yet run** and make them
-**Beta 2 gates**, not to waive them or mark them as passing:
+hardware. The 2026-09-29 proposal below would have moved three gates that
+need hardware or a person Beta 1 does not have into Beta 2, reporting them
+honestly as **Not yet run** rather than waiving them or marking them as
+passing:
 
-| Gate | Why it moves | Beta 1 disclosure |
+| Gate | Why it would move | Beta 1 disclosure if moved |
 |---|---|---|
 | NVIDIA station repeat | No NVIDIA hardware in the station matrix | known-limitations.md: tested on Intel graphics only |
 | Formal Orca/I3 accessibility audit (journey 9) | Only the owner may enable Orca; the AT-SPI `EditableText` gap is upstream | known-limitations.md: screen-reader support is incomplete |
 | Security native-station evidence (24 of 80 checks) | Needs Beta stations that don't exist yet | The verifier keeps failing closed; the 56 checks that ran are reported |
 
-Everything else in the table above stays a Beta 1 gate.
+**The owner declined this proposal on 2026-10-03: all three stay Beta 1
+gates.** Beta 1 must be genuinely good, so every product-quality and
+performance gate, including the 8-hour soak, stays in Beta 1 too. The three
+rows above remain open items in "What's still open, in order" above (the
+Orca audit, the security-station runs, and NVIDIA testing) rather than
+being deferred or waived.
 
 **What changed in the 2026-09-25 pass, with real evidence** (see the top of
 this document for what changed in the 2026-09-29–10-01 pass): journeys 2 (Files), 3
@@ -528,7 +431,7 @@ stays **Not yet run**.
 | CHANGELOG.md | **Pass** — added 2026-09-24; not refreshed with the 2026-09-29–10-01 fixes (out of this pass's scope; CHANGELOG is a per-tag record, not a running log) |
 | docs/release-notes.md (required doc) + docs/release-notes/0.9.0-beta1.md | **Refreshed 2026-10-01** — both release-notes drafts (`packaging/release-notes/0.9.0~beta.1.txt`, `docs/release-notes/0.9.0-beta1.md`) are updated to reflect current reality (touch input, hardware-aware Settings, fixed accessibility claims) and still unpublished per the brief |
 | docs/known-limitations.md reflects current reality | **Refreshed 2026-10-01** — see §7 |
-| docs/install.md / README.md readiness banners | **Needs an owner decision** — unchanged from 2026-09-27; see "Path to Beta 1" item 11 |
+| docs/install.md / README.md readiness banners | **Drafted 2026-10-03** — both switched from "isn't ready for daily use yet" to early-access Beta wording; needs the owner's sign-off in review (see "What's still open, in order", item 8) |
 | Full `python3 -m pytest scripts/` (broader than the required set) | **2 real failures found and fixed this pass**: `test_application_icons.py` (the `915ceb55` Dock Bin-icon fix hand-edited `trash-full.svg` without updating `scripts/build-icons.py`, so the generator drifted from its own output — this is a Release-contracts CI check) and `test_sweep_settings_errors.py` (`PANE_ROUTES` in `scripts/linux/sweep-settings-errors.py` was missing the `touchscreen` pane LINUX-HW-02 added). Both fixed on this branch; `scripts/build-icons.py --check` and the targeted pytest files are now clean. One remaining failure, `hardware-touchscreen.json has no .mac.json` in `test_behavior_suite.py`, is a real gap (not yet recorded) tracked in "Path to Beta 1" item 2 — not a bug. A handful of `CompareTests` failures in `test_behavior_suite.py` only appear when the full `scripts/` suite runs together (not standalone), indicating pytest cross-file test-isolation pollution rather than a product bug; not investigated further this pass. |
 
 ## 7. Known limitations
@@ -582,8 +485,13 @@ non-blocking per `todo.md`.
 recent CI links anywhere in this document are pinned to source `8ba31b82`
 (2026-09-28), which is 279 commits and 3 calendar days behind `integ` HEAD
 `1c9ce60d`. No commit message in that window references a new Actions run
-URL. This is an open item, not a known-red item — status is simply unrun;
-see "Path to Beta 1" item 8.
+URL. This is an open item, not a known-red item — status is simply unrun.
+
+**Update, 2026-10-03: resolved.** CI and the GitHub-built candidate
+packages are green for recent `dev` commits (see the go/no-go section at
+the top of this document). What's still outstanding is a real release run
+on the actual tag, not a CI dry run — see "What's still open, in order",
+item 7.
 
 ## 9. Versioning and release engineering (this pass)
 
@@ -623,10 +531,13 @@ python3 -m pytest -q scripts/test_native_packages.py scripts/test_session_packag
 fixed 2 real failures (`test_application_icons.py`,
 `test_sweep_settings_errors.py` — see §6) and surfaced one real, not-yet-
 recorded gap (`test_behavior_suite.py`'s `hardware-touchscreen.json` scenario
-has no Mac recording — "Path to Beta 1" item 2) plus 3 cross-file
-test-isolation flakes in `test_behavior_suite.py::CompareTests` that only
-reproduce when the whole `scripts/` directory runs together, not
-standalone — not investigated further.
+has no Mac recording) plus 3 cross-file test-isolation flakes in
+`test_behavior_suite.py::CompareTests` that only reproduce when the whole
+`scripts/` directory runs together, not standalone — not investigated
+further. **Update, 2026-10-03:** the `hardware-touchscreen.json` recording
+gap is fixed — `python3 -m pytest -q scripts/test_behavior_suite.py` now
+passes 40/40 — consistent with the 160/160 full behaviour-suite run in the
+go/no-go section at the top of this document.
 
 ## What actually blocks shipping 0.9.0-beta.1 today
 
@@ -674,8 +585,9 @@ pass's explanation of the same gates and remain directionally accurate:
    flow has not been retested; journey 6's process-stop path is live-confirmed
    except for upstream EditableText, while journey 7 has backend evidence but no full
    Settings-UI run. Journeys 8/9 remain Partial/Owner-manual (§1).
-6. **`docs/install.md`/`README.md` still say the product isn't ready to
-   install** — an owner-level messaging decision, not a mechanical fix.
+6. **`docs/install.md`/`README.md` wording — drafted, awaiting sign-off.**
+   Both now use early-access Beta wording instead of "isn't ready for daily
+   use yet" (2026-10-03); the owner still needs to approve it in review.
 
 None of these are release-engineering plumbing problems — the tagging,
 packaging contracts, versioning, and pre-release workflow gating are ready

@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "scenario": "preview/keyboard-page-focus",
+  "platform": "Lulo local contract",
+  "observations": {
+    "page": {
+      "focus": {
+        "role": "document",
+        "label": "guide.pdf"
+      }
+    }
+  }
+}

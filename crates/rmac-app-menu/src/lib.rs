@@ -1174,6 +1174,15 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
         ],
     },
     MenuSpec {
+        label: "Edit",
+        items: &[
+            item!("Undo", "calendar::UndoEvent", "⌘Z"),
+            item!("Redo", "calendar::RedoEvent", "⇧⌘Z"),
+            item!("Show Event Info", "calendar::ShowInspector", "⌘I", separator),
+            item!("Delete Event", "calendar::DeleteEvent", "⌫"),
+        ],
+    },
+    MenuSpec {
         label: "View",
         items: &[
             item!("Day", "calendar::ShowDay", "⌘1"),

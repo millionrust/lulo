@@ -1,9 +1,10 @@
-//! Calendar's read-only presentation model. CAL-2 can replace `fixture_week`
-//! with an EDS snapshot without changing navigation or Week layout.
+//! Calendar presentation and event editing model. EDS work stays off the UI thread.
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone, Utc, Weekday};
 use chrono_tz::Tz;
 use rmac_calendar_store::{layout_week, LayoutEvent, LayoutSlot};
+
+pub mod editing;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum View {
@@ -38,21 +39,24 @@ pub enum CalendarColor {
 
 #[derive(Clone, Debug)]
 pub struct Calendar {
-    pub name: &'static str,
-    pub account: &'static str,
+    pub name: String,
+    pub account: String,
     pub color: CalendarColor,
     pub visible: bool,
+    pub source_uid: Option<String>,
+    pub writable: bool,
 }
 
 #[derive(Clone, Debug)]
 pub struct Event {
     pub id: String,
-    pub title: &'static str,
-    pub location: &'static str,
+    pub title: String,
+    pub location: String,
     pub calendar: usize,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
     pub all_day: bool,
+    pub ical: Option<rmac_calendar_store::Event>,
 }
 
 #[derive(Clone, Debug)]
@@ -60,6 +64,19 @@ pub struct WeekSnapshot {
     pub calendars: Vec<Calendar>,
     pub events: Vec<Event>,
     pub slots: Vec<LayoutSlot>,
+}
+
+impl WeekSnapshot {
+    pub fn empty() -> Self {
+        Self { calendars: Vec::new(), events: Vec::new(), slots: Vec::new() }
+    }
+
+    pub fn slots_for(&self, first: NaiveDate) -> Vec<LayoutSlot> {
+        let events: Vec<_> = self.events.iter().filter(|event| !event.all_day).map(|event| LayoutEvent {
+            id: event.id.clone(), start: event.start, end: event.end,
+        }).collect();
+        layout_week(&events, first, Tz::UTC).unwrap_or_default()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -119,40 +136,52 @@ pub fn current_date() -> NaiveDate {
 pub fn fixture_week(first_day: NaiveDate) -> WeekSnapshot {
     let calendars = vec![
         Calendar {
-            name: "Work",
-            account: "Google",
+            name: "Work".into(),
+            account: "Google".into(),
             color: CalendarColor::Blue,
             visible: true,
+            source_uid: None,
+            writable: false,
         },
         Calendar {
-            name: "Team",
-            account: "Google",
+            name: "Team".into(),
+            account: "Google".into(),
             color: CalendarColor::Teal,
             visible: true,
+            source_uid: None,
+            writable: false,
         },
         Calendar {
-            name: "Family",
-            account: "Google",
+            name: "Family".into(),
+            account: "Google".into(),
             color: CalendarColor::Orange,
             visible: true,
+            source_uid: None,
+            writable: false,
         },
         Calendar {
-            name: "Home",
-            account: "iCloud",
+            name: "Home".into(),
+            account: "iCloud".into(),
             color: CalendarColor::Green,
             visible: true,
+            source_uid: None,
+            writable: false,
         },
         Calendar {
-            name: "Gym",
-            account: "iCloud",
+            name: "Gym".into(),
+            account: "iCloud".into(),
             color: CalendarColor::Purple,
             visible: false,
+            source_uid: None,
+            writable: false,
         },
         Calendar {
-            name: "Holidays",
-            account: "Other",
+            name: "Holidays".into(),
+            account: "Other".into(),
             color: CalendarColor::Red,
             visible: true,
+            source_uid: None,
+            writable: false,
         },
     ];
     let mut events = Vec::new();
@@ -164,12 +193,13 @@ pub fn fixture_week(first_day: NaiveDate) -> WeekSnapshot {
         let index = events.len();
         events.push(Event {
             id: format!("fixture-{index}"),
-            title,
-            location,
+            title: title.into(),
+            location: location.into(),
             calendar,
             start,
             end,
             all_day,
+            ical: None,
         });
         index
     };

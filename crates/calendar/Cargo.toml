@@ -17,4 +17,6 @@ chrono.workspace = true
 chrono-tz.workspace = true
 gpui.workspace = true
 rmac-calendar-store.workspace = true
+rmac-calendar-eds.workspace = true
 rmac-ui.workspace = true
+blocking.workspace = true

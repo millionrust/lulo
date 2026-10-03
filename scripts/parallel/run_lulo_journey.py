@@ -343,7 +343,9 @@ class Driver:
             try:
                 if node is None:
                     continue
-                if node.name == label or (node.name or "").startswith(label + ","):
+                name = node.name or ""
+                if (name == label or name.startswith(label + ",") or
+                        (top_bar_control and name.startswith(label + " "))):
                     pid = node.getApplication().get_process_id()
                     if top_bar_control and (pid != top_bar or
                                             node.getRoleName() not in {"push button", "button"}):

@@ -1128,7 +1128,7 @@ pub fn boot_app_instance<V, F, H>(
 {
     boot_app_instance_with_assets(
         app_id,
-        default_assets(),
+        shared_assets(),
         title,
         width,
         height,

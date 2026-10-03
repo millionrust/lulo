@@ -110,6 +110,27 @@ fn outbox_claim_is_durable_and_crash_safe() {
 }
 
 #[test]
+fn existing_v1_cache_gains_outbox_without_losing_mail() {
+    let mut fixture = Fixture::new();
+    let message_id = fixture.insert(7, "Before migration", Some(b"retained body"));
+    fixture
+        .store
+        .connection
+        .execute_batch("DROP TABLE outbox_recipients; DROP TABLE outbox; PRAGMA user_version=1;")
+        .unwrap();
+    let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
+    assert_eq!(
+        reopened.get_message(message_id).unwrap().unwrap().subject,
+        "Before migration"
+    );
+    assert_eq!(reopened.outbox_count(OutboxState::Queued).unwrap(), 0);
+    reopened
+        .queue_outbox("a@example.test", &["b@example.test".into()], b"message")
+        .unwrap();
+    assert_eq!(reopened.outbox_count(OutboxState::Queued).unwrap(), 1);
+}
+
+#[test]
 fn blob_is_content_addressed_private_and_detects_damage() {
     let mut fixture = Fixture::new();
     let id = fixture.insert(1, "Hello", Some(b"private body"));

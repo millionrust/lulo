@@ -162,7 +162,9 @@ fn tls(stream: Stream, host: &str) -> Result<Stream, Error> {
     }
     let roots = RootCertStore::from_iter(certs.certs);
     let config = Arc::new(
-        ClientConfig::builder()
+        ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .map_err(|_| Error::Tls)?
             .with_root_certificates(roots)
             .with_no_client_auth(),
     );
@@ -247,9 +249,17 @@ pub fn submit(
     authentication: &Authentication,
     message: &OutboxMessage,
 ) -> Result<(), SubmissionFailure> {
-    let fail = |error| SubmissionFailure {
-        error,
-        retry: Retry::Safe,
+    let fail = |error| {
+        let retry = match error {
+            Error::Rejected(code) if code >= 500 => Retry::Hold,
+            Error::Tls
+            | Error::MissingStartTls
+            | Error::AuthenticationUnavailable
+            | Error::InvalidEnvelope
+            | Error::Protocol => Retry::Hold,
+            _ => Retry::Safe,
+        };
+        SubmissionFailure { error, retry }
     };
     if !valid_address(&message.envelope_from)
         || message.recipients.is_empty()
@@ -443,7 +453,7 @@ mod tests {
             result,
             Err(SubmissionFailure {
                 error: Error::MissingStartTls,
-                retry: Retry::Safe
+                retry: Retry::Hold
             })
         ));
         let (command, rest) = server.join().unwrap();

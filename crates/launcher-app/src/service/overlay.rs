@@ -302,6 +302,15 @@ fn open_launcher(
             return;
         }
         cx.activate(true);
+        // A layer-shell popup opened from the shortcut endpoint does not
+        // receive a pointer press. Request compositor keyboard focus so the
+        // first Escape closes Spotlight even after other shell popovers.
+        let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+        if let Some(active) = active {
+            let _ = active
+                .window
+                .update(cx, |_, window, _| window.activate_window());
+        }
     } else {
         #[cfg(target_os = "linux")]
         {

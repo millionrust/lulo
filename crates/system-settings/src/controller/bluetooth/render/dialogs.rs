@@ -197,6 +197,7 @@ impl Settings {
 
         Some(
             rmac_ui::dialog("bluetooth-pairing-dialog", content)
+                .restore_focus_to(self.content_focus.clone())
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     match event.keystroke.key.as_str() {
                         "escape" => {

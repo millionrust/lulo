@@ -788,7 +788,11 @@ impl NotesView {
                                     ),
                             ),
                     );
-                Some(rmac_ui::dialog("rename-folder-dialog", card).into_any_element())
+                Some(
+                    rmac_ui::dialog("rename-folder-dialog", card)
+                        .restore_focus_to(self.focus.clone())
+                        .into_any_element(),
+                )
             }
             FolderDialog::Delete(_) => {
                 let count = self.session.folder_count(folder_id);

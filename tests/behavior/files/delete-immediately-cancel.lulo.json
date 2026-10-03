@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "files/delete-immediately-cancel",
+  "observations": {
+    "asked": {"dialog": {"present": true}},
+    "cancelled_escape": {
+      "dialog": {"present": false},
+      "files": {"entries": ["report.txt"]},
+      "focus": {"role": "list"}
+    },
+    "reopened": {"dialog": {"present": true}},
+    "cancelled_button": {
+      "dialog": {"present": false},
+      "files": {"entries": ["report.txt"]},
+      "focus": {"role": "list"}
+    }
+  }
+}

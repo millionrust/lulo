@@ -7,10 +7,15 @@
     {"key": "cmd-w", "settle": 1.2},
     {"observe": "asked", "facts": ["dialog"]},
     {"key": "escape"},
-    {"observe": "cancelled", "facts": ["dialog", "windows"]},
+    {"observe": "cancelled", "facts": ["dialog", "windows", "focus"]},
     {"key": "cmd-w", "settle": 1.2},
     {"key": "cmd-."},
-    {"observe": "cancelled-period", "facts": ["dialog", "windows"]}
+    {"observe": "cancelled-period", "facts": ["dialog", "windows", "focus"]},
+    {"key": "cmd-w", "settle": 1.2},
+    {"select": "Cancel"},
+    {"observe": "cancelled-button", "facts": ["dialog", "windows", "focus"]},
+    {"key": "cmd-w", "settle": 1.2},
+    {"observe": "reopened-after-cancel", "facts": ["dialog"]}
   ],
   "tolerance": {"asked.dialog.buttons": "subset"}
 }

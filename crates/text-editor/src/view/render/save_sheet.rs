@@ -3,7 +3,7 @@
 
 use super::*;
 use gpui::prelude::FluentBuilder as _;
-use gpui::{Animation, AnimationExt as _, AnyElement};
+use gpui::{Animation, AnimationExt as _, AnyElement, Focusable as _};
 use rmac_ui::{DialogButtonKind, PopUpButton};
 use std::time::Duration;
 
@@ -280,6 +280,7 @@ impl EditorView {
                 self.filename()
             ))
             .attached()
+            .restore_focus_to(self.input.read(cx).focus_handle(cx))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 match event.keystroke.key.as_str() {
                     "escape" if this.save_goto_open => {

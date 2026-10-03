@@ -1014,39 +1014,10 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
     scenario = {"app": "text-editor", "launch": {}, "steps": []}
     run = run_lulo.LuloRun(nested, "text-editor-save-sheet", scenario, bins, settle, None)
 
-    def click_into_document() -> None:
-        """Restore keyboard focus to the document window: live-verified
-        (2026-10-03) that Escape dismisses the alert (closed: True) but
-        leaves *no* accessible node focused anywhere (fact_focus's role is
-        None) - a real focus-restoration gap, worth its own parity row -
-        and cmd-w alone then does nothing, since nothing owns the
-        shortcut. Clicking the document keeps the Tab probe below
-        independent of that bug rather than reporting it as "not
-        measured"."""
-
-        size = _window_size(run)
-        if size is None:
-            return
-        width, height = size
-        ox, oy = run.window_origin()
-        run.nested.input.click(ox + width / 2, oy + height / 2, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
-        time.sleep(0.3)
-
-    def ensure_alert(attempts: int = 3) -> bool:
-        for _ in range(attempts):
-            if run.dialog_node() is not None:
-                return True
-            click_into_document()
-            run.nested.input.key("cmd-w")
-            time.sleep(1.0)
-        return run.dialog_node() is not None
-
     out: dict[str, Any] = {}
     try:
         run.setup()
         run.launch()
-        run.nested.input.key("cmd-n")
-        time.sleep(1.0)
         run.nested.input.type_text("Hello")
         time.sleep(0.3)
         run.nested.input.key("cmd-w")
@@ -1056,10 +1027,16 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
 
         run.nested.input.key("escape")
         time.sleep(0.6)
-        out["escape"] = {"closed": run.dialog_node() is None}
+        focus = run.fact_focus()
+        out["escape"] = {
+            "closed": run.dialog_node() is None,
+            "focus_returned": focus["role"] in {"text-area", "text-field"} and focus["value"] == "Hello",
+        }
 
-        if not ensure_alert():
-            out["tab_focus"] = {"moved": None, "reason": "the alert did not reopen for the Tab probe"}
+        run.nested.input.key("cmd-w")
+        time.sleep(1.0)
+        if run.dialog_node() is None:
+            out["tab_focus"] = {"moved": None, "reason": "Cmd-W did not reopen the alert after Escape"}
         else:
             before = name(run.focused_node()) or None
             run.nested.input.key("tab")

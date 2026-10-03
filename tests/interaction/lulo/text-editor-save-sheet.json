@@ -5,7 +5,8 @@
   "recorded": "2026-10-03",
   "probes": {
     "escape": {
-      "closed": true
+      "closed": true,
+      "focus_returned": true
     },
     "tab_focus": {
       "moved": true

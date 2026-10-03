@@ -13,10 +13,13 @@ use gpui::{
     anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, Context,
     ElementId, FocusHandle, Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
     MouseButton, ParentElement as _, Pixels, Point, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Toggled, Window,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Toggled, Window,
 };
 use gpui_component::StyledExt as _;
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use crate::{mac, shortcuts::Shortcut, Button, ButtonRole, ListRow};
 
@@ -177,6 +180,17 @@ fn enter_dialog_focus(
     }
 }
 
+/// Remember the control that had focus before the modal appeared. GPUI drops
+/// keyed element state when the dialog is removed from the next frame; that
+/// release is the one place shared by Escape, a Cancel click, and every other
+/// way an app can dismiss a dialog.
+struct DialogFocusState {
+    boundary: FocusHandle,
+    restore: RefCell<Option<FocusHandle>>,
+    last_focus: RefCell<Option<FocusHandle>>,
+    _release: Subscription,
+}
+
 /// A centered modal: a dimmed, click-swallowing scrim with `content` floated
 /// over it. While a `Dialog` is on screen, Tab/Shift-Tab cycle within
 /// `content` and can never land back on whatever is behind the scrim — the
@@ -195,6 +209,7 @@ pub struct Dialog {
     extra_key_down: Vec<KeyDownListener>,
     attached: bool,
     focus_trap: bool,
+    restore_focus: Option<FocusHandle>,
 }
 
 /// A key handler a dialog runs alongside its own key handling.
@@ -241,17 +256,47 @@ impl Dialog {
         self.extra_key_down.push(Box::new(listener));
         self
     }
+
+    /// Return focus to this control when the dialog closes. Use this when an
+    /// app focuses a sheet field before its first render, so the automatically
+    /// captured focus is already inside the sheet.
+    pub fn restore_focus_to(mut self, handle: FocusHandle) -> Self {
+        self.restore_focus = Some(handle);
+        self
+    }
 }
 
 impl RenderOnce for Dialog {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let boundary = window
-            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
-            .read(cx)
-            .clone();
+        let state = window.use_keyed_state(self.id.clone(), cx, |window, cx| {
+            let boundary = cx.focus_handle();
+            let restore = window.focused(cx);
+            let release = cx.on_release_in(window, |state: &mut DialogFocusState, window, cx| {
+                let focused = window.focused(cx);
+                if focused.is_none()
+                    || state.boundary.contains_focused(window, cx)
+                    || focused == *state.last_focus.get_mut()
+                {
+                    if let Some(restore) = state.restore.get_mut() {
+                        window.focus(restore, cx);
+                    }
+                }
+            });
+            DialogFocusState {
+                boundary,
+                restore: RefCell::new(restore),
+                last_focus: RefCell::new(None),
+                _release: release,
+            }
+        });
+        let boundary = state.read(cx).boundary.clone();
+        if let Some(restore) = self.restore_focus {
+            *state.read(cx).restore.borrow_mut() = Some(restore);
+        }
         if self.focus_trap {
             enter_dialog_focus(&boundary, self.initial_focus, window, cx);
         }
+        *state.read(cx).last_focus.borrow_mut() = window.focused(cx);
         let navigation_boundary = boundary.clone();
 
         let mut element = div()
@@ -310,6 +355,7 @@ pub fn dialog(id: impl Into<ElementId>, content: impl IntoElement) -> Dialog {
         extra_key_down: Vec::new(),
         attached: false,
         focus_trap: true,
+        restore_focus: None,
     }
 }
 

@@ -165,11 +165,22 @@ def start(work: Path) -> Optional["FakeHardware"]:
             [wifi], home_connection, home_ap, "Casa_Lulo",
             NMActiveConnectionState.NM_ACTIVE_CONNECTION_STATE_ACTIVATED,
         )
-        # AddWiFiDevice does not set ActiveAccessPoint; rmac-network reads
-        # it unconditionally (crates/rmac-network/src/linux.rs), so leaving
-        # it unset would make Wi-Fi report "unavailable" instead of showing
-        # the three networks below with Casa Lulo connected.
-        nm_mock.SetProperty(wifi, WIRELESS_DEVICE_IFACE, "ActiveAccessPoint", dbus.ObjectPath(home_ap))
+        # AddWiFiDevice never declares an ActiveAccessPoint property, and
+        # the generic Properties.Set (NM's own SetProperty included) can
+        # only change a property that already exists -- it raises
+        # UnknownProperty for one that doesn't. rmac-network reads
+        # ActiveAccessPoint unconditionally
+        # (crates/rmac-network/src/linux.rs), so leaving it unset would
+        # make Wi-Fi report "unavailable" instead of showing the three
+        # networks below with Casa Lulo connected. AddProperty (unlike
+        # Set) creates a new property, but it has to be called on the
+        # device object itself, not the manager object `nm_mock` is bound
+        # to -- both mock objects live in the same spawned process.
+        wifi_device = dbus.Interface(
+            BusType.SYSTEM.get_connection().get_object("org.freedesktop.NetworkManager", wifi),
+            dbusmock.MOCK_IFACE,
+        )
+        wifi_device.AddProperty(WIRELESS_DEVICE_IFACE, "ActiveAccessPoint", dbus.ObjectPath(home_ap))
         nm_mock.SetDeviceActive(wifi, active)
 
         bt_log = open(logs_dir / "fake-bluez.log", "w")

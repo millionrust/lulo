@@ -214,6 +214,18 @@ pub(crate) fn parse_uid_fetch(responses: &[Response]) -> Vec<MessageChange> {
     responses.iter().filter_map(parse_fetch).collect()
 }
 
+pub(crate) fn parse_search(responses: &[Response]) -> Vec<u32> {
+    responses
+        .iter()
+        .filter_map(|response| {
+            let line = std::str::from_utf8(response.first_line()).ok()?;
+            line.strip_prefix("* SEARCH")
+        })
+        .flat_map(str::split_ascii_whitespace)
+        .filter_map(|uid| uid.parse::<u32>().ok().filter(|uid| *uid != 0))
+        .collect()
+}
+
 pub(crate) fn parse_copyuid(response: &Response) -> Option<CopyUid> {
     let line = String::from_utf8_lossy(response.first_line());
     let (_, rest) = line.split_once("[COPYUID ")?;

@@ -1,5 +1,8 @@
 //! Per-account mail cache. Callers run this synchronous API on a worker thread.
 
+mod search;
+pub use search::{SearchField, SearchQuery, SearchTerm};
+
 use rmac_mail_store::{thread_messages, MessageHeader, ThreadForest};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use sha2::{Digest, Sha256};
@@ -523,8 +526,18 @@ impl MailStorage {
         mailbox_id: Option<i64>,
         limit: usize,
     ) -> Result<Vec<MessageSummary>> {
-        // A quoted phrase treats user input as data rather than FTS5 operators.
-        let phrase = format!("\"{}\"", text.replace('"', "\"\""));
+        self.search_query(&SearchQuery::parse(text), mailbox_id, limit)
+    }
+
+    pub fn search_query(
+        &self,
+        query: &SearchQuery,
+        mailbox_id: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<MessageSummary>> {
+        if query.is_empty() || limit == 0 {
+            return Ok(Vec::new());
+        }
         let mut statement = self.connection.prepare(
             "SELECT m.id,m.mailbox_id,m.uid,m.subject,m.sender,m.preview,m.flags,m.body_hash \
              FROM messages_fts JOIN messages m ON m.id=messages_fts.rowid \
@@ -532,7 +545,11 @@ impl MailStorage {
              ORDER BY bm25(messages_fts), m.received_at DESC LIMIT ?3",
         )?;
         let rows = statement.query_map(
-            params![phrase, mailbox_id, i64::try_from(limit).unwrap_or(i64::MAX)],
+            params![
+                query.fts_expression(),
+                mailbox_id,
+                i64::try_from(limit).unwrap_or(i64::MAX)
+            ],
             summary_from_row,
         )?;
         rows.collect::<rusqlite::Result<Vec<_>>>()

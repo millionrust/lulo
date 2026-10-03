@@ -15,4 +15,6 @@ path = "src/main.rs"
 [dependencies]
 gpui.workspace = true
 rmac-mail-mime.workspace = true
+rmac-mail-storage.workspace = true
+rmac-editor.workspace = true
 rmac-ui.workspace = true

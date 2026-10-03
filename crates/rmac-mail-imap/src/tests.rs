@@ -82,6 +82,63 @@ fn send(stream: &mut impl Write, message: &str) {
 }
 
 #[test]
+fn server_search_and_copy_quote_user_values() {
+    let (config, handle) = fixture(false, |socket| {
+        let mut stream = StreamOwned::new(ServerConnection::new(server_config()).unwrap(), socket);
+        send(&mut stream, "* OK ready\r\n");
+        assert_eq!(read_line(&mut stream), "L00000001 CAPABILITY\r\n");
+        send(
+            &mut stream,
+            "* CAPABILITY IMAP4rev1 UIDPLUS\r\nL00000001 OK done\r\n",
+        );
+        assert_eq!(
+            read_line(&mut stream),
+            "L00000002 UID SEARCH FROM \"Ada\" SUBJECT \"Lunch \\\"Friday\\\"\"\r\n"
+        );
+        send(&mut stream, "* SEARCH 7 19\r\nL00000002 OK done\r\n");
+        assert_eq!(
+            read_line(&mut stream),
+            "L00000003 UID COPY 7 \"Archive\"\r\n"
+        );
+        send(&mut stream, "L00000003 OK [COPYUID 42 7 11] copied\r\n");
+        assert_eq!(read_line(&mut stream), "L00000004 CREATE \"Receipts\"\r\n");
+        send(&mut stream, "L00000004 OK done\r\n");
+        assert_eq!(
+            read_line(&mut stream),
+            "L00000005 RENAME \"Receipts\" \"Bills\"\r\n"
+        );
+        send(&mut stream, "L00000005 OK done\r\n");
+        assert_eq!(read_line(&mut stream), "L00000006 DELETE \"Bills\"\r\n");
+        send(&mut stream, "L00000006 OK done\r\n");
+    });
+    let mut client = Client::connect_with_roots(&config, roots()).unwrap();
+    assert_eq!(
+        client
+            .search_uids(&[
+                SearchKey::From("Ada"),
+                SearchKey::Subject("Lunch \"Friday\"")
+            ])
+            .unwrap(),
+        [7, 19]
+    );
+    assert!(client
+        .search_uids(&[SearchKey::Text("bad\r\ncommand")])
+        .is_err());
+    assert_eq!(
+        client
+            .copy_uids("7", "Archive")
+            .unwrap()
+            .unwrap()
+            .destination_uids,
+        "11"
+    );
+    client.create_mailbox("Receipts").unwrap();
+    client.rename_mailbox("Receipts", "Bills").unwrap();
+    client.delete_mailbox("Bills").unwrap();
+    handle.join().unwrap();
+}
+
+#[test]
 fn tls_plain_sync_move_uidplus_special_use_and_idle() {
     let (config, handle) = fixture(false, |socket| {
         let mut stream = StreamOwned::new(ServerConnection::new(server_config()).unwrap(), socket);

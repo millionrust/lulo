@@ -1092,8 +1092,12 @@ class LuloRun:
         for node in descendants(frame, limit=4000) if frame is not None else []:
             match = re.fullmatch(r"(\d+) conversations, (\d+) unread", name(node))
             if match:
-                return {"count": int(match.group(1)), "unread": int(match.group(2))}
-        return {"count": 0, "unread": 0}
+                rows = [item for item in descendants(frame, limit=4000)
+                        if role(item) in ("list item", "table row")
+                        and name(item).startswith(("Unread,", "flagged,", "Anna", "Lulo", "Sam", "Northwind", "Grandma", "Bank", "Climbing", "Ana"))]
+                return {"count": int(match.group(1)), "unread": int(match.group(2)),
+                        "flagged": sum("flagged," in name(item) for item in rows)}
+        return {"count": 0, "unread": 0, "flagged": 0}
 
     def fact_sidebar(self) -> dict[str, Any]:
         """Weather's city list owns the window's only editable search field."""

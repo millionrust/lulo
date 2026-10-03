@@ -1194,6 +1194,10 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
 
 const MAIL_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: "Edit",
+        items: &[item!("Undo", "mail::Undo", "⌘Z")],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             item!("New Message", "mail::NewMessage", "⌘N"),
@@ -1208,10 +1212,16 @@ const MAIL_MENUS: &[MenuSpec] = &[
             item!("Forward", "mail::Forward", "⇧⌘F", separator),
             item!("Mark as Read or Unread", "mail::ToggleRead", "⇧⌘U"),
             item!("Flag", "mail::Flag", "⇧⌘L", separator),
+        ],
+    },
+    MenuSpec {
+        label: "Mailbox",
+        items: &[
             item!("Archive", "mail::Archive", ""),
             item!("Move to Bin", "mail::Delete", "⌫"),
             item!("Move to Junk", "mail::Junk", "⇧⌘J"),
             item!("Move To…", "mail::Move", "⌃⌘M"),
+            item!("Copy To…", "mail::Copy", ""),
         ],
     },
     MenuSpec {

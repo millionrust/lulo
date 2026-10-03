@@ -52,6 +52,63 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn search_tokens_scope_and_fts_escaping() {
+    let mut fixture = Fixture::new();
+    let lunch = fixture.insert(7, "Lunch on Friday", None);
+    fixture.insert(8, "Other subject", None);
+    let archive = fixture
+        .store
+        .upsert_mailbox("Archive", 43, Some("\\Archive"))
+        .unwrap();
+    fixture
+        .store
+        .put_message(&NewMessage {
+            mailbox_id: archive,
+            uid: 9,
+            message_id: None,
+            in_reply_to: None,
+            references: &[],
+            subject: "Lunch on Friday",
+            sender: "Ada <ada@example.test>",
+            recipients: "Bob <bob@example.test>",
+            preview: "A short preview",
+            received_at: 101,
+            flags: 0,
+            body: None,
+            body_text: Some("meeting at noon"),
+        })
+        .unwrap();
+    let query = SearchQuery::parse("from:Ada to:Bob subject:\"Lunch on Friday\"");
+    assert_eq!(
+        fixture.store.search_query(&query, None, 10).unwrap().len(),
+        2
+    );
+    assert_eq!(
+        fixture
+            .store
+            .search_query(&query, Some(fixture.inbox), 10)
+            .unwrap()[0]
+            .id,
+        lunch
+    );
+    assert_eq!(fixture.store.search("meeting", None, 10).unwrap().len(), 1);
+    assert!(fixture
+        .store
+        .search("\" OR *", None, 10)
+        .unwrap()
+        .is_empty());
+    assert!(fixture
+        .store
+        .search_query(&SearchQuery::default(), None, 10)
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        SearchQuery::parse("from: Ada").terms[0].field,
+        SearchField::From
+    );
+}
+
+#[test]
 fn sync_cursor_unread_and_pending_local_flags_survive_reopen() {
     let mut fixture = Fixture::new();
     let id = fixture.insert(7, "Unread", None);

@@ -17,6 +17,13 @@ const SIDEBAR: f32 = 220.0;
 const LIST: f32 = 340.0;
 const TOOLBAR: f32 = 52.0;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ControlMode {
+    Disabled,
+    Enabled,
+    Selected,
+}
+
 pub struct MailView {
     pub focus: FocusHandle,
     state: MailState,
@@ -54,8 +61,7 @@ impl MailView {
         id: &'static str,
         glyph: &'static str,
         label: &'static str,
-        enabled: bool,
-        selected: bool,
+        mode: ControlMode,
         click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -69,19 +75,19 @@ impl MailView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(if selected {
+            .bg(if mode == ControlMode::Selected {
                 mac::control_fill()
             } else {
                 mac::material_clear()
             })
-            .text_color(if enabled {
+            .text_color(if mode != ControlMode::Disabled {
                 mac::text()
             } else {
                 mac::text_tertiary()
             })
             .text_size(px(17.0))
             .child(glyph);
-        if enabled {
+        if mode != ControlMode::Disabled {
             button =
                 button.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| click(this, cx)));
         }
@@ -102,8 +108,11 @@ impl MailView {
             "mail-filter",
             "☷",
             "Filter Unread",
-            true,
-            self.state.unread_only,
+            if self.state.unread_only {
+                ControlMode::Selected
+            } else {
+                ControlMode::Enabled
+            },
             |this, cx| {
                 this.state.unread_only = !this.state.unread_only;
                 this.sync_menu(cx);
@@ -124,7 +133,7 @@ impl MailView {
             ("mail-move", "▱", "Move"),
             ("mail-search", "⌕", "Search"),
         ] {
-            bar = bar.child(self.control(id, glyph, label, false, false, |_, _| {}, cx));
+            bar = bar.child(self.control(id, glyph, label, ControlMode::Disabled, |_, _| {}, cx));
         }
         bar.into_any_element()
     }

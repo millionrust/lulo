@@ -60,7 +60,10 @@ impl Candidate {
             _ => return None,
         };
         let port = self.port.parse::<u16>().ok().filter(|port| *port != 0)?;
-        if self.authentication.to_ascii_lowercase() != "password-cleartext" {
+        if !self
+            .authentication
+            .eq_ignore_ascii_case("password-cleartext")
+        {
             return None;
         }
         let host = self.host.trim().to_ascii_lowercase();

@@ -5,7 +5,7 @@ mod rich_text;
 pub use rich_text::{sanitize_html, Block, BlockKind, Image, RichText, Span};
 
 use mail_builder::MessageBuilder;
-use mail_parser::{MessageParser, MimeHeaders};
+use mail_parser::{Address, HeaderValue, MessageParser, MimeHeaders};
 
 #[derive(Clone, Debug, Default)]
 pub struct Draft {
@@ -187,9 +187,46 @@ pub fn build(draft: &Draft) -> Result<BuiltMessage, Error> {
 pub struct ParsedMessage {
     pub subject: String,
     pub message_id: Option<String>,
+    pub in_reply_to: Option<String>,
+    pub references: Vec<String>,
+    pub from: Vec<Mailbox>,
+    pub to: Vec<Mailbox>,
+    pub cc: Vec<Mailbox>,
+    pub reply_to: Vec<Mailbox>,
+    pub preview: String,
     pub plain_text: String,
     pub rich_text: RichText,
     pub attachments: Vec<Attachment>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Mailbox {
+    pub display_name: Option<String>,
+    pub address: String,
+}
+
+fn mailboxes(value: Option<&Address<'_>>) -> Vec<Mailbox> {
+    value
+        .into_iter()
+        .flat_map(Address::iter)
+        .filter_map(|entry| {
+            entry.address.as_ref().map(|address| Mailbox {
+                display_name: entry.name.as_ref().map(ToString::to_string),
+                address: address.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn message_ids(value: &HeaderValue<'_>) -> Vec<String> {
+    if let Some(ids) = value.as_text_list() {
+        ids.iter().map(|id| id.to_string()).collect()
+    } else {
+        value
+            .as_text()
+            .map(|id| vec![id.to_owned()])
+            .unwrap_or_default()
+    }
 }
 
 pub fn parse(bytes: &[u8]) -> Result<ParsedMessage, Error> {
@@ -228,6 +265,16 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMessage, Error> {
     Ok(ParsedMessage {
         subject: message.subject().unwrap_or_default().to_owned(),
         message_id: message.message_id().map(str::to_owned),
+        in_reply_to: message_ids(message.in_reply_to()).into_iter().next(),
+        references: message_ids(message.references()),
+        from: mailboxes(message.from()),
+        to: mailboxes(message.to()),
+        cc: mailboxes(message.cc()),
+        reply_to: mailboxes(message.reply_to()),
+        preview: message
+            .body_preview(160)
+            .map(|preview| preview.into_owned())
+            .unwrap_or_default(),
         plain_text,
         rich_text,
         attachments,
@@ -277,6 +324,10 @@ mod tests {
         assert!(!String::from_utf8_lossy(&built.bytes).contains("hidden@example.test"));
         let parsed = parse(&built.bytes).unwrap();
         assert_eq!(parsed.subject, "Café");
+        assert_eq!(parsed.from[0].address, "a@example.test");
+        assert_eq!(parsed.to[0].address, "b@example.test");
+        assert!(parsed.cc.is_empty());
+        assert!(!parsed.preview.is_empty());
         assert!(parsed.plain_text.contains("Plain café"));
         assert_eq!(parsed.attachments[0].bytes, b"attached");
     }
@@ -318,6 +369,13 @@ mod tests {
         let source = String::from_utf8_lossy(&built.bytes);
         assert!(source.contains("In-Reply-To: <original@example.test>"));
         assert!(source.contains("References: <older@example.test> <original@example.test>"));
+        let parsed = parse(&built.bytes).unwrap();
+        assert!(parsed
+            .in_reply_to
+            .as_deref()
+            .unwrap_or_default()
+            .contains("original@example.test"));
+        assert_eq!(parsed.references.len(), 2);
         draft
             .references
             .push("bad@example.test\r\nBcc: thief@example.test".into());

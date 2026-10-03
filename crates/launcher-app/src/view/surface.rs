@@ -8,6 +8,13 @@ pub(super) struct SurfaceBridge {
 }
 
 impl Surface for SurfaceBridge {
+    fn current_color_scheme(&self) -> Option<&'static str> {
+        Some(match rmac_ui::theme::current().color_scheme {
+            rmac_appearance::ResolvedColorScheme::Dark => "dark",
+            rmac_appearance::ResolvedColorScheme::Light => "light",
+        })
+    }
+
     fn open_setting(&self, pane_id: &str) -> Result<(), BackendError> {
         if !rmac_launcher_providers::system_settings_entries()
             .iter()
@@ -24,6 +31,10 @@ impl Surface for SurfaceBridge {
         Command::new(executable)
             .arg("--pane")
             .arg(pane_id)
+            .env(
+                "RMAC_COLOR_SCHEME",
+                self.current_color_scheme().unwrap_or("light"),
+            )
             .spawn()
             .map(|_| ())
             .map_err(|error| BackendError::new(FailureKind::Io(error.kind()), error.to_string()))

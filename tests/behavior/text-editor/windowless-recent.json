@@ -1,0 +1,18 @@
+{
+  "title": "Text Editor stays running after its last window closes and reopens a recent document",
+  "app": "text-editor",
+  "lulo_only": true,
+  "setup": {"files": {"report.txt": "A recent document.\n"}},
+  "launch": {"file": "report.txt"},
+  "steps": [
+    {"observe": "open", "facts": ["windows"]},
+    {"key": "cmd-w", "settle": 1.2},
+    {"observe": "windowless", "facts": ["windows"]},
+    {"menu_action": "text_editor::OpenRecent0", "settle": 1.2},
+    {"observe": "recent", "facts": ["windows"]},
+    {"key": "cmd-w", "settle": 1.2},
+    {"menu_action": "text_editor::NewFile", "settle": 1.2},
+    {"observe": "new", "facts": ["windows"]}
+  ],
+  "omit": ["open.windows.front", "open.windows.titles", "recent.windows.front", "recent.windows.titles", "new.windows.front", "new.windows.titles"]
+}

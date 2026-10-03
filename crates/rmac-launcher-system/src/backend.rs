@@ -37,6 +37,10 @@ pub trait Surface: Send + Sync + 'static {
     fn open_setting(&self, pane_id: &str) -> Result<(), BackendError>;
     fn copy_text(&self, text: &str) -> Result<(), BackendError>;
 
+    fn current_color_scheme(&self) -> Option<&'static str> {
+        None
+    }
+
     fn search_files(&self, query: &str) -> Result<(), BackendError> {
         let _ = query;
         Err(BackendError::new(
@@ -63,17 +67,20 @@ impl<S: Surface> Backend for SystemBackend<S> {
         spec: &'a rmac_apps::LaunchSpec,
     ) -> BackendFuture<'a, Result<rmac_app_launch::Outcome, BackendError>> {
         let spec = spec.clone();
+        let color_scheme = self.surface.current_color_scheme();
         Box::pin(async move {
-            rmac_app_launch::launch(spec).await.map_err(|error| {
-                BackendError::new(
-                    match error.kind {
-                        rmac_app_launch::ErrorKind::Io(kind) => FailureKind::Io(kind),
-                        rmac_app_launch::ErrorKind::Rejected => FailureKind::Rejected,
-                        rmac_app_launch::ErrorKind::Protocol => FailureKind::Other,
-                    },
-                    error.to_string(),
-                )
-            })
+            rmac_app_launch::launch_with_color_scheme(spec, color_scheme)
+                .await
+                .map_err(|error| {
+                    BackendError::new(
+                        match error.kind {
+                            rmac_app_launch::ErrorKind::Io(kind) => FailureKind::Io(kind),
+                            rmac_app_launch::ErrorKind::Rejected => FailureKind::Rejected,
+                            rmac_app_launch::ErrorKind::Protocol => FailureKind::Other,
+                        },
+                        error.to_string(),
+                    )
+                })
         })
     }
 

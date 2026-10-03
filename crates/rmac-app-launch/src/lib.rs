@@ -11,7 +11,7 @@ mod model;
 mod recent;
 mod termination;
 
-pub use application::launch;
+pub use application::{launch, launch_with_color_scheme};
 pub use document::{
     all_applications, file_association, open_document, open_file_with, open_item,
     record_recent_document, reveal_application, reveal_item,

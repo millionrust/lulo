@@ -157,12 +157,10 @@ impl Session {
 
 fn tls(stream: Stream, host: &str) -> Result<Stream, Error> {
     let certs = rustls_native_certs::load_native_certs();
-    if certs.certs.is_empty() {
-        return Err(Error::Tls);
-    }
     let mut roots = RootCertStore::empty();
-    for certificate in certs.certs {
-        roots.add(certificate).map_err(|_| Error::Tls)?;
+    let (added, _) = roots.add_parsable_certificates(certs.certs);
+    if added == 0 {
+        return Err(Error::Tls);
     }
     let config = Arc::new(
         ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))

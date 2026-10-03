@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original Lulo Calendar artwork, MIT licensed. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="paper" x2="0" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#e8e9ec"/></linearGradient>
+    <clipPath id="shape"><rect x="100" y="100" width="824" height="824" rx="190"/></clipPath>
+  </defs>
+  <g clip-path="url(#shape)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#paper)"/>
+    <path d="M100 100h824v240H100z" fill="#e94138"/>
+    <path d="M100 340h824" stroke="#d5d6db" stroke-width="8"/>
+    <text x="512" y="260" fill="white" font-family="sans-serif" font-size="104" font-weight="600" text-anchor="middle">CALENDAR</text>
+    <text x="512" y="760" fill="#24252c" font-family="sans-serif" font-size="410" font-weight="700" text-anchor="middle">3</text>
+  </g>
+  <rect x="100" y="100" width="824" height="824" rx="190" fill="none" stroke="#bbc0c8" stroke-width="8"/>
+</svg>

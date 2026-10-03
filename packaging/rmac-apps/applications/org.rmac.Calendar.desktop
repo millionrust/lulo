@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Calendar
+Name[hi]=कैलेंडर
+GenericName=Calendar
+GenericName[hi]=कैलेंडर
+Comment=View your calendars and events
+Comment[hi]=अपने कैलेंडर और कार्यक्रम देखें
+Keywords=calendar;events;week;date;appointments;
+Keywords[hi]=कैलेंडर;कार्यक्रम;सप्ताह;तारीख;मुलाकात;
+TryExec=/usr/bin/rmac-calendar
+Exec=/usr/bin/rmac-calendar
+Icon=org.rmac.Calendar
+Terminal=false
+Categories=Office;Calendar;
+StartupWMClass=org.rmac.Calendar

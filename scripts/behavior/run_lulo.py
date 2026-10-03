@@ -51,6 +51,7 @@ APP_BINARIES = {
     "text-editor": ["rmac-text-editor"],
     "settings": ["rmac-system-settings"],
     "calculator": ["rmac-calculator"],
+    "calendar": ["rmac-calendar"],
     "clock": ["rmac-clock"],
     "weather": ["rmac-weather"],
     "desktop": ["rmac-wallpaper", "wallpaper"],

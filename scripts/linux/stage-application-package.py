@@ -21,6 +21,7 @@ APPLICATION_IDS = (
     "org.rmac.AppDrawer",
     "org.rmac.ArchiveUtility",
     "org.rmac.Calculator",
+    "org.rmac.Calendar",
     "org.rmac.Clock",
     "org.rmac.Files",
     "org.rmac.Notes",

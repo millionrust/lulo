@@ -159,3 +159,12 @@ msgstr "ऑडियो और वीडियो फ़ाइलें चल�
 
 msgid "video;audio;music;movie;player;media;"
 msgstr "वीडियो;ऑडियो;संगीत;फ़िल्म;प्लेयर;मीडिया;"
+
+msgid "Calendar"
+msgstr "कैलेंडर"
+
+msgid "View your calendars and events"
+msgstr "अपने कैलेंडर और कार्यक्रम देखें"
+
+msgid "calendar;events;week;date;appointments;"
+msgstr "कैलेंडर;कार्यक्रम;सप्ताह;तारीख;मुलाकात;"

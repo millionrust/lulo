@@ -1,0 +1,39 @@
+{
+  "title": "Calendar: arrow keys move the selected day in Month view",
+  "app": "calendar",
+  "launch": {},
+  "pending": "Pending: needs the Calendar app (milestones CAL-3..CAL-8), `calendar` in scenario.APPS, and a Mac recording made only against a local 'On My Mac' calendar (never a synced account).",
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "key": "cmd-3",
+      "settle": 0.5
+    },
+    {
+      "key": "cmd-t",
+      "settle": 0.5
+    },
+    {
+      "key": "right",
+      "settle": 0.3
+    },
+    {
+      "observe": "next_day",
+      "facts": [
+        "selection"
+      ]
+    },
+    {
+      "key": "down",
+      "settle": 0.3
+    },
+    {
+      "observe": "next_week",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

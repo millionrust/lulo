@@ -1,0 +1,33 @@
+{
+  "title": "Calendar: accepting an invitation updates its status",
+  "app": "calendar",
+  "launch": {},
+  "pending": "Pending: needs the Calendar app (milestones CAL-3..CAL-8), `calendar` in scenario.APPS, and a Mac recording made only against a local 'On My Mac' calendar (never a synced account).",
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "select": "Invitations",
+      "settle": 0.5
+    },
+    {
+      "observe": "inbox",
+      "facts": [
+        "dialog"
+      ]
+    },
+    {
+      "select": "Accept",
+      "settle": 1
+    },
+    {
+      "observe": "accepted",
+      "facts": [
+        "dialog",
+        "selection"
+      ]
+    }
+  ],
+  "fixture": "Lulo: fixture CalDAV server with one pending invitation. Mac: an .ics invitation imported into a local calendar."
+}

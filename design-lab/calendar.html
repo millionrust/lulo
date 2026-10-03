@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Calendar — day, week, month, year</title>
+<link rel="stylesheet" href="lab.css">
+<!--
+  Calendar (planned crate `calendar`, ADR 0022, docs/design/calendar-mail.md).
+  NOT yet measured on the Mac: window chrome, sidebar panel and toolbar capsules
+  reuse the Files measurements (design-lab/finder.html); every Calendar-specific
+  number below is an estimate marked "verify on Mac" until a read-only capture
+  lands in tests/inventory/mac. Glyphs are original inline SVGs, not Apple art.
+
+  Window        1100 × 720 (default; verify), radius 27, toolbar 52
+  Sidebar       floating panel x 8 → 220, y 8 → h − 8.5, radius 19; traffic
+                lights centres 26 / 49 / 72, y 26. Rows 24 tall (calendar
+                list, verify), colour checkbox 14 at x 18, label at 40.
+                Section head 11 semibold secondary. Mini month at the bottom:
+                7 × 6 cells 26 × 22, today = red circle 20.
+  Toolbar       capsules 36 tall at y 8 (Files): [sidebar|inbox] at 228,
+                [+] next; segmented Day/Week/Month/Year centred on the
+                content, selected pill like Files' view control; search 36
+                circle 9 from the right edge.
+  Content head  "October 2026": 22 bold at x content+16, y 60 (verify);
+                ‹ Today › capsule 28 tall at the right.
+  Week view     day header 34 ("Sat 3": 11 regular label, 15 semibold
+                number; today number white in a 24 red circle); all-day
+                strip ≥ 24; gutter 52 with 10 pt hour labels; hour 48 tall;
+                hairline rows; weekend columns tinted 3 %.
+  Events        fill = calendar colour 22 % (dark) / 18 % (light); 3 pt
+                solid left edge; title 11 semibold, time 11 regular;
+                radius 4; 1 pt gap between overlapping columns.
+  Now line      sys-red 1 pt across today's column with an 8 dot at the
+                left, time label in the gutter (red pill, white 10 pt).
+  Month view    day numbers 12 at top-right (inset 6); events 11 regular
+                lines 16 tall with a 6 dot (timed) or tinted bar (all-day).
+  Year view     4 × 3 mini months; busy days tinted with the accent at
+                15 / 30 / 45 % by event count (verify on Mac).
+-->
+<style>
+  .win{--win:rgb(33,33,46);--panel:rgb(30,30,39);--panel-edge:rgba(255,255,255,.10);--text:rgb(223,223,225);
+       --strong:rgb(244,244,253);--sec:rgb(159,159,165);--hair:rgba(255,255,255,.10);--hair2:rgba(255,255,255,.05);
+       --cap:rgba(255,255,255,.02);--cap-edge:rgba(255,255,255,.14);--cap-on:rgba(255,255,255,.16);--wkend:rgba(255,255,255,.03);
+       --ev-a:22%;--red:#FF453A;--pop:rgba(44,44,50,.96)}
+  .win.light{--win:#FFFFFF;--panel:#F2F2F4;--panel-edge:rgba(0,0,0,.08);--text:#1d1d1f;--strong:#1d1d1f;--sec:#6e6e73;
+       --hair:rgba(0,0,0,.10);--hair2:rgba(0,0,0,.05);--cap:rgba(0,0,0,.02);--cap-edge:rgba(0,0,0,.12);--cap-on:rgba(0,0,0,.09);
+       --wkend:rgba(0,0,0,.025);--ev-a:18%;--red:#FF3B30;--pop:rgba(250,250,252,.97)}
+  .stage{padding:24px;display:flex;flex-direction:column;gap:28px}
+  .cap-label{font:600 12px var(--font);color:#999;margin:0 0 6px}
+  .win{position:relative;width:1100px;height:720px;background:var(--win);border-radius:27px;overflow:hidden;color:var(--text);font-size:13px;
+       box-shadow:0 0 0 .5px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.14)}
+  .win.light{box-shadow:0 0 0 .5px rgba(0,0,0,.25),0 12px 30px rgba(0,0,0,.25)}
+  svg.g{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .panel{position:absolute;left:8px;top:8px;bottom:8.5px;width:212px;border-radius:19px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--panel-edge)}
+  .tl{position:absolute;top:19px;width:14px;height:14px;border-radius:50%}
+  .cals{position:absolute;left:10px;right:10px;top:48px}
+  .hd{font:600 11px/17px var(--font);color:var(--sec);margin:12px 0 2px 6px}
+  .cr{height:24px;display:flex;align-items:center;gap:8px;padding-left:8px;color:var(--strong)}
+  .chk{width:14px;height:14px;border-radius:4px;display:flex;align-items:center;justify-content:center}
+  .chk svg{width:11px;height:11px;stroke:#fff;stroke-width:2.6}
+  .chk.off{background:transparent!important;box-shadow:inset 0 0 0 1.5px var(--c)}
+  .mini{position:absolute;left:14px;right:14px;bottom:16px;font-size:11px}
+  .mini .mh{display:flex;justify-content:space-between;font-weight:600;color:var(--strong);margin:0 4px 6px}
+  .mini .grid{display:grid;grid-template-columns:repeat(7,1fr);row-gap:2px;text-align:center}
+  .mini .grid span{height:20px;line-height:20px}
+  .mini .dn{color:var(--sec);font-size:10px}
+  .mini .o{color:var(--sec);opacity:.6}
+  .mini .t{background:var(--red);color:#fff;border-radius:50%;width:20px;margin:0 auto;font-weight:600}
+  .capb{position:absolute;top:8px;height:36px;border-radius:18px;background:var(--cap);box-shadow:inset 0 0 0 1px var(--cap-edge);display:flex;align-items:center;color:var(--strong)}
+  .capb b{width:36px;height:36px;display:flex;align-items:center;justify-content:center}
+  .capb i.div{width:1px;height:20px;background:var(--hair)}
+  .seg{position:absolute;top:8px;height:36px;border-radius:18px;background:var(--cap);box-shadow:inset 0 0 0 1px var(--cap-edge);display:flex;align-items:center;padding:0 4px;gap:2px}
+  .seg span{height:28px;padding:0 13px;border-radius:14px;display:flex;align-items:center;font-weight:500;color:var(--strong)}
+  .seg span.on{background:var(--cap-on);font-weight:600}
+  .content{position:absolute;left:228px;right:0;top:52px;bottom:0}
+  .chead{position:absolute;left:16px;right:16px;top:4px;height:36px;display:flex;align-items:center}
+  .chead h2{margin:0;font:700 22px var(--font);color:var(--strong)} .chead h2 em{font-style:normal;font-weight:400;color:var(--sec)}
+  .nav{margin-left:auto;height:28px;border-radius:14px;box-shadow:inset 0 0 0 1px var(--cap-edge);display:flex;align-items:center;color:var(--strong)}
+  .nav b{width:28px;display:flex;justify-content:center} .nav span{padding:0 8px;font-weight:500;box-shadow:inset 1px 0 0 var(--hair),inset -1px 0 0 var(--hair);line-height:28px}
+  /* week / day grid */
+  .wk{position:absolute;left:0;right:0;top:44px;bottom:0;overflow:hidden}
+  .dh{position:absolute;top:0;height:34px;display:flex;align-items:center;justify-content:center;gap:5px;color:var(--sec);font-size:12px}
+  .dh b{font:600 15px var(--font);color:var(--strong);min-width:24px;height:24px;border-radius:12px;display:flex;align-items:center;justify-content:center;padding:0 4px}
+  .dh.today b{background:var(--red);color:#fff}
+  .allday{position:absolute;left:0;right:0;top:34px;height:26px;box-shadow:inset 0 -1px 0 var(--hair)}
+  .allday .lab{position:absolute;left:6px;top:6px;font-size:10px;color:var(--sec)}
+  .tg{position:absolute;left:0;right:0;top:60px;bottom:0}
+  .hr{position:absolute;left:52px;right:0;height:1px;background:var(--hair2)}
+  .hl{position:absolute;left:0;width:44px;text-align:right;font-size:10px;color:var(--sec);transform:translateY(-6px)}
+  .vc{position:absolute;top:0;bottom:0;width:1px;background:var(--hair2)}
+  .we{position:absolute;top:0;bottom:0;background:var(--wkend)}
+  .ev{position:absolute;border-radius:4px;padding:2px 5px 2px 7px;overflow:hidden;font-size:11px;line-height:14px;
+      background:color-mix(in srgb,var(--c) var(--ev-a),transparent);box-shadow:inset 3px 0 0 var(--c);color:var(--strong)}
+  .ev b{display:block;font-weight:600;color:color-mix(in srgb,var(--c) 55%,var(--strong))} .ev i{font-style:normal;color:var(--sec)}
+  .ev.sel{background:var(--c);color:#fff} .ev.sel b,.ev.sel i{color:#fff}
+  .ad{position:absolute;top:3px;height:19px;border-radius:4px;padding:0 6px;font-size:11px;line-height:19px;font-weight:600;color:#fff;background:var(--c);white-space:nowrap;overflow:hidden}
+  .now{position:absolute;height:1px;background:var(--red)} .now::before{content:"";position:absolute;left:-4px;top:-3.5px;width:8px;height:8px;border-radius:50%;background:var(--red)}
+  .nowl{position:absolute;left:4px;width:42px;height:16px;border-radius:8px;background:var(--red);color:#fff;font:600 10px/16px var(--font);text-align:center;transform:translateY(-8px)}
+  /* month */
+  .mo{position:absolute;left:0;right:0;top:44px;bottom:0}
+  .mo .dn{position:absolute;top:0;height:24px;font-size:11px;color:var(--sec);text-align:right;padding-right:8px;line-height:24px}
+  .cell{position:absolute;box-shadow:inset 1px 1px 0 var(--hair2);padding:4px 6px;font-size:11px}
+  .cell .n{position:absolute;right:6px;top:4px;font-size:12px;color:var(--strong);min-width:22px;height:22px;line-height:22px;text-align:center;border-radius:11px}
+  .cell.out .n{color:var(--sec)} .cell.today .n{background:var(--red);color:#fff;font-weight:600}
+  .cell .l{margin-top:2px;height:16px;line-height:16px;white-space:nowrap;overflow:hidden;display:flex;align-items:center;gap:5px}
+  .cell .l::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--c);flex:none}
+  .cell .l i{font-style:normal;color:var(--sec);margin-left:auto}
+  .cell .bar{margin-top:2px;height:16px;line-height:16px;border-radius:3px;padding:0 5px;color:#fff;font-weight:600;background:var(--c)}
+  .cell .more{color:var(--sec);margin-top:2px}
+  .cell .first{height:26px}
+  /* year */
+  .yr{position:absolute;left:16px;right:16px;top:48px;bottom:12px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px 26px}
+  .ym h3{margin:0 0 4px;font:600 15px var(--font);color:var(--red)} .ym h3.p{color:var(--strong)}
+  .ym .g{display:grid;grid-template-columns:repeat(7,1fr);font-size:10.5px;text-align:center;row-gap:1px}
+  .ym .g span{height:19px;line-height:19px;border-radius:50%;width:19px;margin:0 auto}
+  .ym .g .h{color:var(--sec)} .ym .g .b1{background:color-mix(in srgb,var(--accent) 15%,transparent)}
+  .ym .g .b2{background:color-mix(in srgb,var(--accent) 30%,transparent)} .ym .g .b3{background:color-mix(in srgb,var(--accent) 45%,transparent)}
+  .ym .g .t{background:var(--red);color:#fff;font-weight:600}
+  /* day detail + inspector */
+  .detail{position:absolute;top:0;bottom:0;right:0;width:300px;box-shadow:inset 1px 0 0 var(--hair);padding:18px 18px}
+  .detail h4{margin:0;font:700 17px var(--font);color:var(--strong)} .detail .m{color:var(--sec);margin-top:4px;line-height:18px}
+  .detail .sec{margin-top:14px;padding-top:12px;box-shadow:inset 0 1px 0 var(--hair);line-height:20px}
+  .pop{position:absolute;width:300px;border-radius:14px;background:var(--pop);backdrop-filter:blur(40px);padding:14px 16px;color:var(--strong);
+       box-shadow:0 0 0 .5px rgba(0,0,0,.6),inset 0 0 0 1px var(--panel-edge),0 16px 40px rgba(0,0,0,.45);z-index:5}
+  .pop::before{content:"";position:absolute;left:-7px;top:40px;width:14px;height:14px;background:inherit;transform:rotate(45deg);box-shadow:-1px 1px 0 var(--panel-edge)}
+  .pop .t{font:700 15px var(--font)} .pop .fld{color:var(--sec);margin:3px 0 10px}
+  .pop .r{display:flex;align-items:center;min-height:26px;box-shadow:inset 0 -1px 0 var(--hair);gap:8px}
+  .pop .r .k{width:76px;color:var(--sec);text-align:right;font-size:12px} .pop .r .v{flex:1}
+  .pop .pill{display:inline-flex;align-items:center;gap:6px;padding:1px 8px;border-radius:6px;background:var(--cap-on)}
+  .pop .dot{width:8px;height:8px;border-radius:50%;background:var(--c)}
+  .pop .acts{display:flex;gap:6px;margin-top:12px} .pop .acts span{flex:1;text-align:center;padding:4px 0;border-radius:7px;background:var(--cap-on);font-weight:500}
+  .pop .acts span.on{background:var(--accent);color:#fff}
+</style>
+</head>
+<body>
+<header class="lab">
+  <h1>Calendar</h1>
+  <nav><a href="index.html">Overview</a><a href="calendar.html" class="on">Calendar</a><a href="mail.html">Mail</a><a href="internet-accounts.html">Internet Accounts</a><a href="finder.html">Files</a></nav>
+  <span class="spacer"></span><span style="font-size:12px;color:#8b8b93">Estimates, not Mac measurements — see the comment at the top</span>
+</header>
+<div class="stage" id="stage"></div>
+<script>
+const P = {
+  side:'<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>',
+  inbox:'<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>', left:'<path d="M14.5 6l-6 6 6 6"/>', right:'<path d="M9.5 6l6 6-6 6"/>',
+  search:'<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>', check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+};
+const g = (n, s = 18) => `<svg class="g" viewBox="0 0 24 24" style="width:${s}px;height:${s}px">${P[n]}</svg>`;
+const C = {work:'#0A84FF', home:'#30D158', family:'#FF9F0A', gym:'#BF5AF2', hol:'#FF453A', team:'#40C8E0'};
+const days = [['Mon',28],['Tue',29],['Wed',30],['Thu',1],['Fri',2],['Sat',3],['Sun',4]];
+const TODAY = 5;
+const events = [
+  [0,9,9.5,'Stand-up','work','Room 4'],[0,13,14,'Design review','work','Studio'],[1,9,9.5,'Stand-up','work',''],
+  [1,10.5,12,'Calendar sync spec','team','Video call'],[1,18,19.5,'Climbing','gym','The Wall'],[2,9,9.5,'Stand-up','work',''],
+  [2,12,13,'Lunch with Ana','home','Café Lulo'],[2,12.5,14,'Vendor call','work',''],[3,9,9.5,'Stand-up','work',''],
+  [3,15,16.5,'Release triage','team','Room 2'],[4,9,9.5,'Stand-up','work',''],[4,16,17,'1:1 with Sam','work',''],
+  [5,10,11.5,'Farmers market','family','Plaza'],[5,14,15,'Haircut','home',''],[6,11,13,'Family lunch','family','Grandma’s'],
+];
+const allday = [[1,3,'Conference','team'],[4,5,'Ana’s birthday','family']];
+const fmt = h => { const H = Math.floor(h), M = Math.round((h - H) * 60); return `${H}:${String(M).padStart(2,'0')}`; };
+
+function sidebar(){
+  const row = (n, c, on = true) => `<div class="cr"><span class="chk${on ? '' : ' off'}" style="background:${c};--c:${c}">${on ? g('check', 11) : ''}</span>${n}</div>`;
+  let mini = '';
+  ['M','T','W','T','F','S','S'].forEach(d => mini += `<span class="dn">${d}</span>`);
+  [28,29,30].forEach(d => mini += `<span class="o">${d}</span>`);
+  for (let d = 1; d <= 31; d++) mini += `<span class="${d === 3 ? 't' : ''}">${d}</span>`;
+  [1,2,3,4,5,6,7,8].forEach(d => mini += `<span class="o">${d}</span>`);
+  return `<div class="panel"><i class="tl" style="left:19px;background:#ff5f57"></i><i class="tl" style="left:42px;background:#febc2e"></i><i class="tl" style="left:65px;background:#28c840"></i>
+    <div class="cals"><div class="hd">Google</div>${row('Work', C.work)}${row('Team', C.team)}${row('Family', C.family)}
+    <div class="hd">iCloud</div>${row('Home', C.home)}${row('Gym', C.gym, false)}
+    <div class="hd">Other</div>${row('Holidays', C.hol)}</div>
+    <div class="mini"><div class="mh"><span>October 2026</span><span style="display:flex;gap:6px;color:var(--sec)">${g('left',13)}${g('right',13)}</span></div><div class="grid">${mini}</div></div></div>`;
+}
+function toolbar(view){
+  const segs = ['Day','Week','Month','Year'].map(v => `<span class="${v === view ? 'on' : ''}">${v}</span>`).join('');
+  return `<div class="capb" style="left:228px"><b>${g('side')}</b><i class="div"></i><b>${g('inbox')}</b></div>
+    <div class="capb" style="left:310px"><b>${g('plus')}</b></div>
+    <div class="seg" style="left:${228 + (872 - 262) / 2}px;width:262px">${segs}</div>
+    <div class="capb" style="right:9px"><b>${g('search')}</b></div>`;
+}
+function head(title, sub){ return `<div class="chead"><h2>${title} <em>${sub}</em></h2><div class="nav"><b>${g('left',14)}</b><span>Today</span><b>${g('right',14)}</b></div></div>`; }
+
+function week(selected){
+  const W = 872, gut = 52, cw = (W - gut) / 7, H = 48, start = 8;
+  let h = '<div class="wk">';
+  days.forEach(([n, d], i) => h += `<div class="dh${i === TODAY ? ' today' : ''}" style="left:${gut + i * cw}px;width:${cw}px">${n} <b>${d}</b></div>`);
+  h += `<div class="allday"><span class="lab">all-day</span>`;
+  allday.forEach(([a, b, t, c]) => h += `<span class="ad" style="--c:${C[c]};left:${gut + a * cw + 2}px;width:${(b - a + 1) * cw - 4}px">${t}</span>`);
+  h += `</div><div class="tg">`;
+  h += `<i class="we" style="left:${gut + 5 * cw}px;width:${2 * cw}px"></i>`;
+  for (let i = 0; i < 13; i++) { h += `<i class="hr" style="top:${i * H}px"></i>`; if (i) h += `<span class="hl" style="top:${i * H}px">${start + i}:00</span>`; }
+  for (let i = 0; i <= 7; i++) h += `<i class="vc" style="left:${gut + i * cw}px"></i>`;
+  // overlap layout: Wed lunch + vendor call share the column
+  events.forEach(([d, a, b, t, c, loc], ix) => {
+    let x = gut + d * cw + 1, w = cw - 3;
+    if (d === 2 && a === 12) w = cw / 2 - 2;
+    if (d === 2 && a === 12.5) { x += cw / 2; w = cw / 2 - 3; }
+    h += `<div class="ev${ix === selected ? ' sel' : ''}" style="--c:${C[c]};left:${x}px;top:${(a - start) * H + 1}px;width:${w}px;height:${(b - a) * H - 2}px"><b>${t}</b><i>${fmt(a)}${loc && b - a >= 1 ? ' · ' + loc : ''}</i></div>`;
+  });
+  const now = 11.4;
+  h += `<span class="nowl" style="top:${(now - start) * H}px">11:24</span><i class="now" style="left:${gut + TODAY * cw}px;width:${cw}px;top:${(now - start) * H}px"></i>`;
+  return h + '</div></div>';
+}
+function day(){
+  const W = 872 - 300, gut = 52, H = 48, start = 8;
+  let h = '<div class="wk" style="right:300px">';
+  h += `<div class="dh today" style="left:${gut}px;width:${W - gut}px;justify-content:flex-start;padding-left:8px">Saturday <b>3</b></div><div class="allday"><span class="lab">all-day</span></div><div class="tg">`;
+  for (let i = 0; i < 13; i++) { h += `<i class="hr" style="top:${i * H}px"></i>`; if (i) h += `<span class="hl" style="top:${i * H}px">${start + i}:00</span>`; }
+  events.filter(e => e[0] === 5).forEach(([d, a, b, t, c, loc], i) => h += `<div class="ev${i === 0 ? ' sel' : ''}" style="--c:${C[c]};left:${gut + 2}px;top:${(a - start) * H + 1}px;width:${W - gut - 8}px;height:${(b - a) * H - 2}px"><b>${t}</b><i>${fmt(a)} – ${fmt(b)}${loc ? ' · ' + loc : ''}</i></div>`);
+  h += `<span class="nowl" style="top:${(11.4 - start) * H}px">11:24</span><i class="now" style="left:${gut}px;right:0;top:${(11.4 - start) * H}px"></i></div></div>`;
+  h += `<div class="detail"><h4>Farmers market</h4><div class="m">Plaza<br>Saturday 3 October 2026<br>10:00 to 11:30</div>
+    <div class="sec"><span style="color:var(--sec)">Calendar</span> &nbsp;<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${C.family}"></span> Family<br>
+    <span style="color:var(--sec)">Alert</span> &nbsp;30 minutes before<br><span style="color:var(--sec)">Repeat</span> &nbsp;Every Saturday</div>
+    <div class="sec"><span style="color:var(--sec)">Invitees</span><br>Anna Kim (organiser)<br>Sam Ortiz · accepted</div>
+    <div class="sec" style="color:var(--sec)">Bring the big basket.</div></div>`;
+  return h;
+}
+function month(){
+  const W = 872, cw = W / 7, top = 24, rh = (720 - 52 - 44 - top) / 5;
+  let h = '<div class="mo">';
+  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((d, i) => h += `<span class="dn" style="left:${i * cw}px;width:${cw}px">${d}</span>`);
+  const byDay = {1:[['l','Stand-up','work','9:00'],['l','Release triage','team','15:00']],2:[['bar','Ana’s birthday','family']],3:[['bar','Ana’s birthday','family'],['l','Farmers market','family','10:00'],['l','Haircut','home','14:00']],
+    4:[['l','Family lunch','family','11:00']],6:[['l','Stand-up','work','9:00']],8:[['l','Dentist','home','8:30']],12:[['bar','Team offsite','team']],13:[['bar','Team offsite','team']],
+    14:[['l','Stand-up','work','9:00'],['l','Design review','work','13:00'],['l','Lunch with Ana','home','12:00'],['l','Climbing','gym','18:00']],19:[['l','Flight to Lisbon','team','7:10']],26:[['bar','Bank holiday','hol']],31:[['l','Halloween party','family','19:00']]};
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 7; c++) {
+    const n = r * 7 + c - 2; const out = n < 1 || n > 31; const label = out ? (n < 1 ? 30 + n : n - 31) : n;
+    const evs = (byDay[n] || []);
+    let inner = `<span class="n">${label}</span><div class="first"></div>`;
+    evs.slice(0, 3).forEach(([k, t, cal, tm]) => inner += k === 'bar' ? `<div class="bar" style="--c:${C[cal]}">${t}</div>` : `<div class="l" style="--c:${C[cal]}">${t}<i>${tm}</i></div>`);
+    if (evs.length > 3) inner += `<div class="more">${evs.length - 3} more</div>`;
+    h += `<div class="cell${out ? ' out' : ''}${n === 3 ? ' today' : ''}" style="left:${c * cw}px;top:${top + r * rh}px;width:${cw}px;height:${rh}px">${inner}</div>`;
+  }
+  return h + '</div>';
+}
+function year(){
+  const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const busy = (m, d) => ((m * 7 + d * 13) % 11 === 0 ? 3 : (m * 3 + d * 5) % 9 === 0 ? 2 : (m + d * 7) % 6 === 0 ? 1 : 0);
+  let h = '<div class="yr">';
+  names.forEach((nm, m) => {
+    const first = (new Date(2026, m, 1).getDay() + 6) % 7, len = new Date(2026, m + 1, 0).getDate();
+    let gr = ['M','T','W','T','F','S','S'].map(x => `<span class="h">${x}</span>`).join('');
+    for (let i = 0; i < first; i++) gr += '<span></span>';
+    for (let d = 1; d <= len; d++) { const t = m === 9 && d === 3; const b = busy(m, d); gr += `<span class="${t ? 't' : b ? 'b' + b : ''}">${d}</span>`; }
+    h += `<div class="ym"><h3 class="${m === 9 ? '' : 'p'}">${nm}</h3><div class="g">${gr}</div></div>`;
+  });
+  return h + '</div>';
+}
+function inspector(){
+  return `<div class="pop" style="--c:${C.team};left:${228 + 52 + 2 * 117.14 + 8}px;top:232px">
+    <div class="t">Calendar sync spec</div><div class="fld">Video call</div>
+    <div class="r"><span class="k">all-day</span><span class="v">☐</span></div>
+    <div class="r"><span class="k">starts</span><span class="v">29/09/2026 &nbsp; 10:30</span></div>
+    <div class="r"><span class="k">ends</span><span class="v">29/09/2026 &nbsp; 12:00</span></div>
+    <div class="r"><span class="k">repeat</span><span class="v">None</span></div>
+    <div class="r"><span class="k">alert</span><span class="v">15 minutes before</span></div>
+    <div class="r"><span class="k">calendar</span><span class="v"><span class="pill"><i class="dot"></i>Team</span></span></div>
+    <div class="r"><span class="k">invitees</span><span class="v">Anna Kim, Sam Ortiz</span></div>
+    <div class="r" style="box-shadow:none"><span class="k">notes</span><span class="v" style="color:var(--sec)">Add Notes or URL</span></div>
+    <div class="acts"><span class="on">Accept</span><span>Maybe</span><span>Decline</span></div></div>`;
+}
+const frames = [
+  ['Week — dark (today Saturday 3 October, 11:24)', 'dark', 'Week', head('October 2026', ''), week(-1)],
+  ['Week — light, event selected with the inspector popover', 'light', 'Week', head('October 2026', ''), week(4) + ''],
+  ['Day — dark, detail column', 'dark', 'Day', head('3 October 2026', 'Saturday'), day()],
+  ['Month — dark', 'dark', 'Month', head('October', '2026'), month()],
+  ['Month — light', 'light', 'Month', head('October', '2026'), month()],
+  ['Year — light', 'light', 'Year', head('2026', ''), year()],
+];
+document.getElementById('stage').innerHTML = frames.map(([label, theme, view, hd, body], i) =>
+  `<div><p class="cap-label">${label}</p><div class="win ${theme}">${sidebar()}${toolbar(view)}<div class="content">${hd}${body}</div>${i === 1 ? inspector() : ''}</div></div>`).join('');
+</script>
+</body>
+</html>

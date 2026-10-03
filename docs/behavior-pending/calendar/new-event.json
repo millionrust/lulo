@@ -1,0 +1,40 @@
+{
+  "title": "Calendar: ⌘N creates a New Event and focuses its title",
+  "app": "calendar",
+  "launch": {},
+  "pending": "Pending: needs the Calendar app (milestones CAL-3..CAL-8), `calendar` in scenario.APPS, and a Mac recording made only against a local 'On My Mac' calendar (never a synced account).",
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "key": "cmd-2",
+      "settle": 0.5
+    },
+    {
+      "key": "cmd-n",
+      "settle": 1
+    },
+    {
+      "observe": "created",
+      "facts": [
+        "focus",
+        "selection",
+        "dialog"
+      ]
+    },
+    {
+      "type": "Behaviour suite event"
+    },
+    {
+      "key": "return",
+      "settle": 0.5
+    },
+    {
+      "observe": "named",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

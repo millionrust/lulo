@@ -136,6 +136,9 @@ for those.
    Evolution Data Server; not a Beta-1-sized fix, but likely to be the
    single most-reported missing app — call it out explicitly in release
    notes/known-limitations rather than let users discover it.
+   **Update 2026-10-03:** the owner moved Calendar and Mail into Beta 1. Plan:
+   ADR 0022 and `docs/design/calendar-mail.md` (accounts ACC-1..4, Calendar
+   CAL-1..9, Mail MAIL-1..10).
 8. **PREV-02/03/04/15 (P1, mixed)** — Preview's File menu is still partial:
    Print works for PDFs/images but is unverified live, Save/Export As is
    partial, Markup/annotation is entirely absent. Plan: Print live-check is

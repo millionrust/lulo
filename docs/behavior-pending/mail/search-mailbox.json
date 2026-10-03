@@ -1,0 +1,34 @@
+{
+  "title": "Mail: search finds a message by sender",
+  "app": "mail",
+  "launch": {},
+  "pending": "Pending: needs the Mail app (MAIL-5..MAIL-8), `mail` in scenario.APPS, the in-tree fixture IMAP/SMTP account on Lulo, and a Mac recording against a local 'On My Mac' mailbox only. Never send mail and never confirm a deletion on the Mac.",
+  "steps": [
+    {
+      "wait": 3
+    },
+    {
+      "key": "cmd-alt-f",
+      "settle": 0.5
+    },
+    {
+      "observe": "search_focus",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "type": "Anna"
+    },
+    {
+      "key": "return",
+      "settle": 2
+    },
+    {
+      "observe": "results",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

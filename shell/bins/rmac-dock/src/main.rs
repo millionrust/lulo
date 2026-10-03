@@ -649,6 +649,8 @@ mod linux_wayland {
         ) -> Self {
             let focus = cx.focus_handle();
             focus.focus(window, cx);
+            let mapped_focus = focus.clone();
+            window.on_next_frame(move |window, cx| mapped_focus.focus(window, cx));
             cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() {
                     this.was_active = true;
@@ -3067,6 +3069,10 @@ mod linux_wayland {
                                         origin: point(px(0.0), px(0.0)),
                                         size: window.bounds().size,
                                     }]));
+                                    this.ensure_menu_keyboard(
+                                        window.display(cx).map(|display| display.id()),
+                                        cx,
+                                    );
                                 }
                                 cx.notify();
                             })
@@ -3413,6 +3419,10 @@ mod linux_wayland {
                                         origin: point(px(0.0), px(0.0)),
                                         size: window.bounds().size,
                                     }]));
+                                    this.ensure_menu_keyboard(
+                                        window.display(cx).map(|display| display.id()),
+                                        cx,
+                                    );
                                 }
                                 if !is_finder {
                                     this.load_login_state(&context_app_id, cx);
@@ -3628,6 +3638,10 @@ mod linux_wayland {
                                         origin: point(px(0.0), px(0.0)),
                                         size: window.bounds().size,
                                     }]));
+                                    this.ensure_menu_keyboard(
+                                        window.display(cx).map(|display| display.id()),
+                                        cx,
+                                    );
                                 }
                                 cx.notify();
                             }),
@@ -4760,9 +4774,10 @@ mod linux_wayland {
             )
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(move |this, _, _, cx| {
+                cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
                     this.open_separator_menu(anchor, cx);
+                    this.ensure_menu_keyboard(window.display(cx).map(|display| display.id()), cx);
                 }),
             );
         hit = if horizontal {

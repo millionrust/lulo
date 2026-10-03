@@ -5,7 +5,8 @@
       "launch": "settings"
     },
     {
-      "shot": "open"
+      "shot": "open",
+      "expect_window": "org.rmac.SystemSettings"
     },
     {
       "type": "wallpaper"

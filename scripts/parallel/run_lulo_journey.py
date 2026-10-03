@@ -14,6 +14,8 @@ import sys
 import tempfile
 import time
 
+from PIL import Image
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "behavior"))
 import run_lulo  # noqa: E402
@@ -34,13 +36,28 @@ APP_IDS = {
     "settings": "org.rmac.SystemSettings", "calculator": "org.rmac.Calculator",
     "preview": "org.rmac.Preview", "notes": "org.rmac.Notes", "terminal": "org.rmac.Terminal",
 }
+DOCK_NAMES = {
+    "files": "Files", "text-editor": "Text Editor", "settings": "System Settings",
+    "calculator": "Calculator", "preview": "Preview", "notes": "Notes", "terminal": "Terminal",
+}
+# The resident shell the real session starts (crates/rmac-session/units).
+# Each is started only when --bin-dir has it; the socket, when named, is
+# awaited so the first shortcut of a journey reaches a ready service.
+RESIDENT = (
+    ("rmac-top-bar", [], None),
+    ("rmac-wallpaper", [], None),
+    ("rmac-quick-settings", [], "rmac/shortcut-quick-settings.sock"),
+    ("rmac-launcher", [], "rmac/shortcut-launcher.sock"),
+    ("rmac-app-switcher", ["--service"], "rmac/app-switcher.sock"),
+)
 FORBIDDEN = {"Shut Down", "Restart", "Log Out", "Sleep", "Empty Bin", "Empty Trash", "Wi-Fi On", "Wi-Fi Off"}
 
 
 def private_bus(work: Path, env: dict, bins: Path) -> Path:
     services = work / "dbus-services"
     services.mkdir()
-    for name in ("org.a11y.Bus.service", "org.freedesktop.portal.Desktop.service"):
+    for name in ("org.a11y.Bus.service", "org.freedesktop.portal.Desktop.service",
+                 "org.freedesktop.impl.portal.PermissionStore.service"):
         source = Path("/usr/share/dbus-1/services") / name
         if source.exists():
             shutil.copy(source, services / name)
@@ -81,6 +98,7 @@ class Driver:
         self.current = None
         self.scratch = work / "capture"
         self.scratch.mkdir()
+        self.shot_serial = 0
 
     def start(self):
         # run_window_move supplies the proven Sway -> niri setup. Give it a
@@ -92,6 +110,10 @@ class Driver:
         shell = original.read_text()
         for binary in Path(self.args.bin_dir).glob("rmac-*"):
             shell = shell.replace(f"/usr/libexec/rmac/{binary.name}", str(binary))
+        # niri makes Alt its Mod key when it runs nested in a window, so the
+        # session's Mod (⌘ = Super) bindings such as ⌘Tab would otherwise
+        # pass straight through to the focused app. Keep Super, as on a TTY.
+        shell = shell.replace("input {\n", 'input {\n    mod-key-nested "Super"\n', 1)
         config.write_text(shell)
         run_window_move.REPO = private_root
         self.session.start()
@@ -101,15 +123,11 @@ class Driver:
         self.session.output = next(iter(self.session.niri("outputs") or {}), "winit")
         self.sampler = screencopy.Screencopy(self.session.pointer)
         bins = Path(self.args.bin_dir)
-        for binary in ("rmac-top-bar", "rmac-wallpaper"):
+        for binary, arguments, socket in RESIDENT:
             if (bins / binary).exists():
-                self.session.spawn([str(bins / binary)], binary)
-        if any(step.get("click") == "Control Centre" for step in self.data["steps"]):
-            self.session.spawn([str(bins / "rmac-quick-settings")], "quick-settings")
-            self.session.wait_for(lambda: (self.session.runtime / "rmac/shortcut-quick-settings.sock").exists(), 10)
-        if any(step.get("key") == "cmd-space" for step in self.data["steps"]):
-            self.session.spawn([str(bins / "rmac-launcher")], "launcher")
-            self.session.wait_for(lambda: (self.session.runtime / "rmac/shortcut-launcher.sock").exists(), 10)
+                self.session.spawn([str(bins / binary), *arguments], binary)
+                if socket and not self.session.wait_for(lambda: (self.session.runtime / socket).exists(), 10):
+                    raise RuntimeError(f"{binary} did not open {socket}")
         time.sleep(1)
 
     def window(self):
@@ -122,22 +140,65 @@ class Driver:
         return (next((w for w in windows if w.get("pid") == process.pid), None)
                 or next((w for w in windows if w.get("app_id") == APP_IDS[self.current]), None))
 
-    def capture(self, destination: Path, full=False, fast=False):
-        geom = self.capture_region(full)
-        # Sway's wlroots screencopy captures the niri surface in one frame.
-        # niri's own screencopy waits for its next software-rendered frame.
-        # This session has exactly one Sway output. `-o` overrides `-g` in
-        # the installed grim, so omit it to preserve window-region shots.
-        cmd = ["grim"]
-        if geom:
-            cmd += ["-g", f"{geom[0]},{geom[1]} {geom[2]}x{geom[3]}"]
-        if fast:
-            cmd += ["-t", "ppm"]
-        cmd.append(str(destination))
-        env = {**self.session.env, "WAYLAND_DISPLAY": self.session.sway_display}
-        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=10)
-        if result.returncode:
-            raise RuntimeError(f"grim failed: {result.stderr[-200:]}")
+    def refresh_output(self):
+        # The nested niri output is resized by Sway after it starts, so the
+        # logical size read once at start-up can be stale (1280×800 vs 900).
+        try:
+            outputs = self.session.niri("outputs") or {}
+        except RuntimeError:
+            return
+        logical = next(iter(outputs.values()), {}).get("logical") or {}
+        if logical.get("width") and logical.get("height"):
+            self.session.width, self.session.height = logical["width"], logical["height"]
+
+    def screenshot(self) -> Image.Image:
+        """niri's own composition of its output.
+
+        Shots come from niri, not from the parent Sway: nested niri's winit
+        backend can stop presenting new frames to Sway for seconds (or for
+        the rest of a run) after a window maps while its scene stays current,
+        so Sway pixels showed stale screens. niri renders this from the same
+        scene its DRM backend scans out on real hardware. The pointer is
+        left out so a moved cursor never counts as a changed screen.
+        """
+        for _attempt in range(3):
+            self.shot_serial += 1
+            path = self.scratch / f"niri-{self.shot_serial}.png"
+            subprocess.run([self.args.niri, "msg", "action", "screenshot-screen", "--write-to-disk", "true",
+                            "--show-pointer", "false", "--path", str(path)],
+                           env=self.session.env, check=True, capture_output=True, timeout=10)
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                try:
+                    with Image.open(path) as source:
+                        image = source.convert("RGB")
+                    path.unlink()
+                    return image
+                except (OSError, ValueError):
+                    time.sleep(0.03)
+        raise RuntimeError("niri did not write its screenshot")
+
+    def capture(self, destination: Path | None = None, full=False) -> Image.Image:
+        self.refresh_output()
+        image = self.screenshot()
+        x, y, w, h = self.capture_region(full)
+        scale = image.width / max(1, self.session.width)
+        crop = image.crop(tuple(round(v * scale) for v in (x, y, x + w, y + h)))
+        if destination is not None:
+            crop.save(destination)
+        return crop
+
+    def settled(self, full=False, timeout=4.0) -> Image.Image:
+        """Wait until two shots 250 ms apart show the same screen."""
+        previous = self.capture(full=full)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            time.sleep(0.25)
+            current = self.capture(full=full)
+            if journey.changed_pixels(previous, current) < journey.SAME_SCREEN_PIXELS:
+                return current
+            previous = current
+        return previous
 
     def capture_region(self, full=False):
         if not full and self.window():
@@ -145,18 +206,67 @@ class Driver:
             x, y = max(0, int(x)), max(0, int(y))
             w, h = min(int(w), self.session.width - x), min(int(h), self.session.height - y)
             if w > 50 and h > 50:
-                return (x + self.session.niri_rect[0], y + self.session.niri_rect[1], w, h)
-        return (self.session.niri_rect[0], self.session.niri_rect[1], self.session.width, self.session.height)
+                return (x, y, w, h)
+        return (0, 0, self.session.width, self.session.height)
+
+    def sway_region(self, full=False):
+        x, y, w, h = self.capture_region(full)
+        return (x + self.session.niri_rect[0], y + self.session.niri_rect[1], w, h)
+
+    def accessible(self, pid: int | None = None):
+        """Yield (node, pid) for every accessible on screen, or one app's."""
+        import pyatspi
+
+        desktop = pyatspi.Registry.getDesktop(0)
+        for index in range(desktop.childCount):
+            app = desktop.getChildAtIndex(index)
+            try:
+                app_pid = app.get_process_id()
+            except Exception:  # noqa: BLE001
+                continue
+            if pid is not None and app_pid != pid:
+                continue
+            stack = [app]
+            while stack:
+                node = stack.pop()
+                try:
+                    if node is None:
+                        continue
+                    yield node, app_pid
+                    stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+                except Exception:  # noqa: BLE001
+                    continue
+
+    def dump_accessible(self, destination: Path) -> None:
+        """Every named accessible with its role and window/desktop extents."""
+        import pyatspi
+
+        rows = []
+        for node, pid in self.accessible():
+            try:
+                if not node.name:
+                    continue
+                component = node.queryComponent()
+                window = component.getExtents(pyatspi.WINDOW_COORDS)
+                desktop = component.getExtents(pyatspi.DESKTOP_COORDS)
+                rows.append({"pid": pid, "role": node.getRoleName(), "name": node.name,
+                             "window": [window.x, window.y, window.width, window.height],
+                             "desktop": [desktop.x, desktop.y, desktop.width, desktop.height]})
+            except Exception:  # noqa: BLE001
+                continue
+        destination.write_text(json.dumps(rows, indent=1) + "\n")
+
+    @staticmethod
+    def text_of(node) -> str:
+        try:
+            text = node.queryText()
+            return text.getText(0, text.characterCount)
+        except Exception:  # noqa: BLE001
+            return node.name or ""
 
     def launch(self, step: dict):
         app = step["launch"]
         self.current = app
-        if app in self.apps:
-            window = self.window()
-            if window:
-                subprocess.run([self.args.niri, "msg", "action", "focus-window", "--id", str(window["id"])],
-                               env=self.session.env, check=True, capture_output=True)
-            return
         command = [str(Path(self.args.bin_dir) / BINARIES[app])]
         if app == "files":
             command += ["--path", str(self.sandbox / step.get("path", "."))]
@@ -164,6 +274,25 @@ class Driver:
             command += [str(self.sandbox / step["file"])]
         if not Path(command[0]).is_file():
             raise RuntimeError(f"missing binary {command[0]}")
+        running = self.apps.get(app)
+        if running is not None and running.poll() is None:
+            if "file" in step or "path" in step:
+                # Opening a document in a running app: the second process
+                # hands the request to the first, as a Files double-click or
+                # `xdg-open` would.
+                before = {w.get("id") for w in self.session.windows()}
+                self.session.spawn(command, f"{app}-open")
+                if not self.session.wait_for(lambda: any(
+                        w.get("id") not in before and w.get("app_id") == APP_IDS[app]
+                        for w in self.session.windows()), 30):
+                    raise RuntimeError(f"{app} opened no window for {step.get('file') or step.get('path')}")
+            else:
+                # Bringing a running app forward is a Dock click, which also
+                # restores its minimised windows like the Mac.
+                self.click(DOCK_NAMES[app], "Dock")
+                if not self.session.wait_for(lambda: (w := self.window()) and w.get("is_focused"), 10):
+                    raise RuntimeError(f"clicking {DOCK_NAMES[app]} in the Dock did not focus it")
+            return
         process = self.session.spawn(command, app)
         self.apps[app] = process
         if not self.session.wait_for(lambda: self.window(), 30):
@@ -172,8 +301,8 @@ class Driver:
     def click(self, label: str, target: str | None = None, attempt: int = 0):
         if label in FORBIDDEN:
             raise RuntimeError(f"refusing destructive or toggle control {label!r}")
-        if target == "Dock" and label == "Files":
-            self.current = "files"
+        if target == "Dock":
+            self.current = next((app for app, name in DOCK_NAMES.items() if name == label), self.current)
         if label == "Save" and self.current == "text-editor":
             self.session.pointer.key("return")
             return
@@ -220,10 +349,6 @@ class Driver:
         if candidates:
             _rank, _area, bx, by, box = min(candidates, key=lambda item: item[:2])
             x, y = self.session.parent_point(bx + box.width / 2, by + box.height / 2)
-            self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
-            return
-        if target == "Dock" and label == "Files":
-            x, y = self.session.parent_point(self.session.width / 2 - 303, self.session.height - 48)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
         status_x = {"Lulo": 26, "Battery": self.session.width - 296,
@@ -280,21 +405,70 @@ class Driver:
             dx, dy = step[kind]
             ax, ay = step.get("anchor", [w / 2, 18])
             after = None
+
+            def moved():
+                current = self.window()
+                if not current:
+                    return None
+                cx, cy, _cw, _ch = self.session.geometry(current)
+                return (cx, cy) if abs(cx - x) > 20 or abs(cy - y) > 20 else None
+
             for _ in range(3):
                 candidate = self.window()
                 if not candidate:
                     break
                 cx, cy, _cw, _ch = self.session.geometry(candidate)
                 self.session.drag((cx + ax, cy + ay), (cx + ax + dx, cy + ay + dy))
-                self.session.wait_for(
-                    lambda: (candidate := self.window())
-                    if candidate and (abs(self.session.geometry(candidate)[0] - x) > 20 or
-                                      abs(self.session.geometry(candidate)[1] - y) > 20) else None, 1.5)
-                after = self.session.geometry(self.window()) if self.window() else None
-                if after and (abs(after[0] - x) > 20 or abs(after[1] - y) > 20):
+                after = self.session.wait_for(moved, 1.5)
+                if after:
                     break
-            if after is None or (abs(after[0] - x) <= 20 and abs(after[1] - y) <= 20):
-                raise RuntimeError(f"nested niri reported no window movement after drag: {(x, y)} -> {after}")
+            if after is None:
+                raise RuntimeError(f"nested niri reported no window movement after drag from {(x, y)}")
+
+    def check_shot(self, step: dict, image: Image.Image, previous: Image.Image | None,
+                   after_action: bool) -> list[str]:
+        """Every assertion on a shot; an empty list means it held."""
+        errors = []
+        if after_action and step.get("expect_change", True) and previous is not None:
+            changed = journey.changed_pixels(previous, image)
+            if changed < journey.SAME_SCREEN_PIXELS:
+                errors.append(f"the screen did not change ({changed} px differ from the previous shot)")
+        windows = self.session.windows()
+        if step.get("expect_window") and not any(
+                w.get("app_id") == step["expect_window"] and w.get("is_focused") for w in windows):
+            errors.append(f"expected {step['expect_window']} window is not focused")
+        mapped = {w.get("app_id") for w in windows}
+        errors += [f"{app} has no mapped window" for app in step.get("expect_mapped", []) if app not in mapped]
+        errors += [f"{app} still has a mapped window" for app in step.get("expect_unmapped", []) if app in mapped]
+        errors += [f"no sandbox file matches {pattern}" for pattern in step.get("expect_files", [])
+                   if not list(self.sandbox.glob(pattern))]
+        errors += [f"a sandbox file still matches {pattern}" for pattern in step.get("expect_no_files", [])
+                   if list(self.sandbox.glob(pattern))]
+        if "expect_text" in step:
+            spec = step["expect_text"]
+            process = self.apps.get(self.current)
+            texts = [self.text_of(node) for node, _pid in
+                     self.accessible(process.pid if process is not None else None)
+                     if node.name == spec["label"]]
+            if not texts:
+                errors.append(f"no accessible named {spec['label']!r}")
+            elif "equals" in spec and spec["equals"] not in texts:
+                errors.append(f"{spec['label']!r} reads {texts!r}, expected {spec['equals']!r}")
+            elif "contains" in spec and not any(spec["contains"] in text for text in texts):
+                errors.append(f"{spec['label']!r} reads {texts!r}, expected it to contain {spec['contains']!r}")
+        if step.get("expect_accessible"):
+            import pyatspi
+
+            names = set()
+            for node, _pid in self.accessible():
+                try:
+                    if node.name and node.getState().contains(pyatspi.STATE_SHOWING):
+                        names.add(node.name)
+                except Exception:  # noqa: BLE001
+                    continue
+            errors += [f"nothing accessible named {name!r} is showing"
+                       for name in step["expect_accessible"] if name not in names]
+        return errors
 
     def run(self, name: str) -> dict:
         target = self.out / name
@@ -303,6 +477,7 @@ class Driver:
         pending = None
         timing = None
         issues = []
+        previous = None
         try:
             self.start()
             for index, step in enumerate(self.data["steps"]):
@@ -310,38 +485,46 @@ class Driver:
                 if kind == "wait":
                     time.sleep(float(step[kind]))
                 elif kind == "shot":
+                    full = step.get("scope") == "full"
                     destination = target / f"{len(result['steps']):02d}-{step[kind]}.png"
-                    self.capture(destination, full=step.get("scope") == "full")
-                    if self.current == "text-editor" and step[kind] == "saved" and not list(self.sandbox.glob("Parallel Journey Sandbox*")):
-                        issues.append({"index": index, "action": pending,
-                                       "error": "Save did not create the document in the journey sandbox"})
-                    if step.get("expect_window") and not any(
-                        w.get("app_id") == step["expect_window"] and w.get("is_focused")
-                        for w in self.session.windows()
-                    ):
-                        issues.append({"index": index, "action": pending,
-                                       "error": f"expected {step['expect_window']} window is not focused"})
+                    image = self.settled(full)
+                    image.save(destination)
+                    if self.args.full_too and not full:
+                        self.capture(destination.with_suffix(".full.png"), full=True)
+                    if self.args.dump_a11y:
+                        self.dump_accessible(destination.with_suffix(".a11y.json"))
+                    errors = self.check_shot(step, image, previous, pending is not None)
+                    issues += [{"index": index, "shot": step[kind], "action": pending, "error": error}
+                               for error in errors]
+                    windows = [{"app_id": w.get("app_id"), "title": w.get("title"),
+                                "focused": w.get("is_focused"), "geometry": self.session.geometry(w)}
+                               for w in self.session.windows()]
                     result["steps"].append({"name": step[kind], "image": destination.name,
-                                            "region": self.capture_region(step.get("scope") == "full"),
-                                            "action": pending, **(timing or {})})
+                                            "region": self.capture_region(full), "windows": windows,
+                                            "errors": errors, "action": pending, **(timing or {})})
+                    previous = image
+                    pending = None
                 else:
                     full = kind == "launch" or step.get("scope") == "full"
                     pending = {kind: step[kind], "index": index}
                     try:
-                        timing = journey.measure(lambda p: self.capture(p, full=full, fast=True),
-                                                 lambda: self.action(step), self.scratch,
-                                                 probe=lambda: self.sampler.fingerprint(self.capture_region(full)))
+                        # Timing samples the parent Sway output at a high rate.
+                        # Nested niri can present late there, so these numbers
+                        # are an upper bound; the shot itself comes from niri.
+                        timing = journey.measure(
+                            None, lambda: self.action(step), self.scratch,
+                            probe=lambda: self.sampler.fingerprint(self.sway_region(full)))
                     except RuntimeError as error:
-                        if kind not in {"click", "menu"}:
+                        if kind not in {"click", "menu", "launch"}:
                             raise
                         issues.append({"index": index, "action": pending, "error": str(error)})
                         timing = {"first_change_ms": None, "settled_ms": None,
                                   "samples": 0, "actual_hz": None, "timed_out": False,
                                   "error": str(error)}
             if issues:
-                result.update(status="partial", issues=issues)
-        except (RuntimeError, OSError, subprocess.SubprocessError, wlinput.InjectorError) as error:
-            result.update(status="failed", error=str(error))
+                result.update(status="failed", issues=issues)
+        except Exception as error:  # noqa: BLE001 - any crash must fail the journey, never pass it
+            result.update(status="failed", error=f"{type(error).__name__}: {error}")
         finally:
             if hasattr(self.session, "pointer"):
                 self.session.finish()
@@ -350,6 +533,10 @@ class Driver:
                     if process.poll() is None:
                         process.terminate()
             (target / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+        for issue in issues:
+            print(f"FAIL {name} step {issue['index']}: {issue['error']}", flush=True)
+        if result.get("error"):
+            print(f"FAIL {name}: {result['error']}", flush=True)
         return result
 
 
@@ -399,6 +586,9 @@ def outer(args) -> int:
                 command = ["dbus-run-session", f"--config-file={config}", "--", sys.executable,
                            str(Path(__file__).resolve()), "--inner", str(work), "--bin-dir", str(links),
                            "--niri", args.niri, "--output", str(args.output), path.stem]
+                for flag in ("full_too", "dump_a11y"):
+                    if getattr(args, flag):
+                        command.insert(-1, "--" + flag.replace("_", "-"))
                 status = subprocess.call(command, env=env, close_fds=True)
                 failures += status != 0
             finally:
@@ -422,6 +612,10 @@ def main() -> int:
     parser.add_argument("--niri", default="/usr/bin/niri")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--dump-a11y", action="store_true",
+                        help="save every named accessible and its extents beside each shot")
+    parser.add_argument("--full-too", action="store_true",
+                        help="also save the whole output beside each window shot (for review)")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     # run_window_move.Run uses this switch for its other two modes; parallel
     # journeys always use the ordinary 1440×900 nested session.

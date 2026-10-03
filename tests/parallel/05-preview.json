@@ -6,7 +6,8 @@
       "file": "sample.pdf"
     },
     {
-      "shot": "pdf"
+      "shot": "pdf",
+      "expect_window": "org.rmac.Preview"
     },
     {
       "key": "cmd-+"
@@ -24,14 +25,18 @@
       "key": "cmd-w"
     },
     {
-      "shot": "pdf-closed"
+      "shot": "pdf-closed",
+      "expect_unmapped": [
+        "org.rmac.Preview"
+      ]
     },
     {
       "launch": "preview",
       "file": "sample.png"
     },
     {
-      "shot": "image"
+      "shot": "image",
+      "expect_window": "org.rmac.Preview"
     },
     {
       "key": "cmd-+"
@@ -43,7 +48,10 @@
       "key": "cmd-w"
     },
     {
-      "shot": "image-closed"
+      "shot": "image-closed",
+      "expect_unmapped": [
+        "org.rmac.Preview"
+      ]
     }
   ],
   "setup": {

@@ -7,14 +7,16 @@
     },
     {
       "shot": "files-open",
-      "scope": "full"
+      "scope": "full",
+      "expect_window": "org.rmac.Files"
     },
     {
       "launch": "calculator"
     },
     {
       "shot": "calculator-open",
-      "scope": "full"
+      "scope": "full",
+      "expect_window": "org.rmac.Calculator"
     },
     {
       "key": "cmd-tab",
@@ -22,7 +24,8 @@
     },
     {
       "shot": "switch-app",
-      "scope": "full"
+      "scope": "full",
+      "expect_window": "org.rmac.Files"
     },
     {
       "key": "cmd-m",
@@ -30,7 +33,8 @@
     },
     {
       "shot": "minimised",
-      "scope": "full"
+      "scope": "full",
+      "expect_window": "org.rmac.Calculator"
     },
     {
       "click": "Files",
@@ -39,14 +43,19 @@
     },
     {
       "shot": "dock-files",
-      "scope": "full"
+      "scope": "full",
+      "expect_window": "org.rmac.Files"
     },
     {
       "launch": "calculator"
     },
     {
       "shot": "calculator-focused",
-      "scope": "full"
+      "scope": "full",
+      "expect_window": "org.rmac.Calculator",
+      "expect_mapped": [
+        "org.rmac.Files"
+      ]
     },
     {
       "drag_window": [

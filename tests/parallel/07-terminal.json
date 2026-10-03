@@ -5,7 +5,8 @@
       "launch": "terminal"
     },
     {
-      "shot": "terminal-open"
+      "shot": "terminal-open",
+      "expect_window": "org.rmac.Terminal"
     },
     {
       "type": "cd $SANDBOX"

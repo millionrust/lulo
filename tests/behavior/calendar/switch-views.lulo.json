@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "scenario": "calendar/switch-views",
+  "observations": {
+    "week": {"tabs": {"count": 4, "selected": ["Week"]}, "calendar_week": {"present": true, "current_week": true}},
+    "day": {"tabs": {"count": 4, "selected": ["Day"]}},
+    "week_restored": {"tabs": {"count": 4, "selected": ["Week"]}, "calendar_week": {"present": true, "current_week": true}},
+    "month": {"tabs": {"count": 4, "selected": ["Month"]}},
+    "year": {"tabs": {"count": 4, "selected": ["Year"]}}
+  }
+}

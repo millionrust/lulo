@@ -1,6 +1,6 @@
 use chrono::{Datelike, Duration, Timelike};
 use gpui::{div, px, AnyElement, ClickEvent, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window};
 use rmac_calendar::{current_date, fixture_week, is_weekend, month_grid_start,
     CalendarColor, Navigator, View, WeekSnapshot};
@@ -56,10 +56,12 @@ impl CalendarView {
     fn control(&self, id: impl Into<SharedString>, label: impl Into<SharedString>,
         active: bool, click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>) -> AnyElement {
-        div().id(id.into()).h(px(28.0)).px(px(10.0)).rounded(px(mac::radius_pill()))
+        let label: SharedString = label.into();
+        div().id(id.into()).role(Role::Button).aria_label(label.clone())
+            .h(px(28.0)).px(px(10.0)).rounded(px(mac::radius_pill()))
             .flex().items_center().justify_center()
             .bg(if active { mac::control_fill() } else { mac::material_clear() })
-            .text_color(mac::text()).text_size(px(12.0)).child(label.into())
+            .text_color(mac::text()).text_size(px(12.0)).child(label)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| click(this, cx)))
             .into_any_element()
     }
@@ -74,10 +76,18 @@ impl CalendarView {
         bar = bar.child(self.control("calendar-inbox", "▢", false, |_, _| {}, cx));
         bar = bar.child(self.control("calendar-new", "+", false, |_, _| {}, cx));
         bar = bar.child(div().flex_1());
+        let mut tabs = div().flex().role(Role::TabList).aria_label("Calendar views");
         for view in View::ALL {
-            bar = bar.child(self.control(format!("calendar-view-{}", view.label()),
-                view.label(), self.nav.view == view, move |this, cx| this.show(view, cx), cx));
+            tabs = tabs.child(div().id(format!("calendar-view-{}", view.label()))
+                .role(Role::Tab).aria_label(view.label())
+                .aria_selected(self.nav.view == view)
+                .h(px(28.0)).px(px(12.0)).rounded(px(mac::radius_pill()))
+                .flex().items_center().justify_center()
+                .bg(if self.nav.view == view { mac::control_fill() } else { mac::material_clear() })
+                .text_color(mac::text()).text_size(px(12.0)).child(view.label())
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.show(view, cx))));
         }
+        bar = bar.child(tabs);
         bar = bar.child(div().flex_1());
         bar.child(self.control("calendar-search", "⌕", false, |_, _| {}, cx)).into_any_element()
     }
@@ -174,7 +184,8 @@ impl CalendarView {
         let day_width = ((width - GUTTER) / 7.0).max(1.0);
         let grid_top = 60.0;
         let grid_height = (height - grid_top).max(0.0);
-        let mut week = div().relative().w_full().h_full().overflow_hidden();
+        let mut week = div().relative().w_full().h_full().overflow_hidden()
+            .role(Role::Group).aria_label(format!("Week of {first}"));
         for index in 0..7 {
             let day = first + Duration::days(index);
             let x = GUTTER + index as f32 * day_width;
@@ -237,7 +248,8 @@ impl CalendarView {
             let color = Self::color(snapshot.calendars[event.calendar].color);
             week = week.child(div().absolute().left(px(x)).top(px(y)).w(px(width - 1.0))
                 .h(px(h)).rounded(px(4.0)).overflow_hidden().pl(px(6.0)).pt(px(2.0))
-                .bg(mac::accent_subtle()).border_l_3().border_color(color)
+                .bg(color.opacity(if mac::window().l < 0.5 { 0.22 } else { 0.18 }))
+                .border_l_3().border_color(color)
                 .flex().flex_col().text_size(px(11.0)).text_color(mac::text())
                 .child(div().font_weight(FontWeight::SEMIBOLD).child(event.title))
                 .child(div().text_color(mac::text_secondary())

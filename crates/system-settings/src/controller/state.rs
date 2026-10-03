@@ -97,6 +97,7 @@ pub(super) struct Settings {
     pub(super) network: rmac_network::NetworkSnapshot,
     pub(super) internet_accounts: Vec<rmac_accounts_linux::GoaAccount>,
     pub(super) internet_accounts_loading: bool,
+    pub(super) internet_accounts_watch_started: bool,
     pub(super) internet_accounts_busy: bool,
     pub(super) internet_accounts_error: Option<SharedString>,
     pub(super) internet_account_selected: Option<String>,

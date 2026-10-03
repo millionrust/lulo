@@ -100,6 +100,10 @@ impl Settings {
     }
 
     pub(super) fn refresh_internet_accounts(&mut self, cx: &mut Context<Self>) {
+        if !self.internet_accounts_watch_started {
+            self.internet_accounts_watch_started = true;
+            Self::watch_internet_accounts(cx);
+        }
         self.internet_accounts_loading = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -125,7 +129,7 @@ impl Settings {
         #[cfg(target_os = "linux")]
         {
             let (sender, receiver) = async_channel::bounded(1);
-            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            cx.spawn(async move |_, _| {
                 while receiver.recv().await.is_ok() {
                     let _ = this.update(cx, |this: &mut Settings, cx| {
                         this.refresh_internet_accounts(cx)
@@ -133,7 +137,7 @@ impl Settings {
                 }
             })
             .detach();
-            cx.spawn(async move |_, _| {
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
                 blocking::unblock(move || {
                     if let Ok(bus) = rmac_accounts_linux::goa::GoaBus::session() {
                         let _ = bus.watch(&mut |_| {

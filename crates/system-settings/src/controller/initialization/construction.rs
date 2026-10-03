@@ -163,6 +163,7 @@ impl Settings {
             network: rmac_network::NetworkSnapshot::default(),
             internet_accounts: Vec::new(),
             internet_accounts_loading: true,
+            internet_accounts_watch_started: false,
             internet_accounts_busy: false,
             internet_accounts_error: None,
             internet_account_selected: None,

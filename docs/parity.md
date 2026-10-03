@@ -720,7 +720,7 @@ similar — no plan, not tracked as rows here).
 | APP-10 | P2 | S | Missing | **Dictionary**: Spotlight already has definitions when dictd is installed; a window app plus ⌃⌘D lookup would reuse that. | new |
 | APP-11 | P1 (data safety) | L | Missing | **Time Machine**: a Déjà Dup engine behind a Lulo pane (see SET-10). | new |
 | APP-12 | P2 | S | Missing | **Digital Color Meter**: cheap tool designers expect; worth doing alongside a Print Center queue view (SET-07). | new |
-| APP-13 | P1 | L | Partial: MAIL-1 storage, MAIL-2 IMAP (`fdd30a49`) and MAIL-3 SMTP/Outbox/MIME/sanitiser engines implemented; MAIL-4..MAIL-10 (sync runtime, app, compose) open | **Mail**: engines exist (SQLite cache, IMAP with IDLE, SMTP submission and Outbox, MIME, HTML sanitiser); the app window, compose and sync runtime are not built yet. See docs/design/calendar-mail.md. | `crates/rmac-mail-*` |
+| APP-13 | P1 | L | Partial: MAIL-1 storage, MAIL-2 IMAP (`fdd30a49`), MAIL-3 SMTP/Outbox/MIME/sanitiser, and MAIL-5 read-only three-pane app shell Fixed `ec9f9475`; MAIL-4 and MAIL-6..MAIL-10 open | **Mail**: the fixture-backed app has a floating mailboxes sidebar, virtual conversation list, sanitized rich-text viewer, read state and thread toggling. Live sync, compose, search and organizing still need the remaining milestones. See docs/design/calendar-mail.md. | `crates/mail`, `crates/rmac-mail-*` |
 
 ---
 

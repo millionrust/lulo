@@ -95,15 +95,15 @@ impl QuickSettingsView {
             .when(enabled, |hit| {
                 hit.on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                    cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                         this.dragging = Some(kind);
-                        this.sync_slider_bulge(kind, window);
+                        this.sync_slider_bulge(kind, cx);
                         let value = super::slider_value(kind, f32::from(event.position.x));
                         this.slide(kind, value, cx);
                     }),
                 )
-                .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
-                    this.set_slider_hovered(kind, *hovered, window, cx);
+                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                    this.set_slider_hovered(kind, *hovered, cx);
                 }))
             })
             .child(

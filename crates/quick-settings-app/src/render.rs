@@ -235,16 +235,16 @@ impl Render for QuickSettingsView {
                     let value = slider_value(kind, f32::from(event.position.x));
                     this.slide(kind, value, cx);
                 } else {
-                    this.end_drag(window, cx);
+                    this.end_drag(cx);
                 }
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _: &MouseUpEvent, window, cx| this.end_drag(window, cx)),
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.end_drag(cx)),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, _: &MouseUpEvent, window, cx| this.end_drag(window, cx)),
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.end_drag(cx)),
             )
             .overflow_hidden()
             .rounded(px(layout::SURFACE_RADIUS as f32))

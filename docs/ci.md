@@ -39,8 +39,9 @@ Sway, XDG directories and app processes. Thirteen `checks` jobs run menu
 dismissal, power dialogs, window movement and the ten everyday journeys in
 private nested Sway/niri sessions. They download the same binaries. Only Lulo
 screenshots are uploaded, together with result JSON and logs.
-The menu bar journey covers controls available on a headless host; its battery
-control is absent when CI has no battery.
+The menu bar journey covers controls available on a headless host; CI has no
+battery or audio output, so it stops after opening Control Centre. The separate
+menu-dismiss runner checks the other shell popovers and their dismissal.
 
 Ubuntu 26.04 does not package niri in its archive (the project's
 `packaging/third-party/niri/debian/control` records this). The nested niri

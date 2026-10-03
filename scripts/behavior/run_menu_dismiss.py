@@ -813,6 +813,11 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
                    str(Path(__file__).resolve()), "--inner", str(work), *argv]
         with open(work / "logs" / "session.log", "w") as log:
             result = subprocess.call(command, env=env, close_fds=True, stderr=log)
+        if result:
+            for name in ("top-bar", "notification-center", "session"):
+                log = work / "logs" / f"{name}.log"
+                if log.exists():
+                    print(f"{name} log tail:\n{log.read_text(errors='replace')[-2000:]}")
         return result
     finally:
         if run_lulo.reap(work / "runtime"):

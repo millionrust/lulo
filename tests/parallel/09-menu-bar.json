@@ -54,22 +54,6 @@
     {
       "shot": "control-centre",
       "scope": "full"
-    },
-    {
-      "click": "Sound",
-      "scope": "full"
-    },
-    {
-      "shot": "sound-menu",
-      "scope": "full"
-    },
-    {
-      "key": "escape",
-      "scope": "full"
-    },
-    {
-      "shot": "sound-closed",
-      "scope": "full"
     }
   ],
   "mac": "unsafe",

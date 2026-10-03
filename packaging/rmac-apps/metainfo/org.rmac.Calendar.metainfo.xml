@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>org.rmac.Calendar</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Calendar</name>
+  <name xml:lang="hi">कैलेंडर</name>
+  <summary>View your calendars and events</summary>
+  <summary xml:lang="hi">अपने कैलेंडर और कार्यक्रम देखें</summary>
+  <description>
+    <p>Calendar shows a weekly schedule with an all-day strip, overlapping events, a calendar list, and a mini month.</p>
+    <p>Choose a day in the mini month or use the toolbar and keyboard to navigate between weeks and return to today.</p>
+  </description>
+  <launchable type="desktop-id">org.rmac.Calendar.desktop</launchable>
+  <icon type="stock">org.rmac.Calendar</icon>
+  <provides><binary>rmac-calendar</binary></provides>
+  <url type="homepage">https://github.com/snehacodex/rmac</url>
+  <developer id="org.rmac"><name>Lulo OS contributors</name></developer>
+  <releases><release version="0.9.0-beta.1" date="2026-09-24"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

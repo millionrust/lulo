@@ -23,6 +23,7 @@ IDENTITIES = (
     "org.rmac.AppDrawer",
     "org.rmac.SystemSettings",
     "org.rmac.Calculator",
+    "org.rmac.Calendar",
     "org.rmac.Preview",
     "org.rmac.ArchiveUtility",
     "org.rmac.Clock",

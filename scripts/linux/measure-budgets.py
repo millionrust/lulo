@@ -108,6 +108,7 @@ APPS: tuple[tuple[str, str, str], ...] = (
     ("Text Editor", "rmac-text-editor", "org.rmac.TextEditor"),
     ("Calculator", "rmac-calculator", "org.rmac.Calculator"),
     ("Clock", "rmac-clock", "org.rmac.Clock"),
+    ("Calendar", "rmac-calendar", "org.rmac.Calendar"),
     ("Weather", "rmac-weather", "org.rmac.Weather"),
     ("Preview", "rmac-preview", "org.rmac.Preview"),
 )

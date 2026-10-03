@@ -44,6 +44,7 @@ APP_SPECS = (
     AppSpec("archive-utility", "rmac-archive-utility", "zip", "archive", "org.rmac.ArchiveUtility"),
     AppSpec("app-drawer", "rmac-app-drawer", mode="layer"),
     AppSpec("clock", "rmac-clock", window_app_id="org.rmac.Clock"),
+    AppSpec("calendar", "rmac-calendar", window_app_id="org.rmac.Calendar"),
     AppSpec("notes", "rmac-notes", window_app_id="org.rmac.Notes"),
     AppSpec("player", "rmac-player", "wav", window_app_id="org.rmac.Player"),
     AppSpec("preview", "rmac-preview", "pdf", window_app_id="org.rmac.Preview"),
@@ -553,7 +554,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--apps",
         nargs="+",
         choices=[spec.app_id for spec in APP_SPECS],
-        help="run only selected app IDs (default: all thirteen)",
+        help="run only selected app IDs (default: all fourteen)",
     )
     parser.add_argument("--_inner-work", type=Path, help=argparse.SUPPRESS)
     return parser

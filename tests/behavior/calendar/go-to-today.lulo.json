@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "calendar/go-to-today",
+  "observations": {
+    "today": {"calendar_week": {"present": true, "current_week": true}},
+    "next_week": {"calendar_week": {"present": true, "current_week": false}},
+    "back_today": {"calendar_week": {"present": true, "current_week": true}}
+  }
+}

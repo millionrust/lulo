@@ -1,0 +1,13 @@
+{
+  "title": "Calendar: next week then Today returns to this week",
+  "app": "calendar",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "today", "facts": ["calendar_week"]},
+    {"key": "cmd-right"},
+    {"observe": "next_week", "facts": ["calendar_week"]},
+    {"key": "cmd-t"},
+    {"observe": "back_today", "facts": ["calendar_week"]}
+  ]
+}

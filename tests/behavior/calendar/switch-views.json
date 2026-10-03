@@ -1,0 +1,17 @@
+{
+  "title": "Calendar: keyboard shortcuts select the four view tabs",
+  "app": "calendar",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "week", "facts": ["tabs", "calendar_week"]},
+    {"key": "cmd-1"},
+    {"observe": "day", "facts": ["tabs"]},
+    {"key": "cmd-2"},
+    {"observe": "week_restored", "facts": ["tabs", "calendar_week"]},
+    {"key": "cmd-3"},
+    {"observe": "month", "facts": ["tabs"]},
+    {"key": "cmd-4"},
+    {"observe": "year", "facts": ["tabs"]}
+  ]
+}

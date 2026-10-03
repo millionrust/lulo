@@ -10,6 +10,7 @@ pub const SYSTEM_SETTINGS: &str = "org.rmac.SystemSettings";
 pub const CALCULATOR: &str = "org.rmac.Calculator";
 pub const PREVIEW: &str = "org.rmac.Preview";
 pub const CLOCK: &str = "org.rmac.Clock";
+pub const CALENDAR: &str = "org.rmac.Calendar";
 pub const WEATHER: &str = "org.rmac.Weather";
 pub const PLAYER: &str = "org.rmac.Player";
 /// The Open panel (`crates/rmac-file-chooser`, `org.freedesktop.impl.portal.FileChooser`'s
@@ -28,7 +29,7 @@ pub const FILE_CHOOSER_SAVE: &str = "org.rmac.FileChooser.Save";
 /// the Restart/Shut Down/Log Out confirmation shown from the same menu).
 pub const FORCE_QUIT: &str = "org.rmac.ForceQuit";
 
-pub const ALL: [&str; 12] = [
+pub const ALL: [&str; 13] = [
     FILES,
     TERMINAL,
     NOTES,
@@ -39,6 +40,7 @@ pub const ALL: [&str; 12] = [
     CALCULATOR,
     PREVIEW,
     CLOCK,
+    CALENDAR,
     WEATHER,
     PLAYER,
 ];
@@ -59,6 +61,7 @@ pub fn window_title(app_id: &str) -> Option<&'static str> {
         CALCULATOR => Some("Calculator"),
         PREVIEW => Some("Preview"),
         CLOCK => Some("Clock"),
+        CALENDAR => Some("Calendar"),
         WEATHER => Some("Weather"),
         PLAYER => Some("Media Player"),
         FORCE_QUIT => Some("Force Quit Applications"),

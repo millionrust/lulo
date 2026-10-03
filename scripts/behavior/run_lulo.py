@@ -23,6 +23,7 @@ Isolation (docs/behavior-suite.md):
 from __future__ import annotations
 
 import argparse
+from datetime import date, timedelta
 import base64
 import errno
 import json
@@ -51,6 +52,7 @@ APP_BINARIES = {
     "text-editor": ["rmac-text-editor"],
     "settings": ["rmac-system-settings"],
     "calculator": ["rmac-calculator"],
+    "calendar": ["rmac-calendar"],
     "clock": ["rmac-clock"],
     "weather": ["rmac-weather"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
@@ -1031,6 +1033,15 @@ class LuloRun:
         if not tabs and frame is not None:
             tabs = [name(frame)]
         return {"count": len(tabs), "titles": tabs, "selected": selected}
+
+    def fact_calendar_week(self) -> dict[str, Any]:
+        """Whether Calendar's accessible week grid includes the current week."""
+        frame = self.active_frame()
+        week = next((name(node) for node in descendants(frame, limit=4000)
+                     if name(node).startswith("Week of ")), None) if frame is not None else None
+        first = date.today() - timedelta(days=date.today().weekday())
+        return {"present": week is not None,
+                "current_week": week == f"Week of {first.isoformat()}"}
 
     def fact_sidebar(self) -> dict[str, Any]:
         """Weather's city list owns the window's only editable search field."""

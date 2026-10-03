@@ -160,3 +160,12 @@ msgstr ""
 
 msgid "video;audio;music;movie;player;media;"
 msgstr ""
+
+msgid "Calendar"
+msgstr ""
+
+msgid "View your calendars and events"
+msgstr ""
+
+msgid "calendar;events;week;date;appointments;"
+msgstr ""

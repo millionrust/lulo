@@ -901,7 +901,7 @@ where
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
-    boot_with_assets(default_assets(), title, width, height, build);
+    boot_with_assets(shared_assets(), title, width, height, build);
 }
 
 /// [`boot`] with an explicit desktop/Wayland identity.
@@ -915,12 +915,12 @@ pub fn boot_app<V, F>(
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
-    boot_app_with_assets(app_id, default_assets(), title, width, height, build);
+    boot_app_with_assets(app_id, shared_assets(), title, width, height, build);
 }
 
 /// gpui-component's bundled fonts and icons — the default asset source every
 /// `boot*` entry point falls back to when the app has none of its own.
-fn default_assets() -> impl gpui::AssetSource {
+pub fn shared_assets() -> impl gpui::AssetSource {
     gpui_component_assets::Assets
 }
 
@@ -1128,7 +1128,7 @@ pub fn boot_app_instance<V, F, H>(
 {
     boot_app_instance_with_assets(
         app_id,
-        default_assets(),
+        shared_assets(),
         title,
         width,
         height,

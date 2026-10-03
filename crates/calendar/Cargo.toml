@@ -1,0 +1,20 @@
+[package]
+name = "rmac-calendar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rmac-calendar"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+gpui.workspace = true
+rmac-calendar-store.workspace = true
+rmac-ui.workspace = true

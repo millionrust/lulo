@@ -1154,6 +1154,33 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
     },
 ];
 
+const CALENDAR_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: "File",
+        items: &[
+            item!("New Event", "calendar::NewEvent", "⌘N"),
+            item!("Close Window", "calendar::CloseWindow", "⌘W", separator),
+        ],
+    },
+    MenuSpec {
+        label: "View",
+        items: &[
+            item!("Day", "calendar::ShowDay", "⌘1"),
+            item!("Week", "calendar::ShowWeek", "⌘2"),
+            item!("Month", "calendar::ShowMonth", "⌘3"),
+            item!("Year", "calendar::ShowYear", "⌘4"),
+            item!("Go to Today", "calendar::GoToday", "⌘T", separator),
+            item!("Previous Period", "calendar::PreviousPeriod", "⌘←"),
+            item!("Next Period", "calendar::NextPeriod", "⌘→"),
+            item!("Show Sidebar", "calendar::ToggleSidebar", "⌃⌘S", separator),
+        ],
+    },
+    MenuSpec {
+        label: WINDOW_MENU,
+        items: &[item!("Close", "rmac_ui::RequestClose", "⌥⌘W")],
+    },
+];
+
 const CALCULATOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
@@ -1511,6 +1538,7 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::SYSTEM_MONITOR => Some(MONITOR_MENUS),
         rmac_apps::identity::SYSTEM_SETTINGS => Some(SETTINGS_MENUS),
         rmac_apps::identity::CALCULATOR => Some(CALCULATOR_MENUS),
+        rmac_apps::identity::CALENDAR => Some(CALENDAR_MENUS),
         rmac_apps::identity::PREVIEW => Some(PREVIEW_MENUS),
         rmac_apps::identity::CLOCK => Some(CLOCK_MENUS),
         rmac_apps::identity::WEATHER => Some(WEATHER_MENUS),
@@ -1539,6 +1567,7 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
         rmac_apps::identity::SYSTEM_MONITOR => Some("org.rmac.SystemMonitor.Menu"),
         rmac_apps::identity::SYSTEM_SETTINGS => Some("org.rmac.SystemSettings.Menu"),
         rmac_apps::identity::CALCULATOR => Some("org.rmac.Calculator.Menu"),
+        rmac_apps::identity::CALENDAR => Some("org.rmac.Calendar.Menu"),
         rmac_apps::identity::PREVIEW => Some("org.rmac.Preview.Menu"),
         rmac_apps::identity::CLOCK => Some("org.rmac.Clock.Menu"),
         rmac_apps::identity::WEATHER => Some("org.rmac.Weather.Menu"),
@@ -1557,6 +1586,7 @@ const MENU_APPS: &[&str] = &[
     rmac_apps::identity::SYSTEM_MONITOR,
     rmac_apps::identity::SYSTEM_SETTINGS,
     rmac_apps::identity::CALCULATOR,
+    rmac_apps::identity::CALENDAR,
     rmac_apps::identity::PREVIEW,
     rmac_apps::identity::CLOCK,
     rmac_apps::identity::WEATHER,
@@ -2920,6 +2950,20 @@ mod tests {
         );
         assert_eq!(application.items[0].shortcut, "⌥⌘Q");
         assert!(validate_menus(&menus).is_ok());
+    }
+
+    #[test]
+    fn calendar_menu_actions_are_distinct_and_week_is_exposed() {
+        let actions = spec_actions(CALENDAR_MENUS);
+        let menus = definition(rmac_apps::identity::CALENDAR, &actions).unwrap();
+        assert!(validate_menus(&menus).is_ok());
+        let view = menus.iter().find(|menu| menu.label == "View").unwrap();
+        assert_eq!(view.items[1].action, "calendar::ShowWeek");
+        assert_eq!(view.items[1].shortcut, "⌘2");
+        assert!(view
+            .items
+            .iter()
+            .any(|item| item.action == "calendar::GoToday"));
     }
 
     #[test]

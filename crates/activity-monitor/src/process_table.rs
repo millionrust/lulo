@@ -647,19 +647,15 @@ impl TableDelegate for ProcessTableDelegate {
         _window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> Stateful<gpui::Div> {
-        let selected = self
-            .accessible
-            .rows
-            .get(row_index)
-            .map(|row| row.selected)
-            .unwrap_or(false);
         let name = self
-            .accessible
             .rows
             .get(row_index)
-            .map(|row| row.label.clone())
-            .or_else(|| self.rows.get(row_index).map(|row| row.name.to_string()))
+            .map(|row| format!("{} (PID {})", row.name, row.pid))
             .unwrap_or_default();
+        let selected = self
+            .rows
+            .get(row_index)
+            .is_some_and(|row| self.selected_pid == Some(row.pid));
         let key = self
             .rows
             .get(row_index)
@@ -848,6 +844,9 @@ mod tests {
         refreshed.mem = 1024;
         assert_eq!(original.accessibility_key(), refreshed.accessibility_key());
         refreshed.start_time = 42;
+        assert_ne!(original.accessibility_key(), refreshed.accessibility_key());
+        refreshed.start_time = original.start_time;
+        refreshed.pid = 2;
         assert_ne!(original.accessibility_key(), refreshed.accessibility_key());
     }
 

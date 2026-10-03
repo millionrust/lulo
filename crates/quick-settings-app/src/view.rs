@@ -732,7 +732,11 @@ impl QuickSettingsView {
         window.remove_window();
     }
 
-    fn dismiss_and_restore_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn dismiss_and_restore_focus(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.dismiss(window, cx);
         if let Some(previous_window) = self.previous_window {
             cx.spawn(async move |_, _| {

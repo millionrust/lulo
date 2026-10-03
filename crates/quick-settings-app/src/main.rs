@@ -156,6 +156,10 @@ fn fallback_bounds(cx: &App) -> Bounds<Pixels> {
 }
 
 fn dismiss_active(cx: &mut App) -> bool {
+    dismiss_active_with_restore(false, cx)
+}
+
+fn dismiss_active_with_restore(restore: bool, cx: &mut App) -> bool {
     #[cfg(target_os = "linux")]
     {
         let catcher =
@@ -169,7 +173,13 @@ fn dismiss_active(cx: &mut App) -> bool {
         if let Some(view) = active.view.upgrade() {
             let dismissed = cx
                 .update_window(active.window, |_, window, cx| {
-                    view.update(cx, |view, cx| view.dismiss(window, cx));
+                    view.update(cx, |view, cx| {
+                        if restore {
+                            view.dismiss_and_restore_focus(window, cx);
+                        } else {
+                            view.dismiss(window, cx);
+                        }
+                    });
                 })
                 .is_ok();
             cx.update_global::<QuickSettingsService, _>(|service, _| service.active = None);
@@ -259,7 +269,7 @@ fn open_popover(
                         dismiss_active(cx);
                     },
                     |cx| {
-                        dismiss_active(cx);
+                        dismiss_active_with_restore(true, cx);
                     },
                     cx,
                 )
@@ -372,7 +382,15 @@ fn main() {
                                 let previous_window = rmac_compositor_niri::snapshot()
                                     .await
                                     .ok()
-                                    .and_then(|snapshot| snapshot.focus.window);
+                                    .and_then(|snapshot| {
+                                        snapshot.focus.window.or_else(|| {
+                                            snapshot
+                                                .workspaces
+                                                .iter()
+                                                .find(|workspace| workspace.focused)
+                                                .and_then(|workspace| workspace.active_window)
+                                        })
+                                    });
                                 cx.update(|cx| route_activation(*activation, previous_window, cx));
                             }
                         }

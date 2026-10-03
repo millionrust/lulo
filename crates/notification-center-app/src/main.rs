@@ -352,7 +352,15 @@ fn main() {
                                 let previous_window = rmac_compositor_niri::snapshot()
                                     .await
                                     .ok()
-                                    .and_then(|snapshot| snapshot.focus.window);
+                                    .and_then(|snapshot| {
+                                        snapshot.focus.window.or_else(|| {
+                                            snapshot
+                                                .workspaces
+                                                .iter()
+                                                .find(|workspace| workspace.focused)
+                                                .and_then(|workspace| workspace.active_window)
+                                        })
+                                    });
                                 cx.update(|cx| route_activation(*activation, previous_window, cx));
                             }
                         }

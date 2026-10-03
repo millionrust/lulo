@@ -185,12 +185,14 @@ SHELL_JOURNEYS: list[dict[str, Any]] = [
     },
     {
         "id": "control-centre", "title": "Control Centre", "open": "quick-settings",
-        "resident": "rmac-quick-settings", "background": "rmac-calculator", "cycle": True,
+        "resident": "rmac-quick-settings", "background": "rmac-calculator",
+        "background_tab": True, "cycle": True,
         "steps": [("escape", None, "close Control Centre")],
     },
     {
         "id": "notification-centre", "title": "Notification Centre", "open": "notification-center",
         "resident": "rmac-notification-center-panel", "background": "rmac-calculator",
+        "background_tab": True,
         "steps": [("tab", None, "next control"), ("tab", None, "next control"), ("tab", None, "next control"),
                   ("escape", None, "close Notification Centre")],
     },
@@ -822,6 +824,10 @@ class Audit:
         result: dict[str, Any] = {"id": journey["id"], "title": journey["title"], "kind": "shell", "steps": []}
         steps = result["steps"]
         try:
+            if journey.get("background_tab"):
+                before, _ = self.current_focus()
+                steps.append(self.press("tab", "move", "focus a background control",
+                                        snapshot(before)))
             if journey.get("open"):
                 offset = self.orca.offset()
                 shell.dispatch(journey["open"])

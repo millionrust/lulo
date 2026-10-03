@@ -135,7 +135,7 @@ impl FakePassword {
 }
 
 #[test]
-#[ignore = "requires the private dbus-run-session wrapper"]
+#[ignore = "requires the private test runner"]
 fn adapter_uses_goa_wire_contract_on_private_bus() {
     assert_eq!(std::env::var("RMAC_TEST_PRIVATE_BUS").as_deref(), Ok("1"));
     let _daemon = Builder::session()

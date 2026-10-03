@@ -38,7 +38,7 @@ STEP_KINDS = {
     "relaunch",
     "drag_in_window",
 }
-FACTS = {"sidebar", "monitor_rows", "tabs", "selection", "window_size", "dialog", "menu", "calendar_week", "clock_timers", "windows", "focus", "settings_controls", "pdf_text_marks", "toolbar", "note_background", "clock_stopwatch", "note_body", "pdf_annotations", "display", "saved_documents", "preview_search", "weather_settings", "files", "file_chooser", "preview_bookmarks"}
+FACTS = {"sidebar", "monitor_rows", "tabs", "selection", "window_size", "dialog", "menu", "calendar_week", "calendar_month", "clock_timers", "windows", "focus", "settings_controls", "pdf_text_marks", "toolbar", "note_background", "clock_stopwatch", "note_body", "pdf_annotations", "display", "saved_documents", "preview_search", "weather_settings", "files", "file_chooser", "preview_bookmarks"}
 
 # Mac AX roles and AT-SPI role names, both mapped to one small vocabulary.
 AX_ROLES = {

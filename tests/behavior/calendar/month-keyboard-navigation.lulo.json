@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "calendar/month-keyboard-navigation",
+  "observations": {
+    "today": {"tabs": {"count": 4, "selected": ["Month"]}, "calendar_month": {"present": true, "selected_day_offset": 0}},
+    "next_day": {"calendar_month": {"present": true, "selected_day_offset": 1}},
+    "next_week": {"calendar_month": {"present": true, "selected_day_offset": 8}}
+  }
+}

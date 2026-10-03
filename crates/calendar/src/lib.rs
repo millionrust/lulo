@@ -95,6 +95,12 @@ impl Navigator {
     pub fn week_start(&self) -> NaiveDate {
         self.selected - Duration::days(self.selected.weekday().num_days_from_monday() as i64)
     }
+
+    pub fn move_day(&mut self, days: i64) {
+        if let Some(date) = self.selected.checked_add_signed(Duration::days(days)) {
+            self.selected = date;
+        }
+    }
 }
 
 fn shift_month(date: NaiveDate, delta: i64) -> Option<NaiveDate> {
@@ -218,6 +224,32 @@ pub fn is_weekend(day: NaiveDate) -> bool {
     matches!(day.weekday(), Weekday::Sat | Weekday::Sun)
 }
 
+pub fn event_occurs_on(event: &Event, day: NaiveDate) -> bool {
+    let start = event.start.date_naive();
+    let end = event.end.date_naive();
+    if event.all_day {
+        start <= day && day < end
+    } else {
+        start <= day
+            && (day < end || (day == end && event.end.time() != chrono::NaiveTime::MIN))
+            && event.end > event.start
+    }
+}
+
+pub fn events_on_day<'a>(
+    snapshot: &'a WeekSnapshot,
+    visible: &[bool],
+    day: NaiveDate,
+) -> Vec<&'a Event> {
+    snapshot
+        .events
+        .iter()
+        .filter(|event| {
+            visible.get(event.calendar).copied().unwrap_or(false) && event_occurs_on(event, day)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +293,37 @@ mod tests {
             3
         );
         assert!(snapshot.slots.iter().any(|slot| slot.columns == 2));
+    }
+
+    #[test]
+    fn month_day_events_respect_visibility_and_exclusive_all_day_end() {
+        let first = NaiveDate::from_ymd_opt(2026, 9, 28).unwrap();
+        let snapshot = fixture_week(first);
+        let mut visible = [true; 6];
+        assert_eq!(
+            events_on_day(&snapshot, &visible, first + Duration::days(2)).len(),
+            4
+        );
+        visible[1] = false;
+        assert_eq!(
+            events_on_day(&snapshot, &visible, first + Duration::days(2)).len(),
+            3
+        );
+        assert!(!event_occurs_on(
+            &snapshot.events[14],
+            first + Duration::days(4)
+        ));
+    }
+
+    #[test]
+    fn month_arrow_navigation_crosses_week_and_month_boundary() {
+        let mut nav = Navigator::new(NaiveDate::from_ymd_opt(2026, 10, 31).unwrap());
+        nav.view = View::Month;
+        nav.move_day(1);
+        assert_eq!(nav.selected, NaiveDate::from_ymd_opt(2026, 11, 1).unwrap());
+        nav.move_day(7);
+        assert_eq!(nav.selected, NaiveDate::from_ymd_opt(2026, 11, 8).unwrap());
+        nav.move_day(-7);
+        assert_eq!(nav.selected, NaiveDate::from_ymd_opt(2026, 11, 1).unwrap());
     }
 }

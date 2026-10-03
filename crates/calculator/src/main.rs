@@ -39,7 +39,8 @@ gpui::actions!(
         DecimalPlaces14,
         DecimalPlaces15,
         EnterFullScreen,
-        CloseWindow
+        CloseWindow,
+        QuitAndKeepWindows
     ]
 );
 
@@ -91,7 +92,12 @@ fn main() {
                     Some("Calculator"),
                 ),
                 KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Calculator")),
+                KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, Some("Calculator")),
             ]);
+            // Application ▸ Quit and Keep Windows (⌥⌘Q): Calculator has a
+            // single window and no document state to restore (unlike
+            // Preview's open-file list), so this is the same quit as ⌘Q.
+            cx.on_action(|_: &QuitAndKeepWindows, cx| cx.quit());
             rmac_ui::install_app_menu(CALCULATOR, cx);
             // Basic is the only mode, so View ▸ Basic is always the ticked one.
             rmac_ui::set_menu_checked("calculator::ShowBasic", true, cx);

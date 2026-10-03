@@ -1156,6 +1156,14 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
 
 const CALCULATOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!(
+            "Quit and Keep Windows",
+            "calculator::QuitAndKeepWindows",
+            "⌥⌘Q"
+        )],
+    },
+    MenuSpec {
         label: "Edit",
         items: &[
             item!("Undo", "input::Undo", "⌘Z"),
@@ -1361,6 +1369,14 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
 
 const CLOCK_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!(
+            "Quit and Keep Windows",
+            "clock::QuitAndKeepWindows",
+            "⌥⌘Q"
+        )],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             submenu!(
@@ -1409,7 +1425,14 @@ const CLOCK_MENUS: &[MenuSpec] = &[
 const WEATHER_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
-        items: &[item!("Settings…", "weather::ShowSettings", "⌘,", separator)],
+        items: &[
+            item!("Settings…", "weather::ShowSettings", "⌘,", separator),
+            item!(
+                "Quit and Keep Windows",
+                "weather::QuitAndKeepWindows",
+                "⌥⌘Q"
+            ),
+        ],
     },
     MenuSpec {
         label: "File",
@@ -2805,9 +2828,11 @@ mod tests {
         );
         let actions = spec_actions(CLOCK_MENUS);
         let menus = definition(rmac_apps::identity::CLOCK, &actions).unwrap();
-        assert_eq!(labels(&menus), ["File", "Edit", "View"]);
-        assert_eq!(menus[2].items[2].label, "Stopwatch");
-        assert_eq!(menus[2].items[2].shortcut, "⌘3");
+        assert_eq!(labels(&menus), ["Application", "File", "Edit", "View"]);
+        assert_eq!(menus[0].items[0].label, "Quit and Keep Windows");
+        assert_eq!(menus[0].items[0].shortcut, "⌥⌘Q");
+        assert_eq!(menus[3].items[2].label, "Stopwatch");
+        assert_eq!(menus[3].items[2].shortcut, "⌘3");
         assert!(validate_menus(&menus).is_ok());
     }
 
@@ -2826,6 +2851,8 @@ mod tests {
             ["Application", "File", "Edit", "View"]
         );
         assert_eq!(menus[0].items[0].shortcut, "⌘,");
+        assert_eq!(menus[0].items[1].label, "Quit and Keep Windows");
+        assert_eq!(menus[0].items[1].shortcut, "⌥⌘Q");
         assert_eq!(menus[3].items[2].label, "Hide Sidebar");
         assert_eq!(menus[3].items[2].shortcut, "⌃⌘S");
         assert_eq!(menus[3].items.len(), 4);
@@ -2875,6 +2902,23 @@ mod tests {
         assert_eq!(menus[0].items[0].shortcut, "⌘C");
         assert_eq!(menus[0].items[1].shortcut, "⌘V");
         assert_eq!(menus[1].items[0].label, "Basic");
+        assert!(validate_menus(&menus).is_ok());
+    }
+
+    #[test]
+    fn calculator_exports_quit_and_keep_windows_when_registered() {
+        let actions = spec_actions(CALCULATOR_MENUS);
+        let menus = definition(rmac_apps::identity::CALCULATOR, &actions).unwrap();
+        let application = menus
+            .iter()
+            .find(|menu| menu.label == APPLICATION_MENU)
+            .expect("Application menu");
+        assert_eq!(application.items[0].label, "Quit and Keep Windows");
+        assert_eq!(
+            application.items[0].action,
+            "calculator::QuitAndKeepWindows"
+        );
+        assert_eq!(application.items[0].shortcut, "⌥⌘Q");
         assert!(validate_menus(&menus).is_ok());
     }
 

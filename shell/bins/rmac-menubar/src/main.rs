@@ -1374,6 +1374,7 @@ mod linux_wayland {
                 self.menu_window,
                 window_items,
                 rmac_locale::FileVocabulary::from_environment(),
+                active_app_id.as_deref(),
             ));
             menus.push(help);
             BarMenus {
@@ -4829,6 +4830,24 @@ mod linux_wayland {
         }
     }
 
+    /// [`menu_model::WindowRegion`] as the compositor's own region type,
+    /// for the Window-menu commands that run a direct [`Action::TileWindow`]
+    /// rather than Mission Control's one-word command.
+    fn tile_region(region: menu_model::WindowRegion) -> rmac_compositor::TileRegion {
+        use menu_model::WindowRegion as R;
+        use rmac_compositor::TileRegion as T;
+        match region {
+            R::Left => T::Left,
+            R::Right => T::Right,
+            R::Top => T::Top,
+            R::Bottom => T::Bottom,
+            R::TopLeft => T::TopLeft,
+            R::TopRight => T::TopRight,
+            R::BottomLeft => T::BottomLeft,
+            R::BottomRight => T::BottomRight,
+        }
+    }
+
     /// The standard Window menu's commands, run through the compositor on
     /// the window the menu was opened over, so they work for every app.
     fn dispatch_window_command(
@@ -4875,9 +4894,14 @@ mod linux_wayland {
                         vec![Action::FocusWindow { window }]
                     }
                 }
-                (WindowCommand::BringAllToFront, focused) => {
-                    // Raise every visible window of the app, the one the
-                    // menu was opened over last so it stays in front.
+                // Bring All to Front and Arrange in Front both raise every
+                // visible window of the app, the one the menu was opened
+                // over last so it stays in front. macOS additionally has
+                // Arrange in Front cascade their positions; rmac-compositor
+                // has no window-repositioning primitive for that yet
+                // (WIN-01), so it runs the same raise.
+                (WindowCommand::BringAllToFront, focused)
+                | (WindowCommand::ArrangeInFront, focused) => {
                     let mut windows = rmac_compositor::application_windows(&snapshot, &app_id);
                     windows.sort_by_key(|window| Some(*window) == focused);
                     windows
@@ -4889,6 +4913,55 @@ mod linux_wayland {
                     store.record_from(&snapshot, &[window]);
                     store_changed = true;
                     vec![Action::MinimizeWindow { window }]
+                }
+                // Zoom All fills every window of the app, as Minimise All
+                // minimises every one of them.
+                (WindowCommand::ZoomAll, _) => {
+                    rmac_compositor::application_windows(&snapshot, &app_id)
+                        .into_iter()
+                        .map(|window| Action::FillWindow { window })
+                        .collect()
+                }
+                // Always on Top (Calculator, CALC-08) raises the window once.
+                // A true persistent pin needs rmac-compositor-niri to re-raise
+                // it on every later focus change, which it cannot do yet, so
+                // this is a one-shot raise rather than a toggle.
+                (WindowCommand::AlwaysOnTop, Some(window)) => {
+                    vec![Action::FocusWindow { window }]
+                }
+                // Full-Screen Tile's "Left of Screen"/"Right of Screen": the
+                // Mac puts the window in a full-screen Space split with
+                // another app's window. Lulo has no multi-app full-screen
+                // Space yet, so this runs the same half-tile Move & Resize
+                // uses (WIN-01).
+                (WindowCommand::FullScreenTileSide(region), Some(window)) => {
+                    vec![Action::TileWindow {
+                        window,
+                        region: tile_region(region),
+                    }]
+                }
+                // Move & Resize's "Arrange" combinations: tile the window the
+                // menu opened over into the primary region, and — when the
+                // app has a second window — tile that one into the secondary
+                // region. The Mac's "… & Quarters" items offer a two-more-
+                // window quarter picker; Lulo places just the one other
+                // window into the opposite half as a simpler, still-real
+                // stand-in rather than a dead menu item.
+                (WindowCommand::ComboTile(primary, secondary), Some(window)) => {
+                    let mut actions = vec![Action::TileWindow {
+                        window,
+                        region: tile_region(primary),
+                    }];
+                    if let Some(&other) = rmac_compositor::application_windows(&snapshot, &app_id)
+                        .iter()
+                        .find(|&&candidate| candidate != window)
+                    {
+                        actions.push(Action::TileWindow {
+                            window: other,
+                            region: tile_region(secondary),
+                        });
+                    }
+                    actions
                 }
                 (_, _) => {
                     eprintln!("no {app_id} window to act on from the Window menu");

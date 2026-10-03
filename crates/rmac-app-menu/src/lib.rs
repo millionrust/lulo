@@ -2960,7 +2960,10 @@ mod tests {
         let view = menus.iter().find(|menu| menu.label == "View").unwrap();
         assert_eq!(view.items[1].action, "calendar::ShowWeek");
         assert_eq!(view.items[1].shortcut, "⌘2");
-        assert!(view.items.iter().any(|item| item.action == "calendar::GoToday"));
+        assert!(view
+            .items
+            .iter()
+            .any(|item| item.action == "calendar::GoToday"));
     }
 
     #[test]

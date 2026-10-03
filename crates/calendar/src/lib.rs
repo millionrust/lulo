@@ -70,7 +70,10 @@ pub struct Navigator {
 
 impl Navigator {
     pub fn new(today: NaiveDate) -> Self {
-        Self { selected: today, view: View::Week }
+        Self {
+            selected: today,
+            view: View::Week,
+        }
     }
 
     pub fn today(&mut self, today: NaiveDate) {
@@ -80,7 +83,9 @@ impl Navigator {
     pub fn step(&mut self, direction: i64) {
         self.selected = match self.view {
             View::Day => self.selected.checked_add_signed(Duration::days(direction)),
-            View::Week => self.selected.checked_add_signed(Duration::days(direction * 7)),
+            View::Week => self
+                .selected
+                .checked_add_signed(Duration::days(direction * 7)),
             View::Month => shift_month(self.selected, direction),
             View::Year => shift_month(self.selected, direction * 12),
         }
@@ -96,8 +101,8 @@ fn shift_month(date: NaiveDate, delta: i64) -> Option<NaiveDate> {
     let month_index = i64::from(date.year()) * 12 + i64::from(date.month0()) + delta;
     let year = i32::try_from(month_index.div_euclid(12)).ok()?;
     let month = u32::try_from(month_index.rem_euclid(12) + 1).ok()?;
-    let last_day = (NaiveDate::from_ymd_opt(year, month, 1)? + Duration::days(32))
-        .with_day(1)? - Duration::days(1);
+    let last_day = (NaiveDate::from_ymd_opt(year, month, 1)? + Duration::days(32)).with_day(1)?
+        - Duration::days(1);
     NaiveDate::from_ymd_opt(year, month, date.day().min(last_day.day()))
 }
 
@@ -107,12 +112,42 @@ pub fn current_date() -> NaiveDate {
 
 pub fn fixture_week(first_day: NaiveDate) -> WeekSnapshot {
     let calendars = vec![
-        Calendar { name: "Work", account: "Google", color: CalendarColor::Blue, visible: true },
-        Calendar { name: "Team", account: "Google", color: CalendarColor::Teal, visible: true },
-        Calendar { name: "Family", account: "Google", color: CalendarColor::Orange, visible: true },
-        Calendar { name: "Home", account: "iCloud", color: CalendarColor::Green, visible: true },
-        Calendar { name: "Gym", account: "iCloud", color: CalendarColor::Purple, visible: false },
-        Calendar { name: "Holidays", account: "Other", color: CalendarColor::Red, visible: true },
+        Calendar {
+            name: "Work",
+            account: "Google",
+            color: CalendarColor::Blue,
+            visible: true,
+        },
+        Calendar {
+            name: "Team",
+            account: "Google",
+            color: CalendarColor::Teal,
+            visible: true,
+        },
+        Calendar {
+            name: "Family",
+            account: "Google",
+            color: CalendarColor::Orange,
+            visible: true,
+        },
+        Calendar {
+            name: "Home",
+            account: "iCloud",
+            color: CalendarColor::Green,
+            visible: true,
+        },
+        Calendar {
+            name: "Gym",
+            account: "iCloud",
+            color: CalendarColor::Purple,
+            visible: false,
+        },
+        Calendar {
+            name: "Holidays",
+            account: "Other",
+            color: CalendarColor::Red,
+            visible: true,
+        },
     ];
     let mut events = Vec::new();
     let mut add = |day: i64, from: u32, to: u32, title, location, calendar, all_day| {
@@ -122,8 +157,13 @@ pub fn fixture_week(first_day: NaiveDate) -> WeekSnapshot {
         let end = Utc.from_utc_datetime(&date.and_hms_opt(to, 0, 0).unwrap());
         let index = events.len();
         events.push(Event {
-            id: format!("fixture-{index}"), title, location, calendar,
-            start, end, all_day,
+            id: format!("fixture-{index}"),
+            title,
+            location,
+            calendar,
+            start,
+            end,
+            all_day,
         });
         index
     };
@@ -142,18 +182,31 @@ pub fn fixture_week(first_day: NaiveDate) -> WeekSnapshot {
     let conference = add(1, 0, 23, "Conference", "", 1, true);
     let birthday = add(4, 0, 23, "Ana's birthday", "", 2, true);
     events[conference].end = Utc.from_utc_datetime(
-        &(first_day + Duration::days(4)).and_hms_opt(0, 0, 0).unwrap(),
+        &(first_day + Duration::days(4))
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
     );
     events[birthday].end = Utc.from_utc_datetime(
-        &(first_day + Duration::days(6)).and_hms_opt(0, 0, 0).unwrap(),
+        &(first_day + Duration::days(6))
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
     );
-    let layout_events: Vec<_> = events.iter().filter(|event| !event.all_day)
+    let layout_events: Vec<_> = events
+        .iter()
+        .filter(|event| !event.all_day)
         .map(|event| LayoutEvent {
-            id: event.id.clone(), start: event.start, end: event.end,
-        }).collect();
-    let slots = layout_week(&layout_events, first_day, Tz::UTC)
-        .expect("fixture contains valid week dates");
-    WeekSnapshot { calendars, events, slots }
+            id: event.id.clone(),
+            start: event.start,
+            end: event.end,
+        })
+        .collect();
+    let slots =
+        layout_week(&layout_events, first_day, Tz::UTC).expect("fixture contains valid week dates");
+    WeekSnapshot {
+        calendars,
+        events,
+        slots,
+    }
 }
 
 pub fn month_grid_start(date: NaiveDate) -> NaiveDate {
@@ -173,9 +226,15 @@ mod tests {
     fn week_navigation_and_today() {
         let today = NaiveDate::from_ymd_opt(2026, 10, 3).unwrap();
         let mut nav = Navigator::new(today);
-        assert_eq!(nav.week_start(), NaiveDate::from_ymd_opt(2026, 9, 28).unwrap());
+        assert_eq!(
+            nav.week_start(),
+            NaiveDate::from_ymd_opt(2026, 9, 28).unwrap()
+        );
         nav.step(1);
-        assert_eq!(nav.week_start(), NaiveDate::from_ymd_opt(2026, 10, 5).unwrap());
+        assert_eq!(
+            nav.week_start(),
+            NaiveDate::from_ymd_opt(2026, 10, 5).unwrap()
+        );
         nav.today(today);
         assert_eq!(nav.selected, today);
     }
@@ -193,8 +252,14 @@ mod tests {
         let snapshot = fixture_week(NaiveDate::from_ymd_opt(2026, 9, 28).unwrap());
         assert_eq!(snapshot.calendars.len(), 6);
         assert_eq!(snapshot.events.len(), 16);
-        assert_eq!(snapshot.events.iter().filter(|event| event.all_day).count(), 2);
-        assert_eq!((snapshot.events[14].end - snapshot.events[14].start).num_days(), 3);
+        assert_eq!(
+            snapshot.events.iter().filter(|event| event.all_day).count(),
+            2
+        );
+        assert_eq!(
+            (snapshot.events[14].end - snapshot.events[14].start).num_days(),
+            3
+        );
         assert!(snapshot.slots.iter().any(|slot| slot.columns == 2));
     }
 }

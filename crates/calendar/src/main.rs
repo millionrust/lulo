@@ -8,9 +8,17 @@ use view::CalendarView;
 gpui::actions!(
     calendar,
     [
-        ShowDay, ShowWeek, ShowMonth, ShowYear,
-        GoToday, PreviousPeriod, NextPeriod,
-        ToggleSidebar, NewEvent, ShowInvitations, Search,
+        ShowDay,
+        ShowWeek,
+        ShowMonth,
+        ShowYear,
+        GoToday,
+        PreviousPeriod,
+        NextPeriod,
+        ToggleSidebar,
+        NewEvent,
+        ShowInvitations,
+        Search,
         CloseWindow,
     ]
 );
@@ -32,7 +40,11 @@ fn main() {
         ]);
         rmac_ui::install_app_menu(CALENDAR, cx);
         // Event creation, invitations, and search arrive in CAL-5/6/8.
-        for action in ["calendar::NewEvent", "calendar::ShowInvitations", "calendar::Search"] {
+        for action in [
+            "calendar::NewEvent",
+            "calendar::ShowInvitations",
+            "calendar::Search",
+        ] {
             rmac_ui::set_menu_enabled(action, false, cx);
         }
         let mut options = rmac_ui::window_options_for_app(CALENDAR, 1100.0, 720.0, cx);
@@ -52,8 +64,11 @@ fn main() {
             cx.quit();
         }
         cx.on_window_closed(|cx, _| {
-            if cx.windows().is_empty() { cx.quit(); }
-        }).detach();
+            if cx.windows().is_empty() {
+                cx.quit();
+            }
+        })
+        .detach();
         cx.activate(true);
     });
 }

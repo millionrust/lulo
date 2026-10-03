@@ -363,10 +363,10 @@ class Run:
         """A real click on the logo, granting the bar real keyboard focus
         the same way it opens the menu for a mouse user."""
 
-        logo = self.wait_for(lambda: self.find_button("menu"), 10, 0.3)
+        logo = self.wait_for(lambda: self.find_button("Lulo menu"), 10, 0.3)
         if logo is None:
             return False
-        return self.click_button("menu")
+        return self.click_button("Lulo menu")
 
     # -- the Lulo menu's own Down/Up/Return/Escape ----------------------------
 
@@ -612,7 +612,7 @@ class Run:
             self.keys.key("escape")
             self.keys.key("escape")
             time.sleep(0.2)
-            menu_clicked = self.click_button("menu")
+            menu_clicked = self.click_button("Lulo menu")
             dispatch_result = self.dispatch("shutdown-dialog")
             missing = self.wait_for_power_dialog()
             if not menu_clicked or missing:
@@ -652,7 +652,7 @@ class Run:
             self.keys.key("escape")
             self.keys.key("escape")
             time.sleep(0.2)
-            menu_clicked = self.click_button("menu")
+            menu_clicked = self.click_button("Lulo menu")
             dispatch_result = self.dispatch("shutdown-dialog")
             missing = self.wait_for_power_dialog()
             if not menu_clicked or missing:
@@ -683,7 +683,7 @@ class Run:
             self.keys.key("escape")
             self.keys.key("escape")
             time.sleep(0.2)
-            menu_clicked = self.click_button("menu")
+            menu_clicked = self.click_button("Lulo menu")
             dispatch_result = self.dispatch("shutdown-dialog")
             missing = self.wait_for_power_dialog()
             escape_opened.append(not missing)

@@ -39,6 +39,8 @@ Sway, XDG directories and app processes. Thirteen `checks` jobs run menu
 dismissal, power dialogs, window movement and the ten everyday journeys in
 private nested Sway/niri sessions. They download the same binaries. Only Lulo
 screenshots are uploaded, together with result JSON and logs.
+The menu bar journey covers controls available on a headless host; its battery
+control is absent when CI has no battery.
 
 Ubuntu 26.04 does not package niri in its archive (the project's
 `packaging/third-party/niri/debian/control` records this). The nested niri
@@ -58,6 +60,8 @@ regressions block merges. Runtime jobs have 25 minute timeouts; binaries are
 built once, and all playback jobs run in parallel. An `agent/*` push invokes
 the same workflow; `.claude/ci-branch.sh wait <name>` prints its merged runtime
 report even while the summary job is non-blocking.
+New pushes cancel older runtime runs for the same branch, so an agent's
+iteration does not queue a second full playback behind obsolete results.
 
 Run the partition and merger tests without a compositor:
 

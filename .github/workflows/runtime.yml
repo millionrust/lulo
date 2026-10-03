@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: runtime-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build all app and shell binaries
@@ -129,7 +133,7 @@ jobs:
             at-spi2-core curl dbus fonts-inter foot gir1.2-gtk-4.0 grim libdisplay-info3 \
             libgbm1 libglib2.0-bin libinput10 libpango-1.0-0 \
             libpangocairo-1.0-0 libpipewire-0.3-0t64 libseat1 libxkbcommon-x11-0 \
-            mesa-vulkan-drivers python3-dbus python3-gi python3-pil \
+            mesa-vulkan-drivers poppler-utils python3-dbus python3-gi python3-pil \
             python3-pyatspi sway xdg-desktop-portal
           curl --fail --silent --show-error --location --retry 3 \
             https://ppa.launchpadcontent.net/avengemedia/danklinux/ubuntu/pool/main/n/niri/niri_26.04ppa3_amd64.deb \

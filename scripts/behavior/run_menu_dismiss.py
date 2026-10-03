@@ -285,10 +285,10 @@ class Run:
         """A real click on the logo, opening the Lulo menu the same way a
         mouse user would."""
 
-        logo = self.wait_for(lambda: self.find_button("menu"), 10, 0.3)
+        logo = self.wait_for(lambda: self.find_button("Lulo menu"), 10, 0.3)
         if logo is None:
             return False
-        return self.click_button("menu")
+        return self.click_button("Lulo menu")
 
     def close_everything(self) -> None:
         self.keys.key("escape")
@@ -439,11 +439,11 @@ class Run:
         # Index 1: the active app's own title, right of the logo
         # (`TopBar::keyboard_titles`'s "{app} menu" label). With nothing
         # focused this is the desktop's ("Finder"-equivalent) title; the
-        # logo itself is named exactly "menu", so excluding that finds it
+        # Excluding the Lulo logo finds an application title.
         # without guessing a pixel offset.
         title = self.wait_for(
             lambda: self.find_node(
-                ("push button", "button"), lambda name: name != "menu" and name.endswith(" menu")
+                ("push button", "button"), lambda name: name != "Lulo menu" and name.endswith(" menu")
             ),
             10,
             0.3,
@@ -470,7 +470,7 @@ class Run:
         opened = self.retry_until(self.open_system_menu, lambda: self.find_menu_item("About"))
         self.check("Same title: the Lulo menu opens first", opened)
         if opened:
-            self.click_button("menu")
+            self.click_button("Lulo menu")
             self.check("Same title: a second click keeps the menu open",
                        self.find_menu_item("About") is not None)
 

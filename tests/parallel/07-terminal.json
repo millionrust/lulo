@@ -33,7 +33,7 @@
       "shot": "echo-output"
     },
     {
-      "type": "ls"
+      "type": "ls -la"
     },
     {
       "shot": "ls-command"

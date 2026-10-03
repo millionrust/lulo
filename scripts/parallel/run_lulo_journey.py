@@ -342,7 +342,8 @@ class Driver:
             try:
                 if node is None:
                     continue
-                if node.name == label or (node.name or "").startswith(label + ","):
+                if ((node.name == label or (node.name or "").startswith(label + ","))
+                        and node.getState().contains(pyatspi.STATE_SHOWING)):
                     pid = node.getApplication().get_process_id()
                     if target == "Dock" and (dock is None or pid != dock.pid):
                         stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))

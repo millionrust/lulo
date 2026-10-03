@@ -1,5 +1,5 @@
 {
-  "title": "Menu bar: read-only status menus",
+  "title": "Menu bar: available status menus",
   "steps": [
     {
       "launch": "files",
@@ -45,25 +45,6 @@
     },
     {
       "shot": "wifi-closed",
-      "scope": "full"
-    },
-    {
-      "click": "Battery",
-      "scope": "full"
-    },
-    {
-      "shot": "battery-menu",
-      "scope": "full",
-      "expect_accessible": [
-        "Battery Settings…"
-      ]
-    },
-    {
-      "key": "escape",
-      "scope": "full"
-    },
-    {
-      "shot": "battery-closed",
       "scope": "full"
     },
     {

@@ -92,7 +92,7 @@ fn tls_plain_sync_move_uidplus_special_use_and_idle() {
         assert!(line.starts_with("L00000002 AUTHENTICATE PLAIN "));
         assert_eq!(
             STANDARD
-                .decode(line.trim().split(' ').last().unwrap())
+                .decode(line.trim().split(' ').next_back().unwrap())
                 .unwrap(),
             b"\0alice@example.test\0secret-password"
         );
@@ -290,7 +290,7 @@ fn oauthbearer_escapes_authorization_identity() {
         let line = read_line(&mut stream);
         assert!(line.starts_with("L00000002 AUTHENTICATE OAUTHBEARER "));
         let value = STANDARD
-            .decode(line.trim().split(' ').last().unwrap())
+            .decode(line.trim().split(' ').next_back().unwrap())
             .unwrap();
         assert_eq!(
             value,

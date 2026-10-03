@@ -47,7 +47,9 @@ its sliders because `rmac-quick-settings` exposed no AT-SPI children.
 The current nested probe asserts a populated panel and Wi-Fi detail view,
 then targets accessible sliders for hover captures. The 2026-10-03
 Display capture found no hover change (INT-008); Sound was unavailable in
-the private session and remains unmeasured.
+the private session and remains unmeasured. After the hovers, the probe sweeps the pointer
+across the whole open panel and sets every enabled slider through AT-SPI;
+it fails if Control Centre panics (CC-16).
 
 As of 2026-10-03, `lulo_probe.py` also records the Lulo side of six more
 surfaces: Spotlight/the launcher and Notification Centre (shell harness,

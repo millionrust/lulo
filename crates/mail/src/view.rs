@@ -7,7 +7,7 @@ use gpui::{
 };
 use rmac_mail::{MailState, Mailbox, Message};
 use rmac_mail_mime::{BlockKind, RichText};
-use rmac_ui::{mac, StyledExt as _};
+use rmac_ui::mac;
 
 use crate::{
     CloseWindow, NextMessage, PreviousMessage, ToggleRead, ToggleThreads, ToggleUnreadFilter,
@@ -131,6 +131,7 @@ impl MailView {
 
     fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let mut list = div()
+            .id("mail-sidebar-scroll")
             .absolute()
             .top(px(48.0))
             .left(px(10.0))
@@ -438,6 +439,7 @@ impl MailView {
                 .into_any_element();
         };
         let mut body = div()
+            .id("mail-viewer-scroll")
             .flex_1()
             .h_full()
             .overflow_y_scroll()

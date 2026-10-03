@@ -120,6 +120,8 @@ impl Settings {
     }
 
     pub(super) fn watch_internet_accounts(cx: &mut Context<Self>) {
+        #[cfg(not(target_os = "linux"))]
+        let _ = cx;
         #[cfg(target_os = "linux")]
         {
             let (sender, receiver) = async_channel::bounded(1);
@@ -424,6 +426,8 @@ impl Settings {
                 rmac_accounts_linux::goa::GoaBus::session()?.set_service(&path, service, enabled)
             })
             .await;
+            #[cfg(not(target_os = "linux"))]
+            let _ = (path, service, enabled);
             #[cfg(not(target_os = "linux"))]
             let result: Result<(), rmac_accounts_linux::Error> =
                 Err(rmac_accounts_linux::Error::Unavailable);

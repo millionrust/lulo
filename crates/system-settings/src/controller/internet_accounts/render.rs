@@ -45,7 +45,7 @@ fn field(
     cx: &Context<Settings>,
 ) -> impl IntoElement {
     let field = div()
-        .id(("internet-account-field", label_text))
+        .id(format!("internet-account-field-{label_text}"))
         .role(Role::TextInput)
         .aria_label(label_text)
         .v_flex()

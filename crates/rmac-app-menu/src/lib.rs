@@ -2673,6 +2673,9 @@ mod tests {
                 "terminal::NextTab",
                 "terminal::PrevTab",
                 "terminal::Copy",
+                "terminal::CopyPlainText",
+                "terminal::ShowTabBar",
+                "terminal::AllowMouseReporting",
                 "terminal::Paste",
                 "terminal::SelectAll",
                 "terminal::Find",
@@ -2687,6 +2690,9 @@ mod tests {
         assert_eq!(terminal_hints["terminal::NextTab"], "⇧⌘]");
         assert_eq!(terminal_hints["terminal::PrevTab"], "⇧⌘[");
         assert_eq!(terminal_hints["terminal::Copy"], "⌘C");
+        assert_eq!(terminal_hints["terminal::CopyPlainText"], "⌥⇧⌘C");
+        assert_eq!(terminal_hints["terminal::ShowTabBar"], "⇧⌘T");
+        assert_eq!(terminal_hints["terminal::AllowMouseReporting"], "⌘R");
         assert_eq!(terminal_hints["terminal::Paste"], "⌘V");
         assert_eq!(terminal_hints["terminal::SelectAll"], "⌘A");
         assert_eq!(terminal_hints["terminal::Find"], "⌘F");
@@ -2710,8 +2716,9 @@ mod tests {
         let editor_hints = hints(&editor);
         assert_eq!(editor_hints["text_editor::FindPrev"], "⇧⌘G");
         assert_eq!(editor_hints["text_editor::ToggleReplace"], "⌥⌘F");
-        // Bound to ⇧⌘M, which the menu now says (MENU-07).
-        assert_eq!(editor_hints["text_editor::ToggleMono"], "⇧⌘M");
+        // The app retains its private font toggle, but the Mac has no
+        // Monospaced menu row to advertise it.
+        assert!(!editor_hints.contains_key("text_editor::ToggleMono"));
         assert_eq!(editor_hints["input::Undo"], "⌘Z");
         assert_eq!(editor_hints["input::Redo"], "⇧⌘Z");
 

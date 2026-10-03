@@ -96,15 +96,16 @@ the frame, with its table outside the Tab cycle (ACC-28). Spotlight still
 loses focus after Escape.
 
 After the panel focus fix at `030faff9`, a private Orca rerun with a Calculator
-button focused behind each panel (`/tmp/orca-cx-a11y-panels-control-focus.json`)
+button focused behind each panel (`/tmp/orca-cx-a11y-panels-visibility.json`)
 heard `Wi-Fi details button` when Control Centre opened and returned to
 Calculator's `Close window` button on Escape. Notification Centre opened on
-its panel and returned to Calculator's `Minimize` button on Escape. Its empty
+its panel and returned to Calculator's `Minimize` button on Escape. Neither
+panel had a showing AT-SPI frame after Escape. The empty Notification Centre
 panel still traps Tab (ACC-29). The panel interaction probe saw 13 accessible
 Control Centre nodes, five Wi-Fi detail nodes, and four Notification Centre
 nodes; its repeated dismissal checks returned inconsistent `closed` values,
 so the focus and Escape result above uses the Orca journey's direct AT-SPI
-observations.
+observations. Outside-click dismissal still needs an independent check.
 
 ## Owner final listen
 

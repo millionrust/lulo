@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "settings/internet-accounts-add-sheet",
+  "platform": "Lulo local contract",
+  "observations": {
+    "sheet": {"dialog": {"present": true}},
+    "cancelled": {"dialog": {"present": false}}
+  }
+}

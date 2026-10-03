@@ -340,6 +340,7 @@ pub mod callback {
     pub struct OAuthReceiver {
         connection: Connection,
         receiver: Receiver<(String, String)>,
+        cancel_sender: Sender<(String, String)>,
     }
 
     impl OAuthReceiver {
@@ -348,7 +349,12 @@ pub mod callback {
             let (sender, receiver) = mpsc::channel();
             connection
                 .object_server()
-                .at(PATH, Callback { sender })
+                .at(
+                    PATH,
+                    Callback {
+                        sender: sender.clone(),
+                    },
+                )
                 .map_err(|_| Error::Unavailable)?;
             let reply = connection
                 .request_name_with_flags(NAME, RequestNameFlags::DoNotQueue.into())
@@ -359,7 +365,13 @@ pub mod callback {
             Ok(Self {
                 connection,
                 receiver,
+                cancel_sender: sender,
             })
+        }
+
+        /// Wakes a pending sign-in when its sheet closes.
+        pub fn cancel_sender(&self) -> Sender<(String, String)> {
+            self.cancel_sender.clone()
         }
 
         /// Waits without polling and discards callbacks with a wrong client,
@@ -372,6 +384,9 @@ pub mod callback {
                     .receiver
                     .recv_timeout(remaining)
                     .map_err(|_| Error::SignInFailed)?;
+                if client.is_empty() && uri.is_empty() {
+                    return Err(Error::SignInFailed);
+                }
                 if attempt.accepts_callback(&client, &uri) {
                     return Ok((client, uri));
                 }

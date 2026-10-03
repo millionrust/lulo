@@ -18,6 +18,7 @@ mod displays;
 mod focus;
 mod initialization;
 mod input;
+mod internet_accounts;
 mod locale;
 mod lock_screen;
 mod login_items;
@@ -186,6 +187,7 @@ actions!(
         ShowDisplays,
         ShowFocus,
         ShowKeyboard,
+        ShowInternetAccounts,
         ShowLanguageRegion,
         ShowLockScreen,
         ShowLoginItems,

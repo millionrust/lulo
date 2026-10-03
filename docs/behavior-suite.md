@@ -106,11 +106,14 @@ RMAC_READ_ONLY_GOA_TEST=1 cargo test -p rmac-accounts-linux --profile iterate \
   --test real_goa -- --ignored --exact real_goa_object_manager_read_only
 ```
 
-The cross-app Internet Accounts sheet scenario remains pending until ACC-3.
+ACC-3 adds `tests/behavior/settings/internet-accounts-add-sheet.json` as a
+Lulo-only, cancel-before-sign-in scenario. It has no Mac recording yet. The
+`scripts/assert_internet_accounts_accessibility.py` AT-SPI check opens the
+same sheet and asserts six named provider actions and an accessible email
+field, then cancels; it never creates an account.
 
-`docs/behavior-pending/calendar/`, `docs/behavior-pending/mail/` and
-`docs/behavior-pending/settings/internet-accounts-add-sheet.json` are stubs for
-the apps planned in ADR 0022. They move to `tests/behavior` once the app exists,
+`docs/behavior-pending/calendar/` and `docs/behavior-pending/mail/` remain
+stubs for the apps planned in ADR 0022. They move to `tests/behavior` once the app exists,
 `scenario.APPS` lists `calendar`/`mail`, and a Mac recording exists. Mac
 recordings use only a local "On My Mac" calendar and mailbox: never send mail,
 sign in, or confirm a deletion on the owner's Mac. The Lulo side runs against

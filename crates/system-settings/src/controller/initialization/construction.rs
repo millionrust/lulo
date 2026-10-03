@@ -161,6 +161,14 @@ impl Settings {
             dock_size_slider,
             dock_magnification_slider,
             network: rmac_network::NetworkSnapshot::default(),
+            internet_accounts: Vec::new(),
+            internet_accounts_loading: true,
+            internet_accounts_watch_started: false,
+            internet_accounts_busy: false,
+            internet_accounts_error: None,
+            internet_account_selected: None,
+            internet_account_delete: false,
+            internet_account_sheet: None,
             storage: Vec::new(),
             storage_loading: true,
             storage_busy: false,
@@ -398,6 +406,9 @@ impl Settings {
             mac_keyboard_error: None,
         };
         settings.sync_catalog_for_pane(false);
+        if settings.current().name.as_ref() == "Internet Accounts" {
+            settings.refresh_internet_accounts(cx);
+        }
         settings
     }
 }

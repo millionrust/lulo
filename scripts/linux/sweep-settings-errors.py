@@ -23,7 +23,7 @@ AT-SPI `Action.doAction("click")` on a node the app itself published, or a
 `--pane <id>` launch that hands its arguments to the one running instance
 instead of opening a second window (SET-57, `controller.rs::run()`,
 `rmac_ui::boot_unified_single_window_app_with_assets`). That hand-off is
-also how this script reaches every one of the 25 top-level panes in
+also how this script reaches every one of the 27 top-level panes in
 `crates/system-settings/src/navigation.rs`'s `PANE_ROUTES`: a fresh
 `--pane <id>` launch always lands on that pane's own root
 (`NavigationState::navigate_to_pane` -> `select_category` ->
@@ -49,7 +49,7 @@ every control that mutates live state -- a toggle switch, a checkbox, a
 different AT-SPI role (`Role::Switch`, `Role::Button`, `Role::CheckBox`,
 `Role::ComboBox`, ...). This script therefore only ever clicks nodes whose
 AT-SPI role is exactly "list item", and only those outside the sidebar (the
-sidebar's own rows, named after `PANE_ROUTES`'s 25 display names, are
+sidebar's own rows, named after `PANE_ROUTES`'s 27 display names, are
 excluded so this script never re-drives navigation it already reached via
 `--pane`). It never clicks a "push button", so it never presses
 Connect/Forget/Empty/Refresh/Turn Off/any other mutating control, and never
@@ -125,6 +125,7 @@ PANE_ROUTES: list[tuple[str, str]] = [
     ("wifi", "Wi-Fi"),
     ("bluetooth", "Bluetooth"),
     ("network", "Network"),
+    ("internet-accounts", "Internet Accounts"),
     ("vpn", "VPN"),
     ("battery", "Battery"),
     ("general", "General"),

@@ -43,10 +43,11 @@ pub(super) enum SubPage {
 }
 
 pub(super) const GENERAL_DESTINATIONS: [&str; 3] = ["About", "Software Update", "Storage"];
-pub(super) const PANE_ROUTES: [(&str, &str); 26] = [
+pub(super) const PANE_ROUTES: [(&str, &str); 27] = [
     ("wifi", "Wi-Fi"),
     ("bluetooth", "Bluetooth"),
     ("network", "Network"),
+    ("internet-accounts", "Internet Accounts"),
     ("vpn", "VPN"),
     ("battery", "Battery"),
     ("general", "General"),
@@ -108,6 +109,12 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 "icons/globe.svg",
                 blue,
                 "Configure network services and connections.",
+            ),
+            cat(
+                "Internet Accounts",
+                "icons/globe.svg",
+                blue,
+                "Add accounts and choose the apps that use them.",
             ),
             cat(
                 "VPN",
@@ -323,6 +330,7 @@ pub(super) fn category_has_dedicated_renderer(name: &str) -> bool {
         "Wi-Fi"
             | "Bluetooth"
             | "Network"
+            | "Internet Accounts"
             | "VPN"
             | "Battery"
             | "General"

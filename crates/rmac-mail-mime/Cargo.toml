@@ -1,0 +1,15 @@
+[package]
+name = "rmac-mail-mime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+html5ever.workspace = true
+mail-builder.workspace = true
+mail-parser.workspace = true
+markup5ever_rcdom.workspace = true
+url.workspace = true
+

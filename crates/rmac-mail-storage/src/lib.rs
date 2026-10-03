@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
 #[derive(Debug)]
 pub enum Error {
@@ -109,6 +109,31 @@ pub struct Attachment {
     pub blob_hash: String,
 }
 
+/// A claimed submission. Keep SMTP's envelope separate from MIME headers so
+/// Bcc recipients are delivered without appearing in the message source.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutboxMessage {
+    pub id: i64,
+    pub envelope_from: String,
+    pub recipients: Vec<String>,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutboxEntry {
+    pub id: i64,
+    pub state: OutboxState,
+    pub envelope_from: String,
+    pub recipients: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutboxState {
+    Queued,
+    Sending,
+    Held,
+}
+
 impl MailStorage {
     /// `data_root` is normally ~/.local/share/lulo/mail. A typed UUID prevents
     /// remote account names from becoming path components.
@@ -148,7 +173,144 @@ impl MailStorage {
             tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             tx.commit()?;
         }
+        if version < 2 {
+            let tx = self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            tx.execute_batch(include_str!("schema_v2.sql"))?;
+            tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+            tx.commit()?;
+        }
         Ok(())
+    }
+
+    /// Persist a complete RFC 5322 message before offering it for submission.
+    pub fn queue_outbox(
+        &mut self,
+        envelope_from: &str,
+        recipients: &[String],
+        bytes: &[u8],
+    ) -> Result<i64> {
+        let hash = self.write_blob(bytes)?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "INSERT INTO outbox(envelope_from,blob_hash,state) VALUES (?1,?2,'queued')",
+            params![envelope_from, hash],
+        )?;
+        let id = tx.last_insert_rowid();
+        for (position, recipient) in recipients.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO outbox_recipients(outbox_id,position,address) VALUES (?1,?2,?3)",
+                params![id, position as i64, recipient],
+            )?;
+        }
+        tx.commit()?;
+        Ok(id)
+    }
+
+    /// Atomically claim one message. A process crash leaves it in `sending` so
+    /// an ambiguous SMTP acceptance cannot silently cause a duplicate send.
+    pub fn claim_outbox(&mut self) -> Result<Option<OutboxMessage>> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let row: Option<(i64,String,String)> = tx.query_row(
+            "SELECT id,envelope_from,blob_hash FROM outbox WHERE state='queued' ORDER BY id LIMIT 1",
+            [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
+        ).optional()?;
+        let Some((id, envelope_from, hash)) = row else {
+            return Ok(None);
+        };
+        tx.execute("UPDATE outbox SET state='sending' WHERE id=?1", [id])?;
+        let recipients = {
+            let mut statement = tx.prepare(
+                "SELECT address FROM outbox_recipients WHERE outbox_id=?1 ORDER BY position",
+            )?;
+            let recipients = statement
+                .query_map([id], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            recipients
+        };
+        tx.commit()?;
+        let bytes = self.read_blob(&hash)?;
+        Ok(Some(OutboxMessage {
+            id,
+            envelope_from,
+            recipients,
+            bytes,
+        }))
+    }
+
+    pub fn complete_outbox(&mut self, id: i64) -> Result<()> {
+        self.connection
+            .execute("DELETE FROM outbox WHERE id=?1 AND state='sending'", [id])?;
+        Ok(())
+    }
+
+    /// Retry only when SMTP definitely did not accept the message. An uncertain
+    /// post-DATA result remains held until the user chooses to retry.
+    pub fn update_outbox_state(&mut self, id: i64, state: OutboxState) -> Result<()> {
+        let state = match state {
+            OutboxState::Queued => "queued",
+            OutboxState::Sending => "sending",
+            OutboxState::Held => "held",
+        };
+        self.connection
+            .execute("UPDATE outbox SET state=?1 WHERE id=?2", params![state, id])?;
+        Ok(())
+    }
+
+    pub fn outbox_count(&self, state: OutboxState) -> Result<i64> {
+        let state = match state {
+            OutboxState::Queued => "queued",
+            OutboxState::Sending => "sending",
+            OutboxState::Held => "held",
+        };
+        Ok(self.connection.query_row(
+            "SELECT COUNT(*) FROM outbox WHERE state=?1",
+            [state],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Metadata for the Outbox mailbox, including claims left behind by a
+    /// crash. The UI can show Held/Sending items and offer explicit retry.
+    pub fn outbox_entries(&self) -> Result<Vec<OutboxEntry>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT id,state,envelope_from FROM outbox ORDER BY id")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut recipients_statement = self.connection.prepare(
+            "SELECT address FROM outbox_recipients WHERE outbox_id=?1 ORDER BY position",
+        )?;
+        let mut entries = Vec::new();
+        for row in rows {
+            let (id, state, envelope_from) = row?;
+            let state = match state.as_str() {
+                "queued" => OutboxState::Queued,
+                "sending" => OutboxState::Sending,
+                "held" => OutboxState::Held,
+                _ => return Err(Error::Sql(rusqlite::Error::InvalidQuery)),
+            };
+            let recipients = recipients_statement
+                .query_map([id], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            entries.push(OutboxEntry {
+                id,
+                state,
+                envelope_from,
+                recipients,
+            });
+        }
+        Ok(entries)
     }
 
     pub fn upsert_mailbox(

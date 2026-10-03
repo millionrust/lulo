@@ -22,6 +22,7 @@ blocking = "1"
 bzip2 = "0.6"
 chrono = "0.4"
 chrono-tz = "0.10"
+base64 = "0.22"
 cosmic-text = "=0.14.2"
 flate2 = "=1.1.9"
 gpui = { version = "=0.2.2", git = "https://github.com/zed-industries/zed.git", package = "gpui" }
@@ -32,11 +33,15 @@ gpui-component-assets = { version = "=0.5.1", path = "vendor/gpui-component/crat
 futures-util = { version = "0.3", features = ["io"] }
 futures-lite = "2"
 image = { version = "0.25.10", default-features = false }
+html5ever = "=0.27.0"
 kdl = { version = "=6.5.0", features = ["v1-fallback"] }
 libc = "=0.2.186"
 libloading = "=0.8.9"
 lzma-rs = "0.3"
 markdown = "=1.0.0"
+mail-builder = "0.4.4"
+mail-parser = "0.11.8"
+markup5ever_rcdom = "=0.3.0"
 notify = "7"
 objc2 = "0.6"
 objc2-app-kit = "0.3"
@@ -99,6 +104,8 @@ rmac-login-items = { version = "=0.9.0-beta.1", path = "crates/rmac-login-items"
 rmac-login-items-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-login-items-linux" }
 rmac-mail-store = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-store" }
 rmac-mail-imap = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-imap" }
+rmac-mail-storage = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-storage" }
+rmac-mail-mime = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-mime" }
 rmac-locale = { version = "=0.9.0-beta.1", path = "crates/rmac-locale" }
 rmac-locale-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-locale-linux" }
 rmac-power = { version = "=0.9.0-beta.1", path = "crates/rmac-power" }
@@ -156,6 +163,8 @@ resvg = { version = "=0.45.1", default-features = false }
 rust-embed = { version = "8", features = ["include-exclude"] }
 rustix = { version = "=1.1.4", features = ["fs"] }
 rusqlite = { version = "=0.37.0", features = ["bundled"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["std", "ring", "tls12"] }
+rustls-native-certs = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10.9"

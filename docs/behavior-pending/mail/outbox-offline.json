@@ -1,0 +1,15 @@
+{
+  "title": "Mail: offline send stays in Outbox and submits after reconnect",
+  "app": "mail",
+  "launch": {},
+  "pending": "Needs the Mail app (MAIL-5/6), fixture SMTP account and mail in scenario.APPS. Run only in the nested compositor with private XDG directories. Do not send from the owner's Mac account; use a local mailbox for Mac recording.",
+  "steps": [
+    { "set_fixture_network": "offline" },
+    { "key": "cmd-n", "settle": 1 },
+    { "enter_fixture_message": { "to": "recipient@example.test", "subject": "Outbox offline", "body": "Queued until online" } },
+    { "key": "shift-cmd-d", "settle": 1 },
+    { "observe": "outbox-queued", "facts": ["mailboxes", "message-counts", "smtp-deliveries"] },
+    { "set_fixture_network": "online" },
+    { "observe": "outbox-drained", "facts": ["mailboxes", "message-counts", "smtp-deliveries"] }
+  ]
+}

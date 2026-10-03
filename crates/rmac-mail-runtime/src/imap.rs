@@ -260,7 +260,12 @@ impl ImapBackend {
                 store.set_server_flags(mailbox_id, uid, bits)?;
                 continue;
             }
-            let Some(bytes) = self.client.fetch_body(change.uid)? else {
+            let fetch_full = kind == MailboxKind::Inbox && previous.is_some();
+            let Some(bytes) = (if fetch_full {
+                self.client.fetch_body(change.uid)?
+            } else {
+                self.client.fetch_headers(change.uid)?
+            }) else {
                 continue;
             };
             let parsed = rmac_mail_mime::parse(&bytes)?;
@@ -288,8 +293,8 @@ impl ImapBackend {
                 preview: &parsed.preview,
                 received_at: now,
                 flags: bits,
-                body: Some(&bytes),
-                body_text: Some(&parsed.plain_text),
+                body: fetch_full.then_some(bytes.as_slice()),
+                body_text: fetch_full.then_some(parsed.plain_text.as_str()),
             })?;
             if kind == MailboxKind::Inbox && previous.is_some() && bits & FLAG_SEEN == 0 {
                 new_mail.push(NewMail {

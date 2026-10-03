@@ -131,3 +131,11 @@ fn new_mail_debug_redacts_private_content() {
     let printed = format!("{notice:?}");
     assert!(!printed.contains("planted-"));
 }
+
+#[test]
+fn header_only_messages_still_supply_sender_and_subject() {
+    let parsed = rmac_mail_mime::parse(b"From: Ada <ada@example.test>\r\nTo: Bob <bob@example.test>\r\nSubject: First sync\r\n\r\n").unwrap();
+    assert_eq!(parsed.subject, "First sync");
+    assert_eq!(parsed.from[0].address, "ada@example.test");
+    assert!(parsed.preview.is_empty());
+}

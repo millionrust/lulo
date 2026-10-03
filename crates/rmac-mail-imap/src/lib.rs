@@ -307,6 +307,13 @@ impl Client {
         Ok(responses.iter().find_map(Response::first_literal))
     }
 
+    /// Fetch only RFC 5322 headers for the initial cache scan. Bodies remain
+    /// on the server until a message is opened or newly arrives in Inbox.
+    pub fn fetch_headers(&mut self, uid: u32) -> Result<Option<Vec<u8>>, Error> {
+        let responses = self.command(&format!("UID FETCH {uid} (UID BODY.PEEK[HEADER])"))?;
+        Ok(responses.iter().find_map(Response::first_literal))
+    }
+
     pub fn move_uids(
         &mut self,
         uid_set: &str,

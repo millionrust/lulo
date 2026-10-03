@@ -529,7 +529,7 @@ fn create_account(
             discovered_config,
             tokens,
         );
-        return Err(SaveError::Goa(rmac_accounts_linux::Error::Unavailable));
+        Err(SaveError::Goa(rmac_accounts_linux::Error::Unavailable))
     }
     #[cfg(target_os = "linux")]
     {

@@ -629,6 +629,93 @@ mod linux_wayland {
         }
     }
 
+    /// Holds Escape only while a pointer-opened Dock menu is visible. The
+    /// Dock's own layer surface never takes keyboard focus.
+    struct DockMenuKeyboard {
+        dock: WeakEntity<Dock>,
+        focus: FocusHandle,
+        previous_window: Option<rmac_compositor::WindowId>,
+        was_active: bool,
+        closing: bool,
+        input_region_set: bool,
+    }
+
+    impl DockMenuKeyboard {
+        fn new(
+            dock: WeakEntity<Dock>,
+            previous_window: Option<rmac_compositor::WindowId>,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) -> Self {
+            let focus = cx.focus_handle();
+            focus.focus(window, cx);
+            cx.observe_window_activation(window, |this, window, cx| {
+                if window.is_window_active() {
+                    this.was_active = true;
+                } else if this.was_active {
+                    this.close(false, window, cx);
+                }
+            })
+            .detach();
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor()
+                    .timer(KEYBOARD_ACTIVATION_TIMEOUT)
+                    .await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if !this.was_active {
+                        this.close(false, window, cx);
+                    }
+                });
+            })
+            .detach();
+            Self {
+                dock,
+                focus,
+                previous_window,
+                was_active: false,
+                closing: false,
+                input_region_set: false,
+            }
+        }
+
+        fn close(&mut self, restore: bool, window: &mut Window, cx: &mut Context<Self>) {
+            if self.closing {
+                return;
+            }
+            self.closing = true;
+            let _ = self.dock.update(cx, |dock, cx| dock.dismiss_popovers(cx));
+            window.remove_window();
+            if let (true, Some(previous)) = (restore, self.previous_window) {
+                cx.spawn(async move |_, _| {
+                    let action = rmac_compositor::Action::FocusWindow { window: previous };
+                    if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                        eprintln!("could not return focus from the Dock menu: {error:?}");
+                    }
+                })
+                .detach();
+            }
+        }
+    }
+
+    impl Render for DockMenuKeyboard {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            if !self.input_region_set {
+                self.input_region_set = true;
+                window.set_input_region(Some(&[]));
+            }
+            div()
+                .id("dock-menu-keyboard")
+                .track_focus(&self.focus)
+                .size_full()
+                .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    if event.keystroke.key == "escape" {
+                        cx.stop_propagation();
+                        this.close(true, window, cx);
+                    }
+                }))
+        }
+    }
+
     type InputRegionKey = (
         f32,
         f32,
@@ -647,8 +734,7 @@ mod linux_wayland {
         status: Entity<DockStatus>,
         hovered_item: Option<(f32, String)>,
         context_menu: Option<DockMenu>,
-        dismiss_focus: FocusHandle,
-        dismiss_focus_active: bool,
+        menu_keyboard: Option<WindowHandle<DockMenuKeyboard>>,
         input_region: Option<InputRegionKey>,
         pointer_inside: bool,
         hidden: bool,
@@ -698,12 +784,60 @@ mod linux_wayland {
     }
 
     impl Dock {
+        fn ensure_menu_keyboard(&mut self, display_id: Option<DisplayId>, cx: &mut Context<Self>) {
+            if self.menu_keyboard.is_some()
+                || self.keyboard.is_some()
+                || (self.context_menu.is_none() && self.separator_menu.is_none())
+            {
+                return;
+            }
+            let previous_window = self
+                .status
+                .read(cx)
+                .snapshot()
+                .and_then(|snapshot| snapshot.compositor.focus.window);
+            let dock = cx.entity().downgrade();
+            let options = WindowOptions {
+                titlebar: None,
+                focus: true,
+                show: true,
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: Size::new(px(1.0), px(1.0)),
+                })),
+                display_id,
+                app_id: Some("dev.rmac.DockMenuKeyboard".to_owned()),
+                window_background: WindowBackgroundAppearance::Transparent,
+                kind: WindowKind::LayerShell(LayerShellOptions {
+                    namespace: "rmac-dock-menu-keyboard".to_owned(),
+                    layer: Layer::Overlay,
+                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                    ..Default::default()
+                }),
+                is_movable: false,
+                is_resizable: false,
+                is_minimizable: false,
+                ..Default::default()
+            };
+            match cx.open_window(options, move |window, cx| {
+                cx.new(|cx| DockMenuKeyboard::new(dock, previous_window, window, cx))
+            }) {
+                Ok(surface) => self.menu_keyboard = Some(surface),
+                Err(error) => eprintln!("could not focus the Dock menu: {error}"),
+            }
+        }
+
         fn dismiss_popovers(&mut self, cx: &mut Context<Self>) {
             self.context_menu = None;
             self.separator_menu = None;
             self.stack_popover = None;
             self.input_region = None;
-            self.dismiss_focus_active = false;
+            if let Some(surface) = self.menu_keyboard.take() {
+                let _ = surface.update(cx, |surface, window, _| {
+                    surface.closing = true;
+                    window.remove_window();
+                });
+            }
             cx.notify();
         }
 
@@ -728,8 +862,7 @@ mod linux_wayland {
                 status,
                 hovered_item: None,
                 context_menu: None,
-                dismiss_focus: cx.focus_handle(),
-                dismiss_focus_active: false,
+                menu_keyboard: None,
                 input_region: None,
                 pointer_inside: false,
                 hidden,
@@ -2454,20 +2587,24 @@ mod linux_wayland {
                 || self.keyboard.is_some()
                 || self.separator_menu.is_some()
                 || self.stack_popover.is_some();
-            let popover_open = self.context_menu.is_some()
-                || self.separator_menu.is_some()
-                || self.stack_popover.is_some();
-            if popover_open && self.keyboard.is_none() && !self.dismiss_focus_active {
-                self.dismiss_focus.focus(window, cx);
-                self.dismiss_focus_active = true;
-            } else if !popover_open {
-                if self.dismiss_focus_active && self.keyboard.is_none() {
-                    // The menu used this OnDemand surface for Escape. Give
-                    // keyboard focus back when it closes so a later
-                    // shortcut-opened overlay can receive its first key.
-                    window.blur();
+            let menu_open = self.context_menu.is_some() || self.separator_menu.is_some();
+            if menu_open && self.keyboard.is_none() && self.menu_keyboard.is_none() {
+                let dock = cx.entity().downgrade();
+                let display_id = window.display(cx).map(|display| display.id());
+                // Opening a GPUI window during render invalidates this
+                // frame's element arena.
+                cx.defer(move |cx| {
+                    let _ = dock.update(cx, |dock, cx| {
+                        dock.ensure_menu_keyboard(display_id, cx);
+                    });
+                });
+            } else if !menu_open {
+                if let Some(surface) = self.menu_keyboard.take() {
+                    let _ = surface.update(cx, |surface, window, _| {
+                        surface.closing = true;
+                        window.remove_window();
+                    });
                 }
-                self.dismiss_focus_active = false;
             }
             // The output can be resized without changing the shelf's length.
             // Include the surface geometry so the input region follows the
@@ -2587,20 +2724,9 @@ mod linux_wayland {
                 .role(Role::Toolbar)
                 .aria_label("Dock")
                 .size_full()
-                .track_focus(&self.dismiss_focus)
                 .relative()
                 .flex()
                 .font_features(rmac_shell_ui::tabular_font_features())
-                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                    if event.keystroke.key == "escape"
-                        && (this.context_menu.is_some()
-                            || this.separator_menu.is_some()
-                            || this.stack_popover.is_some())
-                    {
-                        cx.stop_propagation();
-                        this.dismiss_popovers(cx);
-                    }
-                }))
                 // Any click leaves keyboard mode first; a click on a tile
                 // then does what it always does. niri gives the keyboard
                 // back to its focused window when the focus surface goes.
@@ -5181,7 +5307,7 @@ mod linux_wayland {
                         namespace: format!("rmac-dock-{}", u64::from(display_id)),
                         layer: Layer::Top,
                         anchor,
-                        keyboard_interactivity: KeyboardInteractivity::OnDemand,
+                        keyboard_interactivity: KeyboardInteractivity::None,
                         exclusive_zone,
                         ..Default::default()
                     }),

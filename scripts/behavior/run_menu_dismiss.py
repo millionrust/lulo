@@ -587,6 +587,8 @@ class Run:
             return
         for method in ("outside click", "Escape"):
             self.close_everything()
+            self.check(f"Dock context menu: keyboard surface absent before {method}",
+                       not self.has_layer("rmac-dock-menu-keyboard"))
             tile = self.wait_for(lambda: self.find_node(
                 ("push button", "button"),
                 lambda name: name.startswith("Files") and not name.endswith(" menu")
@@ -604,12 +606,16 @@ class Run:
             self.check(f"Dock context menu: opens for {method}", opened, f"tile={box}")
             if not opened:
                 continue
+            self.check(f"Dock context menu: keyboard surface opens for {method}",
+                       self.wait_for(lambda: self.has_layer("rmac-dock-menu-keyboard"), 5))
             if method == "Escape":
                 self.keys.key("escape")
             else:
                 self.click_at(200, MENU_SURFACE_HEIGHT + 70)
             closed = self.wait_for(lambda: self.find_menu("Files") is None, 10)
             self.check(f"Dock context menu: closes on {method}", closed)
+            self.check(f"Dock context menu: keyboard surface closes on {method}",
+                       self.wait_for(lambda: not self.has_layer("rmac-dock-menu-keyboard"), 5))
             if not closed:
                 self.dock.terminate()
                 self.dock.wait(timeout=5)

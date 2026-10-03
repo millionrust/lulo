@@ -453,12 +453,16 @@ pub fn window_menu(
     };
     let tile =
         |label: &str, half, shortcut: &str| command(label, WindowCommand::Tile(half), shortcut);
+    // Each Arrange row is named by its own slug: "Left & Right" and "Left &
+    // Quarters" share regions, and the menu wire format rejects a repeated
+    // action. `WindowCommand::parse` maps the slug back to its regions.
     let combo = |entry: &(&str, &str, WindowRegion, WindowRegion), shortcut: &str| {
-        command(
+        Item::new(
             entry.0,
-            WindowCommand::ComboTile(entry.2, entry.3),
+            format!("{WINDOW_ACTION_PREFIX}combo-{}", entry.1),
             shortcut,
         )
+        .enabled(has_focus)
     };
     let combo_shortcuts = ["⌃⇧←", "⌃⌥⇧←", "⌃⇧→", "⌃⌥⇧→", "⌃⇧↑", "⌃⌥⇧↑", "⌃⇧↓", "⌃⌥⇧↓"];
     let mut move_and_resize_children = vec![

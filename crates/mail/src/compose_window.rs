@@ -65,7 +65,7 @@ impl ComposeView {
             .first()
             .map(|account| account.address.as_str())
             .unwrap_or_default();
-        let quote = initial_draft(kind, message, &from);
+        let quote = initial_draft(kind, message, from);
         let to = cx.new(|cx| InputState::new(window, cx).placeholder("Add recipients"));
         let cc = cx.new(|cx| InputState::new(window, cx).placeholder("Add Cc recipients"));
         let bcc = cx.new(|cx| InputState::new(window, cx).placeholder("Add Bcc recipients"));

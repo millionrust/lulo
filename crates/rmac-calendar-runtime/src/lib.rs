@@ -202,7 +202,10 @@ impl<B: CalendarBackend> CalendarRuntime<B> {
             .ok_or_else(|| "Calendar is closed".to_owned())?;
         let client = &open.client;
         let snapshot = &mut open.snapshot;
-        client.refresh()?;
+        // EDS local-file calendars have no remote state to refresh and reject Refresh.
+        if snapshot.source.backend != "local" {
+            client.refresh()?;
+        }
         snapshot.online = client.online()?;
         Ok(snapshot)
     }
@@ -324,7 +327,7 @@ mod tests {
             Ok((vec![], EVENT.into()))
         }
         fn refresh(&self) -> Result<(), String> {
-            Ok(())
+            panic!("local calendar must not request unsupported EDS refresh")
         }
     }
     #[test]

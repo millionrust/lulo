@@ -62,6 +62,7 @@ fn local_calendar_round_trip() {
         .any(|item| item.contains("Changed private test")));
     calendar.remove(&[(uid, String::new())], "all").unwrap();
     assert!(matches!(events.next(), Some(ViewEvent::Removed(_))));
-    calendar.refresh().unwrap();
+    // The local backend rejects explicit refresh; the adapter returns that error.
+    assert!(calendar.refresh().is_err());
     calendar.close().unwrap();
 }

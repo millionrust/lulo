@@ -48,6 +48,7 @@ EXPECTED_STARTUP_APPS = {
     "app-drawer": "rmac-app-drawer",
     "clock": "rmac-clock",
     "calendar": "rmac-calendar",
+    "mail": "rmac-mail",
     "notes": "rmac-notes",
     "player": "rmac-player",
     "preview": "rmac-preview",

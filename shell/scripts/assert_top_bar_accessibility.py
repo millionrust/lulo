@@ -42,13 +42,13 @@ for bar in bars:
         node for node in nodes if node.getRoleName() in {"button", "push button"}
     ]
     names = [button.name for button in buttons]
-    required = {"Spotlight", "Control Center"}
+    required = {"Spotlight", "Control Centre"}
     missing = required.difference(names)
     clocks = [name for name in names if name.startswith("Date and time:")]
     if missing or len(clocks) != 1 or any(not name for name in names):
         roles = [(node.getRoleName(), node.name) for node in nodes]
         raise AssertionError(
-            "top bar must expose named Spotlight, Control Center, and one "
+            "top bar must expose named Spotlight, Control Centre, and one "
             f"date/time button; missing={sorted(missing)!r}, found={roles!r}"
         )
     # Menu titles take keyboard focus so the arrow keys can move between

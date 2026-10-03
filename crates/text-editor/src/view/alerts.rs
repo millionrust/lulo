@@ -106,6 +106,7 @@ impl EditorView {
             }
             Some(ActiveAlert::Error { .. }) | None => {}
         }
+        self.refocus_document_after_alert(window, cx);
         cx.notify();
     }
 
@@ -129,14 +130,26 @@ impl EditorView {
             }
             _ => {}
         }
+        self.refocus_document_after_alert(window, cx);
         cx.notify();
     }
 
     /// Cancel / dismiss the alert without acting.
-    pub(super) fn alert_cancel(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn alert_cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.alert = None;
         self.save_goto_open = false;
+        self.refocus_document_after_alert(window, cx);
         cx.notify();
+    }
+
+    /// A sheet's text field held focus. Once the sheet leaves the tree that
+    /// handle is no longer under the editor's key context, so ⌘W, ⌘S and
+    /// typing would go nowhere until the person clicked the document. The
+    /// Mac returns focus to the document as the sheet closes.
+    fn refocus_document_after_alert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.alert.is_none() {
+            self.input.update(cx, |state, cx| state.focus(window, cx));
+        }
     }
 
     pub(super) fn open_save_goto(&mut self, window: &mut Window, cx: &mut Context<Self>) {

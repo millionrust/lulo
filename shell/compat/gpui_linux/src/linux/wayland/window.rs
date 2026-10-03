@@ -1990,6 +1990,8 @@ impl PlatformWindow for WaylandWindow {
     fn a11y_tree_update(&self, mut tree_update: accesskit::TreeUpdate) {
         crate::linux::a11y::prepare_tree_update(&mut tree_update);
         let mut state = self.borrow_mut();
+        let inset = f64::from(f32::from(state.inset()) * state.scale);
+        crate::linux::a11y::offset_for_client_inset(&mut tree_update, inset);
         if let Some(adapter) = state.accesskit_adapter.as_mut() {
             adapter.update_if_active(|| tree_update);
         }

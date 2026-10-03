@@ -48,7 +48,14 @@ impl Settings {
                             this.finish_privacy_update(Ok(snapshot));
                             this.privacy_stream_error = None;
                         }
-                        Err(error) => this.finish_privacy_update(Err(error)),
+                        // A background re-read that fails is not a failed
+                        // change the person asked for: keep the last
+                        // snapshot and say so in the Privacy pane only,
+                        // never in the window-wide Settings banner.
+                        Err(error) => {
+                            this.privacy_stream_error =
+                                Some(format!("Could not read portal permissions: {error}").into());
+                        }
                     }
                 } else {
                     this.privacy_refresh_pending = true;

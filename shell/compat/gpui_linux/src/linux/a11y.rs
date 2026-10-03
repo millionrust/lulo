@@ -42,6 +42,34 @@ pub(crate) fn label_toolkit(tree_update: &mut accesskit::TreeUpdate) {
     }
 }
 
+/// GPUI's fixed id for the root (window) node of every frame's tree.
+const ROOT_NODE_ID: accesskit::NodeId = accesskit::NodeId(0);
+
+/// Shift a client-decorated window's tree out of its shadow inset.
+///
+/// GPUI lays out a client-decorated window in surface coordinates, which
+/// include the transparent shadow margin around the visible window, while
+/// the compositor places and reports the window by its visible geometry
+/// (`xdg_surface.set_window_geometry`). AT-SPI window coordinates are
+/// relative to that visible window, so without this every extent was off by
+/// the inset — about one list row in Files — and anything that clicks or
+/// highlights by extent (Orca's mouse review, automation) hit the row below.
+/// GPUI rebuilds the root node every frame, so its transform is always set.
+/// `inset` is in physical pixels, the unit of GPUI's AccessKit bounds.
+#[cfg_attr(not(feature = "wayland"), allow(dead_code))]
+pub(crate) fn offset_for_client_inset(tree_update: &mut accesskit::TreeUpdate, inset: f64) {
+    if inset <= 0.0 {
+        return;
+    }
+    if let Some((_, root)) = tree_update
+        .nodes
+        .iter_mut()
+        .find(|(id, _)| *id == ROOT_NODE_ID)
+    {
+        root.set_transform(accesskit::Affine::translate((-inset, -inset)));
+    }
+}
+
 /// Class name that `rmac_ui::accessibility` puts on a node publishing the
 /// text, caret and selection of the text field it contains.
 pub(crate) const TEXT_PROXY_CLASS: &str = "rmac-text-proxy";
@@ -148,6 +176,33 @@ mod tests {
         let tree = update.tree.as_ref().expect("tree survives labeling");
         assert_eq!(tree.toolkit_name.as_deref(), Some(TOOLKIT_NAME));
         assert_eq!(tree.toolkit_version.as_deref(), Some(toolkit_version()));
+    }
+
+    #[test]
+    fn client_inset_moves_the_tree_onto_the_visible_window() {
+        let mut row = accesskit::Node::new(accesskit::Role::ListItem);
+        row.set_bounds(accesskit::Rect::new(24.0, 110.0, 400.0, 130.0));
+        let mut update = TreeUpdate {
+            nodes: vec![
+                (NodeId(0), node(accesskit::Role::Window, &[1])),
+                (NodeId(1), row),
+            ],
+            tree: Some(Tree::new(NodeId(0))),
+            tree_id: TreeId::ROOT,
+            focus: NodeId(0),
+        };
+        offset_for_client_inset(&mut update, 12.0);
+        let root = &update.nodes[0].1;
+        assert_eq!(
+            root.transform().copied(),
+            Some(accesskit::Affine::translate((-12.0, -12.0)))
+        );
+        assert!(update.nodes[1].1.transform().is_none());
+
+        let mut flush = update_with_tree();
+        flush.nodes = vec![(NodeId(0), node(accesskit::Role::Window, &[]))];
+        offset_for_client_inset(&mut flush, 0.0);
+        assert!(flush.nodes[0].1.transform().is_none());
     }
 
     #[test]

@@ -669,7 +669,7 @@ impl PreviewView {
             y1: point.1,
         });
         let point = (raw.x0, raw.y0);
-        window.focus(&self.focus, cx);
+        window.focus(&self.page_focus, cx);
         if self.markup_tool == Tool::Select {
             let hit = slot
                 .markup
@@ -1255,6 +1255,7 @@ impl PreviewView {
             view.start_load(index, cx);
         }
         view.load_signatures(cx);
+        window.focus(&view.page_focus, cx);
         view
     }
 
@@ -1496,7 +1497,7 @@ impl PreviewView {
 
     fn close_go_to_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.go_to_page_open = false;
-        window.focus(&self.focus, cx);
+        window.focus(&self.page_focus, cx);
         cx.notify();
     }
 
@@ -2110,7 +2111,7 @@ impl PreviewView {
             cx.notify();
             return;
         };
-        window.focus(&self.focus, cx);
+        window.focus(&self.page_focus, cx);
         match event.click_count {
             2 => {
                 let Some(slot) = self.slot() else { return };

@@ -110,8 +110,7 @@ impl Settings {
                 cx.stop_propagation();
                 cx.notify();
             }))
-            .children(cards)
-            .into_any_element()])
+            .children(cards)])
     }
     /// macOS 26 About: the machine centred over its name, then the Name,
     /// chip and memory group, the operating system and the startup volume.

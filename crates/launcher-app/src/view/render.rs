@@ -264,21 +264,18 @@ impl LauncherView {
         };
         let text_size = rmac_ui::text_px(metrics::TEXT_SIZE);
         let line_height = px(metrics::TEXT_LINE);
-        let active_result =
+        let selected_announcement =
             if self.keyboard_selection && self.panel.is_none() && self.browse_mode.is_none() {
                 self.visible_rows()
                     .into_iter()
-                    .enumerate()
-                    .find(|(_, row)| row.selected)
-                    .map(|(index, row)| {
-                        let label = match row.subtitle {
-                            Some(subtitle) => format!("{}, {subtitle}", row.title),
-                            None => row.title,
-                        };
-                        (index, label)
+                    .find(|row| row.selected)
+                    .map(|row| match row.subtitle {
+                        Some(subtitle) => format!("{}, {subtitle}", row.title),
+                        None => row.title,
                     })
+                    .unwrap_or_default()
             } else {
-                None
+                String::new()
             };
         div()
             .relative()
@@ -367,18 +364,6 @@ impl LauncherView {
                             .text_size(text_size)
                             .line_height(line_height),
                     )
-                    .when_some(active_result, |field, (index, label)| {
-                        field.child(
-                            div()
-                                .id(("spotlight-active-result", index))
-                                .role(Role::Button)
-                                .aria_label(label)
-                                .aria_selected(true)
-                                .aria_active_descendant()
-                                .absolute()
-                                .size_full(),
-                        )
-                    })
                     .on_a11y_action(
                         AccessibleAction::SetValue,
                         self.assistive_query_listener(cx),
@@ -387,6 +372,20 @@ impl LauncherView {
                         AccessibleAction::ReplaceSelectedText,
                         self.assistive_query_listener(cx),
                     ),
+            )
+            .child(
+                div()
+                    .id("spotlight-selected-result")
+                    .role(Role::Status)
+                    .aria_label(SharedString::from(selected_announcement))
+                    .a11y_synthetic_children(|builder| {
+                        builder.parent_node().set_live(accesskit::Live::Polite);
+                        builder.parent_node().set_live_atomic();
+                    })
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size(px(1.0)),
             )
             .into_any_element()
     }

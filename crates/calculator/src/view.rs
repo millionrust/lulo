@@ -552,14 +552,16 @@ impl CalculatorView {
                 text.chars().map(|c| c.len_utf8() as u8).collect::<Vec<_>>(),
             );
             builder.push_child(id, node);
-            // A Label's AT-SPI Name is computed from its text-run content
-            // (the number itself), so `aria_label` alone never reaches it;
-            // `run_lulo.py`'s `fact_display` instead looks for "display" in
-            // the node's name *or description* — set the description here
-            // rather than through `with_description` (which uses its own
-            // `a11y_synthetic_children` hook and would replace this one).
+            // AT-SPI announces a live node when its *name* changes. Publish
+            // the result on the parent as both label and value; changing only
+            // the text-run child emits text events, which Orca ignores while
+            // keyboard focus remains on the calculator window.
+            builder.parent_node().set_label(text.clone());
+            builder.parent_node().set_value(text);
+            // Keep the control's purpose in its description while the name
+            // carries the changing result. The behavior probe finds the
+            // display by name or description.
             builder.parent_node().set_description("Display");
-            builder.parent_node().set_read_only();
             builder.parent_node().set_live(accesskit::Live::Polite);
             builder.parent_node().set_live_atomic();
         }
@@ -620,12 +622,8 @@ impl CalculatorView {
             .child(
                 line(keypad::RESULT_TOP, keypad::RESULT_LINE)
                     .id("calculator-result")
-                    .role(Role::TextInput)
+                    .role(Role::Label)
                     .aria_label("Display")
-                    .aria_value(SharedString::from(result.clone()))
-                    .focusable()
-                    .tab_stop(false)
-                    .track_focus(&self.focus)
                     .a11y_synthetic_children(Self::accessible_display_text(result.clone()))
                     .text_size(px(result_size))
                     .font_weight(FontWeight::LIGHT)
@@ -946,6 +944,7 @@ impl Render for CalculatorView {
         let window_height = self.window_height();
         div()
             .id("calculator")
+            .track_focus(&self.focus)
             .key_context("Calculator")
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 this.on_key_down(event, cx);

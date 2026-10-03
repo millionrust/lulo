@@ -341,6 +341,7 @@ class Orca:
 
 
 EVENT_TYPES = (
+    "object:announcement",
     "object:property-change:accessible-name",
     "object:state-changed:focused", "object:state-changed:checked", "object:state-changed:expanded",
     "object:state-changed:selected", "object:state-changed:pressed", "object:property-change:accessible-value",

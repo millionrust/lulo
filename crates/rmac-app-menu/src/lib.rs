@@ -481,6 +481,7 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 ]
             ),
             item!("Close Window", "terminal::CloseTab", "⌘W", separator),
+            item!("Close All", "terminal::CloseAll", "⌥⌘W"),
             item!("Reset", "terminal::ResetTerminal", "⌥⌘R", separator),
             item!("Hard Reset", "terminal::HardResetTerminal", "⌃⌥⌘R"),
         ],
@@ -2670,6 +2671,7 @@ mod tests {
             &[
                 "terminal::TabBasicDefault",
                 "terminal::CloseTab",
+                "terminal::CloseAll",
                 "terminal::NextTab",
                 "terminal::PrevTab",
                 "terminal::Copy",
@@ -2687,6 +2689,7 @@ mod tests {
         let terminal_hints = hints(&terminal);
         assert_eq!(terminal_hints["terminal::TabBasicDefault"], "⌘T");
         assert_eq!(terminal_hints["terminal::CloseTab"], "⌘W");
+        assert_eq!(terminal_hints["terminal::CloseAll"], "⌥⌘W");
         assert_eq!(terminal_hints["terminal::NextTab"], "⇧⌘]");
         assert_eq!(terminal_hints["terminal::PrevTab"], "⇧⌘[");
         assert_eq!(terminal_hints["terminal::Copy"], "⌘C");

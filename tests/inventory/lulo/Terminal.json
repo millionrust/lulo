@@ -265,6 +265,13 @@
           "children": []
         },
         {
+          "label": "Close All",
+          "action": "terminal::CloseAll",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Reset",
           "action": "terminal::ResetTerminal",
           "shortcut": "⌥⌘R",

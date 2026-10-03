@@ -204,6 +204,7 @@ impl TerminalView {
                 CloseTab,
                 Some("Terminal"),
             ),
+            KeyBinding::new("alt-cmd-w", CloseAll, Some("Terminal")),
             KeyBinding::new(
                 rmac_ui::shortcuts::NEXT_TAB.keystroke,
                 NextTab,

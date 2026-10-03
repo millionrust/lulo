@@ -143,6 +143,8 @@ gpui::actions!(
         SelectCommand,
         SelectCommandOutput,
         CloseTab,
+        CloseWindow,
+        CloseAll,
         NextTab,
         PrevTab,
         CycleProfile,

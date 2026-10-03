@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "terminal/close-all",
+  "platform": "Lulo local contract",
+  "observations": {
+    "two_windows": {"windows": {"count": 2}},
+    "windowless": {"windows": {"count": 0}}
+  }
+}

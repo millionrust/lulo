@@ -181,6 +181,20 @@ impl Render for TerminalView {
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 this.request_close_window(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
+                this.request_close_window(window, cx)
+            }))
+            .on_action(cx.listener(|_, _: &CloseAll, _, cx| {
+                // Dispatch after the current action returns; a render-tree
+                // handler cannot recursively update its own window.
+                cx.defer(|cx| {
+                    for handle in cx.windows() {
+                        let _ = handle.update(cx, |_, window, cx| {
+                            window.dispatch_action(Box::new(CloseWindow), cx);
+                        });
+                    }
+                });
+            }))
             .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
             .on_action(cx.listener(|this, _: &ShowTabBar, _, cx| this.toggle_tab_bar(cx)))
             .on_action(cx.listener(|this, _: &AllowMouseReporting, _, cx| {

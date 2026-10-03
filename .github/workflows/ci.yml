@@ -382,7 +382,8 @@ jobs:
       - name: Build the apps under test
         run: |
           cargo build --locked --bins -p rmac-finder -p rmac-text-editor \
-            -p rmac-system-settings -p rmac-calculator -p rmac-file-chooser
+            -p rmac-system-settings -p rmac-calculator -p rmac-file-chooser \
+            -p rmac-calendar
           (cd shell && cargo build --locked -p rmac-shell-wallpaper --bin wallpaper --features wayland)
 
       - name: Play the scenarios in a nested compositor

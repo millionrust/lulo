@@ -181,7 +181,7 @@ fn unfold(input: &str) -> Result<Vec<String>, CalendarError> {
     }
     let mut lines: Vec<String> = Vec::new();
     for raw in input.replace("\r\n", "\n").split('\n') {
-        if let Some(rest) = raw.strip_prefix([' ', '\t']) {
+        if let Some(rest) = raw.strip_prefix(' ').or_else(|| raw.strip_prefix('\t')) {
             let previous = lines
                 .last_mut()
                 .ok_or_else(|| CalendarError("folded line without predecessor".into()))?;
@@ -272,9 +272,7 @@ fn parse_event(lines: &[String]) -> Result<Event, CalendarError> {
         },
         None => start,
     };
-    if start.zone == Zone::Date && end.zone != Zone::Date
-        || start.zone != Zone::Date && end.zone == Zone::Date
-    {
+    if (start.zone == Zone::Date) != (end.zone == Zone::Date) {
         return Err(CalendarError("DTSTART and DTEND value types differ".into()));
     }
     if end.local < start.local && end.zone == start.zone {

@@ -236,7 +236,7 @@ impl EditorView {
         // bindings before raw key-down listeners run. Cancel the sheet here
         // instead of falling through to the find bar (TE-19).
         if matches!(self.alert, Some(ActiveAlert::ConfirmSave(_))) {
-            self.alert_cancel(cx);
+            self.alert_cancel(window, cx);
             return;
         }
         self.find_open = false;

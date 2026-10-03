@@ -15,7 +15,10 @@
     },
     {
       "shot": "spotlight-open",
-      "scope": "full"
+      "scope": "full",
+      "expect_accessible": [
+        "Spotlight Search"
+      ]
     },
     {
       "type": "calc",

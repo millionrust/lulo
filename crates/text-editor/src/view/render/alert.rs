@@ -50,7 +50,7 @@ impl EditorView {
                     .into(),
                 vec![
                     rmac_ui::dialog_button("alert-cancel", "Cancel", Normal)
-                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_cancel(window, cx)))
                         .into_any_element(),
                     rmac_ui::dialog_button("alert-reload", "Discard & Reload", Destructive)
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -79,7 +79,7 @@ impl EditorView {
                     .into(),
                 vec![
                     rmac_ui::dialog_button("alert-cancel-overwrite", "Cancel", Normal)
-                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_cancel(window, cx)))
                         .into_any_element(),
                     rmac_ui::dialog_button(
                         "alert-confirm-overwrite",
@@ -98,7 +98,7 @@ impl EditorView {
                     .into(),
                 vec![
                     rmac_ui::dialog_button("alert-cancel-plain-text", "Cancel", Normal)
-                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_cancel(window, cx)))
                         .into_any_element(),
                     rmac_ui::dialog_button("alert-confirm-plain-text", "Convert", Destructive)
                         .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
@@ -109,7 +109,7 @@ impl EditorView {
                 title.to_owned(),
                 message,
                 vec![rmac_ui::dialog_button("alert-ok", "OK", Primary)
-                    .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
+                    .on_click(cx.listener(|this, _, window, cx| this.alert_cancel(window, cx)))
                     .into_any_element()],
             ),
         };

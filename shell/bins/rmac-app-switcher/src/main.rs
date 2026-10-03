@@ -42,7 +42,10 @@ pub(crate) mod linux_wayland {
     /// state before treating "⌘ is up" as a release.
     const RELEASE_GRACE: Duration = Duration::from_millis(80);
     /// Never keep an invisible exclusive surface that never got the keyboard.
-    const ACTIVATION_TIMEOUT: Duration = Duration::from_millis(1_000);
+    /// The surface took 750 ms to get the keyboard in the reference laptop's
+    /// nested journey session and sometimes over 1 s, when ⌘Tab then did
+    /// nothing at all. Leave a slow low-spec first frame room to arrive.
+    const ACTIVATION_TIMEOUT: Duration = Duration::from_millis(3_000);
     const QUIT_READBACK_TIMEOUT: Duration = Duration::from_millis(500);
     const QUIT_READBACK_INTERVAL: Duration = Duration::from_millis(25);
     const HIDDEN_SIZE: f32 = 1.0;

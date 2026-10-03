@@ -5,7 +5,8 @@
       "launch": "calculator"
     },
     {
-      "shot": "open"
+      "shot": "open",
+      "expect_window": "org.rmac.Calculator"
     },
     {
       "key": "2"

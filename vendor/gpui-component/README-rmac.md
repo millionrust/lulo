@@ -12,3 +12,7 @@ and `text/text_view.rs`.
 uses rmac's GPUI compatibility patches, and matches rmac's `iterate` profile.
 The vendored workspace's lockfile was seeded from rmac's root lockfile, so
 its focused tests use the same GPUI revision and shared build artifacts.
+
+`crates/ui/src/kbd.rs` formats shortcuts in macOS glyphs on every platform
+(⌘ is Super on Lulo), so pop-up menus show "⌘⌫" instead of upstream's Linux
+"Win+Backspace".

@@ -22,7 +22,7 @@ pub struct Session {
     ranked: Vec<RankedResult>,
     selected: Option<ResultId>,
     /// The person moved or picked the selection this query; until then
-    /// it follows the first row as batches arrive.
+    /// it is the first row, also as later batches arrive.
     chosen: bool,
     cancellation: Option<Cancellation>,
     limit: usize,
@@ -430,22 +430,22 @@ impl Session {
         ranked.truncate(self.limit.saturating_sub(footer.len()));
         ranked.extend(footer);
         self.ranked = ranked;
-        // A selection the person made stays put. One that only followed an
-        // earlier first row stays too (no flicker as batches arrive), except
-        // that an answer arriving takes the top, and the "Search in" row
-        // never keeps it once real results exist.
-        let answer_first = self
-            .ranked
-            .first()
-            .is_some_and(|ranked| ranked.result.category.is_answer());
+        // A selection the person made stays put. For a typed query an
+        // automatic selection is the top hit and follows the first row as
+        // batches arrive: a slow provider's better match (Calculator for
+        // "calc") must win over an earlier, weaker one (Menu Bar), or Return
+        // opens the wrong thing. With no query the idle list keeps its
+        // selection (no flicker as suggestions arrive), except that the
+        // "Search in" row never keeps it once real results exist.
         let chosen = self.chosen;
+        let idle = query.is_empty();
         self.selected = previous
             .filter(|selected| {
                 self.ranked
                     .iter()
                     .find(|ranked| &ranked.result.id == selected)
                     .is_some_and(|ranked| {
-                        chosen || (!answer_first && ranked.result.category != Category::SearchIn)
+                        chosen || (idle && ranked.result.category != Category::SearchIn)
                     })
             })
             .or_else(|| self.ranked.first().map(|ranked| ranked.result.id.clone()));

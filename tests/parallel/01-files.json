@@ -6,7 +6,8 @@
       "path": "."
     },
     {
-      "shot": "open-folder"
+      "shot": "open-folder",
+      "expect_window": "org.rmac.Files"
     },
     {
       "key": "cmd-1"
@@ -42,19 +43,25 @@
       "click": "report.txt"
     },
     {
-      "shot": "selected"
+      "shot": "selected",
+      "expect_change": false
     },
     {
       "key": "space"
     },
     {
-      "shot": "quick-look"
+      "shot": "quick-look",
+      "expect_window": "org.rmac.QuickLook"
     },
     {
       "key": "escape"
     },
     {
-      "shot": "quick-look-closed"
+      "shot": "quick-look-closed",
+      "expect_window": "org.rmac.Files",
+      "expect_unmapped": [
+        "org.rmac.QuickLook"
+      ]
     },
     {
       "key": "return"
@@ -72,13 +79,23 @@
       "key": "return"
     },
     {
-      "shot": "renamed"
+      "shot": "renamed",
+      "expect_files": [
+        "renamed.txt",
+        "second.txt"
+      ],
+      "expect_no_files": [
+        "report.txt"
+      ]
     },
     {
       "key": "cmd-shift-n"
     },
     {
-      "shot": "new-folder"
+      "shot": "new-folder",
+      "expect_files": [
+        "untitled folder"
+      ]
     },
     {
       "key": "return"
@@ -96,13 +113,19 @@
       "key": "cmd-backspace"
     },
     {
-      "shot": "in-bin"
+      "shot": "in-bin",
+      "expect_no_files": [
+        "renamed.txt"
+      ]
     },
     {
       "key": "cmd-z"
     },
     {
-      "shot": "undo-bin"
+      "shot": "undo-bin",
+      "expect_files": [
+        "renamed.txt"
+      ]
     }
   ],
   "setup": {

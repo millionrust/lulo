@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "text-editor/focus-after-save",
+  "platform": "Lulo local contract",
+  "observations": {
+    "saved": {
+      "saved_documents": {
+        "entries": [
+          "FocusAfterSave.txt"
+        ]
+      },
+      "focus": {
+        "role": "text-field",
+        "value": "Hello world"
+      }
+    }
+  }
+}

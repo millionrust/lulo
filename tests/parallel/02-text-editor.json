@@ -5,7 +5,8 @@
       "launch": "text-editor"
     },
     {
-      "shot": "new-document"
+      "shot": "new-document",
+      "expect_window": "org.rmac.TextEditor"
     },
     {
       "type": "The quick brown fox jumps over a quiet river."
@@ -77,13 +78,19 @@
       "click": "Save"
     },
     {
-      "shot": "saved"
+      "shot": "saved",
+      "expect_files": [
+        "Parallel Journey Sandbox*"
+      ]
     },
     {
       "key": "cmd-w"
     },
     {
-      "shot": "document-closed"
+      "shot": "document-closed",
+      "expect_unmapped": [
+        "org.rmac.TextEditor"
+      ]
     },
     {
       "menu": [
@@ -93,7 +100,8 @@
       ]
     },
     {
-      "shot": "opened-recent"
+      "shot": "opened-recent",
+      "expect_window": "org.rmac.TextEditor"
     }
   ]
 }

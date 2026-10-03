@@ -560,7 +560,9 @@ impl RenderOnce for PopUpButtonTrigger {
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             })
             .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
-            .when(menu_button_icon, |el| {
+            // The Mac never shows a control's help tag over its own open
+            // menu; the tag covered the first item ("Pin N|More").
+            .when(menu_button_icon && !open, |el| {
                 el.tooltip(move |window, cx| {
                     ComponentTooltip::new(tooltip_label.clone()).build(window, cx)
                 })

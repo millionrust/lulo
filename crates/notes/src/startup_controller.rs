@@ -12,6 +12,42 @@ pub(super) struct NotesInputs {
 }
 
 impl NotesView {
+    pub(super) fn continue_title_into_body(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let editable = self.is_interactive_ready()
+            && !self.markdown_preview_visible
+            && self
+                .session
+                .selected_note()
+                .is_some_and(|note| !note.deleted);
+        if !editable {
+            return;
+        }
+        let (start, end, text) = {
+            let title = self.title.read(cx);
+            let range = title.selected_range();
+            (range.start, range.end, title.value().to_string())
+        };
+        let (start, end) = (start.min(text.len()), end.min(text.len()));
+        let tail = text[end..].to_string();
+        if start < text.len() {
+            self.title.update(cx, |title, cx| {
+                title.set_selected_range(start..text.len(), cx);
+                title.replace("", window, cx);
+            });
+        }
+        let body_empty = self.body.read(cx).value().is_empty();
+        self.body.update(cx, |body, cx| {
+            body.set_selected_range(0..0, cx);
+            if !body_empty || !tail.is_empty() {
+                body.insert(format!("{tail}\n"), window, cx);
+            }
+            body.set_selected_range(0..0, cx);
+            body.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+        cx.notify();
+    }
+
     pub(super) fn initialize_inputs(window: &mut Window, cx: &mut Context<Self>) -> NotesInputs {
         cx.bind_keys([
             KeyBinding::new("cmd-n", ComposeNote, Some("Notes")),
@@ -90,6 +126,21 @@ impl NotesView {
         cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 this.schedule_current_edit(cx);
+            }
+        })
+        .detach();
+        // Return in the title continues the note on the next line, as the
+        // Mac's single text view does: text after the caret moves down into
+        // the body and the caret follows it.
+        cx.subscribe_in(&title, window, |this, _, event: &InputEvent, window, cx| {
+            if matches!(
+                event,
+                InputEvent::PressEnter {
+                    secondary: false,
+                    ..
+                }
+            ) {
+                this.continue_title_into_body(window, cx);
             }
         })
         .detach();

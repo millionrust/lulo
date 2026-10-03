@@ -15,7 +15,10 @@
     },
     {
       "shot": "system-menu",
-      "scope": "full"
+      "scope": "full",
+      "expect_accessible": [
+        "About This Lulo OS"
+      ]
     },
     {
       "key": "escape",
@@ -31,7 +34,10 @@
     },
     {
       "shot": "wifi-menu",
-      "scope": "full"
+      "scope": "full",
+      "expect_accessible": [
+        "Wi-Fi Settings…"
+      ]
     },
     {
       "key": "escape",
@@ -47,7 +53,10 @@
     },
     {
       "shot": "battery-menu",
-      "scope": "full"
+      "scope": "full",
+      "expect_accessible": [
+        "Battery Settings…"
+      ]
     },
     {
       "key": "escape",

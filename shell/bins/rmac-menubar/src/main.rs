@@ -4227,7 +4227,7 @@ mod linux_wayland {
                             div()
                                 .id(format!("control-center-{}", self.display_id))
                                 .role(Role::Button)
-                                .aria_label("Control Center")
+                                .aria_label("Control Centre")
                                 .h(px(SLOT_HEIGHT))
                                 .px(px(STATUS_PAD))
                                 .flex()

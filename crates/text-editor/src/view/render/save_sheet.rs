@@ -176,7 +176,9 @@ impl EditorView {
                 this.open_save_goto(window, cx)
             }))
             .w(px(458.0))
-            .h(px(367.0))
+            // ⌘S on an Untitled document opens a plain Save sheet (no heading
+            // on the Mac); only closing it asks "Do you want to keep …?".
+            .h(px(if closing { 367.0 } else { 281.0 }))
             .px(px(26.0))
             .pt(px(30.0))
             .pb(px(20.0))
@@ -189,25 +191,27 @@ impl EditorView {
             .shadow_xl()
             .relative()
             .occlude()
-            .child(
-                div()
-                    .text_size(rmac_ui::text_px(15.0))
-                    .font_weight(mac::BOLD)
-                    .child(format!(
-                        "Do you want to keep this new document “{}”?",
-                        self.filename()
-                    )),
-            )
-            .child(
-                div()
-                    .mt(px(10.0))
-                    .mb(px(22.0))
-                    .text_size(rmac_ui::text_px(13.0))
-                    .text_color(mac::text_secondary())
-                    .child(
-                        "You can choose to save your changes or delete this document immediately. You can’t undo this action.",
-                    ),
-            )
+            .when(closing, |card| {
+                card.child(
+                    div()
+                        .text_size(rmac_ui::text_px(15.0))
+                        .font_weight(mac::BOLD)
+                        .child(format!(
+                            "Do you want to keep this new document “{}”?",
+                            self.filename()
+                        )),
+                )
+                .child(
+                    div()
+                        .mt(px(10.0))
+                        .mb(px(22.0))
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(mac::text_secondary())
+                        .child(
+                            "You can choose to save your changes or delete this document immediately. You can’t undo this action.",
+                        ),
+                )
+            })
             .child(row(
                 "Save As:",
                 div()
@@ -252,7 +256,7 @@ impl EditorView {
                             "Cancel",
                             DialogButtonKind::Normal,
                         )
-                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx))),
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_cancel(window, cx))),
                     )
                     .child(
                         rmac_ui::dialog_button(
@@ -275,10 +279,14 @@ impl EditorView {
             dialog = dialog.passive();
         }
         dialog
-            .aria_label(format!(
-                "Do you want to keep this new document “{}”?",
-                self.filename()
-            ))
+            .aria_label(if closing {
+                format!(
+                    "Do you want to keep this new document “{}”?",
+                    self.filename()
+                )
+            } else {
+                "Save".to_string()
+            })
             .attached()
             .restore_focus_to(self.input.read(cx).focus_handle(cx))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
@@ -293,7 +301,7 @@ impl EditorView {
                     }
                     "escape" if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) => {
                         cx.stop_propagation();
-                        this.alert_cancel(cx);
+                        this.alert_cancel(window, cx);
                     }
                     "enter" if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) => {
                         cx.stop_propagation();

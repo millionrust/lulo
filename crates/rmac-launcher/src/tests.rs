@@ -271,6 +271,47 @@ fn selection_wraps_and_survives_later_provider_batches() {
 }
 
 #[test]
+fn unchosen_selection_follows_a_better_late_batch() {
+    let mut session = Session::default();
+    let request = session.begin(
+        "calc",
+        vec![
+            provider("apps", Category::Applications, Privacy::default()),
+            provider("settings", Category::Settings, Privacy::default()),
+        ],
+    );
+    session.apply(
+        request.generation,
+        rmac_shell_settings::ProviderId("settings".into()),
+        Ok(vec![result(
+            "settings",
+            "menu-bar",
+            Category::Settings,
+            "Calculation Menu Bar",
+        )]),
+    );
+    assert_eq!(
+        session.selected().map(|id| id.local.as_str()),
+        Some("menu-bar")
+    );
+    session.apply(
+        request.generation,
+        rmac_shell_settings::ProviderId("apps".into()),
+        Ok(vec![result(
+            "apps",
+            "calculator",
+            Category::Applications,
+            "Calculator",
+        )]),
+    );
+    assert_eq!(session.results()[0].result.title, "Calculator");
+    assert_eq!(
+        session.selected().map(|id| id.local.as_str()),
+        Some("calculator")
+    );
+}
+
+#[test]
 fn empty_query_selection_order_matches_application_grid_then_suggestions() {
     let mut session = Session::default();
     let request = session.begin(

@@ -5,7 +5,8 @@
       "launch": "notes"
     },
     {
-      "shot": "notes-open"
+      "shot": "notes-open",
+      "expect_window": "org.rmac.Notes"
     },
     {
       "key": "cmd-n"
@@ -17,19 +18,28 @@
       "type": "Parallel journey note"
     },
     {
-      "shot": "note-typed"
+      "shot": "note-typed",
+      "expect_text": {
+        "label": "Title",
+        "equals": "Parallel journey note"
+      }
     },
     {
       "key": "return"
     },
     {
-      "shot": "note-newline"
+      "shot": "note-newline",
+      "expect_change": false
     },
     {
       "type": "- [ ] Buy milk"
     },
     {
-      "shot": "checklist-typed"
+      "shot": "checklist-typed",
+      "expect_text": {
+        "label": "Body",
+        "contains": "- [ ] Buy milk"
+      }
     },
     {
       "click": "More"

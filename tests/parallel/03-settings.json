@@ -5,7 +5,8 @@
       "launch": "settings"
     },
     {
-      "shot": "open"
+      "shot": "open",
+      "expect_window": "org.rmac.SystemSettings"
     },
     {
       "type": "wallpaper"
@@ -29,7 +30,8 @@
       "key": "escape"
     },
     {
-      "shot": "search-cleared"
+      "shot": "search-cleared",
+      "expect_change": false
     },
     {
       "click": "Appearance"

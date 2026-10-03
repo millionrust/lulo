@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_526 gaps across 10 apps; 139 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_520 gaps across 10 apps; 145 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Calculator
 
@@ -177,30 +177,24 @@ _526 gaps across 10 apps; 139 Mac-only items were allowlisted (see `tests/invent
 | NOT-MENU-061 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
 | NOT-MENU-055 | wrong/missing shortcut | Zoom | Window ▸ Zoom | ⌃⌘Z |  | shortcut differs |
 | NOT-MENU-056 | wrong/missing shortcut | Zoom All | Window ▸ Zoom All | ⌃⌥⌘Z |  | shortcut differs |
-| NOT-SETTINGS-001 | missing settings control | Allow mention notifications | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-002 | missing settings control | Always resume to last Quick Note | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-003 | missing settings control | Automatically move checklist items to the bottom of the list as they are ticked off. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-004 | missing settings control | Automatically sort ticked items | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-005 | missing settings control | Change Password… | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-006 | missing settings control | Default account: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-007 | missing settings control | Default text size: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-008 | missing settings control | Enable the On My Mac account | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-009 | missing settings control | Group notes by date | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-010 | missing settings control | Help | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-011 | missing settings control | Locked notes: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-012 | missing settings control | New notes start with: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-013 | missing settings control | Notes in On My Mac are stored on this computer. Disabling this account doesn’t affect your other notes. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-014 | missing settings control | Receive notifications on this Mac when your name is mentioned in shared notes. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-015 | missing settings control | Reset Password… | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-016 | missing settings control | Siri uses this default account when creating notes. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-017 | missing settings control | Use Custom Password | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-018 | missing settings control | Use Touch ID | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-019 | missing settings control | Use dark backgrounds for note content | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-020 | missing settings control | Use your fingerprint to view locked notes. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-021 | missing settings control | When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-022 | missing settings control | When sorted by Date Edited or Date Created, group notes by date. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-023 | missing settings control | iCloud | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-024 | missing settings control | slider | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-001 | missing settings control | Always resume to last Quick Note | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-002 | missing settings control | Automatically move checklist items to the bottom of the list as they are ticked off. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-003 | missing settings control | Automatically sort ticked items | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-004 | missing settings control | Change Password… | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-005 | missing settings control | Default account: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-006 | missing settings control | Default text size: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-007 | missing settings control | Enable the On My Mac account | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-008 | missing settings control | Group notes by date | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-009 | missing settings control | Help | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-010 | missing settings control | Locked notes: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-011 | missing settings control | New notes start with: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-012 | missing settings control | Notes in On My Mac are stored on this computer. Disabling this account doesn’t affect your other notes. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-013 | missing settings control | Reset Password… | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-014 | missing settings control | Use Custom Password | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-015 | missing settings control | Use dark backgrounds for note content | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-016 | missing settings control | When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-017 | missing settings control | When sorted by Date Edited or Date Created, group notes by date. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-018 | missing settings control | slider | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | NOT-TOOLBAR-001 | missing toolbar item | Off | toolbar |  |  | named Mac toolbar command absent from Lulo's toolbar source |
 
 ## Preview

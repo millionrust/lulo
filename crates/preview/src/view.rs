@@ -2677,9 +2677,16 @@ impl PreviewView {
             })
             .flex()
             .items_center()
-            .child(
+            .child(rmac_ui::KeyboardAction::new(
+                "preview-sidebar-toggle-keyboard",
                 div()
                     .id("preview-sidebar-toggle")
+                    .role(Role::Button)
+                    .aria_label(if self.sidebar {
+                        "Hide Sidebar"
+                    } else {
+                        "Show Sidebar"
+                    })
                     .pl(px(7.5))
                     .h_full()
                     .flex()
@@ -2694,7 +2701,16 @@ impl PreviewView {
                         let shown = !this.sidebar;
                         this.set_sidebar(shown, cx);
                     })),
-            )
+                {
+                    let view = cx.entity();
+                    move |_, cx| {
+                        view.update(cx, |this, cx| {
+                            let shown = !this.sidebar;
+                            this.set_sidebar(shown, cx);
+                        });
+                    }
+                },
+            ))
             .child(
                 div()
                     .id("preview-sidebar-menu")

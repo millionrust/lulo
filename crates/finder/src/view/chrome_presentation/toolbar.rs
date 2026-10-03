@@ -206,7 +206,8 @@ impl FinderView {
         let action_control = capsule("actions")
             .role(Role::Toolbar)
             .aria_label("Actions")
-            .child(
+            .child(rmac_ui::KeyboardAction::new(
+                "actions-keyboard",
                 capsule_button(
                     "more",
                     "icons/ellipsis.svg",
@@ -225,7 +226,28 @@ impl FinderView {
                     ));
                     cx.notify();
                 })),
-            );
+                {
+                    let view = view.clone();
+                    move |window, cx| {
+                        view.update(cx, |this, cx| {
+                            let width = f32::from(rmac_ui::window_content_size(window).width);
+                            let x = width
+                                - TRAILING_MARGIN
+                                - CAPSULE_BUTTON
+                                - TRAILING_GAP
+                                - CAPSULE_BUTTON / 2.0;
+                            this.menu_purpose = MenuPurpose::Context;
+                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                gpui::point(px(x), px(TOOLBAR_HEIGHT)),
+                                &this.focus,
+                                window,
+                                cx,
+                            ));
+                            cx.notify();
+                        });
+                    }
+                },
+            ));
 
         // Search is a 36 pt circle that opens into a field, as in Finder; it
         // stays open while it holds a query.
@@ -362,7 +384,34 @@ impl FinderView {
                 toolbar
                     .child(view_control)
                     .child(div().w(px(VIEW_TO_GROUP_GAP)).flex_none())
-                    .child(sort_control)
+                    .child(rmac_ui::KeyboardAction::new(
+                        "sort-keyboard",
+                        sort_control,
+                        {
+                            let view = view.clone();
+                            move |window, cx| {
+                                view.update(cx, |this, cx| {
+                                    let width =
+                                        f32::from(rmac_ui::window_content_size(window).width);
+                                    let x = width
+                                        - TRAILING_MARGIN
+                                        - CAPSULE_BUTTON
+                                        - TRAILING_GAP
+                                        - CAPSULE_BUTTON
+                                        - TRAILING_GAP
+                                        - GROUP_CAPSULE_WIDTH / 2.0;
+                                    this.menu_purpose = MenuPurpose::Sort;
+                                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                        gpui::point(px(x), px(TOOLBAR_HEIGHT)),
+                                        &this.focus,
+                                        window,
+                                        cx,
+                                    ));
+                                    cx.notify();
+                                });
+                            }
+                        },
+                    ))
                     .child(div().w(px(TRAILING_GAP)).flex_none())
             })
             .child(action_control)

@@ -8,7 +8,11 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
+pub const FLAG_SEEN: i64 = 1;
+pub const FLAG_ANSWERED: i64 = 2;
+pub const FLAG_FLAGGED: i64 = 4;
+pub const FLAG_DRAFT: i64 = 8;
 
 #[derive(Debug)]
 pub enum Error {
@@ -81,6 +85,14 @@ pub struct MessageSummary {
     pub preview: String,
     pub flags: i64,
     pub body_hash: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MailboxState {
+    pub id: i64,
+    pub name: String,
+    pub uidvalidity: i64,
+    pub highest_modseq: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -170,7 +182,7 @@ impl MailStorage {
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)?;
             tx.execute_batch(include_str!("schema_v1.sql"))?;
-            tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+            tx.pragma_update(None, "user_version", 1)?;
             tx.commit()?;
         }
         if version < 2 {
@@ -178,6 +190,12 @@ impl MailStorage {
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)?;
             tx.execute_batch(include_str!("schema_v2.sql"))?;
+            tx.pragma_update(None, "user_version", 2)?;
+            tx.commit()?;
+        }
+        if version < 3 {
+            let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            tx.execute_batch(include_str!("schema_v3.sql"))?;
             tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             tx.commit()?;
         }
@@ -329,6 +347,68 @@ impl MailStorage {
             .query_row("SELECT id FROM mailboxes WHERE name=?1", [name], |row| {
                 row.get(0)
             })?)
+    }
+
+    pub fn mailbox(&self, name: &str) -> Result<Option<MailboxState>> {
+        self.connection.query_row(
+            "SELECT id,name,uidvalidity,highest_modseq FROM mailboxes WHERE name=?1",
+            [name],
+            |row| Ok(MailboxState { id: row.get(0)?, name: row.get(1)?, uidvalidity: row.get(2)?, highest_modseq: row.get(3)? }),
+        ).optional().map_err(Error::from)
+    }
+
+    pub fn mailbox_by_id(&self, id: i64) -> Result<Option<MailboxState>> {
+        self.connection.query_row(
+            "SELECT id,name,uidvalidity,highest_modseq FROM mailboxes WHERE id=?1",
+            [id],
+            |row| Ok(MailboxState { id: row.get(0)?, name: row.get(1)?, uidvalidity: row.get(2)?, highest_modseq: row.get(3)? }),
+        ).optional().map_err(Error::from)
+    }
+
+    pub fn mailbox_by_special_use(&self, special_use: &str) -> Result<Option<MailboxState>> {
+        self.connection.query_row(
+            "SELECT id,name,uidvalidity,highest_modseq FROM mailboxes WHERE special_use=?1 LIMIT 1",
+            [special_use],
+            |row| Ok(MailboxState { id: row.get(0)?, name: row.get(1)?, uidvalidity: row.get(2)?, highest_modseq: row.get(3)? }),
+        ).optional().map_err(Error::from)
+    }
+
+    pub fn set_mailbox_modseq(&mut self, id: i64, modseq: i64) -> Result<()> {
+        self.connection.execute(
+            "UPDATE mailboxes SET highest_modseq=?1 WHERE id=?2",
+            params![modseq, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn message_by_uid(&self, mailbox_id: i64, uid: i64) -> Result<Option<MessageSummary>> {
+        self.connection.query_row(
+            "SELECT id,mailbox_id,uid,subject,sender,preview,flags,body_hash FROM messages WHERE mailbox_id=?1 AND uid=?2",
+            params![mailbox_id, uid], summary_from_row,
+        ).optional().map_err(Error::from)
+    }
+
+    pub fn set_server_flags(&mut self, mailbox_id: i64, uid: i64, flags: i64) -> Result<()> {
+        self.connection.execute(
+            "UPDATE messages SET flags=?1 WHERE mailbox_id=?2 AND uid=?3 AND NOT EXISTS (SELECT 1 FROM changes WHERE message_id=messages.id)",
+            params![flags, mailbox_id, uid],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_server_uid(&mut self, mailbox_id: i64, uid: i64) -> Result<()> {
+        self.connection.execute(
+            "DELETE FROM messages WHERE mailbox_id=?1 AND uid=?2 AND NOT EXISTS (SELECT 1 FROM changes WHERE message_id=messages.id)",
+            params![mailbox_id, uid],
+        )?;
+        Ok(())
+    }
+
+    pub fn unread_inbox_count(&self) -> Result<i64> {
+        self.connection.query_row(
+            "SELECT COUNT(*) FROM messages m JOIN mailboxes b ON b.id=m.mailbox_id WHERE (b.name='INBOX' COLLATE NOCASE OR b.special_use='\\Inbox') AND (m.flags & 1)=0",
+            [], |row| row.get(0),
+        ).map_err(Error::from)
     }
 
     /// Write the blob durably before the row. A crash may leave an orphan blob,

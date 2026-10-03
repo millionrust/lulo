@@ -13,6 +13,7 @@ pub use protocol::{
 };
 use std::{fmt, io, time::Duration};
 use transport::Transport;
+pub use transport::Interrupt;
 use zeroize::Zeroize;
 
 const MAX_IDLE: Duration = Duration::from_secs(25 * 60);
@@ -153,6 +154,10 @@ impl Client {
 
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
+    }
+
+    pub fn interrupt_handle(&self) -> io::Result<Interrupt> {
+        self.transport.interrupt_handle()
     }
 
     pub fn authenticate(&mut self, auth: Authentication<'_>) -> Result<(), Error> {
@@ -322,6 +327,16 @@ impl Client {
         }
         protocol::validate_uid_set(uid_set)?;
         self.command(&format!("UID EXPUNGE {uid_set}"))?;
+        Ok(())
+    }
+
+    /// Replace standard flags for one UID. The caller must verify UIDVALIDITY
+    /// before replaying a queued change.
+    pub fn store_flags(&mut self, uid: u32, flags: &[&str]) -> Result<(), Error> {
+        if uid == 0 || flags.iter().any(|flag| !matches!(*flag, "\\Seen" | "\\Answered" | "\\Flagged" | "\\Draft" | "\\Deleted")) {
+            return Err(Error::Protocol("Invalid IMAP flags"));
+        }
+        self.command(&format!("UID STORE {uid} FLAGS.SILENT ({})", flags.join(" ")))?;
         Ok(())
     }
 

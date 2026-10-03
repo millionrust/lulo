@@ -52,6 +52,21 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn sync_cursor_unread_and_pending_local_flags_survive_reopen() {
+    let mut fixture = Fixture::new();
+    let id = fixture.insert(7, "Unread", None);
+    assert_eq!(fixture.store.unread_inbox_count().unwrap(), 1);
+    fixture.store.set_mailbox_modseq(fixture.inbox, 123).unwrap();
+    fixture.store.queue_change(id, Change::SetFlags(FLAG_SEEN)).unwrap();
+    fixture.store.set_server_flags(fixture.inbox, 7, 0).unwrap();
+    assert_eq!(fixture.store.get_message(id).unwrap().unwrap().flags, FLAG_SEEN);
+    assert_eq!(fixture.store.unread_inbox_count().unwrap(), 0);
+    let reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
+    assert_eq!(reopened.mailbox("INBOX").unwrap().unwrap().highest_modseq, 123);
+    assert_eq!(reopened.pending_changes().unwrap().len(), 1);
+}
+
+#[test]
 fn migration_is_idempotent_and_rejects_future_schema() {
     let fixture = Fixture::new();
     let path = fixture
@@ -64,7 +79,7 @@ fn migration_is_idempotent_and_rejects_future_schema() {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .expect("version"),
-        2
+        3
     );
     drop(reopened);
     let db = Connection::open(path).expect("open raw");

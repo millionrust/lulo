@@ -430,7 +430,17 @@ class Driver:
         elif kind == "key":
             if step[kind] in {"power", "ctrl-power", "cmd-alt-escape", "cmd-alt-s"}:
                 raise RuntimeError("refusing session or device-control shortcut")
-            self.session.pointer.key(step[kind])
+            if step[kind] == "cmd-m":
+                focused = next((w.get("id") for w in self.session.windows()
+                                if w.get("is_focused")), None)
+                for _ in range(3):
+                    self.session.pointer.key("cmd-m")
+                    if focused is None or self.session.wait_for(
+                            lambda: not any(w.get("id") == focused and w.get("is_focused")
+                                            for w in self.session.windows()), 2.5):
+                        break
+            else:
+                self.session.pointer.key(step[kind])
             if step[kind] == "cmd-space":
                 # The private nested bus has no GlobalShortcuts portal. Route
                 # the same shortcut to the resident launcher after injection.

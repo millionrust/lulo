@@ -2587,7 +2587,9 @@ mod linux_wayland {
                 .role(Role::Toolbar)
                 .aria_label("Dock")
                 .size_full()
-                .track_focus(&self.dismiss_focus)
+                .when(self.dismiss_focus_active, |dock| {
+                    dock.track_focus(&self.dismiss_focus)
+                })
                 .relative()
                 .flex()
                 .font_features(rmac_shell_ui::tabular_font_features())

@@ -868,6 +868,13 @@ class Audit:
                         step["flags"].append(checks.flag(
                             "focus-lost", f"Escape returned focus to {focused_app!r}, not "
                             f"{journey['background']!r}"))
+                    resident = shell.residents.get(journey.get("resident", ""))
+                    if resident is not None:
+                        pyatspi = atspi()
+                        showing = [name(frame) for frame in shell.session.frames_by_pid(resident.pid)
+                                   if has_state(frame, pyatspi.STATE_SHOWING)]
+                        step["showing_frames_after_escape"] = showing
+                        print(f"     panels still showing after Escape: {showing}", flush=True)
                 steps.append(step)
                 previous = step["focus"]
         except (StepFailed, wlinput.InjectorError) as error:

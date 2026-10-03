@@ -228,9 +228,10 @@ impl MailStorage {
             let mut statement = tx.prepare(
                 "SELECT address FROM outbox_recipients WHERE outbox_id=?1 ORDER BY position",
             )?;
-            statement
+            let recipients = statement
                 .query_map([id], |row| row.get(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            recipients
         };
         tx.commit()?;
         let bytes = self.read_blob(&hash)?;

@@ -236,11 +236,14 @@ impl FinderView {
                 dialog_action("recovery-later", "Later", DialogActionKind::Normal).disabled(busy),
                 dialog_action(
                     "recovery-confirm",
-                    if busy {
-                        "Resolving…"
-                    } else {
-                        presentation.action_label
-                    },
+                    &bin_copy(
+                        self.file_words,
+                        if busy {
+                            "Resolving…"
+                        } else {
+                            presentation.action_label
+                        },
+                    ),
                     DialogActionKind::Default,
                 )
                 .disabled(busy)
@@ -267,11 +270,14 @@ impl FinderView {
         );
         Some(AccessibleDialog {
             kind: DialogKind::TrashRecovery,
-            title: format!(
-                "Recover Trash Operation (1 of {})",
-                self.trash_recovery_reviews.len()
+            title: bin_copy(
+                self.file_words,
+                &format!(
+                    "Recover Trash Operation (1 of {})",
+                    self.trash_recovery_reviews.len()
+                ),
             ),
-            description: presentation.message,
+            description: bin_copy(self.file_words, &presentation.message),
             actions: vec![
                 dialog_action("trash-recovery-later", "Later", DialogActionKind::Normal)
                     .disabled(busy),
@@ -477,7 +483,7 @@ impl FinderView {
         if let Some(notice) = &self.operation_notice {
             regions.push(AccessibleLiveRegion {
                 id: "operation-notice".to_string(),
-                text: notice.to_string(),
+                text: bin_copy(self.file_words, notice.as_ref()),
                 politeness: LivePoliteness::Polite,
                 progress: None,
                 actions: vec![dialog_action(
@@ -493,12 +499,15 @@ impl FinderView {
             let recovery_pending = recovery_pending || self.trash_pending != 0;
             regions.push(AccessibleLiveRegion {
                 id: "operation-error".to_string(),
-                text: rmac_ui::user_error_message(
-                    rmac_ui::ErrorSurface::Files,
-                    error.as_ref(),
-                    recovery_pending,
-                )
-                .to_string(),
+                text: bin_copy(
+                    self.file_words,
+                    rmac_ui::user_error_message(
+                        rmac_ui::ErrorSurface::Files,
+                        error.as_ref(),
+                        recovery_pending,
+                    )
+                    .as_ref(),
+                ),
                 politeness: LivePoliteness::Assertive,
                 progress: None,
                 actions: vec![dialog_action(
@@ -526,7 +535,7 @@ impl FinderView {
             regions.push(AccessibleLiveRegion {
                 id: "trash-progress".to_string(),
                 text: trash_progress_text(
-                    operation.label.as_ref(),
+                    &bin_copy(self.file_words, operation.label.as_ref()),
                     operation.processed,
                     operation.total,
                 ),

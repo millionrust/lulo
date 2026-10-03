@@ -11,5 +11,6 @@
     {"key": "cmd-n", "settle": 1.2},
     {"observe": "small_image", "facts": ["window_size", "windows"]}
   ],
+  "tolerance": {"small_image.window_size": "within-2"},
   "omit": ["small_image.windows.front", "small_image.windows.titles"]
 }

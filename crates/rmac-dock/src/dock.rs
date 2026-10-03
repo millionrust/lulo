@@ -524,7 +524,10 @@ pub(super) fn project_special_items(places: &rmac_places::Snapshot) -> Vec<Speci
         } else {
             SpecialActivation::Unavailable {
                 kind: SpecialItemKind::Trash,
-                detail: "the desktop Trash authority is unavailable".into(),
+                detail: format!(
+                    "the desktop {} authority is unavailable",
+                    rmac_locale::FileVocabulary::from_environment().bin()
+                ),
             }
         },
     };

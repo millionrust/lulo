@@ -42,14 +42,17 @@ impl Render for FinderView {
             .undo_available
             .as_ref()
             .map(|available| available.label.clone());
-        let operation_notice = self.operation_notice.clone();
+        let operation_notice = self
+            .operation_notice
+            .as_ref()
+            .map(|notice| SharedString::from(bin_copy(self.file_words, notice.as_ref())));
         let operation_error = self.operation_error.clone();
         let transfer = self.transfer.clone();
         let undo_progress = self.undo_operation.clone();
         #[cfg(any(target_os = "linux", test))]
         let trash_progress = self.trash_operation.as_ref().map(|operation| {
             (
-                operation.label.clone(),
+                SharedString::from(bin_copy(self.file_words, operation.label.as_ref())),
                 operation.processed,
                 operation.total,
                 operation.cancelling,
@@ -64,11 +67,12 @@ impl Render for FinderView {
         let trash_recovery_pending = false;
         let any_recovery_pending = recovery_pending || trash_recovery_pending;
         let operation_error = operation_error.map(|message| {
-            rmac_ui::user_error_message(
+            let safe = rmac_ui::user_error_message(
                 rmac_ui::ErrorSurface::Files,
                 message.as_ref(),
                 any_recovery_pending,
-            )
+            );
+            SharedString::from(bin_copy(self.file_words, safe.as_ref()))
         });
         let open_with_dialog = self.render_open_with(cx);
         let go_to_sheet = self.render_go_to_folder(cx);

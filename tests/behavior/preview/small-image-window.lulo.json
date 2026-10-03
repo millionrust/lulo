@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "scenario": "preview/small-image-window",
+  "platform": "Lulo local contract",
+  "observations": {
+    "small_image": {
+      "windows": {"count": 2},
+      "window_size": {"width": 648, "height": 400}
+    }
+  }
+}

@@ -5,6 +5,17 @@ use crate::view::selection_controller::pathname_clipboard_text;
 use crate::view::sidebar_favourites::{dedupe_absolute_directories, extra_favourite_place};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[test]
+fn visible_trash_feedback_uses_the_message_locale() {
+    let british = rmac_locale::FileVocabulary::for_locale("en_GB.UTF-8");
+    let american = rmac_locale::FileVocabulary::for_locale("en_US.UTF-8");
+    assert_eq!(
+        bin_copy(british, "Undo Move to Trash; Trash recovery is available"),
+        "Undo Move to Bin; Bin recovery is available"
+    );
+    assert_eq!(bin_copy(american, "Move to Trash"), "Move to Trash");
+}
+
 struct TestDirectory(PathBuf);
 
 impl TestDirectory {

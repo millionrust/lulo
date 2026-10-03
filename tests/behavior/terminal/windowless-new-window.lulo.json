@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "terminal/windowless-new-window",
+  "platform": "Lulo local contract",
+  "observations": {
+    "windowless": {"windows": {"count": 0}},
+    "reopened": {"windows": {"count": 1}}
+  }
+}

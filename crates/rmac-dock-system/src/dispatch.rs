@@ -427,7 +427,7 @@ fn prepare_trash_review(
         _ => Preparation::Ready(rejected(
             ActionTarget::Special(rmac_dock::SpecialItemKind::Trash),
             Operation::ReviewTrash,
-            "Trash",
+            rmac_locale::FileVocabulary::from_environment().bin(),
         )),
     }
 }

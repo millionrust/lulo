@@ -84,7 +84,13 @@ impl fmt::Display for Operation {
             Self::UpdateStacks => "update Dock stacks",
             Self::Resolve => "resolve Dock activation",
             Self::OpenPlace => "open Dock place",
+            Self::ReviewTrash if rmac_locale::FileVocabulary::from_environment().bin() == "Bin" => {
+                "review Empty Bin"
+            }
             Self::ReviewTrash => "review Empty Trash",
+            Self::EmptyTrash if rmac_locale::FileVocabulary::from_environment().bin() == "Bin" => {
+                "empty Bin"
+            }
             Self::EmptyTrash => "empty Trash",
             Self::Hide => "hide application windows",
             Self::ShowAllWindows => "show all application windows",

@@ -319,5 +319,16 @@ class PopoverRegistryTests(unittest.TestCase):
         self.assertIs(lp.POPOVER_STARTERS["spotlight"], lp.ShellSession.start_launcher)
 
 
+class PanelSweepTests(unittest.TestCase):
+    def test_sweep_covers_the_panel_and_crosses_each_slider_row(self):
+        points = lp.panel_sweep_points(962, 28, 316, 380)
+        xs = {x for x, _ in points}
+        ys = sorted({y for _, y in points})
+        self.assertEqual((min(xs), max(xs)), (962, 962 + 316))
+        self.assertEqual((ys[0], ys[-1]), (28, 28 + 380))
+        # Every 24 pt slider hit rect is crossed by at least two rows.
+        self.assertLessEqual(max(b - a for a, b in zip(ys, ys[1:])), 12)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "scenario": "text-editor/close-after-save",
+  "platform": "Lulo local contract",
+  "observations": {
+    "saved": {
+      "saved_documents": {
+        "entries": ["CloseAfterSave.txt"],
+        "contents": {"CloseAfterSave.txt": "Hello"}
+      },
+      "focus": {"role": "text-field", "value": "Hello"}
+    },
+    "closed": {
+      "windows": {"count": 0}
+    }
+  }
+}

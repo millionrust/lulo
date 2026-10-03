@@ -1,0 +1,14 @@
+{
+  "title": "Notes: Return in the title continues the note in the body",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "Shopping"},
+    {"key": "return", "settle": 0.5},
+    {"type": "- [ ] Buy milk"},
+    {"observe": "continued", "facts": ["focus", "note_body"]}
+  ]
+}

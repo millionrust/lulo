@@ -181,8 +181,22 @@ steps on macOS and Lulo. Each input step has a following `shot`. Actions are
 `drag_window`. `setup.files` and `setup.fixtures` create disposable content;
 `$SANDBOX` in typed text resolves to that run's disposable folder. A shot
 with `"scope": "full"` captures shell controls and menus. The Lulo runner
-always uses headless Sway with nested niri, Dock and top bar, including for
+always uses headless Sway with nested niri, Dock, top bar and the resident
+shell services (Spotlight, Control Centre, app switcher), including for
 ordinary app journeys.
+
+Lulo shots come from niri's own composition (`niri msg action
+screenshot-screen`), not from the parent Sway output: nested niri's winit
+backend can stop presenting new frames to Sway for seconds after a window
+maps, which once made Files look frozen after Quick Look. Shots carry
+assertions and a journey **fails** when one does not hold: `expect_change`
+(on by default after every action — the screen must change by more than a
+caret blink), `expect_window` (focused app id), `expect_mapped` /
+`expect_unmapped`, `expect_files` / `expect_no_files` (sandbox globs),
+`expect_text` (AT-SPI text of a named accessible) and `expect_accessible`
+(names that must be showing). Any runner error also fails the journey.
+`--full-too` and `--dump-a11y` save a full-screen shot and every named
+accessible's extents beside each shot for review.
 
 ```sh
 python3 scripts/parallel/run_mac.py --output /tmp/rmac-parallel-mac

@@ -328,9 +328,17 @@ impl CalendarView {
     }
 
     fn heading(&self, cx: &mut Context<Self>) -> AnyElement {
-        let title = match self.nav.view {
-            View::Year => self.nav.selected.format("%Y").to_string(),
-            _ => self.nav.selected.format("%B %Y").to_string(),
+        let (title, subtitle) = match self.nav.view {
+            View::Day => (
+                self.nav.selected.format("%-d %B %Y").to_string(),
+                self.nav.selected.format("%A").to_string(),
+            ),
+            View::Week => (self.nav.selected.format("%B %Y").to_string(), String::new()),
+            View::Month => (
+                self.nav.selected.format("%B").to_string(),
+                self.nav.selected.format("%Y").to_string(),
+            ),
+            View::Year => (self.nav.selected.format("%Y").to_string(), String::new()),
         };
         div()
             .h(px(44.0))
@@ -343,6 +351,13 @@ impl CalendarView {
                     .font_weight(FontWeight::BOLD)
                     .text_color(mac::text())
                     .child(title),
+            )
+            .child(
+                div()
+                    .ml(px(7.0))
+                    .text_size(px(22.0))
+                    .text_color(mac::text_secondary())
+                    .child(subtitle),
             )
             .child(div().flex_1())
             .child(self.control(
@@ -393,13 +408,21 @@ impl CalendarView {
         let grid_top = 60.0;
         let grid_height = (height - grid_top).max(0.0);
         let mut week = div()
-            .id("calendar-week")
+            .id(if days == 1 {
+                "calendar-day-grid"
+            } else {
+                "calendar-week"
+            })
             .relative()
             .w_full()
             .h_full()
             .overflow_hidden()
             .role(Role::Group)
-            .aria_label(format!("Week of {first}"));
+            .aria_label(if days == 1 {
+                format!("Day of {first}")
+            } else {
+                format!("Week of {first}")
+            });
         for index in 0..days {
             let day = first + Duration::days(index as i64);
             let x = GUTTER + index as f32 * day_width;
@@ -614,7 +637,7 @@ impl CalendarView {
     }
 
     fn day(&self, snapshot: &WeekSnapshot, width: f32, height: f32) -> AnyElement {
-        let grid_width = (width - 300.0).max(250.0);
+        let grid_width = (width - 300.0).max(200.0);
         let mut detail = div()
             .id("calendar-day-detail")
             .absolute()

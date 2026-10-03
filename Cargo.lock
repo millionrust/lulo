@@ -6515,6 +6515,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-mail-runtime"
+version = "0.9.0-beta.1"
+dependencies = [
+ "rmac-accounts",
+ "rmac-accounts-linux",
+ "rmac-mail-imap",
+ "rmac-mail-mime",
+ "rmac-mail-storage",
+ "sha2 0.10.9",
+ "uuid",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-mail-smtp"
 version = "0.9.0-beta.1"
 dependencies = [

@@ -194,7 +194,9 @@ impl MailStorage {
             tx.commit()?;
         }
         if version < 3 {
-            let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let tx = self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
             tx.execute_batch(include_str!("schema_v3.sql"))?;
             tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             tx.commit()?;
@@ -350,19 +352,39 @@ impl MailStorage {
     }
 
     pub fn mailbox(&self, name: &str) -> Result<Option<MailboxState>> {
-        self.connection.query_row(
-            "SELECT id,name,uidvalidity,highest_modseq FROM mailboxes WHERE name=?1",
-            [name],
-            |row| Ok(MailboxState { id: row.get(0)?, name: row.get(1)?, uidvalidity: row.get(2)?, highest_modseq: row.get(3)? }),
-        ).optional().map_err(Error::from)
+        self.connection
+            .query_row(
+                "SELECT id,name,uidvalidity,highest_modseq FROM mailboxes WHERE name=?1",
+                [name],
+                |row| {
+                    Ok(MailboxState {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        uidvalidity: row.get(2)?,
+                        highest_modseq: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(Error::from)
     }
 
     pub fn mailbox_by_id(&self, id: i64) -> Result<Option<MailboxState>> {
-        self.connection.query_row(
-            "SELECT id,name,uidvalidity,highest_modseq FROM mailboxes WHERE id=?1",
-            [id],
-            |row| Ok(MailboxState { id: row.get(0)?, name: row.get(1)?, uidvalidity: row.get(2)?, highest_modseq: row.get(3)? }),
-        ).optional().map_err(Error::from)
+        self.connection
+            .query_row(
+                "SELECT id,name,uidvalidity,highest_modseq FROM mailboxes WHERE id=?1",
+                [id],
+                |row| {
+                    Ok(MailboxState {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        uidvalidity: row.get(2)?,
+                        highest_modseq: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(Error::from)
     }
 
     pub fn mailbox_by_special_use(&self, special_use: &str) -> Result<Option<MailboxState>> {

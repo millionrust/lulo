@@ -1,39 +1,67 @@
 //! Linux account, connectivity, notification and Dock signal adapters.
 
-use std::{collections::HashMap, sync::{mpsc, Arc, Mutex}, thread, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{mpsc, Arc, Mutex},
+    thread,
+    time::Duration,
+};
 
 use rmac_accounts::provider::{Provider, SocketSecurity};
 use rmac_accounts_linux::{goa::GoaBus, AccountChange, GoaAccount, GoaApi};
 use rmac_mail_imap::TlsMode;
 use uuid::Uuid;
-use zbus::{blocking::{Connection, MessageIterator, Proxy}, zvariant::Value};
+use zbus::{
+    blocking::{Connection, MessageIterator, Proxy},
+    zvariant::Value,
+};
 
-use crate::{account_id, Account, Backend, BackendFactory, Error, EventSink, ImapFactory, ImapSettings, NewMail, Runtime, Snapshot, Transport};
 use crate::imap::ImapAuth;
+use crate::{
+    account_id, Account, Backend, BackendFactory, Error, EventSink, ImapFactory, ImapSettings,
+    NewMail, Runtime, Snapshot, Transport,
+};
 
 /// The GOA account list is authoritative. Other IMAP accounts may provide
 /// manual server settings through `Runtime::upsert_account` until ACC-3 exposes
 /// those details in its account model.
 pub fn resolve_goa(account: &GoaAccount) -> Option<Account> {
-    if !account.services.mail { return None; }
+    if !account.services.mail {
+        return None;
+    }
     let transport = match account.provider.as_str() {
         "ms_graph" => Transport::Graph,
         "google" | "imap_smtp" => {
-            let provider = if account.provider == "google" { Provider::Google } else {
+            let provider = if account.provider == "google" {
+                Provider::Google
+            } else {
                 let domain = account.identity.rsplit_once('@')?.1;
                 Provider::from_domain(domain)
             };
             let preset = provider.info().servers?;
             Transport::Imap(ImapSettings {
-                host: preset.imap_host.into(), port: preset.imap_port,
-                tls: match preset.imap_security { SocketSecurity::Tls => TlsMode::Implicit, SocketSecurity::StartTls => TlsMode::StartTls },
+                host: preset.imap_host.into(),
+                port: preset.imap_port,
+                tls: match preset.imap_security {
+                    SocketSecurity::Tls => TlsMode::Implicit,
+                    SocketSecurity::StartTls => TlsMode::StartTls,
+                },
                 user: account.identity.clone(),
-                auth: if provider == Provider::Google { ImapAuth::XOAuth2 } else { ImapAuth::Password },
+                auth: if provider == Provider::Google {
+                    ImapAuth::XOAuth2
+                } else {
+                    ImapAuth::Password
+                },
             })
         }
         _ => return None,
     };
-    Some(Account { path: account.path.clone(), id: account_id(account), address: account.identity.clone(), transport })
+    Some(Account {
+        path: account.path.clone(),
+        id: account_id(account),
+        address: account.identity.clone(),
+        transport,
+    })
 }
 
 /// Starts the signal watch after Mail opens. The blocking GOA API never runs
@@ -45,12 +73,17 @@ pub fn watch_goa(runtime: Arc<Runtime>) -> thread::JoinHandle<()> {
             if let Ok(goa) = GoaBus::session() {
                 let result = goa.watch(&mut |change| match change {
                     AccountChange::Added(account) | AccountChange::Updated(account) => {
-                        if let Some(resolved) = resolve_goa(&account) { runtime.upsert_account(resolved); }
-                        else { runtime.remove_account(&account.path); }
+                        if let Some(resolved) = resolve_goa(&account) {
+                            runtime.upsert_account(resolved);
+                        } else {
+                            runtime.remove_account(&account.path);
+                        }
                     }
                     AccountChange::Removed(path) => runtime.remove_account(&path),
                 });
-                if result.is_ok() { delay = Duration::from_secs(1); }
+                if result.is_ok() {
+                    delay = Duration::from_secs(1);
+                }
             }
             thread::sleep(delay);
             delay = super::next_backoff(delay);
@@ -69,17 +102,27 @@ pub fn watch_connectivity(runtime: Arc<Runtime>) -> thread::JoinHandle<()> {
                 if let Ok(signals) = MessageIterator::for_match_rule(rule, &connection, Some(16)) {
                     let mut last = None;
                     let mut update = || {
-                        if let Ok(proxy) = Proxy::new(&connection, "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager", "org.freedesktop.NetworkManager") {
+                        if let Ok(proxy) = Proxy::new(
+                            &connection,
+                            "org.freedesktop.NetworkManager",
+                            "/org/freedesktop/NetworkManager",
+                            "org.freedesktop.NetworkManager",
+                        ) {
                             if let Ok(value) = proxy.get_property::<u32>("Connectivity") {
                                 let online = value >= 3;
-                                if last != Some(online) { runtime.set_online(online); last = Some(online); }
+                                if last != Some(online) {
+                                    runtime.set_online(online);
+                                    last = Some(online);
+                                }
                             }
                         }
                     };
                     update();
                     delay = Duration::from_secs(1);
                     for signal in signals {
-                        if signal.is_err() { break; }
+                        if signal.is_err() {
+                            break;
+                        }
                         update();
                     }
                 }
@@ -90,7 +133,10 @@ pub fn watch_connectivity(runtime: Arc<Runtime>) -> thread::JoinHandle<()> {
     })
 }
 
-pub enum UiEvent { Snapshot(Snapshot), NewMail(NewMail) }
+pub enum UiEvent {
+    Snapshot(Snapshot),
+    NewMail(NewMail),
+}
 
 /// Posts to the same freedesktop service owned by Lulo Notification Centre.
 /// The optional channel gives the Mail window immutable state updates.
@@ -100,7 +146,12 @@ pub struct DesktopSink {
 }
 
 impl DesktopSink {
-    pub fn new(ui: Option<mpsc::Sender<UiEvent>>) -> Self { Self { unread: Mutex::new(HashMap::new()), ui } }
+    pub fn new(ui: Option<mpsc::Sender<UiEvent>>) -> Self {
+        Self {
+            unread: Mutex::new(HashMap::new()),
+            ui,
+        }
+    }
 }
 
 impl EventSink for DesktopSink {
@@ -110,25 +161,47 @@ impl EventSink for DesktopSink {
             unread.insert(value.account, value.unread_inbox);
             unread.values().copied().sum::<i64>()
         };
-        if let Some(ui) = &self.ui { let _ = ui.send(UiEvent::Snapshot(value)); }
+        if let Some(ui) = &self.ui {
+            let _ = ui.send(UiEvent::Snapshot(value));
+        }
         if let Ok(connection) = Connection::session() {
             let mut properties = HashMap::new();
             properties.insert("count", Value::I64(count));
             properties.insert("count-visible", Value::Bool(count > 0));
-            let _ = connection.emit_signal(None::<&str>, "/com/canonical/Unity/LauncherEntry", "com.canonical.Unity.LauncherEntry", "Update", &("application://org.rmac.Mail.desktop", properties));
+            let _ = connection.emit_signal(
+                None::<&str>,
+                "/com/canonical/Unity/LauncherEntry",
+                "com.canonical.Unity.LauncherEntry",
+                "Update",
+                &("application://org.rmac.Mail.desktop", properties),
+            );
         }
     }
 
     fn new_mail(&self, value: NewMail) {
-        if let Some(ui) = &self.ui { let _ = ui.send(UiEvent::NewMail(value.clone())); }
+        if let Some(ui) = &self.ui {
+            let _ = ui.send(UiEvent::NewMail(value.clone()));
+        }
         if let Ok(connection) = Connection::session() {
             let mut hints = HashMap::new();
             hints.insert("desktop-entry", Value::Str("org.rmac.Mail".into()));
             let body = format!("{}\n{}", value.subject, value.preview);
-            let _ = connection.call_method(Some("org.freedesktop.Notifications"), "/org/freedesktop/Notifications", Some("org.freedesktop.Notifications"), "Notify", &(
-                "Mail", 0_u32, "org.rmac.Mail", value.sender, body,
-                vec!["default", "Open"], hints, -1_i32,
-            ));
+            let _ = connection.call_method(
+                Some("org.freedesktop.Notifications"),
+                "/org/freedesktop/Notifications",
+                Some("org.freedesktop.Notifications"),
+                "Notify",
+                &(
+                    "Mail",
+                    0_u32,
+                    "org.rmac.Mail",
+                    value.sender,
+                    body,
+                    vec!["default", "Open"],
+                    hints,
+                    -1_i32,
+                ),
+            );
         }
     }
 }

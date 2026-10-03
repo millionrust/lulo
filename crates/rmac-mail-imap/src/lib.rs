@@ -12,8 +12,8 @@ pub use protocol::{
     Capabilities, CopyUid, Mailbox, MailboxKind, MessageChange, SelectState, SyncCursor,
 };
 use std::{fmt, io, time::Duration};
-use transport::Transport;
 pub use transport::Interrupt;
+use transport::Transport;
 use zeroize::Zeroize;
 
 const MAX_IDLE: Duration = Duration::from_secs(25 * 60);
@@ -333,10 +333,20 @@ impl Client {
     /// Replace standard flags for one UID. The caller must verify UIDVALIDITY
     /// before replaying a queued change.
     pub fn store_flags(&mut self, uid: u32, flags: &[&str]) -> Result<(), Error> {
-        if uid == 0 || flags.iter().any(|flag| !matches!(*flag, "\\Seen" | "\\Answered" | "\\Flagged" | "\\Draft" | "\\Deleted")) {
+        if uid == 0
+            || flags.iter().any(|flag| {
+                !matches!(
+                    *flag,
+                    "\\Seen" | "\\Answered" | "\\Flagged" | "\\Draft" | "\\Deleted"
+                )
+            })
+        {
             return Err(Error::Protocol("Invalid IMAP flags"));
         }
-        self.command(&format!("UID STORE {uid} FLAGS.SILENT ({})", flags.join(" ")))?;
+        self.command(&format!(
+            "UID STORE {uid} FLAGS.SILENT ({})",
+            flags.join(" ")
+        ))?;
         Ok(())
     }
 

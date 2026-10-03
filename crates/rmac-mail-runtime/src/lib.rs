@@ -116,16 +116,26 @@ impl std::fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 impl From<rmac_mail_imap::Error> for Error {
-    fn from(value: rmac_mail_imap::Error) -> Self { Self::Imap(value) }
+    fn from(value: rmac_mail_imap::Error) -> Self {
+        Self::Imap(value)
+    }
 }
 impl From<rmac_mail_storage::Error> for Error {
-    fn from(value: rmac_mail_storage::Error) -> Self { Self::Storage(value) }
+    fn from(value: rmac_mail_storage::Error) -> Self {
+        Self::Storage(value)
+    }
 }
 impl From<rmac_mail_mime::Error> for Error {
-    fn from(value: rmac_mail_mime::Error) -> Self { Self::Mime(value) }
+    fn from(value: rmac_mail_mime::Error) -> Self {
+        Self::Mime(value)
+    }
 }
 
-enum Command { Online(bool), Sync, Stop }
+enum Command {
+    Online(bool),
+    Sync,
+    Stop,
+}
 
 struct Worker {
     account: Account,
@@ -155,16 +165,30 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    pub fn new(data_root: PathBuf, factory: Arc<dyn BackendFactory>, sink: Arc<dyn EventSink>) -> Self {
-        Self { workers: Mutex::new(HashMap::new()), factory, sink, data_root, online: Mutex::new(true) }
+    pub fn new(
+        data_root: PathBuf,
+        factory: Arc<dyn BackendFactory>,
+        sink: Arc<dyn EventSink>,
+    ) -> Self {
+        Self {
+            workers: Mutex::new(HashMap::new()),
+            factory,
+            sink,
+            data_root,
+            online: Mutex::new(true),
+        }
     }
 
     pub fn upsert_account(&self, account: Account) {
         let mut workers = self.workers.lock().expect("mail workers lock poisoned");
-        if workers.get(&account.path).is_some_and(|worker| worker.account.id == account.id && worker.account.transport == account.transport) {
+        if workers.get(&account.path).is_some_and(|worker| {
+            worker.account.id == account.id && worker.account.transport == account.transport
+        }) {
             return;
         }
-        if let Some(old) = workers.remove(&account.path) { old.send(Command::Stop); }
+        if let Some(old) = workers.remove(&account.path) {
+            old.send(Command::Stop);
+        }
         let (sender, receiver) = mpsc::channel();
         let interrupt = Arc::new(Mutex::new(None));
         let online = *self.online.lock().expect("mail network lock poisoned");
@@ -174,24 +198,46 @@ impl Runtime {
         let control = Arc::clone(&interrupt);
         let copy = account.clone();
         thread::spawn(move || run_worker(copy, root, factory, sink, receiver, control, online));
-        workers.insert(account.path.clone(), Worker { account, sender, interrupt });
+        workers.insert(
+            account.path.clone(),
+            Worker {
+                account,
+                sender,
+                interrupt,
+            },
+        );
     }
 
     pub fn remove_account(&self, path: &str) {
-        if let Some(worker) = self.workers.lock().expect("mail workers lock poisoned").remove(path) {
+        if let Some(worker) = self
+            .workers
+            .lock()
+            .expect("mail workers lock poisoned")
+            .remove(path)
+        {
             worker.send(Command::Stop);
         }
     }
 
     pub fn set_online(&self, online: bool) {
         *self.online.lock().expect("mail network lock poisoned") = online;
-        for worker in self.workers.lock().expect("mail workers lock poisoned").values() {
+        for worker in self
+            .workers
+            .lock()
+            .expect("mail workers lock poisoned")
+            .values()
+        {
             worker.send(Command::Online(online));
         }
     }
 
     pub fn sync_now(&self, path: &str) {
-        if let Some(worker) = self.workers.lock().expect("mail workers lock poisoned").get(path) {
+        if let Some(worker) = self
+            .workers
+            .lock()
+            .expect("mail workers lock poisoned")
+            .get(path)
+        {
             worker.send(Command::Sync);
         }
     }
@@ -199,7 +245,12 @@ impl Runtime {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
-        for (_, worker) in self.workers.get_mut().expect("mail workers lock poisoned").drain() {
+        for (_, worker) in self
+            .workers
+            .get_mut()
+            .expect("mail workers lock poisoned")
+            .drain()
+        {
             worker.send(Command::Stop);
         }
     }
@@ -210,15 +261,25 @@ fn next_backoff(current: Duration) -> Duration {
 }
 
 fn run_worker(
-    account: Account, root: PathBuf, factory: Arc<dyn BackendFactory>,
-    sink: Arc<dyn EventSink>, receiver: mpsc::Receiver<Command>,
-    interrupt: Arc<Mutex<Option<rmac_mail_imap::Interrupt>>>, mut online: bool,
+    account: Account,
+    root: PathBuf,
+    factory: Arc<dyn BackendFactory>,
+    sink: Arc<dyn EventSink>,
+    receiver: mpsc::Receiver<Command>,
+    interrupt: Arc<Mutex<Option<rmac_mail_imap::Interrupt>>>,
+    mut online: bool,
 ) {
-    let Ok(mut store) = MailStorage::open(&root, account.id) else { return; };
+    let Ok(mut store) = MailStorage::open(&root, account.id) else {
+        return;
+    };
     let mut backoff = Duration::from_secs(1);
     loop {
         if !online {
-            sink.snapshot(Snapshot { account: account.id, unread_inbox: store.unread_inbox_count().unwrap_or(0), online: false });
+            sink.snapshot(Snapshot {
+                account: account.id,
+                unread_inbox: store.unread_inbox_count().unwrap_or(0),
+                online: false,
+            });
             match receiver.recv() {
                 Ok(Command::Online(value)) => online = value,
                 Ok(Command::Stop) | Err(_) => break,
@@ -230,15 +291,27 @@ fn run_worker(
             *interrupt.lock().expect("mail interrupt lock poisoned") = backend.interrupt();
             let result = backend.sync(&mut store, account.id);
             if let Ok(messages) = &result {
-                for message in messages { sink.new_mail(message.clone()); }
-                sink.snapshot(Snapshot { account: account.id, unread_inbox: store.unread_inbox_count().unwrap_or(0), online: true });
+                for message in messages {
+                    sink.new_mail(message.clone());
+                }
+                sink.snapshot(Snapshot {
+                    account: account.id,
+                    unread_inbox: store.unread_inbox_count().unwrap_or(0),
+                    online: true,
+                });
             }
             if result.is_ok() && matches!(&account.transport, Transport::Imap(_)) {
                 loop {
                     backend.wait_for_push(IMAP_REFRESH)?;
                     let messages = backend.sync(&mut store, account.id)?;
-                    for message in messages { sink.new_mail(message); }
-                    sink.snapshot(Snapshot { account: account.id, unread_inbox: store.unread_inbox_count().unwrap_or(0), online: true });
+                    for message in messages {
+                        sink.new_mail(message);
+                    }
+                    sink.snapshot(Snapshot {
+                        account: account.id,
+                        unread_inbox: store.unread_inbox_count().unwrap_or(0),
+                        online: true,
+                    });
                 }
             }
             result.map(|_| ())
@@ -254,9 +327,16 @@ fn run_worker(
         } else {
             // A command interrupts IDLE by closing its socket. On a genuine
             // failure, this deadline is the only reconnect wakeup.
-            let wait = if result.is_ok() { Duration::ZERO } else { backoff };
+            let wait = if result.is_ok() {
+                Duration::ZERO
+            } else {
+                backoff
+            };
             match receiver.recv_timeout(wait) {
-                Ok(Command::Online(value)) => { online = value; backoff = Duration::from_secs(1); }
+                Ok(Command::Online(value)) => {
+                    online = value;
+                    backoff = Duration::from_secs(1);
+                }
                 Ok(Command::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Ok(Command::Sync) => backoff = Duration::from_secs(1),
                 Err(mpsc::RecvTimeoutError::Timeout) => backoff = next_backoff(backoff),
@@ -265,4 +345,5 @@ fn run_worker(
     }
 }
 
-#[cfg(test)] mod tests;
+#[cfg(test)]
+mod tests;

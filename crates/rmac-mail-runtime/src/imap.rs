@@ -481,7 +481,7 @@ mod tests {
                     | "UID STORE 8 +FLAGS.SILENT (\\Seen)" => {
                         send(&mut stream, &format!("{tag} OK done\r\n"))
                     }
-                    _ => panic!("unexpected fixture command"),
+                    _ => panic!("unexpected fixture command: {rest}"),
                 }
             }
             assert_eq!(round, 4);

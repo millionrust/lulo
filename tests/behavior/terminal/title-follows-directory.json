@@ -1,0 +1,12 @@
+{
+  "title": "Terminal title follows Bash directory changes",
+  "app": "terminal",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"observe": "initial", "facts": ["windows"]},
+    {"type": "cd /tmp\n", "settle": 1.2},
+    {"observe": "tmp", "facts": ["windows"]}
+  ],
+  "omit": ["initial.windows.front", "initial.windows.titles", "tmp.windows.front"]
+}

@@ -1,0 +1,13 @@
+{
+  "title": "Terminal stays running after its last window closes and opens another from Shell menu",
+  "app": "terminal",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"key": "cmd-w", "settle": 1.2},
+    {"observe": "windowless", "facts": ["windows"]},
+    {"menu_action": "terminal::WindowBasicDefault", "settle": 1.2},
+    {"observe": "reopened", "facts": ["windows"]}
+  ],
+  "omit": ["reopened.windows.front", "reopened.windows.titles"]
+}

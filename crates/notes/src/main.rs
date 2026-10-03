@@ -463,5 +463,18 @@ fn main() {
         1080.0,
         720.0,
         NotesView::new,
+        |cx: &mut gpui::App| {
+            cx.on_action(|_: &ComposeNote, cx| {
+                if cx.windows().is_empty() {
+                    rmac_ui::open_another_window(Vec::new(), cx);
+                    rmac_ui::dispatch_to_app_window(Box::new(ComposeNote), cx);
+                }
+            });
+            cx.on_action(|_: &FocusMainWindow, cx| {
+                if cx.windows().is_empty() {
+                    rmac_ui::open_another_window(Vec::new(), cx);
+                }
+            });
+        },
     );
 }

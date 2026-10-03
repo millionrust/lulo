@@ -39,5 +39,6 @@ fn main() {
                 .filter(|index| *index < profiles::PROFILES.len());
             controller::TerminalView::new(window, cx, profile)
         },
+        controller::register_windowless_actions,
     );
 }

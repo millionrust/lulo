@@ -197,7 +197,7 @@ fn special_item_id(kind: rmac_dock::SpecialItemKind) -> &'static str {
     match kind {
         rmac_dock::SpecialItemKind::Files => "Files",
         rmac_dock::SpecialItemKind::Downloads => "Downloads",
-        rmac_dock::SpecialItemKind::Trash => "Trash",
+        rmac_dock::SpecialItemKind::Trash => rmac_locale::FileVocabulary::from_environment().bin(),
     }
 }
 
@@ -258,16 +258,22 @@ pub fn prepare_special_context(
                     Error::new(
                         Operation::ReviewTrash,
                         FailureKind::Rejected,
-                        "Trash",
-                        "Trash changed before the deletion review",
+                        rmac_locale::FileVocabulary::from_environment().bin(),
+                        format!(
+                            "{} changed before the deletion review",
+                            rmac_locale::FileVocabulary::from_environment().bin()
+                        ),
                     )
                 })?
                 .ok_or_else(|| {
                     Error::new(
                         Operation::ReviewTrash,
                         FailureKind::Rejected,
-                        "Trash",
-                        "Trash is already empty",
+                        rmac_locale::FileVocabulary::from_environment().bin(),
+                        format!(
+                            "{} is already empty",
+                            rmac_locale::FileVocabulary::from_environment().bin()
+                        ),
                     )
                 })
         }
@@ -292,8 +298,11 @@ pub fn execute_empty_trash(
             Error::new(
                 Operation::EmptyTrash,
                 FailureKind::Rejected,
-                "Trash",
-                "Trash changed or could not be emptied",
+                rmac_locale::FileVocabulary::from_environment().bin(),
+                format!(
+                    "{} changed or could not be emptied",
+                    rmac_locale::FileVocabulary::from_environment().bin()
+                ),
             )
         })
 }

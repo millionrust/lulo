@@ -944,23 +944,59 @@ pub fn boot_app_with_assets<A, V, F>(
 /// a second launch brings the running app's window forward instead of
 /// starting a second process, which could not own the app's menus (or, for
 /// Notes, its library).
-pub fn boot_single_window_app_with_assets<A, V, F>(
+pub fn boot_single_window_app_with_assets<A, V, F, H>(
     app_id: &'static str,
     assets: A,
     title: impl Into<SharedString>,
     width: f32,
     height: f32,
     build: F,
+    setup: H,
 ) where
     A: gpui::AssetSource,
     V: Render + 'static,
-    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+    F: Fn(&mut Window, &mut Context<V>) -> V + 'static,
+    H: FnOnce(&mut App) + 'static,
 {
     if hand_off_to_running_instance(app_id, &[Vec::new()]) {
         focus_running_app(app_id);
         return;
     }
-    boot_app_window(app_id, assets, title, width, height, true, build);
+    let fallback_title: SharedString = title.into();
+    let title = rmac_apps::identity::window_title(app_id)
+        .map(SharedString::from)
+        .unwrap_or(fallback_title);
+    let build =
+        Rc::new(move |_: &[String], window: &mut Window, cx: &mut Context<V>| build(window, cx));
+    crate::application()
+        .with_assets(assets)
+        .with_quit_mode(gpui::QuitMode::Explicit)
+        .run(move |cx: &mut App| {
+            init_application(cx);
+            setup(cx);
+            let open = build.clone();
+            let window_title = title.clone();
+            let opener: OpenWindow = Rc::new(move |_, cx| {
+                if let Some((window, _)) = crate::menu_target::target(cx) {
+                    let _ = window.update(cx, |_, window, _| window.activate_window());
+                } else if let Err(error) = open_app_window(
+                    app_id,
+                    window_title.clone(),
+                    width,
+                    height,
+                    Vec::new(),
+                    open.clone(),
+                    cx,
+                ) {
+                    eprintln!("{app_id} could not reopen its window: {error}");
+                }
+            });
+            cx.set_global(AppWindowOpener(opener.clone()));
+            crate::install_app_instance(app_id, move |arguments, cx| opener(arguments, cx), cx);
+            open_app_window(app_id, title.clone(), width, height, Vec::new(), build, cx)
+                .expect("failed to open window");
+            cx.activate(true);
+        });
 }
 
 /// Bring `app_id`'s most recently used window forward through the
@@ -1077,16 +1113,18 @@ fn boot_app_window<A, V, F>(
 }
 
 /// [`boot_app_instance_with_assets`] with gpui-component's default assets.
-pub fn boot_app_instance<V, F>(
+pub fn boot_app_instance<V, F, H>(
     app_id: &'static str,
     title: impl Into<SharedString>,
     width: f32,
     height: f32,
     windows: Vec<Vec<String>>,
     build: F,
+    setup: H,
 ) where
     V: Render + 'static,
     F: Fn(&[String], &mut Window, &mut Context<V>) -> V + 'static,
+    H: FnOnce(&mut App) + 'static,
 {
     boot_app_instance_with_assets(
         app_id,
@@ -1096,6 +1134,7 @@ pub fn boot_app_instance<V, F>(
         height,
         windows,
         build,
+        setup,
     );
 }
 
@@ -1107,7 +1146,8 @@ pub fn boot_app_instance<V, F>(
 /// without starting GPUI. Otherwise it opens the windows itself, keeps
 /// running with its menu after the last one closes (as the Mac's Dock
 /// does), and serves later launches' requests with `build` too.
-pub fn boot_app_instance_with_assets<A, V, F>(
+#[allow(clippy::too_many_arguments)] // App identity, assets, geometry, windows, and two callbacks are separate inputs.
+pub fn boot_app_instance_with_assets<A, V, F, H>(
     app_id: &'static str,
     assets: A,
     title: impl Into<SharedString>,
@@ -1115,10 +1155,12 @@ pub fn boot_app_instance_with_assets<A, V, F>(
     height: f32,
     windows: Vec<Vec<String>>,
     build: F,
+    setup: H,
 ) where
     A: gpui::AssetSource,
     V: Render + 'static,
     F: Fn(&[String], &mut Window, &mut Context<V>) -> V + 'static,
+    H: FnOnce(&mut App) + 'static,
 {
     let mut windows = windows;
     if windows.is_empty() {
@@ -1134,8 +1176,10 @@ pub fn boot_app_instance_with_assets<A, V, F>(
     let build = Rc::new(build);
     crate::application()
         .with_assets(assets)
+        .with_quit_mode(gpui::QuitMode::Explicit)
         .run(move |cx: &mut App| {
             init_application(cx);
+            setup(cx);
             let requested = build.clone();
             let window_title = title.clone();
             let opener: OpenWindow = Rc::new(move |arguments, cx| {

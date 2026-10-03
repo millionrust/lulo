@@ -3,6 +3,13 @@
 use super::*;
 
 impl EditorView {
+    pub(super) fn open_pending_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending_open_picker && !self.file_busy && !self.file_action_blocked() {
+            self.pending_open_picker = false;
+            self.open(window, cx);
+        }
+    }
+
     pub(super) fn new_file(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.file_busy || self.file_action_blocked() {
             return;

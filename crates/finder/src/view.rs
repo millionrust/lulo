@@ -518,5 +518,9 @@ pub(crate) fn run(windows: Vec<Vec<String>>) {
     );
 }
 
+fn bin_copy(words: rmac_locale::FileVocabulary, message: &str) -> String {
+    message.replace("Trash", words.bin())
+}
+
 #[cfg(test)]
 mod tests;

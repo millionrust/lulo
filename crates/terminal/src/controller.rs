@@ -182,6 +182,54 @@ gpui::actions!(
         TabSolidColors,
     ]
 );
+
+fn open_windowless_profile(profile: Option<usize>, cx: &mut gpui::App) {
+    if cx.windows().is_empty() {
+        let arguments = profile
+            .map(|index| vec![format!("--profile={index}")])
+            .unwrap_or_default();
+        rmac_ui::open_another_window(arguments, cx);
+    }
+}
+
+pub(crate) fn register_windowless_actions(cx: &mut gpui::App) {
+    macro_rules! open_profile {
+        ($action:ty, $profile:expr) => {
+            cx.on_action(|_: &$action, cx| open_windowless_profile($profile, cx));
+        };
+    }
+    open_profile!(WindowBasicDefault, None);
+    open_profile!(WindowBasic, Some(profile_named("Basic")));
+    open_profile!(WindowClearDark, Some(profile_named("Clear Dark")));
+    open_profile!(WindowClearLight, Some(profile_named("Clear Light")));
+    open_profile!(WindowGrass, Some(profile_named("Grass")));
+    open_profile!(WindowHomebrew, Some(profile_named("Homebrew")));
+    open_profile!(WindowManPage, Some(profile_named("Man Page")));
+    open_profile!(WindowNovel, Some(profile_named("Novel")));
+    open_profile!(WindowOcean, Some(profile_named("Ocean")));
+    open_profile!(WindowPro, Some(profile_named("Pro")));
+    open_profile!(WindowRedSands, Some(profile_named("Red Sands")));
+    open_profile!(WindowSilverAerogel, Some(profile_named("Silver Aerogel")));
+    open_profile!(WindowSolidColors, Some(profile_named("Solid Colors")));
+    open_profile!(TabBasicDefault, None);
+    open_profile!(TabBasic, Some(profile_named("Basic")));
+    open_profile!(TabClearDark, Some(profile_named("Clear Dark")));
+    open_profile!(TabClearLight, Some(profile_named("Clear Light")));
+    open_profile!(TabGrass, Some(profile_named("Grass")));
+    open_profile!(TabHomebrew, Some(profile_named("Homebrew")));
+    open_profile!(TabManPage, Some(profile_named("Man Page")));
+    open_profile!(TabNovel, Some(profile_named("Novel")));
+    open_profile!(TabOcean, Some(profile_named("Ocean")));
+    open_profile!(TabPro, Some(profile_named("Pro")));
+    open_profile!(TabRedSands, Some(profile_named("Red Sands")));
+    open_profile!(TabSilverAerogel, Some(profile_named("Silver Aerogel")));
+    open_profile!(TabSolidColors, Some(profile_named("Solid Colors")));
+    cx.on_action(|_: &ShowSettings, cx| {
+        if cx.windows().is_empty() {
+            crate::settings_window::show(cx);
+        }
+    });
+}
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
 

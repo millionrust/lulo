@@ -2,10 +2,22 @@ use crate::{Delivery, Error, ErrorKind, Outcome};
 
 /// Start one parsed desktop-entry command without a shell.
 pub async fn launch(spec: rmac_apps::LaunchSpec) -> Result<Outcome, Error> {
+    launch_with_color_scheme(spec, None).await
+}
+
+/// Pass a fresh resolved scheme to compositor-spawned apps. Resident launchers
+/// can outlive the scheme niri inherited when the desktop session started.
+pub async fn launch_with_color_scheme(
+    spec: rmac_apps::LaunchSpec,
+    color_scheme: Option<&str>,
+) -> Result<Outcome, Error> {
+    let color_scheme = color_scheme
+        .filter(|scheme| matches!(*scheme, "dark" | "light"))
+        .map(str::to_owned);
     if cfg!(target_os = "linux")
         && std::env::var_os(rmac_compositor_niri::SOCKET_PATH_ENV).is_some()
     {
-        if let Some(arguments) = rmac_apps::activation_spawn_argv(&spec) {
+        if let Some(mut arguments) = rmac_apps::activation_spawn_argv(&spec) {
             // niri acknowledges `spawn` before it forks, and a failed exec is
             // only logged in niri's own output, so a missing or unrunnable
             // program would otherwise "launch" with nothing on screen.
@@ -19,6 +31,7 @@ pub async fn launch(spec: rmac_apps::LaunchSpec) -> Result<Outcome, Error> {
                     kind: ErrorKind::Io(kind),
                 })?;
             }
+            arguments = with_color_scheme(arguments, color_scheme.as_deref());
             if let Ok(command) = rmac_compositor::SpawnCommand::new(arguments) {
                 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -52,7 +65,19 @@ pub async fn launch(spec: rmac_apps::LaunchSpec) -> Result<Outcome, Error> {
     }
 
     blocking::unblock(move || {
-        rmac_apps::launch(&spec)
+        let child = match (
+            color_scheme.as_deref(),
+            rmac_apps::activation_spawn_argv(&spec),
+        ) {
+            (Some(scheme), Some(arguments)) if cfg!(target_os = "linux") => {
+                std::process::Command::new("/usr/bin/env")
+                    .arg(format!("RMAC_COLOR_SCHEME={scheme}"))
+                    .args(arguments)
+                    .spawn()
+            }
+            _ => rmac_apps::launch(&spec),
+        };
+        child
             .map(|child| Outcome {
                 process_id: Some(child.id()),
                 delivery: Delivery::DirectFallback,
@@ -62,6 +87,16 @@ pub async fn launch(spec: rmac_apps::LaunchSpec) -> Result<Outcome, Error> {
             })
     })
     .await
+}
+
+fn with_color_scheme(mut arguments: Vec<String>, scheme: Option<&str>) -> Vec<String> {
+    if let Some(scheme) = scheme {
+        arguments.splice(
+            0..0,
+            ["/usr/bin/env".into(), format!("RMAC_COLOR_SCHEME={scheme}")],
+        );
+    }
+    arguments
 }
 
 pub(crate) fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
@@ -123,4 +158,21 @@ fn executable(candidate: &std::path::Path) -> Result<(), std::io::ErrorKind> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod color_scheme_tests {
+    use super::with_color_scheme;
+
+    #[test]
+    fn compositor_spawn_receives_the_live_scheme() {
+        assert_eq!(
+            with_color_scheme(vec!["rmac-system-settings".into()], Some("dark")),
+            [
+                "/usr/bin/env",
+                "RMAC_COLOR_SCHEME=dark",
+                "rmac-system-settings"
+            ]
+        );
+    }
 }

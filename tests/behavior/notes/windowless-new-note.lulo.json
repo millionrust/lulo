@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "notes/windowless-new-note",
+  "platform": "Lulo local contract",
+  "observations": {
+    "windowless": {"windows": {"count": 0}},
+    "reopened": {"windows": {"count": 1}}
+  }
+}

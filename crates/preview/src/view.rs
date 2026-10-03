@@ -2600,7 +2600,7 @@ impl PreviewView {
         let hit_height = mac::traffic_light_hit_height();
         let is_pdf = self.slot().and_then(Slot::kind) == Some(Kind::Pdf);
         let ready = self.slot().is_some_and(|slot| slot.loaded().is_some());
-        let group = metrics::right_group(width, is_pdf);
+        let group = metrics::right_group(width, true);
         let (title, subtitle) = self.title_and_subtitle();
         let subtitle = self.toolbar_shown.then_some(subtitle).flatten();
         let title_left = if !self.toolbar_shown {
@@ -2867,7 +2867,7 @@ impl PreviewView {
             ))
             .on_click(cx.listener(|this, _, _, cx| this.toggle_inspector(cx)));
 
-        let search = is_pdf.then(|| {
+        let search = ready.then(|| {
             let text_failed = self
                 .slot()
                 .is_some_and(|slot| matches!(slot.text, TextState::Failed(_)));
@@ -2881,6 +2881,7 @@ impl PreviewView {
                     .map(|current| format!("{} of {}", current + 1, self.search.matches.len()))
             };
             capsule("preview-search", group.search, metrics::SEARCH_WIDTH)
+                .when(!is_pdf, |field| field.opacity(0.5))
                 .child(
                     div()
                         .absolute()

@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "terminal/title-follows-directory",
+  "platform": "Lulo local contract",
+  "observations": {
+    "initial": {"windows": {"count": 1}},
+    "tmp": {"windows": {"count": 1, "titles": ["tmp — Terminal"]}}
+  }
+}

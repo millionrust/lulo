@@ -22,11 +22,14 @@ impl FinderView {
                 .into_any_element(),
             rmac_ui::dialog_button(
                 "recovery-confirm",
-                if busy {
-                    "Resolving…"
-                } else {
-                    presentation.action_label
-                },
+                bin_copy(
+                    self.file_words,
+                    if busy {
+                        "Resolving…"
+                    } else {
+                        presentation.action_label
+                    },
+                ),
                 rmac_ui::DialogButtonKind::Primary,
             )
             .busy(busy)
@@ -97,9 +100,12 @@ impl FinderView {
         }
         let review = self.trash_recovery_reviews.first()?;
         let presentation = trash_recovery_presentation(&review.action);
-        let title = format!(
-            "Recover Trash Operation (1 of {})",
-            self.trash_recovery_reviews.len()
+        let title = bin_copy(
+            self.file_words,
+            &format!(
+                "Recover Trash Operation (1 of {})",
+                self.trash_recovery_reviews.len()
+            ),
         );
         let busy = self.trash_recovery_busy;
         let resolvable = !matches!(
@@ -129,7 +135,14 @@ impl FinderView {
             .on_click(cx.listener(|this, _, _, cx| this.resolve_current_trash_recovery(cx)))
             .into_any_element(),
         ];
-        Some(rmac_ui::alert(title, presentation.message, buttons).into_any_element())
+        Some(
+            rmac_ui::alert(
+                title,
+                bin_copy(self.file_words, &presentation.message),
+                buttons,
+            )
+            .into_any_element(),
+        )
     }
 
     #[cfg(any(target_os = "linux", test))]

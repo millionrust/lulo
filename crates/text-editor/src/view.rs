@@ -236,6 +236,7 @@ struct EditorView {
     watched_directory: Option<PathBuf>,
     document_watcher: Option<notify::RecommendedWatcher>,
     pending_startup_path: Option<PathBuf>,
+    pending_open_picker: bool,
     /// The modal alert currently shown, if any (shared `rmac_ui::alert`).
     alert: Option<ActiveAlert>,
     _subscriptions: Vec<Subscription>,

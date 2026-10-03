@@ -5642,6 +5642,7 @@ version = "0.9.0-beta.1"
 dependencies = [
  "rmac-apps",
  "rmac-compositor",
+ "rmac-locale",
  "rmac-places",
  "rmac-shell-settings",
 ]
@@ -5681,6 +5682,7 @@ dependencies = [
  "rmac-compositor-niri",
  "rmac-dock",
  "rmac-icon",
+ "rmac-locale",
  "rmac-places",
  "rmac-places-system",
  "rmac-portal",
@@ -6001,6 +6003,7 @@ dependencies = [
  "rmac-dock",
  "rmac-dock-runtime",
  "rmac-dock-system",
+ "rmac-locale",
  "rmac-login-items-linux",
  "rmac-osd",
  "rmac-places",
@@ -6287,6 +6290,7 @@ dependencies = [
  "rmac-dock",
  "rmac-dock-runtime",
  "rmac-dock-system",
+ "rmac-locale",
  "rmac-osd",
  "rmac-pasteboard",
  "rmac-places",

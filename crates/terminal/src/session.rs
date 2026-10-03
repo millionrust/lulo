@@ -104,6 +104,36 @@ fn shell_program(configured: Option<String>) -> String {
         .unwrap_or_else(|| "/bin/sh".to_string())
 }
 
+/// Bash does not report its current directory by default. Emit one bounded
+/// OSC 7 report at each prompt without starting a process or watching /proc.
+/// User prompt commands still run after the directory report.
+fn bash_directory_prompt_command(shell: &str, existing: Option<String>) -> Option<String> {
+    if std::path::Path::new(shell).file_name()?.to_str()? != "bash" {
+        return None;
+    }
+    let report = r#"__rmac_uri=${PWD//%/%25}; __rmac_uri=${__rmac_uri// /%20}; __rmac_uri=${__rmac_uri//#/%23}; __rmac_uri=${__rmac_uri//\?/%3F}; printf '\033]7;file://%s\007' "$__rmac_uri""#;
+    Some(
+        match existing.filter(|command| !command.trim().is_empty()) {
+            Some(command) => format!("{report}; {command}"),
+            None => report.to_owned(),
+        },
+    )
+}
+
+#[cfg(test)]
+mod directory_prompt_tests {
+    use super::bash_directory_prompt_command;
+
+    #[test]
+    fn bash_reports_directory_at_each_prompt_and_preserves_user_hook() {
+        let command =
+            bash_directory_prompt_command("/bin/bash", Some("history -a".into())).unwrap();
+        assert!(command.contains("7;file://%s"));
+        assert!(command.ends_with("; history -a"));
+        assert!(bash_directory_prompt_command("/bin/zsh", None).is_none());
+    }
+}
+
 /// `portable_pty::SlavePty::spawn_command` reports every failure through
 /// `anyhow`, but on Unix it's always `std::process::Command::spawn`'s own
 /// `io::Error` underneath (exec failures are reported back to the parent
@@ -592,8 +622,13 @@ impl Session {
         let job_source = ForegroundJobSource::from_master(&*pair.master);
         let workers = ReservedSessionWorkers::reserve()?;
         let shell = shell_program(std::env::var("SHELL").ok());
+        let prompt_command =
+            bash_directory_prompt_command(&shell, std::env::var("PROMPT_COMMAND").ok());
         let mut command = CommandBuilder::new(shell);
         command.env("TERM", "xterm-256color");
+        if let Some(prompt_command) = prompt_command {
+            command.env("PROMPT_COMMAND", prompt_command);
+        }
         if let Some(directory) = starting_directory {
             command.cwd(directory);
         }

@@ -2982,6 +2982,29 @@ mod tests {
     }
 
     #[test]
+    fn british_files_menu_uses_bin_for_every_trash_action() {
+        let menus = definition_for_vocabulary(
+            rmac_apps::identity::FILES,
+            &[
+                "finder::MoveToTrash",
+                "finder::GoTrash",
+                "finder::EmptyTrash",
+                "finder::EmptyTrashImmediately",
+            ],
+            rmac_locale::FileVocabulary::for_locale("en_GB.UTF-8"),
+        )
+        .unwrap();
+        let labels = menus
+            .iter()
+            .flat_map(|menu| &menu.items)
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>();
+        for label in ["Move to Bin", "Bin", "Empty Bin…", "Empty Bin"] {
+            assert!(labels.contains(&label), "missing {label}: {labels:?}");
+        }
+    }
+
+    #[test]
     fn files_file_menu_offers_rename_after_get_info() {
         let menus = definition_for_vocabulary(
             rmac_apps::identity::FILES,

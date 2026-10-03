@@ -75,6 +75,7 @@ impl Tab {
 struct SettingsView {
     focus: FocusHandle,
     tab: Tab,
+    file_words: rmac_locale::FileVocabulary,
     settings: FinderSettings,
     save_error: Option<SharedString>,
 }
@@ -84,6 +85,7 @@ impl SettingsView {
         Self {
             focus: cx.focus_handle(),
             tab: Tab::General,
+            file_words: rmac_locale::FileVocabulary::from_environment(),
             settings: settings::current(),
             save_error: None,
         }
@@ -337,7 +339,7 @@ impl SettingsView {
             ))
             .child(checkbox_row(
                 "settings-sidebar-bin",
-                "Bin",
+                self.file_words.bin(),
                 sidebar.show_bin,
                 sidebar_listener(cx, |sidebar, value| sidebar.show_bin = value),
             ))
@@ -382,7 +384,7 @@ impl SettingsView {
             ))
             .child(checkbox_row(
                 "settings-warn-empty-bin",
-                "Show warning before emptying the Bin",
+                format!("Show warning before emptying the {}", self.file_words.bin()),
                 advanced.warn_before_emptying_bin,
                 advanced_listener(cx, |advanced, value| {
                     advanced.warn_before_emptying_bin = value
@@ -390,7 +392,10 @@ impl SettingsView {
             ))
             .child(checkbox_row(
                 "settings-remove-after-30-days",
-                "Remove items from the Bin after 30 days",
+                format!(
+                    "Remove items from the {} after 30 days",
+                    self.file_words.bin()
+                ),
                 advanced.remove_items_from_bin_after_30_days,
                 advanced_listener(cx, |advanced, value| {
                     advanced.remove_items_from_bin_after_30_days = value

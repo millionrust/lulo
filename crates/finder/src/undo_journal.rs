@@ -1781,7 +1781,12 @@ fn undo_label(record: &UndoRecord) -> String {
         UndoKind::Move => "Undo Move",
         UndoKind::Replace => "Undo Replace",
         UndoKind::MoveReplace => "Undo Move and Replace",
-        UndoKind::Trash => "Undo Move to Trash",
+        UndoKind::Trash => {
+            return format!(
+                "Undo Move to {} “{name}”",
+                rmac_locale::FileVocabulary::from_environment().bin()
+            );
+        }
         UndoKind::Restore => "Undo Restore",
     };
     format!("{verb} “{name}”")

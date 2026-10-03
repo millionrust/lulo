@@ -2459,6 +2459,12 @@ mod linux_wayland {
                 self.dismiss_focus.focus(window, cx);
                 self.dismiss_focus_active = true;
             } else if !popover_open {
+                if self.dismiss_focus_active && self.keyboard.is_none() {
+                    // The menu used this OnDemand surface for Escape. Give
+                    // keyboard focus back when it closes so a later
+                    // shortcut-opened overlay can receive its first key.
+                    window.blur();
+                }
                 self.dismiss_focus_active = false;
             }
             // The output can be resized without changing the shelf's length.

@@ -166,6 +166,23 @@ impl NotesView {
                 .role(Role::MultilineTextInput)
                 .aria_label("Body")
                 .accessible_text_input(&self.body, cx)
+                // The multiline input binds Tab to indentation. Let Tab
+                // reach the Tags field that follows it in the editor.
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    let modifiers = event.keystroke.modifiers;
+                    if event.keystroke.key != "tab"
+                        || modifiers.shift
+                        || modifiers.control
+                        || modifiers.alt
+                        || modifiers.platform
+                        || !this.body.read(cx).focus_handle(cx).is_focused(window)
+                    {
+                        return;
+                    }
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    window.focus(&this.tags.read(cx).focus_handle(cx), cx);
+                }))
                 .on_a11y_action(AccessibleAction::SetValue, self.assistive_body_listener(cx))
                 .on_a11y_action(
                     AccessibleAction::ReplaceSelectedText,

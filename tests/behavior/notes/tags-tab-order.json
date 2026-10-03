@@ -1,0 +1,16 @@
+{
+  "title": "Notes: Tab from the Body reaches the Tags field",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "Keyboard tags"},
+    {"key": "tab"},
+    {"observe": "body", "facts": ["focus"]},
+    {"key": "tab"},
+    {"observe": "tags", "facts": ["focus"]}
+  ],
+  "omit": ["body.focus.value", "tags.focus.value", "body.focus.selection", "tags.focus.selection", "body.focus.selected_text", "tags.focus.selected_text", "body.focus.selected_all", "tags.focus.selected_all"]
+}

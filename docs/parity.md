@@ -682,7 +682,7 @@ similar — no plan, not tracked as rows here).
 | APP-10 | P2 | S | Missing | **Dictionary**: Spotlight already has definitions when dictd is installed; a window app plus ⌃⌘D lookup would reuse that. | new |
 | APP-11 | P1 (data safety) | L | Missing | **Time Machine**: a Déjà Dup engine behind a Lulo pane (see SET-10). | new |
 | APP-12 | P2 | S | Missing | **Digital Color Meter**: cheap tool designers expect; worth doing alongside a Print Center queue view (SET-07). | new |
-| APP-13 | P1 | L | Missing (designed) | **Mail**: owner put a native Mail app in Beta 1 (2026-10-03), replacing the Thunderbird substitute. Design: ADR 0022 (own Rust IMAP/SMTP/Graph engine, GOA credentials), `docs/design/calendar-mail.md` (MAIL-1..MAIL-10), mock `design-lab/mail.html`, pending scenarios `docs/behavior-pending/mail/`. Default-mail-app choice still needs S16. | new `mail` + `rmac-mail-*` crates; `crates/rmac-apps/src/catalog.rs` |
+| APP-13 | P1 | L | Partial: MAIL-1 storage implemented; app missing | **Mail**: MAIL-1 adds the SQLite cache, FTS5 search, blob store, reference threading and offline change journal in `rmac-mail-store` / `rmac-mail-storage`, with a killed-writer crash test. The native app, account integration, protocol engines and UI remain in MAIL-2..MAIL-10. Design: ADR 0022, `docs/design/calendar-mail.md`, mock `design-lab/mail.html`, pending scenarios `docs/behavior-pending/mail/`. Default-mail-app choice still needs S16. | new `mail` + remaining `rmac-mail-*` crates; `crates/rmac-apps/src/catalog.rs` |
 
 ---
 

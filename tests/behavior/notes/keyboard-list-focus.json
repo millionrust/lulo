@@ -1,0 +1,11 @@
+{
+  "title": "Notes opens with keyboard focus on the named note list",
+  "app": "notes",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"wait": 2},
+    {"observe": "initial", "facts": ["focus"]}
+  ],
+  "omit": ["initial.focus.value", "initial.focus.selection", "initial.focus.selected_text", "initial.focus.selected_all"]
+}

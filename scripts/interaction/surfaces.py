@@ -54,7 +54,7 @@ SURFACES: list[dict[str, Any]] = [
         "status": "automated",
         "mac": {"process": "Finder", "open": "menu-bar-title", "title": "Apple", "neighbor_title": "Finder"},
         # Ground truth read live (lulo_probe.py --explore, 2026-10-02): the
-        # The leftmost top-bar item's accessible name is "Lulo menu", and
+        # leftmost top-bar item's accessible name is "Lulo menu", and
         # every other one is "<App> menu" (e.g. "Files menu"), not the bare
         # app name.
         "lulo": {"harness": "shell", "open": "topbar-menu", "label": "Lulo menu", "neighbor_label": "Files menu"},

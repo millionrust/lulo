@@ -111,6 +111,7 @@ def start(work: Path) -> Optional["FakeHardware"]:
         import dbus
         import dbus.mainloop.glib
         import dbusmock
+        from dbusmock.templates.bluez5 import BLUEZ_MOCK_IFACE
         from dbusmock.templates.networkmanager import (
             DeviceState,
             InfrastructureMode,
@@ -189,7 +190,10 @@ def start(work: Path) -> Optional["FakeHardware"]:
             "bluez5", {}, BusType.SYSTEM, stdout=bt_log, stderr=bt_log,
         )
         processes.append(bt_server.process)
-        bt_mock = dbus.Interface(bt_server.obj, dbusmock.MOCK_IFACE)
+        # bluez5's convenience methods (unlike NetworkManager's and
+        # UPower's) live on their own org.bluez.Mock interface, not the
+        # generic org.freedesktop.DBus.Mock.
+        bt_mock = dbus.Interface(bt_server.obj, BLUEZ_MOCK_IFACE)
         bt_mock.AddAdapter("hci0", "lulo-laptop")
         bt_mock.AddDevice("hci0", "AA:BB:CC:DD:EE:06", "Lulo Headphones")
         bt_mock.PairDevice("hci0", "AA:BB:CC:DD:EE:06")

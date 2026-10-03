@@ -108,7 +108,7 @@ fn popover_options(bounds: Bounds<Pixels>) -> WindowOptions {
                 px(0.0),
                 px(0.0),
             )),
-            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            keyboard_interactivity: KeyboardInteractivity::Exclusive,
             ..Default::default()
         }),
         is_movable: false,

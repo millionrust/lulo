@@ -91,7 +91,7 @@ scenarios passed in the same private runner.
 |---|---|---|
 | Files | 12-stop Tab cycle through sidebar, toolbar actions and Search back to Files | 2: Escape from Search leaves window focus (ACC-18); rename exit speech omits the list name |
 | Settings | one sidebar stop and one General-list stop; arrows select rows | 3 low-severity no-effect probes on Search before the list receives focus |
-| Notes | named list on launch; Folders in Tab cycle; Body → Tags behavior scenario passed | 1: ⌘F leaves focus on the window (ACC-18) |
+| Notes | named list on launch; Folders in Tab cycle; Body → Tags behavior scenario passed | 1: ⌘F leaves focus on the window (ACC-18). Some icon buttons appear twice in the Tab cycle, which this audit does not flag. |
 | Preview | first Tab reaches named document; toolbar includes Show Markup Toolbar | 2: launch focus remains on the window before Tab |
 | Menu bar (⌃F2) | AT-SPI focus lands on a named, showing and visible "Lulo menu" item | 4: first Orca utterance is still "frame"; two later focus moves are silent; Escape returns to an unnamed frame in the empty nested session (ACC-23 remains partial) |
 | Dock (⌃F3) | first Files button is named, visible and spoken immediately | 2: one later focus move is silent; Escape returns to the empty session's frame |

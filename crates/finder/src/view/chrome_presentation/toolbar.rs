@@ -97,11 +97,12 @@ impl FinderView {
     ) -> impl IntoElement {
         let can_go_back = self.trash_view || self.applications_view || !self.back.is_empty();
         let can_go_forward = !self.fwd.is_empty();
+        let view = cx.entity();
         let navigation_control = capsule("navigation")
             .role(Role::Toolbar)
             .aria_label("Back/Forward")
             .child(
-                capsule_button(
+                rmac_ui::KeyboardAction::new("back-keyboard", capsule_button(
                     "back",
                     "icons/chevron-left.svg",
                     TOOLBAR_CHEVRON_GLYPH,
@@ -109,11 +110,14 @@ impl FinderView {
                     false,
                     can_go_back,
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))), {
+                    let view = view.clone();
+                    move |_, cx| { view.update(cx, |this, cx| this.go_back(cx)); }
+                }).disabled(!can_go_back),
             )
             .child(capsule_rule(true))
             .child(
-                capsule_button(
+                rmac_ui::KeyboardAction::new("forward-keyboard", capsule_button(
                     "fwd",
                     "icons/chevron-right.svg",
                     TOOLBAR_CHEVRON_GLYPH,
@@ -121,7 +125,10 @@ impl FinderView {
                     false,
                     can_go_forward,
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))), {
+                    let view = view.clone();
+                    move |_, cx| { view.update(cx, |this, cx| this.go_forward(cx)); }
+                }).disabled(!can_go_forward),
             );
 
         let modes = [
@@ -140,7 +147,9 @@ impl FinderView {
                     view_control.child(capsule_rule(self.view != mode && self.view != previous));
             }
             let current = self.view == mode;
-            view_control = view_control.child(
+            let action_view = view.clone();
+            view_control = view_control.child(rmac_ui::KeyboardAction::new(
+                SharedString::from(format!("{id}-keyboard")),
                 capsule_button(id, glyph, TOOLBAR_GLYPH, tooltip, current, true)
                     .role(Role::RadioButton)
                     .aria_toggled(if current {
@@ -149,7 +158,8 @@ impl FinderView {
                         Toggled::False
                     })
                     .on_click(cx.listener(move |this, _, _, cx| this.select_view_mode(mode, cx))),
-            );
+                move |_, cx| { action_view.update(cx, |this, cx| this.select_view_mode(mode, cx)); },
+            ));
         }
 
         // Finder's "Group" pop-up. Files has no grouping, so it offers the
@@ -232,7 +242,7 @@ impl FinderView {
         } else {
             capsule("search")
                 .child(
-                    capsule_button(
+                    rmac_ui::KeyboardAction::new("search-keyboard", capsule_button(
                         "search-button",
                         "icons/search.svg",
                         18.0,
@@ -240,7 +250,10 @@ impl FinderView {
                         false,
                         true,
                     )
-                    .on_click(cx.listener(|this, _, window, cx| this.open_search(window, cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.open_search(window, cx))), {
+                        let view = view.clone();
+                        move |window, cx| { view.update(cx, |this, cx| this.open_search(window, cx)); }
+                    }),
                 )
                 .into_any_element()
         };

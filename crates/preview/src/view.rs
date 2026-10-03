@@ -368,6 +368,7 @@ struct Search {
 
 pub(crate) struct PreviewView {
     pub(crate) focus: FocusHandle,
+    page_focus: FocusHandle,
     slots: Vec<Slot>,
     selected: usize,
     back: Vec<Location>,
@@ -1204,6 +1205,7 @@ impl PreviewView {
         let next_id = slots.len() as u64;
         let mut view = Self {
             focus: cx.focus_handle(),
+            page_focus: cx.focus_handle(),
             sidebar: slots.len() > 1,
             image_background: false,
             slots,
@@ -2897,6 +2899,7 @@ impl PreviewView {
             .when(self.toolbar_shown, |toolbar| toolbar.child(zoom_group))
             .when(self.toolbar_shown, |toolbar| {
                 toolbar.child(
+                    rmac_ui::KeyboardAction::new("preview-toggle-markup-keyboard",
                     capsule("preview-toggle-markup", group.zoom - 48.0, 36.0)
                         .role(Role::Button)
                         .aria_label("Show Markup Toolbar")
@@ -2911,7 +2914,15 @@ impl PreviewView {
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.markup_shown = !this.markup_shown;
                             cx.notify();
-                        })),
+                        })), {
+                            let view = cx.entity();
+                            move |_, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.markup_shown = !this.markup_shown;
+                                    cx.notify();
+                                });
+                            }
+                        }),
                 )
             })
             .when(self.toolbar_shown, |toolbar| toolbar.child(rotate))
@@ -3326,6 +3337,9 @@ impl PreviewView {
         };
         div()
             .id("preview-document")
+            .role(Role::Document)
+            .aria_label(self.title_and_subtitle().0)
+            .track_focus(&self.page_focus.clone().tab_stop(true).tab_index(0))
             .absolute()
             .left(px(left))
             .top(px(self.document_top()))

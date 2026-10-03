@@ -266,6 +266,7 @@ impl FinderView {
             free_bytes: None,
             dragging: None,
             focus,
+            sidebar_focus: cx.focus_handle(),
             native_window_title: "Files".into(),
             watcher,
             filesystem_events: fs_events,

@@ -453,6 +453,7 @@ struct FinderView {
     free_bytes: Option<u64>,
     dragging: Option<Point<Pixels>>,
     focus: FocusHandle,
+    sidebar_focus: FocusHandle,
     native_window_title: String,
     watcher: Option<RecommendedWatcher>,
     filesystem_events: async_channel::Sender<()>,

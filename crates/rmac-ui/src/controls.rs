@@ -6,7 +6,7 @@ use gpui::{
     div, prelude::FluentBuilder as _, px, rgba, AccessibleAction, Anchor, AnyElement, App,
     ClickEvent, Context, DismissEvent, ElementId, Entity, Focusable as _, Hsla,
     InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement as _,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled,
+    RenderOnce, Role, SharedString, Stateful, StatefulInteractiveElement as _, StyleRefinement, Styled,
     Toggled, Window,
 };
 use gpui_component::{
@@ -57,6 +57,52 @@ pub enum ToggleState {
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>;
+
+/// Add a stable Tab stop and keyboard activation to an existing styled
+/// button. The supplied element keeps its pointer handler and appearance.
+#[derive(IntoElement)]
+pub struct KeyboardAction {
+    id: ElementId,
+    element: Stateful<gpui::Div>,
+    activate: Rc<dyn Fn(&mut Window, &mut App)>,
+    enabled: bool,
+}
+
+impl KeyboardAction {
+    pub fn new(
+        id: impl Into<ElementId>,
+        element: Stateful<gpui::Div>,
+        activate: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        Self { id: id.into(), element, activate: Rc::new(activate), enabled: true }
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.enabled = !disabled;
+        self
+    }
+}
+
+impl RenderOnce for KeyboardAction {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let focus = window
+            .use_keyed_state(self.id, cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let activate = self.activate;
+        self.element.when(self.enabled, |element| {
+            element
+                .track_focus(&focus.tab_stop(true).tab_index(0))
+                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    if matches!(event.keystroke.key.as_str(), "space" | "enter") && !event.is_held {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        activate(window, cx);
+                    }
+                })
+        })
+    }
+}
 
 /// Paint rmac-owned colours onto a gpui-component button.
 ///
@@ -2107,6 +2153,8 @@ pub struct ListRow {
     content: AnyElement,
     selected: bool,
     disabled: bool,
+    tab_stop: bool,
+    active_descendant: bool,
     on_activate: Option<ClickHandler>,
     style: StyleRefinement,
     // Crate-private accessibility overrides. `ListRow` defaults to
@@ -2127,6 +2175,8 @@ impl ListRow {
             content: content.into_any_element(),
             selected: false,
             disabled: false,
+            tab_stop: true,
+            active_descendant: false,
             on_activate: None,
             style: StyleRefinement::default(),
             role: Role::ListItem,
@@ -2144,6 +2194,18 @@ impl ListRow {
 
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Keep a row available to assistive technology while its parent list
+    /// owns the single Tab stop and arrow-key focus.
+    pub fn tab_stop(mut self, tab_stop: bool) -> Self {
+        self.tab_stop = tab_stop;
+        self
+    }
+
+    pub fn active_descendant(mut self, active: bool) -> Self {
+        self.active_descendant = active;
         self
     }
 
@@ -2211,6 +2273,7 @@ impl RenderOnce for ListRow {
         };
         let disabled = self.disabled;
         let selected = self.selected;
+        let tab_stop = self.tab_stop;
         let focus_handle = window
             .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
             .read(cx)
@@ -2220,6 +2283,7 @@ impl RenderOnce for ListRow {
             .id(self.id)
             .role(self.role)
             .aria_selected(selected)
+            .when(self.active_descendant, |el| el.aria_active_descendant())
             .when_some(self.aria_label, |el, label| el.aria_label(label))
             .when_some(self.aria_toggled, |el, toggled| el.aria_toggled(toggled))
             .when_some(self.aria_expanded, |el, expanded| {
@@ -2238,7 +2302,7 @@ impl RenderOnce for ListRow {
             .text_color(text)
             .cursor_default()
             .when(!disabled, |el| {
-                el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
+                el.track_focus(&focus_handle.clone().tab_stop(tab_stop).tab_index(0))
             })
             .when(disabled, |el| el.opacity(0.5))
             .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))

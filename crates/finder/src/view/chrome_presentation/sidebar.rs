@@ -637,6 +637,7 @@ impl FinderView {
                             .id("sidebar-places")
                             .role(Role::ListBox)
                             .aria_label("Sidebar")
+                            .track_focus(&self.sidebar_focus.clone().tab_stop(true).tab_index(0))
                             .flex_1()
                             .min_h(px(0.0))
                             .child(contents.overflow_y_scrollbar()),

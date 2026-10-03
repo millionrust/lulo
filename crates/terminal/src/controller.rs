@@ -102,6 +102,7 @@ gpui::actions!(
         Copy,
         CopyPlainText,
         CopyStylePlainText,
+        CopyStyleHeading,
         CopyWithoutBackgroundColour,
         OpenManPageForSelection,
         SearchManPageIndexForSelection,

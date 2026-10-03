@@ -1990,8 +1990,13 @@ impl PlatformWindow for WaylandWindow {
     fn a11y_tree_update(&self, mut tree_update: accesskit::TreeUpdate) {
         crate::linux::a11y::prepare_tree_update(&mut tree_update);
         let mut state = self.borrow_mut();
-        let inset = f64::from(f32::from(state.inset()) * state.scale);
-        crate::linux::a11y::offset_for_client_inset(&mut tree_update, inset);
+        let (left, top) = a11y_origin_inset(state.inset(), state.tiling);
+        let scale = f64::from(state.scale);
+        crate::linux::a11y::offset_for_client_inset(
+            &mut tree_update,
+            f64::from(f32::from(left)) * scale,
+            f64::from(f32::from(top)) * scale,
+        );
         if let Some(adapter) = state.accesskit_adapter.as_mut() {
             adapter.update_if_active(|| tree_update);
         }
@@ -2159,6 +2164,20 @@ fn inset_by_tiling(mut bounds: Bounds<Pixels>, inset: Pixels, tiling: Tiling) ->
     bounds
 }
 
+/// How far the visible window's top-left corner sits inside the surface:
+/// the client frame on the untiled left and top edges only. A tiled edge
+/// (niri tiles windows by default) has no shadow margin, so offsetting the
+/// accessibility tree there would move every extent off the window.
+fn a11y_origin_inset(inset: Pixels, tiling: Tiling) -> (Pixels, Pixels) {
+    let origin = inset_by_tiling(
+        Bounds::new(Point::default(), Size::default()),
+        inset,
+        tiling,
+    )
+    .origin;
+    (origin.x, origin.y)
+}
+
 fn surface_geometry(state: &WaylandWindowState) -> Bounds<i32> {
     geometry_inside_frame(state.bounds.size, state.inset(), state.tiling)
 }
@@ -2171,7 +2190,7 @@ fn geometry_inside_frame(size: Size<Pixels>, inset: Pixels, tiling: Tiling) -> B
 
 #[cfg(test)]
 mod rmac_frame_loop_tests {
-    use super::{frame_loop_parked, geometry_inside_frame};
+    use super::{a11y_origin_inset, frame_loop_parked, geometry_inside_frame};
     use gpui::{Tiling, px, size};
 
     #[test]
@@ -2182,6 +2201,19 @@ mod rmac_frame_loop_tests {
         assert_eq!(geometry.origin.y, 12);
         assert_eq!(geometry.size.width, 800);
         assert_eq!(geometry.size.height, 600);
+    }
+
+    #[test]
+    fn accessibility_origin_skips_tiled_edges() {
+        let floating = a11y_origin_inset(px(12.0), Tiling::default());
+        assert_eq!(floating, (px(12.0), px(12.0)));
+        let tiled = a11y_origin_inset(px(12.0), Tiling::tiled());
+        assert_eq!(tiled, (px(0.0), px(0.0)));
+        let left_only = Tiling {
+            left: true,
+            ..Tiling::default()
+        };
+        assert_eq!(a11y_origin_inset(px(12.0), left_only), (px(0.0), px(12.0)));
     }
 
     #[test]

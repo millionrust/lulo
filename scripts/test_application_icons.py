@@ -24,6 +24,7 @@ IDENTITIES = (
     "org.rmac.SystemSettings",
     "org.rmac.Calculator",
     "org.rmac.Calendar",
+    "org.rmac.Mail",
     "org.rmac.Preview",
     "org.rmac.ArchiveUtility",
     "org.rmac.Clock",

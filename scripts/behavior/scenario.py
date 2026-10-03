@@ -22,7 +22,7 @@ FORMAT = 1
 REPO = Path(__file__).resolve().parents[2]
 SCENARIO_ROOT = REPO / "tests" / "behavior"
 
-APPS = {"files", "text-editor", "settings", "calculator", "calendar", "clock", "weather", "desktop", "preview", "notes", "system-monitor", "terminal"}
+APPS = {"files", "text-editor", "settings", "calculator", "calendar", "mail", "clock", "weather", "desktop", "preview", "notes", "system-monitor", "terminal"}
 STEP_KINDS = {
     "key",
     "type",
@@ -38,7 +38,7 @@ STEP_KINDS = {
     "relaunch",
     "drag_in_window",
 }
-FACTS = {"sidebar", "monitor_rows", "tabs", "selection", "window_size", "dialog", "menu", "calendar_week", "clock_timers", "windows", "focus", "settings_controls", "pdf_text_marks", "toolbar", "note_background", "clock_stopwatch", "note_body", "pdf_annotations", "display", "saved_documents", "preview_search", "weather_settings", "files", "file_chooser", "preview_bookmarks"}
+FACTS = {"sidebar", "monitor_rows", "tabs", "selection", "window_size", "dialog", "menu", "calendar_week", "mail_messages", "clock_timers", "windows", "focus", "settings_controls", "pdf_text_marks", "toolbar", "note_background", "clock_stopwatch", "note_body", "pdf_annotations", "display", "saved_documents", "preview_search", "weather_settings", "files", "file_chooser", "preview_bookmarks"}
 
 # Mac AX roles and AT-SPI role names, both mapped to one small vocabulary.
 AX_ROLES = {

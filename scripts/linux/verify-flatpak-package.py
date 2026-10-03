@@ -32,6 +32,7 @@ APP_BINARIES = {
     "org.rmac.SystemSettings": "rmac-system-settings",
     "org.rmac.Calculator": "rmac-calculator",
     "org.rmac.Calendar": "rmac-calendar",
+    "org.rmac.Mail": "rmac-mail",
     "org.rmac.Clock": "rmac-clock",
     "org.rmac.Weather": "rmac-weather",
     "org.rmac.Preview": "rmac-preview",

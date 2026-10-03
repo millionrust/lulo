@@ -53,6 +53,7 @@ APP_BINARIES = {
     "settings": ["rmac-system-settings"],
     "calculator": ["rmac-calculator"],
     "calendar": ["rmac-calendar"],
+    "mail": ["rmac-mail"],
     "clock": ["rmac-clock"],
     "weather": ["rmac-weather"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
@@ -1056,6 +1057,13 @@ class LuloRun:
         first = date.today() - timedelta(days=date.today().weekday())
         return {"present": week is not None,
                 "current_week": week == f"Week of {first.isoformat()}"}
+
+    def fact_mail_messages(self) -> dict[str, Any]:
+        """Visible message rows and their unread state in the Mail fixture."""
+        frame = self.active_frame()
+        labels = [name(node) for node in descendants(frame, limit=4000)
+                  if role(node) in {"list item", "table row"} and name(node).startswith(("Unread,", "Anna Kim,", "Lulo OS Beta,", "Sam Ortiz,", "Northwind Air,", "Grandma,", "Bank of Example,", "Climbing Wall,", "Ana Ruiz,", "Jacob Samas,"))] if frame is not None else []
+        return {"count": len(labels), "unread": sum(label.startswith("Unread,") for label in labels)}
 
     def fact_sidebar(self) -> dict[str, Any]:
         """Weather's city list owns the window's only editable search field."""

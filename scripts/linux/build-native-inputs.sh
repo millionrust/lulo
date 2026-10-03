@@ -134,6 +134,7 @@ fi
     -p rmac-archive-utility --bin rmac-archive-utility \
     -p rmac-calculator --bin rmac-calculator \
     -p rmac-calendar --bin rmac-calendar \
+    -p rmac-mail --bin rmac-mail \
     -p rmac-clock --bin rmac-clock \
     -p rmac-weather --bin rmac-weather \
     -p rmac-player --bin rmac-player \

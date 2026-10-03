@@ -1187,6 +1187,42 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
     },
 ];
 
+const MAIL_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: "File",
+        items: &[
+            item!("New Message", "mail::NewMessage", "⌘N"),
+            item!("Close Window", "mail::CloseWindow", "⌘W", separator),
+        ],
+    },
+    MenuSpec {
+        label: "Message",
+        items: &[
+            item!("Reply", "mail::Reply", "⌘R"),
+            item!("Reply All", "mail::ReplyAll", "⇧⌘R"),
+            item!("Forward", "mail::Forward", "⇧⌘F", separator),
+            item!("Mark as Read or Unread", "mail::ToggleRead", "⇧⌘U"),
+            item!("Flag", "mail::Flag", "⇧⌘L", separator),
+            item!("Archive", "mail::Archive", ""),
+            item!("Move to Bin", "mail::Delete", "⌫"),
+            item!("Move to Junk", "mail::Junk", "⇧⌘J"),
+            item!("Move To…", "mail::Move", "⌃⌘M"),
+        ],
+    },
+    MenuSpec {
+        label: "View",
+        items: &[
+            item!("Organize by Conversation", "mail::ToggleThreads", ""),
+            item!("Filter Unread", "mail::ToggleUnreadFilter", ""),
+            item!("Search", "mail::Search", "⌘F"),
+        ],
+    },
+    MenuSpec {
+        label: WINDOW_MENU,
+        items: &[item!("Close", "rmac_ui::RequestClose", "⌥⌘W")],
+    },
+];
+
 const CALCULATOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
@@ -1547,6 +1583,7 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::SYSTEM_SETTINGS => Some(SETTINGS_MENUS),
         rmac_apps::identity::CALCULATOR => Some(CALCULATOR_MENUS),
         rmac_apps::identity::CALENDAR => Some(CALENDAR_MENUS),
+        rmac_apps::identity::MAIL => Some(MAIL_MENUS),
         rmac_apps::identity::PREVIEW => Some(PREVIEW_MENUS),
         rmac_apps::identity::CLOCK => Some(CLOCK_MENUS),
         rmac_apps::identity::WEATHER => Some(WEATHER_MENUS),
@@ -1576,6 +1613,7 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
         rmac_apps::identity::SYSTEM_SETTINGS => Some("org.rmac.SystemSettings.Menu"),
         rmac_apps::identity::CALCULATOR => Some("org.rmac.Calculator.Menu"),
         rmac_apps::identity::CALENDAR => Some("org.rmac.Calendar.Menu"),
+        rmac_apps::identity::MAIL => Some("org.rmac.Mail.Menu"),
         rmac_apps::identity::PREVIEW => Some("org.rmac.Preview.Menu"),
         rmac_apps::identity::CLOCK => Some("org.rmac.Clock.Menu"),
         rmac_apps::identity::WEATHER => Some("org.rmac.Weather.Menu"),
@@ -1595,6 +1633,7 @@ const MENU_APPS: &[&str] = &[
     rmac_apps::identity::SYSTEM_SETTINGS,
     rmac_apps::identity::CALCULATOR,
     rmac_apps::identity::CALENDAR,
+    rmac_apps::identity::MAIL,
     rmac_apps::identity::PREVIEW,
     rmac_apps::identity::CLOCK,
     rmac_apps::identity::WEATHER,
@@ -2984,6 +3023,21 @@ mod tests {
             .items
             .iter()
             .any(|item| item.action == "calendar::GoToday"));
+    }
+
+    #[test]
+    fn mail_menu_actions_are_distinct_and_conversation_toggle_is_exposed() {
+        let actions = spec_actions(MAIL_MENUS);
+        let menus = definition(rmac_apps::identity::MAIL, &actions).unwrap();
+        assert!(validate_menus(&menus).is_ok());
+        assert_eq!(
+            bus_name(rmac_apps::identity::MAIL),
+            Some("org.rmac.Mail.Menu")
+        );
+        assert!(menus.iter().any(|menu| menu
+            .items
+            .iter()
+            .any(|item| { item.action == "mail::ToggleThreads" })));
     }
 
     #[test]

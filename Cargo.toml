@@ -49,6 +49,7 @@ objc2-foundation = "0.3"
 rmac-calendar-eds = { version = "=0.9.0-beta.1", path = "crates/rmac-calendar-eds" }
 rmac-calendar-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-calendar-runtime" }
 rmac-calendar-store = { version = "=0.9.0-beta.1", path = "crates/rmac-calendar-store" }
+rmac-mail = { version = "=0.9.0-beta.1", path = "crates/mail" }
 rmac-apps = { version = "=0.9.0-beta.1", path = "crates/rmac-apps" }
 rmac-accounts = { version = "=0.9.0-beta.1", path = "crates/rmac-accounts" }
 rmac-app-launch = { version = "=0.9.0-beta.1", path = "crates/rmac-app-launch" }

@@ -169,3 +169,15 @@ msgstr ""
 
 msgid "calendar;events;week;date;appointments;"
 msgstr ""
+
+msgid "Mail"
+msgstr ""
+
+msgid "Email Client"
+msgstr ""
+
+msgid "Read and organize your email"
+msgstr ""
+
+msgid "mail;email;messages;inbox;"
+msgstr ""

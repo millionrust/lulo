@@ -45,6 +45,7 @@ APP_SPECS = (
     AppSpec("app-drawer", "rmac-app-drawer", mode="layer"),
     AppSpec("clock", "rmac-clock", window_app_id="org.rmac.Clock"),
     AppSpec("calendar", "rmac-calendar", window_app_id="org.rmac.Calendar"),
+    AppSpec("mail", "rmac-mail", window_app_id="org.rmac.Mail"),
     AppSpec("notes", "rmac-notes", window_app_id="org.rmac.Notes"),
     AppSpec("player", "rmac-player", "wav", window_app_id="org.rmac.Player"),
     AppSpec("preview", "rmac-preview", "pdf", window_app_id="org.rmac.Preview"),

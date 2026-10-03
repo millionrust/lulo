@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Mail
+Name[hi]=मेल
+GenericName=Email Client
+GenericName[hi]=ईमेल क्लाइंट
+Comment=Read and organize your email
+Comment[hi]=अपना ईमेल पढ़ें और व्यवस्थित करें
+Keywords=mail;email;messages;inbox;
+Keywords[hi]=मेल;ईमेल;संदेश;इनबॉक्स;
+TryExec=/usr/bin/rmac-mail
+Exec=/usr/bin/rmac-mail
+Icon=org.rmac.Mail
+Terminal=false
+Categories=Network;Email;
+StartupWMClass=org.rmac.Mail

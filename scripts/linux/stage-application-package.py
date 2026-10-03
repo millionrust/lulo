@@ -22,6 +22,7 @@ APPLICATION_IDS = (
     "org.rmac.ArchiveUtility",
     "org.rmac.Calculator",
     "org.rmac.Calendar",
+    "org.rmac.Mail",
     "org.rmac.Clock",
     "org.rmac.Files",
     "org.rmac.Notes",

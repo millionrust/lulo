@@ -83,6 +83,7 @@ APPLICATION_BINARIES = (
     "rmac-archive-utility",
     "rmac-calculator",
     "rmac-calendar",
+    "rmac-mail",
     "rmac-clock",
     "rmac-files",
     "rmac-notes",

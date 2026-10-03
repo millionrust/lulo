@@ -168,3 +168,15 @@ msgstr "अपने कैलेंडर और कार्यक्रम �
 
 msgid "calendar;events;week;date;appointments;"
 msgstr "कैलेंडर;कार्यक्रम;सप्ताह;तारीख;मुलाकात;"
+
+msgid "Mail"
+msgstr "मेल"
+
+msgid "Email Client"
+msgstr "ईमेल क्लाइंट"
+
+msgid "Read and organize your email"
+msgstr "अपना ईमेल पढ़ें और व्यवस्थित करें"
+
+msgid "mail;email;messages;inbox;"
+msgstr "मेल;ईमेल;संदेश;इनबॉक्स;"

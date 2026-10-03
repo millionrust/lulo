@@ -138,6 +138,15 @@
       "sandbox_eligible": false,
       "authority": "Calendar will use Evolution Data Server on the session bus; the read-only shell currently uses a local fixture.",
       "permissions": []
+    },
+    {
+      "id": "org.rmac.Mail",
+      "binary": "rmac-mail",
+      "distribution": "native",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "Mail will use account credentials and local message storage; this read-only shell currently uses a fixture.",
+      "permissions": []
     }
   ]
 }

@@ -6493,6 +6493,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-mail"
+version = "0.9.0-beta.1"
+dependencies = [
+ "gpui",
+ "rmac-mail-mime",
+ "rmac-ui",
+]
+
+[[package]]
 name = "rmac-mail-imap"
 version = "0.9.0-beta.1"
 dependencies = [

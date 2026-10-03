@@ -54,6 +54,9 @@ RESIDENT = (
 # Sound module title is the volume slider on Lulo; its detail (the output
 # list the Mac opens) is behind the module's Sound Outputs button.
 LULO_LABELS = {"Sound": "Sound Outputs"}
+# Top-bar status items found by name prefix. Their positions move with the
+# clock's width, so they are never clicked at a fixed offset.
+STATUS_ITEMS = {"Wi-Fi", "Battery"}
 FORBIDDEN = {"Shut Down", "Restart", "Log Out", "Sleep", "Empty Bin", "Empty Trash", "Wi-Fi On", "Wi-Fi Off"}
 
 
@@ -340,8 +343,16 @@ class Driver:
             try:
                 if node is None:
                     continue
-                if node.name == label or (node.name or "").startswith(label + ","):
+                name = node.name or ""
+                exact = name == label or name.startswith(label + ",")
+                # Top-bar status items carry their state in the name
+                # ("Wi-Fi connected, signal 3 of 3 bars", "Battery 96%").
+                status = label in STATUS_ITEMS and name.startswith(label + " ")
+                if exact or status:
                     pid = node.getApplication().get_process_id()
+                    if not exact and pid != top_bar:
+                        stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+                        continue
                     if target == "Dock" and (dock is None or pid != dock.pid):
                         stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
                         continue
@@ -379,11 +390,8 @@ class Driver:
                                              origin[1] + box.y + box.height / 2)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
-        status_x = {"Lulo": 26, "Battery": self.session.width - 296,
-                    "Wi-Fi": self.session.width - 251,
-                    "Control Centre": self.session.width - 182}
-        if label in status_x:
-            x, y = self.session.parent_point(status_x[label], 15)
+        if label == "Lulo":
+            x, y = self.session.parent_point(26, 15)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
         if label == "File" and self.current == "text-editor":

@@ -11,3 +11,5 @@ another title must switch menus. The Lulo menu, Wi-Fi, Bluetooth, Sound,
 Dock context menu, Spotlight, Apps, Control Center, and Notification Center
 must close on an outside click and Escape. The runner also checks clicks on
 wallpaper inside and below the top bar's own layer, and on another window.
+Inside Control Centre, Esc in Sound's output list must return to the grid and
+a second Esc must close Control Centre.

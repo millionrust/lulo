@@ -61,6 +61,10 @@ import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
+# The top bar's leftmost item (the Lulo mark). Its accessible name is
+# "Lulo menu" (shell/bins/rmac-menubar/src/main.rs `LULO_MENU_LABEL`), so
+# Orca announces what it opens rather than a bare "menu".
+LULO_MENU = "Lulo menu"
 OUTPUT_W, OUTPUT_H = 1440, 900
 # A stable point below all top-bar dropdowns, also used to distinguish the
 # two outside-click locations exercised by this scenario.
@@ -285,10 +289,10 @@ class Run:
         """A real click on the logo, opening the Lulo menu the same way a
         mouse user would."""
 
-        logo = self.wait_for(lambda: self.find_button("menu"), 10, 0.3)
+        logo = self.wait_for(lambda: self.find_button(LULO_MENU), 10, 0.3)
         if logo is None:
             return False
-        return self.click_button("menu")
+        return self.click_button(LULO_MENU)
 
     def close_everything(self) -> None:
         self.keys.key("escape")
@@ -439,11 +443,11 @@ class Run:
         # Index 1: the active app's own title, right of the logo
         # (`TopBar::keyboard_titles`'s "{app} menu" label). With nothing
         # focused this is the desktop's ("Finder"-equivalent) title; the
-        # logo itself is named exactly "menu", so excluding that finds it
+        # logo itself is named LULO_MENU, so excluding that finds it
         # without guessing a pixel offset.
         title = self.wait_for(
             lambda: self.find_node(
-                ("push button", "button"), lambda name: name != "menu" and name.endswith(" menu")
+                ("push button", "button"), lambda name: name != LULO_MENU and name.endswith(" menu")
             ),
             10,
             0.3,
@@ -470,7 +474,7 @@ class Run:
         opened = self.retry_until(self.open_system_menu, lambda: self.find_menu_item("About"))
         self.check("Same title: the Lulo menu opens first", opened)
         if opened:
-            self.click_button("menu")
+            self.click_button(LULO_MENU)
             self.check("Same title: a second click keeps the menu open",
                        self.find_menu_item("About") is not None)
 
@@ -542,6 +546,48 @@ class Run:
             if not closed:
                 self.dispatch(shortcut)
                 self.wait_for(lambda: self.popover_gone(namespace), 5)
+
+    def control_centre_detail_escape(self) -> None:
+        """Esc inside a Control Centre list (Sound's outputs) backs out to
+        the grid, and a second Esc closes Control Centre, as on the Mac.
+        The list replaces the control that opened it, so the panel itself
+        must hold keyboard focus or Esc is lost."""
+
+        namespace = "rmac-quick-settings"
+        self.close_everything()
+        self.dispatch("quick-settings")
+        opened = self.wait_for(lambda: self.has_layer(namespace), 10)
+        def sound_outputs():
+            return self.find_node(("push button", "button"), lambda name: name == "Sound Outputs")
+
+        outputs = sound_outputs() if opened and self.wait_for(
+            lambda: sound_outputs() is not None, 10) else None
+        listed = False
+        if outputs is not None:
+            try:
+                outputs.queryAction().doAction(0)
+                listed = self.wait_for(
+                    lambda: self.find_node(("push button", "button", "menu item", "list item", "label"),
+                                           lambda name: name == "Sound Settings\u2026") is not None, 10)
+            except Exception:  # noqa: BLE001
+                listed = False
+        self.check("Control Centre list: Sound Outputs opens the output list", listed)
+        if not listed:
+            self.dispatch("quick-settings")
+            self.wait_for(lambda: self.popover_gone(namespace), 5)
+            return
+        time.sleep(0.3)
+        self.keys.key("escape")
+        back = self.wait_for(
+            lambda: self.find_node(("push button", "button", "menu item", "list item", "label"),
+                                   lambda name: name == "Sound Settings\u2026") is None, 5)
+        self.check("Control Centre list: Esc returns to the grid", back and self.has_layer(namespace))
+        self.keys.key("escape")
+        closed = self.wait_for(lambda: self.popover_gone(namespace), 5)
+        self.check("Control Centre list: a second Esc closes Control Centre", closed)
+        if not closed:
+            self.dispatch("quick-settings")
+            self.wait_for(lambda: self.popover_gone(namespace), 5)
 
     def clock_popover_dismissal(self) -> None:
         namespace = "rmac-notification-center"
@@ -735,6 +781,8 @@ class Run:
                 self.clock_popover_dismissal()
             elif self.args.only == "combined":
                 self.control_center_and_app_menu_close_on_wallpaper_click()
+            elif self.args.only == "control-centre-list":
+                self.control_centre_detail_escape()
             else:
                 namespaces = {
                     "quick-settings": "rmac-quick-settings",
@@ -758,6 +806,7 @@ class Run:
                                     ("launcher", "rmac-launcher"),
                                     ("app-drawer", "rmac-app-drawer")):
             self.layer_popover_dismissal(shortcut, namespace)
+        self.control_centre_detail_escape()
         self.clock_popover_dismissal()
         self.control_center_and_app_menu_close_on_wallpaper_click()
         # Log Out ends this run's own nested niri for real; nothing after
@@ -832,7 +881,7 @@ def main() -> int:
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
                                            "launcher", "app-drawer", "notification-center",
-                                           "combined"))
+                                           "combined", "control-centre-list"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

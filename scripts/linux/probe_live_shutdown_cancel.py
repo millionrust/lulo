@@ -25,6 +25,8 @@ except ImportError:  # pragma: no cover - available on the Linux reference host
 
 
 TIMEOUT_SECONDS = 8.0
+# The top bar's Lulo mark (shell/bins/rmac-menubar/src/main.rs `LULO_MENU_LABEL`).
+LULO_MENU = "Lulo menu"
 POLL_SECONDS = 0.2
 TOP_BAR_NAMES = {"rmac-top-bar", "top-bar", "rmac-menubar"}
 EXPECTED_USER = "jacob"
@@ -170,8 +172,8 @@ class AtspiBackend:
     def activate_click(self, node: object) -> None:
         identity = (role(node), name(node))
         allowed = {
-            ("push button", "menu"),
-            ("button", "menu"),
+            ("push button", LULO_MENU),
+            ("button", LULO_MENU),
         }
         if identity not in allowed:
             raise ProbeError(f"refusing AT-SPI activation outside the safe allowlist: {identity!r}")
@@ -198,7 +200,7 @@ def run_probe(backend: AtspiBackend, report: Callable[[str], None] = print) -> N
         raise ProbeError("refusing: the system menu or confirmation was already open")
     menu_may_be_open = False
     try:
-        logo = backend.wait(lambda: backend.find("push button", "menu"), "top-bar menu button")
+        logo = backend.wait(lambda: backend.find("push button", LULO_MENU), "top-bar menu button")
         report("state: live top-bar menu button found")
         menu_may_be_open = True
         backend.activate_click(logo)
@@ -217,7 +219,7 @@ def run_probe(backend: AtspiBackend, report: Callable[[str], None] = print) -> N
             try:
                 item = backend.find("menu item", "Shut Down…")
                 if item is not None:
-                    logo = backend.find("push button", "menu")
+                    logo = backend.find("push button", LULO_MENU)
                     if logo is None:
                         report("cleanup: system menu remains open; menu toggle not found")
                     else:

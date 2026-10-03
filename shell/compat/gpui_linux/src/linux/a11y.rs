@@ -55,10 +55,15 @@ const ROOT_NODE_ID: accesskit::NodeId = accesskit::NodeId(0);
 /// the inset — about one list row in Files — and anything that clicks or
 /// highlights by extent (Orca's mouse review, automation) hit the row below.
 /// GPUI rebuilds the root node every frame, so its transform is always set.
-/// `inset` is in physical pixels, the unit of GPUI's AccessKit bounds.
+/// `left` and `top` are the frame on those edges in physical pixels, the
+/// unit of GPUI's AccessKit bounds; a tiled edge has none.
 #[cfg_attr(not(feature = "wayland"), allow(dead_code))]
-pub(crate) fn offset_for_client_inset(tree_update: &mut accesskit::TreeUpdate, inset: f64) {
-    if inset <= 0.0 {
+pub(crate) fn offset_for_client_inset(
+    tree_update: &mut accesskit::TreeUpdate,
+    left: f64,
+    top: f64,
+) {
+    if left <= 0.0 && top <= 0.0 {
         return;
     }
     if let Some((_, root)) = tree_update
@@ -66,7 +71,7 @@ pub(crate) fn offset_for_client_inset(tree_update: &mut accesskit::TreeUpdate, i
         .iter_mut()
         .find(|(id, _)| *id == ROOT_NODE_ID)
     {
-        root.set_transform(accesskit::Affine::translate((-inset, -inset)));
+        root.set_transform(accesskit::Affine::translate((-left, -top)));
     }
 }
 
@@ -191,7 +196,7 @@ mod tests {
             tree_id: TreeId::ROOT,
             focus: NodeId(0),
         };
-        offset_for_client_inset(&mut update, 12.0);
+        offset_for_client_inset(&mut update, 12.0, 12.0);
         let root = &update.nodes[0].1;
         assert_eq!(
             root.transform().copied(),
@@ -201,7 +206,7 @@ mod tests {
 
         let mut flush = update_with_tree();
         flush.nodes = vec![(NodeId(0), node(accesskit::Role::Window, &[]))];
-        offset_for_client_inset(&mut flush, 0.0);
+        offset_for_client_inset(&mut flush, 0.0, 0.0);
         assert!(flush.nodes[0].1.transform().is_none());
     }
 

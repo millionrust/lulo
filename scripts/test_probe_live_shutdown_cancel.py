@@ -20,7 +20,7 @@ class FakeBackend:
         self.fail_at = fail_at
 
     def find(self, wanted_role: str, wanted_name: str):
-        if self.state != "dialog" and wanted_role == "push button" and wanted_name == "menu":
+        if self.state != "dialog" and wanted_role == "push button" and wanted_name == probe.LULO_MENU:
             return "menu"
         if self.state == "menu" and wanted_role == "menu item" and wanted_name == "Shut Down…":
             return "shutdown-row"

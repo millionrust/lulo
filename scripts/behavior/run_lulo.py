@@ -1030,7 +1030,12 @@ class LuloRun:
         selected = [name(n) for n in nodes if has_state(n, pyatspi.STATE_SELECTED)]
         if not tabs and frame is not None:
             tabs = [name(frame)]
-        return {"count": len(tabs), "titles": tabs, "selected": selected}
+        return {
+            "count": len(tabs),
+            "titles": tabs,
+            "selected": selected,
+            "tab_bar_visible": bool(nodes),
+        }
 
     def fact_sidebar(self) -> dict[str, Any]:
         """Weather's city list owns the window's only editable search field."""

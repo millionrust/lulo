@@ -5682,6 +5682,7 @@ dependencies = [
  "rmac-compositor-niri",
  "rmac-dock",
  "rmac-icon",
+ "rmac-locale",
  "rmac-places",
  "rmac-places-system",
  "rmac-portal",

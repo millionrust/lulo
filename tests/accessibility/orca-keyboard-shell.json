@@ -1,13 +1,12 @@
 {
  "format": 1,
- "recorded": "2026-10-03T06:58:18Z",
- "git": "ead605a6",
+ "recorded": "2026-10-03T07:21:13Z",
+ "git": "df061b7f",
  "orca": "50.2-0ubuntu0.1",
  "harness": "scripts/a11y/orca_audit.py",
  "summary": {
   "focus-nowhere": 2,
-  "silent-focus": 3,
-  "speech-mismatch": 1
+  "silent-focus": 3
  },
  "journeys": [
   {
@@ -20,7 +19,7 @@
      "note": "focus the menu bar",
      "expect": null,
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/32468547367797741533350466348543639552",
+      "key": "1054765:/org/a11y/atspi/accessible/1/32468547367797741533350466348543639552",
       "role": "menu item",
       "name": "Lulo menu",
       "states": [
@@ -37,32 +36,27 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "Lulo menu, menu item",
      "speech": [
-      "frame"
+      "frame",
+      "Lulo menu."
      ],
      "events": [
       "object:active-descendant-changed",
       "object:state-changed:focused",
       "window:activate"
      ],
-     "flags": [
-      {
-       "kind": "speech-mismatch",
-       "severity": "low",
-       "detail": "Orca said 'frame', not the name 'lulo menu'"
-      }
-     ]
+     "flags": []
     },
     {
      "key": "right",
      "note": "next title",
      "expect": "move",
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/32501477621634883888520989332933181440",
+      "key": "1054765:/org/a11y/atspi/accessible/1/32501477621634883888520989332933181440",
       "role": "menu item",
       "name": "Files menu",
       "states": [
@@ -79,12 +73,11 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "Files menu, menu item",
      "speech": [
-      "Lulo menu.",
       "Files menu."
      ],
      "events": [
@@ -97,7 +90,7 @@
      "note": "next title",
      "expect": "move",
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/192103384746746234942623807609925271552",
+      "key": "1054765:/org/a11y/atspi/accessible/1/192103384746746234942623807609925271552",
       "role": "menu item",
       "name": "File menu",
       "states": [
@@ -114,7 +107,7 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "File menu, menu item",
@@ -131,7 +124,7 @@
      "note": "previous title",
      "expect": "move",
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/32501477621634883888520989332933181440",
+      "key": "1054765:/org/a11y/atspi/accessible/1/32501477621634883888520989332933181440",
       "role": "menu item",
       "name": "Files menu",
       "states": [
@@ -148,7 +141,7 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "Files menu, menu item",
@@ -169,7 +162,7 @@
      "note": "open the menu",
      "expect": null,
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/2049716750420340247401365024490389504",
+      "key": "1054765:/org/a11y/atspi/accessible/1/2049716750420340247401365024490389504",
       "role": "menu",
       "name": "Files",
       "states": [
@@ -186,7 +179,7 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "Files, menu",
@@ -203,7 +196,7 @@
      "note": "next item",
      "expect": "move",
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/132145999890441400496329505618182275072",
+      "key": "1054765:/org/a11y/atspi/accessible/1/132145999890441400496329505618182275072",
       "role": "menu item",
       "name": "Settings…",
       "states": [
@@ -220,7 +213,7 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "Settings…, menu item",
@@ -237,7 +230,7 @@
      "note": "next item",
      "expect": "move",
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/333330882979222997223407016268751962112",
+      "key": "1054765:/org/a11y/atspi/accessible/1/333330882979222997223407016268751962112",
       "role": "menu item",
       "name": "Empty Bin…",
       "states": [
@@ -254,7 +247,7 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "Empty Bin…, menu item",
@@ -271,7 +264,7 @@
      "note": "previous item",
      "expect": "move",
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/132145999890441400496329505618182275072",
+      "key": "1054765:/org/a11y/atspi/accessible/1/132145999890441400496329505618182275072",
       "role": "menu item",
       "name": "Settings…",
       "states": [
@@ -288,7 +281,7 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "Settings…, menu item",
@@ -309,7 +302,7 @@
      "note": "next menu / submenu",
      "expect": null,
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/25323632450514610461507301840378658816",
+      "key": "1054765:/org/a11y/atspi/accessible/1/25323632450514610461507301840378658816",
       "role": "menu",
       "name": "File",
       "states": [
@@ -326,7 +319,7 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "File, menu",
@@ -343,7 +336,7 @@
      "note": "back out",
      "expect": null,
      "focus": {
-      "key": "1028448:/org/a11y/atspi/accessible/1/192103384746746234942623807609925271552",
+      "key": "1054765:/org/a11y/atspi/accessible/1/192103384746746234942623807609925271552",
       "role": "menu item",
       "name": "File menu",
       "states": [
@@ -360,7 +353,7 @@
       "labelled_by": "",
       "content": "",
       "app": "top-bar",
-      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+      "parent": "1054765:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
      },
      "via": "event",
      "heard": "File menu, menu item",
@@ -377,7 +370,7 @@
      "note": "back out",
      "expect": null,
      "focus": {
-      "key": "1028447:/org/a11y/atspi/accessible/1/0",
+      "key": "1054764:/org/a11y/atspi/accessible/1/0",
       "role": "frame",
       "name": "",
       "states": [
@@ -395,7 +388,7 @@
       "labelled_by": "",
       "content": "",
       "app": "dock",
-      "parent": "1028447:/org/a11y/atspi/accessible/root"
+      "parent": "1054764:/org/a11y/atspi/accessible/root"
      },
      "via": "event",
      "heard": "(unnamed), frame",
@@ -420,7 +413,7 @@
      "note": "leave the menu bar",
      "expect": null,
      "focus": {
-      "key": "1028447:/org/a11y/atspi/accessible/1/0",
+      "key": "1054764:/org/a11y/atspi/accessible/1/0",
       "role": "frame",
       "name": "",
       "states": [
@@ -438,7 +431,7 @@
       "labelled_by": "",
       "content": "",
       "app": "dock",
-      "parent": "1028447:/org/a11y/atspi/accessible/root"
+      "parent": "1054764:/org/a11y/atspi/accessible/root"
      },
      "via": "event",
      "heard": "(unnamed), frame",
@@ -448,13 +441,6 @@
     }
    ],
    "flags": [
-    {
-     "kind": "speech-mismatch",
-     "severity": "low",
-     "detail": "Orca said 'frame', not the name 'lulo menu'",
-     "key": "ctrl-f2",
-     "focus": "Lulo menu, menu item"
-    },
     {
      "kind": "silent-focus",
      "severity": "medium",
@@ -479,8 +465,7 @@
    ],
    "summary": {
     "focus-nowhere": 1,
-    "silent-focus": 2,
-    "speech-mismatch": 1
+    "silent-focus": 2
    }
   },
   {
@@ -493,7 +478,7 @@
      "note": "focus the Dock",
      "expect": null,
      "focus": {
-      "key": "1028447:/org/a11y/atspi/accessible/2/106729470590371260471065281949891297280",
+      "key": "1054764:/org/a11y/atspi/accessible/2/106729470590371260471065281949891297280",
       "role": "button",
       "name": "Files",
       "states": [
@@ -510,7 +495,7 @@
       "labelled_by": "",
       "content": "",
       "app": "dock",
-      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+      "parent": "1054764:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
      },
      "via": "event",
      "heard": "Files, button",
@@ -529,7 +514,7 @@
      "note": "next app",
      "expect": "move",
      "focus": {
-      "key": "1028447:/org/a11y/atspi/accessible/2/276667091721799603778251472792979505152",
+      "key": "1054764:/org/a11y/atspi/accessible/2/276667091721799603778251472792979505152",
       "role": "button",
       "name": "Apps",
       "states": [
@@ -546,7 +531,7 @@
       "labelled_by": "",
       "content": "",
       "app": "dock",
-      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+      "parent": "1054764:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
      },
      "via": "event",
      "heard": "Apps, button",
@@ -563,7 +548,7 @@
      "note": "next app",
      "expect": "move",
      "focus": {
-      "key": "1028447:/org/a11y/atspi/accessible/2/179874894843363091627271626393902907392",
+      "key": "1054764:/org/a11y/atspi/accessible/2/179874894843363091627271626393902907392",
       "role": "button",
       "name": "Notes",
       "states": [
@@ -580,7 +565,7 @@
       "labelled_by": "",
       "content": "",
       "app": "dock",
-      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+      "parent": "1054764:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
      },
      "via": "event",
      "heard": "Notes, button",
@@ -597,7 +582,7 @@
      "note": "next app",
      "expect": "move",
      "focus": {
-      "key": "1028447:/org/a11y/atspi/accessible/2/96348985333396022608703271389313892352",
+      "key": "1054764:/org/a11y/atspi/accessible/2/96348985333396022608703271389313892352",
       "role": "button",
       "name": "Text Editor",
       "states": [
@@ -614,7 +599,7 @@
       "labelled_by": "",
       "content": "",
       "app": "dock",
-      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+      "parent": "1054764:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
      },
      "via": "event",
      "heard": "Text Editor, button",
@@ -631,7 +616,7 @@
      "note": "previous app",
      "expect": "move",
      "focus": {
-      "key": "1028447:/org/a11y/atspi/accessible/2/179874894843363091627271626393902907392",
+      "key": "1054764:/org/a11y/atspi/accessible/2/179874894843363091627271626393902907392",
       "role": "button",
       "name": "Notes",
       "states": [
@@ -648,7 +633,7 @@
       "labelled_by": "",
       "content": "",
       "app": "dock",
-      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+      "parent": "1054764:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
      },
      "via": "event",
      "heard": "Notes, button",
@@ -669,7 +654,7 @@
      "note": "leave the Dock",
      "expect": null,
      "focus": {
-      "key": "1028447:/org/a11y/atspi/accessible/1/0",
+      "key": "1054764:/org/a11y/atspi/accessible/1/0",
       "role": "frame",
       "name": "",
       "states": [
@@ -687,7 +672,7 @@
       "labelled_by": "",
       "content": "",
       "app": "dock",
-      "parent": "1028447:/org/a11y/atspi/accessible/root"
+      "parent": "1054764:/org/a11y/atspi/accessible/root"
      },
      "via": "event",
      "heard": "(unnamed), frame",

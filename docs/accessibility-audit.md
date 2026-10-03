@@ -79,7 +79,7 @@ kept in the evidence but not counted as defects.
 
 Build `ead605a6`: Files, Settings, Notes, Preview, menu bar and Dock were
 rerun with Orca 50.2 in private nested sessions. Across these six journeys,
-the 35 baseline flags fell to 14. The Files journey was repeated after the
+the 35 baseline flags fell to 13. The Files journey was repeated after the
 audit learned that an arrow-selected list child belongs to its list's Tab
 stop; the complete cycle has 12 stops and returns to the named file list.
 Evidence: `tests/accessibility/orca-keyboard-apps.json`,
@@ -93,7 +93,7 @@ scenarios passed in the same private runner.
 | Settings | one sidebar stop and one General-list stop; arrows select rows | 3 low-severity no-effect probes on Search before the list receives focus |
 | Notes | named list on launch; Folders in Tab cycle; Body → Tags behavior scenario passed | 1: ⌘F leaves focus on the window (ACC-18). Some icon buttons appear twice in the Tab cycle, which this audit does not flag. |
 | Preview | first Tab reaches named document; toolbar includes Show Markup Toolbar | 2: launch focus remains on the window before Tab |
-| Menu bar (⌃F2) | AT-SPI focus lands on a named, showing and visible "Lulo menu" item | 4: first Orca utterance is still "frame"; two later focus moves are silent; Escape returns to an unnamed frame in the empty nested session (ACC-23 remains partial) |
+| Menu bar (⌃F2) | AT-SPI focus lands on a named, showing and visible "Lulo menu" item; the first Orca utterance includes its name | 3: two later focus moves are silent; Escape returns to an unnamed frame in the empty nested session |
 | Dock (⌃F3) | first Files button is named, visible and spoken immediately | 2: one later focus move is silent; Escape returns to the empty session's frame |
 
 ## Owner final listen

@@ -91,7 +91,7 @@ def evaluate() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     all_gaps: list[dict[str, Any]] = []
     all_unprobed: list[dict[str, Any]] = []
     for item in sf.SURFACES:
-        if item["status"] != "automated":
+        if item["status"] not in ("automated", "lulo-only"):
             for probe_id in probe_ids_for(item):
                 all_unprobed.append({"surface": item["id"], "probe": probe_id,
                                       "reason": item.get("note", "surface has no driver yet")})

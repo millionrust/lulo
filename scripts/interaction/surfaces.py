@@ -12,9 +12,18 @@ under /tmp/mac-gui.lock) on 2026-10-02; see mac_probe.py.
 `status`:
   - "automated": both mac_probe.py and lulo_probe.py can open it and run
     its probes end to end.
+  - "lulo-only": lulo_probe.py can open it and record its probes, but no
+    Mac driver exists yet (this agent never clicks, types or runs
+    AppleScript/JXA on the owner's live Mac - see AGENT-BRIEF.md). The Lulo
+    facts are written to tests/interaction/lulo/<id>.json in the same shape
+    as every other surface, ready for interaction_diff.py to compare the
+    moment a Mac recording exists; until then every one of its probes
+    shows up in docs/interaction-gaps.md's "Not yet probed" table with
+    reason "no recording" (Mac pending), never as a false pass.
   - "planned": declared for the matrix (coverage the owner asked for) but
-    no driver yet. These show up in docs/interaction-gaps.md as "not yet
-    probed", never as a false pass or a fabricated gap.
+    no driver on *either* side yet. These show up in
+    docs/interaction-gaps.md as "not yet probed", never as a false pass or
+    a fabricated gap.
 """
 
 from __future__ import annotations
@@ -62,10 +71,18 @@ SURFACES: list[dict[str, Any]] = [
         "id": "clock-notification-centre",
         "title": "Clock menu extra / Notification Centre",
         "kind": "popover",
-        "status": "planned",
+        "status": "lulo-only",
         "mac": {"process": "ControlCenter", "open": "menu-extra", "extra_description": "Clock"},
-        "lulo": {"harness": "shell", "open": "topbar-click", "label": "Clock"},
-        "note": "Lulo interaction driver not wired up yet; the separate nested AT-SPI assertion covers its accessible tree.",
+        # The real trigger is clicking the top-bar clock; the panel process
+        # (rmac-notification-center-panel) is the same one the owner's
+        # "notification-center" shortcut (LOGO+CTRL+n) shows, so this probe
+        # opens it the same reliable way run_popover_surface already proved
+        # for Control Centre (shell.dispatch), rather than re-deriving a
+        # click on the "Clock" top-bar label.
+        "lulo": {"harness": "shell", "open": "shortcut", "shortcut": "notification-center"},
+        "note": "Lulo interaction driver (outside-click, Escape) is wired up; the separate nested AT-SPI"
+                " assertion (--assert-notification-center) still covers its accessible tree. The Mac side is"
+                " pending - this agent never drives the owner's live Mac GUI.",
     },
     {
         "id": "status-menu-sound",
@@ -81,50 +98,57 @@ SURFACES: list[dict[str, Any]] = [
         "id": "spotlight",
         "title": "Spotlight / Lulo launcher",
         "kind": "popover",
-        "status": "planned",
+        "status": "lulo-only",
         "mac": {"process": "Spotlight", "open": "menu-extra", "extra_description": "Spotlight"},
-        "lulo": {"harness": "shell", "open": "shortcut", "shortcut": "spotlight"},
-        "note": "Driver not wired up yet; run_cold_surfaces.py already covers Spotlight's latency and typing,"
-                " this suite still needs to add outside-click/Escape here.",
+        # The shortcut id is "launcher" (crates/rmac-shortcuts/src/model.rs),
+        # not "spotlight" - rmac-shortcut-dispatch rejects unknown action ids.
+        "lulo": {"harness": "shell", "open": "shortcut", "shortcut": "launcher"},
+        "note": "Lulo interaction driver (outside-click, Escape) is wired up; run_cold_surfaces.py already"
+                " covers Spotlight's latency and typing. The Mac side is pending - this agent never drives"
+                " the owner's live Mac GUI.",
     },
     {
         "id": "dock",
         "title": "Dock + Dock context menu",
         "kind": "dock",
-        "status": "planned",
+        "status": "lulo-only",
         "mac": {"process": "Dock", "open": "already-visible"},
         "lulo": {"harness": "shell", "open": "already-visible"},
-        "note": "Driver not wired up yet.",
+        "note": "Lulo interaction driver (hover, right-click/Show-Menu) is wired up. The Mac side is pending -"
+                " this agent never drives the owner's live Mac GUI.",
     },
     # -- App dialogs/menus: one app in headless Sway, no shell (lulo_probe.py's Nested) --
     {
         "id": "files-window-context-menu",
         "title": "Files window background context menu",
         "kind": "context-menu",
-        "status": "planned",
+        "status": "lulo-only",
         "mac": {"app": "files", "open": "context-background"},
         "lulo": {"harness": "app", "app": "files", "open": "context-background"},
-        "note": "Driver not wired up yet; scripts/behavior's existing context()/context_background() already"
-                " prove the item list on both sides, this suite still needs an outside-click/Escape driver here.",
+        "note": "Lulo interaction driver (outside-click, Escape) is wired up; scripts/behavior's existing"
+                " context()/context_background() already prove the item list on both sides. The Mac side is"
+                " pending - this agent never drives the owner's live Mac GUI.",
     },
     {
         "id": "text-editor-save-sheet",
         "title": "Text Editor's unsaved-document alert",
         "kind": "dialog",
-        "status": "planned",
+        "status": "lulo-only",
         "mac": {"app": "text-editor", "open": "close-unsaved"},
         "lulo": {"harness": "app", "app": "text-editor", "open": "close-unsaved"},
-        "note": "Driver not wired up yet; tests/behavior/text-editor/close-unsaved-save.json already proves the"
-                " dialog's content, this suite still needs to add Escape/outside-click here.",
+        "note": "Lulo interaction driver (Escape, Tab focus) is wired up; tests/behavior/text-editor/"
+                "close-unsaved-save.json already proves the dialog's content. The Mac side is pending - this"
+                " agent never drives the owner's live Mac GUI.",
     },
     {
         "id": "settings-sidebar-list",
         "title": "Settings sidebar list",
         "kind": "list",
-        "status": "planned",
+        "status": "lulo-only",
         "mac": {"app": "settings", "open": "already-visible"},
         "lulo": {"harness": "app", "app": "settings", "open": "already-visible"},
-        "note": "Driver not wired up yet.",
+        "note": "Lulo interaction driver (hover, right-click, scroll, Tab focus) is wired up. The Mac side is"
+                " pending - this agent never drives the owner's live Mac GUI.",
     },
 ]
 

@@ -404,6 +404,20 @@ class Wayland:
         if mods:
             self.roundtrip()
 
+    def scroll(self, vertical: float, horizontal: float = 0.0) -> None:
+        """A discrete wheel scroll (zwlr_virtual_pointer_v1's `axis`
+        requests, mirroring wl_pointer: axis 0 is vertical, 1 horizontal;
+        positive `vertical` scrolls content up, matching a two-finger swipe
+        up on a Mac trackpad with natural scrolling, the session default -
+        see packaging/rmac-session/shell.kdl's `natural-scroll`)."""
+
+        if vertical:
+            self._send(self.pointer, 3, struct.pack("<III", self._time(), 0, _fixed(vertical)))
+        if horizontal:
+            self._send(self.pointer, 3, struct.pack("<III", self._time(), 1, _fixed(horizontal)))
+        self._send(self.pointer, 4, b"")
+        self.roundtrip()
+
     def close(self) -> None:
         try:
             self._send(self.keyboard, 3, b"")

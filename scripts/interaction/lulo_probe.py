@@ -48,7 +48,10 @@ import surfaces as sf  # noqa: E402
 import probes as pr  # noqa: E402
 import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
-import atspi_assert_support as support  # noqa: E402
+# atspi_assert_support imports pyatspi at module level; deferred to its one
+# call site (run_control_centre_surface) so this module - and its pure
+# helpers below - stay importable where pyatspi is not installed (e.g.
+# scripts/test_interaction_probes.py on the Mac).
 
 from run_lulo import (  # noqa: E402
     StepFailed, Unsupported, atspi, descendants, extents, has_state, name, pump, role,
@@ -131,6 +134,10 @@ class ShellSession:
         self.children: list[subprocess.Popen] = []
         self.logs = nested.work / "logs"
         self.env = dict(nested.env)  # inherits Sway's WAYLAND_DISPLAY, SWAYSOCK, HOME, XDG_*, the private D-Bus address
+        # Resident shortcut-surface processes, keyed by surface id (not by
+        # binary), so a generic popover runner can start/locate the right
+        # one without hard-coding Control Centre's own attribute names.
+        self.popover_processes: dict[str, subprocess.Popen] = {}
 
     def _spawn(self, argv: list[str], label: str, extra: Optional[dict[str, str]] = None) -> subprocess.Popen:
         process = subprocess.Popen(argv, env={**self.env, **(extra or {})},
@@ -191,11 +198,13 @@ class ShellSession:
             stack.extend(node.get("floating_nodes", []))
         rect = (niri_node or {}).get("rect") or {"x": 0, "y": 0}
         self.niri_origin = (rect.get("x", 0), rect.get("y", 0))
-        self._spawn([str(dock)], "dock")
+        self.dock_process = self._spawn([str(dock)], "dock")
         self.top_bar = find_bin(self.bins, "rmac-top-bar", "top-bar")
         self.top_bar_process = self._spawn([str(self.top_bar)], "top-bar")
         if not self.wait_for_populated_frame(self.top_bar_process.pid):
             raise StepFailed("the top bar did not publish an accessible tree in time")
+        if not self.wait_for_populated_frame(self.dock_process.pid):
+            raise StepFailed("the Dock did not publish an accessible tree in time")
 
     def wait_for_populated_frame(self, pid: int, timeout: float = 15.0) -> bool:
         """AT-SPI briefly reports an app with one empty root frame right
@@ -235,18 +244,34 @@ class ShellSession:
         return reply["Ok"][key]
 
     def start_quick_settings(self) -> None:
+        if "control-centre" in self.popover_processes:
+            return
         quick_settings = find_bin(self.bins, "rmac-quick-settings")
         self.quick_settings_process = self._spawn([str(quick_settings)], "quick-settings")
         endpoint = Path(self.env["XDG_RUNTIME_DIR"]) / "rmac" / "shortcut-quick-settings.sock"
         if not self._wait_for(endpoint.exists, 20):
             raise StepFailed("Quick Settings did not register its shortcut endpoint")
+        self.popover_processes["control-centre"] = self.quick_settings_process
 
     def start_notification_center(self) -> None:
+        if "clock-notification-centre" in self.popover_processes:
+            return
         panel = find_bin(self.bins, "rmac-notification-center-panel")
         self.notification_center_process = self._spawn([str(panel)], "notification-center")
         endpoint = Path(self.env["XDG_RUNTIME_DIR"]) / "rmac" / "shortcut-notification-center.sock"
         if not self._wait_for(endpoint.exists, 20):
             raise StepFailed("Notification Center did not register its shortcut endpoint")
+        self.popover_processes["clock-notification-centre"] = self.notification_center_process
+
+    def start_launcher(self) -> None:
+        if "spotlight" in self.popover_processes:
+            return
+        launcher = find_bin(self.bins, "rmac-launcher")
+        self.launcher_process = self._spawn([str(launcher)], "launcher")
+        endpoint = Path(self.env["XDG_RUNTIME_DIR"]) / "rmac" / "shortcut-launcher.sock"
+        if not self._wait_for(endpoint.exists, 20):
+            raise StepFailed("the launcher did not register its shortcut endpoint")
+        self.popover_processes["spotlight"] = self.launcher_process
 
     def dispatch(self, shortcut: str) -> None:
         dispatcher = find_bin(self.bins, "rmac-shortcut-dispatch")
@@ -435,7 +460,7 @@ def run_menu_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any
     return out
 
 
-def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any]:
+def run_control_centre_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     shell.start_quick_settings()
     # Quick Settings starts hidden and (live-verified) registers no AT-SPI
@@ -504,6 +529,8 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
             if target is None:
                 out[f"hover:{label}"] = {"changed": None, "reason": "slider not present"}
                 continue
+            import atspi_assert_support as support
+
             if "focusable" not in support.states(target):
                 out[f"hover:{label}"] = {"changed": None, "reason": "slider unavailable"}
                 continue
@@ -605,9 +632,190 @@ def region_changed(before, after, box: tuple[float, float, float, float], thresh
     return changed_pixels > threshold
 
 
+POPOVER_RUNNERS = {
+    "control-centre": run_control_centre_surface,
+}
+# Surface id -> the ShellSession starter that makes shell.popover_processes[id] exist.
+POPOVER_STARTERS = {
+    "control-centre": ShellSession.start_quick_settings,
+    "clock-notification-centre": ShellSession.start_notification_center,
+    "spotlight": ShellSession.start_launcher,
+}
+
+
+def run_generic_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any]:
+    """outside-click/Escape for a shortcut-driven popover with no further
+    per-surface logic (Spotlight, Notification Centre): the same two probes
+    run_control_centre_surface proves for Control Centre, minus its
+    hover-slider and Wi-Fi-detail steps, which have no equivalent here.
+
+    Live-verified (2026-10-03) on Spotlight across four runs: Escape never
+    closed it (4/4), but outside-click's own result flipped between runs
+    (2/4 closed) - the same kind of run-to-run instability
+    run_control_centre_surface's own Escape probe already calls out,
+    recorded as whatever one run observed rather than retried into a
+    falsely stable answer."""
+
+    sid = item["id"]
+    lulo = item["lulo"]
+    starter = POPOVER_STARTERS[sid]
+    out: dict[str, Any] = {}
+
+    def process() -> subprocess.Popen:
+        return shell.popover_processes[sid]
+
+    def current_frames() -> list:
+        return shell.frames_by_pid(process().pid)
+
+    def is_open() -> bool:
+        pyatspi = atspi()
+        for frame in current_frames():
+            if has_state(frame, pyatspi.STATE_SHOWING) or has_state(frame, pyatspi.STATE_VISIBLE):
+                return True
+        return False
+
+    def open_popover() -> None:
+        if is_open():
+            return
+        shell.dispatch(lulo["shortcut"])
+        if not shell._wait_for(is_open, 20):
+            raise StepFailed(f"{item['title']} did not open from its shortcut endpoint")
+
+    def close_safety_net() -> None:
+        for _ in range(2):
+            if not is_open():
+                return
+            shell.input.key("escape")
+            time.sleep(0.4)
+            if is_open():
+                shell.dispatch(lulo["shortcut"])
+                time.sleep(0.4)
+
+    try:
+        starter(shell)
+        open_popover()
+        shell.click(OUTPUT_W // 2, OUTPUT_H - 20)
+        time.sleep(0.6)
+        out["outside_click"] = {"closed": not is_open()}
+        close_safety_net()
+
+        open_popover()
+        shell.input.key("escape")
+        time.sleep(0.6)
+        out["escape"] = {"closed": not is_open()}
+        close_safety_net()
+    finally:
+        close_safety_net()
+    return out
+
+
+def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any]:
+    specific = POPOVER_RUNNERS.get(item["id"])
+    if specific is not None:
+        return specific(shell, item)
+    return run_generic_popover_surface(shell, item)
+
+
+def run_dock_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any]:
+    """Dock hover (magnification/highlight) and right-click (its item menu).
+
+    Live-verified (2026-10-03, --explore-style dump): AccessKit's AT-SPI
+    adapter reports every Dock shelf item's bounds as SCREEN_COORDS=None
+    (unlike the top bar/Control Centre, where SCREEN_COORDS mostly works)
+    and exposes exactly one action, named "click" - not the "Open"/"Show
+    Menu" pair crates/rmac-dock/src/accessibility.rs defines on the Rust
+    side, so there is no named secondary action to invoke here the way
+    click_node() opens a menu bar title. The right-click probe therefore
+    sends a real secondary pointer click (the only way left to exercise
+    it), at the item's WINDOW_COORDS extents: the Dock's own toolbar
+    reports window=(0, 0, OUTPUT_W, ~OUTPUT_H), i.e. its surface's local
+    origin coincides with niri's own, so no extra fixed-margin fallback
+    (unlike Control Centre's panel) is needed to turn those into
+    niri-logical coordinates for shell.move/shell.click.
+
+    Both probes were also flaky run to run in that same live session (hover
+    changed/right-click opened on one run, neither did on the next) - the
+    same instability already seen on Spotlight and Control Centre's Escape;
+    recorded as whatever one run observed, never smoothed into a single
+    answer."""
+
+    out: dict[str, Any] = {}
+    pyatspi = atspi()
+    frames = shell.frames_by_pid(shell.dock_process.pid)
+    if not frames:
+        raise StepFailed("the Dock exposed no accessible frame over AT-SPI")
+
+    target = None
+    for frame in frames:
+        for node in descendants(frame, limit=2000):
+            if role(node) in {"push button", "button"} and name(node) and has_state(node, pyatspi.STATE_SHOWING):
+                target = node
+                break
+        if target is not None:
+            break
+    if target is None:
+        dump_tree(frames, f"{item['id']}: no Dock item found")
+        return {"hover": {"changed": None, "reason": "no Dock item found"},
+                "right_click": {"opened": None, "reason": "no Dock item found"}}
+
+    box = extents(target)
+    if box is None or box[2] <= 0 or box[3] <= 0:
+        out["hover"] = {"changed": None, "reason": "item bounds unavailable"}
+        out["right_click"] = {"opened": None, "reason": "item bounds unavailable"}
+        return out
+
+    origin_x, origin_y = shell.niri_origin
+    region = (max(0, box[0] + origin_x - 14), max(0, box[1] + origin_y - 14), box[2] + 28, box[3] + 28)
+    cx, cy = box[0] + box[2] / 2, box[1] + box[3] / 2
+
+    shell.move(OUTPUT_W // 2, 10)
+    time.sleep(0.3)
+    rest = capture_full(shell.env, shell.nested.work / "dock-hover-rest.png")
+    shell.move(cx - 20, cy)
+    time.sleep(0.1)
+    shell.move(cx, cy)
+    time.sleep(0.5)
+    hovered = capture_full(shell.env, shell.nested.work / "dock-hover-on.png")
+    out["hover"] = {"changed": region_changed(rest, hovered, region)}
+    shell.move(OUTPUT_W // 2, 10)
+    time.sleep(0.2)
+
+    # Live-verified (2026-10-03): a synthetic secondary pointer click here
+    # does not even reach a Dock item as a *primary* click does - clicking
+    # the Settings tile's measured centre the same way never spawns its
+    # window either, the same layer-shell limitation click_node() already
+    # documents for the top bar, just with no named AT-SPI action to fall
+    # back to for a context menu. Recording "opened": False here would
+    # misreport a harness limitation as a real absence of a Dock item menu,
+    # so this probe is left unmeasured rather than guessed.
+    menu_roles = {"menu", "popup menu"}
+    shell.click(cx, cy, button="right")
+    time.sleep(0.5)
+    opened = any_showing(frames, menu_roles)
+    if opened:
+        out["right_click"] = {"opened": True}
+        for _ in range(2):
+            if not any_showing(frames, menu_roles):
+                break
+            shell.input.key("escape")
+            time.sleep(0.3)
+        if any_showing(frames, menu_roles):
+            shell.click(cx, cy, button="right")
+            time.sleep(0.3)
+    else:
+        out["right_click"] = {
+            "opened": None,
+            "reason": "synthetic pointer clicks do not reach Dock items in this nested harness"
+                      " (a left-click sanity check on another tile also did not activate it); no AT-SPI"
+                      " secondary action is exposed as a substitute",
+        }
+    return out
+
+
 RUNNERS = {
     "menu": run_menu_surface,
     "popover": run_popover_surface,
+    "dock": run_dock_surface,
 }
 
 
@@ -713,16 +921,269 @@ def record_shell_surfaces(nested: "run_lulo.Nested", bins: list[Path], niri_bin:
     return results
 
 
+# --------------------------------------------------------------------------
+# The "app" harness: one app launched directly in run_lulo.Nested's headless
+# Sway, no shell/niri - the same skeleton run_lulo.py's own LuloRun uses.
+# --------------------------------------------------------------------------
+
+
+def _any_showing(run: "run_lulo.LuloRun", roles: set[str]) -> bool:
+    pyatspi = atspi()
+    return any(role(node) in roles and has_state(node, pyatspi.STATE_SHOWING)
+               for frame in run.frames() for node in descendants(frame, limit=3000))
+
+
+def _window_size(run: "run_lulo.LuloRun") -> Optional[tuple[int, int]]:
+    """The app's own on-screen size, from Sway's tree - not a top-level
+    "frame" node's own WINDOW_COORDS extents, which this AT-SPI adapter
+    reports as the degenerate sentinel (-1, -1, -1, -1) (a frame has no
+    bounds relative to itself; live-verified 2026-10-03 against both the
+    Dock's unnamed root frames and Text Editor's window)."""
+
+    windows = [w for w in run.nested.windows() if w.get("pid") == run.process.pid]
+    focused = [w for w in windows if w.get("focused")] or windows
+    if not focused:
+        return None
+    rect = focused[0].get("rect") or {}
+    width, height = rect.get("width"), rect.get("height")
+    if not width or not height:
+        return None
+    return width, height
+
+
+def run_files_context_menu_surface(nested: "run_lulo.Nested", bins: list[Path], settle: float) -> dict[str, Any]:
+    menu_roles = {"menu", "popup menu"}
+    scenario = {"app": "files", "launch": {"folder": "."}, "steps": []}
+    run = run_lulo.LuloRun(nested, "files-window-context-menu", scenario, bins, settle, None)
+
+    def is_menu_showing() -> bool:
+        return _any_showing(run, menu_roles)
+
+    def close_safety_net(corner: tuple[int, int]) -> None:
+        for _ in range(2):
+            if not is_menu_showing():
+                return
+            run.nested.input.key("escape")
+            time.sleep(0.3)
+        if is_menu_showing():
+            # Escape is exactly what this probe may find broken; fall back
+            # to a definite outside click (not the menu's own anchor point,
+            # which the still-open menu may now cover) rather than risk
+            # leaving it open for the next probe.
+            run.nested.input.click(*corner, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+            time.sleep(0.3)
+
+    out: dict[str, Any] = {}
+    corner = (5, 5)
+    try:
+        run.setup()
+        run.launch()
+        # The Files background context menu only has "list"/"table" roles
+        # to right-click into in List view (tests/behavior/files/context-
+        # menu.json uses the same cmd-2 switch); a fresh window's default
+        # view has none, so context_background() finds no viewport.
+        run.nested.input.key("cmd-2")
+        time.sleep(0.5)
+        ox, oy = run.window_origin()
+        corner = (ox + 5, oy + 5)
+
+        run.context_background()
+        time.sleep(0.5)
+        if not is_menu_showing():
+            raise StepFailed("the Files background context menu did not open")
+        run.nested.input.click(*corner, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+        time.sleep(0.4)
+        out["outside_click"] = {"closed": not is_menu_showing()}
+        close_safety_net(corner)
+
+        run.context_background()
+        time.sleep(0.5)
+        if not is_menu_showing():
+            raise StepFailed("the Files background context menu did not reopen")
+        run.nested.input.key("escape")
+        time.sleep(0.4)
+        out["escape"] = {"closed": not is_menu_showing()}
+        close_safety_net(corner)
+    finally:
+        close_safety_net(corner)
+        run.stop()
+    return out
+
+
+def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Path], settle: float) -> dict[str, Any]:
+    scenario = {"app": "text-editor", "launch": {}, "steps": []}
+    run = run_lulo.LuloRun(nested, "text-editor-save-sheet", scenario, bins, settle, None)
+
+    def click_into_document() -> None:
+        """Restore keyboard focus to the document window: live-verified
+        (2026-10-03) that Escape dismisses the alert (closed: True) but
+        leaves *no* accessible node focused anywhere (fact_focus's role is
+        None) - a real focus-restoration gap, worth its own parity row -
+        and cmd-w alone then does nothing, since nothing owns the
+        shortcut. Clicking the document keeps the Tab probe below
+        independent of that bug rather than reporting it as "not
+        measured"."""
+
+        size = _window_size(run)
+        if size is None:
+            return
+        width, height = size
+        ox, oy = run.window_origin()
+        run.nested.input.click(ox + width / 2, oy + height / 2, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+        time.sleep(0.3)
+
+    def ensure_alert(attempts: int = 3) -> bool:
+        for _ in range(attempts):
+            if run.dialog_node() is not None:
+                return True
+            click_into_document()
+            run.nested.input.key("cmd-w")
+            time.sleep(1.0)
+        return run.dialog_node() is not None
+
+    out: dict[str, Any] = {}
+    try:
+        run.setup()
+        run.launch()
+        run.nested.input.key("cmd-n")
+        time.sleep(1.0)
+        run.nested.input.type_text("Hello")
+        time.sleep(0.3)
+        run.nested.input.key("cmd-w")
+        time.sleep(1.0)
+        if run.dialog_node() is None:
+            raise StepFailed("the unsaved-changes alert did not appear")
+
+        run.nested.input.key("escape")
+        time.sleep(0.6)
+        out["escape"] = {"closed": run.dialog_node() is None}
+
+        if not ensure_alert():
+            out["tab_focus"] = {"moved": None, "reason": "the alert did not reopen for the Tab probe"}
+        else:
+            before = name(run.focused_node()) or None
+            run.nested.input.key("tab")
+            time.sleep(0.4)
+            after = name(run.focused_node()) or None
+            out["tab_focus"] = {"moved": bool(before) and bool(after) and before != after}
+    finally:
+        run.stop()
+    return out
+
+
+def run_settings_sidebar_list_surface(nested: "run_lulo.Nested", bins: list[Path], settle: float) -> dict[str, Any]:
+    # A row that is never the landing/first category: exercises real hover
+    # and right-click without the special-cased first-row semantics some UI
+    # toolkits apply (crates/system-settings/src/navigation.rs).
+    row_name = "Appearance"
+    scenario = {"app": "settings", "launch": {}, "steps": []}
+    run = run_lulo.LuloRun(nested, "settings-sidebar-list", scenario, bins, settle, None)
+    out: dict[str, Any] = {}
+    try:
+        run.setup()
+        run.launch()
+        frame = run.active_frame()
+        target = None
+        for node in descendants(frame, limit=3000) if frame is not None else []:
+            if name(node) == row_name:
+                target = node
+                break
+        if target is None:
+            out["hover"] = {"changed": None, "reason": f"{row_name!r} row not found"}
+            out["right_click"] = {"opened": None, "reason": f"{row_name!r} row not found"}
+            out["scroll"] = {"scrolled": None, "reason": f"{row_name!r} row not found"}
+        else:
+            box = extents(target)
+            ox, oy = run.window_origin()
+            cx, cy = ox + box[0] + box[2] / 2, oy + box[1] + box[3] / 2
+            region = (max(0, ox + box[0] - 10), max(0, oy + box[1] - 10), box[2] + 20, box[3] + 20)
+
+            run.nested.input.move(ox + 4, oy + 4, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+            time.sleep(0.3)
+            rest = capture_full(run.env, run.nested.work / "settings-sidebar-hover-rest.png")
+            run.nested.input.move(cx - 10, cy, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+            time.sleep(0.1)
+            run.nested.input.move(cx, cy, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+            time.sleep(0.5)
+            hovered = capture_full(run.env, run.nested.work / "settings-sidebar-hover-on.png")
+            out["hover"] = {"changed": region_changed(rest, hovered, region)}
+
+            run.nested.input.click(cx, cy, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H, button="right")
+            time.sleep(0.4)
+            opened = _any_showing(run, {"menu", "popup menu"})
+            out["right_click"] = {"opened": opened}
+            if opened:
+                run.nested.input.key("escape")
+                time.sleep(0.3)
+
+            window_size = _window_size(run)
+            sidebar_height = window_size[1] if window_size is not None else 600
+            sidebar_region = (max(0, ox + box[0] - 10), max(0, oy), box[2] + 220, sidebar_height)
+            before = capture_full(run.env, run.nested.work / "settings-sidebar-scroll-before.png")
+            run.nested.input.move(cx, cy, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+            run.nested.input.scroll(600)
+            time.sleep(0.4)
+            after = capture_full(run.env, run.nested.work / "settings-sidebar-scroll-after.png")
+            out["scroll"] = {"scrolled": region_changed(before, after, sidebar_region)}
+
+        run.nested.input.key("cmd-f")
+        time.sleep(0.5)
+        before_focus = name(run.focused_node()) or None
+        run.nested.input.key("tab")
+        time.sleep(0.4)
+        after_focus = name(run.focused_node()) or None
+        out["tab_focus"] = {"moved": bool(before_focus) and bool(after_focus) and before_focus != after_focus}
+    finally:
+        run.stop()
+    return out
+
+
+APP_RUNNERS = {
+    "files-window-context-menu": run_files_context_menu_surface,
+    "text-editor-save-sheet": run_text_editor_save_sheet_surface,
+    "settings-sidebar-list": run_settings_sidebar_list_surface,
+}
+
+
+def record_app_surfaces(nested: "run_lulo.Nested", bins: list[Path], items: list[dict[str, Any]],
+                        settle: float = 1.0) -> list[dict[str, Any]]:
+    results = []
+    for item in items:
+        runner = APP_RUNNERS.get(item["id"])
+        result: dict[str, Any] = {"format": 1, "surface": item["id"], "platform": "Lulo",
+                                  "recorded": datetime.date.today().isoformat(), "probes": {}}
+        if runner is None:
+            result["error"] = f"no Lulo app driver for surface {item['id']!r}"
+        else:
+            try:
+                result["probes"] = runner(nested, bins, settle)
+            except (StepFailed, Unsupported, wlinput.InjectorError) as error:
+                result["error"] = str(error)
+        results.append(result)
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        (OUT_DIR / f"{result['surface']}.json").write_text(json.dumps(result, indent=2) + "\n")
+        print(f"{'ERROR' if 'error' in result else 'ok   '} {item['id']}: "
+              f"{result.get('error') or json.dumps(result['probes'])}", flush=True)
+    return results
+
+
 def inner(args: argparse.Namespace) -> int:
     work = Path(args.inner)
     nested = run_lulo.Nested(work)
     bins = [Path(p) for p in args.bin_dir] + [Path(p) for p in args.shell_bin_dir]
     niri_bin = Path(args.niri) if args.niri else None
-    wanted = [item for item in sf.SURFACES if item["status"] == "automated"
-              and item.get("lulo", {}).get("harness") == "shell"]
+    # "lulo-only" means the Lulo driver is ready even though no Mac driver
+    # exists yet (never written by this agent - AGENT-BRIEF.md). Both
+    # statuses have a real end-to-end Lulo recording to run.
+    lulo_driven = {"automated", "lulo-only"}
+    shell_wanted = [item for item in sf.SURFACES if item["status"] in lulo_driven
+                    and item.get("lulo", {}).get("harness") == "shell"]
+    app_wanted = [item for item in sf.SURFACES if item["status"] in lulo_driven
+                  and item.get("lulo", {}).get("harness") == "app"]
     if not args.all:
         chosen = set(args.surfaces)
-        wanted = [item for item in wanted if item["id"] in chosen]
+        shell_wanted = [item for item in shell_wanted if item["id"] in chosen]
+        app_wanted = [item for item in app_wanted if item["id"] in chosen]
     if args.explore:
         wanted_all = [item for item in sf.SURFACES if item.get("lulo", {}).get("harness") == "shell"
                       and (args.all or item["id"] in set(args.surfaces))]
@@ -736,9 +1197,11 @@ def inner(args: argparse.Namespace) -> int:
         return 0
     results = []
     try:
-        if wanted:
-            results.extend(record_shell_surfaces(nested, bins, niri_bin, wanted,
+        if shell_wanted:
+            results.extend(record_shell_surfaces(nested, bins, niri_bin, shell_wanted,
                                                  args.assert_notification_center))
+        if app_wanted:
+            results.extend(record_app_surfaces(nested, bins, app_wanted))
     finally:
         nested.close()
     OUT_DIR.mkdir(parents=True, exist_ok=True)

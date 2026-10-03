@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "surface": "dock",
+  "platform": "Lulo",
+  "recorded": "2026-10-03",
+  "probes": {
+    "hover": {
+      "changed": true
+    },
+    "right_click": {
+      "opened": true
+    }
+  }
+}

@@ -15,6 +15,7 @@ sys.path.insert(0, str(HERE / "interaction"))
 import interaction_diff as diff  # noqa: E402
 import probes as pr  # noqa: E402
 import surfaces as sf  # noqa: E402
+import lulo_probe as lp  # noqa: E402
 
 
 class ProbeRegistryTests(unittest.TestCase):
@@ -199,6 +200,123 @@ class DiffReportTests(unittest.TestCase):
     def test_render_markdown_with_no_gaps_still_mentions_the_matrix(self):
         text = diff.render_markdown([], [])
         self.assertIn("No gaps found", text)
+
+
+class LuloOnlySurfaceTests(unittest.TestCase):
+    """The newly-widened surfaces (dock, spotlight, Notification Centre,
+    the Files context menu, the Text Editor alert, the Settings sidebar):
+    a Lulo driver exists, but this agent never drives the owner's live Mac,
+    so each one declares "lulo-only", not "automated"."""
+
+    LULO_ONLY_IDS = {
+        "dock", "spotlight", "clock-notification-centre",
+        "files-window-context-menu", "text-editor-save-sheet", "settings-sidebar-list",
+    }
+
+    def test_every_expected_surface_is_lulo_only(self):
+        by_id = {item["id"]: item for item in sf.SURFACES}
+        for sid in self.LULO_ONLY_IDS:
+            self.assertEqual(by_id[sid]["status"], "lulo-only", sid)
+
+    def test_every_lulo_only_surface_still_names_both_platforms(self):
+        # Ground truth for a future Mac driver stays declared even though
+        # nobody has written or run that driver yet.
+        for item in sf.SURFACES:
+            if item["status"] == "lulo-only":
+                self.assertIn("mac", item, item["id"])
+                self.assertIn("lulo", item, item["id"])
+
+    def test_spotlight_dispatches_the_real_launcher_shortcut_id(self):
+        # Regression: this surface used to name a shortcut id ("spotlight")
+        # that crates/rmac-shortcuts/src/model.rs does not know, which
+        # rmac-shortcut-dispatch would reject outright.
+        self.assertEqual(sf.surface("spotlight")["lulo"]["shortcut"], "launcher")
+
+    def test_matrix_includes_the_widened_probes(self):
+        pairs = set(sf.matrix())
+        self.assertIn(("dock", "hover"), pairs)
+        self.assertIn(("dock", "right_click"), pairs)
+        self.assertIn(("spotlight", "outside_click"), pairs)
+        self.assertIn(("spotlight", "escape"), pairs)
+        self.assertIn(("clock-notification-centre", "outside_click"), pairs)
+        self.assertIn(("files-window-context-menu", "outside_click"), pairs)
+        self.assertIn(("text-editor-save-sheet", "tab_focus"), pairs)
+        self.assertIn(("settings-sidebar-list", "scroll"), pairs)
+
+
+class LuloOnlyDiffTests(unittest.TestCase):
+    """A "lulo-only" surface must be compared exactly like an "automated"
+    one once a Lulo recording exists - never lumped into the generic
+    "surface has no driver yet" bucket "planned" surfaces get."""
+
+    def _item(self, **overrides):
+        item = {"id": "x", "title": "X", "kind": "dock", "status": "lulo-only"}
+        item.update(overrides)
+        return item
+
+    def test_a_lulo_recording_with_no_mac_recording_is_pending_not_skipped(self):
+        lulo = {"probes": {"hover": {"changed": True}, "right_click": {"opened": True}}}
+        gaps, unprobed = diff.compare_surface(self._item(), None, lulo)
+        self.assertEqual(gaps, [])
+        reasons = {u["probe"]: u["reason"] for u in unprobed}
+        self.assertEqual(reasons["hover"], "no recording")
+        self.assertEqual(reasons["right_click"], "no recording")
+
+    def test_once_both_sides_are_recorded_lulo_only_compares_like_automated(self):
+        mac = {"probes": {"hover": {"changed": True}, "right_click": {"opened": True}}}
+        lulo = {"probes": {"hover": {"changed": False}, "right_click": {"opened": True}}}
+        gaps, unprobed = diff.compare_surface(self._item(), mac, lulo)
+        self.assertEqual(len(gaps), 1)
+        self.assertEqual(gaps[0]["probe"], "hover")
+        # "dock" also declares the still-planned "press_hold" probe.
+        self.assertEqual([u["probe"] for u in unprobed], ["press_hold"])
+
+    def test_evaluate_does_not_fall_back_to_the_generic_planned_note(self):
+        # A "planned" surface's probes are bucketed under its own note; a
+        # "lulo-only" surface's probes go through compare_surface instead,
+        # so a missing mac recording must read as "no recording", not the
+        # surface-level note string.
+        item = self._item(note="should never be shown for a lulo-only surface")
+        originals = sf.SURFACES
+        sf.SURFACES = [item]
+        try:
+            gaps, unprobed = diff.evaluate()
+        finally:
+            sf.SURFACES = originals
+        self.assertEqual(gaps, [])
+        self.assertTrue(unprobed)
+        for row in unprobed:
+            self.assertNotEqual(row["reason"], "should never be shown for a lulo-only surface")
+
+
+class PopoverRegistryTests(unittest.TestCase):
+    """run_popover_surface (scripts/interaction/lulo_probe.py) dispatches a
+    shell-harness popover by surface id, to either a surface-specific
+    runner (Control Centre) or the generic shortcut-driven one (Spotlight,
+    Notification Centre). A surface declared in surfaces.py with no entry
+    in either table would raise KeyError the first time anyone recorded
+    it - this is checked here, with no AT-SPI bus or compositor needed."""
+
+    def test_every_shell_popover_surface_is_registered(self):
+        for item in sf.SURFACES:
+            if item["kind"] != "popover" or item.get("lulo", {}).get("harness") != "shell":
+                continue
+            if item["id"] in lp.POPOVER_RUNNERS:
+                continue
+            self.assertIn(item["id"], lp.POPOVER_STARTERS, item["id"])
+
+    def test_dispatcher_prefers_the_surface_specific_runner(self):
+        calls = []
+        lp.POPOVER_RUNNERS["x-test"] = lambda shell, item: calls.append(("specific", shell, item["id"]))
+        try:
+            lp.run_popover_surface("fake-shell", {"id": "x-test", "title": "X"})
+        finally:
+            del lp.POPOVER_RUNNERS["x-test"]
+        self.assertEqual(calls, [("specific", "fake-shell", "x-test")])
+
+    def test_dispatcher_falls_back_to_the_generic_runner(self):
+        self.assertNotIn("spotlight", lp.POPOVER_RUNNERS)
+        self.assertIs(lp.POPOVER_STARTERS["spotlight"], lp.ShellSession.start_launcher)
 
 
 if __name__ == "__main__":

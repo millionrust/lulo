@@ -25,31 +25,31 @@ Either the surface/probe has no driver yet (`status: "planned"` in surfaces.py/p
 | lulo-menu | arrow_keys | planned, no driver yet |
 | files-app-menu | hover | not measured: changed |
 | files-app-menu | arrow_keys | planned, no driver yet |
-| clock-notification-centre | escape | Lulo interaction driver not wired up yet; the separate nested AT-SPI assertion covers its accessible tree. |
-| clock-notification-centre | hover | Lulo interaction driver not wired up yet; the separate nested AT-SPI assertion covers its accessible tree. |
-| clock-notification-centre | outside_click | Lulo interaction driver not wired up yet; the separate nested AT-SPI assertion covers its accessible tree. |
-| clock-notification-centre | press_hold | Lulo interaction driver not wired up yet; the separate nested AT-SPI assertion covers its accessible tree. |
+| clock-notification-centre | escape | no recording |
+| clock-notification-centre | hover | no recording |
+| clock-notification-centre | outside_click | no recording |
+| clock-notification-centre | press_hold | planned, no driver yet |
 | status-menu-sound | escape | Real Mac has no separate Sound menu-bar extra by default (it lives in Control Centre); needs the owner's menu-bar extras enabled before recording, so left planned. |
 | status-menu-sound | hover | Real Mac has no separate Sound menu-bar extra by default (it lives in Control Centre); needs the owner's menu-bar extras enabled before recording, so left planned. |
 | status-menu-sound | outside_click | Real Mac has no separate Sound menu-bar extra by default (it lives in Control Centre); needs the owner's menu-bar extras enabled before recording, so left planned. |
 | status-menu-sound | reopen_same_title | Real Mac has no separate Sound menu-bar extra by default (it lives in Control Centre); needs the owner's menu-bar extras enabled before recording, so left planned. |
 | status-menu-sound | switch_neighbor | Real Mac has no separate Sound menu-bar extra by default (it lives in Control Centre); needs the owner's menu-bar extras enabled before recording, so left planned. |
 | status-menu-sound | arrow_keys | Real Mac has no separate Sound menu-bar extra by default (it lives in Control Centre); needs the owner's menu-bar extras enabled before recording, so left planned. |
-| spotlight | escape | Driver not wired up yet; run_cold_surfaces.py already covers Spotlight's latency and typing, this suite still needs to add outside-click/Escape here. |
-| spotlight | hover | Driver not wired up yet; run_cold_surfaces.py already covers Spotlight's latency and typing, this suite still needs to add outside-click/Escape here. |
-| spotlight | outside_click | Driver not wired up yet; run_cold_surfaces.py already covers Spotlight's latency and typing, this suite still needs to add outside-click/Escape here. |
-| spotlight | press_hold | Driver not wired up yet; run_cold_surfaces.py already covers Spotlight's latency and typing, this suite still needs to add outside-click/Escape here. |
-| dock | hover | Driver not wired up yet. |
-| dock | right_click | Driver not wired up yet. |
-| dock | press_hold | Driver not wired up yet. |
-| files-window-context-menu | escape | Driver not wired up yet; scripts/behavior's existing context()/context_background() already prove the item list on both sides, this suite still needs an outside-click/Escape driver here. |
-| files-window-context-menu | outside_click | Driver not wired up yet; scripts/behavior's existing context()/context_background() already prove the item list on both sides, this suite still needs an outside-click/Escape driver here. |
-| text-editor-save-sheet | escape | Driver not wired up yet; tests/behavior/text-editor/close-unsaved-save.json already proves the dialog's content, this suite still needs to add Escape/outside-click here. |
-| text-editor-save-sheet | tab_focus | Driver not wired up yet; tests/behavior/text-editor/close-unsaved-save.json already proves the dialog's content, this suite still needs to add Escape/outside-click here. |
-| settings-sidebar-list | hover | Driver not wired up yet. |
-| settings-sidebar-list | right_click | Driver not wired up yet. |
-| settings-sidebar-list | scroll | Driver not wired up yet. |
-| settings-sidebar-list | tab_focus | Driver not wired up yet. |
-| settings-sidebar-list | arrow_keys | Driver not wired up yet. |
-| settings-sidebar-list | double_click | Driver not wired up yet. |
-| settings-sidebar-list | type_to_select | Driver not wired up yet. |
+| spotlight | escape | no recording |
+| spotlight | hover | no recording |
+| spotlight | outside_click | no recording |
+| spotlight | press_hold | planned, no driver yet |
+| dock | hover | no recording |
+| dock | right_click | no recording |
+| dock | press_hold | planned, no driver yet |
+| files-window-context-menu | escape | no recording |
+| files-window-context-menu | outside_click | no recording |
+| text-editor-save-sheet | escape | no recording |
+| text-editor-save-sheet | tab_focus | no recording |
+| settings-sidebar-list | hover | no recording |
+| settings-sidebar-list | right_click | no recording |
+| settings-sidebar-list | scroll | no recording |
+| settings-sidebar-list | tab_focus | no recording |
+| settings-sidebar-list | arrow_keys | planned, no driver yet |
+| settings-sidebar-list | double_click | planned, no driver yet |
+| settings-sidebar-list | type_to_select | planned, no driver yet |

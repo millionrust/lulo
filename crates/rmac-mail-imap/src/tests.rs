@@ -13,10 +13,11 @@ use std::{
 
 const CERT: &[u8] = include_bytes!("../tests/fixtures/server.cert.der");
 const KEY: &[u8] = include_bytes!("../tests/fixtures/server.key.der");
+const CA: &[u8] = include_bytes!("../tests/fixtures/ca.der");
 
 fn roots() -> rustls::RootCertStore {
     let mut roots = rustls::RootCertStore::empty();
-    roots.add(CertificateDer::from(CERT)).unwrap();
+    roots.add(CertificateDer::from(CA)).unwrap();
     roots
 }
 

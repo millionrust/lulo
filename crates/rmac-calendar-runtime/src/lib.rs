@@ -4,11 +4,11 @@ use rmac_calendar_eds::{Eds, Source, ViewEvent};
 use rmac_calendar_store::Calendar as IcalCalendar;
 use std::collections::BTreeMap;
 
-pub trait CalendarClient {
+pub trait CalendarClient: Send {
     fn online(&self) -> Result<bool, String>;
     fn writable(&self) -> Result<bool, String>;
     fn list(&self, query: &str) -> Result<Vec<String>, String>;
-    fn subscribe(&self, query: &str) -> Result<Box<dyn Iterator<Item = ViewEvent>>, String>;
+    fn subscribe(&self, query: &str) -> Result<Box<dyn Iterator<Item = ViewEvent> + Send>, String>;
     fn create(&self, objects: &[String]) -> Result<Vec<String>, String>;
     fn modify(&self, objects: &[String], scope: &str) -> Result<(), String>;
     fn remove(&self, ids: &[(String, String)], scope: &str) -> Result<(), String>;
@@ -17,7 +17,7 @@ pub trait CalendarClient {
     fn refresh(&self) -> Result<(), String>;
 }
 
-pub trait CalendarBackend {
+pub trait CalendarBackend: Send {
     fn sources(&self) -> Result<Vec<Source>, String>;
     fn open(&self, uid: &str) -> Result<Box<dyn CalendarClient>, String>;
 }
@@ -46,7 +46,7 @@ impl CalendarClient for rmac_calendar_eds::Calendar {
         self.object_list(query)
             .map_err(|_| "Couldn't load events".into())
     }
-    fn subscribe(&self, query: &str) -> Result<Box<dyn Iterator<Item = ViewEvent>>, String> {
+    fn subscribe(&self, query: &str) -> Result<Box<dyn Iterator<Item = ViewEvent> + Send>, String> {
         let stream = self
             .view(query)
             .and_then(|view| view.into_events())
@@ -91,7 +91,7 @@ pub struct Snapshot {
 struct OpenCalendar {
     client: Box<dyn CalendarClient>,
     snapshot: Snapshot,
-    events: Box<dyn Iterator<Item = ViewEvent>>,
+    events: Box<dyn Iterator<Item = ViewEvent> + Send>,
 }
 
 pub struct CalendarRuntime<B> {
@@ -264,8 +264,8 @@ fn insert_object(objects: &mut BTreeMap<String, String>, raw: String) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
-    use std::rc::Rc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     const EVENT: &str = "BEGIN:VEVENT\nUID:a\nSUMMARY:Meeting\nDTSTART:20261003T100000Z\nDTEND:20261003T110000Z\nEND:VEVENT";
     fn source() -> Source {
@@ -278,10 +278,10 @@ mod tests {
         }
     }
     struct Fake {
-        offline: Rc<Cell<bool>>,
+        offline: Arc<AtomicBool>,
     }
     struct FakeClient {
-        offline: Rc<Cell<bool>>,
+        offline: Arc<AtomicBool>,
     }
     impl CalendarBackend for Fake {
         fn sources(&self) -> Result<Vec<Source>, String> {
@@ -295,7 +295,7 @@ mod tests {
     }
     impl CalendarClient for FakeClient {
         fn online(&self) -> Result<bool, String> {
-            Ok(!self.offline.get())
+            Ok(!self.offline.load(Ordering::Relaxed))
         }
         fn writable(&self) -> Result<bool, String> {
             Ok(true)
@@ -303,8 +303,10 @@ mod tests {
         fn list(&self, _: &str) -> Result<Vec<String>, String> {
             Ok(vec![EVENT.into()])
         }
-        fn subscribe(&self, _: &str) -> Result<Box<dyn Iterator<Item = ViewEvent>>, String> {
-            Ok(Box::new(std::iter::once(ViewEvent::Removed(vec!["a".into()]))))
+        fn subscribe(&self, _: &str) -> Result<Box<dyn Iterator<Item = ViewEvent> + Send>, String> {
+            Ok(Box::new(std::iter::once(ViewEvent::Removed(vec![
+                "a".into()
+            ]))))
         }
         fn create(&self, _: &[String]) -> Result<Vec<String>, String> {
             Ok(vec!["b".into()])
@@ -326,8 +328,14 @@ mod tests {
         }
     }
     #[test]
+    fn runtime_can_move_to_worker_thread() {
+        fn assert_send<T: Send>() {}
+        assert_send::<CalendarRuntime<Eds>>();
+    }
+
+    #[test]
     fn initial_load_and_view_changes() {
-        let offline = Rc::new(Cell::new(false));
+        let offline = Arc::new(AtomicBool::new(false));
         let mut runtime = CalendarRuntime::new(Fake {
             offline: offline.clone(),
         });
@@ -339,14 +347,14 @@ mod tests {
             .apply_view("local", ViewEvent::Added(vec![EVENT.into()]))
             .unwrap();
         assert_eq!(runtime.snapshot("local").unwrap().objects.len(), 1);
-        offline.set(true);
+        offline.store(true, Ordering::Relaxed);
         assert!(!runtime.refresh("local").unwrap().online);
         assert_eq!(runtime.create("local", &[EVENT.into()]).unwrap(), vec!["b"]);
     }
     #[test]
     fn rejects_missing_source_and_malformed_event() {
         let mut runtime = CalendarRuntime::new(Fake {
-            offline: Rc::new(Cell::new(false)),
+            offline: Arc::new(AtomicBool::new(false)),
         });
         runtime.reload_sources().unwrap();
         assert!(runtime.open("missing").is_err());

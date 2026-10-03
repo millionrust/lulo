@@ -344,13 +344,16 @@ pub fn open_outside_click_catcher_around_with_escape(
 }
 
 #[cfg(target_os = "linux")]
+type OutsideClickCallback = std::rc::Rc<dyn Fn(&mut App)>;
+
+#[cfg(target_os = "linux")]
 fn open_outside_click_catcher_impl(
     namespace: &str,
     display: std::rc::Rc<dyn gpui::PlatformDisplay>,
     reserved_top: gpui::Pixels,
     excluded: Option<gpui::Bounds<gpui::Pixels>>,
-    on_click: std::rc::Rc<dyn Fn(&mut App)>,
-    on_escape: Option<std::rc::Rc<dyn Fn(&mut App)>>,
+    on_click: OutsideClickCallback,
+    on_escape: Option<OutsideClickCallback>,
     cx: &mut App,
 ) -> Option<gpui::AnyWindowHandle> {
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
@@ -446,9 +449,9 @@ fn open_outside_click_catcher_impl(
 
 #[cfg(target_os = "linux")]
 struct OutsideClickCatcher {
-    left: std::rc::Rc<dyn Fn(&mut App)>,
-    right: std::rc::Rc<dyn Fn(&mut App)>,
-    escape: Option<std::rc::Rc<dyn Fn(&mut App)>>,
+    left: OutsideClickCallback,
+    right: OutsideClickCallback,
+    escape: Option<OutsideClickCallback>,
     focus: gpui::FocusHandle,
     input_regions: Vec<gpui::Bounds<gpui::Pixels>>,
 }

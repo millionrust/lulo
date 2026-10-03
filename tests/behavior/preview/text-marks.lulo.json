@@ -4,14 +4,14 @@
   "observations": {
     "underlined": {
       "pdf_text_marks": {
-        "underlines": 1,
+        "underlines": 3,
         "strikeouts": 0
       }
     },
     "struck_through": {
       "pdf_text_marks": {
-        "underlines": 1,
-        "strikeouts": 1
+        "underlines": 3,
+        "strikeouts": 3
       }
     }
   }

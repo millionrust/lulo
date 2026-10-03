@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "scenario": "text-editor/close-all",
+  "platform": "Lulo local contract",
+  "observations": {
+    "asked": {
+      "dialog": {"present": true},
+      "windows": {"count": 1}
+    },
+    "cancelled": {
+      "dialog": {"present": false},
+      "windows": {"count": 1}
+    }
+  }
+}

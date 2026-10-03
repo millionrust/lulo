@@ -14,15 +14,15 @@ use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
-    document, ActualSize, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument,
-    EnterFullScreen, ExportPdf, FindNext, FindPrev, IncreaseFont, InsertLineBreak, InsertPageBreak,
-    InsertParagraphBreak, JumpToSelection, NewFile, OpenFile, OpenRecent0, OpenRecent1,
-    OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8,
-    OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine, SetEncodingUtf16Be,
-    SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf,
-    SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage,
-    TransformCapitalise, TransformLowercase, TransformUppercase, UseSelectionForFind, ZoomIn,
-    ZoomOut,
+    document, ActualSize, ClearRecentMenu, CloseAll, CloseBar, CloseWindow, DecreaseFont,
+    DuplicateDocument, EnterFullScreen, ExportPdf, FindNext, FindPrev, IncreaseFont,
+    InsertLineBreak, InsertPageBreak, InsertParagraphBreak, JumpToSelection, NewFile, OpenFile,
+    OpenRecent0, OpenRecent1, OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6,
+    OpenRecent7, OpenRecent8, OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder,
+    SelectLine, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom,
+    SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono,
+    ToggleReplace, ToggleWrapToPage, TransformCapitalise, TransformLowercase, TransformUppercase,
+    UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use super::{
@@ -212,6 +212,20 @@ impl Render for EditorView {
             .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| window.toggle_fullscreen()))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.guarded(Pending::Close, window, cx)
+            }))
+            .on_action(cx.listener(|_, _: &CloseAll, _, cx| {
+                if super::startup::document_window_count() < 2 {
+                    return;
+                }
+                // Dispatch after this action finishes: GPUI cannot update the
+                // active window recursively while its render tree handles it.
+                cx.defer(|cx| {
+                    for handle in cx.windows() {
+                        let _ = handle.update(cx, |_, window, cx| {
+                            window.dispatch_action(Box::new(CloseWindow), cx);
+                        });
+                    }
+                });
             }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereDocuments, _, cx| { this.save_location = SaveLocation::Documents; this.save_custom_folder = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereDesktop, _, cx| { this.save_location = SaveLocation::Desktop; this.save_custom_folder = None; cx.notify(); }))

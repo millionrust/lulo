@@ -56,13 +56,26 @@ impl Services {
 }
 
 /// GOA object IDs are opaque. A Yahoo or iCloud Lulo account can own two IDs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Account {
     pub provider: Provider,
     pub display_name: String,
     pub address: String,
     pub goa_ids: Vec<String>,
     pub services: Services,
+}
+
+impl std::fmt::Debug for Account {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Account")
+            .field("provider", &self.provider)
+            .field("display_name", &"[redacted]")
+            .field("address", &"[redacted]")
+            .field("goa_ids", &"[redacted]")
+            .field("services", &self.services)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,5 +194,21 @@ mod tests {
             Err(AccountError::DuplicateGoaId)
         );
         assert_eq!(create(vec![]), Err(AccountError::MissingGoaId));
+    }
+
+    #[test]
+    fn account_debug_omits_personal_data() {
+        let account = Account::new(
+            Provider::Google,
+            "Planted Name".into(),
+            "planted@example.com".into(),
+            vec!["planted-goa-id".into()],
+            Services::ALL,
+        )
+        .expect("valid account");
+        let debug = format!("{account:?}");
+        assert!(!debug.contains("Planted Name"));
+        assert!(!debug.contains("planted@example.com"));
+        assert!(!debug.contains("planted-goa-id"));
     }
 }

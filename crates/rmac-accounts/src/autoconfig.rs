@@ -7,12 +7,24 @@ const MAX_XML_BYTES: usize = 256 * 1024;
 const MAX_XML_EVENTS: usize = 4096;
 const MAX_XML_DEPTH: usize = 32;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct MailServer {
     pub host: String,
     pub port: u16,
     pub security: SocketSecurity,
     pub username: String,
+}
+
+impl std::fmt::Debug for MailServer {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MailServer")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("security", &self.security)
+            .field("username", &"[redacted]")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -234,11 +246,22 @@ pub enum DiscoveryStep {
 
 /// A nonblocking decision sequence. The Linux adapter performs each requested
 /// network lookup and calls the corresponding method once it finishes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Discovery {
     pub address: String,
     pub step: DiscoveryStep,
     pub config: Option<MailConfig>,
+}
+
+impl std::fmt::Debug for Discovery {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Discovery")
+            .field("address", &"[redacted]")
+            .field("step", &self.step)
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 impl Discovery {
@@ -366,5 +389,16 @@ mod tests {
         assert_eq!(discovery.step, DiscoveryStep::BuiltIn(Provider::Google));
         discovery.accept_builtin();
         assert_eq!(discovery.step, DiscoveryStep::OAuth(Provider::Google));
+    }
+
+    #[test]
+    fn discovery_debug_omits_address_and_username() {
+        let mut discovery = Discovery::new("planted@example.com".into()).expect("valid address");
+        discovery.autoconfig_result(Some(
+            parse_ispdb(XML, "planted@example.com").expect("valid XML"),
+        ));
+        let debug = format!("{discovery:?}");
+        assert!(!debug.contains("planted@example.com"));
+        assert!(!debug.contains("planted"));
     }
 }

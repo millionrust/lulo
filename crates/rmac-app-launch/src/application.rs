@@ -99,23 +99,6 @@ fn with_color_scheme(mut arguments: Vec<String>, scheme: Option<&str>) -> Vec<St
     arguments
 }
 
-#[cfg(test)]
-mod color_scheme_tests {
-    use super::with_color_scheme;
-
-    #[test]
-    fn compositor_spawn_receives_the_live_scheme() {
-        assert_eq!(
-            with_color_scheme(vec!["rmac-system-settings".into()], Some("dark")),
-            [
-                "/usr/bin/env",
-                "RMAC_COLOR_SCHEME=dark",
-                "rmac-system-settings"
-            ]
-        );
-    }
-}
-
 pub(crate) fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
     matches!(
         kind,
@@ -175,4 +158,21 @@ fn executable(candidate: &std::path::Path) -> Result<(), std::io::ErrorKind> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod color_scheme_tests {
+    use super::with_color_scheme;
+
+    #[test]
+    fn compositor_spawn_receives_the_live_scheme() {
+        assert_eq!(
+            with_color_scheme(vec!["rmac-system-settings".into()], Some("dark")),
+            [
+                "/usr/bin/env",
+                "RMAC_COLOR_SCHEME=dark",
+                "rmac-system-settings"
+            ]
+        );
+    }
 }

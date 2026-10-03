@@ -1146,6 +1146,7 @@ pub fn boot_app_instance<V, F, H>(
 /// without starting GPUI. Otherwise it opens the windows itself, keeps
 /// running with its menu after the last one closes (as the Mac's Dock
 /// does), and serves later launches' requests with `build` too.
+#[allow(clippy::too_many_arguments)] // App identity, assets, geometry, windows, and two callbacks are separate inputs.
 pub fn boot_app_instance_with_assets<A, V, F, H>(
     app_id: &'static str,
     assets: A,

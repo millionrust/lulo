@@ -173,7 +173,7 @@ pub fn image_window_size(pixels: (f32, f32)) -> (f32, f32) {
     // space to centre the image rather than opening a thin strip.
     let min_width =
         TITLE_LEFT + (DEFAULT_WINDOW.0 - right_group(DEFAULT_WINDOW.0, true).zoom) + 60.0;
-    let min_height = 400.0;
+    let min_height: f32 = 400.0;
     (
         (width * scale).round().max(min_width.min(max_width)),
         ((height * scale).round() + TOOLBAR_HEIGHT).max(min_height.min(max_height)),

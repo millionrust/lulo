@@ -4,6 +4,6 @@
   "platform": "Lulo local contract",
   "observations": {
     "initial": {"windows": {"count": 1}},
-    "tmp": {"windows": {"count": 1}}
+    "tmp": {"windows": {"count": 1, "titles": ["tmp — Terminal"]}}
   }
 }

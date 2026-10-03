@@ -5,7 +5,8 @@
   "observations": {
     "small_image": {
       "windows": {"count": 2},
-      "window_size": {"width": 648, "height": 400}
+      "window_size": {"width": 648, "height": 400},
+      "preview_search": {"present": true}
     }
   }
 }

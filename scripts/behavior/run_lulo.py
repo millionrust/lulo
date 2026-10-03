@@ -628,6 +628,8 @@ class LuloRun:
 
     def launch(self, launch_override: Optional[dict[str, Any]] = None) -> None:
         launch = self.scenario.get("launch", {}) if launch_override is None else launch_override
+        if app_id := self.scenario.get("floating_app_id"):
+            self.nested.swaymsg("for_window", f'[app_id="{app_id}"]', "floating", "enable")
         command = [str(self.binary())]
         if self.app == "files":
             if "reveal" in launch:
@@ -887,6 +889,16 @@ class LuloRun:
         return {
             "width": width,
             "height": height,
+        }
+
+    def fact_preview_search(self) -> dict[str, Any]:
+        """Whether the Preview toolbar exposes its Find control."""
+        frame = self.active_frame()
+        return {
+            "present": frame is not None and any(
+                role(node) in TEXT_ROLES and name(node) == "Find"
+                for node in descendants(frame, limit=3000)
+            )
         }
 
     def dialog_node(self):
@@ -1205,7 +1217,8 @@ class LuloRun:
                 raise Unsupported("menu-bar steps need the top bar, which the nested runner does not start yet")
             elif "menu_action" in step:
                 # Lulo-only scenarios can activate the same published D-Bus
-                # command the menu bar sends, without opening a live menu.
+                # command the menu bar sends. Fetch Layout first as the menu
+                # bar does when it opens a menu, so dynamic Recent rows exist.
                 bus = "org.rmac." + {
                     "calculator": "Calculator",
                     "clock": "Clock",
@@ -1217,6 +1230,14 @@ class LuloRun:
                     "notes": "Notes",
                     "terminal": "Terminal",
                 }[self.app] + ".Menu"
+                layout = subprocess.run(
+                    ["gdbus", "call", "--session", "--dest", bus,
+                     "--object-path", "/org/rmac/AppMenu1", "--method",
+                     "org.rmac.AppMenu2.Layout"],
+                    env=self.env, capture_output=True, text=True, timeout=5,
+                )
+                if layout.returncode:
+                    raise StepFailed(f"menu layout failed: {layout.stderr.strip()}")
                 call = subprocess.run(
                     ["gdbus", "call", "--session", "--dest", bus,
                      "--object-path", "/org/rmac/AppMenu1", "--method",

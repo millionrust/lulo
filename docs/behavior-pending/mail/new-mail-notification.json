@@ -1,0 +1,11 @@
+{
+  "title": "Mail: an Inbox arrival sends one notification and updates the Dock badge",
+  "app": "mail",
+  "launch": {},
+  "pending": "Pending: MAIL-5 app and fixture-account injection, plus a local Mac mailbox recording. Deliver one fixture message while Mail is running; never send to a real account. The runtime's fake-backend tests cover scheduling until this UI scenario can run.",
+  "steps": [
+    {"observe": "before", "facts": ["mail_messages", "dock_badge"]},
+    {"fixture": "deliver_inbox_message", "id": "new-arrival-1"},
+    {"observe": "after", "facts": ["mail_messages", "notification", "dock_badge"]}
+  ]
+}

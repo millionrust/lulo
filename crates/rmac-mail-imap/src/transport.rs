@@ -2,7 +2,7 @@ use crate::{protocol::Response, Config, Error, TlsMode};
 use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 use std::{
     io::{self, Read, Write},
-    net::{TcpStream, ToSocketAddrs},
+    net::{Shutdown, TcpStream, ToSocketAddrs},
     sync::Arc,
     time::Duration,
 };
@@ -15,7 +15,19 @@ pub(crate) struct Transport {
     default_timeout: Duration,
 }
 
+/// A control handle that wakes a worker blocked in IDLE without a timer.
+pub struct Interrupt(TcpStream);
+
+impl Interrupt {
+    pub fn wake(&self) -> io::Result<()> {
+        self.0.shutdown(Shutdown::Both)
+    }
+}
+
 impl Transport {
+    pub(crate) fn interrupt_handle(&self) -> io::Result<Interrupt> {
+        self.stream.sock.try_clone().map(Interrupt)
+    }
     pub(crate) fn connect(config: &Config, roots: RootCertStore) -> Result<Self, Error> {
         let mut socket = None;
         for address in (config.host.as_str(), config.port).to_socket_addrs()? {

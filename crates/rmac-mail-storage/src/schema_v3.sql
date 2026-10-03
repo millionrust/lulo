@@ -1,0 +1,1 @@
+ALTER TABLE mailboxes ADD COLUMN highest_modseq INTEGER NOT NULL DEFAULT 0;

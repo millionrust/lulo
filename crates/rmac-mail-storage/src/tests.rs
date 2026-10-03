@@ -52,6 +52,72 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn sync_cursor_unread_and_pending_local_flags_survive_reopen() {
+    let mut fixture = Fixture::new();
+    let id = fixture.insert(7, "Unread", None);
+    fixture.insert(9, "Second", None);
+    assert_eq!(
+        fixture.store.cached_uids(fixture.inbox).unwrap(),
+        vec![7, 9]
+    );
+    assert_eq!(fixture.store.unread_inbox_count().unwrap(), 2);
+    fixture
+        .store
+        .set_mailbox_modseq(fixture.inbox, 123)
+        .unwrap();
+    fixture
+        .store
+        .queue_change(id, Change::SetFlags(FLAG_SEEN))
+        .unwrap();
+    fixture.store.set_server_flags(fixture.inbox, 7, 0).unwrap();
+    assert_eq!(
+        fixture.store.get_message(id).unwrap().unwrap().flags,
+        FLAG_SEEN
+    );
+    assert_eq!(fixture.store.unread_inbox_count().unwrap(), 1);
+    let reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
+    assert_eq!(
+        reopened.mailbox("INBOX").unwrap().unwrap().highest_modseq,
+        123
+    );
+    assert_eq!(reopened.pending_changes().unwrap().len(), 1);
+}
+
+#[test]
+fn existing_v2_cache_adds_cursor_without_losing_messages() {
+    let mut fixture = Fixture::new();
+    fixture.insert(11, "Keep me", None);
+    let path = fixture
+        .root
+        .join(fixture.account.to_string())
+        .join("index.sqlite3");
+    fixture
+        .store
+        .connection
+        .execute_batch("ALTER TABLE mailboxes DROP COLUMN highest_modseq; PRAGMA user_version=2;")
+        .unwrap();
+    let reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
+    assert_eq!(
+        reopened.mailbox("INBOX").unwrap().unwrap().highest_modseq,
+        0
+    );
+    assert_eq!(
+        reopened
+            .message_by_uid(fixture.inbox, 11)
+            .unwrap()
+            .unwrap()
+            .subject,
+        "Keep me"
+    );
+    let db = Connection::open(path).unwrap();
+    assert_eq!(
+        db.pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
+            .unwrap(),
+        3
+    );
+}
+
+#[test]
 fn migration_is_idempotent_and_rejects_future_schema() {
     let fixture = Fixture::new();
     let path = fixture
@@ -64,7 +130,7 @@ fn migration_is_idempotent_and_rejects_future_schema() {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .expect("version"),
-        2
+        3
     );
     drop(reopened);
     let db = Connection::open(path).expect("open raw");
@@ -124,7 +190,7 @@ fn existing_v1_cache_gains_outbox_without_losing_mail() {
     fixture
         .store
         .connection
-        .execute_batch("DROP TABLE outbox_recipients; DROP TABLE outbox; PRAGMA user_version=1;")
+        .execute_batch("DROP TABLE outbox_recipients; DROP TABLE outbox; ALTER TABLE mailboxes DROP COLUMN highest_modseq; PRAGMA user_version=1;")
         .unwrap();
     let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
     assert_eq!(
@@ -136,6 +202,10 @@ fn existing_v1_cache_gains_outbox_without_losing_mail() {
         .queue_outbox("a@example.test", &["b@example.test".into()], b"message")
         .unwrap();
     assert_eq!(reopened.outbox_count(OutboxState::Queued).unwrap(), 1);
+    assert_eq!(
+        reopened.mailbox("INBOX").unwrap().unwrap().highest_modseq,
+        0
+    );
 }
 
 #[test]

@@ -51,6 +51,7 @@ rmac-calendar-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-calenda
 rmac-calendar-store = { version = "=0.9.0-beta.1", path = "crates/rmac-calendar-store" }
 rmac-apps = { version = "=0.9.0-beta.1", path = "crates/rmac-apps" }
 rmac-accounts = { version = "=0.9.0-beta.1", path = "crates/rmac-accounts" }
+rmac-accounts-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-accounts-linux" }
 rmac-app-launch = { version = "=0.9.0-beta.1", path = "crates/rmac-app-launch" }
 rmac-app-menu = { version = "=0.9.0-beta.1", path = "crates/rmac-app-menu" }
 rmac-appearance = { version = "=0.9.0-beta.1", path = "crates/rmac-appearance" }
@@ -106,6 +107,7 @@ rmac-mail-store = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-store" }
 rmac-mail-imap = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-imap" }
 rmac-mail-storage = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-storage" }
 rmac-mail-mime = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-mime" }
+rmac-mail-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-runtime" }
 rmac-locale = { version = "=0.9.0-beta.1", path = "crates/rmac-locale" }
 rmac-locale-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-locale-linux" }
 rmac-power = { version = "=0.9.0-beta.1", path = "crates/rmac-power" }

@@ -12,6 +12,7 @@ pub use protocol::{
     Capabilities, CopyUid, Mailbox, MailboxKind, MessageChange, SelectState, SyncCursor,
 };
 use std::{fmt, io, time::Duration};
+pub use transport::Interrupt;
 use transport::Transport;
 use zeroize::Zeroize;
 
@@ -153,6 +154,10 @@ impl Client {
 
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
+    }
+
+    pub fn interrupt_handle(&self) -> io::Result<Interrupt> {
+        self.transport.interrupt_handle()
     }
 
     pub fn authenticate(&mut self, auth: Authentication<'_>) -> Result<(), Error> {
@@ -302,6 +307,13 @@ impl Client {
         Ok(responses.iter().find_map(Response::first_literal))
     }
 
+    /// Fetch only RFC 5322 headers for the initial cache scan. Bodies remain
+    /// on the server until a message is opened or newly arrives in Inbox.
+    pub fn fetch_headers(&mut self, uid: u32) -> Result<Option<Vec<u8>>, Error> {
+        let responses = self.command(&format!("UID FETCH {uid} (UID BODY.PEEK[HEADER])"))?;
+        Ok(responses.iter().find_map(Response::first_literal))
+    }
+
     pub fn move_uids(
         &mut self,
         uid_set: &str,
@@ -322,6 +334,36 @@ impl Client {
         }
         protocol::validate_uid_set(uid_set)?;
         self.command(&format!("UID EXPUNGE {uid_set}"))?;
+        Ok(())
+    }
+
+    /// Replace standard flags for one UID. The caller must verify UIDVALIDITY
+    /// before replaying a queued change.
+    pub fn store_flags(&mut self, uid: u32, flags: &[&str]) -> Result<(), Error> {
+        if uid == 0
+            || flags
+                .iter()
+                .any(|flag| !matches!(*flag, "\\Seen" | "\\Answered" | "\\Flagged" | "\\Draft"))
+        {
+            return Err(Error::Protocol("Invalid IMAP flags"));
+        }
+        self.command(&format!(
+            "UID STORE {uid} -FLAGS.SILENT (\\Seen \\Answered \\Flagged \\Draft)"
+        ))?;
+        if !flags.is_empty() {
+            self.command(&format!(
+                "UID STORE {uid} +FLAGS.SILENT ({})",
+                flags.join(" ")
+            ))?;
+        }
+        Ok(())
+    }
+
+    pub fn mark_deleted(&mut self, uid: u32) -> Result<(), Error> {
+        if uid == 0 {
+            return Err(Error::Protocol("Invalid IMAP UID"));
+        }
+        self.command(&format!("UID STORE {uid} +FLAGS.SILENT (\\Deleted)"))?;
         Ok(())
     }
 

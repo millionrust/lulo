@@ -1,0 +1,22 @@
+[package]
+name = "rmac-mail-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+rmac-accounts.workspace = true
+rmac-accounts-linux.workspace = true
+rmac-mail-imap.workspace = true
+rmac-mail-mime.workspace = true
+rmac-mail-storage.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus.workspace = true
+
+[dev-dependencies]
+rustls.workspace = true

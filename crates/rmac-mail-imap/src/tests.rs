@@ -355,3 +355,65 @@ fn unsafe_mailbox_and_uid_set_are_rejected() {
     assert!(validate_auth_field("alice\x01auth=Bearer attacker").is_err());
     assert!(validate_auth_field("alice\r\n").is_err());
 }
+
+#[test]
+fn flag_replay_preserves_unknown_flags_and_delete_only_marks_deleted() {
+    let (config, handle) = fixture(false, |socket| {
+        let mut stream = StreamOwned::new(ServerConnection::new(server_config()).unwrap(), socket);
+        send(&mut stream, "* OK ready\r\n");
+        assert_eq!(read_line(&mut stream), "L00000001 CAPABILITY\r\n");
+        send(
+            &mut stream,
+            "* CAPABILITY IMAP4rev1 AUTH=PLAIN SASL-IR\r\nL00000001 OK done\r\n",
+        );
+        assert!(read_line(&mut stream).starts_with("L00000002 AUTHENTICATE PLAIN "));
+        send(&mut stream, "L00000002 OK done\r\n");
+        assert_eq!(read_line(&mut stream), "L00000003 CAPABILITY\r\n");
+        send(
+            &mut stream,
+            "* CAPABILITY IMAP4rev1\r\nL00000003 OK done\r\n",
+        );
+        assert_eq!(
+            read_line(&mut stream),
+            "L00000004 UID STORE 7 -FLAGS.SILENT (\\Seen \\Answered \\Flagged \\Draft)\r\n"
+        );
+        send(&mut stream, "L00000004 OK done\r\n");
+        assert_eq!(
+            read_line(&mut stream),
+            "L00000005 UID STORE 7 +FLAGS.SILENT (\\Seen \\Flagged)\r\n"
+        );
+        send(&mut stream, "L00000005 OK done\r\n");
+        assert_eq!(
+            read_line(&mut stream),
+            "L00000006 UID STORE 7 +FLAGS.SILENT (\\Deleted)\r\n"
+        );
+        send(&mut stream, "L00000006 OK done\r\n");
+        assert_eq!(
+            read_line(&mut stream),
+            "L00000007 UID FETCH 7 (UID BODY.PEEK[HEADER])\r\n"
+        );
+        let headers = b"From: Ada <a@example.test>\r\nSubject: Hi\r\n\r\n";
+        send(
+            &mut stream,
+            &format!("* 1 FETCH (UID 7 BODY[HEADER] {{{}}}\r\n", headers.len()),
+        );
+        stream.write_all(headers).unwrap();
+        send(&mut stream, ")\r\nL00000007 OK done\r\n");
+    });
+    let mut client = Client::connect_with_roots(&config, roots()).unwrap();
+    client
+        .authenticate(Authentication::Plain {
+            user: "a@example.test",
+            password: &Secret::new("test"),
+        })
+        .unwrap();
+    client.store_flags(7, &["\\Seen", "\\Flagged"]).unwrap();
+    client.mark_deleted(7).unwrap();
+    assert_eq!(
+        client.fetch_headers(7).unwrap(),
+        Some(b"From: Ada <a@example.test>\r\nSubject: Hi\r\n\r\n".to_vec())
+    );
+    assert!(client.store_flags(0, &[]).is_err());
+    assert!(client.store_flags(7, &["invalid"]).is_err());
+    handle.join().unwrap();
+}

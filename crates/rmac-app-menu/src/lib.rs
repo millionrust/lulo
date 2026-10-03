@@ -906,6 +906,7 @@ const FILES_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("Show View Options", "finder::ShowViewOptions", "⌘J"),
+            item!("Show Preview", "finder::TogglePreview", "⇧⌘P"),
             item!("Show Tab Bar", "finder::ToggleTabBar", "⇧⌘T"),
             item!("Hide Toolbar", "finder::ToggleToolbar", "⌥⌘T"),
             item!("Enter Full Screen", "finder::EnterFullScreen", "F"),
@@ -3188,6 +3189,7 @@ mod tests {
             ("finder::SortByKind", "⌃⌥⌘2"),
             ("finder::SortByDate", "⌃⌥⌘5"),
             ("finder::SortBySize", "⌃⌥⌘6"),
+            ("finder::TogglePreview", "⇧⌘P"),
             ("finder::MoveItemHere", "⌥⌘V"),
             ("finder::GoRecents", "⇧⌘F"),
             ("finder::GoDocuments", "⇧⌘O"),

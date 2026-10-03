@@ -614,6 +614,15 @@ impl FinderView {
         );
         rmac_ui::set_menu_enabled("finder::QuickLook", has_selection, cx);
         rmac_ui::set_menu_enabled("finder::Slideshow", has_selection, cx);
+        rmac_ui::set_menu_label(
+            "finder::TogglePreview",
+            if self.preview_visible {
+                "Hide Preview"
+            } else {
+                "Show Preview"
+            },
+            cx,
+        );
         rmac_ui::set_menu_enabled(
             "finder::GoShared",
             rmac_finder::places::shared_folder(&self.home).is_some(),

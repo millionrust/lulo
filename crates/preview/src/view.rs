@@ -3239,6 +3239,7 @@ impl PreviewView {
                 .overflow_hidden()
                 .child(
                     div()
+                        .id("preview-bookmarks-scroll")
                         .absolute()
                         .left_0()
                         .right_0()

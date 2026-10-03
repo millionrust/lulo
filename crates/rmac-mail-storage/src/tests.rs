@@ -185,7 +185,7 @@ fn existing_v1_cache_gains_outbox_without_losing_mail() {
     fixture
         .store
         .connection
-        .execute_batch("DROP TABLE outbox_recipients; DROP TABLE outbox; PRAGMA user_version=1;")
+        .execute_batch("DROP TABLE outbox_recipients; DROP TABLE outbox; ALTER TABLE mailboxes DROP COLUMN highest_modseq; PRAGMA user_version=1;")
         .unwrap();
     let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
     assert_eq!(
@@ -197,6 +197,10 @@ fn existing_v1_cache_gains_outbox_without_losing_mail() {
         .queue_outbox("a@example.test", &["b@example.test".into()], b"message")
         .unwrap();
     assert_eq!(reopened.outbox_count(OutboxState::Queued).unwrap(), 1);
+    assert_eq!(
+        reopened.mailbox("INBOX").unwrap().unwrap().highest_modseq,
+        0
+    );
 }
 
 #[test]

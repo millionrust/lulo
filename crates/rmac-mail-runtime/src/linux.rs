@@ -137,6 +137,7 @@ pub enum UiEvent {
     Snapshot(Snapshot),
     NewMail(NewMail),
     Failure { account: Uuid, message: String },
+    OpenMessage { account: Uuid, message_id: i64 },
 }
 
 /// Posts to the same freedesktop service owned by Lulo Notification Centre.
@@ -144,13 +145,59 @@ pub enum UiEvent {
 pub struct DesktopSink {
     unread: Mutex<HashMap<Uuid, i64>>,
     ui: Option<mpsc::Sender<UiEvent>>,
+    notification_targets: Arc<Mutex<HashMap<u32, (Uuid, i64)>>>,
 }
 
 impl DesktopSink {
     pub fn new(ui: Option<mpsc::Sender<UiEvent>>) -> Self {
+        let notification_targets = Arc::new(Mutex::new(HashMap::new()));
+        if let Some(sender) = ui.clone() {
+            let targets = Arc::clone(&notification_targets);
+            thread::spawn(move || watch_notification_actions(sender, targets));
+        }
         Self {
             unread: Mutex::new(HashMap::new()),
             ui,
+            notification_targets,
+        }
+    }
+}
+
+fn watch_notification_actions(
+    ui: mpsc::Sender<UiEvent>,
+    targets: Arc<Mutex<HashMap<u32, (Uuid, i64)>>>,
+) {
+    let Ok(connection) = Connection::session() else {
+        return;
+    };
+    let rule = "type='signal',sender='org.freedesktop.Notifications',path='/org/freedesktop/Notifications',interface='org.freedesktop.Notifications',member='ActionInvoked'";
+    let Ok(signals) = MessageIterator::for_match_rule(rule, &connection, Some(64)) else {
+        return;
+    };
+    for signal in signals {
+        let Ok(signal) = signal else {
+            break;
+        };
+        let Ok((id, action)) = signal.body().deserialize::<(u32, String)>() else {
+            continue;
+        };
+        if action != "default" {
+            continue;
+        }
+        let target = targets
+            .lock()
+            .expect("mail notification lock poisoned")
+            .remove(&id);
+        if let Some((account, message_id)) = target {
+            if ui
+                .send(UiEvent::OpenMessage {
+                    account,
+                    message_id,
+                })
+                .is_err()
+            {
+                break;
+            }
         }
     }
 }
@@ -195,7 +242,7 @@ impl EventSink for DesktopSink {
             let mut hints = HashMap::new();
             hints.insert("desktop-entry", Value::Str("org.rmac.Mail".into()));
             let body = format!("{}\n{}", value.subject, value.preview);
-            let _ = connection.call_method(
+            let reply = connection.call_method(
                 Some("org.freedesktop.Notifications"),
                 "/org/freedesktop/Notifications",
                 Some("org.freedesktop.Notifications"),
@@ -211,6 +258,20 @@ impl EventSink for DesktopSink {
                     -1_i32,
                 ),
             );
+            if let Ok(reply) = reply {
+                if let Ok(id) = reply.body().deserialize::<u32>() {
+                    let mut targets = self
+                        .notification_targets
+                        .lock()
+                        .expect("mail notification lock poisoned");
+                    if targets.len() >= 1024 {
+                        if let Some(oldest) = targets.keys().next().copied() {
+                            targets.remove(&oldest);
+                        }
+                    }
+                    targets.insert(id, (value.account, value.message_id));
+                }
+            }
         }
     }
 }

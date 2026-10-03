@@ -18,7 +18,7 @@ use rmac_mail_storage::MailStorage;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-pub use imap::{ImapFactory, ImapSettings};
+pub use imap::{CredentialLookup, ImapAuth, ImapFactory, ImapSettings};
 
 pub const IMAP_REFRESH: Duration = Duration::from_secs(15 * 60);
 pub const GRAPH_REFRESH: Duration = Duration::from_secs(5 * 60);

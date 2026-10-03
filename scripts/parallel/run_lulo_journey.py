@@ -18,6 +18,7 @@ from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "behavior"))
+import fake_hardware  # noqa: E402
 import run_lulo  # noqa: E402
 import run_window_move  # noqa: E402
 import wlinput  # noqa: E402
@@ -608,9 +609,12 @@ def outer(args) -> int:
     try:
         for path in journey.paths(args.journeys):
             work = Path(tempfile.mkdtemp(prefix="lulo-parallel-"))
+            hardware = fake_hardware.start(work) if getattr(args, "fake_hardware", True) else None
             try:
                 env = run_lulo.isolated_environment(work)
                 run_lulo.refuse_live_session(env)
+                if hardware is not None:
+                    env.update(hardware.env)
                 bins = Path(args.bin_dir).expanduser().resolve()
                 # run_window_move expects legacy dock/mission-control names.
                 links = work / "bins"
@@ -655,6 +659,8 @@ def outer(args) -> int:
                 if run_lulo.reap(work / "runtime"):
                     time.sleep(1)
                     run_lulo.reap(work / "runtime")
+                if hardware is not None:
+                    hardware.stop()
                 if args.keep:
                     print(f"kept {work}", flush=True)
                 else:
@@ -672,6 +678,10 @@ def main() -> int:
     parser.add_argument("--niri", default="/usr/bin/niri")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument(
+        "--no-fake-hardware", dest="fake_hardware", action="store_false", default=True,
+        help="skip the private NetworkManager/BlueZ/UPower mocks (docs/behavior-suite.md)",
+    )
     parser.add_argument("--dump-a11y", action="store_true",
                         help="save every named accessible and its extents beside each shot")
     parser.add_argument("--full-too", action="store_true",

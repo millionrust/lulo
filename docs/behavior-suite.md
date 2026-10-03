@@ -1,5 +1,35 @@
 # Behaviour-parity suite
 
+## Fake hardware
+
+The private nested session (headless Sway or nested niri, every runner
+below) has no real NetworkManager, BlueZ, UPower or backlight, so Control
+Centre, the top-bar status menus (Wi-Fi, Bluetooth, Sound, Battery) and the
+matching System Settings panes all ran against empty/unavailable data —
+state the real laptop, with real hardware, never produces. That gap is why
+a real Control Centre crash (2026-10-03) never reproduced in any nested
+test.
+
+`scripts/behavior/fake_hardware.py` closes it: `fake_hardware.start(work)`
+starts a *private* D-Bus system bus (never the real one — only
+`DBUS_SYSTEM_BUS_ADDRESS` in the env dict handed to the nested apps points
+at it) and loads three python-dbusmock templates onto it — NetworkManager
+(three Wi-Fi networks, one connected), BlueZ (one adapter, one paired and
+connected device) and UPower (an 80%, discharging battery) — plus a
+scratch tree shaped like `/sys` (`LULO_FAKE_SYS_ROOT`) so
+`system-settings::hardware::current()` and `rmac-osd`'s backlight reader,
+which read real sysfs paths by default, detect the same devices when
+pointed at it.
+
+It is wired into `run_lulo.py`, `run_menu_dismiss.py`, `run_power_dialogs.py`
+and `run_lulo_journey.py`, on by default; pass `--no-fake-hardware` to any
+of them to go back to the old empty-hardware session. python3-dbusmock is
+an Ubuntu package (installed in CI's `scenarios` and `checks` jobs); where
+it is not installed — e.g. this repo's reference laptop, which has no sudo
+access for an agent to install it — `start()` logs a warning and returns
+`None`, so every caller falls back to today's behaviour instead of failing
+the run.
+
 ## Interaction probes
 
 `scripts/interaction/` is a sibling suite to `scripts/inventory` (which

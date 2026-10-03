@@ -1,5 +1,5 @@
 {
-  "title": "Preview opens with keyboard focus on its named page",
+  "title": "Tab reaches Preview's named page",
   "app": "preview",
   "lulo_only": true,
   "setup": {
@@ -11,6 +11,9 @@
     "file": "guide.pdf"
   },
   "steps": [
+    {
+      "key": "tab"
+    },
     {
       "observe": "page",
       "facts": [

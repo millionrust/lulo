@@ -7,8 +7,8 @@ authors.workspace = true
 publish = false
 
 [dependencies]
-base64 = "0.22"
+base64.workspace = true
 imap-codec = "=1.0.0"
-rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
-rustls-native-certs = "0.8"
+rustls.workspace = true
+rustls-native-certs.workspace = true
 zeroize.workspace = true

@@ -334,19 +334,29 @@ impl Client {
     /// before replaying a queued change.
     pub fn store_flags(&mut self, uid: u32, flags: &[&str]) -> Result<(), Error> {
         if uid == 0
-            || flags.iter().any(|flag| {
-                !matches!(
-                    *flag,
-                    "\\Seen" | "\\Answered" | "\\Flagged" | "\\Draft" | "\\Deleted"
-                )
-            })
+            || flags
+                .iter()
+                .any(|flag| !matches!(*flag, "\\Seen" | "\\Answered" | "\\Flagged" | "\\Draft"))
         {
             return Err(Error::Protocol("Invalid IMAP flags"));
         }
         self.command(&format!(
-            "UID STORE {uid} FLAGS.SILENT ({})",
-            flags.join(" ")
+            "UID STORE {uid} -FLAGS.SILENT (\\Seen \\Answered \\Flagged \\Draft)"
         ))?;
+        if !flags.is_empty() {
+            self.command(&format!(
+                "UID STORE {uid} +FLAGS.SILENT ({})",
+                flags.join(" ")
+            ))?;
+        }
+        Ok(())
+    }
+
+    pub fn mark_deleted(&mut self, uid: u32) -> Result<(), Error> {
+        if uid == 0 {
+            return Err(Error::Protocol("Invalid IMAP UID"));
+        }
+        self.command(&format!("UID STORE {uid} +FLAGS.SILENT (\\Deleted)"))?;
         Ok(())
     }
 

@@ -221,3 +221,42 @@ impl BackendFactory for ProviderFactory {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmac_accounts::model::Services;
+
+    fn account(provider: &str, address: &str) -> GoaAccount {
+        GoaAccount {
+            path: "/org/gnome/OnlineAccounts/Accounts/1".into(),
+            id: "1".into(),
+            provider: provider.into(),
+            identity: address.into(),
+            services: Services {
+                mail: true,
+                calendar: false,
+                contacts: false,
+            },
+        }
+    }
+
+    #[test]
+    fn goa_discovery_routes_microsoft_to_graph_and_google_to_idle() {
+        assert!(matches!(
+            resolve_goa(&account("ms_graph", "a@outlook.com"))
+                .unwrap()
+                .transport,
+            Transport::Graph
+        ));
+        let google = resolve_goa(&account("google", "a@gmail.com")).unwrap();
+        assert!(matches!(
+            google.transport,
+            Transport::Imap(ImapSettings {
+                auth: ImapAuth::XOAuth2,
+                ..
+            })
+        ));
+        assert!(resolve_goa(&account("imap_smtp", "a@unknown.example")).is_none());
+    }
+}

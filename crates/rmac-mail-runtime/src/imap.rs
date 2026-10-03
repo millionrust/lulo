@@ -3,6 +3,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(target_os = "linux")]
 use rmac_accounts_linux::GoaApi;
 use rmac_mail_imap::{
     Authentication, Client, Config, Interrupt, MailboxKind, Secret, SyncCursor, TlsMode,
@@ -91,12 +92,16 @@ impl BackendFactory for ImapFactory {
             },
         };
         client.authenticate(auth)?;
-        Ok(Box::new(ImapBackend { client }))
+        Ok(Box::new(ImapBackend {
+            client,
+            trash: None,
+        }))
     }
 }
 
 struct ImapBackend {
     client: Client,
+    trash: Option<String>,
 }
 
 fn flags_from_imap(flags: &[String]) -> i64 {
@@ -147,15 +152,20 @@ fn special_use(kind: MailboxKind) -> Option<&'static str> {
 
 fn uid_set_members(input: &str) -> Vec<i64> {
     let mut result = Vec::new();
-    for part in input.split(',').take(4096) {
+    for part in input.split(',') {
+        if result.len() >= 4096 {
+            break;
+        }
         if let Some((a, b)) = part.split_once(':') {
             if let (Ok(start), Ok(end)) = (a.parse::<i64>(), b.parse::<i64>()) {
-                if end >= start && end - start <= 4096 {
-                    result.extend(start..=end);
+                if start > 0 && end >= start && end - start <= 4096 {
+                    result.extend((start..=end).take(4096 - result.len()));
                 }
             }
         } else if let Ok(uid) = part.parse::<i64>() {
-            result.push(uid);
+            if uid > 0 {
+                result.push(uid);
+            }
         }
     }
     result
@@ -187,11 +197,10 @@ impl ImapBackend {
                     self.client.move_uids(&uid.to_string(), &destination.name)?;
                 }
                 Change::Delete => {
-                    let trash = store.mailbox_by_special_use("\\Trash")?;
-                    if let Some(trash) = trash {
-                        self.client.move_uids(&uid.to_string(), &trash.name)?;
+                    if let Some(trash) = &self.trash {
+                        self.client.move_uids(&uid.to_string(), trash)?;
                     } else {
-                        self.client.store_flags(uid, &["\\Deleted"])?;
+                        self.client.mark_deleted(uid)?;
                         self.client.expunge_uids(&uid.to_string())?;
                     }
                 }
@@ -305,6 +314,10 @@ impl ImapBackend {
 impl Backend for ImapBackend {
     fn sync(&mut self, store: &mut MailStorage, account: Uuid) -> Result<Vec<NewMail>, Error> {
         let mailboxes = self.client.list_mailboxes()?;
+        self.trash = mailboxes
+            .iter()
+            .find(|mailbox| mailbox.kind == MailboxKind::Trash && mailbox.selectable)
+            .map(|mailbox| mailbox.name.clone());
         let mut all = Vec::new();
         for mailbox in mailboxes.into_iter().filter(|mailbox| mailbox.selectable) {
             all.extend(self.sync_mailbox(store, account, &mailbox.name, mailbox.kind)?);

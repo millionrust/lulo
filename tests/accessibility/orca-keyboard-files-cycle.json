@@ -1,0 +1,1019 @@
+{
+ "format": 1,
+ "recorded": "2026-10-03T06:50:10Z",
+ "git": "ead605a6",
+ "orca": "50.2-0ubuntu0.1",
+ "harness": "scripts/a11y/orca_audit.py",
+ "summary": {
+  "focus-nowhere": 1,
+  "speech-mismatch": 1
+ },
+ "journeys": [
+  {
+   "id": "files",
+   "title": "Files",
+   "kind": "app",
+   "steps": [
+    {
+     "key": "launch",
+     "note": "window opens (scripted keys)",
+     "focus": {
+      "key": "1019025:/org/a11y/atspi/accessible/0/239271174501629287133809579247733309440",
+      "role": "list box",
+      "name": "Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019025:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Files, list box",
+     "speech": [
+      "sandbox — Files",
+      "Files.",
+      "List with 3 items"
+     ],
+     "flags": []
+    },
+    {
+     "key": "down",
+     "note": "next item",
+     "expect": "move",
+     "focus": {
+      "key": "1019025:/org/a11y/atspi/accessible/0/239271174501629287133809579247733309440",
+      "role": "list box",
+      "name": "Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019025:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Files, list box",
+     "speech": [
+      "sandbox List with 3 items",
+      "Budget.txt.",
+      "Plain Text Document."
+     ],
+     "events": [
+      "object:selection-changed",
+      "object:state-changed:selected"
+     ],
+     "flags": []
+    },
+    {
+     "key": "down",
+     "note": "next item",
+     "expect": "move",
+     "focus": {
+      "key": "1019025:/org/a11y/atspi/accessible/0/239271174501629287133809579247733309440",
+      "role": "list box",
+      "name": "Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019025:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Files, list box",
+     "speech": [
+      "Letter.txt.",
+      "Plain Text Document."
+     ],
+     "events": [
+      "object:selection-changed",
+      "object:state-changed:selected"
+     ],
+     "flags": []
+    },
+    {
+     "key": "up",
+     "note": "previous item",
+     "expect": "move",
+     "focus": {
+      "key": "1019025:/org/a11y/atspi/accessible/0/239271174501629287133809579247733309440",
+      "role": "list box",
+      "name": "Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019025:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Files, list box",
+     "speech": [
+      "Budget.txt.",
+      "Plain Text Document."
+     ],
+     "events": [
+      "object:selection-changed",
+      "object:state-changed:selected"
+     ],
+     "flags": []
+    },
+    {
+     "key": "cmd-shift-n",
+     "note": "New Folder: rename field",
+     "expect": null,
+     "focus": {
+      "key": "1019025:/org/a11y/atspi/accessible/0/145816161738630139717103591325630988288",
+      "role": "entry",
+      "name": "Name",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "editable",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": "untitled folder",
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019025:/org/a11y/atspi/accessible/0/38722981586661924821975624643095035904"
+     },
+     "via": "event",
+     "heard": "Name, entry, 'untitled folder'",
+     "speech": [
+      "Name entry untitled folder selected."
+     ],
+     "events": [
+      "object:selection-changed",
+      "object:state-changed:focused",
+      "object:state-changed:selected"
+     ],
+     "flags": []
+    },
+    {
+     "key": "escape",
+     "note": "leave rename",
+     "expect": null,
+     "focus": {
+      "key": "1019025:/org/a11y/atspi/accessible/0/239271174501629287133809579247733309440",
+      "role": "list box",
+      "name": "Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019025:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Files, list box",
+     "speech": [
+      "untitled folder.",
+      "Folder."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": [
+      {
+       "kind": "speech-mismatch",
+       "severity": "low",
+       "detail": "Orca said 'untitled folder. / Folder.', not the name 'files'"
+      }
+     ]
+    },
+    {
+     "key": "cmd-f",
+     "note": "Search field",
+     "expect": null,
+     "focus": {
+      "key": "1019025:/org/a11y/atspi/accessible/0/124797871688576184424488592177826365440",
+      "role": "entry",
+      "name": "Search",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "editable",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": "",
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019025:/org/a11y/atspi/accessible/0/189966014380036527770181155667692224512"
+     },
+     "via": "event",
+     "heard": "Search, entry",
+     "speech": [
+      "Search entry."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "escape",
+     "note": "leave search",
+     "expect": null,
+     "focus": {
+      "key": "1019025:/org/a11y/atspi/accessible/0/0",
+      "role": "frame",
+      "name": "sandbox — Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible",
+       "active"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019025:/org/a11y/atspi/accessible/root"
+     },
+     "via": "event",
+     "heard": "sandbox — Files, frame",
+     "speech": [
+      "sandbox — Files frame"
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": [
+      {
+       "kind": "focus-nowhere",
+       "severity": "medium",
+       "detail": "keyboard focus is on the window itself, not on any control"
+      }
+     ]
+    },
+    {
+     "key": "launch",
+     "note": "window opens (Tab cycle)",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/239271174501629287133809579247733309440",
+      "role": "list box",
+      "name": "Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Files, list box",
+     "speech": [
+      "sandbox — Files",
+      "Files.",
+      "List with 3 items"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/302603747083157255180131976733641408512",
+      "role": "button",
+      "name": "Close window",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Close window, button",
+     "speech": [
+      "Close window button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/269681092980159858386777180557094682624",
+      "role": "button",
+      "name": "Minimize",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Minimize, button",
+     "speech": [
+      "Minimize button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/59937482543630696103994704468237090816",
+      "role": "button",
+      "name": "Enter Full Screen",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Enter Full Screen, button",
+     "speech": [
+      "Enter Full Screen button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/214212877361928294531482551112387526656",
+      "role": "list box",
+      "name": "Sidebar",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Sidebar, list box",
+     "speech": [
+      "Sidebar.",
+      "List with 12 items"
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "down",
+     "note": "next item",
+     "expect": null,
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/150255247974098123348609212637102735360",
+      "role": "list item",
+      "name": "Applications",
+      "states": [
+       "focused",
+       "focusable",
+       "selectable",
+       "selected",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/214212877361928294531482551112387526656"
+     },
+     "via": "event",
+     "heard": "Applications, list item, selected",
+     "speech": [
+      "Applications.",
+      "Applications — Files"
+     ],
+     "events": [
+      "object:selection-changed",
+      "object:state-changed:focused",
+      "object:state-changed:selected"
+     ],
+     "flags": []
+    },
+    {
+     "key": "up",
+     "note": "previous item",
+     "expect": null,
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/29903229629501284621789234242217050112",
+      "role": "list item",
+      "name": "Recents",
+      "states": [
+       "focused",
+       "focusable",
+       "selectable",
+       "selected",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/214212877361928294531482551112387526656"
+     },
+     "via": "event",
+     "heard": "Recents, list item, selected",
+     "speech": [
+      "Recents."
+     ],
+     "events": [
+      "object:selection-changed",
+      "object:state-changed:focused",
+      "object:state-changed:selected"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/108425723777709172828935165516883951616",
+      "role": "button",
+      "name": "Back",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/123067128330803541587842038537360769024"
+     },
+     "via": "event",
+     "heard": "Back, button",
+     "speech": [
+      "Back button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/282550686399521188619407389867252908032",
+      "role": "radio button",
+      "name": "Icon",
+      "states": [
+       "focused",
+       "focusable",
+       "checkable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/316166421040169368633888471899770454016"
+     },
+     "via": "event",
+     "heard": "Icon, radio button, not checked",
+     "speech": [
+      "View panel",
+      "View.",
+      "Icon not selected radio button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/256972305044908650509123973267851313152",
+      "role": "radio button",
+      "name": "List",
+      "states": [
+       "focused",
+       "focusable",
+       "checkable",
+       "checked",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/316166421040169368633888471899770454016"
+     },
+     "via": "event",
+     "heard": "List, radio button, checked",
+     "speech": [
+      "View.",
+      "List selected radio button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/285007443072647417831499225962152722432",
+      "role": "radio button",
+      "name": "Columns",
+      "states": [
+       "focused",
+       "focusable",
+       "checkable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/316166421040169368633888471899770454016"
+     },
+     "via": "event",
+     "heard": "Columns, radio button, not checked",
+     "speech": [
+      "View.",
+      "Columns not selected radio button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/111787526546466691264813832325111480320",
+      "role": "radio button",
+      "name": "Gallery",
+      "states": [
+       "focused",
+       "focusable",
+       "checkable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/316166421040169368633888471899770454016"
+     },
+     "via": "event",
+     "heard": "Gallery, radio button, not checked",
+     "speech": [
+      "View.",
+      "Gallery not selected radio button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/50647296468220191680439736875603722240",
+      "role": "button",
+      "name": "Sort By",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/189966014380036527770181155667692224512"
+     },
+     "via": "event",
+     "heard": "Sort By, button",
+     "speech": [
+      "Sort By button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/33654243180847700360937258132707475456",
+      "role": "button",
+      "name": "Action",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/48074297592514188116790221938855247872"
+     },
+     "via": "event",
+     "heard": "Action, button",
+     "speech": [
+      "Action button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/97952815779017769608168324034488958976",
+      "role": "button",
+      "name": "Search",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/189966014380036527770181155667692224512"
+     },
+     "via": "event",
+     "heard": "Search, button",
+     "speech": [
+      "Search button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "tab",
+     "note": "next control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/239271174501629287133809579247733309440",
+      "role": "list box",
+      "name": "Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/0"
+     },
+     "via": "event",
+     "heard": "Files, list box",
+     "speech": [
+      "Files.",
+      "list box"
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "shift-tab",
+     "note": "previous control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/97952815779017769608168324034488958976",
+      "role": "button",
+      "name": "Search",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/189966014380036527770181155667692224512"
+     },
+     "via": "event",
+     "heard": "Search, button",
+     "speech": [
+      "Search button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "shift-tab",
+     "note": "previous control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/33654243180847700360937258132707475456",
+      "role": "button",
+      "name": "Action",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/48074297592514188116790221938855247872"
+     },
+     "via": "event",
+     "heard": "Action, button",
+     "speech": [
+      "Action button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "shift-tab",
+     "note": "previous control",
+     "expect": "move",
+     "focus": {
+      "key": "1019316:/org/a11y/atspi/accessible/0/50647296468220191680439736875603722240",
+      "role": "button",
+      "name": "Sort By",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "rmac-files",
+      "parent": "1019316:/org/a11y/atspi/accessible/0/189966014380036527770181155667692224512"
+     },
+     "via": "event",
+     "heard": "Sort By, button",
+     "speech": [
+      "Sort By button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    }
+   ],
+   "cycle": {
+    "outcome": "cycle",
+    "start": "Files, list box",
+    "stops": [
+     "Close window, button",
+     "Minimize, button",
+     "Enter Full Screen, button",
+     "Sidebar, list box",
+     "Back, button",
+     "Icon, radio button, not checked",
+     "List, radio button, checked",
+     "Columns, radio button, not checked",
+     "Gallery, radio button, not checked",
+     "Sort By, button",
+     "Action, button",
+     "Search, button"
+    ]
+   },
+   "cycle_flags": [],
+   "flags": [
+    {
+     "kind": "speech-mismatch",
+     "severity": "low",
+     "detail": "Orca said 'untitled folder. / Folder.', not the name 'files'",
+     "key": "escape",
+     "focus": "Files, list box"
+    },
+    {
+     "kind": "focus-nowhere",
+     "severity": "medium",
+     "detail": "keyboard focus is on the window itself, not on any control",
+     "key": "escape",
+     "focus": "sandbox — Files, frame"
+    }
+   ],
+   "summary": {
+    "focus-nowhere": 1,
+    "speech-mismatch": 1
+   }
+  }
+ ]
+}

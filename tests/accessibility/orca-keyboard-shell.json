@@ -1,0 +1,733 @@
+{
+ "format": 1,
+ "recorded": "2026-10-03T06:58:18Z",
+ "git": "ead605a6",
+ "orca": "50.2-0ubuntu0.1",
+ "harness": "scripts/a11y/orca_audit.py",
+ "summary": {
+  "focus-nowhere": 2,
+  "silent-focus": 3,
+  "speech-mismatch": 1
+ },
+ "journeys": [
+  {
+   "id": "menu-bar",
+   "title": "Top-bar menus (Control-F2)",
+   "kind": "shell",
+   "steps": [
+    {
+     "key": "ctrl-f2",
+     "note": "focus the menu bar",
+     "expect": null,
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/32468547367797741533350466348543639552",
+      "role": "menu item",
+      "name": "Lulo menu",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "Lulo menu, menu item",
+     "speech": [
+      "frame"
+     ],
+     "events": [
+      "object:active-descendant-changed",
+      "object:state-changed:focused",
+      "window:activate"
+     ],
+     "flags": [
+      {
+       "kind": "speech-mismatch",
+       "severity": "low",
+       "detail": "Orca said 'frame', not the name 'lulo menu'"
+      }
+     ]
+    },
+    {
+     "key": "right",
+     "note": "next title",
+     "expect": "move",
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/32501477621634883888520989332933181440",
+      "role": "menu item",
+      "name": "Files menu",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "Files menu, menu item",
+     "speech": [
+      "Lulo menu.",
+      "Files menu."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "right",
+     "note": "next title",
+     "expect": "move",
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/192103384746746234942623807609925271552",
+      "role": "menu item",
+      "name": "File menu",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "File menu, menu item",
+     "speech": [
+      "File menu."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "left",
+     "note": "previous title",
+     "expect": "move",
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/32501477621634883888520989332933181440",
+      "role": "menu item",
+      "name": "Files menu",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "Files menu, menu item",
+     "speech": [],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": [
+      {
+       "kind": "silent-focus",
+       "severity": "medium",
+       "detail": "focus moved to Files menu, menu item but Orca said nothing"
+      }
+     ]
+    },
+    {
+     "key": "down",
+     "note": "open the menu",
+     "expect": null,
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/2049716750420340247401365024490389504",
+      "role": "menu",
+      "name": "Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "Files, menu",
+     "speech": [
+      "Files menu."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "down",
+     "note": "next item",
+     "expect": "move",
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/132145999890441400496329505618182275072",
+      "role": "menu item",
+      "name": "Settings…",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "Settings…, menu item",
+     "speech": [
+      "Settings…"
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "down",
+     "note": "next item",
+     "expect": "move",
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/333330882979222997223407016268751962112",
+      "role": "menu item",
+      "name": "Empty Bin…",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "Empty Bin…, menu item",
+     "speech": [
+      "Empty Bin…"
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "up",
+     "note": "previous item",
+     "expect": "move",
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/132145999890441400496329505618182275072",
+      "role": "menu item",
+      "name": "Settings…",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "Settings…, menu item",
+     "speech": [],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": [
+      {
+       "kind": "silent-focus",
+       "severity": "medium",
+       "detail": "focus moved to Settings…, menu item but Orca said nothing"
+      }
+     ]
+    },
+    {
+     "key": "right",
+     "note": "next menu / submenu",
+     "expect": null,
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/25323632450514610461507301840378658816",
+      "role": "menu",
+      "name": "File",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "File, menu",
+     "speech": [
+      "File menu."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "escape",
+     "note": "back out",
+     "expect": null,
+     "focus": {
+      "key": "1028448:/org/a11y/atspi/accessible/1/192103384746746234942623807609925271552",
+      "role": "menu item",
+      "name": "File menu",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "top-bar",
+      "parent": "1028448:/org/a11y/atspi/accessible/1/322020867225612745405051426459913027584"
+     },
+     "via": "event",
+     "heard": "File menu, menu item",
+     "speech": [
+      "File menu."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "escape",
+     "note": "back out",
+     "expect": null,
+     "focus": {
+      "key": "1028447:/org/a11y/atspi/accessible/1/0",
+      "role": "frame",
+      "name": "",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible",
+       "active"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "dock",
+      "parent": "1028447:/org/a11y/atspi/accessible/root"
+     },
+     "via": "event",
+     "heard": "(unnamed), frame",
+     "speech": [
+      "frame"
+     ],
+     "events": [
+      "object:active-descendant-changed",
+      "object:state-changed:focused",
+      "window:activate"
+     ],
+     "flags": [
+      {
+       "kind": "focus-nowhere",
+       "severity": "medium",
+       "detail": "keyboard focus is on the window itself, not on any control"
+      }
+     ]
+    },
+    {
+     "key": "escape",
+     "note": "leave the menu bar",
+     "expect": null,
+     "focus": {
+      "key": "1028447:/org/a11y/atspi/accessible/1/0",
+      "role": "frame",
+      "name": "",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible",
+       "active"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "dock",
+      "parent": "1028447:/org/a11y/atspi/accessible/root"
+     },
+     "via": "event",
+     "heard": "(unnamed), frame",
+     "speech": [],
+     "events": [],
+     "flags": []
+    }
+   ],
+   "flags": [
+    {
+     "kind": "speech-mismatch",
+     "severity": "low",
+     "detail": "Orca said 'frame', not the name 'lulo menu'",
+     "key": "ctrl-f2",
+     "focus": "Lulo menu, menu item"
+    },
+    {
+     "kind": "silent-focus",
+     "severity": "medium",
+     "detail": "focus moved to Files menu, menu item but Orca said nothing",
+     "key": "left",
+     "focus": "Files menu, menu item"
+    },
+    {
+     "kind": "silent-focus",
+     "severity": "medium",
+     "detail": "focus moved to Settings…, menu item but Orca said nothing",
+     "key": "up",
+     "focus": "Settings…, menu item"
+    },
+    {
+     "kind": "focus-nowhere",
+     "severity": "medium",
+     "detail": "keyboard focus is on the window itself, not on any control",
+     "key": "escape",
+     "focus": "(unnamed), frame"
+    }
+   ],
+   "summary": {
+    "focus-nowhere": 1,
+    "silent-focus": 2,
+    "speech-mismatch": 1
+   }
+  },
+  {
+   "id": "dock",
+   "title": "Dock (Control-F3)",
+   "kind": "shell",
+   "steps": [
+    {
+     "key": "ctrl-f3",
+     "note": "focus the Dock",
+     "expect": null,
+     "focus": {
+      "key": "1028447:/org/a11y/atspi/accessible/2/106729470590371260471065281949891297280",
+      "role": "button",
+      "name": "Files",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "dock",
+      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+     },
+     "via": "event",
+     "heard": "Files, button",
+     "speech": [
+      "Files button."
+     ],
+     "events": [
+      "object:active-descendant-changed",
+      "object:state-changed:focused",
+      "window:activate"
+     ],
+     "flags": []
+    },
+    {
+     "key": "right",
+     "note": "next app",
+     "expect": "move",
+     "focus": {
+      "key": "1028447:/org/a11y/atspi/accessible/2/276667091721799603778251472792979505152",
+      "role": "button",
+      "name": "Apps",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "dock",
+      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+     },
+     "via": "event",
+     "heard": "Apps, button",
+     "speech": [
+      "Apps button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "right",
+     "note": "next app",
+     "expect": "move",
+     "focus": {
+      "key": "1028447:/org/a11y/atspi/accessible/2/179874894843363091627271626393902907392",
+      "role": "button",
+      "name": "Notes",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "dock",
+      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+     },
+     "via": "event",
+     "heard": "Notes, button",
+     "speech": [
+      "Notes button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "right",
+     "note": "next app",
+     "expect": "move",
+     "focus": {
+      "key": "1028447:/org/a11y/atspi/accessible/2/96348985333396022608703271389313892352",
+      "role": "button",
+      "name": "Text Editor",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "dock",
+      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+     },
+     "via": "event",
+     "heard": "Text Editor, button",
+     "speech": [
+      "Text Editor button."
+     ],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": []
+    },
+    {
+     "key": "left",
+     "note": "previous app",
+     "expect": "move",
+     "focus": {
+      "key": "1028447:/org/a11y/atspi/accessible/2/179874894843363091627271626393902907392",
+      "role": "button",
+      "name": "Notes",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "dock",
+      "parent": "1028447:/org/a11y/atspi/accessible/2/71858901957234285559848450383708946432"
+     },
+     "via": "event",
+     "heard": "Notes, button",
+     "speech": [],
+     "events": [
+      "object:state-changed:focused"
+     ],
+     "flags": [
+      {
+       "kind": "silent-focus",
+       "severity": "medium",
+       "detail": "focus moved to Notes, button but Orca said nothing"
+      }
+     ]
+    },
+    {
+     "key": "escape",
+     "note": "leave the Dock",
+     "expect": null,
+     "focus": {
+      "key": "1028447:/org/a11y/atspi/accessible/1/0",
+      "role": "frame",
+      "name": "",
+      "states": [
+       "focused",
+       "focusable",
+       "sensitive",
+       "enabled",
+       "showing",
+       "visible",
+       "active"
+      ],
+      "description": "",
+      "value": null,
+      "text": null,
+      "labelled_by": "",
+      "content": "",
+      "app": "dock",
+      "parent": "1028447:/org/a11y/atspi/accessible/root"
+     },
+     "via": "event",
+     "heard": "(unnamed), frame",
+     "speech": [
+      "frame"
+     ],
+     "events": [
+      "object:active-descendant-changed",
+      "object:state-changed:focused",
+      "window:activate"
+     ],
+     "flags": [
+      {
+       "kind": "focus-nowhere",
+       "severity": "medium",
+       "detail": "keyboard focus is on the window itself, not on any control"
+      }
+     ]
+    }
+   ],
+   "flags": [
+    {
+     "kind": "silent-focus",
+     "severity": "medium",
+     "detail": "focus moved to Notes, button but Orca said nothing",
+     "key": "left",
+     "focus": "Notes, button"
+    },
+    {
+     "kind": "focus-nowhere",
+     "severity": "medium",
+     "detail": "keyboard focus is on the window itself, not on any control",
+     "key": "escape",
+     "focus": "(unnamed), frame"
+    }
+   ],
+   "summary": {
+    "focus-nowhere": 1,
+    "silent-focus": 1
+   }
+  }
+ ]
+}

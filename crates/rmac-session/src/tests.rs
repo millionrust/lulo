@@ -637,23 +637,27 @@ fn desktop_overlays_are_linux_layer_surfaces_without_window_chrome() {
     let overlays = [
         (
             include_str!("../../launcher-app/src/service/overlay.rs"),
+            "fn overlay_options(",
             "namespace: \"rmac-launcher\"",
         ),
         (
             include_str!("../../quick-settings-app/src/main.rs"),
+            "fn popover_options(",
             "namespace: rmac_quick_settings::surface::NAMESPACE",
         ),
         (
             include_str!("../../notification-center-app/src/main.rs"),
+            "fn panel_options(",
             "namespace: rmac_notifications_linux::center_surface::NAMESPACE",
         ),
         (
             include_str!("../../app-drawer/src/service.rs"),
+            "fn drawer_options(",
             "namespace: \"rmac-app-drawer\"",
         ),
     ];
 
-    for (source, namespace_declaration) in overlays {
+    for (source, _options_function, namespace_declaration) in overlays {
         let kind = source
             .find("kind: WindowKind::LayerShell(LayerShellOptions {")
             .expect("overlay has layer-shell window options");

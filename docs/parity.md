@@ -704,7 +704,7 @@ similar — no plan, not tracked as rows here).
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| APP-01 | P1 | L | Missing (designed) | **Calendar**: core productivity app; the menu-bar clock is expected to open it, and the desktop Calendar widget has no app behind it yet. Owner put it in Beta 1 (2026-10-03). Design: ADR 0022, `docs/design/calendar-mail.md` (milestones CAL-1..CAL-9), mock `design-lab/calendar.html`, pending scenarios `docs/behavior-pending/calendar/`. | EDS over D-Bus (`rmac-calendar-eds`), new `calendar` + `calendar-agent` crates |
+| APP-01 | P1 | L | Partial (CAL-1 fixed `b6eab8d8`; CAL-2..CAL-9 open) | **Calendar**: CAL-1 adds pure Rust iCalendar VEVENT parsing/serialisation, bounded RRULE/RDATE/EXDATE and detached-instance expansion, IANA time zones, and deterministic day/week overlap columns, with RFC 5545 and golden tests. Custom VTIMEZONE definitions and DURATION/PERIOD/RANGE recurrence forms remain open. The app, EDS adapter, reminders, menu-bar clock target, and desktop widget integration remain open. Owner put Calendar in Beta 1 (2026-10-03). Design: ADR 0022, `docs/design/calendar-mail.md`, mock `design-lab/calendar.html`, pending scenarios `docs/behavior-pending/calendar/`. | EDS over D-Bus (`rmac-calendar-eds`), new `calendar` + `calendar-agent` crates |
 | APP-02 | P2 | M | Missing | **Reminders**: pairs with Calendar; build after it, on EDS VTODO. | EDS |
 | APP-03 | P1 | M | Missing | **Disk Utility**: the Mac answer to "format a USB stick" (Erase, Eject, First Aid). | build on udisks2 |
 | APP-04 | P2 | S | Missing | **System Information**: reached from About This Mac › More Info…; Lulo's About covers the summary only. | new |

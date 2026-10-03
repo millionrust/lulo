@@ -21,6 +21,7 @@ async-process = "2"
 blocking = "1"
 bzip2 = "0.6"
 chrono = "0.4"
+chrono-tz = "0.10"
 cosmic-text = "=0.14.2"
 flate2 = "=1.1.9"
 gpui = { version = "=0.2.2", git = "https://github.com/zed-industries/zed.git", package = "gpui" }
@@ -146,6 +147,7 @@ rmac-window-state = { version = "=0.9.0-beta.1", path = "crates/rmac-window-stat
 pam-sys2 = "=1.0.2"
 quick-xml = "0.39.4"
 raw-window-handle = "=0.6.2"
+rrule = "0.14"
 resvg = { version = "=0.45.1", default-features = false }
 rust-embed = { version = "8", features = ["include-exclude"] }
 rustix = { version = "=1.1.4", features = ["fs"] }

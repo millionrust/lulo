@@ -613,7 +613,9 @@ class Run:
             self.check(f"clock/date popover: opens for {method}", opened)
             if not opened:
                 continue
-            time.sleep(0.5)
+            # Layer listing can precede the catcher's first input-region
+            # commit, especially while Notification Center paints its panel.
+            time.sleep(1.0)
             if method == "Escape":
                 self.keys.key("escape")
             else:

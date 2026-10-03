@@ -6,7 +6,7 @@
   "steps": [
     {
       "key": "cmd-,",
-      "settle": 0.5
+      "settle": 1.5
     },
     {
       "observe": "opened",
@@ -22,7 +22,7 @@
     },
     {
       "select": "Group notes by date",
-      "settle": 0.5
+      "settle": 1.0
     },
     {
       "observe": "ungrouped",
@@ -32,7 +32,7 @@
     },
     {
       "select": "Group notes by date",
-      "settle": 0.5
+      "settle": 1.0
     },
     {
       "observe": "regrouped",

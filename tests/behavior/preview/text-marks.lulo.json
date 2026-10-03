@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "preview/text-marks",
+  "observations": {
+    "underlined": {
+      "pdf_text_marks": {
+        "underlines": 1,
+        "strikeouts": 0
+      }
+    },
+    "struck_through": {
+      "pdf_text_marks": {
+        "underlines": 1,
+        "strikeouts": 1
+      }
+    }
+  }
+}

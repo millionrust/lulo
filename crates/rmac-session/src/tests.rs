@@ -654,13 +654,19 @@ fn desktop_overlays_are_linux_layer_surfaces_without_window_chrome() {
     ];
 
     for (source, namespace_declaration) in overlays {
+        // Other Linux-only blocks (such as the outside-click catcher) can
+        // come first; check the one that declares this overlay's namespace.
         let linux_options = source
-            .split_once("#[cfg(target_os = \"linux\")]")
-            .expect("overlay has Linux-specific window options")
-            .1
-            .split("#[cfg(not(target_os = \"linux\"))]")
-            .next()
-            .expect("Linux window options precede the non-Linux fallback");
+            .split("#[cfg(target_os = \"linux\")]")
+            .skip(1)
+            .map(|section| {
+                section
+                    .split("#[cfg(not(target_os = \"linux\"))]")
+                    .next()
+                    .unwrap_or(section)
+            })
+            .find(|section| section.contains(namespace_declaration))
+            .expect("overlay has Linux-specific window options naming its namespace");
         assert!(linux_options.contains("WindowKind::LayerShell"));
         assert!(linux_options.contains("Layer::Overlay"));
         assert!(linux_options.contains(namespace_declaration));

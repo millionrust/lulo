@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "surface": "settings-sidebar-list",
+  "platform": "Lulo",
+  "recorded": "2026-10-03",
+  "probes": {
+    "hover": {
+      "changed": false
+    },
+    "right_click": {
+      "opened": false
+    },
+    "scroll": {
+      "scrolled": true
+    },
+    "tab_focus": {
+      "moved": true
+    }
+  }
+}

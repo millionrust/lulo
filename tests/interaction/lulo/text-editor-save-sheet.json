@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "surface": "text-editor-save-sheet",
+  "platform": "Lulo",
+  "recorded": "2026-10-03",
+  "probes": {
+    "escape": {
+      "closed": true
+    },
+    "tab_focus": {
+      "moved": true
+    }
+  }
+}

@@ -47,10 +47,33 @@ its sliders because `rmac-quick-settings` exposed no AT-SPI children.
 The current nested probe asserts a populated panel and Wi-Fi detail view,
 then targets accessible sliders for hover captures. The 2026-10-03
 Display capture found no hover change (INT-008); Sound was unavailable in
-the private session and remains unmeasured. Everything else in
-`surfaces.py`/`probes.py` (status menus, Spotlight, the Dock, Files'
-context menu, dialogs, lists, tab focus, arrow keys, type-to-select,
-press-and-hold) is declared for the matrix but has no driver yet.
+the private session and remains unmeasured.
+
+As of 2026-10-03, `lulo_probe.py` also records the Lulo side of six more
+surfaces: Spotlight/the launcher and Notification Centre (shell harness,
+shortcut-driven, outside-click/Escape), the Dock (hover, right-click/item
+menu), and three surfaces via a new "app" harness that launches one app
+directly in `run_lulo.Nested`'s headless Sway with no shell - the Files
+background context menu (outside-click/Escape), Text Editor's
+unsaved-changes alert (Escape, Tab focus), and the Settings sidebar list
+(hover, right-click, scroll, Tab focus). None of these has a Mac recording
+yet (this agent never drives the owner's live Mac GUI), so each surface's
+`status` is `"lulo-only"`, not `"automated"`: `interaction_diff.py` reports
+every one of their probes as "no recording" rather than a pass, exactly as
+it already does for a genuinely missing recording on an "automated"
+surface. Several facts were flaky run to run in the same live session
+(Spotlight's outside-click, the Dock's hover/right-click, Notification
+Centre's Escape) - recorded as whatever one run observed, the same
+treatment Control Centre's own flaky Escape probe already gets, not
+smoothed into a single answer. One probe (the Dock's right-click) could
+not reliably be driven at all: a synthetic secondary pointer click does
+not reach a Dock item in this harness (a left-click sanity check on
+another tile also failed to activate it, and AT-SPI exposes no named
+secondary action to fall back to the way `click_node()` does for the top
+bar), so it is recorded as unmeasured rather than a false "no menu".
+Status menus, dialogs beyond Text Editor's, arrow keys, type-to-select,
+double-click and press-and-hold are still declared for the matrix but
+have no driver yet.
 
 ## System Settings View menu
 

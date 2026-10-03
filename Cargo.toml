@@ -43,6 +43,7 @@ objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
 rmac-apps = { version = "=0.9.0-beta.1", path = "crates/rmac-apps" }
 rmac-accounts = { version = "=0.9.0-beta.1", path = "crates/rmac-accounts" }
+rmac-accounts-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-accounts-linux" }
 rmac-app-launch = { version = "=0.9.0-beta.1", path = "crates/rmac-app-launch" }
 rmac-app-menu = { version = "=0.9.0-beta.1", path = "crates/rmac-app-menu" }
 rmac-appearance = { version = "=0.9.0-beta.1", path = "crates/rmac-appearance" }
@@ -166,6 +167,7 @@ wayland-client = "=0.31.14"
 wayland-protocols = { version = "=0.32.13", features = ["client", "staging"] }
 xkbcommon = { version = "=0.8.0", default-features = false, features = ["wayland"] }
 zbus = { version = "5.16.0", features = ["blocking-api"] }
+ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
 zeroize = "=1.9.0"
 zip = { version = "2.4", default-features = false, features = ["deflate"] }
 

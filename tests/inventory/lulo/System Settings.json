@@ -240,6 +240,13 @@
           "children": []
         },
         {
+          "label": "Internet Accounts",
+          "action": "system_settings::ShowInternetAccounts",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Notifications",
           "action": "system_settings::ShowNotifications",
           "shortcut": "",
@@ -617,6 +624,10 @@
     {
       "id": "network",
       "label": "Network"
+    },
+    {
+      "id": "internet-accounts",
+      "label": "Internet Accounts"
     },
     {
       "id": "vpn",

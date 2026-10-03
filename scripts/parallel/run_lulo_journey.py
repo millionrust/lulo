@@ -335,6 +335,7 @@ class Driver:
         # accessible action, which is what assistive tech does.
         top_bar = next((p.pid for p in self.session.children
                         if isinstance(p.args, list) and Path(p.args[0]).name == "rmac-top-bar"), None)
+        top_bar_control = label in {"Wi-Fi", "Control Centre"}
         dock = next((p for p in self.session.children
                      if isinstance(p.args, list) and Path(p.args[0]).name == "dock"), None)
         while stack:
@@ -342,16 +343,23 @@ class Driver:
             try:
                 if node is None:
                     continue
-                if ((node.name == label or (node.name or "").startswith(label + ","))
-                        and node.getState().contains(pyatspi.STATE_SHOWING)):
+                if node.name == label or (node.name or "").startswith(label + ","):
                     pid = node.getApplication().get_process_id()
+                    if top_bar_control and (pid != top_bar or
+                                            node.getRoleName() not in {"push button", "button"}):
+                        stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+                        continue
+                    if not top_bar_control and not node.getState().contains(pyatspi.STATE_SHOWING):
+                        stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+                        continue
                     if target == "Dock" and (dock is None or pid != dock.pid):
                         stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
                         continue
                     owned = [w for w in windows if w.get("pid") == pid]
                     owner = (next((w for w in owned if w.get("is_focused")), None)
                              or (owned[0] if owned else None))
-                    box = node.queryComponent().getExtents(pyatspi.WINDOW_COORDS)
+                    space = pyatspi.DESKTOP_COORDS if top_bar_control else pyatspi.WINDOW_COORDS
+                    box = node.queryComponent().getExtents(space)
                     if box.width > 2 and box.height > 2 and box.x >= 0 and box.y >= 0:
                         role = node.getRoleName()
                         rank = 0 if role in {"list item", "tree item", "table row", "table cell"} else 1
@@ -382,9 +390,12 @@ class Driver:
                                              origin[1] + box.y + box.height / 2)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
-        status_x = {"Lulo": 26, "Battery": self.session.width - 296,
-                    "Wi-Fi": self.session.width - 251,
-                    "Control Centre": self.session.width - 182}
+        if top_bar_control:
+            if attempt < 12:
+                time.sleep(0.15)
+                return self.click(label, target, attempt + 1)
+            raise RuntimeError(f"no top-bar control with usable bounds named {label!r}")
+        status_x = {"Lulo": 26, "Battery": self.session.width - 296}
         if label in status_x:
             x, y = self.session.parent_point(status_x[label], 15)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)

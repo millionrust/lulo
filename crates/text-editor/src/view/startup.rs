@@ -1,6 +1,7 @@
 //! Text Editor launch argument, document-window, and application startup authority.
 
 use super::*;
+use gpui::QuitMode;
 use std::cell::RefCell;
 
 thread_local! {
@@ -84,6 +85,14 @@ fn parse_startup_request(
 }
 
 pub(super) fn open_editor_window(cx: &mut App, initial_path: Option<PathBuf>) -> Result<(), ()> {
+    open_editor_window_with_picker(cx, initial_path, false)
+}
+
+fn open_editor_window_with_picker(
+    cx: &mut App,
+    initial_path: Option<PathBuf>,
+    show_picker: bool,
+) -> Result<(), ()> {
     let (width, height) = document_window_size();
     let options = rmac_ui::window_options_for_app(rmac_ui::app_id::TEXT_EDITOR, width, height, cx);
     cx.open_window(options, |window, cx| {
@@ -93,10 +102,48 @@ pub(super) fn open_editor_window(cx: &mut App, initial_path: Option<PathBuf>) ->
             EditorView::new_with_path(initial_path, window, cx)
         });
         track_document(&view);
+        if show_picker {
+            view.update(cx, |view, cx| view.open(window, cx));
+        }
         cx.new(|cx| Root::new(view, window, cx))
     })
     .map(|_| ())
     .map_err(|_| ())
+}
+
+fn open_recent_without_window(index: usize, cx: &mut App) {
+    if document_window_count() != 0 {
+        return;
+    }
+    cx.spawn(async move |cx| {
+        let path = cx
+            .background_executor()
+            .spawn(async move {
+                let store = rmac_recent_documents::Store::from_environment().ok()?;
+                let mut paths = store.load_for_app(rmac_ui::app_id::TEXT_EDITOR).ok()?;
+                (index < paths.len()).then(|| paths.swap_remove(index))
+            })
+            .await;
+        if let Some(path) = path {
+            cx.update(|cx| {
+                let _ = open_editor_window(cx, Some(path));
+            });
+        }
+    })
+    .detach();
+}
+
+fn clear_recent_without_window(cx: &mut App) {
+    if document_window_count() != 0 {
+        return;
+    }
+    cx.background_executor()
+        .spawn(async move {
+            if let Ok(store) = rmac_recent_documents::Store::from_environment() {
+                let _ = store.clear_for_app(rmac_ui::app_id::TEXT_EDITOR);
+            }
+        })
+        .detach();
 }
 
 /// TextEdit's File ▸ Duplicate: a new untitled window seeded with `content`,
@@ -172,8 +219,35 @@ pub(crate) fn run() {
     }
     rmac_ui::application()
         .with_assets(gpui_component_assets::Assets)
+        .with_quit_mode(QuitMode::Explicit)
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
+            cx.on_action(|_: &NewFile, cx| {
+                if document_window_count() == 0 {
+                    let _ = open_editor_window(cx, None);
+                }
+            });
+            cx.on_action(|_: &OpenFile, cx| {
+                if document_window_count() == 0 {
+                    let _ = open_editor_window_with_picker(cx, None, true);
+                }
+            });
+            cx.on_action(|_: &ShowSettings, cx| {
+                if document_window_count() == 0 {
+                    crate::settings_window::show(cx);
+                }
+            });
+            cx.on_action(|_: &crate::OpenRecent0, cx| open_recent_without_window(0, cx));
+            cx.on_action(|_: &crate::OpenRecent1, cx| open_recent_without_window(1, cx));
+            cx.on_action(|_: &crate::OpenRecent2, cx| open_recent_without_window(2, cx));
+            cx.on_action(|_: &crate::OpenRecent3, cx| open_recent_without_window(3, cx));
+            cx.on_action(|_: &crate::OpenRecent4, cx| open_recent_without_window(4, cx));
+            cx.on_action(|_: &crate::OpenRecent5, cx| open_recent_without_window(5, cx));
+            cx.on_action(|_: &crate::OpenRecent6, cx| open_recent_without_window(6, cx));
+            cx.on_action(|_: &crate::OpenRecent7, cx| open_recent_without_window(7, cx));
+            cx.on_action(|_: &crate::OpenRecent8, cx| open_recent_without_window(8, cx));
+            cx.on_action(|_: &crate::OpenRecent9, cx| open_recent_without_window(9, cx));
+            cx.on_action(|_: &crate::ClearRecentMenu, cx| clear_recent_without_window(cx));
             rmac_ui::install_app_instance(
                 rmac_ui::app_id::TEXT_EDITOR,
                 |arguments, cx| match parse_startup_request(

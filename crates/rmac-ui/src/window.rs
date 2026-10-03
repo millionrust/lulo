@@ -954,13 +954,46 @@ pub fn boot_single_window_app_with_assets<A, V, F>(
 ) where
     A: gpui::AssetSource,
     V: Render + 'static,
-    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+    F: Fn(&mut Window, &mut Context<V>) -> V + 'static,
 {
     if hand_off_to_running_instance(app_id, &[Vec::new()]) {
         focus_running_app(app_id);
         return;
     }
-    boot_app_window(app_id, assets, title, width, height, true, build);
+    let fallback_title: SharedString = title.into();
+    let title = rmac_apps::identity::window_title(app_id)
+        .map(SharedString::from)
+        .unwrap_or(fallback_title);
+    let build =
+        Rc::new(move |_: &[String], window: &mut Window, cx: &mut Context<V>| build(window, cx));
+    crate::application()
+        .with_assets(assets)
+        .with_quit_mode(gpui::QuitMode::Explicit)
+        .run(move |cx: &mut App| {
+            init_application(cx);
+            let open = build.clone();
+            let window_title = title.clone();
+            let opener: OpenWindow = Rc::new(move |_, cx| {
+                if let Some((window, _)) = crate::menu_target::target(cx) {
+                    let _ = window.update(cx, |_, window, _| window.activate_window());
+                } else if let Err(error) = open_app_window(
+                    app_id,
+                    window_title.clone(),
+                    width,
+                    height,
+                    Vec::new(),
+                    open.clone(),
+                    cx,
+                ) {
+                    eprintln!("{app_id} could not reopen its window: {error}");
+                }
+            });
+            cx.set_global(AppWindowOpener(opener.clone()));
+            crate::install_app_instance(app_id, move |arguments, cx| opener(arguments, cx), cx);
+            open_app_window(app_id, title.clone(), width, height, Vec::new(), build, cx)
+                .expect("failed to open window");
+            cx.activate(true);
+        });
 }
 
 /// Bring `app_id`'s most recently used window forward through the
@@ -1134,6 +1167,7 @@ pub fn boot_app_instance_with_assets<A, V, F>(
     let build = Rc::new(build);
     crate::application()
         .with_assets(assets)
+        .with_quit_mode(gpui::QuitMode::Explicit)
         .run(move |cx: &mut App| {
             init_application(cx);
             let requested = build.clone();

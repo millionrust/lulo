@@ -516,7 +516,7 @@ fn authoritative_process_ids(item: &Item) -> Option<Vec<u32>> {
 pub(super) fn project_special_items(places: &rmac_places::Snapshot) -> Vec<SpecialItem> {
     let trash = SpecialItem {
         kind: SpecialItemKind::Trash,
-        name: "Trash",
+        name: rmac_locale::FileVocabulary::from_environment().bin(),
         available: places.trash.available,
         item_count: places.trash.available.then_some(places.trash.item_count),
         activation: if places.trash.available {

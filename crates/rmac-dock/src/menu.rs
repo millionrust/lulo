@@ -580,9 +580,9 @@ impl Session {
                 rows.push(Row {
                     id: RowId::EmptyTrash,
                     section: Section::Destructive,
-                    label: "Empty Trash".into(),
+                    label: format!("Empty {name}"),
                     accessible_label: bounded(&format!(
-                        "Empty Trash permanently, {expected_item_count} {item_label}, requires confirmation"
+                        "Empty {name} permanently, {expected_item_count} {item_label}, requires confirmation"
                     )),
                     enabled: true,
                     checked: false,
@@ -597,8 +597,8 @@ impl Session {
             None if menu.kind == SpecialItemKind::Trash && available => rows.push(Row {
                 id: RowId::EmptyTrash,
                 section: Section::Destructive,
-                label: "Empty Trash".into(),
-                accessible_label: "Empty Trash, the Trash is empty".into(),
+                label: format!("Empty {name}"),
+                accessible_label: format!("Empty {name}, the {name} is empty"),
                 enabled: false,
                 checked: false,
                 urgent: false,
@@ -917,7 +917,7 @@ fn special_name(kind: SpecialItemKind) -> &'static str {
     match kind {
         SpecialItemKind::Files => "Files",
         SpecialItemKind::Downloads => "Downloads",
-        SpecialItemKind::Trash => "Trash",
+        SpecialItemKind::Trash => rmac_locale::FileVocabulary::from_environment().bin(),
     }
 }
 

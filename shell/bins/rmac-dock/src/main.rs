@@ -14,6 +14,11 @@ mod linux_wayland {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
+    fn bin_word() -> &'static str {
+        static WORD: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+        WORD.get_or_init(|| rmac_locale::FileVocabulary::from_environment().bin())
+    }
+
     use futures_util::FutureExt as _;
     use gpui::{
         canvas, div, img, layer_shell::*, point, prelude::*, px, rgba, AccessibleAction,
@@ -420,10 +425,10 @@ mod linux_wayland {
             .iter()
             .find(|item| item.kind == rmac_dock::SpecialItemKind::Trash);
         match trash.and_then(|trash| trash.item_count) {
-            Some(0) => "Trash, empty".into(),
-            Some(1) => "Trash, 1 item".into(),
-            Some(count) => format!("Trash, {count} items"),
-            None => "Trash unavailable".into(),
+            Some(0) => format!("{}, empty", bin_word()),
+            Some(1) => format!("{}, 1 item", bin_word()),
+            Some(count) => format!("{}, {count} items", bin_word()),
+            None => format!("{} unavailable", bin_word()),
         }
     }
 
@@ -500,7 +505,7 @@ mod linux_wayland {
         );
         targets.push(KeyTarget {
             id: rmac_dock::presentation::EntryId::Special(rmac_dock::SpecialItemKind::Trash),
-            name: "Trash".into(),
+            name: bin_word().into(),
             accessible: trash_accessible_label(&snapshot.model),
             center: trash_center,
         });
@@ -3557,7 +3562,7 @@ mod linux_wayland {
                             .rounded(px(tokens::dock_tile_radius(metrics.icon_size)))
                             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                 if *hovered {
-                                    this.hovered_item = Some((trash_center, "Trash".into()));
+                                    this.hovered_item = Some((trash_center, bin_word().into()));
                                     cx.notify();
                                 } else if this
                                     .hovered_item
@@ -4638,7 +4643,7 @@ mod linux_wayland {
     ) -> gpui::AnyElement {
         const WIDTH: f32 = 260.0;
         // The count stays in the accessible name; the text is the Mac's.
-        let accessible = format!("Empty Trash, {item_count} items");
+        let accessible = format!("Empty {}, {item_count} items", bin_word());
         let button = |id: &'static str, label: &'static str, default: bool| {
             div()
                 .id(format!("dock-trash-alert-{display_id}-{id}"))
@@ -4684,7 +4689,10 @@ mod linux_wayland {
                     .text_size(px(13.0))
                     .font_weight(FontWeight::BOLD)
                     .text_center()
-                    .child("Are you sure you want to permanently erase the items in the Trash?"),
+                    .child(format!(
+                        "Are you sure you want to permanently erase the items in the {}?",
+                        bin_word()
+                    )),
             )
             .child(
                 div()
@@ -4704,12 +4712,23 @@ mod linux_wayland {
                             this.finish_trash_review(false, cx);
                         },
                     )))
-                    .child(button("empty", "Empty Trash", true).on_click(cx.listener(
-                        |this, _: &gpui::ClickEvent, _, cx| {
-                            cx.stop_propagation();
-                            this.finish_trash_review(true, cx);
-                        },
-                    ))),
+                    .child(
+                        button(
+                            "empty",
+                            if bin_word() == "Bin" {
+                                "Empty Bin"
+                            } else {
+                                "Empty Trash"
+                            },
+                            true,
+                        )
+                        .on_click(cx.listener(
+                            |this, _: &gpui::ClickEvent, _, cx| {
+                                cx.stop_propagation();
+                                this.finish_trash_review(true, cx);
+                            },
+                        )),
+                    ),
             )
             .into_any_element()
     }

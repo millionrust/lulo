@@ -176,7 +176,7 @@ pub(crate) fn rows(target: &MenuTarget, settings: &DesktopSettings, files: bool)
                 ));
             }
             rows.push(Row::new(
-                "Move to Trash",
+                format!("Move to {}", bin_word()),
                 Some("trash"),
                 Command::MoveToTrash,
                 1,

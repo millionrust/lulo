@@ -1245,8 +1245,9 @@ impl Wallpaper {
                     let result = blocking::unblock(move || trash::delete_all(&selection)).await;
                     let _ = this.update(cx, |this, cx| {
                         if result.is_err() {
-                            this.action_error =
-                                Some("The items could not be moved to Trash".into());
+                            this.action_error = Some(
+                                format!("The items could not be moved to {}", bin_word()).into(),
+                            );
                         } else {
                             this.desk.selection.clear();
                             let _ = rmac_sound::play(rmac_sound::Cue::Trash);

@@ -317,7 +317,7 @@ impl FinderView {
                 dialog_action(
                     "permanent-delete-confirm",
                     if confirmation.empty_trash {
-                        "Empty Trash"
+                        &format!("Empty {}", self.file_words.bin())
                     } else {
                         "Delete"
                     },

@@ -41,6 +41,11 @@ const RENDER_COUNT_DIR_ENV: &str = "RMAC_WALLPAPER_RENDER_COUNT_DIR";
 const WEATHER_REFRESH: Duration = Duration::from_secs(15 * 60);
 static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
 
+fn bin_word() -> &'static str {
+    static WORD: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    WORD.get_or_init(|| rmac_locale::FileVocabulary::from_environment().bin())
+}
+
 /// Menu glyphs (shell/assets/menu), the desktop's folder and document
 /// artwork (assets/icons) and the widget glyphs.
 macro_rules! menu_icons {

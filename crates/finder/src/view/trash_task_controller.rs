@@ -101,8 +101,9 @@ impl FinderView {
         }
         if self.trash_pending != 0 {
             let retained = format!(
-                "{} changed Trash operation{} retained for manual recovery",
+                "{} changed {} operation{} retained for manual recovery",
                 self.trash_pending,
+                self.file_words.bin(),
                 if self.trash_pending == 1 {
                     " was"
                 } else {
@@ -120,10 +121,14 @@ impl FinderView {
             self.operation_notice = Some(
                 match (kind, completed) {
                     (TrashTaskKind::Move, 0) => {
-                        "Move to Trash cancelled; no item was moved".to_string()
+                        format!(
+                            "Move to {} cancelled; no item was moved",
+                            self.file_words.bin()
+                        )
                     }
                     (TrashTaskKind::Move, completed) => format!(
-                        "Move to Trash cancelled after moving {completed} item{}",
+                        "Move to {} cancelled after moving {completed} item{}",
+                        self.file_words.bin(),
                         if completed == 1 { "" } else { "s" }
                     ),
                     (TrashTaskKind::Restore, 0) => {

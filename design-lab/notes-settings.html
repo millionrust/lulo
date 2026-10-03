@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Notes Settings study</title>
+<style>
+  @import url("tokens.css");
+  :root { color-scheme: dark; font: 13px system-ui, sans-serif; }
+  body { margin: 30px; background: var(--grouped-bg); color: var(--label); }
+  .window { width: 456px; height: 310px; border: 1px solid var(--separator-strong); border-radius: var(--menu-radius); background: var(--window); overflow: hidden; }
+  .title { height: 44px; display: grid; place-items: center; border-bottom: 1px solid var(--separator); font-weight: 600; }
+  main { padding: 18px 16px; display: grid; gap: 22px; }
+  .group { display: grid; gap: 8px; }
+  .choices, .size { display: flex; align-items: center; gap: 8px; }
+  button, output { background: var(--fill-control); border: 1px solid var(--separator-strong); border-radius: var(--menu-item-radius); color: inherit; padding: 5px 9px; font: inherit; }
+  button.selected { background: var(--accent); border-color: var(--accent-hover); }
+  output { min-width: 42px; text-align: center; }
+  label { display: flex; align-items: center; gap: 8px; }
+</style>
+<div class="window">
+  <div class="title">Notes Settings</div>
+  <main>
+    <div class="group">
+      <div>Sort notes by:</div>
+      <div class="choices"><button class="selected">Date Edited</button><button>Date Created</button><button>Title</button></div>
+    </div>
+    <div class="group">
+      <div>Text size:</div>
+      <div class="size"><button>−</button><output>100%</output><button>+</button></div>
+    </div>
+    <label><input type="checkbox" checked> Group notes by date</label>
+  </main>
+</div>
+</html>

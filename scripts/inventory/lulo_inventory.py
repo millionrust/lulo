@@ -335,6 +335,7 @@ def read_settings_sidebar() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 SETTINGS_FILES = {
+    "Notes": ["crates/notes/src/settings_window.rs"],
     "Finder": [
         "crates/finder/src/view/settings_window.rs",
         "crates/finder/src/view/settings.rs",
@@ -413,6 +414,21 @@ def read_settings_window(app_display_name: str) -> dict:
             if key not in seen:
                 seen.add(key)
                 labels.append({"kind": "control", "label": m.group(1)})
+        if app_display_name == "Notes" and path.name == "settings_window.rs":
+            # These controls are text children and the sort choices are
+            # generated from a literal (label, SortOrder) table.
+            for label in re.findall(r'\.child\("([^\"]+)"\)', text):
+                key = ("control", label)
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "control", "label": label})
+            for label in re.findall(r'\("([^\"]+)", SortOrder::\w+\)', text):
+                key = ("control", label)
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "control", "label": label})
+            if 'window.set_window_title("Notes Settings")' in text:
+                labels.append({"kind": "control", "label": "Notes Settings"})
         if app_display_name == "Text Editor" and path.name == "settings_window.rs":
             for m in re.finditer(r'\.(?:aria_label|child)\("([^"]+)"\)', text):
                 key = ("control", m.group(1))

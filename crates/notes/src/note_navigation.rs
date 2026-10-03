@@ -19,6 +19,9 @@ impl NotesView {
     }
 
     pub(super) fn selected_section(&self) -> Option<String> {
+        if !self.group_notes_by_date {
+            return None;
+        }
         let selected = self.session.selected_note()?;
         self.session
             .visible_notes()
@@ -28,7 +31,7 @@ impl NotesView {
     }
 
     pub(super) fn visible_sections(&self, cx: &Context<Self>) -> BTreeSet<String> {
-        if !self.search_query.read(cx).value().trim().is_empty() {
+        if !self.group_notes_by_date || !self.search_query.read(cx).value().trim().is_empty() {
             return BTreeSet::new();
         }
         self.session
@@ -370,7 +373,8 @@ impl NotesView {
         let note_count = notes.len();
         // Notes groups a date-sorted list under Pinned / Today / Yesterday /
         // Previous 7 Days / … headers (S: sizes from platform knowledge).
-        let sectioned = !search_active
+        let sectioned = self.group_notes_by_date
+            && !search_active
             && self
                 .session
                 .snapshot()

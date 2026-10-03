@@ -38,6 +38,8 @@ gpui::actions!(
         JumpToSelection,
         HideSidebar,
         ShowThumbnails,
+        ShowBookmarks,
+        AddBookmark,
         ShowImageBackground,
         ActualSize,
         ZoomToFit,
@@ -159,6 +161,8 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-j", JumpToSelection, context),
         KeyBinding::new("alt-cmd-1", HideSidebar, context),
         KeyBinding::new("alt-cmd-2", ShowThumbnails, context),
+        KeyBinding::new("alt-cmd-5", ShowBookmarks, context),
+        KeyBinding::new("cmd-d", AddBookmark, context),
         KeyBinding::new("alt-cmd-b", ShowImageBackground, context),
         KeyBinding::new(shortcuts::ZOOM_RESET.keystroke, ActualSize, context),
         KeyBinding::new("cmd-9", ZoomToFit, context),
@@ -359,6 +363,48 @@ fn saved_windows_path() -> PathBuf {
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
         .unwrap_or_else(std::env::temp_dir);
     state.join("rmac-preview/saved-windows.json")
+}
+
+/// A stable, document-specific state file. The original path is also stored
+/// in the file and checked on load, so a hash collision cannot attach another
+/// document's bookmarks.
+fn bookmarks_path(document: &std::path::Path) -> PathBuf {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let hash = document
+        .as_os_str()
+        .as_encoded_bytes()
+        .iter()
+        .fold(FNV_OFFSET, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+        });
+    saved_windows_path()
+        .with_file_name("bookmarks")
+        .join(format!("{hash:016x}.json"))
+}
+
+fn load_bookmarks(document: &std::path::Path) -> std::collections::BTreeSet<usize> {
+    let Ok(bytes) = std::fs::read(bookmarks_path(document)) else {
+        return Default::default();
+    };
+    let Ok((stored_path, pages)) = serde_json::from_slice::<(PathBuf, Vec<usize>)>(&bytes) else {
+        return Default::default();
+    };
+    if stored_path != document {
+        return Default::default();
+    }
+    pages.into_iter().collect()
+}
+
+fn save_bookmarks(document: &std::path::Path, pages: &[usize]) -> std::io::Result<()> {
+    let path = bookmarks_path(document);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let bytes = serde_json::to_vec(&(document, pages)).map_err(std::io::Error::other)?;
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&temporary, bytes)?;
+    std::fs::rename(temporary, path)
 }
 
 /// App ▸ Quit and Keep Windows: persist just the documents in each live

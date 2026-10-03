@@ -353,6 +353,36 @@
       "reason": "Opens the Apple Photos library browser, which is unavailable on Linux."
     },
     {
+      "app": "Notes",
+      "label": "iCloud",
+      "reason": "The reference Mac's iCloud Notes account requires an Apple Account and iCloud service."
+    },
+    {
+      "app": "Notes",
+      "label": "Siri uses this default account when creating notes.",
+      "reason": "Siri's note creation is a macOS system integration and cannot create Lulo's local notes."
+    },
+    {
+      "app": "Notes",
+      "label": "Use Touch ID",
+      "reason": "Touch ID is Apple's fingerprint authentication service for locked notes."
+    },
+    {
+      "app": "Notes",
+      "label": "Use your fingerprint to view locked notes.",
+      "reason": "This help text describes Apple's Touch ID authentication for locked notes."
+    },
+    {
+      "app": "Notes",
+      "label": "Allow mention notifications",
+      "reason": "Mentions in shared iCloud notes require Apple's collaboration and notification service."
+    },
+    {
+      "app": "Notes",
+      "label": "Receive notifications on this Mac when your name is mentioned in shared notes.",
+      "reason": "This help text describes iCloud Notes collaboration notifications."
+    },
+    {
       "app": "System Settings",
       "label": "AirDrop & Handoff",
       "match": "exact",

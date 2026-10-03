@@ -641,11 +641,10 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
 const NOTES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
-        items: &[item!(
-            "Quit and Keep Windows",
-            "notes::QuitAndKeepWindows",
-            "⌥⌘Q"
-        )],
+        items: &[
+            item!("Settings…", "notes::ShowSettings", "⌘,", separator),
+            item!("Quit and Keep Windows", "notes::QuitAndKeepWindows", "⌥⌘Q"),
+        ],
     },
     MenuSpec {
         label: "File",
@@ -1333,6 +1332,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Hide Sidebar", "preview::HideSidebar", "⌥⌘1"),
             item!("Thumbnails", "preview::ShowThumbnails", "⌥⌘2"),
+            item!("Bookmarks", "preview::ShowBookmarks", "⌥⌘5"),
             item!("Actual Size", "preview::ActualSize", "⌘0", separator),
             item!("Actual Size on All", "preview::ActualSizeOnAll", "⌥⌘0"),
             item!("Zoom to Fit", "preview::ZoomToFit", "⌘9"),
@@ -1375,6 +1375,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         label: "Tools",
         items: &[
             item!("Show Inspector", "preview::ShowInspector", "⌘I"),
+            item!("Add Bookmark", "preview::AddBookmark", "⌘D"),
             submenu!(
                 "Annotate",
                 "preview::AnnotateMenu",
@@ -2767,6 +2768,7 @@ mod tests {
         let menus = definition(rmac_apps::identity::NOTES, &spec_actions(NOTES_MENUS)).unwrap();
         let shortcuts = hints(&menus);
         for (action, shortcut) in [
+            ("notes::ShowSettings", "⌘,"),
             ("notes::FindAndReplace", "⇧⌘F"),
             ("notes::FindInNoteNext", "⌘G"),
             ("notes::UseSelectionForFind", "⌘E"),
@@ -2841,6 +2843,8 @@ mod tests {
                 .map(|item| item.shortcut.clone())
         };
         assert_eq!(shortcut("Hide Sidebar").as_deref(), Some("⌥⌘1"));
+        assert_eq!(shortcut("Bookmarks").as_deref(), Some("⌥⌘5"));
+        assert_eq!(shortcut("Add Bookmark").as_deref(), Some("⌘D"));
         assert_eq!(shortcut("Quit and Keep Windows").as_deref(), Some("⌥⌘Q"));
         assert_eq!(shortcut("Close All").as_deref(), Some("⌥⌘W"));
         assert_eq!(shortcut("Close Selected").as_deref(), Some("⇧⌘W"));

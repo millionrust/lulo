@@ -175,6 +175,7 @@ impl NotesView {
         }
         self.closing = true;
         window.remove_window();
+        cx.defer(crate::settings_window::close);
     }
 }
 

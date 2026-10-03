@@ -276,6 +276,13 @@
           "children": []
         },
         {
+          "label": "Bookmarks",
+          "action": "preview::ShowBookmarks",
+          "shortcut": "⌥⌘5",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Actual Size",
           "action": "preview::ActualSize",
           "shortcut": "⌘0",
@@ -436,6 +443,13 @@
           "label": "Show Inspector",
           "action": "preview::ShowInspector",
           "shortcut": "⌘I",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Add Bookmark",
+          "action": "preview::AddBookmark",
+          "shortcut": "⌘D",
           "separator_before": false,
           "children": []
         },

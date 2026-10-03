@@ -1,0 +1,37 @@
+{
+  "format": 1,
+  "scenario": "preview/bookmark",
+  "observations": {
+    "empty": {
+      "preview_bookmarks": {
+        "pages": []
+      }
+    },
+    "added": {
+      "preview_bookmarks": {
+        "pages": [
+          "Page 1"
+        ]
+      }
+    },
+    "thumbnails": {
+      "preview_bookmarks": {
+        "pages": []
+      }
+    },
+    "bookmarks": {
+      "preview_bookmarks": {
+        "pages": [
+          "Page 1"
+        ]
+      }
+    },
+    "persisted": {
+      "preview_bookmarks": {
+        "pages": [
+          "Page 1"
+        ]
+      }
+    }
+  }
+}

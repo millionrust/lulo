@@ -352,6 +352,7 @@ impl Settings {
                         "Cancel",
                         rmac_ui::DialogButtonKind::Normal,
                     )
+                    .disabled(busy && sheet.model.step == Step::Services)
                     .on_click(move |_, _, cx| {
                         cancel.update(cx, |settings, cx| settings.close_account_sheet(cx))
                     }),

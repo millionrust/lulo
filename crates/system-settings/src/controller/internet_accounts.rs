@@ -169,6 +169,17 @@ impl Settings {
     }
 
     fn close_account_sheet(&mut self, cx: &mut Context<Self>) {
+        // GOA AddAccount cannot be rolled back once its worker has started.
+        // Keep the sheet until that operation resolves so Cancel cannot
+        // claim to have stopped a mutation that is still committing.
+        if self.internet_accounts_busy
+            && self
+                .internet_account_sheet
+                .as_ref()
+                .is_some_and(|sheet| sheet.model.step == Step::Services)
+        {
+            return;
+        }
         if let Some(sheet) = &self.internet_account_sheet {
             sheet.cancellation.cancel();
         }

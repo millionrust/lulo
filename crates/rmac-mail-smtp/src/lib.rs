@@ -6,7 +6,7 @@ use rmac_mail_storage::{MailStorage, OutboxMessage, OutboxState};
 use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 use std::{
     fmt,
-    io::{self, BufRead, BufReader, Read, Write},
+    io::{self, BufRead, BufReader, BufWriter, Read, Write},
     net::TcpStream,
     sync::Arc,
     time::Duration,
@@ -219,7 +219,7 @@ fn auth(
 }
 
 fn send_data(session: &mut Session, bytes: &[u8]) -> Result<(), Error> {
-    let stream = session.reader.get_mut();
+    let mut stream = BufWriter::with_capacity(16 * 1024, session.reader.get_mut());
     let mut at_line_start = true;
     let mut last = None;
     for &byte in bytes {

@@ -17,6 +17,7 @@ CREATE TABLE messages (
     received_at INTEGER NOT NULL,
     flags INTEGER NOT NULL DEFAULT 0,
     body_hash TEXT,
+    body_text TEXT,
     UNIQUE(mailbox_id, uid)
 );
 CREATE INDEX messages_by_mailbox_date ON messages(mailbox_id, received_at DESC);
@@ -42,15 +43,15 @@ CREATE TABLE changes (
     kind TEXT NOT NULL CHECK(kind IN ('flags','move','delete')),
     value INTEGER
 );
-CREATE VIRTUAL TABLE messages_fts USING fts5(subject, sender, recipients, preview);
+CREATE VIRTUAL TABLE messages_fts USING fts5(subject, sender, recipients, preview, body_text);
 CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
-    INSERT INTO messages_fts(rowid,subject,sender,recipients,preview)
-    VALUES (new.id,new.subject,new.sender,new.recipients,new.preview);
+    INSERT INTO messages_fts(rowid,subject,sender,recipients,preview,body_text)
+    VALUES (new.id,new.subject,new.sender,new.recipients,new.preview,new.body_text);
 END;
 CREATE TRIGGER messages_fts_update AFTER UPDATE ON messages BEGIN
     DELETE FROM messages_fts WHERE rowid=old.id;
-    INSERT INTO messages_fts(rowid,subject,sender,recipients,preview)
-    VALUES (new.id,new.subject,new.sender,new.recipients,new.preview);
+    INSERT INTO messages_fts(rowid,subject,sender,recipients,preview,body_text)
+    VALUES (new.id,new.subject,new.sender,new.recipients,new.preview,new.body_text);
 END;
 CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
     DELETE FROM messages_fts WHERE rowid=old.id;

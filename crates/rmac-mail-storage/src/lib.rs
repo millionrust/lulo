@@ -67,6 +67,8 @@ pub struct NewMessage<'a> {
     pub received_at: i64,
     pub flags: i64,
     pub body: Option<&'a [u8]>,
+    /// Plain text extracted by the MIME layer, when a body has been fetched.
+    pub body_text: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -98,10 +100,20 @@ pub struct PendingChange {
     pub change: Change,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Attachment {
+    pub id: i64,
+    pub message_id: i64,
+    pub filename: String,
+    pub mime_type: String,
+    pub blob_hash: String,
+}
+
 impl MailStorage {
     /// `data_root` is normally ~/.local/share/lulo/mail. A typed UUID prevents
     /// remote account names from becoming path components.
     pub fn open(data_root: &Path, account: Uuid) -> Result<Self> {
+        create_private_dir(data_root)?;
         let account_dir = data_root.join(account.to_string());
         create_private_dir(&account_dir)?;
         let blobs = account_dir.join("blobs");
@@ -165,14 +177,15 @@ impl MailStorage {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute(
-            "INSERT INTO messages(mailbox_id, uid, message_id, in_reply_to, subject, sender, recipients, preview, received_at, flags, body_hash) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) \
+            "INSERT INTO messages(mailbox_id, uid, message_id, in_reply_to, subject, sender, recipients, preview, received_at, flags, body_hash, body_text) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) \
              ON CONFLICT(mailbox_id,uid) DO UPDATE SET message_id=excluded.message_id, in_reply_to=excluded.in_reply_to, \
              subject=excluded.subject, sender=excluded.sender, recipients=excluded.recipients, preview=excluded.preview, \
-             received_at=excluded.received_at, flags=excluded.flags, body_hash=COALESCE(excluded.body_hash,messages.body_hash)",
+             received_at=excluded.received_at, flags=excluded.flags, body_hash=COALESCE(excluded.body_hash,messages.body_hash), \
+             body_text=COALESCE(excluded.body_text,messages.body_text)",
             params![message.mailbox_id, message.uid, message.message_id, message.in_reply_to,
                 message.subject, message.sender, message.recipients, message.preview,
-                message.received_at, message.flags, body_hash],
+                message.received_at, message.flags, body_hash, message.body_text],
         )?;
         let id = tx.query_row(
             "SELECT id FROM messages WHERE mailbox_id=?1 AND uid=?2",
@@ -285,6 +298,37 @@ impl MailStorage {
             return Err(Error::InvalidBlob);
         }
         Ok(bytes)
+    }
+
+    pub fn put_attachment(
+        &mut self,
+        message_id: i64,
+        filename: &str,
+        mime_type: &str,
+        bytes: &[u8],
+    ) -> Result<i64> {
+        let hash = self.write_blob(bytes)?;
+        self.connection.execute(
+            "INSERT INTO attachments(message_id,filename,mime_type,blob_hash) VALUES (?1,?2,?3,?4)",
+            params![message_id, filename, mime_type, hash],
+        )?;
+        Ok(self.connection.last_insert_rowid())
+    }
+
+    pub fn attachments(&self, message_id: i64) -> Result<Vec<Attachment>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id,message_id,filename,mime_type,blob_hash FROM attachments WHERE message_id=?1 ORDER BY id")?;
+        let rows = statement.query_map([message_id], |row| {
+            Ok(Attachment {
+                id: row.get(0)?,
+                message_id: row.get(1)?,
+                filename: row.get(2)?,
+                mime_type: row.get(3)?,
+                blob_hash: row.get(4)?,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
     }
 
     pub fn queue_change(&mut self, message_id: i64, change: Change) -> Result<i64> {

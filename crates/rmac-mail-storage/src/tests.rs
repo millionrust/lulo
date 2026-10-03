@@ -39,6 +39,7 @@ impl Fixture {
                 received_at: 100,
                 flags: 0,
                 body,
+                body_text: None,
             })
             .expect("insert")
     }
@@ -124,6 +125,25 @@ fn blob_is_content_addressed_private_and_detects_damage() {
 }
 
 #[test]
+fn attachment_metadata_points_to_durable_blob() {
+    let mut fixture = Fixture::new();
+    let message_id = fixture.insert(1, "Files", None);
+    let attachment_id = fixture
+        .store
+        .put_attachment(message_id, "report.pdf", "application/pdf", b"%PDF fixture")
+        .expect("attachment");
+    let reopened = MailStorage::open(&fixture.root, fixture.account).expect("reopen");
+    let attachments = reopened.attachments(message_id).expect("metadata");
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].id, attachment_id);
+    assert_eq!(attachments[0].filename, "report.pdf");
+    assert_eq!(
+        reopened.read_blob(&attachments[0].blob_hash).expect("blob"),
+        b"%PDF fixture"
+    );
+}
+
+#[test]
 fn fts_tracks_insert_update_and_delete_and_scopes_mailbox() {
     let mut fixture = Fixture::new();
     let id = fixture.insert(1, "Purple planets", None);
@@ -146,6 +166,7 @@ fn fts_tracks_insert_update_and_delete_and_scopes_mailbox() {
             received_at: 1,
             flags: 0,
             body: None,
+            body_text: None,
         })
         .expect("other message");
     assert_eq!(
@@ -179,6 +200,7 @@ fn fts_tracks_insert_update_and_delete_and_scopes_mailbox() {
             received_at: 2,
             flags: 0,
             body: None,
+            body_text: Some("The hidden body speaks"),
         })
         .expect("update");
     assert!(fixture
@@ -186,6 +208,14 @@ fn fts_tracks_insert_update_and_delete_and_scopes_mailbox() {
         .search("Purple planets", Some(fixture.inbox), 10)
         .expect("search")
         .is_empty());
+    assert_eq!(
+        fixture
+            .store
+            .search("hidden body", None, 10)
+            .expect("body search")
+            .len(),
+        1
+    );
     assert_eq!(
         fixture
             .store
@@ -230,6 +260,7 @@ fn references_feed_threading_and_survive_reopen() {
             received_at: 101,
             flags: 0,
             body: None,
+            body_text: None,
         })
         .expect("child");
     let reopened = MailStorage::open(&fixture.root, fixture.account).expect("reopen");

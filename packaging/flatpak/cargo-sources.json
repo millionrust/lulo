@@ -2389,6 +2389,32 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/fallible-iterator/fallible-iterator-0.3.0.crate",
+        "sha256": "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649",
+        "dest": "cargo/vendor/fallible-iterator-0.3.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649\", \"files\": {}}",
+        "dest": "cargo/vendor/fallible-iterator-0.3.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/fallible-streaming-iterator/fallible-streaming-iterator-0.1.9.crate",
+        "sha256": "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a",
+        "dest": "cargo/vendor/fallible-streaming-iterator-0.1.9"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a\", \"files\": {}}",
+        "dest": "cargo/vendor/fallible-streaming-iterator-0.1.9",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/fastrand/fastrand-2.4.1.crate",
         "sha256": "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6",
         "dest": "cargo/vendor/fastrand-2.4.1"
@@ -3370,6 +3396,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/hashlink/hashlink-0.10.0.crate",
+        "sha256": "7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1",
+        "dest": "cargo/vendor/hashlink-0.10.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1\", \"files\": {}}",
+        "dest": "cargo/vendor/hashlink-0.10.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/heapless/heapless-0.9.3.crate",
         "sha256": "25ba4bd83f9415b58b4ed8dc5714c76e626a105be4646c02630ad730ad3b5aa4",
         "dest": "cargo/vendor/heapless-0.9.3"
@@ -4345,6 +4384,19 @@
         "type": "inline",
         "contents": "{\"package\": \"f02ab6bace2054fb888a3c16f990117b579d14a3088e472d63c6011fa185c9d3\", \"files\": {}}",
         "dest": "cargo/vendor/libredox-0.1.17",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/libsqlite3-sys/libsqlite3-sys-0.35.0.crate",
+        "sha256": "133c182a6a2c87864fe97778797e46c7e999672690dc9fa3ee8e241aa4a9c13f",
+        "dest": "cargo/vendor/libsqlite3-sys-0.35.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"133c182a6a2c87864fe97778797e46c7e999672690dc9fa3ee8e241aa4a9c13f\", \"files\": {}}",
+        "dest": "cargo/vendor/libsqlite3-sys-0.35.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -6887,6 +6939,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/rusqlite/rusqlite-0.37.0.crate",
+        "sha256": "165ca6e57b20e1351573e3729b958bc62f0e48025386970b6e4d29e7a7e71f3f",
+        "dest": "cargo/vendor/rusqlite-0.37.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"165ca6e57b20e1351573e3729b958bc62f0e48025386970b6e4d29e7a7e71f3f\", \"files\": {}}",
+        "dest": "cargo/vendor/rusqlite-0.37.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/rust-embed/rust-embed-8.11.0.crate",
         "sha256": "04113cb9355a377d83f06ef1f0a45b8ab8cd7d8b1288160717d66df5c7988d27",
         "dest": "cargo/vendor/rust-embed-8.11.0"
@@ -9289,6 +9354,19 @@
         "type": "inline",
         "contents": "{\"package\": \"d00ae130edd690eaa877e4f40605d534790d1cf1d651e7685bd6a144521b251f\", \"files\": {}}",
         "dest": "cargo/vendor/value-bag-sval2-1.12.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/vcpkg/vcpkg-0.2.15.crate",
+        "sha256": "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426",
+        "dest": "cargo/vendor/vcpkg-0.2.15"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426\", \"files\": {}}",
+        "dest": "cargo/vendor/vcpkg-0.2.15",
         "dest-filename": ".cargo-checksum.json"
     },
     {

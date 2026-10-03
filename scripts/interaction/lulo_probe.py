@@ -996,10 +996,29 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
     scenario = {"app": "text-editor", "launch": {}, "steps": []}
     run = run_lulo.LuloRun(nested, "text-editor-save-sheet", scenario, bins, settle, None)
 
+    def click_into_document() -> None:
+        """Restore keyboard focus to the document window: live-verified
+        (2026-10-03) that Escape dismisses the alert (closed: True) but
+        leaves *no* accessible node focused anywhere (fact_focus's role is
+        None) - a real focus-restoration gap, worth its own parity row -
+        and cmd-w alone then does nothing, since nothing owns the
+        shortcut. Clicking the document keeps the Tab probe below
+        independent of that bug rather than reporting it as "not
+        measured"."""
+
+        frame = run.active_frame()
+        box = extents(frame) if frame is not None else None
+        if box is None:
+            return
+        ox, oy = run.window_origin(frame)
+        run.nested.input.click(ox + box[2] / 2, oy + box[3] / 2, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+        time.sleep(0.3)
+
     def ensure_alert(attempts: int = 3) -> bool:
         for _ in range(attempts):
             if run.dialog_node() is not None:
                 return True
+            click_into_document()
             run.nested.input.key("cmd-w")
             time.sleep(1.0)
         return run.dialog_node() is not None
@@ -1020,12 +1039,6 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
         run.nested.input.key("escape")
         time.sleep(0.6)
         out["escape"] = {"closed": run.dialog_node() is None}
-        print(f"DIAG windows after escape: {run.fact_windows()}", flush=True)
-        print(f"DIAG focus after escape: {run.fact_focus()}", flush=True)
-        run.nested.input.key("cmd-w")
-        time.sleep(1.0)
-        print(f"DIAG dialog after one more cmd-w: {run.fact_dialog()}", flush=True)
-        print(f"DIAG windows after one more cmd-w: {run.fact_windows()}", flush=True)
 
         if not ensure_alert():
             out["tab_focus"] = {"moved": None, "reason": "the alert did not reopen for the Tab probe"}

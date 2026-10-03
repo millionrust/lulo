@@ -387,11 +387,33 @@ impl Settings {
         );
         Some(
             rmac_ui::dialog("internet-account-sheet", body)
+                .attached()
+                .aria_label("Add an Internet Account")
                 .restore_focus_to(self.content_focus.clone())
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                    if event.keystroke.key == "escape" {
-                        cx.stop_propagation();
-                        this.close_account_sheet(cx);
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            cx.stop_propagation();
+                            this.close_account_sheet(cx);
+                        }
+                        "enter"
+                            if !this.internet_accounts_busy
+                                && this.internet_account_sheet.as_ref().is_some_and(|sheet| {
+                                    matches!(sheet.model.step, Step::Credentials | Step::Services)
+                                }) =>
+                        {
+                            cx.stop_propagation();
+                            match this
+                                .internet_account_sheet
+                                .as_ref()
+                                .map(|sheet| sheet.model.step)
+                            {
+                                Some(Step::Credentials) => this.credentials_next(cx),
+                                Some(Step::Services) => this.save_account(cx),
+                                _ => {}
+                            }
+                        }
+                        _ => {}
                     }
                 }))
                 .into_any_element(),

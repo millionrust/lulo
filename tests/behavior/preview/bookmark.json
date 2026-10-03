@@ -16,6 +16,9 @@
     },
     {
       "key": "alt-cmd-5",
+      "settle": 0.5
+    },
+    {
       "observe": "empty",
       "facts": [
         "preview_bookmarks"
@@ -23,6 +26,9 @@
     },
     {
       "key": "cmd-d",
+      "settle": 0.5
+    },
+    {
       "observe": "added",
       "facts": [
         "preview_bookmarks"
@@ -30,6 +36,9 @@
     },
     {
       "key": "alt-cmd-2",
+      "settle": 0.5
+    },
+    {
       "observe": "thumbnails",
       "facts": [
         "preview_bookmarks"
@@ -37,6 +46,9 @@
     },
     {
       "key": "alt-cmd-5",
+      "settle": 0.5
+    },
+    {
       "observe": "bookmarks",
       "facts": [
         "preview_bookmarks"

@@ -632,65 +632,6 @@ def region_changed(before, after, box: tuple[float, float, float, float], thresh
     return changed_pixels > threshold
 
 
-def find_action_index(node, action_name: str) -> Optional[int]:
-    """The index of a named AT-SPI action on `node`, or None. Dock shelf
-    items publish more than one action (crates/rmac-dock/src/accessibility.rs's
-    AccessibleAction list: "Open" is the default, "Show Menu" is its
-    secondary/context one) - the same mechanism click_node() already uses
-    for the default action, just by name instead of always index 0."""
-
-    try:
-        action = node.queryAction()
-    except Exception:
-        return None
-    try:
-        count = action.nActions
-    except Exception:
-        return None
-    for index in range(count):
-        try:
-            if action.getName(index) == action_name:
-                return index
-        except Exception:
-            continue
-    return None
-
-
-def invoke_action(node, action_name: str) -> bool:
-    """Invoke a named AT-SPI action on `node`; False if it has none by that
-    name (never raises, so callers can record "not measured" instead)."""
-
-    try:
-        action = node.queryAction()
-    except Exception:
-        return False
-    index = find_action_index(node, action_name)
-    if index is None:
-        return False
-    action.doAction(index)
-    return True
-
-
-def screen_box(node) -> Optional[tuple[float, float, float, float]]:
-    """A node's bounds in niri's own logical space (what shell.move/shell.click
-    expect), from AT-SPI's SCREEN_COORDS - sanity-checked against the output
-    size, since some AccessKit adapters report window-relative coordinates
-    there instead (control-centre's panel hover probe hit exactly this; see
-    its own fallback). A surface with no known fixed-layout fallback simply
-    reports bounds as unavailable rather than guessing."""
-
-    try:
-        rect = node.queryComponent().getExtents(atspi().SCREEN_COORDS)
-        box = (float(rect.x), float(rect.y), float(rect.width), float(rect.height))
-    except Exception:
-        return None
-    if box[2] <= 0 or box[3] <= 0:
-        return None
-    if not (0 <= box[0] < OUTPUT_W and 0 <= box[1] < OUTPUT_H):
-        return None
-    return box
-
-
 POPOVER_RUNNERS = {
     "control-centre": run_control_centre_surface,
 }
@@ -769,7 +710,21 @@ def run_popover_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, 
 
 
 def run_dock_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any]:
-    """Dock hover (magnification/highlight) and right-click (Show Menu)."""
+    """Dock hover (magnification/highlight) and right-click (its item menu).
+
+    Live-verified (2026-10-03, --explore-style dump): AccessKit's AT-SPI
+    adapter reports every Dock shelf item's bounds as SCREEN_COORDS=None
+    (unlike the top bar/Control Centre, where SCREEN_COORDS mostly works)
+    and exposes exactly one action, named "click" - not the "Open"/"Show
+    Menu" pair crates/rmac-dock/src/accessibility.rs defines on the Rust
+    side, so there is no named secondary action to invoke here the way
+    click_node() opens a menu bar title. The right-click probe therefore
+    sends a real secondary pointer click (the only way left to exercise
+    it), at the item's WINDOW_COORDS extents: the Dock's own toolbar
+    reports window=(0, 0, OUTPUT_W, ~OUTPUT_H), i.e. its surface's local
+    origin coincides with niri's own, so no extra fixed-margin fallback
+    (unlike Control Centre's panel) is needed to turn those into
+    niri-logical coordinates for shell.move/shell.click."""
 
     out: dict[str, Any] = {}
     pyatspi = atspi()
@@ -790,40 +745,40 @@ def run_dock_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any
         return {"hover": {"changed": None, "reason": "no Dock item found"},
                 "right_click": {"opened": None, "reason": "no Dock item found"}}
 
-    box = screen_box(target)
-    if box is None:
+    box = extents(target)
+    if box is None or box[2] <= 0 or box[3] <= 0:
         out["hover"] = {"changed": None, "reason": "item bounds unavailable"}
-    else:
-        shell.move(OUTPUT_W // 2, 10)
-        time.sleep(0.3)
-        region = (max(0, box[0] - 14), max(0, box[1] - 14), box[2] + 28, box[3] + 28)
-        rest = capture_full(shell.env, shell.nested.work / "dock-hover-rest.png")
-        cx, cy = box[0] + box[2] / 2, box[1] + box[3] / 2
-        shell.move(cx - 20, cy)
-        time.sleep(0.1)
-        shell.move(cx, cy)
-        time.sleep(0.5)
-        hovered = capture_full(shell.env, shell.nested.work / "dock-hover-on.png")
-        out["hover"] = {"changed": region_changed(rest, hovered, region)}
-        shell.move(OUTPUT_W // 2, 10)
-        time.sleep(0.2)
+        out["right_click"] = {"opened": None, "reason": "item bounds unavailable"}
+        return out
+
+    origin_x, origin_y = shell.niri_origin
+    region = (max(0, box[0] + origin_x - 14), max(0, box[1] + origin_y - 14), box[2] + 28, box[3] + 28)
+    cx, cy = box[0] + box[2] / 2, box[1] + box[3] / 2
+
+    shell.move(OUTPUT_W // 2, 10)
+    time.sleep(0.3)
+    rest = capture_full(shell.env, shell.nested.work / "dock-hover-rest.png")
+    shell.move(cx - 20, cy)
+    time.sleep(0.1)
+    shell.move(cx, cy)
+    time.sleep(0.5)
+    hovered = capture_full(shell.env, shell.nested.work / "dock-hover-on.png")
+    out["hover"] = {"changed": region_changed(rest, hovered, region)}
+    shell.move(OUTPUT_W // 2, 10)
+    time.sleep(0.2)
 
     menu_roles = {"menu", "popup menu"}
-    if find_action_index(target, "Show Menu") is None:
-        out["right_click"] = {"opened": None, "reason": "no Show Menu action exposed"}
-    else:
-        invoke_action(target, "Show Menu")
-        time.sleep(0.4)
-        opened = any_showing(frames, menu_roles)
-        out["right_click"] = {"opened": opened}
-        for _ in range(2):
-            if not any_showing(frames, menu_roles):
-                break
-            shell.input.key("escape")
-            time.sleep(0.3)
-        if any_showing(frames, menu_roles):
-            invoke_action(target, "Show Menu")
-            time.sleep(0.3)
+    shell.click(cx, cy, button="right")
+    time.sleep(0.5)
+    out["right_click"] = {"opened": any_showing(frames, menu_roles)}
+    for _ in range(2):
+        if not any_showing(frames, menu_roles):
+            break
+        shell.input.key("escape")
+        time.sleep(0.3)
+    if any_showing(frames, menu_roles):
+        shell.click(cx, cy, button="right")
+        time.sleep(0.3)
     return out
 
 

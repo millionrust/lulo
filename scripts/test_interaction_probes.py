@@ -289,117 +289,34 @@ class LuloOnlyDiffTests(unittest.TestCase):
             self.assertNotEqual(row["reason"], "should never be shown for a lulo-only surface")
 
 
-class FakeAction:
-    def __init__(self, names):
-        self._names = names
-        self.calls = []
+class PopoverRegistryTests(unittest.TestCase):
+    """run_popover_surface (scripts/interaction/lulo_probe.py) dispatches a
+    shell-harness popover by surface id, to either a surface-specific
+    runner (Control Centre) or the generic shortcut-driven one (Spotlight,
+    Notification Centre). A surface declared in surfaces.py with no entry
+    in either table would raise KeyError the first time anyone recorded
+    it - this is checked here, with no AT-SPI bus or compositor needed."""
 
-    @property
-    def nActions(self):
-        return len(self._names)
+    def test_every_shell_popover_surface_is_registered(self):
+        for item in sf.SURFACES:
+            if item["kind"] != "popover" or item.get("lulo", {}).get("harness") != "shell":
+                continue
+            if item["id"] in lp.POPOVER_RUNNERS:
+                continue
+            self.assertIn(item["id"], lp.POPOVER_STARTERS, item["id"])
 
-    def getName(self, index):
-        return self._names[index]
-
-    def doAction(self, index):
-        self.calls.append(index)
-
-
-class FakeNode:
-    def __init__(self, action=None, component=None):
-        self._action = action
-        self._component = component
-
-    def queryAction(self):
-        if self._action is None:
-            raise RuntimeError("no Action interface")
-        return self._action
-
-    def queryComponent(self):
-        if self._component is None:
-            raise RuntimeError("no Component interface")
-        return self._component
-
-
-class FakeComponent:
-    def __init__(self, rect=None, error=None):
-        self._rect = rect
-        self._error = error
-
-    def getExtents(self, _coords):
-        if self._error is not None:
-            raise self._error
-        return self._rect
-
-
-class FakeRect:
-    def __init__(self, x, y, width, height):
-        self.x, self.y, self.width, self.height = x, y, width, height
-
-
-class LuloProbeHelperTests(unittest.TestCase):
-    """lulo_probe.py's pure AT-SPI helpers (scripts/interaction/lulo_probe.py),
-    exercised with plain fake nodes - no AT-SPI bus, no pyatspi package and
-    no compositor needed, so this runs on the Mac exactly like the rest of
-    this file."""
-
-    def test_find_action_index_matches_by_name(self):
-        node = FakeNode(action=FakeAction(["Open", "Show Menu"]))
-        self.assertEqual(lp.find_action_index(node, "Show Menu"), 1)
-        self.assertEqual(lp.find_action_index(node, "Open"), 0)
-
-    def test_find_action_index_is_none_when_the_name_is_absent(self):
-        node = FakeNode(action=FakeAction(["Open"]))
-        self.assertIsNone(lp.find_action_index(node, "Show Menu"))
-
-    def test_find_action_index_is_none_with_no_action_interface(self):
-        self.assertIsNone(lp.find_action_index(FakeNode(), "Show Menu"))
-
-    def test_invoke_action_calls_do_action_at_the_matching_index(self):
-        action = FakeAction(["Open", "Show Menu"])
-        node = FakeNode(action=action)
-        self.assertTrue(lp.invoke_action(node, "Show Menu"))
-        self.assertEqual(action.calls, [1])
-
-    def test_invoke_action_is_false_and_does_not_raise_with_no_match(self):
-        node = FakeNode(action=FakeAction(["Open"]))
-        self.assertFalse(lp.invoke_action(node, "Show Menu"))
-        node_without_actions = FakeNode()
-        self.assertFalse(lp.invoke_action(node_without_actions, "Show Menu"))
-
-    def test_screen_box_returns_none_rather_than_raising_on_any_error(self):
-        node = FakeNode(component=FakeComponent(error=RuntimeError("no AT-SPI bus")))
-        self.assertIsNone(lp.screen_box(node))
-
-    def test_screen_box_accepts_a_valid_in_bounds_rect(self):
-        fake_atspi = type("FakeAtspi", (), {"SCREEN_COORDS": 0})
-        original_atspi = lp.atspi
-        lp.atspi = lambda: fake_atspi
+    def test_dispatcher_prefers_the_surface_specific_runner(self):
+        calls = []
+        lp.POPOVER_RUNNERS["x-test"] = lambda shell, item: calls.append(("specific", shell, item["id"]))
         try:
-            node = FakeNode(component=FakeComponent(rect=FakeRect(10, 20, 30, 40)))
-            self.assertEqual(lp.screen_box(node), (10.0, 20.0, 30.0, 40.0))
+            lp.run_popover_surface("fake-shell", {"id": "x-test", "title": "X"})
         finally:
-            lp.atspi = original_atspi
+            del lp.POPOVER_RUNNERS["x-test"]
+        self.assertEqual(calls, [("specific", "fake-shell", "x-test")])
 
-    def test_screen_box_rejects_coordinates_outside_the_output(self):
-        fake_atspi = type("FakeAtspi", (), {"SCREEN_COORDS": 0})
-        original_atspi = lp.atspi
-        lp.atspi = lambda: fake_atspi
-        try:
-            node = FakeNode(component=FakeComponent(rect=FakeRect(lp.OUTPUT_W + 5, 0, 10, 10)))
-            self.assertIsNone(lp.screen_box(node))
-        finally:
-            lp.atspi = original_atspi
-
-    def test_screen_box_rejects_a_zero_size_rect(self):
-        fake_atspi = type("FakeAtspi", (), {"SCREEN_COORDS": 0})
-        original_atspi = lp.atspi
-        lp.atspi = lambda: fake_atspi
-        try:
-            node = FakeNode(component=FakeComponent(rect=FakeRect(10, 10, 0, 0)))
-            self.assertIsNone(lp.screen_box(node))
-        finally:
-            lp.atspi = original_atspi
+    def test_dispatcher_falls_back_to_the_generic_runner(self):
+        self.assertNotIn("spotlight", lp.POPOVER_RUNNERS)
+        self.assertIs(lp.POPOVER_STARTERS["spotlight"], lp.ShellSession.start_launcher)
 
 
 if __name__ == "__main__":

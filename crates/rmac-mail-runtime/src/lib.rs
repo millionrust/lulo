@@ -116,6 +116,11 @@ impl std::fmt::Display for Error {
         })
     }
 }
+impl Error {
+    fn needs_user_event(&self) -> bool {
+        matches!(self, Self::StaleUidValidity | Self::GraphUnavailable)
+    }
+}
 impl std::error::Error for Error {}
 impl From<rmac_mail_imap::Error> for Error {
     fn from(value: rmac_mail_imap::Error) -> Self {
@@ -339,6 +344,14 @@ fn run_worker(
         }
         if let Err(error) = &result {
             sink.failure(account.id, error);
+            if error.needs_user_event() {
+                match receiver.recv() {
+                    Ok(Command::Online(value)) => online = value,
+                    Ok(Command::Sync) => {}
+                    Ok(Command::Stop) | Err(_) => break,
+                }
+                continue;
+            }
         }
         if result.is_ok() && matches!(&account.transport, Transport::Graph) {
             backoff = Duration::from_secs(1);

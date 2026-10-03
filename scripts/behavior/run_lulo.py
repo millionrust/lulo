@@ -1270,6 +1270,7 @@ class LuloRun:
                     "preview": "Preview",
                     "notes": "Notes",
                     "terminal": "Terminal",
+                    "mail": "Mail",
                 }[self.app] + ".Menu"
                 layout = subprocess.run(
                     ["gdbus", "call", "--session", "--dest", bus,

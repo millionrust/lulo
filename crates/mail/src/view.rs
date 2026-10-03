@@ -141,6 +141,8 @@ impl MailView {
     fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let mut list = div()
             .id("mail-sidebar-scroll")
+            .role(Role::ListBox)
+            .aria_label("Mailboxes")
             .absolute()
             .top(px(48.0))
             .left(px(10.0))
@@ -248,6 +250,9 @@ impl MailView {
             .filter(|&&index| self.state.messages[index].unread)
             .count();
         div()
+            .id("mail-conversations")
+            .role(Role::ListBox)
+            .aria_label(format!("{count} conversations, {unread} unread"))
             .w(px(LIST))
             .h_full()
             .flex()
@@ -449,6 +454,8 @@ impl MailView {
         };
         let mut body = div()
             .id("mail-viewer-scroll")
+            .role(Role::Document)
+            .aria_label(format!("{}, {}", message.sender, message.subject))
             .flex_1()
             .h_full()
             .overflow_y_scroll()

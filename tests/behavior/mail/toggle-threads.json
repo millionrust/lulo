@@ -5,7 +5,7 @@
   "lulo_only": true,
   "steps": [
     {"observe": "threaded", "facts": ["mail_messages"]},
-    {"menu": ["View", "Organize by Conversation"]},
+    {"menu_action": "mail::ToggleThreads"},
     {"observe": "flat", "facts": ["mail_messages"]}
   ]
 }

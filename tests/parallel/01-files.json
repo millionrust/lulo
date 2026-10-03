@@ -43,7 +43,8 @@
       "click": "report.txt"
     },
     {
-      "shot": "selected"
+      "shot": "selected",
+      "expect_change": false
     },
     {
       "key": "space"

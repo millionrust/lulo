@@ -30,7 +30,8 @@
       "key": "escape"
     },
     {
-      "shot": "search-cleared"
+      "shot": "search-cleared",
+      "expect_change": false
     },
     {
       "click": "Appearance"

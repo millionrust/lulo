@@ -320,7 +320,14 @@ class Driver:
         stack = [desktop.getChildAtIndex(i) for i in range(desktop.childCount)]
         candidates = []
         current = self.apps.get(self.current)
-        window = self.window()
+        windows = self.session.windows()
+        # AT-SPI on Wayland only knows coordinates inside a surface. A niri
+        # window's surface sits at its niri geometry; the top bar is anchored
+        # at the output origin; other layer surfaces (Dock, Control Centre,
+        # Spotlight) have no known origin, so they are pressed through their
+        # accessible action, which is what assistive tech does.
+        top_bar = next((p.pid for p in self.session.children
+                        if isinstance(p.args, list) and Path(p.args[0]).name == "rmac-top-bar"), None)
         dock = next((p for p in self.session.children
                      if isinstance(p.args, list) and Path(p.args[0]).name == "dock"), None)
         while stack:
@@ -333,22 +340,34 @@ class Driver:
                     if target == "Dock" and (dock is None or pid != dock.pid):
                         stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
                         continue
-                    belongs = current is not None and pid == current.pid
-                    box = node.queryComponent().getExtents(
-                        pyatspi.WINDOW_COORDS if belongs else pyatspi.DESKTOP_COORDS)
+                    owned = [w for w in windows if w.get("pid") == pid]
+                    owner = (next((w for w in owned if w.get("is_focused")), None)
+                             or (owned[0] if owned else None))
+                    box = node.queryComponent().getExtents(pyatspi.WINDOW_COORDS)
                     if box.width > 2 and box.height > 2 and box.x >= 0 and box.y >= 0:
                         role = node.getRoleName()
                         rank = 0 if role in {"list item", "tree item", "table row", "table cell"} else 1
-                        rank += 0 if belongs else 2
-                        origin = self.session.geometry(window)[:2] if belongs and window else (0, 0)
-                        candidates.append((rank, -box.width * box.height,
-                                           box.x + origin[0], box.y + origin[1], box))
+                        rank += 0 if current is not None and pid == current.pid else 2
+                        if owner is not None:
+                            origin = self.session.geometry(owner)[:2]
+                        elif pid == top_bar:
+                            origin = (0, 0)
+                        else:
+                            origin = None
+                        candidates.append((rank, -box.width * box.height, node, box, origin))
                 stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
             except Exception:
                 continue
         if candidates:
-            _rank, _area, bx, by, box = min(candidates, key=lambda item: item[:2])
-            x, y = self.session.parent_point(bx + box.width / 2, by + box.height / 2)
+            _rank, _area, node, box, origin = min(candidates, key=lambda item: item[:2])
+            if origin is None:
+                action = node.queryAction()
+                if action.nActions < 1:
+                    raise RuntimeError(f"{label!r} is on a layer surface and has no accessible action")
+                action.doAction(0)
+                return
+            x, y = self.session.parent_point(origin[0] + box.x + box.width / 2,
+                                             origin[1] + box.y + box.height / 2)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
         status_x = {"Lulo": 26, "Battery": self.session.width - 296,

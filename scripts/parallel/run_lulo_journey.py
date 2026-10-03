@@ -515,13 +515,21 @@ class Driver:
                 elif kind == "shot":
                     full = step.get("scope") == "full"
                     destination = target / f"{len(result['steps']):02d}-{step[kind]}.png"
-                    image = self.settled(full)
+                    # A slow first frame (a cold shell surface under nested
+                    # software rendering) can land after the screen has
+                    # settled; give the expected state a few seconds.
+                    deadline = time.monotonic() + 6
+                    while True:
+                        image = self.settled(full)
+                        errors = self.check_shot(step, image, previous, pending is not None)
+                        if not errors or time.monotonic() > deadline:
+                            break
+                        time.sleep(0.5)
                     image.save(destination)
                     if self.args.full_too and not full:
                         self.capture(destination.with_suffix(".full.png"), full=True)
                     if self.args.dump_a11y:
                         self.dump_accessible(destination.with_suffix(".a11y.json"))
-                    errors = self.check_shot(step, image, previous, pending is not None)
                     issues += [{"index": index, "shot": step[kind], "action": pending, "error": error}
                                for error in errors]
                     windows = [{"app_id": w.get("app_id"), "title": w.get("title"),
@@ -597,7 +605,8 @@ def outer(args) -> int:
                                 target.unlink()
                             target.symlink_to(source)
                 for alias, source in (("dock", "rmac-dock"), ("mission-control", "rmac-mission-control")):
-                    (links / alias).symlink_to(bins / source)
+                    # Point at the link so --override-bin-dir also covers these.
+                    (links / alias).symlink_to(links / source)
                 # The launcher discovers desktop entries through XDG. Populate
                 # only this run's private data home, pointing Exec/TryExec at
                 # the selected binaries so search can launch a real app.

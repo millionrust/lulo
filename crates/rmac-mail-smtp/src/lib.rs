@@ -416,6 +416,33 @@ mod tests {
     }
 
     #[test]
+    fn xoauth2_command_uses_sasl_format_without_plaintext_token() {
+        let written = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stream = Fixture {
+            read: io::Cursor::new(b"235 authenticated\r\n".to_vec()),
+            written: written.clone(),
+        };
+        let mut session = Session::new(Box::new(stream));
+        auth(
+            &mut session,
+            "AUTH PLAIN XOAUTH2\n",
+            &Authentication::Xoauth2 {
+                user: "a@example.test".into(),
+                token: Secret::new("planted-secret".into()),
+            },
+        )
+        .unwrap();
+        let command = String::from_utf8(written.lock().unwrap().clone()).unwrap();
+        assert!(command.starts_with("AUTH XOAUTH2 "));
+        assert!(!command.contains("planted-secret"));
+        let encoded = command.trim_end().strip_prefix("AUTH XOAUTH2 ").unwrap();
+        assert!(
+            STANDARD.decode(encoded).unwrap()
+                == b"user=a@example.test\x01auth=Bearer planted-secret\x01\x01"
+        );
+    }
+
+    #[test]
     fn starttls_is_required_before_authentication() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();

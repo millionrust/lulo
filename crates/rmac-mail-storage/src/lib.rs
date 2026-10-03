@@ -119,6 +119,14 @@ pub struct OutboxMessage {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutboxEntry {
+    pub id: i64,
+    pub state: OutboxState,
+    pub envelope_from: String,
+    pub recipients: Vec<String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutboxState {
     Queued,
@@ -264,6 +272,44 @@ impl MailStorage {
             [state],
             |row| row.get(0),
         )?)
+    }
+
+    /// Metadata for the Outbox mailbox, including claims left behind by a
+    /// crash. The UI can show Held/Sending items and offer explicit retry.
+    pub fn outbox_entries(&self) -> Result<Vec<OutboxEntry>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT id,state,envelope_from FROM outbox ORDER BY id")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut recipients_statement = self.connection.prepare(
+            "SELECT address FROM outbox_recipients WHERE outbox_id=?1 ORDER BY position",
+        )?;
+        let mut entries = Vec::new();
+        for row in rows {
+            let (id, state, envelope_from) = row?;
+            let state = match state.as_str() {
+                "queued" => OutboxState::Queued,
+                "sending" => OutboxState::Sending,
+                "held" => OutboxState::Held,
+                _ => return Err(Error::Sql(rusqlite::Error::InvalidQuery)),
+            };
+            let recipients = recipients_statement
+                .query_map([id], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            entries.push(OutboxEntry {
+                id,
+                state,
+                envelope_from,
+                recipients,
+            });
+        }
+        Ok(entries)
     }
 
     pub fn upsert_mailbox(

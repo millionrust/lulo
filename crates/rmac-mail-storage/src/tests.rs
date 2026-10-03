@@ -89,12 +89,20 @@ fn outbox_claim_is_durable_and_crash_safe() {
         )
         .unwrap();
     assert_eq!(fixture.store.outbox_count(OutboxState::Queued).unwrap(), 1);
+    assert_eq!(
+        fixture.store.outbox_entries().unwrap()[0].recipients.len(),
+        2
+    );
     let claimed = fixture.store.claim_outbox().unwrap().unwrap();
     assert_eq!(claimed.id, id);
     assert_eq!(claimed.recipients.len(), 2);
     assert!(fixture.store.claim_outbox().unwrap().is_none());
     let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
     assert_eq!(reopened.outbox_count(OutboxState::Sending).unwrap(), 1);
+    assert_eq!(
+        reopened.outbox_entries().unwrap()[0].state,
+        OutboxState::Sending
+    );
     assert!(reopened.claim_outbox().unwrap().is_none());
     reopened.update_outbox_state(id, OutboxState::Held).unwrap();
     assert_eq!(reopened.outbox_count(OutboxState::Held).unwrap(), 1);

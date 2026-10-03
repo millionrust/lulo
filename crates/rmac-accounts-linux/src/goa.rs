@@ -11,7 +11,10 @@ use rmac_accounts::{
 use zbus::blocking::{Connection, MessageIterator, Proxy};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Str};
 
-use crate::{AccountChange, Error, GoaAccount, GoaApi, OAuthAccount, PasswordMailAccount};
+use crate::{
+    AccountChange, Error, GoaAccount, GoaApi, OAuthAccount, PasswordCalendarAccount,
+    PasswordMailAccount,
+};
 
 const SERVICE: &str = "org.gnome.OnlineAccounts";
 const ROOT: &str = "/org/gnome/OnlineAccounts";
@@ -148,7 +151,12 @@ impl GoaApi for GoaBus {
 
     fn add_oauth(&self, account: &OAuthAccount<'_>) -> Result<String, Error> {
         let provider = account.provider.info();
-        if provider.oauth.is_none() || account.identity.is_empty() {
+        if provider.oauth.is_none()
+            || account.identity.is_empty()
+            || account.access_token.expose().is_empty()
+            || account.refresh_token.is_none()
+            || account.expires_at <= 0
+        {
             return Err(Error::InvalidResponse);
         }
         let manager = self.proxy(
@@ -179,12 +187,12 @@ impl GoaApi for GoaBus {
                 "ContactsEnabled".to_owned(),
                 bool_string(account.services.contacts),
             ),
+            ("FilesEnabled".to_owned(), "false".to_owned()),
         ]);
         let mut details = details;
         if account.provider == rmac_accounts::provider::Provider::Microsoft {
             let oauth = provider.oauth.ok_or(Error::InvalidResponse)?;
             details.extend([
-                ("FilesEnabled".into(), "false".into()),
                 (
                     "OAuth2AuthorizationUri".into(),
                     oauth.authorization_uri.into(),
@@ -276,6 +284,55 @@ impl GoaApi for GoaBus {
                     "imap_smtp",
                     account.address,
                     account.address,
+                    credentials,
+                    details,
+                ),
+            )
+            .map_err(|_| Error::SignInFailed)?;
+        Ok(path.to_string())
+    }
+
+    fn add_password_calendar(
+        &self,
+        account: &PasswordCalendarAccount<'_>,
+    ) -> Result<String, Error> {
+        let uri = url::Url::parse(account.caldav_uri).map_err(|_| Error::InvalidResponse)?;
+        if uri.scheme() != "https"
+            || uri.host_str().is_none()
+            || uri.username() != ""
+            || uri.password().is_some()
+            || uri.fragment().is_some()
+            || uri.query().is_some()
+            || account.username.is_empty()
+            || account.presentation_identity.is_empty()
+            || account.password.expose().is_empty()
+        {
+            return Err(Error::InvalidResponse);
+        }
+        let credentials = HashMap::from([(
+            "password".to_owned(),
+            string_value(account.password.expose()),
+        )]);
+        let details = HashMap::from([
+            ("Uri".to_owned(), "".to_owned()),
+            ("CalendarEnabled".to_owned(), "true".to_owned()),
+            ("CalDavUri".to_owned(), account.caldav_uri.to_owned()),
+            ("ContactsEnabled".to_owned(), "false".to_owned()),
+            ("CardDavUri".to_owned(), "".to_owned()),
+            ("FilesEnabled".to_owned(), "false".to_owned()),
+            ("AcceptSslErrors".to_owned(), "false".to_owned()),
+        ]);
+        let manager = self.proxy(
+            "/org/gnome/OnlineAccounts/Manager",
+            "org.gnome.OnlineAccounts.Manager",
+        )?;
+        let path: OwnedObjectPath = manager
+            .call(
+                "AddAccount",
+                &(
+                    "webdav",
+                    account.username,
+                    account.presentation_identity,
                     credentials,
                     details,
                 ),

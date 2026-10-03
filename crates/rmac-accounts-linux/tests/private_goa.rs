@@ -6,11 +6,14 @@
 use std::collections::HashMap;
 
 use rmac_accounts::{
+    autoconfig::{MailConfig, MailServer},
     model::{Service, Services},
-    provider::Provider,
+    provider::{Provider, SocketSecurity},
     Secret,
 };
-use rmac_accounts_linux::{goa::GoaBus, GoaApi, OAuthAccount};
+use rmac_accounts_linux::{
+    goa::GoaBus, GoaApi, OAuthAccount, PasswordCalendarAccount, PasswordMailAccount,
+};
 use zbus::{
     blocking::{connection::Builder, Proxy},
     fdo::ObjectManager,
@@ -31,13 +34,33 @@ impl FakeManager {
         credentials: HashMap<String, OwnedValue>,
         details: HashMap<String, String>,
     ) -> OwnedObjectPath {
-        assert_eq!(provider, "google");
         assert_eq!(identity, "planted@example.com");
-        assert!(credentials.contains_key("access_token"));
-        assert_eq!(
-            details.get("CalendarEnabled").map(String::as_str),
-            Some("true")
-        );
+        match provider {
+            "google" => {
+                assert!(credentials.contains_key("access_token"));
+                assert_eq!(
+                    details.get("CalendarEnabled").map(String::as_str),
+                    Some("true")
+                );
+            }
+            "imap_smtp" => {
+                assert!(credentials.contains_key("imap-password"));
+                assert_eq!(details.get("ImapUseSsl").map(String::as_str), Some("true"));
+                assert_eq!(details.get("SmtpUseTls").map(String::as_str), Some("true"));
+            }
+            "webdav" => {
+                assert!(credentials.contains_key("password"));
+                assert_eq!(
+                    details.get("CalDavUri").map(String::as_str),
+                    Some("https://caldav.example.com")
+                );
+                assert_eq!(
+                    details.get("AcceptSslErrors").map(String::as_str),
+                    Some("false")
+                );
+            }
+            _ => panic!("unexpected fake provider"),
+        }
         OwnedObjectPath::try_from(PATH).unwrap()
     }
 }
@@ -134,16 +157,64 @@ fn adapter_uses_goa_wire_contract_on_private_bus() {
     assert_eq!(accounts[0].provider, "google");
     assert!(accounts[0].services.mail);
     let token = Secret::new("planted-token".into());
+    let refresh = Secret::new("planted-refresh".into());
     let input = OAuthAccount {
         provider: Provider::Google,
         identity: "planted@example.com",
         presentation_identity: "planted@example.com",
         access_token: &token,
-        refresh_token: None,
+        refresh_token: Some(&refresh),
         expires_at: 123,
         services: Services::ALL,
     };
     assert_eq!(client.add_oauth(&input).unwrap(), PATH);
+    let config = MailConfig {
+        imap: MailServer {
+            host: "imap.example.com".into(),
+            port: 993,
+            security: SocketSecurity::Tls,
+            username: "planted@example.com".into(),
+        },
+        smtp: MailServer {
+            host: "smtp.example.com".into(),
+            port: 587,
+            security: SocketSecurity::StartTls,
+            username: "planted@example.com".into(),
+        },
+    };
+    let password = Secret::new("planted-password".into());
+    assert_eq!(
+        client
+            .add_password_mail(&PasswordMailAccount {
+                address: "planted@example.com",
+                display_name: "Planted",
+                config: &config,
+                imap_password: &password,
+                smtp_password: &password,
+            })
+            .unwrap(),
+        PATH
+    );
+    assert_eq!(
+        client
+            .add_password_calendar(&PasswordCalendarAccount {
+                username: "planted@example.com",
+                presentation_identity: "planted@example.com",
+                caldav_uri: "https://caldav.example.com",
+                password: &password,
+            })
+            .unwrap(),
+        PATH
+    );
+    assert_eq!(
+        client.add_password_calendar(&PasswordCalendarAccount {
+            username: "planted@example.com",
+            presentation_identity: "planted@example.com",
+            caldav_uri: "http://caldav.example.com",
+            password: &password,
+        }),
+        Err(rmac_accounts_linux::Error::InvalidResponse)
+    );
     assert_eq!(client.access_token(PATH).unwrap().expose(), "planted-token");
     assert_eq!(
         client.password(PATH, "imap-password").unwrap().expose(),

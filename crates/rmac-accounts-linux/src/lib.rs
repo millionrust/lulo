@@ -58,6 +58,8 @@ pub trait GoaApi {
     fn watch(&self, emit: &mut dyn FnMut(AccountChange)) -> Result<(), Error>;
     fn add_oauth(&self, account: &OAuthAccount<'_>) -> Result<String, Error>;
     fn add_password_mail(&self, account: &PasswordMailAccount<'_>) -> Result<String, Error>;
+    fn add_password_calendar(&self, account: &PasswordCalendarAccount<'_>)
+        -> Result<String, Error>;
     fn remove(&self, path: &str) -> Result<(), Error>;
     fn set_service(&self, path: &str, service: Service, enabled: bool) -> Result<(), Error>;
     fn access_token(&self, path: &str) -> Result<Secret, Error>;
@@ -92,6 +94,19 @@ pub struct PasswordMailAccount<'a> {
 impl std::fmt::Debug for PasswordMailAccount<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("PasswordMailAccount([redacted])")
+    }
+}
+
+pub struct PasswordCalendarAccount<'a> {
+    pub username: &'a str,
+    pub presentation_identity: &'a str,
+    pub caldav_uri: &'a str,
+    pub password: &'a Secret,
+}
+
+impl std::fmt::Debug for PasswordCalendarAccount<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PasswordCalendarAccount([redacted])")
     }
 }
 
@@ -130,6 +145,12 @@ mod tests {
         fn add_password_mail(&self, _account: &PasswordMailAccount<'_>) -> Result<String, Error> {
             Ok("/org/gnome/OnlineAccounts/Accounts/password-fake".into())
         }
+        fn add_password_calendar(
+            &self,
+            _account: &PasswordCalendarAccount<'_>,
+        ) -> Result<String, Error> {
+            Ok("/org/gnome/OnlineAccounts/Accounts/calendar-fake".into())
+        }
         fn remove(&self, _path: &str) -> Result<(), Error> {
             *self.account.lock().unwrap() = None;
             Ok(())
@@ -156,12 +177,13 @@ mod tests {
     fn account_lifecycle_with_fake_goa_and_redacted_diagnostics() {
         let fake = FakeGoa::default();
         let access = Secret::new("planted-token".into());
+        let refresh = Secret::new("planted-refresh".into());
         let input = OAuthAccount {
             provider: Provider::Google,
             identity: "planted@example.com",
             presentation_identity: "planted@example.com",
             access_token: &access,
-            refresh_token: None,
+            refresh_token: Some(&refresh),
             expires_at: 123,
             services: Services::ALL,
         };

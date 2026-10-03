@@ -89,6 +89,14 @@ python3 scripts/behavior/run_lulo.py \
 
 ## Calendar and Mail (pending)
 
+ACC-2's non-UI GOA wire contract is exercised by
+`scripts/behavior/run_goa_private_bus.sh` on the reference laptop. It launches
+one fake GOA service on a disposable session bus with temporary XDG directories
+and runs the ignored `private_goa` integration test. The test covers account
+enumeration, AddAccount, service toggles, token/password requests, and Remove;
+it never connects to the owner's session bus or changes a real account.
+The cross-app Internet Accounts sheet scenario remains pending until ACC-3.
+
 `docs/behavior-pending/calendar/`, `docs/behavior-pending/mail/` and
 `docs/behavior-pending/settings/internet-accounts-add-sheet.json` are stubs for
 the apps planned in ADR 0022. They move to `tests/behavior` once the app exists,

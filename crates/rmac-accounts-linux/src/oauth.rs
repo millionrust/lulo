@@ -164,7 +164,8 @@ impl OAuthAttempt {
         if provider == Provider::Google {
             authorization_url
                 .query_pairs_mut()
-                .append_pair("access_type", "offline");
+                .append_pair("access_type", "offline")
+                .append_pair("prompt", "consent");
         }
         let mut flow = SignIn::default();
         flow.select_provider(provider)
@@ -218,7 +219,8 @@ impl OAuthAttempt {
             .get("refresh_token")
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
-            .map(|value| Secret::new(value.to_owned()));
+            .map(|value| Secret::new(value.to_owned()))
+            .ok_or(Error::InvalidResponse)?;
         let expires_in = response
             .get("expires_in")
             .and_then(Value::as_i64)
@@ -249,7 +251,7 @@ impl OAuthAttempt {
             (now.as_micros() as i64).saturating_add(expires_in.saturating_mul(1_000_000));
         Ok(Tokens {
             access_token,
-            refresh_token,
+            refresh_token: Some(refresh_token),
             expires_at,
             identity: identity.to_owned(),
             presentation_identity: presentation_identity.to_owned(),

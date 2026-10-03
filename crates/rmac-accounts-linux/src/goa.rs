@@ -180,6 +180,21 @@ impl GoaApi for GoaBus {
                 bool_string(account.services.contacts),
             ),
         ]);
+        let mut details = details;
+        if account.provider == rmac_accounts::provider::Provider::Microsoft {
+            let oauth = provider.oauth.ok_or(Error::InvalidResponse)?;
+            details.extend([
+                ("FilesEnabled".into(), "false".into()),
+                (
+                    "OAuth2AuthorizationUri".into(),
+                    oauth.authorization_uri.into(),
+                ),
+                ("OAuth2TokenUri".into(), oauth.token_uri.into()),
+                ("OAuth2ClientId".into(), oauth.client_id.into()),
+                ("OAuth2RedirectUri".into(), oauth.redirect_uri.into()),
+                ("OAuth2ClientSecret".into(), oauth.client_secret.into()),
+            ]);
+        }
         let path: OwnedObjectPath = manager
             .call(
                 "AddAccount",

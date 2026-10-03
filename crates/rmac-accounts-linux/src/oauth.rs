@@ -35,6 +35,7 @@ pub struct Tokens {
     /// GOA's absolute expiry format: microseconds since Unix epoch.
     pub expires_at: i64,
     pub identity: String,
+    pub presentation_identity: String,
 }
 
 impl std::fmt::Debug for Tokens {
@@ -176,6 +177,10 @@ impl OAuthAttempt {
         &self.authorization_url
     }
 
+    fn accepts_callback(&self, client_id: &str, uri: &str) -> bool {
+        self.flow.clone().browser_return(client_id, uri).is_ok()
+    }
+
     /// Acquire `OAuthReceiver` before calling this so the redirect cannot
     /// arrive before the callback name is owned.
     pub async fn open_in_browser(&self) -> Result<(), Error> {
@@ -215,14 +220,20 @@ impl OAuthAttempt {
         let profile = http.identity(config, &access_token)?;
         let identity = match self.provider {
             Provider::Google => profile.get("email").and_then(Value::as_str),
-            Provider::Microsoft => profile
-                .get("mail")
-                .and_then(Value::as_str)
-                .or_else(|| profile.get("userPrincipalName").and_then(Value::as_str)),
+            Provider::Microsoft => profile.get("mail").and_then(Value::as_str),
             _ => None,
         }
         .filter(|value| !value.is_empty())
         .ok_or(Error::InvalidResponse)?;
+        let presentation_identity = if self.provider == Provider::Microsoft {
+            profile
+                .get("userPrincipalName")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(identity)
+        } else {
+            identity
+        };
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| Error::InvalidResponse)?;
@@ -233,6 +244,7 @@ impl OAuthAttempt {
             refresh_token,
             expires_at,
             identity: identity.to_owned(),
+            presentation_identity: presentation_identity.to_owned(),
         })
     }
 }
@@ -248,12 +260,12 @@ fn random_secret() -> Result<Secret, Error> {
 #[cfg(target_os = "linux")]
 pub mod callback {
     use std::sync::mpsc::{self, Receiver, Sender};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use zbus::blocking::Connection;
     use zbus::fdo::{RequestNameFlags, RequestNameReply};
 
-    use crate::Error;
+    use crate::{oauth::OAuthAttempt, Error};
 
     const NAME: &str = "org.gnome.OnlineAccounts.OAuth2";
     const PATH: &str = "/org/gnome/OnlineAccounts/OAuth2";
@@ -277,8 +289,8 @@ pub mod callback {
     }
 
     impl OAuthReceiver {
-        pub fn begin(provider: rmac_accounts::provider::Provider) -> Result<Self, Error> {
-            super::verify_installed_provider(provider)?;
+        pub fn begin(attempt: &OAuthAttempt) -> Result<Self, Error> {
+            super::verify_installed_provider(attempt.provider)?;
             let connection = Connection::session().map_err(|_| Error::Unavailable)?;
             let (sender, receiver) = mpsc::channel();
             connection
@@ -297,12 +309,21 @@ pub mod callback {
             })
         }
 
-        /// Waits for the single redirect. The attempt's state and client ID
-        /// must still be checked before exchanging the code.
-        pub fn receive(&self) -> Result<(String, String), Error> {
-            self.receiver
-                .recv_timeout(Duration::from_secs(300))
-                .map_err(|_| Error::SignInFailed)
+        /// Waits without polling and discards callbacks with a wrong client,
+        /// redirect or state. The deadline is fixed even under spurious calls.
+        pub fn receive_for(&self, attempt: &OAuthAttempt) -> Result<(String, String), Error> {
+            let deadline = Instant::now() + Duration::from_secs(300);
+            for _ in 0..16 {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                let (client, uri) = self
+                    .receiver
+                    .recv_timeout(remaining)
+                    .map_err(|_| Error::SignInFailed)?;
+                if attempt.accepts_callback(&client, &uri) {
+                    return Ok((client, uri));
+                }
+            }
+            Err(Error::InvalidResponse)
         }
     }
 
@@ -366,6 +387,46 @@ mod tests {
             assert!(!debug.contains(secret));
         }
         assert!(tokens.expires_at > 0);
+    }
+
+    struct FakeMicrosoft;
+    impl OAuthHttp for FakeMicrosoft {
+        fn exchange(
+            &self,
+            _config: OAuthConfig,
+            _code: &Secret,
+            _verifier: &Secret,
+        ) -> Result<Value, Error> {
+            Ok(
+                json!({"access_token":"planted-token","refresh_token":"planted-refresh","expires_in":3600}),
+            )
+        }
+        fn identity(&self, _config: OAuthConfig, _token: &Secret) -> Result<Value, Error> {
+            Ok(json!({"mail":"alias@example.com","userPrincipalName":"tenant@example.org"}))
+        }
+    }
+
+    #[test]
+    fn microsoft_keeps_goa_identity_and_presentation_distinct() {
+        let attempt = OAuthAttempt::new(Provider::Microsoft).unwrap();
+        let state = attempt
+            .authorization_url()
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        let config = Provider::Microsoft.info().oauth.unwrap();
+        assert!(!attempt.accepts_callback(
+            config.client_id,
+            &format!("{}?state=wrong&code=secret", config.redirect_uri)
+        ));
+        let redirect = format!("{}?state={state}&code=planted-code", config.redirect_uri);
+        let tokens = attempt
+            .complete(config.client_id, &redirect, &FakeMicrosoft)
+            .unwrap();
+        assert_eq!(tokens.identity, "alias@example.com");
+        assert_eq!(tokens.presentation_identity, "tenant@example.org");
     }
 
     /// Laptop only: `cargo test -p rmac-accounts-linux -- --ignored

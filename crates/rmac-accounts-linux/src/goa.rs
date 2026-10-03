@@ -36,20 +36,13 @@ impl GoaBus {
         Proxy::new(&self.connection, SERVICE, path, interface).map_err(|_| Error::Unavailable)
     }
 
-    fn account(&self, path: &str) -> Result<Proxy<'_>, Error> {
+    fn account<'a>(&'a self, path: &'a str) -> Result<Proxy<'a>, Error> {
         self.proxy(path, ACCOUNT_INTERFACE)
     }
 }
 
 fn property_string(values: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
     String::try_from(values.get(key)?.try_clone().ok()?).ok()
-}
-
-fn property_bool(values: &HashMap<String, OwnedValue>, key: &str) -> bool {
-    values
-        .get(key)
-        .and_then(|value| bool::try_from(value.try_clone().ok()?).ok())
-        .unwrap_or(false)
 }
 
 fn account_from_interfaces(path: &str, interfaces: &Interfaces) -> Option<GoaAccount> {
@@ -60,9 +53,9 @@ fn account_from_interfaces(path: &str, interfaces: &Interfaces) -> Option<GoaAcc
         provider: property_string(props, "ProviderType")?,
         identity: property_string(props, "PresentationIdentity")?,
         services: Services {
-            mail: property_bool(props, "MailEnabled"),
-            calendar: property_bool(props, "CalendarEnabled"),
-            contacts: property_bool(props, "ContactsEnabled"),
+            mail: interfaces.contains_key("org.gnome.OnlineAccounts.Mail"),
+            calendar: interfaces.contains_key("org.gnome.OnlineAccounts.Calendar"),
+            contacts: interfaces.contains_key("org.gnome.OnlineAccounts.Contacts"),
         },
     })
 }
@@ -97,7 +90,8 @@ impl GoaApi for GoaBus {
             .collect();
         for message in iterator {
             let message = message.map_err(|_| Error::Unavailable)?;
-            let interface = message.header().interface().map(|name| name.as_str());
+            let header = message.header();
+            let interface = header.interface().map(|name| name.as_str());
             if !matches!(
                 interface,
                 Some("org.freedesktop.DBus.ObjectManager" | "org.freedesktop.DBus.Properties")
@@ -183,18 +177,18 @@ impl GoaApi for GoaBus {
 
     fn set_service(&self, path: &str, service: Service, enabled: bool) -> Result<(), Error> {
         let property = match service {
-            Service::Mail => "MailEnabled",
-            Service::Calendar => "CalendarEnabled",
-            Service::Contacts => "ContactsEnabled",
+            Service::Mail => "MailDisabled",
+            Service::Calendar => "CalendarDisabled",
+            Service::Contacts => "ContactsDisabled",
         };
         self.account(path)?
-            .set_property(property, enabled)
+            .set_property(property, !enabled)
             .map_err(|_| Error::Unavailable)
     }
 
     fn access_token(&self, path: &str) -> Result<Secret, Error> {
         self.account(path)?
-            .call::<_, _, (String, i32)>("EnsureCredentials", &())
+            .call::<_, _, i32>("EnsureCredentials", &())
             .map_err(|_| Error::SignInFailed)?;
         let (token, _expires): (String, i32) = self
             .proxy(path, "org.gnome.OnlineAccounts.OAuth2Based")?

@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 rmac-accounts.workspace = true
+rmac-portal.workspace = true
 url.workspace = true
 sha2.workspace = true
 serde_json.workspace = true

@@ -150,6 +150,14 @@ impl OAuthAttempt {
         &self.authorization_url
     }
 
+    /// Acquire `OAuthReceiver` before calling this so the redirect cannot
+    /// arrive before the callback name is owned.
+    pub async fn open_in_browser(&self) -> Result<(), Error> {
+        rmac_portal::open_uri(self.authorization_url.as_str())
+            .await
+            .map_err(|_| Error::Unavailable)
+    }
+
     pub fn complete(
         mut self,
         client_id: &str,

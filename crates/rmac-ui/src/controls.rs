@@ -2291,7 +2291,11 @@ impl RenderOnce for ListRow {
             .id(self.id)
             .role(self.role)
             .aria_selected(selected)
-            .when(self.active_descendant, |el| el.aria_active_descendant())
+            // A row that holds real focus already identifies itself to AT-SPI.
+            // GPUI rejects marking that same node as its own active descendant.
+            .when(self.active_descendant && !is_focused, |el| {
+                el.aria_active_descendant()
+            })
             .when_some(self.aria_label, |el, label| el.aria_label(label))
             .when_some(self.aria_toggled, |el, toggled| el.aria_toggled(toggled))
             .when_some(self.aria_expanded, |el, expanded| {

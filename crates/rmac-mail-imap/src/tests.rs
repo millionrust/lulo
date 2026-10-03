@@ -220,6 +220,37 @@ fn untrusted_certificate_is_rejected() {
 }
 
 #[test]
+fn oauth_rejection_does_not_expose_challenge_or_token() {
+    let (config, handle) = fixture(false, |socket| {
+        let mut stream = StreamOwned::new(ServerConnection::new(server_config()).unwrap(), socket);
+        send(&mut stream, "* OK ready\r\n");
+        assert_eq!(read_line(&mut stream), "L00000001 CAPABILITY\r\n");
+        send(
+            &mut stream,
+            "* CAPABILITY IMAP4rev1 AUTH=XOAUTH2 SASL-IR\r\nL00000001 OK done\r\n",
+        );
+        assert!(read_line(&mut stream).starts_with("L00000002 AUTHENTICATE XOAUTH2 "));
+        send(&mut stream, "+ cGxhbnRlZC1jaGFsbGVuZ2U=\r\n");
+        assert_eq!(read_line(&mut stream), "\r\n");
+        send(
+            &mut stream,
+            "L00000002 NO planted-token planted-challenge\r\n",
+        );
+    });
+    let mut client = Client::connect_with_roots(&config, roots()).unwrap();
+    let error = client
+        .authenticate(Authentication::XOAuth2 {
+            user: "alice@example.test",
+            token: &Secret::new("planted-token"),
+        })
+        .unwrap_err();
+    let printed = format!("{error:?} {error}");
+    assert!(!printed.contains("planted-token"));
+    assert!(!printed.contains("planted-challenge"));
+    handle.join().unwrap();
+}
+
+#[test]
 fn unsafe_mailbox_and_uid_set_are_rejected() {
     assert!(protocol::quote("INBOX\r\nEVIL").is_err());
     assert!(protocol::validate_uid_set("1\r\nEVIL").is_err());

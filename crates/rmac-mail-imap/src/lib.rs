@@ -9,6 +9,7 @@ use protocol::{parse_capabilities, parse_list, parse_select, parse_uid_fetch, qu
 pub use protocol::{Capabilities, Mailbox, MailboxKind, MessageChange, SelectState, SyncCursor};
 use std::{fmt, io, time::Duration};
 use transport::Transport;
+use zeroize::Zeroize;
 
 const MAX_IDLE: Duration = Duration::from_secs(25 * 60);
 
@@ -34,6 +35,12 @@ impl fmt::Debug for Secret {
 impl fmt::Display for Secret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("[redacted]")
+    }
+}
+
+impl Drop for Secret {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 
@@ -111,7 +118,7 @@ impl Client {
         }
         let mut roots = rustls::RootCertStore::empty();
         for cert in certs.certs {
-            roots.add(cert).map_err(|_| Error::Tls)?;
+            let _ = roots.add(cert);
         }
         Self::connect_with_roots(config, roots)
     }
@@ -177,7 +184,7 @@ impl Client {
             }
             self.transport.write_line(&encoded)?;
         }
-        self.collect(&tag)?;
+        self.collect_auth(&tag)?;
         // ENABLE is connection-scoped; QRESYNC implicitly enables CONDSTORE.
         if self.capabilities.has("QRESYNC") {
             self.command("ENABLE QRESYNC")?;
@@ -308,6 +315,34 @@ impl Client {
                 return Err(Error::Rejected("IMAP server closed the connection"));
             }
             responses.push(response);
+        }
+    }
+
+    fn collect_auth(&mut self, tag: &str) -> Result<(), Error> {
+        let mut challenge_answered = false;
+        loop {
+            let response = self.transport.read_response()?;
+            let first = response.first_line();
+            if first.starts_with(b"+") {
+                if challenge_answered {
+                    return Err(Error::Rejected("IMAP authentication rejected"));
+                }
+                // XOAUTH2 failures carry a base64 JSON challenge. It can
+                // contain token details, so discard it without logging.
+                self.transport.write_line("")?;
+                challenge_answered = true;
+                continue;
+            }
+            if first.starts_with(tag.as_bytes()) && first.get(tag.len()) == Some(&b' ') {
+                return if first.get(tag.len() + 1..tag.len() + 3) == Some(b"OK") {
+                    Ok(())
+                } else {
+                    Err(Error::Rejected("IMAP authentication rejected"))
+                };
+            }
+            if first.starts_with(b"* BYE") {
+                return Err(Error::Rejected("IMAP server closed the connection"));
+            }
         }
     }
 

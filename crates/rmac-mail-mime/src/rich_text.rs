@@ -121,7 +121,7 @@ fn safe_link(value: &str) -> Option<String> {
     }
 }
 
-fn visit(node: &Handle, collector: &mut Collector, style: &Span, depth: usize) {
+fn visit(node: &Handle, collector: &mut Collector, style: &Span, depth: usize, in_quote: bool) {
     if depth > 64 {
         return;
     }
@@ -182,6 +182,9 @@ fn visit(node: &Handle, collector: &mut Collector, style: &Span, depth: usize) {
             }
             if tag == "br" {
                 collector.flush();
+                if in_quote {
+                    collector.kind = BlockKind::Quote;
+                }
                 return;
             }
             let block = match tag {
@@ -195,7 +198,11 @@ fn visit(node: &Handle, collector: &mut Collector, style: &Span, depth: usize) {
             };
             if let Some(kind) = block {
                 collector.flush();
-                collector.kind = kind;
+                collector.kind = if in_quote || tag == "blockquote" {
+                    BlockKind::Quote
+                } else {
+                    kind
+                };
             }
             let mut child_style = style.clone();
             match tag {
@@ -213,7 +220,13 @@ fn visit(node: &Handle, collector: &mut Collector, style: &Span, depth: usize) {
             }
             let children = node.children.borrow();
             for child in children.iter() {
-                visit(child, collector, &child_style, depth + 1);
+                visit(
+                    child,
+                    collector,
+                    &child_style,
+                    depth + 1,
+                    in_quote || tag == "blockquote",
+                );
             }
             if tag == "td" || tag == "th" {
                 collector.text("  ", style);
@@ -225,7 +238,7 @@ fn visit(node: &Handle, collector: &mut Collector, style: &Span, depth: usize) {
         _ => {
             let children = node.children.borrow();
             for child in children.iter() {
-                visit(child, collector, style, depth + 1);
+                visit(child, collector, style, depth + 1, in_quote);
             }
         }
     }
@@ -237,7 +250,7 @@ fn visit(node: &Handle, collector: &mut Collector, style: &Span, depth: usize) {
 pub fn sanitize_html(html: &str) -> RichText {
     let dom: RcDom = parse_document(RcDom::default(), Default::default()).one(html);
     let mut collector = Collector::default();
-    visit(&dom.document, &mut collector, &Span::default(), 0);
+    visit(&dom.document, &mut collector, &Span::default(), 0, false);
     collector.flush();
     collector.result
 }
@@ -297,5 +310,10 @@ mod tests {
             .blocks
             .iter()
             .any(|block| block.kind == BlockKind::TableRow));
+        let nested_quote = sanitize_html("<blockquote><p>One<br>Two</p></blockquote>");
+        assert!(nested_quote
+            .blocks
+            .iter()
+            .all(|block| block.kind == BlockKind::Quote));
     }
 }

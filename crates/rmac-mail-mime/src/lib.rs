@@ -27,6 +27,8 @@ pub struct Attachment {
     pub filename: String,
     pub content_type: String,
     pub bytes: Vec<u8>,
+    /// Present for a CID image referenced by the HTML body.
+    pub content_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,6 +87,16 @@ fn normalise_id(id: &str) -> Option<&str> {
     .then_some(id)
 }
 
+fn normalise_content_id(id: &str) -> Option<&str> {
+    let id = id.trim().trim_start_matches('<').trim_end_matches('>');
+    (!id.is_empty()
+        && id.is_ascii()
+        && !id
+            .bytes()
+            .any(|byte| byte <= 32 || byte == 127 || matches!(byte, b'<' | b'>')))
+    .then_some(id)
+}
+
 pub fn build(draft: &Draft) -> Result<BuiltMessage, Error> {
     let recipients: Vec<String> = draft
         .to
@@ -128,11 +140,19 @@ pub fn build(draft: &Draft) -> Result<BuiltMessage, Error> {
         builder = builder.references(ids);
     }
     for attachment in &draft.attachments {
-        builder = builder.attachment(
-            attachment.content_type.as_str(),
-            attachment.filename.as_str(),
-            attachment.bytes.as_slice(),
-        );
+        builder = if let Some(id) = &attachment.content_id {
+            builder.inline(
+                attachment.content_type.as_str(),
+                normalise_content_id(id).ok_or(Error::InvalidMessageId)?,
+                attachment.bytes.as_slice(),
+            )
+        } else {
+            builder.attachment(
+                attachment.content_type.as_str(),
+                attachment.filename.as_str(),
+                attachment.bytes.as_slice(),
+            )
+        };
     }
     let bytes = builder.write_to_vec().map_err(Error::Build)?;
     Ok(BuiltMessage {
@@ -179,6 +199,9 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMessage, Error> {
                 })
                 .unwrap_or_else(|| "application/octet-stream".to_owned()),
             bytes: part.contents().to_vec(),
+            content_id: part
+                .content_id()
+                .map(|id| id.trim_start_matches('<').trim_end_matches('>').to_owned()),
         });
     }
     Ok(ParsedMessage {
@@ -224,6 +247,7 @@ mod tests {
                 filename: "file.txt".into(),
                 content_type: "text/plain".into(),
                 bytes: b"attached".to_vec(),
+                content_id: None,
             }],
             ..Draft::default()
         };
@@ -269,6 +293,34 @@ mod tests {
             .references
             .push("bad@example.test\r\nBcc: thief@example.test".into());
         assert!(matches!(build(&draft), Err(Error::InvalidMessageId)));
+    }
+
+    #[test]
+    fn cid_images_keep_an_attachment_mapping() {
+        let draft = Draft {
+            from: "a@example.test".into(),
+            to: vec!["b@example.test".into()],
+            html: Some("<p><img src='cid:photo@example.test' alt='Photo'></p>".into()),
+            attachments: vec![Attachment {
+                filename: "photo.png".into(),
+                content_type: "image/png".into(),
+                bytes: vec![137, 80, 78, 71],
+                content_id: Some("photo@example.test".into()),
+            }],
+            ..Draft::default()
+        };
+        let parsed = parse(&build(&draft).unwrap().bytes).unwrap();
+        assert_eq!(
+            parsed.rich_text.inline_images[0].content_id,
+            "photo@example.test"
+        );
+        assert!(parsed
+            .attachments
+            .iter()
+            .any(
+                |part| part.content_id.as_deref() == Some("photo@example.test")
+                    && part.bytes == vec![137, 80, 78, 71]
+            ));
     }
 
     #[test]

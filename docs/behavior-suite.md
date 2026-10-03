@@ -97,7 +97,15 @@ enumeration, AddAccount, service toggles, token/password requests, and Remove;
 it never connects to the owner's session bus or changes a real account.
 An optional ignored `real_goa` test reads the laptop's live ObjectManager
 without printing identities or changing accounts; run it only with
-`RMAC_READ_ONLY_GOA_TEST=1` under the shared build lock.
+`RMAC_READ_ONLY_GOA_TEST=1` under the shared build lock:
+
+```sh
+exec 8>/tmp/lulo-cargo.lock; flock 8
+export CARGO_TARGET_DIR="$HOME/rmac-wt/target"
+RMAC_READ_ONLY_GOA_TEST=1 cargo test -p rmac-accounts-linux --profile iterate \
+  --test real_goa -- --ignored --exact real_goa_object_manager_read_only
+```
+
 The cross-app Internet Accounts sheet scenario remains pending until ACC-3.
 
 `docs/behavior-pending/calendar/`, `docs/behavior-pending/mail/` and

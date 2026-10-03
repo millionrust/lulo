@@ -166,7 +166,7 @@ fn parse_mx_response(packet: &[u8]) -> Result<Vec<String>, Error> {
         if kind == 15 && class == 1 && length >= 3 {
             let mut name_offset = offset + 2;
             let name = read_name(packet, &mut name_offset)?;
-            if name_offset <= end {
+            if name_offset == end {
                 hosts.push(name);
             }
         }

@@ -15,6 +15,7 @@ sys.path.insert(0, str(HERE / "interaction"))
 import interaction_diff as diff  # noqa: E402
 import probes as pr  # noqa: E402
 import surfaces as sf  # noqa: E402
+import lulo_probe as lp  # noqa: E402
 
 
 class ProbeRegistryTests(unittest.TestCase):
@@ -199,6 +200,206 @@ class DiffReportTests(unittest.TestCase):
     def test_render_markdown_with_no_gaps_still_mentions_the_matrix(self):
         text = diff.render_markdown([], [])
         self.assertIn("No gaps found", text)
+
+
+class LuloOnlySurfaceTests(unittest.TestCase):
+    """The newly-widened surfaces (dock, spotlight, Notification Centre,
+    the Files context menu, the Text Editor alert, the Settings sidebar):
+    a Lulo driver exists, but this agent never drives the owner's live Mac,
+    so each one declares "lulo-only", not "automated"."""
+
+    LULO_ONLY_IDS = {
+        "dock", "spotlight", "clock-notification-centre",
+        "files-window-context-menu", "text-editor-save-sheet", "settings-sidebar-list",
+    }
+
+    def test_every_expected_surface_is_lulo_only(self):
+        by_id = {item["id"]: item for item in sf.SURFACES}
+        for sid in self.LULO_ONLY_IDS:
+            self.assertEqual(by_id[sid]["status"], "lulo-only", sid)
+
+    def test_every_lulo_only_surface_still_names_both_platforms(self):
+        # Ground truth for a future Mac driver stays declared even though
+        # nobody has written or run that driver yet.
+        for item in sf.SURFACES:
+            if item["status"] == "lulo-only":
+                self.assertIn("mac", item, item["id"])
+                self.assertIn("lulo", item, item["id"])
+
+    def test_spotlight_dispatches_the_real_launcher_shortcut_id(self):
+        # Regression: this surface used to name a shortcut id ("spotlight")
+        # that crates/rmac-shortcuts/src/model.rs does not know, which
+        # rmac-shortcut-dispatch would reject outright.
+        self.assertEqual(sf.surface("spotlight")["lulo"]["shortcut"], "launcher")
+
+    def test_matrix_includes_the_widened_probes(self):
+        pairs = set(sf.matrix())
+        self.assertIn(("dock", "hover"), pairs)
+        self.assertIn(("dock", "right_click"), pairs)
+        self.assertIn(("spotlight", "outside_click"), pairs)
+        self.assertIn(("spotlight", "escape"), pairs)
+        self.assertIn(("clock-notification-centre", "outside_click"), pairs)
+        self.assertIn(("files-window-context-menu", "outside_click"), pairs)
+        self.assertIn(("text-editor-save-sheet", "tab_focus"), pairs)
+        self.assertIn(("settings-sidebar-list", "scroll"), pairs)
+
+
+class LuloOnlyDiffTests(unittest.TestCase):
+    """A "lulo-only" surface must be compared exactly like an "automated"
+    one once a Lulo recording exists - never lumped into the generic
+    "surface has no driver yet" bucket "planned" surfaces get."""
+
+    def _item(self, **overrides):
+        item = {"id": "x", "title": "X", "kind": "dock", "status": "lulo-only"}
+        item.update(overrides)
+        return item
+
+    def test_a_lulo_recording_with_no_mac_recording_is_pending_not_skipped(self):
+        lulo = {"probes": {"hover": {"changed": True}, "right_click": {"opened": True}}}
+        gaps, unprobed = diff.compare_surface(self._item(), None, lulo)
+        self.assertEqual(gaps, [])
+        reasons = {u["probe"]: u["reason"] for u in unprobed}
+        self.assertEqual(reasons["hover"], "no recording")
+        self.assertEqual(reasons["right_click"], "no recording")
+
+    def test_once_both_sides_are_recorded_lulo_only_compares_like_automated(self):
+        mac = {"probes": {"hover": {"changed": True}, "right_click": {"opened": True}}}
+        lulo = {"probes": {"hover": {"changed": False}, "right_click": {"opened": True}}}
+        gaps, unprobed = diff.compare_surface(self._item(), mac, lulo)
+        self.assertEqual(len(gaps), 1)
+        self.assertEqual(gaps[0]["probe"], "hover")
+        # "dock" also declares the still-planned "press_hold" probe.
+        self.assertEqual([u["probe"] for u in unprobed], ["press_hold"])
+
+    def test_evaluate_does_not_fall_back_to_the_generic_planned_note(self):
+        # A "planned" surface's probes are bucketed under its own note; a
+        # "lulo-only" surface's probes go through compare_surface instead,
+        # so a missing mac recording must read as "no recording", not the
+        # surface-level note string.
+        item = self._item(note="should never be shown for a lulo-only surface")
+        originals = sf.SURFACES
+        sf.SURFACES = [item]
+        try:
+            gaps, unprobed = diff.evaluate()
+        finally:
+            sf.SURFACES = originals
+        self.assertEqual(gaps, [])
+        self.assertTrue(unprobed)
+        for row in unprobed:
+            self.assertNotEqual(row["reason"], "should never be shown for a lulo-only surface")
+
+
+class FakeAction:
+    def __init__(self, names):
+        self._names = names
+        self.calls = []
+
+    @property
+    def nActions(self):
+        return len(self._names)
+
+    def getName(self, index):
+        return self._names[index]
+
+    def doAction(self, index):
+        self.calls.append(index)
+
+
+class FakeNode:
+    def __init__(self, action=None, component=None):
+        self._action = action
+        self._component = component
+
+    def queryAction(self):
+        if self._action is None:
+            raise RuntimeError("no Action interface")
+        return self._action
+
+    def queryComponent(self):
+        if self._component is None:
+            raise RuntimeError("no Component interface")
+        return self._component
+
+
+class FakeComponent:
+    def __init__(self, rect=None, error=None):
+        self._rect = rect
+        self._error = error
+
+    def getExtents(self, _coords):
+        if self._error is not None:
+            raise self._error
+        return self._rect
+
+
+class FakeRect:
+    def __init__(self, x, y, width, height):
+        self.x, self.y, self.width, self.height = x, y, width, height
+
+
+class LuloProbeHelperTests(unittest.TestCase):
+    """lulo_probe.py's pure AT-SPI helpers (scripts/interaction/lulo_probe.py),
+    exercised with plain fake nodes - no AT-SPI bus, no pyatspi package and
+    no compositor needed, so this runs on the Mac exactly like the rest of
+    this file."""
+
+    def test_find_action_index_matches_by_name(self):
+        node = FakeNode(action=FakeAction(["Open", "Show Menu"]))
+        self.assertEqual(lp.find_action_index(node, "Show Menu"), 1)
+        self.assertEqual(lp.find_action_index(node, "Open"), 0)
+
+    def test_find_action_index_is_none_when_the_name_is_absent(self):
+        node = FakeNode(action=FakeAction(["Open"]))
+        self.assertIsNone(lp.find_action_index(node, "Show Menu"))
+
+    def test_find_action_index_is_none_with_no_action_interface(self):
+        self.assertIsNone(lp.find_action_index(FakeNode(), "Show Menu"))
+
+    def test_invoke_action_calls_do_action_at_the_matching_index(self):
+        action = FakeAction(["Open", "Show Menu"])
+        node = FakeNode(action=action)
+        self.assertTrue(lp.invoke_action(node, "Show Menu"))
+        self.assertEqual(action.calls, [1])
+
+    def test_invoke_action_is_false_and_does_not_raise_with_no_match(self):
+        node = FakeNode(action=FakeAction(["Open"]))
+        self.assertFalse(lp.invoke_action(node, "Show Menu"))
+        node_without_actions = FakeNode()
+        self.assertFalse(lp.invoke_action(node_without_actions, "Show Menu"))
+
+    def test_screen_box_returns_none_rather_than_raising_on_any_error(self):
+        node = FakeNode(component=FakeComponent(error=RuntimeError("no AT-SPI bus")))
+        self.assertIsNone(lp.screen_box(node))
+
+    def test_screen_box_accepts_a_valid_in_bounds_rect(self):
+        fake_atspi = type("FakeAtspi", (), {"SCREEN_COORDS": 0})
+        original_atspi = lp.atspi
+        lp.atspi = lambda: fake_atspi
+        try:
+            node = FakeNode(component=FakeComponent(rect=FakeRect(10, 20, 30, 40)))
+            self.assertEqual(lp.screen_box(node), (10.0, 20.0, 30.0, 40.0))
+        finally:
+            lp.atspi = original_atspi
+
+    def test_screen_box_rejects_coordinates_outside_the_output(self):
+        fake_atspi = type("FakeAtspi", (), {"SCREEN_COORDS": 0})
+        original_atspi = lp.atspi
+        lp.atspi = lambda: fake_atspi
+        try:
+            node = FakeNode(component=FakeComponent(rect=FakeRect(lp.OUTPUT_W + 5, 0, 10, 10)))
+            self.assertIsNone(lp.screen_box(node))
+        finally:
+            lp.atspi = original_atspi
+
+    def test_screen_box_rejects_a_zero_size_rect(self):
+        fake_atspi = type("FakeAtspi", (), {"SCREEN_COORDS": 0})
+        original_atspi = lp.atspi
+        lp.atspi = lambda: fake_atspi
+        try:
+            node = FakeNode(component=FakeComponent(rect=FakeRect(10, 10, 0, 0)))
+            self.assertIsNone(lp.screen_box(node))
+        finally:
+            lp.atspi = original_atspi
 
 
 if __name__ == "__main__":

@@ -123,6 +123,7 @@ impl EditorView {
     /// The confirmed conversion itself — see [`Self::edit_as_plain_text`].
     pub(super) fn perform_edit_as_plain_text(&mut self, cx: &mut Context<Self>) {
         if self.rtf_runs.take().is_some() {
+            self.prevent_editing = false;
             self.path = None;
             self.saved_bytes = None;
             self.text_format = document::TextFormat::default();
@@ -225,6 +226,7 @@ impl EditorView {
                 this.file_busy = false;
                 match loaded {
                     Ok(LoadedFile::Plain(document)) => {
+                        this.prevent_editing = false;
                         this.install_document_text(
                             document.text,
                             document.longest_line,
@@ -241,6 +243,7 @@ impl EditorView {
                         this.record_current_document(cx);
                     }
                     Ok(LoadedFile::RichText { text, runs }) => {
+                        this.prevent_editing = false;
                         this.long_lines = None;
                         this.input
                             .update(cx, |state, cx| state.set_value(text, window, cx));

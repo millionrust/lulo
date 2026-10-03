@@ -1,0 +1,4851 @@
+{
+  "format": 1,
+  "results": [
+    {
+      "scenario": "calculator/backspace-key",
+      "title": "Backspace removes the last digit of the current entry",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/backspace-key",
+        "observations": {
+          "one_digit_removed": {
+            "display": {
+              "value": "12"
+            }
+          },
+          "back_to_zero": {
+            "display": {
+              "value": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/chained-percent-then-operator",
+      "title": "A percent result can feed straight into another operation",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/chained-percent-then-operator",
+        "observations": {
+          "result": {
+            "display": {
+              "value": "10.5"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/clear-during-entry",
+      "title": "C during a pending operation clears only the current entry, not the pending operator",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/clear-during-entry",
+        "observations": {
+          "entry_cleared": {
+            "display": {
+              "value": "12+"
+            }
+          },
+          "continued": {
+            "display": {
+              "value": "17"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/copy-paste",
+      "title": "⌘C copies the displayed number; ⌘V after clearing pastes it back",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/copy-paste",
+        "observations": {
+          "cleared": {
+            "display": {
+              "value": "0"
+            }
+          },
+          "pasted": {
+            "display": {
+              "value": "42"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/decimal-double-dot",
+      "title": "A second decimal point in the same number is ignored",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/decimal-double-dot",
+        "observations": {
+          "display_value": {
+            "display": {
+              "value": "3.1415"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/decimal-places",
+      "title": "Calculator: Decimal Places rounds the display without changing the result",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/decimal-places",
+        "observations": {
+          "default": {
+            "display": {
+              "value": "0.33333333"
+            }
+          },
+          "two_places": {
+            "display": {
+              "value": "0.33"
+            }
+          },
+          "fifteen_places": {
+            "display": {
+              "value": "0.333333333333333"
+            }
+          },
+          "full_value_retained": {
+            "display": {
+              "value": "1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/divide-by-zero",
+      "title": "Dividing by zero shows the real macOS Calculator error state",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/divide-by-zero",
+        "observations": {
+          "error_state": {
+            "display": {
+              "value": "Undefined"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/equals-with-no-operator",
+      "title": "= with no operator entered leaves the display showing the number typed",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/equals-with-no-operator",
+        "observations": {
+          "unchanged": {
+            "display": {
+              "value": "5"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/history-shortcut",
+      "title": "Calculator: History shortcut opens and closes the calculation tape",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/history-shortcut",
+        "observations": {
+          "history_open": {
+            "menu": {
+              "present": true,
+              "items": [
+                "2+3 = 5"
+              ]
+            }
+          },
+          "history_closed": {
+            "menu": {
+              "present": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/keypad",
+      "title": "Calculator: typed keys update the display; Escape clears",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/keypad",
+        "observations": {
+          "sum": {
+            "display": {
+              "value": "19"
+            }
+          },
+          "product": {
+            "display": {
+              "value": "57"
+            }
+          },
+          "repeated_equals": {
+            "display": {
+              "value": "171"
+            }
+          },
+          "cleared": {
+            "display": {
+              "value": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/mode-switch",
+      "title": "Calculator: Basic to Scientific to Basic keeps the window fitted to the keypad",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/mode-switch",
+        "observations": {
+          "basic_initial": {
+            "window_size": {
+              "width": 230,
+              "height": 408
+            },
+            "display": {
+              "value": "0"
+            }
+          },
+          "scientific": {
+            "window_size": {
+              "width": 674,
+              "height": 408
+            },
+            "display": {
+              "value": "0"
+            }
+          },
+          "basic_return": {
+            "window_size": {
+              "width": 230,
+              "height": 408
+            },
+            "display": {
+              "value": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/negative-number-entry",
+      "title": "Typing a leading minus before any digit is entered",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/negative-number-entry",
+        "observations": {
+          "result": {
+            "display": {
+              "value": "-2"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/operator-replace",
+      "title": "Pressing a second operator before entering the next number replaces the pending operator",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/operator-replace",
+        "observations": {
+          "result": {
+            "display": {
+              "value": "15"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/parallel-basic-scientific",
+      "title": "Basic sum remains visible before switching to Scientific and back",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/parallel-basic-scientific",
+        "observations": {
+          "sum": {
+            "display": {
+              "value": "5"
+            },
+            "window_size": {
+              "width": 230,
+              "height": 408
+            }
+          },
+          "scientific": {
+            "display": {
+              "value": "5"
+            },
+            "window_size": {
+              "width": 674,
+              "height": 408
+            }
+          },
+          "basic": {
+            "display": {
+              "value": "5"
+            },
+            "window_size": {
+              "width": 230,
+              "height": 408
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/percent-chain",
+      "title": "% computes relative to the other operand, then = finishes the calculation",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/percent-chain",
+        "observations": {
+          "percent_applied": {
+            "display": {
+              "value": "200-10%"
+            }
+          },
+          "result": {
+            "display": {
+              "value": "180"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/plus-minus-after-result",
+      "title": "± on a computed result negates the result",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/plus-minus-after-result",
+        "observations": {
+          "result": {
+            "display": {
+              "value": "6"
+            }
+          },
+          "negated": {
+            "display": {
+              "value": "(-6)"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/plus-minus",
+      "title": "± negates the number being entered",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/plus-minus",
+        "observations": {
+          "negated": {
+            "display": {
+              "value": "(-5)"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/scientific",
+      "title": "Calculator: Scientific mode computes 2 x² = with the real formula-first display",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/scientific",
+        "observations": {
+          "squared_pending": {
+            "display": {
+              "value": "22"
+            }
+          },
+          "squared_result": {
+            "display": {
+              "value": "4"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/second-key-function",
+      "title": "2nd swaps eˣ for yˣ, changing what the key below it computes",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/second-key-function",
+        "observations": {
+          "e_to_the_2": {
+            "display": {
+              "value": "7.3890561"
+            }
+          },
+          "two_to_the_3": {
+            "display": {
+              "value": "9"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "clock/recent-timer",
+      "title": "Clock: Start Recent Timer starts another countdown with the saved duration",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "clock/recent-timer",
+        "observations": {
+          "first_timer": {
+            "clock_timers": {
+              "running_count": 1,
+              "recent_durations": [
+                900000
+              ]
+            }
+          },
+          "recent_timer_started": {
+            "clock_timers": {
+              "running_count": 2,
+              "recent_durations": [
+                900000
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "clock/stopwatch-views",
+      "title": "Clock: digital and analogue stopwatch views select and persist",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "clock/stopwatch-views",
+        "observations": {
+          "digital_default": {
+            "clock_stopwatch": {
+              "analogue": false,
+              "face_visible": false
+            }
+          },
+          "analogue": {
+            "clock_stopwatch": {
+              "analogue": true,
+              "face_visible": true
+            }
+          },
+          "digital_again": {
+            "clock_stopwatch": {
+              "analogue": false,
+              "face_visible": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "clock/toolbar-tabs",
+      "title": "Clock: menu shortcuts select the matching toolbar tabs",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "clock/toolbar-tabs",
+        "observations": {
+          "world": {
+            "tabs": {
+              "count": 4,
+              "titles": [
+                "World Clock",
+                "Alarms",
+                "Stopwatch",
+                "Timers"
+              ],
+              "selected": [
+                "World Clock"
+              ]
+            }
+          },
+          "stopwatch": {
+            "tabs": {
+              "count": 4,
+              "titles": [
+                "World Clock",
+                "Alarms",
+                "Stopwatch",
+                "Timers"
+              ],
+              "selected": [
+                "Stopwatch"
+              ]
+            }
+          },
+          "timers": {
+            "tabs": {
+              "count": 4,
+              "titles": [
+                "World Clock",
+                "Alarms",
+                "Stopwatch",
+                "Timers"
+              ],
+              "selected": [
+                "Timers"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "desktop/new-folder-named",
+      "title": "New Folder (⇧⌘N) on the desktop, typed name and Return, names and keeps it selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "desktop/new-folder-named",
+        "observations": {
+          "named": {
+            "focus": {
+              "role": "group",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": "desktop"
+            },
+            "files": {
+              "entries": [
+                "Scratch/"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "desktop/new-folder-undo",
+      "title": "Undo (⌘Z) after New Folder on the desktop removes the folder it created",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "desktop/new-folder-undo",
+        "observations": {
+          "undone": {
+            "files": {
+              "entries": [],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "desktop/new-folder",
+      "title": "New Folder (⇧⌘N) on the desktop starts renaming it with the whole name selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "desktop/new-folder",
+        "observations": {
+          "created": {
+            "focus": {
+              "role": "text-field",
+              "value": "untitled folder",
+              "selection": [
+                0,
+                15
+              ],
+              "selected_text": "untitled folder",
+              "selected_all": true,
+              "label": "Rename untitled folder"
+            },
+            "files": {
+              "entries": [
+                "untitled folder/"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/close-all",
+      "title": "Option-Command-W closes every Finder window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/close-all",
+        "observations": {
+          "before": {
+            "windows": {
+              "count": 2,
+              "fullscreen": false
+            }
+          },
+          "closed": {
+            "windows": {
+              "count": 0,
+              "fullscreen": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/close-window-cmd-w",
+      "title": "⌘W closes the front Finder window; Finder keeps running",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/close-window-cmd-w",
+        "observations": {
+          "two_windows": {
+            "windows": {
+              "count": 2,
+              "fullscreen": false
+            }
+          },
+          "one_window": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/column-view-arrows",
+      "title": "Column view (⌘3): → drills into a folder's column and ← goes back up",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/column-view-arrows",
+        "observations": {
+          "drilled": {
+            "selection": {
+              "items": [
+                "notes.txt"
+              ]
+            }
+          },
+          "back": {
+            "selection": {
+              "items": [
+                "Projects"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/context-menu",
+      "title": "Right-clicking a file shows Finder's item menu",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/context-menu",
+        "observations": {
+          "menu": {
+            "menu": {
+              "present": true,
+              "items": [
+                "Open",
+                "Open With",
+                "Always Open With",
+                "-",
+                "Move to Bin",
+                "-",
+                "Get Info",
+                "Rename",
+                "Compress “report.txt”",
+                "Duplicate",
+                "Make Alias",
+                "Quick Look",
+                "Slideshow “report.txt”",
+                "-",
+                "Copy",
+                "Copy “report.txt” as Pathname",
+                "Share…",
+                "-",
+                "label",
+                "-",
+                "Quick Actions"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/copy-paste-into-subfolder",
+      "title": "A copied file pastes into a different folder, leaving the original where it was",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/copy-paste-into-subfolder",
+        "observations": {
+          "pasted": {
+            "files": {
+              "entries": [
+                "Projects/",
+                "Projects/report.txt",
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/copy-paste-multi-select",
+      "title": "Copying two selected files and pasting adds both copies",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/copy-paste-multi-select",
+        "observations": {
+          "pasted": {
+            "files": {
+              "entries": [
+                "a copy.txt",
+                "a.txt",
+                "b copy.txt",
+                "b.txt"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/copy-paste-same-folder",
+      "title": "Copy (⌘C) then Paste (⌘V) in the same folder makes a copy named “name copy.ext”",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/copy-paste-same-folder",
+        "observations": {
+          "pasted": {
+            "files": {
+              "entries": [
+                "report copy.txt",
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "report copy.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/deselect-all",
+      "title": "Option-Command-A clears the Finder selection",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/deselect-all",
+        "observations": {
+          "selected": {
+            "selection": {
+              "items": [
+                "a.txt",
+                "b.txt"
+              ]
+            }
+          },
+          "cleared": {
+            "selection": {
+              "items": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/double-click-opens-folder",
+      "title": "Double-clicking a folder opens it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/double-click-opens-folder",
+        "observations": {
+          "opened": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            },
+            "selection": {
+              "items": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/duplicate-multi-select",
+      "title": "Duplicate (⌘D) on several selected files duplicates all of them",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/duplicate-multi-select",
+        "observations": {
+          "duplicated": {
+            "files": {
+              "entries": [
+                "a copy.txt",
+                "a.txt",
+                "b copy.txt",
+                "b.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "a copy.txt",
+                "b copy.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/duplicate-name-conflict",
+      "title": "Duplicating a file twice numbers the second copy “name copy 2”",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/duplicate-name-conflict",
+        "observations": {
+          "duplicated_twice": {
+            "files": {
+              "entries": [
+                "report copy 2.txt",
+                "report copy.txt",
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "report copy 2.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/duplicate",
+      "title": "Duplicate (⌘D) makes “name copy.ext” next to the file and selects it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/duplicate",
+        "observations": {
+          "duplicated": {
+            "files": {
+              "entries": [
+                "report copy.txt",
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "report copy.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/enclosing-new-window",
+      "title": "Control-Command-Up opens the enclosing folder in another window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/enclosing-new-window",
+        "observations": {
+          "opened": {
+            "windows": {
+              "count": 2,
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/find-by-name",
+      "title": "Control-Shift-Command-F opens filename search",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/find-by-name",
+        "observations": {
+          "focused": {
+            "focus": {
+              "role": "text-field",
+              "label": "Search by Name"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/fullscreen",
+      "title": "Finder F toggles full screen while the file list has focus",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/fullscreen",
+        "observations": {
+          "fullscreen": {
+            "windows": {
+              "count": 1,
+              "front": "sandbox",
+              "titles": [
+                "sandbox"
+              ],
+              "fullscreen": true
+            }
+          },
+          "windowed": {
+            "windows": {
+              "count": 1,
+              "front": "sandbox",
+              "titles": [
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          },
+          "typing": {
+            "windows": {
+              "count": 1,
+              "front": "sandbox",
+              "titles": [
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/gallery-view-arrows",
+      "title": "Gallery view (⌘4): arrow keys move the selection and it survives the view switch",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/gallery-view-arrows",
+        "observations": {
+          "switched": {
+            "selection": {
+              "items": [
+                "a.txt"
+              ]
+            }
+          },
+          "moved": {
+            "selection": {
+              "items": [
+                "a.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/get-info-background",
+      "title": "Get Info from empty folder background names the current folder",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/get-info-background",
+        "observations": {
+          "menu": {
+            "menu": {
+              "present": true,
+              "items": [
+                "New Folder",
+                "-",
+                "Get Info",
+                "-",
+                "View",
+                "Use Groups",
+                "Sort By",
+                "Show View Options",
+                "-",
+                "Import from iPhone"
+              ]
+            }
+          },
+          "info": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 2,
+              "front": "sandbox Info",
+              "titles": [
+                "sandbox Info",
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/get-info-folder",
+      "title": "Get Info (⌘I) on a folder opens an Info window naming the folder",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/get-info-folder",
+        "observations": {
+          "info": {
+            "windows": {
+              "count": 2,
+              "front": "Projects Info",
+              "titles": [
+                "Projects Info",
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/get-info-multi-select",
+      "title": "Get Info (⌘I) on several selected files opens an Info window for each item",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/get-info-multi-select",
+        "observations": {
+          "info": {
+            "windows": {
+              "count": 3,
+              "front": "b.txt Info",
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/get-info",
+      "title": "Get Info (⌘I) opens an “<name> Info” window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/get-info",
+        "observations": {
+          "info": {
+            "windows": {
+              "count": 2,
+              "front": "report.txt Info",
+              "titles": [
+                "report.txt Info",
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/go-shared",
+      "title": "Go to Shared (⇧⌘S) opens the user's shared folder",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/go-shared",
+        "observations": {
+          "shared": {
+            "selection": {
+              "items": [
+                "Shared"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/go-to-folder",
+      "title": "Go to Folder (⇧⌘G) opens a path field with its text selected; Escape closes it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/go-to-folder",
+        "observations": {
+          "open": {
+            "focus": {
+              "role": "text-field",
+              "selected_all": false
+            },
+            "dialog": {
+              "present": true,
+              "title": "Go to Folder",
+              "buttons": [
+                "Close"
+              ]
+            }
+          },
+          "closed": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "sandbox",
+              "titles": [
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/hidden-files-toggle",
+      "title": "⌘⇧. toggles hidden files; a dot file appears then disappears",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/hidden-files-toggle",
+        "observations": {
+          "shown": {
+            "files": {
+              "entries": [
+                "report.txt"
+              ],
+              "trash_entries": []
+            }
+          },
+          "hidden_again": {
+            "files": {
+              "entries": [
+                "report.txt"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/icon-view-arrows",
+      "title": "Arrow keys move the selection through the icon grid",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/icon-view-arrows",
+        "observations": {
+          "down": {
+            "selection": {
+              "items": [
+                "a.txt"
+              ]
+            }
+          },
+          "up": {
+            "selection": {
+              "items": [
+                "a.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/list-arrows",
+      "title": "↓ and ↑ move the selection in list view and stop at the ends",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/list-arrows",
+        "observations": {
+          "down": {
+            "selection": {
+              "items": [
+                "b.txt"
+              ]
+            }
+          },
+          "bottom": {
+            "selection": {
+              "items": [
+                "c.txt"
+              ]
+            }
+          },
+          "up": {
+            "selection": {
+              "items": [
+                "b.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/list-disclosure",
+      "title": "List disclosure expands a folder inline and keyboard arrows move through its children",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/list-disclosure",
+        "observations": {
+          "child": {
+            "selection": {
+              "items": [
+                "plan.txt"
+              ]
+            }
+          },
+          "duplicated_child": {
+            "files": {
+              "entries": [
+                "Projects/",
+                "Projects/plan copy.txt",
+                "Projects/plan.txt",
+                "report.txt"
+              ],
+              "trash_entries": []
+            }
+          },
+          "collapsed": {
+            "selection": {
+              "items": [
+                "report.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/move-to-trash",
+      "title": "Move to Trash (⌘⌫) removes the file without asking, and Undo (⌘Z) puts it back",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/move-to-trash",
+        "observations": {
+          "trashed": {
+            "files": {
+              "entries": [
+                "keep.txt"
+              ],
+              "trash_entries": [
+                "report.txt"
+              ]
+            },
+            "dialog": {
+              "present": false
+            }
+          },
+          "restored": {
+            "files": {
+              "entries": [
+                "keep.txt",
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "report.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/navigate-back-forward",
+      "title": "⌘[ goes back and ⌘] goes forward through Finder navigation history",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/navigate-back-forward",
+        "observations": {
+          "inside": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            }
+          },
+          "back": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            },
+            "selection": {
+              "items": []
+            }
+          },
+          "forward": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-folder-name-conflict",
+      "title": "New Folder (⇧⌘N) when “untitled folder” already exists numbers the new one",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-folder-name-conflict",
+        "observations": {
+          "created": {
+            "focus": {
+              "role": "text-field",
+              "value": "untitled folder 2",
+              "selection": [
+                0,
+                17
+              ],
+              "selected_text": "untitled folder 2",
+              "selected_all": true,
+              "label": "Name"
+            },
+            "files": {
+              "entries": [
+                "untitled folder/",
+                "untitled folder 2/"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-folder-name",
+      "title": "Typing a name over New Folder's selection and pressing Return names the folder and keeps it selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-folder-name",
+        "observations": {
+          "named": {
+            "focus": {
+              "role": "list",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": null
+            },
+            "files": {
+              "entries": [
+                "Plans/",
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "Plans"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-folder-with-selection",
+      "title": "New Folder (⇧⌘N) with a file selected deselects it and selects the new folder instead",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-folder-with-selection",
+        "observations": {
+          "created": {
+            "focus": {
+              "role": "text-field",
+              "value": "untitled folder",
+              "selection": [
+                0,
+                15
+              ],
+              "selected_text": "untitled folder",
+              "selected_all": true,
+              "label": "Name"
+            },
+            "selection": {
+              "items": [
+                "untitled folder"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-folder",
+      "title": "New Folder (⇧⌘N) leaves the new folder's whole name selected for editing",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-folder",
+        "observations": {
+          "created": {
+            "focus": {
+              "role": "text-field",
+              "value": "untitled folder",
+              "selection": [
+                0,
+                15
+              ],
+              "selected_text": "untitled folder",
+              "selected_all": true,
+              "label": "Name"
+            },
+            "files": {
+              "entries": [
+                "report.txt",
+                "untitled folder/"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-tab",
+      "title": "New Tab (⌘T) adds a tab to the same window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-tab",
+        "observations": {
+          "tabbed": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            },
+            "tabs": {
+              "count": 2,
+              "selected": [
+                "sandbox"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-window",
+      "title": "New Window (⌘N) opens a second window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-window",
+        "observations": {
+          "opened": {
+            "windows": {
+              "count": 2,
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/open-enclosing-cmd-up",
+      "title": "Open Enclosing Folder (⌘↑) moves up one level and selects the folder you came from",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/open-enclosing-cmd-up",
+        "observations": {
+          "up": {
+            "selection": {
+              "items": [
+                "Projects"
+              ]
+            },
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/open-folder-new-tab",
+      "title": "Control-Command-O opens the selected folder in a new tab",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/open-folder-new-tab",
+        "observations": {
+          "opened": {
+            "tabs": {
+              "count": 2,
+              "selected": [
+                "Subfolder"
+              ]
+            },
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/open-selected-cmd-down",
+      "title": "Open (⌘↓) opens the selected folder",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/open-selected-cmd-down",
+        "observations": {
+          "opened": {
+            "selection": {
+              "items": []
+            },
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/paste-into-different-folder-keeps-original",
+      "title": "Pasting a copy into a different folder leaves the original file in the source folder",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/paste-into-different-folder-keeps-original",
+        "observations": {
+          "original_still_there": {
+            "files": {
+              "entries": [
+                "Projects/",
+                "Projects/report.txt",
+                "report.txt"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/paste-twice-numbering",
+      "title": "Pasting the same copied file twice makes “name copy” then “name copy 2”",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/paste-twice-numbering",
+        "observations": {
+          "pasted_twice": {
+            "files": {
+              "entries": [
+                "report copy 2.txt",
+                "report copy.txt",
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "report copy 2.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/quick-look-multi",
+      "title": "Space opens Quick Look on several selected files",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/quick-look-multi",
+        "observations": {
+          "previewing": {
+            "windows": {
+              "count": 2,
+              "front": "Quick Look",
+              "titles": [
+                "Quick Look",
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          },
+          "closed": {
+            "windows": {
+              "count": 1,
+              "front": "sandbox",
+              "titles": [
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/quick-look",
+      "title": "Space opens Quick Look on the selected file and Space closes it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/quick-look",
+        "observations": {
+          "previewing": {
+            "windows": {
+              "count": 2,
+              "front": "Quick Look",
+              "titles": [
+                "Quick Look",
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          },
+          "closed": {
+            "windows": {
+              "count": 1,
+              "front": "sandbox",
+              "titles": [
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/rename-escape",
+      "title": "Escape during a rename keeps the old name",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/rename-escape",
+        "observations": {
+          "cancelled": {
+            "files": {
+              "entries": [
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "report.txt"
+              ]
+            },
+            "focus": {
+              "role": "list",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/rename-file",
+      "title": "Return renames a file with only the name before the extension selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/rename-file",
+        "observations": {
+          "editing": {
+            "focus": {
+              "role": "text-field",
+              "value": "report.txt",
+              "selection": [
+                0,
+                6
+              ],
+              "selected_text": "report",
+              "selected_all": false,
+              "label": "Name"
+            }
+          },
+          "renamed": {
+            "files": {
+              "entries": [
+                "notes.txt",
+                "other.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "notes.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/rename-folder",
+      "title": "Return renames a folder with its whole name selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/rename-folder",
+        "observations": {
+          "editing": {
+            "focus": {
+              "role": "text-field",
+              "value": "Projects",
+              "selection": [
+                0,
+                8
+              ],
+              "selected_text": "Projects",
+              "selected_all": true,
+              "label": "Name"
+            }
+          },
+          "renamed": {
+            "files": {
+              "entries": [
+                "Plans/",
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "Plans"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/rename-icon-view",
+      "title": "Return renames a file in icon view with only the name before the extension selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/rename-icon-view",
+        "observations": {
+          "editing": {
+            "focus": {
+              "role": "text-field",
+              "value": "report.txt",
+              "selection": [
+                0,
+                6
+              ],
+              "selected_text": "report",
+              "selected_all": false,
+              "label": "Name"
+            }
+          },
+          "renamed": {
+            "files": {
+              "entries": [
+                "notes.txt",
+                "other.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "notes.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/rename-name-conflict",
+      "title": "Renaming a file to a name already used in the folder shows an alert",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/rename-name-conflict",
+        "observations": {
+          "alert": {
+            "dialog": {
+              "present": true,
+              "title": "The name “notes” with extension “.txt” is already taken. Please choose a different name.",
+              "texts": [],
+              "buttons": [
+                "OK"
+              ],
+              "default": "OK"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/rename-tab-next",
+      "title": "Tab while renaming commits the current name and starts renaming the next item",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/rename-tab-next",
+        "observations": {
+          "next_editing": {
+            "focus": {
+              "role": "list",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": null
+            },
+            "files": {
+              "entries": [
+                "b.txt",
+                "first.txt"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/search-cmd-f",
+      "title": "⌘F opens a search field in the toolbar; typing filters the window to matches",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/search-cmd-f",
+        "observations": {
+          "opened": {
+            "focus": {
+              "role": "text-field"
+            }
+          },
+          "typed": {
+            "focus": {
+              "role": "text-field",
+              "value": "banana",
+              "selection": [
+                6,
+                6
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Search"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/select-all-empty-folder",
+      "title": "Select All (⌘A) in an empty folder selects nothing",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/select-all-empty-folder",
+        "observations": {
+          "none_selected": {
+            "selection": {
+              "items": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/select-all-then-trash-then-undo",
+      "title": "Select All (⌘A), Move to Trash (⌘⌫) removes every item, Undo (⌘Z) restores them all",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/select-all-then-trash-then-undo",
+        "observations": {
+          "trashed": {
+            "files": {
+              "entries": [],
+              "trash_entries": [
+                "a.txt",
+                "b.txt",
+                "c.txt"
+              ]
+            }
+          },
+          "restored": {
+            "files": {
+              "entries": [
+                "a.txt",
+                "b.txt",
+                "c.txt"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/select-all",
+      "title": "Select All (⌘A) selects every item in the folder",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/select-all",
+        "observations": {
+          "all": {
+            "selection": {
+              "items": [
+                "a.txt",
+                "b.txt",
+                "Folder"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/select-cmd-click-toggle",
+      "title": "Command-click toggles one item into (and back out of) the current selection",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/select-cmd-click-toggle",
+        "observations": {
+          "added": {
+            "selection": {
+              "items": [
+                "a.txt",
+                "c.txt"
+              ]
+            }
+          },
+          "removed": {
+            "selection": {
+              "items": [
+                "a.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/select-shift-click-range",
+      "title": "Shift-click extends the selection from the last-clicked item to the one you shift-click",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/select-shift-click-range",
+        "observations": {
+          "range_selected": {
+            "selection": {
+              "items": [
+                "a.txt",
+                "b.txt",
+                "c.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/shift-arrow-extends-selection-list",
+      "title": "Shift+↓ in list view extends the selection downward one row at a time",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/shift-arrow-extends-selection-list",
+        "observations": {
+          "extended": {
+            "selection": {
+              "items": [
+                "a.txt",
+                "b.txt",
+                "c.txt"
+              ]
+            }
+          },
+          "collapsed": {
+            "selection": {
+              "items": [
+                "d.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/shift-click-shrinks-range",
+      "title": "Shift-clicking back inside an already-extended range shrinks the selection to it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/shift-click-shrinks-range",
+        "observations": {
+          "full_range": {
+            "selection": {
+              "items": [
+                "a.txt",
+                "b.txt",
+                "c.txt",
+                "d.txt"
+              ]
+            }
+          },
+          "shrunk_range": {
+            "selection": {
+              "items": [
+                "a.txt",
+                "b.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/sidebar-favourites",
+      "title": "Add to Sidebar keeps the selected folder in place",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/sidebar-favourites",
+        "observations": {
+          "added": {
+            "files": {
+              "entries": [
+                "Pinned One/",
+                "Pinned Two/"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/slideshow",
+      "title": "Option-Command-Y opens the selected file as a full-screen Quick Look slideshow",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/slideshow",
+        "observations": {
+          "slideshow": {
+            "windows": {
+              "count": 2,
+              "front": "Quick Look",
+              "titles": [
+                "Quick Look",
+                "sandbox"
+              ],
+              "fullscreen": true
+            }
+          },
+          "closed": {
+            "windows": {
+              "count": 1,
+              "front": "sandbox",
+              "titles": [
+                "sandbox"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/switch-tabs",
+      "title": "⌘⇧] and ⌘⇧[ switch between tabs in the same window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/switch-tabs",
+        "observations": {
+          "first_tab": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            }
+          },
+          "second_tab": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/tab-bar-toggle",
+      "title": "Show Tab Bar (⇧⌘T) reveals the single tab and toggles it off",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/tab-bar-toggle",
+        "observations": {
+          "hidden": {
+            "tabs": {
+              "count": 1,
+              "selected": []
+            }
+          },
+          "shown": {
+            "tabs": {
+              "count": 1,
+              "selected": [
+                "sandbox"
+              ]
+            }
+          },
+          "hidden_again": {
+            "tabs": {
+              "count": 1,
+              "selected": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/tab-close-cmd-w",
+      "title": "⌘W with two tabs closes only the front tab; the window stays open",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/tab-close-cmd-w",
+        "observations": {
+          "two_tabs": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            },
+            "tabs": {
+              "count": 2,
+              "selected": [
+                "sandbox"
+              ]
+            }
+          },
+          "one_tab": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            },
+            "tabs": {
+              "count": 1,
+              "selected": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/tab-cycles-focus-elements",
+      "title": "Tab moves keyboard focus between the sidebar, the item list and the toolbar",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/tab-cycles-focus-elements",
+        "observations": {
+          "list_focused": {
+            "focus": {
+              "role": "list",
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null
+            }
+          },
+          "next_focus": {
+            "focus": {
+              "role": "button",
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/toolbar-toggle",
+      "title": "⌥⌘T hides Finder's toolbar and restores it on the next press",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/toolbar-toggle",
+        "observations": {
+          "initial": {
+            "toolbar": {
+              "navigation": true
+            }
+          },
+          "hidden": {
+            "toolbar": {
+              "navigation": false
+            }
+          },
+          "restored": {
+            "toolbar": {
+              "navigation": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/trash-multi-select",
+      "title": "Move to Trash (⌘⌫) on several selected files removes all of them at once",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/trash-multi-select",
+        "observations": {
+          "trashed": {
+            "files": {
+              "entries": [
+                "keep.txt"
+              ],
+              "trash_entries": [
+                "a.txt",
+                "b.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/type-to-select-repeat",
+      "title": "Typing the same letter again cycles the selection through names that start with it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/type-to-select-repeat",
+        "observations": {
+          "first": {
+            "selection": {
+              "items": [
+                "apple.txt"
+              ]
+            }
+          },
+          "second": {
+            "selection": {
+              "items": [
+                "apple.txt"
+              ]
+            }
+          },
+          "third": {
+            "selection": {
+              "items": [
+                "apple.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/type-to-select",
+      "title": "Typing a name jumps the selection to the first matching item",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/type-to-select",
+        "observations": {
+          "jumped": {
+            "selection": {
+              "items": [
+                "cherry.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/undo-duplicate",
+      "title": "Undo (⌘Z) after Duplicate (⌘D) removes the duplicate",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/undo-duplicate",
+        "observations": {
+          "undone": {
+            "files": {
+              "entries": [
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/undo-new-folder",
+      "title": "Undo (⌘Z) after New Folder (⇧⌘N) removes the folder it created",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/undo-new-folder",
+        "observations": {
+          "undone": {
+            "files": {
+              "entries": [
+                "report.txt"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/undo-paste",
+      "title": "Undo (⌘Z) after Paste (⌘V) removes the pasted copy",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/undo-paste",
+        "observations": {
+          "undone": {
+            "files": {
+              "entries": [
+                "report.txt"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/undo-rename",
+      "title": "Undo (⌘Z) after a rename restores the old name",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/undo-rename",
+        "observations": {
+          "undone": {
+            "files": {
+              "entries": [
+                "report.txt"
+              ],
+              "trash_entries": []
+            },
+            "selection": {
+              "items": [
+                "report.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/view-options",
+      "title": "Show View Options (⌘J) opens folder options without blocking the folder",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/view-options",
+        "observations": {
+          "icon_options": {
+            "windows": {
+              "count": 2,
+              "fullscreen": false
+            },
+            "dialog": {
+              "present": false
+            }
+          },
+          "selection_while_open": {
+            "selection": {
+              "items": [
+                "example.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "notes/find-replace",
+      "title": "Notes: Find and Replace edits the selected note",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "notes/find-replace",
+        "observations": {
+          "new_note_title": {
+            "focus": {
+              "role": "text-field",
+              "value": "Parity note",
+              "selection": [
+                11,
+                11
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Title"
+            }
+          },
+          "note_body": {
+            "focus": {
+              "role": "text-field",
+              "value": "alpha beta alpha",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Body"
+            }
+          },
+          "find_query": {
+            "focus": {
+              "role": "text-field",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": null
+            }
+          },
+          "replacement": {
+            "focus": {
+              "role": "text-field",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": null
+            }
+          },
+          "replaced_body": {
+            "note_body": {
+              "value": "gamma beta alpha"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "notes/fullscreen-shortcut",
+      "title": "Notes: F toggles full screen without capturing text input",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "notes/fullscreen-shortcut",
+        "observations": {
+          "fullscreen": {
+            "windows": {
+              "count": 1,
+              "front": "Notes",
+              "titles": [
+                "Notes"
+              ],
+              "fullscreen": true
+            }
+          },
+          "windowed": {
+            "windows": {
+              "count": 1,
+              "front": "Notes",
+              "titles": [
+                "Notes"
+              ],
+              "fullscreen": false
+            }
+          },
+          "typing": {
+            "windows": {
+              "count": 1,
+              "front": "Notes",
+              "titles": [
+                "Notes"
+              ],
+              "fullscreen": false
+            },
+            "focus": {
+              "role": "text-field",
+              "value": "f",
+              "selection": [
+                1,
+                1
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Title"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "notes/light-background",
+      "title": "Notes: light note background toggles while the library stays open",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "notes/light-background",
+        "observations": {
+          "default": {
+            "note_background": {
+              "light": false
+            }
+          },
+          "light": {
+            "note_background": {
+              "light": true
+            }
+          },
+          "restored": {
+            "note_background": {
+              "light": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "notes/recent-navigation",
+      "title": "Notes: Recent Notes shortcuts revisit the selected notes",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "notes/recent-navigation",
+        "observations": {
+          "second_note": {
+            "focus": {
+              "role": "text-field",
+              "value": "Second recent note",
+              "selection": [
+                18,
+                18
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Title"
+            }
+          },
+          "previous_note": {
+            "focus": {
+              "role": "text-field",
+              "value": "First recent note",
+              "selection": [
+                17,
+                17
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Title"
+            }
+          },
+          "next_note": {
+            "focus": {
+              "role": "text-field",
+              "value": "Second recent note",
+              "selection": [
+                18,
+                18
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Title"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/close-documents",
+      "title": "Preview: Close Selected and Close All preserve the running app",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/close-documents",
+        "observations": {
+          "both_open": {
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf",
+              "titles": [
+                "guide.pdf"
+              ],
+              "fullscreen": false
+            }
+          },
+          "selected_closed": {
+            "windows": {
+              "count": 1,
+              "front": "second.pdf – 1 page",
+              "titles": [
+                "second.pdf – 1 page"
+              ],
+              "fullscreen": false
+            },
+            "files": {
+              "entries": [
+                "guide.pdf",
+                "second.pdf"
+              ],
+              "trash_entries": []
+            }
+          },
+          "all_closed": {
+            "windows": {
+              "count": 0,
+              "front": null,
+              "titles": [],
+              "fullscreen": null
+            },
+            "files": {
+              "entries": [
+                "guide.pdf",
+                "second.pdf"
+              ],
+              "trash_entries": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/close-window",
+      "title": "⌘W closes the document window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/close-window",
+        "observations": {
+          "open": {
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "fullscreen": false
+            }
+          },
+          "closed": {
+            "windows": {
+              "count": 0,
+              "front": null,
+              "fullscreen": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/find-close",
+      "title": "Escape closes Preview's Find field and returns focus to the document",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/find-close",
+        "observations": {
+          "find_open": {
+            "focus": {
+              "role": "text-field",
+              "label": "Find"
+            }
+          },
+          "find_closed": {
+            "focus": {
+              "role": "text-field",
+              "value": "",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Find"
+            },
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/find-pdf",
+      "title": "Preview: ⌘F focuses the Find field in an open PDF",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/find-pdf",
+        "observations": {
+          "find": {
+            "focus": {
+              "role": "text-field",
+              "value": "",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Find"
+            },
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "titles": [
+                "guide.pdf – 1 page"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/fullscreen",
+      "title": "Preview: F enters and exits document full screen",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/fullscreen",
+        "observations": {
+          "fullscreen": {
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "titles": [
+                "guide.pdf – 1 page"
+              ],
+              "fullscreen": true
+            }
+          },
+          "windowed": {
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "titles": [
+                "guide.pdf – 1 page"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/markup-toggle",
+      "title": "Show Markup Toolbar (⇧⌘A) keeps the PDF window open",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/markup-toggle",
+        "observations": {
+          "markup_open": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "fullscreen": false
+            }
+          },
+          "markup_closed": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/move-to-bin",
+      "title": "Preview: ⌘⌫ moves the open document to Bin",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/move-to-bin",
+        "observations": {
+          "trashed": {
+            "windows": {
+              "count": 0,
+              "front": null,
+              "titles": [],
+              "fullscreen": null
+            },
+            "files": {
+              "entries": [],
+              "trash_entries": [
+                "guide.pdf"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/new-from-clipboard",
+      "title": "Preview: New from Clipboard opens copied image in a new window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/new-from-clipboard",
+        "observations": {
+          "new_image": {
+            "windows": {
+              "count": 2,
+              "front": "guide.pdf – 1 page",
+              "titles": [
+                "guide.pdf – 1 page",
+                "Untitled.png"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/quit-keep-windows",
+      "title": "Preview: Quit and Keep Windows restores the document on next launch",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/quit-keep-windows",
+        "observations": {
+          "restored": {
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "titles": [
+                "guide.pdf – 1 page"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/rectangle-menu",
+      "title": "Preview: Rectangle shortcut creates a saved annotation; Delete removes it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/rectangle-menu",
+        "observations": {
+          "rectangle_saved": {
+            "pdf_annotations": {
+              "rectangles": 1
+            }
+          },
+          "rectangle_deleted": {
+            "pdf_annotations": {
+              "rectangles": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/select-all-no-crash",
+      "title": "⌘A in a document window does not raise an error dialog",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/select-all-no-crash",
+        "observations": {
+          "no_dialog": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/selection-find",
+      "title": "Preview: ⌘E uses selected PDF text for Find",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/selection-find",
+        "observations": {
+          "find_selection": {
+            "focus": {
+              "role": "text-field",
+              "value": "Preview search term",
+              "selection": [
+                19,
+                19
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Find"
+            },
+            "windows": {
+              "count": 1,
+              "front": "selection.pdf – 1 page",
+              "titles": [
+                "selection.pdf – 1 page"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/toolbar-toggle",
+      "title": "Preview: Show Toolbar shortcut hides and restores the controls",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/toolbar-toggle",
+        "observations": {
+          "hidden": {
+            "toolbar": {
+              "markup_button": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "titles": [
+                "guide.pdf – 1 page"
+              ],
+              "fullscreen": false
+            }
+          },
+          "restored": {
+            "toolbar": {
+              "markup_button": true
+            },
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "titles": [
+                "guide.pdf – 1 page"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/arrange-in-front",
+      "title": "Window Arrange in Front activates the Settings window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/arrange-in-front",
+        "observations": {
+          "front": {
+            "windows": {
+              "count": 1,
+              "front": "General",
+              "titles": [
+                "General"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/back-after-opening-pane",
+      "title": "⌘[ goes back to the previous Settings view after opening a pane from search",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/back-after-opening-pane",
+        "observations": {
+          "pane_open": {
+            "windows": {
+              "count": 1,
+              "front": "Wallpaper",
+              "titles": [
+                "Wallpaper"
+              ],
+              "fullscreen": false
+            }
+          },
+          "back": {
+            "windows": {
+              "count": 1,
+              "front": "General",
+              "titles": [
+                "General"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/escape-clears-search",
+      "title": "Escape clears the Settings search field back to empty",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/escape-clears-search",
+        "observations": {
+          "cleared": {
+            "focus": {
+              "role": "text-field",
+              "value": "",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Search"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/search-arrow-down-selects-first-result",
+      "title": "↓ after a Settings search moves focus onto the first result row",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/search-arrow-down-selects-first-result",
+        "observations": {
+          "focused_result": {
+            "focus": {
+              "role": "list",
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/search-cmd-a-selects-query",
+      "title": "⌘A inside the Settings search field selects the whole typed query",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/search-cmd-a-selects-query",
+        "observations": {
+          "selected": {
+            "focus": {
+              "role": "text-field",
+              "selection": [
+                0,
+                9
+              ],
+              "selected_all": true,
+              "label": "Search"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/search-then-new-search",
+      "title": "A second Settings search replaces the first search's results",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/search-then-new-search",
+        "observations": {
+          "first_query": {
+            "focus": {
+              "role": "text-field",
+              "value": "network",
+              "selection": [
+                7,
+                7
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Search"
+            }
+          },
+          "second_query": {
+            "focus": {
+              "role": "text-field",
+              "value": "displays",
+              "selection": [
+                8,
+                8
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Search"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/search",
+      "title": "Settings search: ⌘F focuses search, typing filters, ↓ then Return opens the first match",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/search",
+        "observations": {
+          "focused": {
+            "focus": {
+              "role": "text-field",
+              "label": "Search"
+            }
+          },
+          "typed": {
+            "focus": {
+              "role": "text-field",
+              "value": "wallpaper",
+              "selection": [
+                9,
+                9
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Search"
+            }
+          },
+          "opened": {
+            "windows": {
+              "count": 1,
+              "front": "Wallpaper",
+              "titles": [
+                "Wallpaper"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/tab-moves-focus",
+      "title": "Tab moves keyboard focus from the search field into the sidebar list",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/tab-moves-focus",
+        "observations": {
+          "initial": {
+            "focus": {
+              "role": "text-field",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false
+            }
+          },
+          "after_tab": {
+            "focus": {
+              "role": "row",
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/window-stays-single",
+      "title": "Settings only ever has one window, even after search and navigation",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/window-stays-single",
+        "observations": {
+          "still_one": {
+            "windows": {
+              "count": 1,
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "system-monitor/find-process",
+      "title": "Find Next selects the matching process",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "system-monitor/find-process",
+        "observations": {
+          "opened": {
+            "windows": {
+              "count": 1,
+              "front": "System Monitor",
+              "titles": [
+                "System Monitor"
+              ],
+              "fullscreen": false
+            }
+          },
+          "query": {
+            "focus": {
+              "role": "text-field",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": null
+            }
+          },
+          "found": {
+            "selection": {
+              "items": [
+                "rmac-system-mon (PID 473006), 94.1% CPU, 190.3 MB"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "system-monitor/full-screen",
+      "title": "View Enter Full Screen toggles the Monitor window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "system-monitor/full-screen",
+        "observations": {
+          "opened": {
+            "windows": {
+              "count": 1,
+              "front": "System Monitor",
+              "titles": [
+                "System Monitor"
+              ],
+              "fullscreen": false
+            }
+          },
+          "full_screen": {
+            "windows": {
+              "count": 1,
+              "front": "System Monitor",
+              "titles": [
+                "System Monitor"
+              ],
+              "fullscreen": true
+            }
+          },
+          "returned": {
+            "windows": {
+              "count": 1,
+              "front": "System Monitor",
+              "titles": [
+                "System Monitor"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "system-monitor/selected-processes",
+      "title": "View Selected Processes keeps only the selected process",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "system-monitor/selected-processes",
+        "observations": {
+          "selected": {
+            "selection": {
+              "items": [
+                "rmac-system-mon (PID 473257), 100.7% CPU, 194.2 MB"
+              ]
+            }
+          },
+          "filtered": {
+            "monitor_rows": {
+              "count": 1
+            },
+            "selection": {
+              "items": [
+                "rmac-system-mon (PID 473257), 110.0% CPU, 219.9 MB"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "system-monitor/use-selection-for-find",
+      "title": "Use Selection for Find searches the selected process name",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "system-monitor/use-selection-for-find",
+        "observations": {
+          "selected": {
+            "selection": {
+              "items": [
+                "rmac-system-mon (PID 473407), 95.2% CPU, 192.4 MB"
+              ]
+            }
+          },
+          "query": {
+            "focus": {
+              "role": "text-field",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": null
+            }
+          },
+          "jumped": {
+            "selection": {
+              "items": [
+                "rmac-system-mon (PID 473407), 77.7% CPU, 219.4 MB"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "terminal/fullscreen-menu",
+      "title": "Terminal View menu toggles full screen while Find has focus",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "terminal/fullscreen-menu",
+        "observations": {
+          "entered": {
+            "windows": {
+              "count": 1,
+              "front": "sandbox — Terminal",
+              "titles": [
+                "sandbox — Terminal"
+              ],
+              "fullscreen": true
+            }
+          },
+          "exited": {
+            "windows": {
+              "count": 1,
+              "front": "sandbox — Terminal",
+              "titles": [
+                "sandbox — Terminal"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "terminal/select-to-mark",
+      "title": "Selecting to a terminal mark highlights retained output",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "terminal/select-to-mark",
+        "observations": {
+          "selected": {
+            "focus": {
+              "role": "terminal",
+              "value": "user@host:~/lulo-behavior/terminal-select-to-mark/sandbox$ printf 'marked output\\n'marked outputuser@host:~/lulo-behavior/terminal-select-to-mark/sandbox$ ",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Terminal"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "terminal/settings-from-find",
+      "title": "Terminal settings shortcut works while Find has focus",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "terminal/settings-from-find",
+        "observations": {
+          "settings": {
+            "settings_controls": {
+              "checked": {
+                "Use bold fonts": true,
+                "Use bright colours for bold text": true,
+                "Display ANSI colours": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "terminal/text-colour-preferences",
+      "title": "Terminal text preferences persist their checked state",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "terminal/text-colour-preferences",
+        "observations": {
+          "default": {
+            "settings_controls": {
+              "checked": {
+                "Use bold fonts": true,
+                "Use bright colours for bold text": true,
+                "Display ANSI colours": true
+              }
+            }
+          },
+          "bold_off": {
+            "settings_controls": {
+              "checked": {
+                "Use bold fonts": false,
+                "Use bright colours for bold text": true,
+                "Display ANSI colours": true
+              }
+            }
+          },
+          "bright_off": {
+            "settings_controls": {
+              "checked": {
+                "Use bold fonts": false,
+                "Use bright colours for bold text": false,
+                "Display ANSI colours": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/close-unsaved-delete",
+      "title": "Delete discards an edited Untitled document and closes its window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/close-unsaved-delete",
+        "observations": {
+          "discarded": {
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ],
+              "fullscreen": false
+            },
+            "saved_documents": {
+              "entries": [],
+              "contents": {}
+            },
+            "dialog": {
+              "present": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/close-unsaved-save",
+      "title": "Return saves the edited Untitled document to Documents and closes its window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/close-unsaved-save",
+        "observations": {
+          "saved": {
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ],
+              "fullscreen": false
+            },
+            "saved_documents": {
+              "entries": [
+                "SheetCheck.txt"
+              ],
+              "contents": {
+                "SheetCheck.txt": "Hello"
+              }
+            },
+            "dialog": {
+              "present": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/close-unsaved",
+      "title": "Closing an edited Untitled document shows the Save sheet; Escape and ⌘. cancel",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/close-unsaved",
+        "observations": {
+          "asked": {
+            "dialog": {
+              "present": true,
+              "title": "Do you want to keep this new document “Untitled”?",
+              "texts": [],
+              "buttons": [
+                "Show More Options",
+                "Delete",
+                "Cancel",
+                "Save"
+              ]
+            }
+          },
+          "cancelled": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ],
+              "fullscreen": false
+            }
+          },
+          "cancelled-period": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/copy-paste-within-document",
+      "title": "⌘C then ⌘V copies the selected text and inserts it again at the caret",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/copy-paste-within-document",
+        "observations": {
+          "pasted": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello Hello ",
+              "selection": [
+                12,
+                12
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/delete-forward-key",
+      "title": "Forward Delete removes the character ahead of the caret",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/delete-forward-key",
+        "observations": {
+          "deleted_forward": {
+            "focus": {
+              "role": "text-field",
+              "value": "ello world",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/delete-selection-backspace",
+      "title": "Backspace with a word selected deletes the whole selection",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/delete-selection-backspace",
+        "observations": {
+          "deleted": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello ",
+              "selection": [
+                6,
+                6
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/find-next-prev",
+      "title": "⌘F finds text; ⌘G repeats forward and ⌘⇧G repeats backward",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/find-next-prev",
+        "observations": {
+          "first_match": {
+            "focus": {
+              "role": "text-field",
+              "value": "hello",
+              "selection": [
+                0,
+                5
+              ],
+              "selected_text": "hello",
+              "selected_all": true,
+              "label": "Find"
+            }
+          },
+          "next_match": {
+            "focus": {
+              "role": "text-field",
+              "value": "hello",
+              "selection": [
+                0,
+                5
+              ],
+              "selected_text": "hello",
+              "selected_all": true,
+              "label": "Find"
+            }
+          },
+          "prev_match": {
+            "focus": {
+              "role": "text-field",
+              "value": "hello",
+              "selection": [
+                0,
+                5
+              ],
+              "selected_text": "hello",
+              "selected_all": true,
+              "label": "Find"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/find",
+      "title": "Find (⌘F) focuses the find field; typing searches",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/find",
+        "observations": {
+          "find": {
+            "focus": {
+              "role": "text-field",
+              "label": "Find"
+            }
+          },
+          "typed": {
+            "focus": {
+              "role": "text-field",
+              "value": "hello",
+              "selection": [
+                5,
+                5
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Find"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/font-bigger-smaller",
+      "title": "⌘+ and ⌘- (Format ▸ Font ▸ Bigger/Smaller) resize the font without changing the text",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/font-bigger-smaller",
+        "observations": {
+          "bigger": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world",
+              "selection": [
+                11,
+                11
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "smaller": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world",
+              "selection": [
+                11,
+                11
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/fullscreen-menu",
+      "title": "Text Editor View menu toggles full screen",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/fullscreen-menu",
+        "observations": {
+          "entered": {
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ],
+              "fullscreen": true
+            }
+          },
+          "exited": {
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/insert-breaks",
+      "title": "Insert menu adds line, paragraph, and page breaks at the caret",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/insert-breaks",
+        "observations": {
+          "line": {
+            "focus": {
+              "role": "text-field",
+              "value": "A ",
+              "selection": [
+                2,
+                2
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "paragraph": {
+            "focus": {
+              "role": "text-field",
+              "value": "A B",
+              "selection": [
+                3,
+                3
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "page": {
+            "focus": {
+              "role": "text-field",
+              "value": "A BC\f",
+              "selection": [
+                5,
+                5
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "inserted": {
+            "focus": {
+              "role": "text-field",
+              "value": "A BC\fD",
+              "selection": [
+                6,
+                6
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "saved": {
+            "saved_documents": {
+              "entries": [
+                "BreakCheck.txt"
+              ],
+              "contents": {
+                "BreakCheck.txt": "A B\nC\fD"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/move-cmd-arrow",
+      "title": "⌘←/→ move the caret to the start or end of the line without selecting",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/move-cmd-arrow",
+        "observations": {
+          "at_start": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "at_end": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world",
+              "selection": [
+                11,
+                11
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/move-cmd-up-down-document",
+      "title": "⌘↑/↓ move the caret to the very start or end of the document",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/move-cmd-up-down-document",
+        "observations": {
+          "doc_start": {
+            "focus": {
+              "role": "text-field",
+              "value": "First lineSecond lineThird line",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "doc_end": {
+            "focus": {
+              "role": "text-field",
+              "value": "First lineSecond lineThird line",
+              "selection": [
+                31,
+                31
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/new-document",
+      "title": "New (⌘N) opens a second Untitled window with the text area focused",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/new-document",
+        "observations": {
+          "new": {
+            "windows": {
+              "count": 2,
+              "front": "Untitled 2",
+              "titles": [
+                "Untitled 2",
+                "Untitled"
+              ],
+              "fullscreen": false
+            },
+            "focus": {
+              "role": "text-field",
+              "value": "",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled 2"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/new-window-independent",
+      "title": "⌘N opens a second Untitled window whose text is independent of the first",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/new-window-independent",
+        "observations": {
+          "second_window": {
+            "windows": {
+              "count": 2,
+              "front": "Untitled 2",
+              "titles": [
+                "Untitled 2",
+                "Untitled"
+              ],
+              "fullscreen": false
+            },
+            "focus": {
+              "role": "text-field",
+              "value": "",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled 2"
+            }
+          },
+          "typed_in_second": {
+            "focus": {
+              "role": "text-field",
+              "value": "Second window",
+              "selection": [
+                13,
+                13
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled 2"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/open-panel-desktop",
+      "title": "Open panel navigates to Desktop with Command-D and cancels",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/open-panel-desktop",
+        "observations": {
+          "open": {
+            "dialog": {
+              "present": true,
+              "title": "Open",
+              "texts": [],
+              "buttons": [
+                "Cancel",
+                "Open"
+              ]
+            }
+          },
+          "desktop": {
+            "dialog": {
+              "present": true,
+              "title": "Open",
+              "texts": [],
+              "buttons": [
+                "Cancel",
+                "Open"
+              ]
+            },
+            "selection": {
+              "items": [
+                "Desktop"
+              ]
+            }
+          },
+          "cancelled": {
+            "dialog": {
+              "present": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/option-delete-word",
+      "title": "⌥⌫ deletes the word before the caret",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/option-delete-word",
+        "observations": {
+          "word_deleted": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello ",
+              "selection": [
+                6,
+                6
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/redo-after-multiple-edits",
+      "title": "Two undos followed by two redos exactly reverse two separate edits",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/redo-after-multiple-edits",
+        "observations": {
+          "both_undone": {
+            "focus": {
+              "role": "text-field",
+              "value": "",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "both_redone": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world",
+              "selection": [
+                11,
+                11
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/save-after-find",
+      "title": "Save after closing Find opens the Untitled document's Save sheet",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/save-after-find",
+        "observations": {
+          "save": {
+            "dialog": {
+              "present": true,
+              "title": "Do you want to keep this new document “Untitled”?",
+              "buttons": [
+                "Show More Options",
+                "Cancel",
+                "Save"
+              ]
+            },
+            "focus": {
+              "role": "text-field",
+              "value": "Untitled",
+              "selection": [
+                0,
+                8
+              ],
+              "selected_text": "Untitled",
+              "selected_all": true,
+              "label": "Save As:"
+            }
+          },
+          "cancelled": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/save-go-to-folder",
+      "title": "Command-Shift-G opens Go to Folder from the Untitled Save sheet",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/save-go-to-folder",
+        "observations": {
+          "goto": {
+            "focus": {
+              "role": "text-field",
+              "label": "Go to Folder"
+            },
+            "dialog": {
+              "present": true,
+              "title": "Do you want to keep this new document “Untitled”?",
+              "texts": [],
+              "buttons": [
+                "Show More Options",
+                "Cancel",
+                "Save"
+              ]
+            }
+          },
+          "cancelled": {
+            "dialog": {
+              "present": false
+            },
+            "saved_documents": {
+              "entries": [],
+              "contents": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/save-untitled",
+      "title": "Save (⌘S) on an Untitled document opens the attached Save sheet with the name selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/save-untitled",
+        "observations": {
+          "panel": {
+            "focus": {
+              "role": "text-field",
+              "value": "Untitled",
+              "selection": [
+                0,
+                8
+              ],
+              "selected_text": "Untitled",
+              "selected_all": true,
+              "label": "Save As:"
+            },
+            "dialog": {
+              "present": true,
+              "title": "Do you want to keep this new document “Untitled”?",
+              "buttons": [
+                "Show More Options",
+                "Cancel",
+                "Save"
+              ]
+            }
+          },
+          "cancelled": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/save-with-find-focus",
+      "title": "Save opens the Untitled Save sheet while Find still has focus",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/save-with-find-focus",
+        "observations": {
+          "save": {
+            "dialog": {
+              "present": true,
+              "title": "Do you want to keep this new document “Untitled”?",
+              "buttons": [
+                "Show More Options",
+                "Cancel",
+                "Save"
+              ]
+            },
+            "focus": {
+              "role": "text-field",
+              "value": "Untitled",
+              "selection": [
+                0,
+                8
+              ],
+              "selected_text": "Untitled",
+              "selected_all": true,
+              "label": "Save As:"
+            }
+          },
+          "cancelled": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/select-all",
+      "title": "⌘A selects the entire document",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/select-all",
+        "observations": {
+          "all_selected": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world",
+              "selection": [
+                0,
+                11
+              ],
+              "selected_text": "Hello world",
+              "selected_all": true,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/select-cmd-shift-arrow",
+      "title": "⌘⇧←/→ selects to the start or end of the line",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/select-cmd-shift-arrow",
+        "observations": {
+          "to_start": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world",
+              "selection": [
+                0,
+                11
+              ],
+              "selected_text": "Hello world",
+              "selected_all": true,
+              "label": "Untitled"
+            }
+          },
+          "to_end": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world",
+              "selection": [
+                11,
+                11
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/select-option-shift-arrow",
+      "title": "⌥⇧←/→ extends the selection a whole word at a time",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/select-option-shift-arrow",
+        "observations": {
+          "one_word": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world today",
+              "selection": [
+                12,
+                17
+              ],
+              "selected_text": "today",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "two_words": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello world today",
+              "selection": [
+                6,
+                17
+              ],
+              "selected_text": "world today",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/select-shift-arrow",
+      "title": "Shift+←/→ extends the text selection one character at a time",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/select-shift-arrow",
+        "observations": {
+          "extended": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello",
+              "selection": [
+                3,
+                5
+              ],
+              "selected_text": "lo",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "shrunk": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello",
+              "selection": [
+                4,
+                5
+              ],
+              "selected_text": "o",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/settings",
+      "title": "⌘, opens one Settings window with document defaults and tabs",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/settings",
+        "observations": {
+          "settings": {
+            "windows": {
+              "count": 2,
+              "front": "Settings",
+              "titles": [
+                "Settings",
+                "Untitled"
+              ],
+              "fullscreen": false
+            }
+          },
+          "open-and-save": {
+            "windows": {
+              "count": 2,
+              "front": "Settings",
+              "titles": [
+                "Settings",
+                "Untitled"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/undo-redo",
+      "title": "Undo (⌘Z) removes typed text; Redo (⌘⇧Z) brings it back",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/undo-redo",
+        "observations": {
+          "undone": {
+            "focus": {
+              "role": "text-field",
+              "value": "",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          },
+          "redone": {
+            "focus": {
+              "role": "text-field",
+              "value": "Hello",
+              "selection": [
+                5,
+                5
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "weather/fullscreen-shortcut",
+      "title": "Weather: F enters and exits full screen outside search",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "weather/fullscreen-shortcut",
+        "observations": {
+          "fullscreen": {
+            "windows": {
+              "count": 1,
+              "front": "Weather",
+              "titles": [
+                "Weather"
+              ],
+              "fullscreen": true
+            }
+          },
+          "windowed": {
+            "windows": {
+              "count": 1,
+              "front": "Weather",
+              "titles": [
+                "Weather"
+              ],
+              "fullscreen": false
+            }
+          },
+          "typing": {
+            "windows": {
+              "count": 1,
+              "front": "Weather",
+              "titles": [
+                "Weather"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "weather/settings-shortcut",
+      "title": "Weather: Settings shortcut opens a working temperature preference",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "weather/settings-shortcut",
+        "observations": {
+          "fahrenheit": {
+            "weather_settings": {
+              "fahrenheit": true
+            }
+          },
+          "automatic": {
+            "weather_settings": {
+              "fahrenheit": null
+            }
+          },
+          "single_settings_window": {
+            "windows": {
+              "count": 2,
+              "front": "Settings",
+              "titles": [
+                "Settings",
+                "Weather"
+              ],
+              "fullscreen": false
+            }
+          },
+          "settings_closed": {
+            "windows": {
+              "count": 1,
+              "front": "Weather",
+              "titles": [
+                "Weather"
+              ],
+              "fullscreen": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "weather/sidebar-shortcut",
+      "title": "Weather: sidebar shortcut hides and restores the location list",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "weather/sidebar-shortcut",
+        "observations": {
+          "visible": {
+            "sidebar": {
+              "visible": true
+            }
+          },
+          "hidden": {
+            "sidebar": {
+              "visible": false
+            }
+          },
+          "restored": {
+            "sidebar": {
+              "visible": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

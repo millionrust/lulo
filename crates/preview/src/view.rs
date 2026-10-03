@@ -2922,6 +2922,7 @@ impl PreviewView {
                 .when(!is_pdf, |field| field.opacity(0.5))
                 .child(
                     div()
+                        .id("preview-bookmarks")
                         .absolute()
                         .left(px(metrics::SEARCH_GLYPH_LEFT - 1.0))
                         .top(px((metrics::CONTROL_HEIGHT - 2.0 - 16.0) / 2.0))
@@ -3236,7 +3237,8 @@ impl PreviewView {
                             div().p_3().child("No Bookmarks").into_any_element()
                         } else {
                             div()
-                                .v_flex()
+                                .flex()
+                                .flex_col()
                                 .children(pages.into_iter().map(|page| {
                                     div()
                                         .id(("preview-bookmark", page))

@@ -559,9 +559,37 @@
       "label": "View",
       "items": [
         {
+          "label": "Show Tab Bar",
+          "action": "terminal::ShowTabBar",
+          "shortcut": "⇧⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Allow Mouse Reporting",
           "action": "terminal::AllowMouseReporting",
           "shortcut": "⌘R",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Default Font Size",
+          "action": "terminal::ZoomReset",
+          "shortcut": "⌘0",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Bigger",
+          "action": "terminal::ZoomIn",
+          "shortcut": "⌘+",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Smaller",
+          "action": "terminal::ZoomOut",
+          "shortcut": "⌘-",
           "separator_before": false,
           "children": []
         },
@@ -569,7 +597,7 @@
           "label": "Scroll to Top",
           "action": "terminal::ScrollToTop",
           "shortcut": "⌘",
-          "separator_before": false,
+          "separator_before": true,
           "children": []
         },
         {
@@ -605,34 +633,6 @@
           "action": "terminal::LineDown",
           "shortcut": "⌥⌘",
           "separator_before": false,
-          "children": []
-        },
-        {
-          "label": "Default Font Size",
-          "action": "terminal::ZoomReset",
-          "shortcut": "⌘0",
-          "separator_before": false,
-          "children": []
-        },
-        {
-          "label": "Bigger",
-          "action": "terminal::ZoomIn",
-          "shortcut": "⌘+",
-          "separator_before": false,
-          "children": []
-        },
-        {
-          "label": "Smaller",
-          "action": "terminal::ZoomOut",
-          "shortcut": "⌘-",
-          "separator_before": false,
-          "children": []
-        },
-        {
-          "label": "Show Tab Bar",
-          "action": "terminal::ShowTabBar",
-          "shortcut": "⇧⌘T",
-          "separator_before": true,
           "children": []
         },
         {

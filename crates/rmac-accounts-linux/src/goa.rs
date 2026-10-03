@@ -112,8 +112,11 @@ impl GoaApi for GoaBus {
         let rule = "type='signal',sender='org.gnome.OnlineAccounts'";
         let iterator = MessageIterator::for_match_rule(rule, &self.connection, Some(32))
             .map_err(|_| Error::Unavailable)?;
-        let mut previous: HashMap<_, _> = self
-            .accounts()?
+        let initial = self.accounts()?;
+        for account in &initial {
+            emit(AccountChange::Added(account.clone()));
+        }
+        let mut previous: HashMap<_, _> = initial
             .into_iter()
             .map(|account| (account.path.clone(), account))
             .collect();

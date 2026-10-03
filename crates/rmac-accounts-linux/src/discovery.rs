@@ -121,6 +121,9 @@ fn mx_hosts(domain: &str) -> Result<Vec<String>, Error> {
     if size < 0 {
         return Err(Error::Network);
     }
+    if size as usize > answer.len() {
+        return Err(Error::InvalidResponse);
+    }
     parse_mx_response(&answer[..size as usize])
 }
 
@@ -201,8 +204,9 @@ fn read_name(packet: &[u8], offset: &mut usize) -> Result<String, Error> {
             let start = cursor + 1;
             let end = start + usize::from(len);
             let label = packet.get(start..end).ok_or(Error::InvalidResponse)?;
-            if !label.iter().all(u8::is_ascii_alphanumeric)
-                && !label
+            if label.first() == Some(&b'-')
+                || label.last() == Some(&b'-')
+                || !label
                     .iter()
                     .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
             {

@@ -3,7 +3,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::mpsc, time::Duration};
 
 use rmac_accounts::{
     autoconfig::{MailConfig, MailServer},
@@ -12,7 +12,7 @@ use rmac_accounts::{
     Secret,
 };
 use rmac_accounts_linux::{
-    goa::GoaBus, GoaApi, OAuthAccount, PasswordCalendarAccount, PasswordMailAccount,
+    goa::GoaBus, AccountChange, GoaApi, OAuthAccount, PasswordCalendarAccount, PasswordMailAccount,
 };
 use zbus::{
     blocking::{connection::Builder, Proxy},
@@ -156,6 +156,19 @@ fn adapter_uses_goa_wire_contract_on_private_bus() {
     assert_eq!(accounts.len(), 1);
     assert_eq!(accounts[0].provider, "google");
     assert!(accounts[0].services.mail);
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let watcher = GoaBus::session().unwrap();
+        let _ = watcher.watch(&mut |change| {
+            if let AccountChange::Added(account) = change {
+                let _ = sender.send(account.provider);
+            }
+        });
+    });
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(3)).unwrap(),
+        "google"
+    );
     let token = Secret::new("planted-token".into());
     let refresh = Secret::new("planted-refresh".into());
     let input = OAuthAccount {

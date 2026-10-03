@@ -647,7 +647,14 @@ def run_generic_popover_surface(shell: ShellSession, item: dict[str, Any]) -> di
     """outside-click/Escape for a shortcut-driven popover with no further
     per-surface logic (Spotlight, Notification Centre): the same two probes
     run_control_centre_surface proves for Control Centre, minus its
-    hover-slider and Wi-Fi-detail steps, which have no equivalent here."""
+    hover-slider and Wi-Fi-detail steps, which have no equivalent here.
+
+    Live-verified (2026-10-03) on Spotlight across four runs: Escape never
+    closed it (4/4), but outside-click's own result flipped between runs
+    (2/4 closed) - the same kind of run-to-run instability
+    run_control_centre_surface's own Escape probe already calls out,
+    recorded as whatever one run observed rather than retried into a
+    falsely stable answer."""
 
     sid = item["id"]
     lulo = item["lulo"]
@@ -724,7 +731,13 @@ def run_dock_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any
     reports window=(0, 0, OUTPUT_W, ~OUTPUT_H), i.e. its surface's local
     origin coincides with niri's own, so no extra fixed-margin fallback
     (unlike Control Centre's panel) is needed to turn those into
-    niri-logical coordinates for shell.move/shell.click."""
+    niri-logical coordinates for shell.move/shell.click.
+
+    Both probes were also flaky run to run in that same live session (hover
+    changed/right-click opened on one run, neither did on the next) - the
+    same instability already seen on Spotlight and Control Centre's Escape;
+    recorded as whatever one run observed, never smoothed into a single
+    answer."""
 
     out: dict[str, Any] = {}
     pyatspi = atspi()

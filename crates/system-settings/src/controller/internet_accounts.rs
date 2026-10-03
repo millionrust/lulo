@@ -3,12 +3,12 @@
 use super::*;
 mod render;
 #[cfg(target_os = "linux")]
-use rmac_accounts::autoconfig::{MailConfig, MailServer};
+use rmac_accounts::autoconfig::MailServer;
+use rmac_accounts::autoconfig::{DiscoveryStep, MailConfig};
 use rmac_accounts::model::{Service, Services};
 #[cfg(target_os = "linux")]
 use rmac_accounts::provider::SocketSecurity;
 use rmac_accounts::Secret;
-#[cfg(target_os = "linux")]
 use rmac_accounts_linux::discovery::{discover, SystemDiscovery};
 use rmac_accounts_linux::oauth::Tokens;
 #[cfg(target_os = "linux")]
@@ -28,6 +28,7 @@ pub(super) struct Sheet {
     pub(super) smtp: Entity<InputState>,
     pub(super) tokens: Option<Tokens>,
     pub(super) manual: bool,
+    pub(super) discovered_config: Option<MailConfig>,
     pub(super) generation: u64,
     pub(super) cancellation: std::sync::Arc<OAuthCancellation>,
 }
@@ -159,6 +160,7 @@ impl Settings {
             smtp: account_field(window, cx, "smtp.example.com"),
             tokens: None,
             manual: false,
+            discovered_config: None,
             generation: NEXT_SHEET_ID.fetch_add(10, std::sync::atomic::Ordering::Relaxed),
             cancellation: std::sync::Arc::default(),
         });
@@ -185,10 +187,63 @@ impl Settings {
             return;
         }
         let oauth = sheet.model.step == Step::Browser;
+        let discover =
+            sheet.model.choice == Some(Choice::OtherMail) && !sheet.model.address.is_empty();
+        if discover {
+            sheet.model.step = Step::Discovering;
+        }
         cx.notify();
-        if oauth {
+        if discover {
+            self.start_account_discovery(cx);
+        } else if oauth {
             self.start_account_oauth(cx);
         }
+    }
+
+    fn start_account_discovery(&mut self, cx: &mut Context<Self>) {
+        let Some(sheet) = self.internet_account_sheet.as_mut() else {
+            return;
+        };
+        let address = sheet.model.address.clone();
+        sheet.generation += 1;
+        let generation = sheet.generation;
+        self.internet_accounts_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || discover(&SystemDiscovery, &address)).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                let Some(sheet) = this.internet_account_sheet.as_mut().filter(|sheet| sheet.generation == generation) else { return; };
+                this.internet_accounts_busy = false;
+                match result {
+                    Ok(discovery) => match discovery.step {
+                        DiscoveryStep::OAuth(provider) => {
+                            sheet.model.choice = Some(match provider {
+                                rmac_accounts::provider::Provider::Google => Choice::Google,
+                                rmac_accounts::provider::Provider::Microsoft => Choice::Microsoft,
+                                _ => Choice::OtherMail,
+                            });
+                            sheet.model.step = Step::Browser;
+                            this.start_account_oauth(cx);
+                        }
+                        DiscoveryStep::Configured => {
+                            sheet.discovered_config = discovery.config;
+                            sheet.model.step = Step::Credentials;
+                        }
+                        _ => {
+                            sheet.manual = true;
+                            sheet.model.step = Step::Credentials;
+                            sheet.model.error = Some("Lulo couldn't find the mail servers. Enter the IMAP and SMTP server names.");
+                        }
+                    },
+                    Err(error) => {
+                        sheet.manual = true;
+                        sheet.model.step = Step::Credentials;
+                        sheet.model.error = Some(account_error(error));
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
     }
 
     fn start_account_oauth(&mut self, cx: &mut Context<Self>) {
@@ -269,6 +324,11 @@ impl Settings {
         sheet.model.caldav_uri = sheet.caldav.read(cx).value().to_string();
         if !sheet.model.credentials_valid() {
             sheet.model.error = Some("Enter your name, a valid email address, and a password.");
+        } else if sheet.manual
+            && (sheet.imap.read(cx).value().trim().is_empty()
+                || sheet.smtp.read(cx).value().trim().is_empty())
+        {
+            sheet.model.error = Some("Enter both the IMAP and SMTP server names.");
         } else {
             sheet.model.error = None;
             sheet.model.step = Step::Services;
@@ -297,13 +357,14 @@ impl Settings {
         let smtp = sheet.smtp.read(cx).value().to_string();
         let tokens = sheet.tokens.take();
         let manual = sheet.manual;
+        let discovered_config = sheet.discovered_config.take();
         sheet.generation += 1;
         let generation = sheet.generation;
         self.internet_accounts_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = blocking::unblock(move || {
-                create_account(choice, services, &address, &name, &password, &caldav, &imap, &smtp, manual, tokens.as_ref())
+                create_account(choice, services, &address, &name, &password, &caldav, &imap, &smtp, manual, discovered_config, tokens.as_ref())
             }).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 if let Some(sheet) = this.internet_account_sheet.as_mut().filter(|sheet| sheet.generation == generation) {
@@ -431,12 +492,23 @@ fn create_account(
     imap: &str,
     smtp: &str,
     manual: bool,
+    discovered_config: Option<MailConfig>,
     tokens: Option<&Tokens>,
 ) -> Result<(), SaveError> {
     #[cfg(not(target_os = "linux"))]
     {
         let _ = (
-            choice, services, address, name, password, caldav, imap, smtp, manual, tokens,
+            choice,
+            services,
+            address,
+            name,
+            password,
+            caldav,
+            imap,
+            smtp,
+            manual,
+            discovered_config,
+            tokens,
         );
         return Err(SaveError::Goa(rmac_accounts_linux::Error::Unavailable));
     }
@@ -466,7 +538,9 @@ fn create_account(
             .map_err(SaveError::Goa)?;
             return Ok(());
         }
-        let config = if manual {
+        let config = if let Some(config) = discovered_config {
+            config
+        } else if manual {
             if imap.trim().is_empty() || smtp.trim().is_empty() {
                 return Err(SaveError::Manual);
             }

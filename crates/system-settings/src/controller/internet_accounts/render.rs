@@ -1,5 +1,43 @@
 use super::*;
 
+fn provider_monogram(mark: &'static str) -> AnyElement {
+    div()
+        .size(px(28.0))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(rmac_ui::mac::radius_control()))
+        .bg(rmac_ui::mac::control_fill())
+        .text_size(rmac_ui::text_px(13.0))
+        .font_weight(rmac_ui::mac::BOLD)
+        .text_color(label())
+        .child(mark)
+        .into_any_element()
+}
+
+fn choice_mark(choice: Choice) -> &'static str {
+    match choice {
+        Choice::ICloud => "i",
+        Choice::Microsoft => "M",
+        Choice::Google => "G",
+        Choice::Yahoo => "Y",
+        Choice::OtherMail => "@",
+        Choice::OtherCalendar => "C",
+    }
+}
+
+fn account_mark(label: &str) -> &'static str {
+    match label {
+        "iCloud" => "i",
+        "Microsoft" => "M",
+        "Google" => "G",
+        "Yahoo" => "Y",
+        "Calendar Account" => "C",
+        _ => "@",
+    }
+}
+
 fn field(
     label_text: &'static str,
     editor: &Entity<InputState>,
@@ -108,7 +146,7 @@ impl Settings {
                 let view = view.clone();
                 rows.push(large_nav_row(
                     format!("internet-account-{}", account.paths[0]),
-                    tile26("icons/globe.svg", accent()),
+                    provider_monogram(account_mark(account.label)),
                     account.label,
                     Some(subtitle_text(account.identity.clone())),
                     Some(account.summary().into()),
@@ -187,7 +225,7 @@ impl Settings {
             .v_flex()
             .gap_3()
             .p_5()
-            .rounded(px(rmac_ui::mac::radius_card()))
+            .rounded(px(rmac_ui::mac::radius_large_surface()))
             .bg(rmac_ui::mac::raised())
             .border_1()
             .border_color(rmac_ui::mac::separator())
@@ -199,6 +237,7 @@ impl Settings {
                     .text_color(label())
                     .child(match sheet.model.step {
                         Step::Choose => "Add an Internet Account".to_owned(),
+                        Step::Discovering => "Finding account settings".to_owned(),
                         Step::Credentials => format!(
                             "Sign in to {}",
                             sheet.model.choice.map(Choice::label).unwrap_or("Account")
@@ -219,21 +258,28 @@ impl Settings {
                     let selected = sheet.model.choice == Some(choice);
                     let view = view.clone();
                     body = body.child(
-                        Button::new(format!("account-provider-{choice:?}"), format!("{} · {}", choice.label(), choice.hint()))
-                            .selected(selected)
-                            .h(px(40.0))
-                            .w_full()
-                            .on_click(move |_, _, cx| view.update(cx, |settings, cx| {
-                                if let Some(sheet) = settings.internet_account_sheet.as_mut() {
-                                    sheet.model.choice = Some(choice);
-                                    sheet.model.error = None;
-                                    cx.notify();
-                                }
-                            }))
+                        ListRow::new(
+                            format!("account-provider-{choice:?}"),
+                            div().flex().items_center().gap_2()
+                                .child(provider_monogram(choice_mark(choice)))
+                                .child(div().flex_1().text_color(label()).child(choice.label()))
+                                .child(div().text_size(rmac_ui::text_px(11.0)).text_color(secondary()).child(choice.hint())),
+                        )
+                        .aria_label(format!("{} · {}", choice.label(), choice.hint()))
+                        .selected(selected)
+                        .h(px(40.0))
+                        .on_activate(move |_, _, cx| view.update(cx, |settings, cx| {
+                            if let Some(sheet) = settings.internet_account_sheet.as_mut() {
+                                sheet.model.choice = Some(choice);
+                                sheet.model.error = None;
+                                cx.notify();
+                            }
+                        })),
                     );
                 }
                 body
             }
+            Step::Discovering => body.child(Progress::indeterminate().label("Looking up mail servers…")),
             Step::Credentials => {
                 let mut body = body;
                 if matches!(sheet.model.choice, Some(Choice::ICloud | Choice::Yahoo)) {
@@ -290,6 +336,7 @@ impl Settings {
         let action = view.clone();
         let label = match sheet.model.step {
             Step::Choose => "Continue",
+            Step::Discovering => "",
             Step::Credentials => "Sign In",
             Step::Browser => "",
             Step::Services => "Done",
@@ -309,30 +356,33 @@ impl Settings {
                         cancel.update(cx, |settings, cx| settings.close_account_sheet(cx))
                     }),
                 )
-                .when(sheet.model.step != Step::Browser, |buttons| {
-                    buttons.child(
-                        rmac_ui::dialog_button(
-                            "internet-account-next",
-                            label,
-                            rmac_ui::DialogButtonKind::Primary,
+                .when(
+                    !matches!(sheet.model.step, Step::Browser | Step::Discovering),
+                    |buttons| {
+                        buttons.child(
+                            rmac_ui::dialog_button(
+                                "internet-account-next",
+                                label,
+                                rmac_ui::DialogButtonKind::Primary,
+                            )
+                            .disabled(busy)
+                            .on_click(move |_, _, cx| {
+                                action.update(cx, |settings, cx| {
+                                    match settings
+                                        .internet_account_sheet
+                                        .as_ref()
+                                        .map(|sheet| sheet.model.step)
+                                    {
+                                        Some(Step::Choose) => settings.continue_account_sheet(cx),
+                                        Some(Step::Credentials) => settings.credentials_next(cx),
+                                        Some(Step::Services) => settings.save_account(cx),
+                                        _ => {}
+                                    }
+                                })
+                            }),
                         )
-                        .disabled(busy)
-                        .on_click(move |_, _, cx| {
-                            action.update(cx, |settings, cx| {
-                                match settings
-                                    .internet_account_sheet
-                                    .as_ref()
-                                    .map(|sheet| sheet.model.step)
-                                {
-                                    Some(Step::Choose) => settings.continue_account_sheet(cx),
-                                    Some(Step::Credentials) => settings.credentials_next(cx),
-                                    Some(Step::Services) => settings.save_account(cx),
-                                    _ => {}
-                                }
-                            })
-                        }),
-                    )
-                }),
+                    },
+                ),
         );
         Some(
             rmac_ui::dialog("internet-account-sheet", body)

@@ -78,6 +78,7 @@ impl Choice {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
     Choose,
+    Discovering,
     Credentials,
     Browser,
     Services,
@@ -245,14 +246,23 @@ pub fn account_rows(accounts: &[GoaAccount]) -> Vec<AccountRow> {
         let pair = if matches!(choice, Some(Choice::ICloud | Choice::Yahoo))
             && matches!(account.provider.as_str(), "imap_smtp" | "webdav")
         {
-            accounts.iter().enumerate().find(|(other_index, other)| {
-                !used[*other_index]
-                    && other.identity == account.identity
-                    && matches!(
-                        (account.provider.as_str(), other.provider.as_str()),
-                        ("imap_smtp", "webdav") | ("webdav", "imap_smtp")
-                    )
-            })
+            let candidates: Vec<_> = accounts
+                .iter()
+                .enumerate()
+                .filter(|(other_index, other)| {
+                    !used[*other_index]
+                        && other.identity == account.identity
+                        && matches!(
+                            (account.provider.as_str(), other.provider.as_str()),
+                            ("imap_smtp", "webdav") | ("webdav", "imap_smtp")
+                        )
+                })
+                .collect();
+            if candidates.len() == 1 {
+                Some(candidates[0])
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -277,15 +287,29 @@ pub fn account_rows(accounts: &[GoaAccount]) -> Vec<AccountRow> {
         rows.push(AccountRow {
             identity: account.identity.clone(),
             label: match choice {
-                Some(Choice::ICloud) if members.len() == 2 => "iCloud",
-                Some(Choice::Yahoo) if members.len() == 2 => "Yahoo",
+                Some(Choice::ICloud)
+                    if matches!(account.provider.as_str(), "imap_smtp" | "webdav") =>
+                {
+                    "iCloud"
+                }
+                Some(Choice::Yahoo)
+                    if matches!(account.provider.as_str(), "imap_smtp" | "webdav") =>
+                {
+                    "Yahoo"
+                }
                 _ => provider_label(account),
             },
             paths: members.iter().map(|item| item.path.clone()).collect(),
             services,
             mail_path: find_path("imap_smtp").or_else(|| oauth_path.clone()),
             calendar_path: find_path("webdav").or_else(|| oauth_path.clone()),
-            contacts_path: find_path("webdav").or(oauth_path),
+            contacts_path: find_path("webdav")
+                .filter(|_| {
+                    members
+                        .iter()
+                        .any(|item| item.provider == "webdav" && item.services.contacts)
+                })
+                .or(oauth_path),
         });
     }
     rows
@@ -360,5 +384,24 @@ mod tests {
             Some("/calendar")
         );
         assert_eq!(rows[0].paths.len(), 2);
+    }
+
+    #[test]
+    fn ambiguous_password_accounts_stay_separate() {
+        use rmac_accounts::model::Services;
+        let account = |path: &str, provider: &str| GoaAccount {
+            path: path.into(),
+            id: path.into(),
+            provider: provider.into(),
+            identity: "person@yahoo.com".into(),
+            services: Services::MAIL_ONLY,
+        };
+        let rows = account_rows(&[
+            account("/mail", "imap_smtp"),
+            account("/calendar-a", "webdav"),
+            account("/calendar-b", "webdav"),
+        ]);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|row| row.paths.len() == 1));
     }
 }

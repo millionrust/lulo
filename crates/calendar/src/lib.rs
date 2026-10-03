@@ -120,10 +120,12 @@ pub fn fixture_week(first_day: NaiveDate) -> WeekSnapshot {
         // Fixture hours are UTC, making the screenshot reproducible across machines.
         let start = Utc.from_utc_datetime(&date.and_hms_opt(from, 0, 0).unwrap());
         let end = Utc.from_utc_datetime(&date.and_hms_opt(to, 0, 0).unwrap());
+        let index = events.len();
         events.push(Event {
-            id: format!("fixture-{}", events.len()), title, location, calendar,
+            id: format!("fixture-{index}"), title, location, calendar,
             start, end, all_day,
         });
+        index
     };
     for day in 0..5 {
         add(day, 9, 10, "Stand-up", "Room 4", 0, false);
@@ -137,8 +139,14 @@ pub fn fixture_week(first_day: NaiveDate) -> WeekSnapshot {
     add(5, 10, 12, "Farmers market", "Plaza", 2, false);
     add(5, 14, 15, "Haircut", "", 3, false);
     add(6, 11, 13, "Family lunch", "Grandma's", 2, false);
-    add(1, 0, 23, "Conference", "", 1, true);
-    add(4, 0, 23, "Ana's birthday", "", 2, true);
+    let conference = add(1, 0, 23, "Conference", "", 1, true);
+    let birthday = add(4, 0, 23, "Ana's birthday", "", 2, true);
+    events[conference].end = Utc.from_utc_datetime(
+        &(first_day + Duration::days(4)).and_hms_opt(0, 0, 0).unwrap(),
+    );
+    events[birthday].end = Utc.from_utc_datetime(
+        &(first_day + Duration::days(6)).and_hms_opt(0, 0, 0).unwrap(),
+    );
     let layout_events: Vec<_> = events.iter().filter(|event| !event.all_day)
         .map(|event| LayoutEvent {
             id: event.id.clone(), start: event.start, end: event.end,
@@ -186,6 +194,7 @@ mod tests {
         assert_eq!(snapshot.calendars.len(), 6);
         assert_eq!(snapshot.events.len(), 16);
         assert_eq!(snapshot.events.iter().filter(|event| event.all_day).count(), 2);
+        assert_eq!((snapshot.events[14].end - snapshot.events[14].start).num_days(), 3);
         assert!(snapshot.slots.iter().any(|slot| slot.columns == 2));
     }
 }

@@ -54,10 +54,11 @@ impl CalendarView {
     }
 
     fn control(&self, id: impl Into<SharedString>, label: impl Into<SharedString>,
+        accessible: &'static str,
         active: bool, click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>) -> AnyElement {
         let label: SharedString = label.into();
-        div().id(id.into()).role(Role::Button).aria_label(label.clone())
+        div().id(id.into()).role(Role::Button).aria_label(accessible)
             .h(px(28.0)).px(px(10.0)).rounded(px(mac::radius_pill()))
             .flex().items_center().justify_center()
             .bg(if active { mac::control_fill() } else { mac::material_clear() })
@@ -70,11 +71,11 @@ impl CalendarView {
         let mut bar = div().h(px(TOOLBAR)).w_full().flex().items_center()
             .pl(px(if self.sidebar_visible { SIDEBAR + 8.0 } else { 16.0 }))
             .pr(px(12.0)).gap(px(8.0));
-        bar = bar.child(self.control("calendar-sidebar", "☷", false, |this, cx| {
+        bar = bar.child(self.control("calendar-sidebar", "☷", "Sidebar", false, |this, cx| {
             this.sidebar_visible = !this.sidebar_visible; this.sync_menu(cx); cx.notify();
         }, cx));
-        bar = bar.child(self.control("calendar-inbox", "▢", false, |_, _| {}, cx));
-        bar = bar.child(self.control("calendar-new", "+", false, |_, _| {}, cx));
+        bar = bar.child(self.control("calendar-inbox", "▢", "Invitations", false, |_, _| {}, cx));
+        bar = bar.child(self.control("calendar-new", "+", "New Event", false, |_, _| {}, cx));
         bar = bar.child(div().flex_1());
         let mut tabs = div().flex().role(Role::TabList).aria_label("Calendar views");
         for view in View::ALL {
@@ -89,7 +90,7 @@ impl CalendarView {
         }
         bar = bar.child(tabs);
         bar = bar.child(div().flex_1());
-        bar.child(self.control("calendar-search", "⌕", false, |_, _| {}, cx)).into_any_element()
+        bar.child(self.control("calendar-search", "⌕", "Search", false, |_, _| {}, cx)).into_any_element()
     }
 
     fn mini_month(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -168,13 +169,13 @@ impl CalendarView {
             .child(div().text_size(px(22.0)).font_weight(FontWeight::BOLD)
                 .text_color(mac::text()).child(title))
             .child(div().flex_1())
-            .child(self.control("calendar-prev", "‹", false, |this, cx| {
+            .child(self.control("calendar-prev", "‹", "Previous Period", false, |this, cx| {
                 this.nav.step(-1); cx.notify();
             }, cx))
-            .child(self.control("calendar-today", "Today", false, |this, cx| {
+            .child(self.control("calendar-today", "Today", "Today", false, |this, cx| {
                 this.nav.today(current_date()); cx.notify();
             }, cx))
-            .child(self.control("calendar-next", "›", false, |this, cx| {
+            .child(self.control("calendar-next", "›", "Next Period", false, |this, cx| {
                 this.nav.step(1); cx.notify();
             }, cx)).into_any_element()
     }
@@ -216,9 +217,10 @@ impl CalendarView {
             let day = event.start.date_naive();
             let offset = (day - first).num_days();
             if (0..7).contains(&offset) && self.visible[event.calendar] {
+                let days = (event.end.date_naive() - day).num_days().clamp(1, 7 - offset);
                 week = week.child(div().absolute()
                     .left(px(GUTTER + offset as f32 * day_width + 2.0))
-                    .top(px(37.0)).w(px(day_width - 4.0)).h(px(19.0))
+                    .top(px(37.0)).w(px(days as f32 * day_width - 4.0)).h(px(19.0))
                     .rounded(px(4.0)).px(px(5.0)).overflow_hidden()
                     .bg(Self::color(snapshot.calendars[event.calendar].color))
                     .text_color(mac::white()).text_size(px(11.0))

@@ -28,6 +28,7 @@ fn main() {
             KeyBinding::new("cmd-right", NextPeriod, Some("Calendar")),
             KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Calendar")),
             KeyBinding::new("cmd-w", CloseWindow, Some("Calendar")),
+            KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Calendar")),
         ]);
         rmac_ui::install_app_menu(CALENDAR, cx);
         // Event creation, invitations, and search arrive in CAL-5/6/8.

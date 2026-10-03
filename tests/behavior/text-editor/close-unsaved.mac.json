@@ -3,6 +3,7 @@
   "scenario": "text-editor/close-unsaved",
   "platform": "macOS 26.2",
   "recorded": "2026-09-25",
+  "cancelled-focus-source": "Task-reported Mac behavior: cancelling the sheet returns focus to the document text view; this field was not rerecorded on the Mac",
   "cancelled-period-source": "Task requirement; this extra key step was not rerecorded on the Mac",
   "observations": {
     "asked": {
@@ -25,6 +26,7 @@
       }
     },
     "cancelled": {
+      "focus": {"role": "text-area", "value": "Hello"},
       "dialog": {
         "present": false
       },
@@ -37,6 +39,7 @@
       }
     },
     "cancelled-period": {
+      "focus": {"role": "text-area", "value": "Hello"},
       "dialog": {"present": false},
       "windows": {"count": 1, "front": "Untitled", "titles": ["Untitled"]}
     }

@@ -93,6 +93,7 @@ rmac-lock-provider = { version = "=0.9.0-beta.1", path = "crates/rmac-lock-provi
 rmac-lock-provider-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-lock-provider-linux" }
 rmac-login-items = { version = "=0.9.0-beta.1", path = "crates/rmac-login-items" }
 rmac-login-items-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-login-items-linux" }
+rmac-mail-store = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-store" }
 rmac-locale = { version = "=0.9.0-beta.1", path = "crates/rmac-locale" }
 rmac-locale-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-locale-linux" }
 rmac-power = { version = "=0.9.0-beta.1", path = "crates/rmac-power" }
@@ -148,6 +149,7 @@ raw-window-handle = "=0.6.2"
 resvg = { version = "=0.45.1", default-features = false }
 rust-embed = { version = "8", features = ["include-exclude"] }
 rustix = { version = "=1.1.4", features = ["fs"] }
+rusqlite = { version = "=0.37.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10.9"

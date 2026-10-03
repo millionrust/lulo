@@ -304,7 +304,7 @@ mod tests {
             Ok(vec![EVENT.into()])
         }
         fn subscribe(&self, _: &str) -> Result<Box<dyn Iterator<Item = ViewEvent>>, String> {
-            Ok(Box::new(std::iter::empty()))
+            Ok(Box::new(std::iter::once(ViewEvent::Removed(vec!["a".into()]))))
         }
         fn create(&self, _: &[String]) -> Result<Vec<String>, String> {
             Ok(vec!["b".into()])
@@ -333,9 +333,7 @@ mod tests {
         });
         runtime.reload_sources().unwrap();
         assert_eq!(runtime.open("local").unwrap().objects.len(), 1);
-        runtime
-            .apply_view("local", ViewEvent::Removed(vec!["a".into()]))
-            .unwrap();
+        runtime.next_event("local").unwrap().unwrap();
         assert!(runtime.snapshot("local").unwrap().objects.is_empty());
         runtime
             .apply_view("local", ViewEvent::Added(vec![EVENT.into()]))

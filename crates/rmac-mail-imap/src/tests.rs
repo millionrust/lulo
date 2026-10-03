@@ -252,6 +252,63 @@ fn oauth_rejection_does_not_expose_challenge_or_token() {
 }
 
 #[test]
+fn tls_login_password_fallback() {
+    let (config, handle) = fixture(false, |socket| {
+        let mut stream = StreamOwned::new(ServerConnection::new(server_config()).unwrap(), socket);
+        send(&mut stream, "* OK ready\r\n");
+        assert_eq!(read_line(&mut stream), "L00000001 CAPABILITY\r\n");
+        send(
+            &mut stream,
+            "* CAPABILITY IMAP4rev1\r\nL00000001 OK done\r\n",
+        );
+        assert_eq!(
+            read_line(&mut stream),
+            "L00000002 LOGIN \"alice\" \"secret-password\"\r\n"
+        );
+        send(&mut stream, "L00000002 OK done\r\n");
+    });
+    let mut client = Client::connect_with_roots(&config, roots()).unwrap();
+    client
+        .authenticate(Authentication::Login {
+            user: "alice",
+            password: &Secret::new("secret-password"),
+        })
+        .unwrap();
+    handle.join().unwrap();
+}
+
+#[test]
+fn oauthbearer_escapes_authorization_identity() {
+    let (config, handle) = fixture(false, |socket| {
+        let mut stream = StreamOwned::new(ServerConnection::new(server_config()).unwrap(), socket);
+        send(&mut stream, "* OK ready\r\n");
+        assert_eq!(read_line(&mut stream), "L00000001 CAPABILITY\r\n");
+        send(
+            &mut stream,
+            "* CAPABILITY IMAP4rev1 AUTH=OAUTHBEARER SASL-IR\r\nL00000001 OK done\r\n",
+        );
+        let line = read_line(&mut stream);
+        assert!(line.starts_with("L00000002 AUTHENTICATE OAUTHBEARER "));
+        let value = STANDARD
+            .decode(line.trim().split(' ').last().unwrap())
+            .unwrap();
+        assert_eq!(
+            value,
+            b"n,a=alice=2Cwork=3D@example.test,\x01auth=Bearer token\x01\x01"
+        );
+        send(&mut stream, "L00000002 OK done\r\n");
+    });
+    let mut client = Client::connect_with_roots(&config, roots()).unwrap();
+    client
+        .authenticate(Authentication::OAuthBearer {
+            user: "alice,work=@example.test",
+            token: &Secret::new("token"),
+        })
+        .unwrap();
+    handle.join().unwrap();
+}
+
+#[test]
 fn unsafe_mailbox_and_uid_set_are_rejected() {
     assert!(protocol::quote("INBOX\r\nEVIL").is_err());
     assert!(protocol::validate_uid_set("1\r\nEVIL").is_err());
@@ -259,4 +316,6 @@ fn unsafe_mailbox_and_uid_set_are_rejected() {
         protocol::quote("Sent \"Work\"").unwrap(),
         "\"Sent \\\"Work\\\"\""
     );
+    assert!(validate_auth_field("alice\x01auth=Bearer attacker").is_err());
+    assert!(validate_auth_field("alice\r\n").is_err());
 }

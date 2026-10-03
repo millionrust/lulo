@@ -12,6 +12,7 @@ const MAX_LITERAL: usize = 64 * 1024 * 1024;
 
 pub(crate) struct Transport {
     stream: StreamOwned<ClientConnection, TcpStream>,
+    default_timeout: Duration,
 }
 
 impl Transport {
@@ -53,7 +54,10 @@ impl Transport {
         let connection = ClientConnection::new(tls_config, server_name).map_err(|_| Error::Tls)?;
         let mut stream = StreamOwned::new(connection, socket);
         stream.flush().map_err(|_| Error::Tls)?;
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            default_timeout: config.timeout,
+        })
     }
 
     pub(crate) fn write_line(&mut self, line: &str) -> Result<(), Error> {
@@ -83,13 +87,28 @@ impl Transport {
         self.stream.sock.set_read_timeout(Some(timeout))?;
         Ok(())
     }
+
+    pub(crate) fn reset_read_timeout(&mut self) -> Result<(), Error> {
+        self.set_read_timeout(self.default_timeout)
+    }
 }
 
 fn read_line(reader: &mut impl Read) -> io::Result<Vec<u8>> {
     let mut line = Vec::new();
     loop {
         let mut byte = [0];
-        reader.read_exact(&mut byte)?;
+        if let Err(error) = reader.read_exact(&mut byte) {
+            // A timeout after part of a response would otherwise look like an
+            // idle timeout and let the caller send DONE into a partial frame.
+            return if line.is_empty() {
+                Err(error)
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Incomplete IMAP response",
+                ))
+            };
+        }
         line.push(byte[0]);
         if line.len() > MAX_LINE {
             return Err(io::Error::new(
@@ -122,4 +141,18 @@ fn trailing_literal(line: &[u8]) -> Result<Option<usize>, Error> {
         .and_then(|s| s.parse().ok())
         .ok_or(Error::Protocol("Invalid IMAP literal size"))?;
     Ok(Some(number))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn partial_idle_frame_cannot_be_mistaken_for_a_clean_timeout() {
+        let mut truncated = io::Cursor::new(b"* 2 EXISTS\r");
+        assert_eq!(
+            read_line(&mut truncated).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
 }

@@ -69,9 +69,12 @@ impl Config {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum Authentication<'a> {
     XOAuth2 { user: &'a str, token: &'a Secret },
+    OAuthBearer { user: &'a str, token: &'a Secret },
     Plain { user: &'a str, password: &'a Secret },
+    Login { user: &'a str, password: &'a Secret },
 }
 
 #[derive(Debug)]
@@ -150,26 +153,60 @@ impl Client {
 
     pub fn authenticate(&mut self, auth: Authentication<'_>) -> Result<(), Error> {
         use base64::{engine::general_purpose::STANDARD, Engine as _};
+        if let Authentication::Login { user, password } = auth {
+            if self.capabilities.has("LOGINDISABLED") {
+                return Err(Error::Unsupported("IMAP server does not allow LOGIN"));
+            }
+            validate_auth_field(user)?;
+            validate_auth_field(password.expose())?;
+            let mut command = format!("LOGIN {} {}", quote(user)?, quote(password.expose())?);
+            let result = self.command(&command);
+            command.zeroize();
+            result?;
+            return self.enable_extensions();
+        }
         let (mechanism, payload) = match auth {
             Authentication::XOAuth2 { user, token } => {
                 if !self.capabilities.has("AUTH=XOAUTH2") {
                     return Err(Error::Unsupported("IMAP server does not support XOAUTH2"));
                 }
+                validate_auth_field(user)?;
+                validate_auth_field(token.expose())?;
                 (
                     "XOAUTH2",
                     format!("user={user}\x01auth=Bearer {}\x01\x01", token.expose()),
+                )
+            }
+            Authentication::OAuthBearer { user, token } => {
+                if !self.capabilities.has("AUTH=OAUTHBEARER") {
+                    return Err(Error::Unsupported(
+                        "IMAP server does not support OAUTHBEARER",
+                    ));
+                }
+                validate_auth_field(user)?;
+                validate_auth_field(token.expose())?;
+                let user = user.replace('=', "=3D").replace(',', "=2C");
+                (
+                    "OAUTHBEARER",
+                    format!("n,a={user},\x01auth=Bearer {}\x01\x01", token.expose()),
                 )
             }
             Authentication::Plain { user, password } => {
                 if !self.capabilities.has("AUTH=PLAIN") {
                     return Err(Error::Unsupported("IMAP server does not support PLAIN"));
                 }
+                validate_auth_field(user)?;
+                if password
+                    .expose()
+                    .chars()
+                    .any(|ch| matches!(ch, '\0' | '\r' | '\n'))
+                {
+                    return Err(Error::Protocol("Invalid IMAP credential"));
+                }
                 ("PLAIN", format!("\0{user}\0{}", password.expose()))
             }
+            Authentication::Login { .. } => unreachable!(),
         };
-        if payload.contains('\r') || payload.contains('\n') {
-            return Err(Error::Protocol("Invalid IMAP credential"));
-        }
         let encoded = STANDARD.encode(payload);
         let tag = self.tag();
         if self.capabilities.has("SASL-IR") {
@@ -185,6 +222,10 @@ impl Client {
             self.transport.write_line(&encoded)?;
         }
         self.collect_auth(&tag)?;
+        self.enable_extensions()
+    }
+
+    fn enable_extensions(&mut self) -> Result<(), Error> {
         // ENABLE is connection-scoped; QRESYNC implicitly enables CONDSTORE.
         if self.capabilities.has("QRESYNC") {
             self.command("ENABLE QRESYNC")?;
@@ -288,7 +329,7 @@ impl Client {
             }
             Err(error) => return Err(error),
         };
-        self.transport.set_read_timeout(Duration::from_secs(30))?;
+        self.transport.reset_read_timeout()?;
         self.transport.write_line("DONE")?;
         self.collect(&tag)?;
         Ok(event)
@@ -350,6 +391,14 @@ impl Client {
         let tag = format!("L{:08}", self.next_tag);
         self.next_tag = self.next_tag.wrapping_add(1);
         tag
+    }
+}
+
+fn validate_auth_field(value: &str) -> Result<(), Error> {
+    if value.chars().any(char::is_control) {
+        Err(Error::Protocol("Invalid IMAP credential"))
+    } else {
+        Ok(())
     }
 }
 

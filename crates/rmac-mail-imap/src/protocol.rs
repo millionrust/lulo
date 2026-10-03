@@ -65,10 +65,16 @@ impl Response {
         if raw.len() > MAX_RESPONSE {
             return Err(Error::Protocol("IMAP response is too large"));
         }
-        // The codec validates ordinary RFC 3501 replies. Extension responses
-        // (notably QRESYNC's VANISHED) are parsed below because the stable
-        // codec does not know every server extension.
-        let _ = ResponseCodec::new().decode(&raw);
+        // Validate ordinary tagged completions with the reviewed codec.
+        // Response codes and unsolicited extension data may be unknown to
+        // the stable codec; those are bounded and parsed by the client.
+        let first = raw.split(|byte| *byte == b'\r').next().unwrap_or_default();
+        if first.first() == Some(&b'L')
+            && !first.contains(&b'[')
+            && ResponseCodec::new().decode(&raw).is_err()
+        {
+            return Err(Error::Protocol("Invalid IMAP command completion"));
+        }
         Ok(Self { raw, literal })
     }
 

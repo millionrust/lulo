@@ -71,13 +71,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            at-spi2-core dbus grim libglib2.0-bin mesa-vulkan-drivers \
+            at-spi2-core dbus fonts-inter grim libglib2.0-bin libxkbcommon-x11-0 mesa-vulkan-drivers \
             poppler-utils python3-pyatspi sway wl-clipboard xdg-desktop-portal
       - name: Play recorded scenarios
         env:
           SHARD: ${{ matrix.shard }}
         run: |
           chmod +x runtime-bin/*
+          for binary in runtime-bin/rmac-*; do
+            if ldd "$binary" | grep -q 'not found'; then
+              echo "Missing shared library for $binary"
+              ldd "$binary" | grep 'not found'
+              exit 1
+            fi
+          done
           python3 scripts/behavior/runtime_ci.py prepare runtime-bin
           result="$RUNNER_TEMP/runtime-results/scenario-$SHARD"
           mkdir -p "$result/screenshots"
@@ -119,9 +126,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            at-spi2-core curl dbus foot gir1.2-gtk-4.0 grim libdisplay-info3 \
+            at-spi2-core curl dbus fonts-inter foot gir1.2-gtk-4.0 grim libdisplay-info3 \
             libgbm1 libglib2.0-bin libinput10 libpango-1.0-0 \
-            libpangocairo-1.0-0 libpipewire-0.3-0t64 libseat1 \
+            libpangocairo-1.0-0 libpipewire-0.3-0t64 libseat1 libxkbcommon-x11-0 \
             mesa-vulkan-drivers python3-dbus python3-gi python3-pil \
             python3-pyatspi sway xdg-desktop-portal
           curl --fail --silent --show-error --location --retry 3 \
@@ -139,6 +146,13 @@ jobs:
           SUITE: ${{ matrix.suite }}
         run: |
           chmod +x runtime-bin/*
+          for binary in runtime-bin/rmac-*; do
+            if ldd "$binary" | grep -q 'not found'; then
+              echo "Missing shared library for $binary"
+              ldd "$binary" | grep 'not found'
+              exit 1
+            fi
+          done
           python3 scripts/behavior/runtime_ci.py prepare runtime-bin
           result="$RUNNER_TEMP/runtime-results/$SUITE"
           niri="$RUNNER_TEMP/niri-package/usr/bin/niri"

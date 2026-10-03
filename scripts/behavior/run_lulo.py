@@ -1124,7 +1124,8 @@ class LuloRun:
 
     def ensure_alive(self) -> None:
         if self.process.poll() is not None:
-            raise StepFailed(f"the app exited ({self.process.returncode}) during the scenario")
+            detail = Path(self.log.name).read_text(errors="replace")[-500:]
+            raise StepFailed(f"the app exited ({self.process.returncode}) during the scenario: {detail}")
 
     def window_origin(self, frame=None) -> tuple[int, int]:
         helpers = self.helper_frames() if frame is not None else []

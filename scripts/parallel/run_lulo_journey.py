@@ -129,9 +129,11 @@ class Driver:
         bins = Path(self.args.bin_dir)
         for binary, arguments, socket in RESIDENT:
             if (bins / binary).exists():
-                self.session.spawn([str(bins / binary), *arguments], binary)
+                process = self.session.spawn([str(bins / binary), *arguments], binary)
                 if socket and not self.session.wait_for(lambda: (self.session.runtime / socket).exists(), 10):
-                    raise RuntimeError(f"{binary} did not open {socket}")
+                    log = self.session.logs / f"{binary}.log"
+                    detail = log.read_text(errors="replace")[-700:] if log.exists() else "no process log"
+                    raise RuntimeError(f"{binary} did not open {socket} (exit={process.poll()}): {detail}")
         time.sleep(1)
 
     def window(self):

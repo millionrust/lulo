@@ -24,14 +24,12 @@ impl DiscoveryNetwork for SystemDiscovery {
         if !url.starts_with("https://") {
             return Err(Error::InvalidResponse);
         }
-        let agent = ureq::AgentBuilder::new()
-            .timeout(Duration::from_secs(8))
-            .redirects(0)
-            .build();
-        let response = agent.get(url).call().map_err(|_| Error::Network)?;
+        let agent = crate::oauth::https_agent(Duration::from_secs(8));
+        let mut response = agent.get(url).call().map_err(|_| Error::Network)?;
         let mut bytes = Vec::new();
         response
-            .into_reader()
+            .body_mut()
+            .as_reader()
             .take(MAX_XML + 1)
             .read_to_end(&mut bytes)
             .map_err(|_| Error::Network)?;

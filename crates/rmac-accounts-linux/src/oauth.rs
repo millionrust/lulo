@@ -2,6 +2,7 @@
 //! the browser callback are worker-thread operations.
 
 use std::io::Read;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -13,6 +14,7 @@ use rmac_accounts::{
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use url::Url;
+use ureq::tls::{RootCerts, TlsConfig};
 
 use crate::Error;
 
@@ -55,6 +57,23 @@ pub trait OAuthHttp {
 }
 
 pub struct SystemOAuthHttp;
+
+pub(crate) fn https_agent(timeout: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .max_redirects(0)
+        .https_only(true)
+        .tls_config(
+            TlsConfig::builder()
+                .root_certs(RootCerts::PlatformVerifier)
+                .unversioned_rustls_crypto_provider(Arc::new(
+                    rustls::crypto::ring::default_provider(),
+                ))
+                .build(),
+        )
+        .build()
+        .new_agent()
+}
 
 #[cfg(target_os = "linux")]
 pub fn verify_installed_provider(provider: Provider) -> Result<(), Error> {
@@ -104,12 +123,9 @@ impl OAuthHttp for SystemOAuthHttp {
         {
             return Err(Error::InvalidResponse);
         }
-        let response = ureq::AgentBuilder::new()
-            .timeout(Duration::from_secs(15))
-            .redirects(0)
-            .build()
+        let response = https_agent(Duration::from_secs(15))
             .post(config.token_uri)
-            .send_form(&[
+            .send_form([
                 ("grant_type", "authorization_code"),
                 ("code", code.expose()),
                 ("client_id", config.client_id),
@@ -129,12 +145,9 @@ impl OAuthHttp for SystemOAuthHttp {
         {
             return Err(Error::InvalidResponse);
         }
-        let response = ureq::AgentBuilder::new()
-            .timeout(Duration::from_secs(15))
-            .redirects(0)
-            .build()
+        let response = https_agent(Duration::from_secs(15))
             .get(config.identity_uri)
-            .set(
+            .header(
                 "Authorization",
                 &format!("Bearer {}", access_token.expose()),
             )
@@ -144,10 +157,11 @@ impl OAuthHttp for SystemOAuthHttp {
     }
 }
 
-fn bounded_json(response: ureq::Response) -> Result<Value, Error> {
+fn bounded_json(mut response: ureq::http::Response<ureq::Body>) -> Result<Value, Error> {
     let mut bytes = Vec::new();
     response
-        .into_reader()
+        .body_mut()
+        .as_reader()
         .take(128 * 1024 + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| Error::Network)?;

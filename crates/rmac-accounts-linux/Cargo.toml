@@ -13,6 +13,7 @@ url.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 ureq.workspace = true
+rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
 base64 = "0.22"
 
 [target.'cfg(target_os = "linux")'.dependencies]

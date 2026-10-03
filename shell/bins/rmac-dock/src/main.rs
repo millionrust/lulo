@@ -629,6 +629,17 @@ mod linux_wayland {
         }
     }
 
+    type InputRegionKey = (
+        f32,
+        f32,
+        bool,
+        bool,
+        f32,
+        f32,
+        f32,
+        rmac_shell_settings::DockPlacement,
+    );
+
     struct Dock {
         display_id: u64,
         placement: rmac_shell_settings::DockPlacement,
@@ -638,16 +649,7 @@ mod linux_wayland {
         context_menu: Option<DockMenu>,
         dismiss_focus: FocusHandle,
         dismiss_focus_active: bool,
-        input_region: Option<(
-            f32,
-            f32,
-            bool,
-            bool,
-            f32,
-            f32,
-            f32,
-            rmac_shell_settings::DockPlacement,
-        )>,
+        input_region: Option<InputRegionKey>,
         pointer_inside: bool,
         hidden: bool,
         /// Auto-hide slide in progress: (start ms, sliding out).

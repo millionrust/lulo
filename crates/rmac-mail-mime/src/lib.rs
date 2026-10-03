@@ -42,6 +42,7 @@ pub struct BuiltMessage {
 pub enum Error {
     InvalidAddress,
     InvalidMessageId,
+    InvalidContentType,
     EmptyRecipients,
     Build(std::io::Error),
     Parse,
@@ -52,6 +53,7 @@ impl std::fmt::Display for Error {
         match self {
             Self::InvalidAddress => write!(f, "invalid email address"),
             Self::InvalidMessageId => write!(f, "invalid message ID"),
+            Self::InvalidContentType => write!(f, "invalid attachment content type"),
             Self::EmptyRecipients => write!(f, "message needs a recipient"),
             Self::Build(error) => write!(f, "MIME build failed: {error}"),
             Self::Parse => write!(f, "message could not be parsed"),
@@ -97,6 +99,22 @@ fn normalise_content_id(id: &str) -> Option<&str> {
     .then_some(id)
 }
 
+fn valid_content_type(value: &str) -> bool {
+    let Some((type_, subtype)) = value.split_once('/') else {
+        return false;
+    };
+    !type_.is_empty()
+        && !subtype.is_empty()
+        && !subtype.contains('/')
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#' | b'$' | b'&' | b'^' | b'_' | b'.' | b'+' | b'-'
+                )
+        })
+}
+
 pub fn build(draft: &Draft) -> Result<BuiltMessage, Error> {
     let recipients: Vec<String> = draft
         .to
@@ -140,6 +158,9 @@ pub fn build(draft: &Draft) -> Result<BuiltMessage, Error> {
         builder = builder.references(ids);
     }
     for attachment in &draft.attachments {
+        if !valid_content_type(&attachment.content_type) {
+            return Err(Error::InvalidContentType);
+        }
         builder = if let Some(id) = &attachment.content_id {
             builder.inline(
                 attachment.content_type.as_str(),
@@ -271,6 +292,14 @@ mod tests {
         assert!(matches!(build(&draft), Err(Error::InvalidAddress)));
         draft.to.clear();
         assert!(matches!(build(&draft), Err(Error::EmptyRecipients)));
+        draft.to.push("b@example.test".into());
+        draft.attachments.push(Attachment {
+            filename: "x".into(),
+            content_type: "text/plain\r\nBcc: thief@example.test".into(),
+            bytes: vec![],
+            content_id: None,
+        });
+        assert!(matches!(build(&draft), Err(Error::InvalidContentType)));
     }
 
     #[test]

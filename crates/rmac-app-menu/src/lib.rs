@@ -634,11 +634,10 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
 const NOTES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
-        items: &[item!(
-            "Quit and Keep Windows",
-            "notes::QuitAndKeepWindows",
-            "⌥⌘Q"
-        )],
+        items: &[
+            item!("Settings…", "notes::ShowSettings", "⌘,", separator),
+            item!("Quit and Keep Windows", "notes::QuitAndKeepWindows", "⌥⌘Q"),
+        ],
     },
     MenuSpec {
         label: "File",
@@ -2721,6 +2720,7 @@ mod tests {
         let menus = definition(rmac_apps::identity::NOTES, &spec_actions(NOTES_MENUS)).unwrap();
         let shortcuts = hints(&menus);
         for (action, shortcut) in [
+            ("notes::ShowSettings", "⌘,"),
             ("notes::FindAndReplace", "⇧⌘F"),
             ("notes::FindInNoteNext", "⌘G"),
             ("notes::UseSelectionForFind", "⌘E"),

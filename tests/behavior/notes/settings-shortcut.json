@@ -1,0 +1,14 @@
+{
+  "title": "Notes: Settings shortcut opens one settings window and closes it",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"key": "cmd-,", "settle": 0.5},
+    {"observe": "opened", "facts": ["windows"]},
+    {"key": "cmd-,", "settle": 0.5},
+    {"observe": "singleton", "facts": ["windows"]},
+    {"key": "cmd-w", "settle": 0.5},
+    {"observe": "closed", "facts": ["windows"]}
+  ]
+}

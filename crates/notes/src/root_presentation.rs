@@ -116,6 +116,10 @@ impl NotesView {
                 }
             }))
             .on_action(cx.listener(|this, _: &ComposeNote, _, cx| this.create_note(cx)))
+            .on_action(cx.listener(|_, _: &ShowSettings, _, cx| {
+                let main = cx.entity();
+                cx.defer(move |cx| settings_window::show(main, cx));
+            }))
             .on_action(cx.listener(|this, _: &CreateFolder, _, cx| this.create_folder(cx)))
             .on_action(cx.listener(|this, _: &TrashOrRestore, _, cx| this.trash_or_restore(cx)))
             .on_action(cx.listener(|this, _: &DeleteSelectedNote, _, cx| {

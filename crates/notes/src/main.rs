@@ -23,6 +23,7 @@ mod root_presentation;
 mod runtime_controller;
 mod search_controller;
 mod search_highlight;
+mod settings_window;
 mod startup_controller;
 mod status_presentation;
 mod toolbar;
@@ -92,6 +93,7 @@ actions!(
         DeleteSelectedNote,
         CloseAll,
         QuitAndKeepWindows,
+        ShowSettings,
         FocusMainWindow,
         PreviousRecentNote,
         NextRecentNote,
@@ -464,6 +466,12 @@ fn main() {
         720.0,
         NotesView::new,
         |cx: &mut gpui::App| {
+            cx.on_action(|_: &ShowSettings, cx| {
+                if cx.windows().is_empty() {
+                    rmac_ui::open_another_window(Vec::new(), cx);
+                    rmac_ui::dispatch_to_app_window(Box::new(ShowSettings), cx);
+                }
+            });
             cx.on_action(|_: &ComposeNote, cx| {
                 if cx.windows().is_empty() {
                     rmac_ui::open_another_window(Vec::new(), cx);

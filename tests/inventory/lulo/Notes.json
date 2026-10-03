@@ -13,6 +13,13 @@
           "children": []
         },
         {
+          "label": "Settings…",
+          "action": "notes::ShowSettings",
+          "shortcut": "⌘,",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Services",
           "action": "app::services",
           "shortcut": "",
@@ -939,8 +946,8 @@
     }
   ],
   "settings": {
-    "present": false,
-    "extraction": "none",
+    "present": true,
+    "extraction": "heuristic",
     "controls": []
   },
   "toolbar": {

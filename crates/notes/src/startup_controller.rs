@@ -60,6 +60,7 @@ impl NotesView {
             KeyBinding::new("cmd-d", DuplicateNote, Some("Notes")),
             KeyBinding::new("alt-cmd-w", CloseAll, Some("Notes")),
             KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, Some("Notes")),
+            KeyBinding::new("cmd-,", ShowSettings, Some("Notes")),
             KeyBinding::new("cmd-0", FocusMainWindow, Some("Notes")),
             KeyBinding::new("alt-cmd-[", PreviousRecentNote, Some("Notes")),
             KeyBinding::new("alt-cmd-]", NextRecentNote, Some("Notes")),

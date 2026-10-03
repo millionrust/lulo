@@ -335,6 +335,7 @@ def read_settings_sidebar() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 SETTINGS_FILES = {
+    "Notes": ["crates/notes/src/settings_window.rs"],
     "Finder": [
         "crates/finder/src/view/settings_window.rs",
         "crates/finder/src/view/settings.rs",

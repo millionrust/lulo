@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "notes/settings-shortcut",
+  "observations": {
+    "opened": {"windows": {"count": 2}},
+    "singleton": {"windows": {"count": 2}},
+    "closed": {"windows": {"count": 1}}
+  }
+}

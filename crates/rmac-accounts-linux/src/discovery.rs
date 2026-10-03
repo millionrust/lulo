@@ -4,7 +4,7 @@ use std::io::Read;
 use std::time::Duration;
 
 use rmac_accounts::autoconfig::{parse_ispdb, Discovery, DiscoveryStep, MailConfig, MailServer};
-use rmac_accounts::model::email_domain;
+use rmac_accounts::{model::email_domain, provider::Provider};
 
 use crate::Error;
 
@@ -72,7 +72,17 @@ pub fn discover(network: &impl DiscoveryNetwork, address: &str) -> Result<Discov
         discovery.ispdb_result(fetch_config(network, &ispdb, address));
     }
     if discovery.step == DiscoveryStep::Mx {
-        discovery.mx_result(&network.mx_hosts(domain).unwrap_or_default());
+        let hosts = network.mx_hosts(domain).unwrap_or_default();
+        let provider = hosts.first().and_then(|host| Provider::from_mx_host(host));
+        if provider.is_some()
+            && hosts
+                .iter()
+                .all(|host| Provider::from_mx_host(host) == provider)
+        {
+            discovery.mx_result(&hosts);
+        } else {
+            discovery.mx_result(&[]);
+        }
     }
     Ok(discovery)
 }
@@ -260,5 +270,25 @@ mod tests {
         packet[12] = 0xc0;
         packet[13] = 0x0c;
         assert_eq!(parse_mx_response(&packet), Err(Error::InvalidResponse));
+    }
+
+    #[test]
+    fn mixed_mx_hosts_do_not_choose_oauth_provider() {
+        struct Mixed;
+        impl DiscoveryNetwork for Mixed {
+            fn get_xml(&self, _url: &str) -> Result<String, Error> {
+                Err(Error::Network)
+            }
+            fn mx_hosts(&self, _domain: &str) -> Result<Vec<String>, Error> {
+                Ok(vec![
+                    "mail.example.net".into(),
+                    "tenant.mail.protection.outlook.com".into(),
+                ])
+            }
+        }
+        assert_eq!(
+            discover(&Mixed, "a@company.example").unwrap().step,
+            DiscoveryStep::Manual
+        );
     }
 }

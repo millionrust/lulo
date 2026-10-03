@@ -97,6 +97,13 @@ impl OAuthHttp for SystemOAuthHttp {
         code: &Secret,
         verifier: &Secret,
     ) -> Result<Value, Error> {
+        if Url::parse(config.token_uri)
+            .map_err(|_| Error::InvalidResponse)?
+            .scheme()
+            != "https"
+        {
+            return Err(Error::InvalidResponse);
+        }
         let response = ureq::AgentBuilder::new()
             .timeout(Duration::from_secs(15))
             .redirects(0)
@@ -115,6 +122,13 @@ impl OAuthHttp for SystemOAuthHttp {
     }
 
     fn identity(&self, config: OAuthConfig, access_token: &Secret) -> Result<Value, Error> {
+        if Url::parse(config.identity_uri)
+            .map_err(|_| Error::InvalidResponse)?
+            .scheme()
+            != "https"
+        {
+            return Err(Error::InvalidResponse);
+        }
         let response = ureq::AgentBuilder::new()
             .timeout(Duration::from_secs(15))
             .redirects(0)
@@ -152,6 +166,9 @@ impl OAuthAttempt {
         let challenge = URL_SAFE_NO_PAD.encode(digest);
         let mut authorization_url =
             Url::parse(config.authorization_uri).map_err(|_| Error::InvalidResponse)?;
+        if authorization_url.scheme() != "https" {
+            return Err(Error::InvalidResponse);
+        }
         authorization_url
             .query_pairs_mut()
             .append_pair("response_type", "code")
@@ -265,6 +282,18 @@ fn random_secret() -> Result<Secret, Error> {
         .and_then(|mut file| file.read_exact(&mut bytes))
         .map_err(|_| Error::Unavailable)?;
     Ok(Secret::new(URL_SAFE_NO_PAD.encode(bytes)))
+}
+
+/// The UI starts here on a worker task. The callback name is owned before
+/// the browser opens and is released when the returned receiver is dropped.
+#[cfg(target_os = "linux")]
+pub async fn start_sign_in(
+    provider: Provider,
+) -> Result<(OAuthAttempt, callback::OAuthReceiver), Error> {
+    let attempt = OAuthAttempt::new(provider)?;
+    let receiver = callback::OAuthReceiver::begin(&attempt)?;
+    attempt.open_in_browser().await?;
+    Ok((attempt, receiver))
 }
 
 #[cfg(target_os = "linux")]

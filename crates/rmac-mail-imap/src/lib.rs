@@ -246,7 +246,8 @@ impl Client {
     }
 
     pub fn list_mailboxes(&mut self) -> Result<Vec<Mailbox>, Error> {
-        let cmd = if self.capabilities.has("SPECIAL-USE") {
+        let cmd = if self.capabilities.has("SPECIAL-USE") && self.capabilities.has("LIST-EXTENDED")
+        {
             "LIST \"\" \"*\" RETURN (SPECIAL-USE)"
         } else {
             "LIST \"\" \"*\""

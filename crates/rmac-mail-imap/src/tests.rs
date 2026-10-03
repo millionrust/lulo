@@ -98,7 +98,7 @@ fn tls_plain_sync_move_uidplus_special_use_and_idle() {
         );
         send(&mut stream, "L00000002 OK authenticated\r\n");
         assert_eq!(read_line(&mut stream), "L00000003 CAPABILITY\r\n");
-        send(&mut stream, "* CAPABILITY IMAP4rev1 CONDSTORE QRESYNC IDLE MOVE UIDPLUS SPECIAL-USE\r\nL00000003 OK done\r\n");
+        send(&mut stream, "* CAPABILITY IMAP4rev1 CONDSTORE QRESYNC IDLE MOVE UIDPLUS SPECIAL-USE LIST-EXTENDED\r\nL00000003 OK done\r\n");
         assert_eq!(read_line(&mut stream), "L00000004 ENABLE QRESYNC\r\n");
         send(&mut stream, "* ENABLED QRESYNC\r\nL00000004 OK done\r\n");
         assert_eq!(

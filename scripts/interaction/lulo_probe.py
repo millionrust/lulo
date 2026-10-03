@@ -203,6 +203,8 @@ class ShellSession:
         self.top_bar_process = self._spawn([str(self.top_bar)], "top-bar")
         if not self.wait_for_populated_frame(self.top_bar_process.pid):
             raise StepFailed("the top bar did not publish an accessible tree in time")
+        if not self.wait_for_populated_frame(self.dock_process.pid):
+            raise StepFailed("the Dock did not publish an accessible tree in time")
 
     def wait_for_populated_frame(self, pid: int, timeout: float = 15.0) -> bool:
         """AT-SPI briefly reports an app with one empty root frame right

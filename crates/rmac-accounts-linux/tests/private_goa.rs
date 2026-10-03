@@ -43,6 +43,17 @@ impl FakeManager {
                     Some("true")
                 );
             }
+            "ms_graph" => {
+                assert!(credentials.contains_key("refresh_token"));
+                assert_eq!(
+                    details.get("OAuth2ClientId").map(String::as_str),
+                    Some(Provider::Microsoft.info().oauth.unwrap().client_id)
+                );
+                assert_eq!(
+                    details.get("FilesEnabled").map(String::as_str),
+                    Some("false")
+                );
+            }
             "imap_smtp" => {
                 assert!(credentials.contains_key("imap-password"));
                 assert_eq!(details.get("ImapUseSsl").map(String::as_str), Some("true"));
@@ -181,6 +192,15 @@ fn adapter_uses_goa_wire_contract_on_private_bus() {
         services: Services::ALL,
     };
     assert_eq!(client.add_oauth(&input).unwrap(), PATH);
+    assert_eq!(
+        client
+            .add_oauth(&OAuthAccount {
+                provider: Provider::Microsoft,
+                ..input
+            })
+            .unwrap(),
+        PATH
+    );
     let config = MailConfig {
         imap: MailServer {
             host: "imap.example.com".into(),

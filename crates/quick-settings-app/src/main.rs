@@ -156,10 +156,6 @@ fn fallback_bounds(cx: &App) -> Bounds<Pixels> {
 }
 
 fn dismiss_active(cx: &mut App) -> bool {
-    dismiss_active_with_restore(false, cx)
-}
-
-fn dismiss_active_with_restore(restore: bool, cx: &mut App) -> bool {
     #[cfg(target_os = "linux")]
     {
         let catcher =
@@ -173,13 +169,7 @@ fn dismiss_active_with_restore(restore: bool, cx: &mut App) -> bool {
         if let Some(view) = active.view.upgrade() {
             let dismissed = cx
                 .update_window(active.window, |_, window, cx| {
-                    view.update(cx, |view, cx| {
-                        if restore {
-                            view.dismiss_and_restore_focus(window, cx);
-                        } else {
-                            view.dismiss(window, cx);
-                        }
-                    });
+                    view.update(cx, |view, cx| view.dismiss(window, cx));
                 })
                 .is_ok();
             cx.update_global::<QuickSettingsService, _>(|service, _| service.active = None);
@@ -260,16 +250,13 @@ fn open_popover(
         #[cfg(target_os = "linux")]
         {
             let catcher = display.and_then(|display| {
-                rmac_ui::open_outside_click_catcher_around_with_escape(
+                rmac_ui::open_outside_click_catcher_around(
                     "rmac-quick-settings-click-catcher",
                     display,
                     px(TOP_BAR_RESERVED_HEIGHT),
                     Some(bounds),
                     |cx| {
                         dismiss_active(cx);
-                    },
-                    |cx| {
-                        dismiss_active_with_restore(true, cx);
                     },
                     cx,
                 )

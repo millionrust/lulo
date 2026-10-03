@@ -187,6 +187,7 @@ actions!(
         ShowDisplays,
         ShowFocus,
         ShowKeyboard,
+        ShowInternetAccounts,
         ShowLanguageRegion,
         ShowLockScreen,
         ShowLoginItems,

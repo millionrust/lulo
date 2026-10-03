@@ -1136,6 +1136,11 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
             ),
             item!("Menu Bar", "system_settings::ShowMenuBar", ""),
             item!("Network", "system_settings::ShowNetwork", ""),
+            item!(
+                "Internet Accounts",
+                "system_settings::ShowInternetAccounts",
+                ""
+            ),
             item!("Notifications", "system_settings::ShowNotifications", ""),
             item!(
                 "Privacy & Security",

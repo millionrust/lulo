@@ -217,6 +217,9 @@ impl Render for Settings {
             .on_action(cx.listener(|t, _: &ShowNetwork, window, cx| {
                 t.navigate_to_pane("network", window, cx)
             }))
+            .on_action(cx.listener(|t, _: &ShowInternetAccounts, window, cx| {
+                t.navigate_to_pane("internet-accounts", window, cx)
+            }))
             .on_action(cx.listener(|t, _: &ShowNotifications, window, cx| {
                 t.navigate_to_pane("notifications", window, cx)
             }))

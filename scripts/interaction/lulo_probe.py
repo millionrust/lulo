@@ -941,7 +941,7 @@ def run_files_context_menu_surface(nested: "run_lulo.Nested", bins: list[Path], 
     def is_menu_showing() -> bool:
         return _any_showing(run, menu_roles)
 
-    def close_safety_net() -> None:
+    def close_safety_net(corner: tuple[int, int]) -> None:
         for _ in range(2):
             if not is_menu_showing():
                 return
@@ -949,28 +949,34 @@ def run_files_context_menu_surface(nested: "run_lulo.Nested", bins: list[Path], 
             time.sleep(0.3)
         if is_menu_showing():
             # Escape is exactly what this probe may find broken; fall back
-            # to a second right-click at the same empty spot, proven to
-            # toggle the menu closed again by context_background() itself.
-            try:
-                run.context_background()
-            except StepFailed:
-                pass
+            # to a definite outside click (not the menu's own anchor point,
+            # which the still-open menu may now cover) rather than risk
+            # leaving it open for the next probe.
+            run.nested.input.click(*corner, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
             time.sleep(0.3)
 
     out: dict[str, Any] = {}
+    corner = (5, 5)
     try:
         run.setup()
         run.launch()
+        # The Files background context menu only has "list"/"table" roles
+        # to right-click into in List view (tests/behavior/files/context-
+        # menu.json uses the same cmd-2 switch); a fresh window's default
+        # view has none, so context_background() finds no viewport.
+        run.nested.input.key("cmd-2")
+        time.sleep(0.5)
         ox, oy = run.window_origin()
+        corner = (ox + 5, oy + 5)
 
         run.context_background()
         time.sleep(0.5)
         if not is_menu_showing():
             raise StepFailed("the Files background context menu did not open")
-        run.nested.input.click(ox + 30, oy + 30, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+        run.nested.input.click(*corner, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
         time.sleep(0.4)
         out["outside_click"] = {"closed": not is_menu_showing()}
-        close_safety_net()
+        close_safety_net(corner)
 
         run.context_background()
         time.sleep(0.5)
@@ -979,9 +985,9 @@ def run_files_context_menu_surface(nested: "run_lulo.Nested", bins: list[Path], 
         run.nested.input.key("escape")
         time.sleep(0.4)
         out["escape"] = {"closed": not is_menu_showing()}
-        close_safety_net()
+        close_safety_net(corner)
     finally:
-        close_safety_net()
+        close_safety_net(corner)
         run.stop()
     return out
 

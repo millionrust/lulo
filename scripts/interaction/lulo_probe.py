@@ -933,6 +933,24 @@ def _any_showing(run: "run_lulo.LuloRun", roles: set[str]) -> bool:
                for frame in run.frames() for node in descendants(frame, limit=3000))
 
 
+def _window_size(run: "run_lulo.LuloRun") -> Optional[tuple[int, int]]:
+    """The app's own on-screen size, from Sway's tree - not a top-level
+    "frame" node's own WINDOW_COORDS extents, which this AT-SPI adapter
+    reports as the degenerate sentinel (-1, -1, -1, -1) (a frame has no
+    bounds relative to itself; live-verified 2026-10-03 against both the
+    Dock's unnamed root frames and Text Editor's window)."""
+
+    windows = [w for w in run.nested.windows() if w.get("pid") == run.process.pid]
+    focused = [w for w in windows if w.get("focused")] or windows
+    if not focused:
+        return None
+    rect = focused[0].get("rect") or {}
+    width, height = rect.get("width"), rect.get("height")
+    if not width or not height:
+        return None
+    return width, height
+
+
 def run_files_context_menu_surface(nested: "run_lulo.Nested", bins: list[Path], settle: float) -> dict[str, Any]:
     menu_roles = {"menu", "popup menu"}
     scenario = {"app": "files", "launch": {"folder": "."}, "steps": []}
@@ -1006,19 +1024,10 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
         independent of that bug rather than reporting it as "not
         measured"."""
 
-        # A top-level "frame" node's own WINDOW_COORDS extents are the
-        # degenerate sentinel (-1, -1, -1, -1) on this AT-SPI adapter (a
-        # frame has no bounds relative to itself); the real on-screen size
-        # comes from Sway's own tree instead, the same source
-        # fact_window_size() already uses.
-        windows = [w for w in run.nested.windows() if w.get("pid") == run.process.pid]
-        focused = [w for w in windows if w.get("focused")] or windows
-        if not focused:
+        size = _window_size(run)
+        if size is None:
             return
-        rect = focused[0].get("rect") or {}
-        width, height = rect.get("width"), rect.get("height")
-        if not width or not height:
-            return
+        width, height = size
         ox, oy = run.window_origin()
         run.nested.input.click(ox + width / 2, oy + height / 2, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
         time.sleep(0.3)
@@ -1107,9 +1116,9 @@ def run_settings_sidebar_list_surface(nested: "run_lulo.Nested", bins: list[Path
                 run.nested.input.key("escape")
                 time.sleep(0.3)
 
-            frame_box = extents(frame) if frame is not None else None
-            sidebar_region = (max(0, ox + box[0] - 10), max(0, oy),
-                              box[2] + 220, frame_box[3] if frame_box else 600)
+            window_size = _window_size(run)
+            sidebar_height = window_size[1] if window_size is not None else 600
+            sidebar_region = (max(0, ox + box[0] - 10), max(0, oy), box[2] + 220, sidebar_height)
             before = capture_full(run.env, run.nested.work / "settings-sidebar-scroll-before.png")
             run.nested.input.move(cx, cy, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
             run.nested.input.scroll(600)

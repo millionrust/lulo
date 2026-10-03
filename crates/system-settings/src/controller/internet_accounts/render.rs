@@ -14,7 +14,7 @@ fn field(label_text: &'static str, editor: &Entity<InputState>, busy: bool) -> D
 }
 
 impl Settings {
-    pub(super) fn render_internet_accounts(&self, cx: &Context<Self>) -> Div {
+    pub(in crate::controller) fn render_internet_accounts(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let mut cards: Vec<Div> = Vec::new();
         if let Some(path) = &self.internet_account_selected {
@@ -128,7 +128,10 @@ impl Settings {
         self.pane(cards)
     }
 
-    pub(super) fn render_internet_account_delete(&self, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(in crate::controller) fn render_internet_account_delete(
+        &self,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         self.internet_account_delete.then(|| {
             rmac_ui::alert(
                 "Delete this account?",
@@ -157,7 +160,10 @@ impl Settings {
         })
     }
 
-    pub(super) fn render_internet_account_sheet(&self, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(in crate::controller) fn render_internet_account_sheet(
+        &self,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         let sheet = self.internet_account_sheet.as_ref()?;
         let view = cx.entity();
         let busy = self.internet_accounts_busy;
@@ -199,7 +205,6 @@ impl Settings {
                     let view = view.clone();
                     body = body.child(
                         Button::new(format!("account-provider-{choice:?}"), choice.label())
-                            .aria_label(format!("{}, {}", choice.label(), choice.hint()))
                             .selected(selected)
                             .w_full()
                             .on_click(move |_, _, cx| view.update(cx, |settings, cx| {

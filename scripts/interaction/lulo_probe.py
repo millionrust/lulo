@@ -767,18 +767,35 @@ def run_dock_surface(shell: ShellSession, item: dict[str, Any]) -> dict[str, Any
     shell.move(OUTPUT_W // 2, 10)
     time.sleep(0.2)
 
+    # Live-verified (2026-10-03): a synthetic secondary pointer click here
+    # does not even reach a Dock item as a *primary* click does - clicking
+    # the Settings tile's measured centre the same way never spawns its
+    # window either, the same layer-shell limitation click_node() already
+    # documents for the top bar, just with no named AT-SPI action to fall
+    # back to for a context menu. Recording "opened": False here would
+    # misreport a harness limitation as a real absence of a Dock item menu,
+    # so this probe is left unmeasured rather than guessed.
     menu_roles = {"menu", "popup menu"}
     shell.click(cx, cy, button="right")
     time.sleep(0.5)
-    out["right_click"] = {"opened": any_showing(frames, menu_roles)}
-    for _ in range(2):
-        if not any_showing(frames, menu_roles):
-            break
-        shell.input.key("escape")
-        time.sleep(0.3)
-    if any_showing(frames, menu_roles):
-        shell.click(cx, cy, button="right")
-        time.sleep(0.3)
+    opened = any_showing(frames, menu_roles)
+    if opened:
+        out["right_click"] = {"opened": True}
+        for _ in range(2):
+            if not any_showing(frames, menu_roles):
+                break
+            shell.input.key("escape")
+            time.sleep(0.3)
+        if any_showing(frames, menu_roles):
+            shell.click(cx, cy, button="right")
+            time.sleep(0.3)
+    else:
+        out["right_click"] = {
+            "opened": None,
+            "reason": "synthetic pointer clicks do not reach Dock items in this nested harness"
+                      " (a left-click sanity check on another tile also did not activate it); no AT-SPI"
+                      " secondary action is exposed as a substitute",
+        }
     return out
 
 

@@ -56,7 +56,7 @@ impl CalendarView {
     fn control(&self, id: impl Into<SharedString>, label: impl Into<SharedString>,
         active: bool, click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>) -> AnyElement {
-        div().id(id).h(px(28.0)).px(px(10.0)).rounded(px(mac::radius_pill()))
+        div().id(id.into()).h(px(28.0)).px(px(10.0)).rounded(px(mac::radius_pill()))
             .flex().items_center().justify_center()
             .bg(if active { mac::control_fill() } else { mac::material_clear() })
             .text_color(mac::text()).text_size(px(12.0)).child(label.into())

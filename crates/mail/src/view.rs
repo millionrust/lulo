@@ -7,7 +7,7 @@ use gpui::{
 };
 use rmac_mail::{MailState, Mailbox, Message};
 use rmac_mail_mime::{BlockKind, RichText};
-use rmac_ui::mac;
+use rmac_ui::{mac, StyledExt as _};
 
 use crate::{
     CloseWindow, NextMessage, PreviousMessage, ToggleRead, ToggleThreads, ToggleUnreadFilter,

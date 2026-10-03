@@ -131,6 +131,7 @@ fn mx_hosts(_domain: &str) -> Result<Vec<String>, Error> {
 
 /// Only DNS answer names are used to select an OAuth provider; malformed
 /// packets fail closed to the manual server form.
+#[cfg(any(target_os = "linux", test))]
 fn parse_mx_response(packet: &[u8]) -> Result<Vec<String>, Error> {
     if packet.len() < 12 || packet[3] & 0x0f != 0 {
         return Err(Error::InvalidResponse);
@@ -171,6 +172,7 @@ fn parse_mx_response(packet: &[u8]) -> Result<Vec<String>, Error> {
     Ok(hosts)
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn read_name(packet: &[u8], offset: &mut usize) -> Result<String, Error> {
     let mut cursor = *offset;
     let mut jumped = false;

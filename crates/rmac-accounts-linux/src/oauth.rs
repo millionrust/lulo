@@ -203,6 +203,7 @@ impl OAuthAttempt {
         &self.authorization_url
     }
 
+    #[cfg(any(target_os = "linux", test))]
     fn accepts_callback(&self, client_id: &str, uri: &str) -> bool {
         self.flow.clone().browser_return(client_id, uri).is_ok()
     }

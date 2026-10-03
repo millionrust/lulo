@@ -95,6 +95,9 @@ one fake GOA service on a disposable session bus with temporary XDG directories
 and runs the ignored `private_goa` integration test. The test covers account
 enumeration, AddAccount, service toggles, token/password requests, and Remove;
 it never connects to the owner's session bus or changes a real account.
+An optional ignored `real_goa` test reads the laptop's live ObjectManager
+without printing identities or changing accounts; run it only with
+`RMAC_READ_ONLY_GOA_TEST=1` under the shared build lock.
 The cross-app Internet Accounts sheet scenario remains pending until ACC-3.
 
 `docs/behavior-pending/calendar/`, `docs/behavior-pending/mail/` and

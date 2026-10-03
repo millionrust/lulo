@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 use std::fmt;
 
@@ -58,10 +58,30 @@ impl TimeValue {
             LocalResult::Single(value) => Ok(value.with_timezone(&Utc)),
             // RFC 5545 resolves an ambiguous local time using the first occurrence.
             LocalResult::Ambiguous(first, _) => Ok(first.with_timezone(&Utc)),
-            LocalResult::None => Err(CalendarError(format!(
-                "local time {} does not exist in {zone}",
-                self.local
-            ))),
+            // RFC 5545 section 3.3.5 uses the offset before a spring-forward gap.
+            LocalResult::None => {
+                let mut probe = self.local;
+                for _ in 0..(24 * 60) {
+                    probe = probe
+                        .checked_sub_signed(Duration::minutes(1))
+                        .ok_or_else(|| CalendarError("local time underflow".into()))?;
+                    let prior = match zone.from_local_datetime(&probe) {
+                        LocalResult::Single(value) | LocalResult::Ambiguous(value, _) => value,
+                        LocalResult::None => continue,
+                    };
+                    let fixed = prior.offset().fix();
+                    return self
+                        .local
+                        .and_local_timezone(fixed)
+                        .single()
+                        .map(|value| value.with_timezone(&Utc))
+                        .ok_or_else(|| CalendarError("invalid gap time".into()));
+                }
+                Err(CalendarError(format!(
+                    "local time {} does not exist in {zone}",
+                    self.local
+                )))
+            }
         }
     }
 
@@ -82,10 +102,14 @@ impl Calendar {
         let mut events = Vec::new();
         let mut current: Option<Vec<String>> = None;
         let mut in_calendar = false;
+        let mut saw_calendar = false;
         let mut depth = 0usize;
         for line in lines {
             match line.as_str() {
-                "BEGIN:VCALENDAR" if !in_calendar => in_calendar = true,
+                "BEGIN:VCALENDAR" if !in_calendar => {
+                    in_calendar = true;
+                    saw_calendar = true;
+                }
                 "END:VCALENDAR" if in_calendar && depth == 0 => in_calendar = false,
                 "BEGIN:VEVENT" if in_calendar && current.is_none() => current = Some(Vec::new()),
                 "END:VEVENT" if current.is_some() && depth == 0 => {
@@ -106,8 +130,8 @@ impl Calendar {
                 _ => {}
             }
         }
-        if in_calendar || current.is_some() || events.is_empty() {
-            return Err(CalendarError("incomplete or empty VCALENDAR".into()));
+        if in_calendar || current.is_some() || !saw_calendar {
+            return Err(CalendarError("incomplete VCALENDAR".into()));
         }
         Ok(Self { events })
     }
@@ -120,7 +144,7 @@ impl Calendar {
         ];
         for event in &self.events {
             lines.push("BEGIN:VEVENT".into());
-            lines.push(format!("UID:{}", event.uid));
+            lines.push(format!("UID:{}", escape_text(&event.uid)));
             lines.push(format!("SUMMARY:{}", escape_text(&event.summary)));
             lines.push(format_time("DTSTART", event.start));
             lines.push(format_time("DTEND", event.end));
@@ -199,14 +223,35 @@ fn parse_event(lines: &[String]) -> Result<Event, CalendarError> {
             .ok_or_else(|| CalendarError(format!("property lacks colon: {line}")))?;
         let name = name_and_params.split(';').next().unwrap_or_default();
         match name {
-            "UID" => uid = Some(value.to_string()),
+            "UID" => {
+                if uid.replace(unescape_text(value)?).is_some() {
+                    return Err(CalendarError("duplicate UID".into()));
+                }
+            }
             "SUMMARY" => summary = unescape_text(value)?,
-            "DTSTART" => start = Some(parse_time(name_and_params, value)?),
-            "DTEND" => end = Some(parse_time(name_and_params, value)?),
+            "DTSTART" => {
+                if start.replace(parse_time(name_and_params, value)?).is_some() {
+                    return Err(CalendarError("duplicate DTSTART".into()));
+                }
+            }
+            "DTEND" => {
+                if end.replace(parse_time(name_and_params, value)?).is_some() {
+                    return Err(CalendarError("duplicate DTEND".into()));
+                }
+            }
             "RRULE" => rrules.push(value.to_string()),
             "RDATE" => parse_dates(name_and_params, value, &mut rdates)?,
             "EXDATE" => parse_dates(name_and_params, value, &mut exdates)?,
-            "RECURRENCE-ID" => recurrence_id = Some(parse_time(name_and_params, value)?),
+            "RECURRENCE-ID" => {
+                if recurrence_id
+                    .replace(parse_time(name_and_params, value)?)
+                    .is_some()
+                {
+                    return Err(CalendarError("duplicate RECURRENCE-ID".into()));
+                }
+            }
+            "EXRULE" => return Err(CalendarError("EXRULE is unsupported".into())),
+            "DURATION" => return Err(CalendarError("DURATION is unsupported".into())),
             "STATUS" if value == "CANCELLED" => cancelled = true,
             "STATUS" => other_properties.push(line.clone()),
             _ => other_properties.push(line.clone()),
@@ -219,7 +264,10 @@ fn parse_event(lines: &[String]) -> Result<Event, CalendarError> {
     let end = match end {
         Some(end) => end,
         None if start.zone == Zone::Date => TimeValue {
-            local: start.local + Duration::days(1),
+            local: start
+                .local
+                .checked_add_signed(Duration::days(1))
+                .ok_or_else(|| CalendarError("event end overflows".into()))?,
             zone: Zone::Date,
         },
         None => start,
@@ -274,6 +322,7 @@ fn parse_time(property: &str, value: &str) -> Result<TimeValue, CalendarError> {
             "VALUE" if value == "DATE" => date_only = true,
             "VALUE" if value == "DATE-TIME" => {}
             "VALUE" => return Err(CalendarError(format!("unsupported VALUE={value}"))),
+            "RANGE" => return Err(CalendarError("RECURRENCE-ID RANGE is unsupported".into())),
             _ => {}
         }
     }

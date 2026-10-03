@@ -69,8 +69,13 @@ pub fn expand(
         }
         let first = master.start.resolve(floating_zone)?;
         let duration = nominal_duration(master, floating_zone)?;
+        let lookback = if master.start.zone == Zone::Date {
+            duration + Duration::days(2)
+        } else {
+            duration
+        };
         let search_start = window_start
-            .checked_sub_signed(duration.max(Duration::zero()))
+            .checked_sub_signed(lookback)
             .ok_or_else(|| CalendarError("window start underflow".into()))?;
         let mut starts = Vec::new();
         if master.rrules.is_empty() {
@@ -145,7 +150,7 @@ pub fn expand(
 }
 
 fn nominal_duration(event: &Event, floating_zone: Tz) -> Result<Duration, CalendarError> {
-    let duration = if event.start.zone == event.end.zone {
+    let duration = if event.start.zone == Zone::Date && event.end.zone == Zone::Date {
         event.end.local - event.start.local
     } else {
         event.end.resolve(floating_zone)? - event.start.resolve(floating_zone)?

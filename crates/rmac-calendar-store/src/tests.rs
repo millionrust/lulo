@@ -190,6 +190,23 @@ fn all_day_exclusive_end_and_dst() {
 }
 
 #[test]
+fn fall_back_all_day_occurrence_overlaps_next_utc_day() {
+    let calendar = fixture(
+        "DTSTART;VALUE=DATE:20251102\r\nDTEND;VALUE=DATE:20251103\r\nRRULE:FREQ=DAILY;COUNT=2",
+    );
+    let result = expand(
+        &calendar,
+        utc("2025-11-03T04:30:00Z"),
+        utc("2025-11-03T06:00:00Z"),
+        chrono_tz::America::New_York,
+        10,
+    )
+    .unwrap();
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].end - result[0].start, chrono::Duration::hours(25));
+}
+
+#[test]
 fn parse_serialise_round_trip_folded_unicode_and_alarm() {
     let source = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:u1\r\nSUMMARY:Crème\\, tea\\nroom\r\nDTSTART;TZID=Europe/Paris:20250102T090000\r\nDTEND;TZID=Europe/Paris:20250102T100000\r\nDESCRIPTION:Something long\r\n and folded\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
     let parsed = Calendar::parse(source).unwrap();
@@ -204,7 +221,9 @@ fn parse_serialise_round_trip_folded_unicode_and_alarm() {
         ]
     );
     let saved = parsed.to_ical();
-    assert!(saved.lines().all(|line| line.len() <= 75));
+    assert!(saved
+        .lines()
+        .all(|line| line.trim_end_matches('\r').len() <= 75));
     assert_eq!(Calendar::parse(&saved).unwrap(), parsed);
 }
 
@@ -214,10 +233,28 @@ fn invalid_external_data_returns_errors() {
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nEND:VEVENT\r\nEND:VCALENDAR",
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nDTSTART;TZID=Mars/Olympus:20250101T090000\r\nEND:VEVENT\r\nEND:VCALENDAR",
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nDTSTART:20250101T090000Z\r\nDTEND:20241231T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR",
+        "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nUID:y\r\nDTSTART:20250101T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR",
+        "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nDTSTART:20250101T090000Z\r\nDURATION:PT1H\r\nEND:VEVENT\r\nEND:VCALENDAR",
         " BEGIN:VCALENDAR",
     ] {
         assert!(Calendar::parse(source).is_err(), "{source}");
     }
+}
+
+#[test]
+fn empty_calendar_is_valid() {
+    let calendar = Calendar::parse("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n").unwrap();
+    assert!(calendar.events.is_empty());
+    assert_eq!(Calendar::parse(&calendar.to_ical()).unwrap(), calendar);
+}
+
+#[test]
+fn spring_gap_uses_pre_transition_offset() {
+    let calendar = fixture("DTSTART;TZID=America/New_York:20250309T023000\r\nDTEND;TZID=America/New_York:20250309T033000");
+    assert_eq!(
+        calendar.events[0].start.resolve(chrono_tz::UTC).unwrap(),
+        utc("2025-03-09T07:30:00Z")
+    );
 }
 
 #[test]
@@ -344,4 +381,34 @@ fn layout_dst_day_has_23_hours() {
     };
     let slots = layout_day(&[whole], date, Tz::America__New_York).unwrap();
     assert_eq!(slots[0].end_second, 23 * 3600);
+}
+
+#[test]
+fn layout_week_golden_splits_overnight_event() {
+    let start = NaiveDate::from_ymd_opt(2025, 1, 6).unwrap();
+    let overnight = LayoutEvent {
+        id: "night".into(),
+        start: utc("2025-01-06T23:00:00Z"),
+        end: utc("2025-01-07T02:00:00Z"),
+    };
+    let slots = layout_week(&[overnight], start, chrono_tz::UTC).unwrap();
+    let golden: Vec<_> = slots
+        .iter()
+        .map(|slot| {
+            (
+                slot.day.to_string(),
+                slot.start_second,
+                slot.end_second,
+                slot.column,
+                slot.columns,
+            )
+        })
+        .collect();
+    assert_eq!(
+        golden,
+        [
+            ("2025-01-06".into(), 82800, 86400, 0, 1),
+            ("2025-01-07".into(), 0, 7200, 0, 1)
+        ]
+    );
 }

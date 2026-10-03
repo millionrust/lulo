@@ -84,6 +84,22 @@ pub fn layout_day(
     Ok(result)
 }
 
+/// Lay out seven consecutive local day columns, splitting events at local midnight.
+pub fn layout_week(
+    events: &[LayoutEvent],
+    first_day: NaiveDate,
+    zone: Tz,
+) -> Result<Vec<LayoutSlot>, CalendarError> {
+    let mut slots = Vec::new();
+    for offset in 0..7 {
+        let day = first_day
+            .checked_add_days(Days::new(offset))
+            .ok_or_else(|| CalendarError("week overflows".into()))?;
+        slots.extend(layout_day(events, day, zone)?);
+    }
+    Ok(slots)
+}
+
 fn local_midnight(day: NaiveDate, zone: Tz) -> Result<DateTime<Utc>, CalendarError> {
     let local = day
         .and_hms_opt(0, 0, 0)

@@ -13,7 +13,10 @@
     {"observe": "recent", "facts": ["windows"]},
     {"key": "cmd-w", "settle": 1.2},
     {"menu_action": "text_editor::NewFile", "settle": 1.2},
-    {"observe": "new", "facts": ["windows"]}
+    {"observe": "new", "facts": ["windows"]},
+    {"key": "cmd-w", "settle": 1.2},
+    {"menu_action": "text_editor::OpenFile", "settle": 1.2},
+    {"observe": "open_picker", "facts": ["windows", "dialog", "focus"]}
   ],
   "omit": ["open.windows.front", "open.windows.titles", "recent.windows.front", "recent.windows.titles", "new.windows.front", "new.windows.titles"]
 }

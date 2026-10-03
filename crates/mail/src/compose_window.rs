@@ -114,9 +114,9 @@ impl ComposeView {
             .get(self.selected_account)
             .map(|account| account.address.clone())
             .unwrap_or_default();
-        draft.to = addresses(self.to.read(cx).value())?;
-        draft.cc = addresses(self.cc.read(cx).value())?;
-        draft.bcc = addresses(self.bcc.read(cx).value())?;
+        draft.to = addresses(&self.to.read(cx).value())?;
+        draft.cc = addresses(&self.cc.read(cx).value())?;
+        draft.bcc = addresses(&self.bcc.read(cx).value())?;
         draft.subject = self.subject.read(cx).value().to_string();
         draft.text = self.body.read(cx).value().to_string();
         Ok(draft)

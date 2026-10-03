@@ -139,11 +139,11 @@ def start(work: Path) -> Optional["FakeHardware"]:
 
         nm_log = open(logs_dir / "fake-networkmanager.log", "w")
         logs.append(nm_log)
-        nm_process, nm_obj = SpawnedMock.spawn_with_template(
+        nm_server = SpawnedMock.spawn_with_template(
             "networkmanager", {"WirelessEnabled": True}, BusType.SYSTEM, stdout=nm_log, stderr=nm_log,
         )
-        processes.append(nm_process)
-        nm_mock = dbus.Interface(nm_obj, dbusmock.MOCK_IFACE)
+        processes.append(nm_server.process)
+        nm_mock = dbus.Interface(nm_server.obj, dbusmock.MOCK_IFACE)
         wifi = nm_mock.AddWiFiDevice("wlan0", "wlan0", DeviceState.ACTIVATED)
         home_ap = nm_mock.AddAccessPoint(
             wifi, "Home_Network", "Casa Lulo", "AA:BB:CC:DD:EE:02",
@@ -174,11 +174,11 @@ def start(work: Path) -> Optional["FakeHardware"]:
 
         bt_log = open(logs_dir / "fake-bluez.log", "w")
         logs.append(bt_log)
-        bt_process, bt_obj = SpawnedMock.spawn_with_template(
+        bt_server = SpawnedMock.spawn_with_template(
             "bluez5", {}, BusType.SYSTEM, stdout=bt_log, stderr=bt_log,
         )
-        processes.append(bt_process)
-        bt_mock = dbus.Interface(bt_obj, dbusmock.MOCK_IFACE)
+        processes.append(bt_server.process)
+        bt_mock = dbus.Interface(bt_server.obj, dbusmock.MOCK_IFACE)
         bt_mock.AddAdapter("hci0", "lulo-laptop")
         bt_mock.AddDevice("hci0", "AA:BB:CC:DD:EE:06", "Lulo Headphones")
         bt_mock.PairDevice("hci0", "AA:BB:CC:DD:EE:06")
@@ -186,11 +186,11 @@ def start(work: Path) -> Optional["FakeHardware"]:
 
         up_log = open(logs_dir / "fake-upower.log", "w")
         logs.append(up_log)
-        up_process, up_obj = SpawnedMock.spawn_with_template(
+        up_server = SpawnedMock.spawn_with_template(
             "upower", {"OnBattery": True}, BusType.SYSTEM, stdout=up_log, stderr=up_log,
         )
-        processes.append(up_process)
-        up_mock = dbus.Interface(up_obj, dbusmock.MOCK_IFACE)
+        processes.append(up_server.process)
+        up_mock = dbus.Interface(up_server.obj, dbusmock.MOCK_IFACE)
         # type=2 (BATTERY), state=2 (DISCHARGING), 80%, ~2h to empty,
         # warning_level=1 (NONE) -- see dbusmock/templates/upower.py.
         up_mock.SetupDisplayDevice(2, 2, 80.0, 80.0, 100.0, -8.0, 7200, 0, True, "battery-full-symbolic", 1)

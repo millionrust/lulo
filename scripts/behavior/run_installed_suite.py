@@ -6,7 +6,7 @@ Usage on the Lulo host:
       --bin-dir /usr/bin --shell-bin-dir /usr/libexec/rmac \
       --output /tmp/lulo-installed-report
 
-Coverage is 27 recorded Mac behavior scenarios, startup-only readiness for 13
+Coverage is 27 recorded Mac behavior scenarios, startup-only readiness for 14
 first-party apps, a private Terminal typed-command roundtrip, Notes crash
 recovery, and nested power-dialog and shutdown flows. Screenshots are
 captured for review, but no automatic pixel score is calculated. The suite
@@ -47,6 +47,7 @@ EXPECTED_STARTUP_APPS = {
     "archive-utility": "rmac-archive-utility",
     "app-drawer": "rmac-app-drawer",
     "clock": "rmac-clock",
+    "calendar": "rmac-calendar",
     "notes": "rmac-notes",
     "player": "rmac-player",
     "preview": "rmac-preview",

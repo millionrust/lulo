@@ -63,6 +63,7 @@ class StartupSmokeTests(unittest.TestCase):
                 "archive-utility",
                 "app-drawer",
                 "clock",
+                "calendar",
                 "notes",
                 "player",
                 "preview",
@@ -123,6 +124,7 @@ class StartupSmokeTests(unittest.TestCase):
             {
                 "archive-utility": "org.rmac.ArchiveUtility",
                 "clock": "org.rmac.Clock",
+                "calendar": "org.rmac.Calendar",
                 "notes": "org.rmac.Notes",
                 "player": "org.rmac.Player",
                 "preview": "org.rmac.Preview",

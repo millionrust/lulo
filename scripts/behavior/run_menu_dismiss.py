@@ -8,22 +8,10 @@
 shell's `cargo build --profile iterate` output share one CARGO_TARGET_DIR on
 the laptop, so one directory has all of them).
 
-The owner reported that clicking anywhere else on screen — the wallpaper,
-another window, the Dock — while a top-bar menu, a status menu or Control
-Center is open does not close it, unlike macOS. Root cause (confirmed by
-reading the code, not guessed): `TopBar`'s own Wayland surface spans a wide
-band (`MENU_SURFACE_HEIGHT`) but narrows its *input region* to just the bar
-strip plus whatever dropdown is open, so a click anywhere else in that band
-falls through to whatever is physically behind it instead of reaching the
-bar's own click-to-close handler; and the Dock's surface is
-`KeyboardInteractivity::None`, so clicking it never signals a focus loss
-either. The fix widens the bar's own input region while a menu is open and
-adds a transparent, keyboard-inert `Layer::Overlay` click catcher — one
-covering the rest of the screen below that band for the bar itself
-(`shell/bins/rmac-menubar/src/main.rs`'s `open_menu_click_catcher`), another
-shared helper for Control Center and the Notification Center panel
-(`rmac_ui::open_outside_click_catcher`) — that catches the pointer press
-itself rather than depending on compositor keyboard-focus semantics.
+The bar's existing transparent surface spans the display. While a dropdown
+is open, its input region accepts clicks across that surface and the root
+handler closes the menu. The other popovers use
+`rmac_ui::open_outside_click_catcher_around`.
 
 Scenarios, each starting from a clean (all-closed) state:
 
@@ -74,9 +62,8 @@ import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
 OUTPUT_W, OUTPUT_H = 1440, 900
-# shell/bins/rmac-menubar/src/main.rs `MENU_SURFACE_HEIGHT`: the bar's own
-# surface covers this whole band; everything below it is the separate
-# click-catcher surface's territory instead.
+# A stable point below all top-bar dropdowns, also used to distinguish the
+# two outside-click locations exercised by this scenario.
 MENU_SURFACE_HEIGHT = 680
 # Top-right corner big enough to contain Control Center's popover regardless
 # of its exact margins (`crates/rmac-quick-settings/src/surface.rs`).
@@ -101,6 +88,15 @@ class Run:
             f"{'PASS' if ok else 'FAIL'} {name} {detail if not ok else ''}".rstrip(),
             flush=True,
         )
+        if not ok and hasattr(self, "keys"):
+            identifier = f"failure-{len(self.results):03d}"
+            try:
+                self.capture(identifier)
+                (self.work / f"{identifier}-layers.json").write_text(
+                    json.dumps(self.niri("layers"), indent=2), encoding="utf-8"
+                )
+            except Exception as error:  # noqa: BLE001
+                print(f"debug capture failed: {error}", flush=True)
 
     def spawn(self, argv: list[str], name: str, extra: dict[str, str] | None = None) -> subprocess.Popen:
         env = {**self.env, **(extra or {})}
@@ -177,6 +173,14 @@ class Run:
         self.quick_settings = self.spawn(
             [str(bins / "rmac-quick-settings")], "quick-settings", {"VK_ICD_FILENAMES": LAVAPIPE}
         )
+        self.launcher = self.spawn([str(bins / "rmac-launcher")], "launcher",
+                                   {"VK_ICD_FILENAMES": LAVAPIPE})
+        self.app_drawer = self.spawn([str(bins / "rmac-app-drawer"), "--service"], "app-drawer",
+                                     {"VK_ICD_FILENAMES": LAVAPIPE})
+        self.notification_center = self.spawn(
+            [str(bins / "rmac-notification-center-panel")], "notification-center",
+            {"VK_ICD_FILENAMES": LAVAPIPE},
+        )
         self.dispatch_bin = str(bins / "rmac-shortcut-dispatch")
         subprocess.run(["busctl", "--user", "set-property", "org.a11y.Bus", "/org/a11y/bus",
                         "org.a11y.Status", "IsEnabled", "b", "true"],
@@ -193,6 +197,22 @@ class Run:
     def dispatch(self, shortcut: str):
         return subprocess.run([self.dispatch_bin, shortcut], env=self.env, capture_output=True,
                               text=True, timeout=10, check=False)
+
+    def has_layer(self, namespace: str) -> bool:
+        def namespaces(value):
+            if isinstance(value, dict):
+                if isinstance(value.get("namespace"), str):
+                    yield value["namespace"]
+                for child in value.values():
+                    yield from namespaces(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from namespaces(child)
+
+        return namespace in set(namespaces(self.niri("layers")))
+
+    def popover_gone(self, namespace: str) -> bool:
+        return not self.has_layer(namespace) and not self.has_layer(f"{namespace}-click-catcher")
 
     # -- AT-SPI ----------------------------------------------------------
 
@@ -274,6 +294,13 @@ class Run:
         self.keys.key("escape")
         self.keys.key("escape")
         time.sleep(0.2)
+        for shortcut, namespace in (("quick-settings", "rmac-quick-settings"),
+                                    ("launcher", "rmac-launcher"),
+                                    ("app-drawer", "rmac-app-drawer"),
+                                    ("notification-center", "rmac-notification-center")):
+            if self.has_layer(namespace):
+                self.dispatch(shortcut)
+            self.wait_for(lambda namespace=namespace: self.popover_gone(namespace), 5)
 
     def capture(self, name: str) -> Image.Image:
         path = self.work / f"{name}.png"
@@ -296,16 +323,12 @@ class Run:
         self.check("Dock click: the Lulo menu opens first", opened)
         if not opened:
             return
-        # The Dock's own shelf, bottom centre: never keyboard-interactive
-        # (`KeyboardInteractivity::None`), so before the fix a click here
-        # never told the menu to close. Retried like the other scenarios:
-        # the click catcher is a layer surface opened the moment the menu
-        # opens, and a click arriving before its first configure/commit is
-        # exactly the kind of lost event `retry_until` exists for.
-        closed = self.retry_until(
-            lambda: self.click_at(OUTPUT_W / 2, OUTPUT_H - 8),
-            lambda: self.find_menu_item("About") is None,
-        )
+        # The Dock's own shelf is never keyboard-interactive, so a blur
+        # callback cannot be relied on here. This is deliberately one click
+        # right after the first menu opens, with no retry or warm-up.
+        # Aim at a Dock tile, not the shelf's transparent bottom border.
+        self.click_at(OUTPUT_W / 2, OUTPUT_H - 48)
+        closed = self.wait_for(lambda: self.find_menu_item("About") is None, 10)
         self.check("Dock click: closes the open Lulo menu", closed)
 
     def wallpaper_click_below_band_closes_status_menu(self) -> None:
@@ -389,6 +412,10 @@ class Run:
             except subprocess.TimeoutExpired:
                 dummy.kill()
                 dummy.wait(timeout=3)
+            self.wait_for(lambda: not any(
+                item.get("app_id") == "org.rmac.MenuDismissProbe"
+                for item in self.niri("windows") or []
+            ), 10)
 
     def escape_closes_app_menu(self) -> None:
         self.close_everything()
@@ -438,6 +465,158 @@ class Run:
             clicked,
         )
 
+    def clicking_same_title_keeps_menu(self) -> None:
+        self.close_everything()
+        opened = self.retry_until(self.open_system_menu, lambda: self.find_menu_item("About"))
+        self.check("Same title: the Lulo menu opens first", opened)
+        if opened:
+            self.click_button("menu")
+            self.check("Same title: a second click keeps the menu open",
+                       self.find_menu_item("About") is not None)
+
+    def status_menu_dismissal(self, label: str) -> None:
+        captures = {"Wi-Fi": "wifi", "Bluetooth": "bluetooth", "Sound": "sound"}
+        for method in ("outside click", "Escape"):
+            self.close_everything()
+            title = self.wait_for(lambda: self.find_node(
+                ("push button", "button"), lambda name: name.startswith(label)), 3)
+            if title is not None:
+                opened = self.retry_until(lambda: self.click_node(title),
+                                          lambda: self.find_menu(label) is not None)
+            else:
+                # Sound and Bluetooth extras are hidden by default, just as
+                # on the Mac. Reopen the same top-bar binary with its built-in
+                # capture setting to exercise their actual dropdown paths.
+                self.top_bar.terminate()
+                self.top_bar.wait(timeout=5)
+                self.top_bar = self.spawn([str(Path(self.args.bin_dir) / "top-bar")],
+                                          "top-bar-captured", {
+                                              "VK_ICD_FILENAMES": LAVAPIPE,
+                                              "RMAC_CAPTURE_STATUS_MENU": captures[label],
+                                          })
+                opened = self.wait_for(lambda: self.find_menu(label) is not None, 10)
+            self.check(f"{label}: opens for {method}", opened)
+            if not opened:
+                continue
+            if method == "Escape":
+                menu = self.find_menu(label)
+                if menu is not None:
+                    box = self.extents(menu)
+                    if box:
+                        self.click_at(box[0] + 2, box[1] + 2)
+                self.keys.key("escape")
+            else:
+                self.click_at(200, MENU_SURFACE_HEIGHT + 70)
+            self.check(f"{label}: closes on {method}",
+                       self.wait_for(lambda: self.find_menu(label) is None, 10))
+
+    def layer_popover_dismissal(self, shortcut: str, namespace: str) -> None:
+        for method in ("outside click", "inside-band click", "Escape"):
+            self.close_everything()
+            self.dispatch(shortcut)
+            opened = self.wait_for(
+                lambda: self.has_layer(namespace)
+                and self.has_layer(f"{namespace}-click-catcher"), 10
+            )
+            if not opened and self.popover_gone(namespace):
+                # Activation may race the prior window's final removal in a
+                # rapid scripted sequence. Retry only from a closed state so
+                # a late first open cannot be toggled shut.
+                self.dispatch(shortcut)
+                opened = self.wait_for(
+                    lambda: self.has_layer(namespace)
+                    and self.has_layer(f"{namespace}-click-catcher"), 10
+                )
+            self.check(f"{shortcut}: opens for {method}", opened)
+            if not opened:
+                continue
+            # Both layer surfaces can be listed before the catcher's first
+            # input-region commit. Let that frame present before input.
+            time.sleep(0.5)
+            if method == "Escape":
+                self.keys.key("escape")
+            else:
+                self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
+            closed = self.wait_for(lambda: self.popover_gone(namespace), 10)
+            self.check(f"{shortcut}: closes on {method}", closed)
+            if not closed:
+                self.dispatch(shortcut)
+                self.wait_for(lambda: self.popover_gone(namespace), 5)
+
+    def clock_popover_dismissal(self) -> None:
+        namespace = "rmac-notification-center"
+        for method in ("outside click", "inside-band click", "Escape"):
+            self.close_everything()
+            clock = self.wait_for(lambda: self.find_node(
+                ("push button", "button"),
+                lambda name: name.startswith("Date and time:")
+            ), 5)
+            opened = clock is not None and self.click_node(clock) and self.wait_for(
+                lambda: self.has_layer(namespace)
+                and self.has_layer(f"{namespace}-click-catcher"), 10
+            )
+            if not opened and self.popover_gone(namespace):
+                clock = self.find_node(
+                    ("push button", "button"),
+                    lambda name: name.startswith("Date and time:")
+                )
+                opened = clock is not None and self.click_node(clock) and self.wait_for(
+                    lambda: self.has_layer(namespace)
+                    and self.has_layer(f"{namespace}-click-catcher"), 10
+                )
+            self.check(f"clock/date popover: opens for {method}", opened)
+            if not opened:
+                continue
+            time.sleep(0.5)
+            if method == "Escape":
+                self.keys.key("escape")
+            else:
+                self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
+            closed = self.wait_for(lambda: self.popover_gone(namespace), 10)
+            self.check(f"clock/date popover: closes on {method}", closed)
+            if not closed:
+                self.dispatch("notification-center")
+                self.wait_for(lambda: self.popover_gone(namespace), 5)
+
+    def dock_context_menu_dismissal(self) -> None:
+        tile = self.wait_for(lambda: self.find_node(
+            ("push button", "button"),
+            lambda name: name.startswith("Files") and not name.endswith(" menu")), 5)
+        self.check("Dock context menu: Files tile available", tile is not None)
+        if tile is None:
+            return
+        for method in ("outside click", "Escape"):
+            self.close_everything()
+            tile = self.wait_for(lambda: self.find_node(
+                ("push button", "button"),
+                lambda name: name.startswith("Files") and not name.endswith(" menu")
+            ), 5)
+            box = self.extents(tile) if tile is not None else None
+            if box is None:
+                self.check(f"Dock context menu: tile has bounds for {method}", False)
+                continue
+            x, y, w, h = box
+            # GPUI's AT-SPI Y extent can shift when niri's work area changes
+            # after the dummy window closes. The private output is fixed at
+            # 900 px and the Dock shelf stays against its bottom edge.
+            self.click_at(x + w / 2, OUTPUT_H - 48, "right")
+            opened = self.wait_for(lambda: self.find_menu("Files") is not None, 5)
+            self.check(f"Dock context menu: opens for {method}", opened, f"tile={box}")
+            if not opened:
+                continue
+            if method == "Escape":
+                self.keys.key("escape")
+            else:
+                self.click_at(200, MENU_SURFACE_HEIGHT + 70)
+            closed = self.wait_for(lambda: self.find_menu("Files") is None, 10)
+            self.check(f"Dock context menu: closes on {method}", closed)
+            if not closed:
+                self.dock.terminate()
+                self.dock.wait(timeout=5)
+                self.dock = self.spawn([str(Path(self.args.bin_dir) / "dock")], "dock-restarted",
+                                       {"VK_ICD_FILENAMES": LAVAPIPE})
+                self.wait_for(lambda: self.find_menu("Files") is None, 5)
+
     def control_center_and_app_menu_close_on_wallpaper_click(self) -> None:
         self.close_everything()
         # Nothing has touched Control Center before this scenario, so this
@@ -451,16 +630,26 @@ class Run:
 
         opened_pixels = 0
         opened = baseline
+        namespace = "rmac-quick-settings"
+        layer_open = False
         for _ in range(4):
-            self.dispatch("quick-settings")
-            time.sleep(0.6)
+            if self.popover_gone(namespace):
+                self.dispatch("quick-settings")
+            layer_open = self.wait_for(
+                lambda: self.has_layer(namespace)
+                and self.has_layer(f"{namespace}-click-catcher"), 3
+            )
+            if layer_open:
+                time.sleep(0.5)
+                layer_open = self.has_layer(namespace)
+            if layer_open:
+                break
+        for _ in range(4 if layer_open else 0):
+            time.sleep(0.5)
             opened = self.capture("cc-open")
             opened_pixels = self.changed_pixels(baseline, opened, CONTROL_CENTER_BOX)
             if opened_pixels > 500:
                 break
-            # Toggle back off before retrying the dispatch — it opens/closes.
-            self.dispatch("quick-settings")
-            time.sleep(0.4)
         self.check("Control Center: opening it changes its corner of the screen",
                    opened_pixels > 500, f"changed={opened_pixels}")
 
@@ -478,31 +667,45 @@ class Run:
             f"opened_changed={opened_pixels}, after_changed={after_pixels}",
         )
 
-    def warm_up(self) -> None:
-        """Opens and closes the Lulo menu once, discarding the result.
-
-        The click catcher (`open_menu_click_catcher`) is a fresh GPUI window
-        every time a menu opens; this process's very first one pays a
-        one-time renderer/font-system setup cost (confirmed with
-        `niri msg -j layers` showing the catcher mapped correctly — this is
-        purely about how long it takes to start accepting input, not a
-        logic bug) that made the very first scenario's click flaky on a
-        loaded machine. The bar is a long-lived daemon in production, so a
-        real user's first click comes long after login; this just moves
-        that one-time cost out of a timed assertion."""
-
-        self.retry_until(self.open_system_menu, lambda: self.find_menu_item("About"))
-        self.close_everything()
-
     def run(self) -> int:
         self.start()
-        self.warm_up()
+        if self.args.only:
+            if self.args.only == "topbar":
+                self.dock_click_closes_app_menu()
+                self.clicking_same_title_keeps_menu()
+            elif self.args.only == "status":
+                for label in ("Wi-Fi", "Bluetooth", "Sound"):
+                    self.status_menu_dismissal(label)
+            elif self.args.only == "dock":
+                self.dock_context_menu_dismissal()
+            elif self.args.only == "notification-center":
+                self.clock_popover_dismissal()
+            elif self.args.only == "combined":
+                self.control_center_and_app_menu_close_on_wallpaper_click()
+            else:
+                namespaces = {
+                    "quick-settings": "rmac-quick-settings",
+                    "launcher": "rmac-launcher",
+                    "app-drawer": "rmac-app-drawer",
+                    "notification-center": "rmac-notification-center",
+                }
+                self.layer_popover_dismissal(self.args.only, namespaces[self.args.only])
+            return self.finish()
         self.dock_click_closes_app_menu()
         self.wallpaper_click_inside_band_closes_app_menu()
         self.wallpaper_click_below_band_closes_status_menu()
-        self.other_window_click_closes_app_menu()
         self.escape_closes_app_menu()
+        self.other_window_click_closes_app_menu()
         self.clicking_another_title_switches_menus()
+        self.clicking_same_title_keeps_menu()
+        for label in ("Wi-Fi", "Bluetooth", "Sound"):
+            self.status_menu_dismissal(label)
+        self.dock_context_menu_dismissal()
+        for shortcut, namespace in (("quick-settings", "rmac-quick-settings"),
+                                    ("launcher", "rmac-launcher"),
+                                    ("app-drawer", "rmac-app-drawer")):
+            self.layer_popover_dismissal(shortcut, namespace)
+        self.clock_popover_dismissal()
         self.control_center_and_app_menu_close_on_wallpaper_click()
         # Log Out ends this run's own nested niri for real; nothing after
         # this point runs.
@@ -574,6 +777,9 @@ def main() -> int:
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, wallpaper, "
                                           "rmac-quick-settings and rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
+                                           "launcher", "app-drawer", "notification-center",
+                                           "combined"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

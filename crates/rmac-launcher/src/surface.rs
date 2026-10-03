@@ -79,7 +79,7 @@ pub enum Layer {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyboardInteractivity {
-    Exclusive,
+    OnDemand,
 }
 
 #[derive(Clone, PartialEq)]
@@ -206,7 +206,7 @@ pub fn plan(
         margin_bottom: 0.0,
         margin_left: 0.0,
         exclusive_zone: 0,
-        keyboard_interactivity: KeyboardInteractivity::Exclusive,
+        keyboard_interactivity: KeyboardInteractivity::OnDemand,
     })
 }
 
@@ -706,7 +706,7 @@ fn valid_description(description: &Description) -> bool {
         && description.margin_bottom == 0.0
         && description.margin_left == 0.0
         && description.exclusive_zone == 0
-        && description.keyboard_interactivity == KeyboardInteractivity::Exclusive
+        && description.keyboard_interactivity == KeyboardInteractivity::OnDemand
         && !description.invocation.output.0.is_empty()
         && SeatId::new(description.invocation.seat.as_str()).is_ok()
 }
@@ -794,7 +794,7 @@ mod tests {
         assert_eq!(description.margin_top, 236.0);
         assert_eq!(
             description.keyboard_interactivity,
-            KeyboardInteractivity::Exclusive
+            KeyboardInteractivity::OnDemand
         );
         assert_eq!(
             description.invocation.restore_window,

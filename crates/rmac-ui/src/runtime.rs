@@ -274,23 +274,13 @@ pub fn shell_surface_root(
         .bg(gpui::transparent_black())
 }
 
-/// A transparent, keyboard-inert layer-shell surface that fills the rest of
-/// the display below `reserved_top` and runs `on_click` — removing itself
-/// first — the instant a pointer button goes down on it.
+/// A transparent layer-shell surface that accepts input outside `reserved_top`
+/// and runs `on_click` — removing itself first — when a pointer button goes down.
 ///
-/// Control Center and the Notification Center panel each own only the small
-/// rectangle they draw; outside that rectangle a click reaches whatever is
-/// physically there instead (the Dock's own surface never requests keyboard
-/// focus at all, so it never tells the popover to close, and even a surface
-/// that does take focus on click only does so if the compositor transfers
-/// Wayland keyboard focus, which this does not depend on). This closes the
-/// gap by catching the pointer press itself: `Layer::Overlay` sits above the
-/// Dock's `Layer::Top` and above ordinary windows unconditionally (the
-/// wlr-layer-shell stacking order is fixed, not creation-order-dependent),
-/// and `reserved_top` excludes the shared top-bar band
-/// (`shell/bins/rmac-menubar/src/main.rs`'s `MENU_SURFACE_HEIGHT`) so this
-/// never competes with the menu bar's own on-demand surface for a click
-/// meant to switch menus or dismiss a different popover there.
+/// A popover owns only its visible rectangle, so clicks elsewhere can reach
+/// another surface without transferring keyboard focus. This catches the
+/// pointer press directly above ordinary windows and the Dock. The menu-bar
+/// strip remains click-through so its titles can still receive clicks.
 ///
 /// Returns `None` (opening nothing) when the display is shorter than
 /// `reserved_top`, or if the window fails to open.
@@ -302,6 +292,70 @@ pub fn open_outside_click_catcher(
     on_click: impl Fn(&mut App) + 'static,
     cx: &mut App,
 ) -> Option<gpui::AnyWindowHandle> {
+    open_outside_click_catcher_around(namespace, display, reserved_top, None, on_click, cx)
+}
+
+/// Like [`open_outside_click_catcher`], but leaves `excluded` click-through.
+/// The bounds are in display coordinates and normally enclose the popover
+/// itself. Four input rectangles cover the rest of the display without
+/// stealing pointer events from controls inside the popover.
+#[cfg(target_os = "linux")]
+pub fn open_outside_click_catcher_around(
+    namespace: &str,
+    display: std::rc::Rc<dyn gpui::PlatformDisplay>,
+    reserved_top: gpui::Pixels,
+    excluded: Option<gpui::Bounds<gpui::Pixels>>,
+    on_click: impl Fn(&mut App) + 'static,
+    cx: &mut App,
+) -> Option<gpui::AnyWindowHandle> {
+    open_outside_click_catcher_impl(
+        namespace,
+        display,
+        reserved_top,
+        excluded,
+        std::rc::Rc::new(on_click),
+        None,
+        cx,
+    )
+}
+
+/// Catch outside presses and Escape while leaving a popover's own controls
+/// pointer-interactive. Keyboard focus starts on the catcher and moves to the
+/// popover if the user clicks inside it.
+#[cfg(target_os = "linux")]
+pub fn open_outside_click_catcher_around_with_escape(
+    namespace: &str,
+    display: std::rc::Rc<dyn gpui::PlatformDisplay>,
+    reserved_top: gpui::Pixels,
+    excluded: Option<gpui::Bounds<gpui::Pixels>>,
+    on_click: impl Fn(&mut App) + 'static,
+    on_escape: impl Fn(&mut App) + 'static,
+    cx: &mut App,
+) -> Option<gpui::AnyWindowHandle> {
+    open_outside_click_catcher_impl(
+        namespace,
+        display,
+        reserved_top,
+        excluded,
+        std::rc::Rc::new(on_click),
+        Some(std::rc::Rc::new(on_escape)),
+        cx,
+    )
+}
+
+#[cfg(target_os = "linux")]
+type OutsideClickCallback = std::rc::Rc<dyn Fn(&mut App)>;
+
+#[cfg(target_os = "linux")]
+fn open_outside_click_catcher_impl(
+    namespace: &str,
+    display: std::rc::Rc<dyn gpui::PlatformDisplay>,
+    reserved_top: gpui::Pixels,
+    excluded: Option<gpui::Bounds<gpui::Pixels>>,
+    on_click: OutsideClickCallback,
+    on_escape: Option<OutsideClickCallback>,
+    cx: &mut App,
+) -> Option<gpui::AnyWindowHandle> {
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
     use gpui::{
         point, size, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
@@ -309,15 +363,41 @@ pub fn open_outside_click_catcher(
     };
 
     let bounds = display.bounds();
-    let height = bounds.size.height - reserved_top;
-    if height <= gpui::px(0.0) {
+    let height = bounds.size.height;
+    if height <= reserved_top {
         return None;
     }
-    let on_click = std::rc::Rc::new(on_click);
+    let width = f32::from(bounds.size.width);
+    let height = f32::from(height);
+    let reserved = f32::from(reserved_top).clamp(0.0, height);
+    let region = |x: f32, y: f32, w: f32, h: f32| {
+        Bounds::new(
+            point(gpui::px(x), gpui::px(y)),
+            size(gpui::px(w), gpui::px(h)),
+        )
+    };
+    let mut input_regions = if let Some(excluded) = excluded {
+        let raw_left = f32::from(excluded.origin.x - bounds.origin.x);
+        let raw_top = f32::from(excluded.origin.y - bounds.origin.y);
+        let left = raw_left.clamp(0.0, width);
+        let top = raw_top.clamp(reserved, height);
+        let right = (raw_left + f32::from(excluded.size.width)).clamp(left, width);
+        let bottom = (raw_top + f32::from(excluded.size.height)).clamp(top, height);
+        vec![
+            region(0.0, reserved, width, top - reserved),
+            region(0.0, bottom, width, height - bottom),
+            region(0.0, top, left, bottom - top),
+            region(right, top, width - right, bottom - top),
+        ]
+    } else {
+        vec![region(0.0, reserved, width, height - reserved)]
+    };
+    input_regions
+        .retain(|region| region.size.width > gpui::px(0.0) && region.size.height > gpui::px(0.0));
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds {
             origin: point(gpui::px(0.0), gpui::px(0.0)),
-            size: size(bounds.size.width, height),
+            size: bounds.size,
         })),
         titlebar: None,
         focus: false,
@@ -328,9 +408,13 @@ pub fn open_outside_click_catcher(
         kind: WindowKind::LayerShell(LayerShellOptions {
             namespace: namespace.to_owned(),
             layer: Layer::Overlay,
-            anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT | Anchor::BOTTOM,
-            margin: Some((reserved_top, gpui::px(0.0), gpui::px(0.0), gpui::px(0.0))),
-            keyboard_interactivity: KeyboardInteractivity::None,
+            anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
+            keyboard_interactivity: if on_escape.is_some() {
+                KeyboardInteractivity::Exclusive
+            } else {
+                KeyboardInteractivity::OnDemand
+            },
+            exclusive_zone: Some(gpui::px(-1.0)),
             ..Default::default()
         }),
         is_movable: false,
@@ -338,30 +422,63 @@ pub fn open_outside_click_catcher(
         is_minimizable: false,
         ..Default::default()
     };
-    cx.open_window(options, move |_, cx| {
+    match cx.open_window(options, move |window, cx| {
         let left = on_click.clone();
         let right = on_click.clone();
-        cx.new(|_| OutsideClickCatcher { left, right })
-    })
-    .ok()
-    .map(AnyWindowHandle::from)
+        cx.new(|cx| {
+            let focus = cx.focus_handle();
+            if on_escape.is_some() {
+                focus.focus(window, cx);
+            }
+            OutsideClickCatcher {
+                left,
+                right,
+                escape: on_escape,
+                focus,
+                input_regions,
+            }
+        })
+    }) {
+        Ok(handle) => Some(AnyWindowHandle::from(handle)),
+        Err(error) => {
+            eprintln!("outside click catcher {namespace} failed to open: {error}");
+            None
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
 struct OutsideClickCatcher {
-    left: std::rc::Rc<dyn Fn(&mut App)>,
-    right: std::rc::Rc<dyn Fn(&mut App)>,
+    left: OutsideClickCallback,
+    right: OutsideClickCallback,
+    escape: Option<OutsideClickCallback>,
+    focus: gpui::FocusHandle,
+    input_regions: Vec<gpui::Bounds<gpui::Pixels>>,
 }
 
 #[cfg(target_os = "linux")]
 impl gpui::Render for OutsideClickCatcher {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl gpui::IntoElement {
+    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl gpui::IntoElement {
         use gpui::{InteractiveElement, MouseButton};
+
+        window.set_input_region(Some(&self.input_regions));
 
         let left = self.left.clone();
         let right = self.right.clone();
+        let escape = self.escape.clone();
         gpui::div()
+            .id("outside-click-catcher")
             .size_full()
+            .track_focus(&self.focus)
+            .bg(gpui::transparent_black())
+            .on_key_down(move |event: &gpui::KeyDownEvent, window, cx| {
+                if event.keystroke.key == "escape" {
+                    if let Some(escape) = &escape {
+                        window.remove_window();
+                        escape(cx);
+                    }
+                }
+            })
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 window.remove_window();
                 left(cx);

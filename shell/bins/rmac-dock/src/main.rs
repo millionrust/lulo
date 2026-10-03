@@ -629,6 +629,17 @@ mod linux_wayland {
         }
     }
 
+    type InputRegionKey = (
+        f32,
+        f32,
+        bool,
+        bool,
+        f32,
+        f32,
+        f32,
+        rmac_shell_settings::DockPlacement,
+    );
+
     struct Dock {
         display_id: u64,
         placement: rmac_shell_settings::DockPlacement,
@@ -636,7 +647,9 @@ mod linux_wayland {
         status: Entity<DockStatus>,
         hovered_item: Option<(f32, String)>,
         context_menu: Option<DockMenu>,
-        input_region: Option<(f32, f32, bool, bool)>,
+        dismiss_focus: FocusHandle,
+        dismiss_focus_active: bool,
+        input_region: Option<InputRegionKey>,
         pointer_inside: bool,
         hidden: bool,
         /// Auto-hide slide in progress: (start ms, sliding out).
@@ -666,8 +679,7 @@ mod linux_wayland {
         bounces: rmac_dock::bounce::BounceTracker,
         /// The tile under a held primary button: macOS darkens it.
         pressed: Option<String>,
-        /// Option held (read from pointer events; the Dock surface never takes the
-        /// keyboard): Dock menus show Force Quit instead of Quit.
+        /// Option held: Dock menus show Force Quit instead of Quit.
         option_held: bool,
         /// Reviewed Trash contents waiting for the Empty Trash alert.
         trash_review: Option<rmac_dock_system::dispatch::ReviewedTrash>,
@@ -686,6 +698,15 @@ mod linux_wayland {
     }
 
     impl Dock {
+        fn dismiss_popovers(&mut self, cx: &mut Context<Self>) {
+            self.context_menu = None;
+            self.separator_menu = None;
+            self.stack_popover = None;
+            self.input_region = None;
+            self.dismiss_focus_active = false;
+            cx.notify();
+        }
+
         fn new(
             display_id: DisplayId,
             surface: DockSurface,
@@ -707,6 +728,8 @@ mod linux_wayland {
                 status,
                 hovered_item: None,
                 context_menu: None,
+                dismiss_focus: cx.focus_handle(),
+                dismiss_focus_active: false,
                 input_region: None,
                 pointer_inside: false,
                 hidden,
@@ -2431,8 +2454,35 @@ mod linux_wayland {
                 || self.keyboard.is_some()
                 || self.separator_menu.is_some()
                 || self.stack_popover.is_some();
-            let input_region = (shelf_start, shelf_extent, self.hidden, modal);
-            if self.input_region != Some(input_region) {
+            let popover_open = self.context_menu.is_some()
+                || self.separator_menu.is_some()
+                || self.stack_popover.is_some();
+            if popover_open && self.keyboard.is_none() && !self.dismiss_focus_active {
+                self.dismiss_focus.focus(window, cx);
+                self.dismiss_focus_active = true;
+            } else if !popover_open {
+                if self.dismiss_focus_active && self.keyboard.is_none() {
+                    // The menu used this OnDemand surface for Escape. Give
+                    // keyboard focus back when it closes so a later
+                    // shortcut-opened overlay can receive its first key.
+                    window.blur();
+                }
+                self.dismiss_focus_active = false;
+            }
+            // The output can be resized without changing the shelf's length.
+            // Include the surface geometry so the input region follows the
+            // visible shelf after a work-area/output update.
+            let input_region = (
+                shelf_start,
+                shelf_extent,
+                self.hidden,
+                modal,
+                surface_width,
+                surface_height,
+                metrics.exclusive_zone,
+                self.placement,
+            );
+            if self.input_region != Some(input_region) || modal {
                 let shelf_bounds = match (self.placement, self.hidden) {
                     (rmac_shell_settings::DockPlacement::Bottom, true) => Bounds {
                         origin: point(px(shelf_start), px(surface_height - 2.0)),
@@ -2537,9 +2587,20 @@ mod linux_wayland {
                 .role(Role::Toolbar)
                 .aria_label("Dock")
                 .size_full()
+                .track_focus(&self.dismiss_focus)
                 .relative()
                 .flex()
                 .font_features(rmac_shell_ui::tabular_font_features())
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    if event.keystroke.key == "escape"
+                        && (this.context_menu.is_some()
+                            || this.separator_menu.is_some()
+                            || this.stack_popover.is_some())
+                    {
+                        cx.stop_propagation();
+                        this.dismiss_popovers(cx);
+                    }
+                }))
                 // Any click leaves keyboard mode first; a click on a tile
                 // then does what it always does. niri gives the keyboard
                 // back to its focused window when the focus surface goes.
@@ -2548,15 +2609,28 @@ mod linux_wayland {
                         this.leave_keyboard(false, cx);
                     }
                 }))
-                .on_click(cx.listener(|this, _, _, cx| {
-                    let mut changed = this.context_menu.take().is_some();
-                    changed |= this.separator_menu.take().is_some();
-                    changed |= this.stack_popover.take().is_some();
-                    if changed {
-                        this.input_region = None;
-                        cx.notify();
-                    }
-                }))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| {
+                        if this.context_menu.is_some()
+                            || this.separator_menu.is_some()
+                            || this.stack_popover.is_some()
+                        {
+                            this.dismiss_popovers(cx);
+                        }
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, _, _, cx| {
+                        if this.context_menu.is_some()
+                            || this.separator_menu.is_some()
+                            || this.stack_popover.is_some()
+                        {
+                            this.dismiss_popovers(cx);
+                        }
+                    }),
+                )
                 .on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
@@ -2847,7 +2921,7 @@ mod linux_wayland {
                         })
                         .on_mouse_down(MouseButton::Right, {
                             let kind = kind.clone();
-                            cx.listener(move |this, _, _, cx| {
+                            cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 let session = this.status.read(cx).model().and_then(|model| {
                                     model.stack_context_menu(&kind).and_then(|menu| {
@@ -2862,6 +2936,12 @@ mod linux_wayland {
                                     login: None,
                                 });
                                 this.input_region = None;
+                                if this.context_menu.is_some() {
+                                    window.set_input_region(Some(&[Bounds {
+                                        origin: point(px(0.0), px(0.0)),
+                                        size: window.bounds().size,
+                                    }]));
+                                }
                                 cx.notify();
                             })
                         })
@@ -3179,7 +3259,7 @@ mod linux_wayland {
                             == rmac_apps::identity::FILES;
                         item = item.on_mouse_down(
                             MouseButton::Right,
-                            cx.listener(move |this, _, _, cx| {
+                            cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 let session = {
                                     let status = this.status.read(cx);
@@ -3202,6 +3282,12 @@ mod linux_wayland {
                                     login: None,
                                 });
                                 this.input_region = None;
+                                if this.context_menu.is_some() {
+                                    window.set_input_region(Some(&[Bounds {
+                                        origin: point(px(0.0), px(0.0)),
+                                        size: window.bounds().size,
+                                    }]));
+                                }
                                 if !is_finder {
                                     this.load_login_state(&context_app_id, cx);
                                 }
@@ -3387,7 +3473,7 @@ mod linux_wayland {
                         }
                         trash = trash.on_mouse_down(
                             MouseButton::Right,
-                            cx.listener(move |this, _, _, cx| {
+                            cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 let session = {
                                     let status = this.status.read(cx);
@@ -3411,6 +3497,12 @@ mod linux_wayland {
                                     login: None,
                                 });
                                 this.input_region = None;
+                                if this.context_menu.is_some() {
+                                    window.set_input_region(Some(&[Bounds {
+                                        origin: point(px(0.0), px(0.0)),
+                                        size: window.bounds().size,
+                                    }]));
+                                }
                                 cx.notify();
                             }),
                         );
@@ -5089,7 +5181,7 @@ mod linux_wayland {
                         namespace: format!("rmac-dock-{}", u64::from(display_id)),
                         layer: Layer::Top,
                         anchor,
-                        keyboard_interactivity: KeyboardInteractivity::None,
+                        keyboard_interactivity: KeyboardInteractivity::OnDemand,
                         exclusive_zone,
                         ..Default::default()
                     }),

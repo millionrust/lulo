@@ -61,15 +61,34 @@ pub(super) fn warm_renderer(cx: &mut App) {
 
 pub(crate) fn release(token: u64, cx: &mut App) {
     if cx.has_global::<LauncherService>() {
-        cx.update_global::<LauncherService, _>(|service, _| {
-            if service
-                .active
-                .as_ref()
-                .is_some_and(|active| active.token == token)
-            {
-                service.active = None;
-            }
-        });
+        let catcher: Option<AnyWindowHandle> =
+            cx.update_global::<LauncherService, _>(|service, _| {
+                let matches = service
+                    .active
+                    .as_ref()
+                    .is_some_and(|active| active.token == token);
+                if matches {
+                    service.active = None;
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    if service.pending_dismiss == Some(token) {
+                        service.pending_dismiss = None;
+                    }
+                    if matches {
+                        service.catcher.take()
+                    } else {
+                        None
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    None
+                }
+            });
+        if let Some(catcher) = catcher {
+            let _ = catcher.update(cx, |_, window, _| window.remove_window());
+        }
     }
 }
 
@@ -93,7 +112,7 @@ fn overlay_options(bounds: WindowBounds, margin_top: f64) -> WindowOptions {
             // margin, results growing downwards without moving the bar.
             anchor: Anchor::TOP,
             margin: Some((px(margin_top as f32), px(0.0), px(0.0), px(0.0))),
-            keyboard_interactivity: KeyboardInteractivity::Exclusive,
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
             ..Default::default()
         }),
         is_movable: false,
@@ -146,10 +165,21 @@ fn route_existing(event: &rmac_shortcuts::Event, cx: &mut App) -> bool {
     false
 }
 
-fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut App) {
+fn open_launcher(
+    event: rmac_shortcuts::Event,
+    options: WindowOptions,
+    excluded: Option<Bounds<gpui::Pixels>>,
+    cx: &mut App,
+) {
+    #[cfg(not(target_os = "linux"))]
+    let _ = excluded;
     let (token, registry, settings, error, clipboard, applications, learning) = cx
         .update_global::<LauncherService, _>(|service, _| {
             service.next_overlay = service.next_overlay.wrapping_add(1).max(1);
+            #[cfg(target_os = "linux")]
+            {
+                service.pending_dismiss = None;
+            }
             (
                 service.next_overlay,
                 service.registry.clone(),
@@ -160,6 +190,55 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
                 service.learning.clone(),
             )
         });
+    #[cfg(target_os = "linux")]
+    {
+        // The catcher is lightweight; request it before the visible overlay
+        // so the first outside click after Spotlight appears is not lost
+        // while a second GPUI layer surface maps.
+        let display = cx
+            .displays()
+            .into_iter()
+            .find(|display| {
+                excluded.is_some_and(|excluded| {
+                    let screen = display.bounds();
+                    excluded.origin.x >= screen.origin.x
+                        && excluded.origin.x < screen.origin.x + screen.size.width
+                        && excluded.origin.y >= screen.origin.y
+                        && excluded.origin.y < screen.origin.y + screen.size.height
+                })
+            })
+            .or_else(|| cx.primary_display());
+        let catcher = display.and_then(|display| {
+            rmac_ui::open_outside_click_catcher_around(
+                "rmac-launcher-click-catcher",
+                display,
+                px(29.0),
+                excluded,
+                move |cx| {
+                    let active = cx.read_global::<LauncherService, _>(|service, _| {
+                        service
+                            .active
+                            .clone()
+                            .filter(|active| active.token == token)
+                    });
+                    if let Some(active) = active {
+                        if let Some(view) = active.view.upgrade() {
+                            let _ = cx.update_window(active.window, |_, window, cx| {
+                                view.update(cx, |view, cx| view.dismiss(window, cx));
+                            });
+                        }
+                        release(token, cx);
+                    } else {
+                        cx.update_global::<LauncherService, _>(|service, _| {
+                            service.pending_dismiss = Some(token);
+                        });
+                    }
+                },
+                cx,
+            )
+        });
+        cx.update_global::<LauncherService, _>(|service, _| service.catcher = catcher);
+    }
     let mut launcher = None;
     let handle = cx.open_window(options, |window, cx| {
         if let Some(directory) = std::env::var_os("RMAC_SPOTLIGHT_FRAME_DIR") {
@@ -192,6 +271,16 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
     if let (Ok(handle), Some(view)) = (handle, launcher) {
+        #[cfg(target_os = "linux")]
+        let cancel = cx.update_global::<LauncherService, _>(|service, _| {
+            service.active = Some(ActiveOverlay {
+                token,
+                view,
+                window: handle.into(),
+            });
+            service.pending_dismiss.take() == Some(token)
+        });
+        #[cfg(not(target_os = "linux"))]
         cx.update_global::<LauncherService, _>(|service, _| {
             service.active = Some(ActiveOverlay {
                 token,
@@ -199,7 +288,40 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
                 window: handle.into(),
             });
         });
+        #[cfg(target_os = "linux")]
+        if cancel {
+            let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+            if let Some(active) = active {
+                if let Some(view) = active.view.upgrade() {
+                    let _ = cx.update_window(active.window, |_, window, cx| {
+                        view.update(cx, |view, cx| view.dismiss(window, cx));
+                    });
+                }
+            }
+            release(token, cx);
+            return;
+        }
         cx.activate(true);
+        // A layer-shell popup opened from the shortcut endpoint does not
+        // receive a pointer press. Request compositor keyboard focus so the
+        // first Escape closes Spotlight even after other shell popovers.
+        let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+        if let Some(active) = active {
+            let _ = active
+                .window
+                .update(cx, |_, window, _| window.activate_window());
+        }
+    } else {
+        #[cfg(target_os = "linux")]
+        {
+            let catcher = cx.update_global::<LauncherService, _>(|service, _| {
+                service.pending_dismiss = None;
+                service.catcher.take()
+            });
+            if let Some(catcher) = catcher {
+                let _ = catcher.update(cx, |_, window, _| window.remove_window());
+            }
+        }
     }
 }
 
@@ -208,7 +330,7 @@ pub(super) fn route_shortcut(event: rmac_shortcuts::Event, cx: &mut App) {
     if route_existing(&event, cx) {
         return;
     }
-    open_launcher(event, fallback_options(cx), cx);
+    open_launcher(event, fallback_options(cx), None, cx);
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -249,6 +371,7 @@ pub(super) fn route_activation(
     open_launcher(
         event,
         overlay_options(WindowBounds::Windowed(bounds), description.margin_top),
+        Some(bounds),
         cx,
     );
 }

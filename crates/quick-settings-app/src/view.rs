@@ -1,13 +1,11 @@
 use std::process::Command as ProcessCommand;
 use std::time::{Duration, Instant};
 
-use gpui::{BorrowAppContext as _, Context, FocusHandle, KeyDownEvent, SharedString, Window};
+use gpui::{Context, FocusHandle, KeyDownEvent, SharedString, Window};
 use rmac_quick_settings::detail::{self, Detail, Module, Panel, RowAction, Target};
 use rmac_quick_settings::layout::Modules;
 use rmac_quick_settings::{Command, Control, Operation, State};
 use rmac_ui::SliderBulge;
-
-use crate::QuickSettingsService;
 
 /// How often Now Playing re-reads the active MPRIS player while open.
 const MEDIA_POLL: Duration = Duration::from_millis(1000);
@@ -58,6 +56,7 @@ impl SliderBulges {
 }
 
 pub(crate) struct QuickSettingsView {
+    token: u64,
     pub(crate) state: State,
     pub(crate) stream_error: Option<SharedString>,
     pub(crate) operation_error: Option<SharedString>,
@@ -92,7 +91,6 @@ pub(crate) struct QuickSettingsView {
     pub(crate) a11y_active_last_frame: bool,
     volume_generation: u64,
     brightness_generation: u64,
-    was_active: bool,
 }
 
 impl QuickSettingsView {
@@ -118,42 +116,10 @@ impl QuickSettingsView {
     pub(crate) fn new(token: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         focus.focus(window, cx);
-        cx.observe_window_activation(window, |this, window, cx| {
-            if window.is_window_active() {
-                this.was_active = true;
-            } else if this.was_active {
-                this.dismiss(window, cx);
-            }
-        })
-        .detach();
+        // The outside catcher handles pointer dismissal. Compositor focus can
+        // move back to an open menu-bar menu while this panel remains visible.
         cx.on_release(move |_, cx| {
-            if cx.has_global::<QuickSettingsService>() {
-                // Every way this window can close (Escape, focus loss, a
-                // button that opens Settings, the toggle) ends here, so the
-                // outside-click catcher goes with it; otherwise an orphaned
-                // catcher would swallow the next click anywhere on screen.
-                #[cfg(target_os = "linux")]
-                let mut catcher = None;
-                cx.update_global::<QuickSettingsService, _>(|service, _| {
-                    if service
-                        .active
-                        .as_ref()
-                        .is_some_and(|active| active.token == token)
-                    {
-                        service.active = None;
-                        #[cfg(target_os = "linux")]
-                        {
-                            catcher = service.catcher.take();
-                        }
-                    }
-                });
-                #[cfg(target_os = "linux")]
-                if let Some(catcher) = catcher {
-                    cx.defer(move |cx| {
-                        let _ = catcher.update(cx, |_, window, _| window.remove_window());
-                    });
-                }
-            }
+            crate::clear_active_popover(token, cx);
         })
         .detach();
 
@@ -211,6 +177,7 @@ impl QuickSettingsView {
         .detach();
 
         Self {
+            token,
             state: State::default(),
             stream_error: None,
             operation_error: None,
@@ -232,7 +199,6 @@ impl QuickSettingsView {
             a11y_active_last_frame: false,
             volume_generation: 0,
             brightness_generation: 0,
-            was_active: false,
         }
     }
 
@@ -751,7 +717,8 @@ impl QuickSettingsView {
         self.dismiss(window, cx);
     }
 
-    pub(crate) fn dismiss(&mut self, window: &mut Window, _cx: &mut Context<Self>) {
+    pub(crate) fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        crate::clear_active_popover(self.token, cx);
         window.remove_window();
     }
 }

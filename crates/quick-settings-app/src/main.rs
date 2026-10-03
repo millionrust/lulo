@@ -73,7 +73,7 @@ pub(crate) struct QuickSettingsService {
     active: Option<ActivePopover>,
     next_token: u64,
     /// The full-screen click catcher that closes the popover the instant a
-    /// pointer button goes down anywhere else (`rmac_ui::open_outside_click_catcher`),
+    /// pointer button goes down anywhere else (`rmac_ui::open_outside_click_catcher_around`),
     /// open only while `active` is `Some`.
     #[cfg(target_os = "linux")]
     catcher: Option<AnyWindowHandle>,
@@ -81,12 +81,10 @@ pub(crate) struct QuickSettingsService {
 
 impl Global for QuickSettingsService {}
 
-/// How much of the display's top the shared top-bar/menu surface
-/// (`shell/bins/rmac-menubar/src/main.rs`'s `MENU_SURFACE_HEIGHT`) already
-/// owns. The click catcher starts below it so it never competes with that
-/// surface's own on-demand focus for a click meant to switch menus there.
+/// Keep the visible menu-bar strip free for its own title clicks; the
+/// catcher's input hole preserves this popover's controls below it.
 #[cfg(target_os = "linux")]
-const TOP_BAR_RESERVED_HEIGHT: f32 = 680.0;
+const TOP_BAR_RESERVED_HEIGHT: f32 = 29.0;
 
 #[cfg(target_os = "linux")]
 fn popover_options(bounds: Bounds<Pixels>) -> WindowOptions {
@@ -184,6 +182,39 @@ fn dismiss_active(cx: &mut App) -> bool {
     false
 }
 
+pub(crate) fn clear_active_popover(token: u64, cx: &mut App) {
+    if !cx.has_global::<QuickSettingsService>() {
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    let catcher = cx.update_global::<QuickSettingsService, _>(|service, _| {
+        if service
+            .active
+            .as_ref()
+            .is_some_and(|active| active.token == token)
+        {
+            service.active = None;
+            service.catcher.take()
+        } else {
+            None
+        }
+    });
+    #[cfg(not(target_os = "linux"))]
+    cx.update_global::<QuickSettingsService, _>(|service, _| {
+        if service
+            .active
+            .as_ref()
+            .is_some_and(|active| active.token == token)
+        {
+            service.active = None;
+        }
+    });
+    #[cfg(target_os = "linux")]
+    if let Some(catcher) = catcher {
+        let _ = catcher.update(cx, |_, window, _| window.remove_window());
+    }
+}
+
 fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
     let token = cx.update_global::<QuickSettingsService, _>(|service, _| {
         service.next_token = service.next_token.wrapping_add(1).max(1);
@@ -202,7 +233,9 @@ fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
         let display = handle
             .update(cx, |_, window, cx| window.display(cx))
             .ok()
-            .flatten();
+            .flatten()
+            .or_else(|| cx.primary_display())
+            .or_else(|| cx.displays().into_iter().next());
         cx.update_global::<QuickSettingsService, _>(|service, _| {
             service.active = Some(ActivePopover {
                 token,
@@ -213,10 +246,14 @@ fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
         #[cfg(target_os = "linux")]
         {
             let catcher = display.and_then(|display| {
-                rmac_ui::open_outside_click_catcher(
+                rmac_ui::open_outside_click_catcher_around_with_escape(
                     "rmac-quick-settings-click-catcher",
                     display,
                     px(TOP_BAR_RESERVED_HEIGHT),
+                    Some(bounds),
+                    |cx| {
+                        dismiss_active(cx);
+                    },
                     |cx| {
                         dismiss_active(cx);
                     },

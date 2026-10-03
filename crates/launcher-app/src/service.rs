@@ -47,6 +47,10 @@ struct LauncherService {
     registry: Arc<Registry>,
     settings_error: Option<SharedString>,
     active: Option<ActiveOverlay>,
+    #[cfg(target_os = "linux")]
+    catcher: Option<AnyWindowHandle>,
+    #[cfg(target_os = "linux")]
+    pending_dismiss: Option<u64>,
     next_overlay: u64,
     clipboard: async_channel::Sender<String>,
     /// Choices learned so far; replaced whole on each new choice.
@@ -140,6 +144,10 @@ pub(crate) fn run() {
                 registry,
                 settings_error: None,
                 active: None,
+                #[cfg(target_os = "linux")]
+                catcher: None,
+                #[cfg(target_os = "linux")]
+                pending_dismiss: None,
                 next_overlay: 0,
                 clipboard: clipboard_tx,
                 learning: Arc::new(learning::load()),

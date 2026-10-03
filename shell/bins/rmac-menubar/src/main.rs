@@ -37,6 +37,7 @@ mod linux_wayland {
         top_bar_clock_parts, top_bar_indicator_labels, top_bar_workspace_label,
         TopBarIndicatorKind,
     };
+    use rmac_ui::{slider_bulge_lerp, SliderBulge};
     use uuid::Uuid;
 
     use crate::menu_model::{
@@ -888,6 +889,9 @@ mod linux_wayland {
         /// further moves (within the row) drag the value instead of
         /// requiring another click.
         status_dragging_volume: bool,
+        volume_hovered: bool,
+        volume_bulge: SliderBulge,
+        volume_bulge_epoch: Instant,
         /// The volume slider's track bounds (left, width) in window
         /// coordinates, recorded while painting so a click or drag can turn
         /// an x position into a volume.
@@ -925,15 +929,6 @@ mod linux_wayland {
         /// same for a status menu.
         capture_status: Option<(StatusMenuKind, bool)>,
         _blur: Subscription,
-        /// A transparent, keyboard-inert layer surface covering everything
-        /// below the bar's own `MENU_SURFACE_HEIGHT` band, open only while
-        /// `open_menu` or `status_menu` is `Some`. The bar's own surface
-        /// claims a wider input region while a menu is open (see `render`),
-        /// so together the two catch a click anywhere else on screen —
-        /// desktop, Dock (never keyboard-interactive, so it never signals a
-        /// focus loss) or another window — and close the menu, matching
-        /// macOS. See `ensure_click_catcher`/`remove_click_catcher`.
-        click_catcher: Option<AnyWindowHandle>,
     }
 
     /// Re-read the audio snapshot whenever PipeWire reports a change (a
@@ -1038,6 +1033,9 @@ mod linux_wayland {
                 sound_menu: None,
                 sound_error: None,
                 status_dragging_volume: false,
+                volume_hovered: false,
+                volume_bulge: SliderBulge::default(),
+                volume_bulge_epoch: Instant::now(),
                 volume_track: Rc::new(RefCell::new((0.0, 1.0))),
                 bluetooth_menu: None,
                 bluetooth_error: None,
@@ -1060,12 +1058,15 @@ mod linux_wayland {
                 keyboard: None,
                 focus,
                 _blur: blur,
-                click_catcher: None,
             }
         }
 
         fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
             if self.status_menu.take().is_some() {
+                self.status_dragging_volume = false;
+                self.volume_hovered = false;
+                self.volume_bulge
+                    .set_active(false, self.volume_bulge_epoch.elapsed().as_millis() as u64);
                 self.status_selected = None;
                 self.status_option = false;
                 self.status_generation = self.status_generation.saturating_add(1);
@@ -1090,27 +1091,14 @@ mod linux_wayland {
             if self.fullscreen && !self.pointer_inside {
                 self.schedule_fullscreen_hide(cx);
             }
-            self.remove_click_catcher(cx);
         }
 
-        /// Opens (if not already open) the click catcher below the bar's own
-        /// `MENU_SURFACE_HEIGHT` band — see `click_catcher`'s field doc.
-        fn ensure_click_catcher(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-            if self.click_catcher.is_some() {
-                return;
-            }
-            let Some(display) = window.display(cx) else {
-                return;
-            };
-            let Some(top_bar) = window.window_handle().downcast::<TopBar>() else {
-                return;
-            };
-            self.click_catcher = open_menu_click_catcher(display, top_bar, cx);
-        }
-
-        fn remove_click_catcher(&mut self, cx: &mut App) {
-            if let Some(handle) = self.click_catcher.take() {
-                let _ = handle.update(cx, |_, window, _| window.remove_window());
+        fn sync_volume_bulge(&mut self, window: &mut Window) {
+            let now = self.volume_bulge_epoch.elapsed().as_millis() as u64;
+            self.volume_bulge
+                .set_active(self.volume_hovered || self.status_dragging_volume, now);
+            if self.volume_bulge.is_animating(now) {
+                window.request_animation_frame();
             }
         }
 
@@ -1163,7 +1151,6 @@ mod linux_wayland {
                             this.hover_generation = this.hover_generation.saturating_add(1);
                             this.menu_window = None;
                             this.help_query.clear();
-                            this.remove_click_catcher(cx);
                             cx.notify();
                             if let Some(confirmed) =
                                 menu_model::confirmation_default_action(&action)
@@ -1204,7 +1191,6 @@ mod linux_wayland {
             self.open_menu_content(index, app_id, cx);
             window.focus(&self.focus, cx);
             window.refresh();
-            self.ensure_click_catcher(window, cx);
         }
 
         /// Everything `open_menu` does except taking the bar's own window
@@ -1790,7 +1776,6 @@ mod linux_wayland {
             self.load_status_menu(kind, true, cx);
             window.focus(&self.focus, cx);
             window.refresh();
-            self.ensure_click_catcher(window, cx);
             cx.notify();
         }
 
@@ -2606,6 +2591,13 @@ mod linux_wayland {
                         .into_any_element()
                 }
                 StatusRow::Slider { value } => {
+                    let bulge = self
+                        .volume_bulge
+                        .progress(self.volume_bulge_epoch.elapsed().as_millis() as u64);
+                    let track_height =
+                        slider_bulge_lerp(menu_model::SLIDER_TRACK_HEIGHT, 8.0, bulge);
+                    let knob_height =
+                        slider_bulge_lerp(menu_model::SLIDER_KNOB_HEIGHT, 18.0, bulge);
                     let track = self.volume_track.clone();
                     // The fill lags the track's own measurement by one frame
                     // (the canvas below records it while painting), the same
@@ -2630,9 +2622,10 @@ mod linux_wayland {
                         .cursor_pointer()
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                                 cx.stop_propagation();
                                 this.status_dragging_volume = true;
+                                this.sync_volume_bulge(window);
                                 let value = this.volume_at(event.position.x.into());
                                 this.commit_output_volume(value, cx);
                             }),
@@ -2645,9 +2638,10 @@ mod linux_wayland {
                         }))
                         .on_mouse_up(
                             MouseButton::Left,
-                            cx.listener(move |this, event: &MouseUpEvent, _, cx| {
+                            cx.listener(move |this, event: &MouseUpEvent, window, cx| {
                                 if this.status_dragging_volume {
                                     this.status_dragging_volume = false;
+                                    this.sync_volume_bulge(window);
                                     let value = this.volume_at(event.position.x.into());
                                     this.commit_output_volume(value, cx);
                                 }
@@ -2655,9 +2649,10 @@ mod linux_wayland {
                         )
                         .on_mouse_up_out(
                             MouseButton::Left,
-                            cx.listener(move |this, _: &MouseUpEvent, _, cx| {
+                            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
                                 if this.status_dragging_volume {
                                     this.status_dragging_volume = false;
+                                    this.sync_volume_bulge(window);
                                     let value = this
                                         .sound_menu
                                         .as_ref()
@@ -2666,6 +2661,11 @@ mod linux_wayland {
                                 }
                             }),
                         )
+                        .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
+                            this.volume_hovered = *hovered;
+                            this.sync_volume_bulge(window);
+                            cx.notify();
+                        }))
                         .child(
                             svg()
                                 .flex_none()
@@ -2680,8 +2680,8 @@ mod linux_wayland {
                                 .id(format!("volume-track-{}", self.display_id))
                                 .relative()
                                 .flex_1()
-                                .h(px(menu_model::SLIDER_TRACK_HEIGHT))
-                                .rounded(px(menu_model::SLIDER_TRACK_HEIGHT / 2.0))
+                                .h(px(track_height))
+                                .rounded(px(track_height / 2.0))
                                 .bg(rgba(palette.switch_off))
                                 .child(
                                     canvas(
@@ -2703,21 +2703,19 @@ mod linux_wayland {
                                         .top_0()
                                         .bottom_0()
                                         .w(px(fill_width))
-                                        .rounded(px(menu_model::SLIDER_TRACK_HEIGHT / 2.0))
+                                        .rounded(px(track_height / 2.0))
                                         .bg(rgba(palette.status_text)),
                                 )
                                 .child(
                                     div()
                                         .absolute()
-                                        .top(px(-(menu_model::SLIDER_KNOB_HEIGHT
-                                            - menu_model::SLIDER_TRACK_HEIGHT)
-                                            / 2.0))
+                                        .top(px(-(knob_height - track_height) / 2.0))
                                         .left(px((fill_width
                                             - menu_model::SLIDER_KNOB_WIDTH / 2.0)
                                             .max(0.0)))
                                         .w(px(menu_model::SLIDER_KNOB_WIDTH))
-                                        .h(px(menu_model::SLIDER_KNOB_HEIGHT))
-                                        .rounded(px(menu_model::SLIDER_KNOB_HEIGHT / 2.0))
+                                        .h(px(knob_height))
+                                        .rounded(px(knob_height / 2.0))
                                         .bg(rgba(palette.status_text)),
                                 ),
                         )
@@ -3164,7 +3162,6 @@ mod linux_wayland {
                 self.menu_window = None;
                 self.help_query.clear();
             }
-            self.remove_click_catcher(cx);
             if let (true, Some(window)) = (restore, mode.previous_window) {
                 cx.spawn(async move |_, _| {
                     let action = rmac_compositor::Action::FocusWindow { window };
@@ -3304,6 +3301,12 @@ mod linux_wayland {
 
     impl Render for TopBar {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            if self
+                .volume_bulge
+                .is_animating(self.volume_bulge_epoch.elapsed().as_millis() as u64)
+            {
+                window.request_animation_frame();
+            }
             self.render_count = self.render_count.saturating_add(1);
             if let Some(index) = self.capture_menu.take() {
                 let app_id = if index == 0 {
@@ -3344,13 +3347,6 @@ mod linux_wayland {
                 self.open_app_id = None;
                 self.selected_item = NO_ITEM;
                 self.submenu_rows.clear();
-            }
-            // Safety net for the two resets above (and any future one that
-            // clears `open_menu`/`status_menu` without going through
-            // `close_menu`): nothing should ever leave the click catcher
-            // open once both are gone.
-            if self.open_menu.is_none() && self.status_menu.is_none() {
-                self.remove_click_catcher(cx);
             }
             let now = Local::now();
             let status = self.status.read(cx);
@@ -3599,19 +3595,19 @@ mod linux_wayland {
                     // A click anywhere else in the bar's own surface — the
                     // wallpaper or another window showing through the
                     // transparent area around the dropdown — reaches no
-                    // handler at all unless the whole band accepts input:
+                    // handler at all unless the whole surface accepts input:
                     // outside the two regions above, nothing here claims
                     // it, so niri just passes it through to whatever is
                     // physically underneath instead of to `root`'s own
                     // `on_click` (which closes the menu). Claiming the
-                    // whole band while a menu is open makes every such
+                    // whole display while a menu is open makes every such
                     // click land on that handler, as macOS does; the
                     // click-through behaviour above returns the moment
-                    // nothing is open. `open_menu_click_catcher` covers
-                    // the rest of the screen below this band.
+                    // nothing is open. This surface covers the display, so
+                    // the same input region catches clicks below the menu.
                     input_regions.push(Bounds {
                         origin: point(px(0.0), px(0.0)),
-                        size: Size::new(window.bounds().size.width, px(MENU_SURFACE_HEIGHT)),
+                        size: window.bounds().size,
                     });
                 }
             }
@@ -3642,9 +3638,7 @@ mod linux_wayland {
                         .hover(|style| style.bg(rgba(tokens::light_hover())))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
-                            if this.open_menu == Some(index) {
-                                this.close_menu(window, cx);
-                            } else {
+                            if this.open_menu != Some(index) {
                                 this.open_menu(index, app_id.clone(), window, cx);
                             }
                         }))
@@ -4057,9 +4051,7 @@ mod linux_wayland {
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     cx.stop_propagation();
-                                    if this.open_menu == Some(0) {
-                                        this.close_menu(window, cx);
-                                    } else {
+                                    if this.open_menu != Some(0) {
                                         this.open_menu(0, SYSTEM_MENU_ID.to_owned(), window, cx);
                                     }
                                 }))
@@ -4089,9 +4081,7 @@ mod linux_wayland {
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
-                                    if this.open_menu == Some(1) {
-                                        this.close_menu(window, cx);
-                                    } else {
+                                    if this.open_menu != Some(1) {
                                         this.open_menu(1, app_id.clone(), window, cx);
                                     }
                                 }))
@@ -4166,9 +4156,7 @@ mod linux_wayland {
                                                     dispatch_shortcut("quick-settings", cx);
                                                     return;
                                                 };
-                                                if this.status_menu == Some(kind) {
-                                                    this.close_menu(window, cx);
-                                                } else {
+                                                if this.status_menu != Some(kind) {
                                                     let option = event.modifiers().alt
                                                         || window.modifiers().alt;
                                                     this.open_status_menu(kind, option, window, cx);
@@ -5405,74 +5393,6 @@ mod linux_wayland {
         cx.new(|cx| ShellStatus::new(status_rx, cx))
     }
 
-    /// A transparent, keyboard-inert layer surface filling everything below
-    /// `MENU_SURFACE_HEIGHT`. See `TopBar::click_catcher`'s field doc for why
-    /// this exists: it catches a pointer press anywhere else on screen and
-    /// closes whatever menu is open, which the bar's own surface — bounded
-    /// to that band — cannot reach by itself.
-    fn open_menu_click_catcher(
-        display: Rc<dyn PlatformDisplay>,
-        top_bar: WindowHandle<TopBar>,
-        cx: &mut App,
-    ) -> Option<AnyWindowHandle> {
-        let bounds = display.bounds();
-        let height = bounds.size.height - px(MENU_SURFACE_HEIGHT);
-        if height <= px(0.0) {
-            return None;
-        }
-        let options = WindowOptions {
-            titlebar: None,
-            focus: false,
-            show: true,
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: Size::new(bounds.size.width, height),
-            })),
-            display_id: Some(display.id()),
-            app_id: Some("dev.rmac.MenuClickCatcher".to_owned()),
-            window_background: WindowBackgroundAppearance::Transparent,
-            kind: WindowKind::LayerShell(LayerShellOptions {
-                namespace: format!("rmac-menu-click-catcher-{}", u64::from(display.id())),
-                layer: Layer::Overlay,
-                anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
-                margin: Some((px(MENU_SURFACE_HEIGHT), px(0.0), px(0.0), px(0.0))),
-                keyboard_interactivity: KeyboardInteractivity::None,
-                ..Default::default()
-            }),
-            is_movable: false,
-            is_resizable: false,
-            is_minimizable: false,
-            ..Default::default()
-        };
-        cx.open_window(options, move |_, cx| {
-            cx.new(|_| MenuClickCatcher { top_bar })
-        })
-        .ok()
-        .map(AnyWindowHandle::from)
-    }
-
-    struct MenuClickCatcher {
-        top_bar: WindowHandle<TopBar>,
-    }
-
-    impl Render for MenuClickCatcher {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            let top_bar = self.top_bar;
-            div()
-                .size_full()
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                    window.remove_window();
-                    let _ =
-                        top_bar.update(cx, |top_bar, window, cx| top_bar.close_menu(window, cx));
-                })
-                .on_mouse_down(MouseButton::Right, move |_, window, cx| {
-                    window.remove_window();
-                    let _ =
-                        top_bar.update(cx, |top_bar, window, cx| top_bar.close_menu(window, cx));
-                })
-        }
-    }
-
     struct MenuBackdrop {
         radius: f32,
         tint: u32,
@@ -5638,6 +5558,7 @@ mod linux_wayland {
     ) -> AnyWindowHandle {
         let display_id = display.id();
         let width = display.bounds().size.width;
+        let height = display.bounds().size.height;
         let handle = cx
             .open_window(
                 WindowOptions {
@@ -5645,7 +5566,7 @@ mod linux_wayland {
                     focus: false,
                     window_bounds: Some(WindowBounds::Windowed(Bounds {
                         origin: point(px(0.), px(0.)),
-                        size: Size::new(width, px(MENU_SURFACE_HEIGHT)),
+                        size: Size::new(width, height),
                     })),
                     display_id: Some(display_id),
                     app_id: Some("dev.rmac.TopBar".to_owned()),

@@ -22,21 +22,44 @@ struct ActiveDrawer {
 struct AppDrawerService {
     active: Option<ActiveDrawer>,
     next_token: u64,
+    #[cfg(target_os = "linux")]
+    catcher: Option<AnyWindowHandle>,
+    #[cfg(target_os = "linux")]
+    pending_dismiss: Option<u64>,
 }
 
 impl Global for AppDrawerService {}
 
 pub(crate) fn release(token: u64, cx: &mut GpuiApp) {
     if cx.has_global::<AppDrawerService>() {
-        cx.update_global::<AppDrawerService, _>(|service, _| {
-            if service
-                .active
-                .as_ref()
-                .is_some_and(|active| active.token == token)
-            {
-                service.active = None;
-            }
-        });
+        let catcher: Option<AnyWindowHandle> =
+            cx.update_global::<AppDrawerService, _>(|service, _| {
+                let matches = service
+                    .active
+                    .as_ref()
+                    .is_some_and(|active| active.token == token);
+                if matches {
+                    service.active = None;
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    if service.pending_dismiss == Some(token) {
+                        service.pending_dismiss = None;
+                    }
+                    if matches {
+                        service.catcher.take()
+                    } else {
+                        None
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    None
+                }
+            });
+        if let Some(catcher) = catcher {
+            let _ = catcher.update(cx, |_, window, _| window.remove_window());
+        }
     }
 }
 
@@ -95,12 +118,12 @@ fn dismiss_active(cx: &mut GpuiApp) -> bool {
                     view.update(cx, |view, cx| view.dismiss(window, cx));
                 })
                 .is_ok();
-            cx.update_global::<AppDrawerService, _>(|service, _| service.active = None);
+            release(active.token, cx);
             if dismissed {
                 return true;
             }
         }
-        cx.update_global::<AppDrawerService, _>(|service, _| service.active = None);
+        release(active.token, cx);
     }
     false
 }
@@ -159,6 +182,47 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         service.next_token = service.next_token.wrapping_add(1).max(1);
         service.next_token
     });
+    #[cfg(target_os = "linux")]
+    {
+        // Map the outside catcher before the visible panel so a quick first
+        // click cannot arrive while only the panel is ready for input.
+        let display = cx
+            .displays()
+            .into_iter()
+            .find(|display| {
+                let screen = display.bounds();
+                bounds.origin.x >= screen.origin.x
+                    && bounds.origin.x < screen.origin.x + screen.size.width
+                    && bounds.origin.y >= screen.origin.y
+                    && bounds.origin.y < screen.origin.y + screen.size.height
+            })
+            .or_else(|| cx.primary_display());
+        let catcher = display.and_then(|display| {
+            rmac_ui::open_outside_click_catcher_around(
+                "rmac-app-drawer-click-catcher",
+                display,
+                px(29.0),
+                Some(bounds),
+                move |cx| {
+                    let active = cx.read_global::<AppDrawerService, _>(|service, _| {
+                        service
+                            .active
+                            .clone()
+                            .filter(|active| active.token == token)
+                    });
+                    if active.is_some() {
+                        dismiss_active(cx);
+                    } else {
+                        cx.update_global::<AppDrawerService, _>(|service, _| {
+                            service.pending_dismiss = Some(token);
+                        });
+                    }
+                },
+                cx,
+            )
+        });
+        cx.update_global::<AppDrawerService, _>(|service, _| service.catcher = catcher);
+    }
     let mut drawer = None;
     let handle = cx.open_window(drawer_options(bounds), |window, cx| {
         window.set_window_title("Apps");
@@ -168,6 +232,16 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
     if let (Ok(handle), Some(view)) = (handle, drawer) {
+        #[cfg(target_os = "linux")]
+        let cancel = cx.update_global::<AppDrawerService, _>(|service, _| {
+            service.active = Some(ActiveDrawer {
+                token,
+                view,
+                window: handle.into(),
+            });
+            service.pending_dismiss.take() == Some(token)
+        });
+        #[cfg(not(target_os = "linux"))]
         cx.update_global::<AppDrawerService, _>(|service, _| {
             service.active = Some(ActiveDrawer {
                 token,
@@ -175,7 +249,23 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
                 window: handle.into(),
             });
         });
+        #[cfg(target_os = "linux")]
+        if cancel {
+            dismiss_active(cx);
+            return;
+        }
         cx.activate(true);
+    } else {
+        #[cfg(target_os = "linux")]
+        {
+            let catcher = cx.update_global::<AppDrawerService, _>(|service, _| {
+                service.pending_dismiss = None;
+                service.catcher.take()
+            });
+            if let Some(catcher) = catcher {
+                let _ = catcher.update(cx, |_, window, _| window.remove_window());
+            }
+        }
     }
 }
 
@@ -223,6 +313,10 @@ pub(crate) fn run(show_on_start: bool) {
             cx.set_global(AppDrawerService {
                 active: None,
                 next_token: 0,
+                #[cfg(target_os = "linux")]
+                catcher: None,
+                #[cfg(target_os = "linux")]
+                pending_dismiss: None,
             });
 
             #[cfg(target_os = "linux")]

@@ -1006,16 +1006,21 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
         independent of that bug rather than reporting it as "not
         measured"."""
 
-        frame = run.active_frame()
-        box = extents(frame) if frame is not None else None
-        print(f"DIAG click_into_document: frame={name(frame) if frame is not None else None!r} box={box}", flush=True)
-        if box is None:
+        # A top-level "frame" node's own WINDOW_COORDS extents are the
+        # degenerate sentinel (-1, -1, -1, -1) on this AT-SPI adapter (a
+        # frame has no bounds relative to itself); the real on-screen size
+        # comes from Sway's own tree instead, the same source
+        # fact_window_size() already uses.
+        windows = [w for w in run.nested.windows() if w.get("pid") == run.process.pid]
+        focused = [w for w in windows if w.get("focused")] or windows
+        if not focused:
             return
-        ox, oy = run.window_origin(frame)
-        print(f"DIAG click_into_document: clicking ({ox + box[2] / 2}, {oy + box[3] / 2})", flush=True)
-        run.nested.input.click(ox + box[2] / 2, oy + box[3] / 2, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
-        time.sleep(0.2)
-        print(f"DIAG click_into_document: focus now {run.fact_focus()}", flush=True)
+        rect = focused[0].get("rect") or {}
+        width, height = rect.get("width"), rect.get("height")
+        if not width or not height:
+            return
+        ox, oy = run.window_origin()
+        run.nested.input.click(ox + width / 2, oy + height / 2, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
         time.sleep(0.3)
 
     def ensure_alert(attempts: int = 3) -> bool:

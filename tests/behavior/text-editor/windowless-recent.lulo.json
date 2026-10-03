@@ -7,6 +7,6 @@
     "windowless": {"windows": {"count": 0}},
     "recent": {"windows": {"count": 1}},
     "new": {"windows": {"count": 1}},
-    "open_picker": {"windows": {"count": 1}}
+    "open_picker": {"windows": {"count": 1}, "file_chooser": {"present": true}}
   }
 }

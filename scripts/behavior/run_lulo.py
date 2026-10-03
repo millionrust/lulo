@@ -903,6 +903,10 @@ class LuloRun:
             )
         }
 
+    def fact_file_chooser(self) -> dict[str, Any]:
+        """Whether the private file chooser opened an Open window."""
+        return {"present": any(name(frame) == "Open" for frame in self.helper_frames())}
+
     def dialog_node(self):
         pyatspi = atspi()
         frame = self.active_frame()

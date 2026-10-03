@@ -614,8 +614,8 @@ mod linux_wayland {
             div()
                 .id("dock-keyboard")
                 .track_focus(&self.focus)
-                .role(Role::Toolbar)
-                .aria_label("Dock")
+                .role(self.announcement.role)
+                .aria_label(self.announcement.label.clone())
                 .size_full()
                 .on_key_down(cx.listener(Self::key_down))
                 .child(

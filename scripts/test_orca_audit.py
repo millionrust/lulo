@@ -88,6 +88,12 @@ class StepFlagTests(unittest.TestCase):
 
 
 class CycleTests(unittest.TestCase):
+    def test_arrow_selected_child_keeps_its_list_tab_stop(self):
+        sidebar = node("list box", "Sidebar", key="sidebar")
+        selected = node("list item", "Applications", key="row", parent="sidebar")
+        self.assertTrue(checks.probe_kept_tab_stop(sidebar, selected))
+        self.assertFalse(checks.probe_kept_tab_stop(sidebar, node("list item", "Other", parent="other")))
+
     def test_stuck_in_multiline_text_is_expected(self):
         editor = node("text", "Document", ["multi line", "editable"])
         self.assertEqual(checks.cycle_flags([editor], "stuck"), [])

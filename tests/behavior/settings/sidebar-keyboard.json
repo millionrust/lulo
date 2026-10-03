@@ -1,0 +1,16 @@
+{
+  "title": "Settings sidebar is one Tab stop and keeps focus while arrows browse",
+  "app": "settings",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"key": "cmd-f"},
+    {"key": "tab", "settle": 0.6},
+    {"observe": "sidebar", "facts": ["focus"]},
+    {"key": "down", "settle": 0.6},
+    {"observe": "after_down", "facts": ["focus"]},
+    {"key": "up", "settle": 0.6},
+    {"observe": "after_up", "facts": ["focus"]}
+  ],
+  "omit": ["*.focus.value", "*.focus.selection", "*.focus.selected_text", "*.focus.selected_all"]
+}

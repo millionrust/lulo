@@ -200,6 +200,8 @@ impl Settings {
             focus: cx.focus_handle(),
             content_focus: cx.focus_handle(),
             results_focus: cx.focus_handle(),
+            general_focus: cx.focus_handle(),
+            general_cursor: 0,
             native_window_title: "Settings".into(),
             focused_once: false,
             wifi_error: None,

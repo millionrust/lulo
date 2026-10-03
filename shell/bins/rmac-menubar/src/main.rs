@@ -646,8 +646,8 @@ mod linux_wayland {
             div()
                 .id("menubar-keyboard")
                 .track_focus(&self.focus)
-                .role(Role::MenuBar)
-                .aria_label("menu bar")
+                .role(self.announcement.role)
+                .aria_label(self.announcement.label.clone())
                 .size_full()
                 .on_key_down(cx.listener(Self::key_down))
                 .child(
@@ -3035,7 +3035,7 @@ mod linux_wayland {
                 .map(|(index, menu)| match index {
                     0 => TitleTarget {
                         app_id: SYSTEM_MENU_ID.to_owned(),
-                        accessible_label: "menu".into(),
+                        accessible_label: "Lulo menu".into(),
                         letter: None,
                     },
                     1 => TitleTarget {
@@ -4038,7 +4038,7 @@ mod linux_wayland {
                             div()
                                 .id(format!("desktop-mark-{}", self.display_id))
                                 .role(Role::Button)
-                                .aria_label("menu")
+                                .aria_label("Lulo menu")
                                 .w(px(LOGO_SLOT))
                                 .h(px(SLOT_HEIGHT))
                                 .flex()

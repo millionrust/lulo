@@ -1,0 +1,15 @@
+{
+  "title": "General navigation rows share one Tab stop and respond to arrows",
+  "app": "settings",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"select": "General", "settle": 0.6},
+    {"observe": "general_list", "facts": ["focus"]},
+    {"key": "down", "settle": 0.6},
+    {"observe": "after_down", "facts": ["focus"]},
+    {"key": "up", "settle": 0.6},
+    {"observe": "after_up", "facts": ["focus"]}
+  ],
+  "omit": ["*.focus.value", "*.focus.selection", "*.focus.selected_text", "*.focus.selected_all"]
+}

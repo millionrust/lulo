@@ -116,7 +116,7 @@ impl Settings {
             )
     }
 
-    pub(super) fn pane(&self, cards: Vec<Div>) -> Div {
+    pub(super) fn pane(&self, cards: Vec<impl IntoElement>) -> Div {
         div()
             .v_flex()
             .when(self.pane_has_hero(), |pane| pane.child(self.render_hero()))

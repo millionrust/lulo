@@ -252,6 +252,7 @@ pub(super) fn nav_row(
     title: SharedString,
     value: Option<SharedString>,
     target: SubPage,
+    active: bool,
 ) -> AnyElement {
     let id = ElementId::from(SharedString::from(format!("nav-{title}")));
     // `ListRow` has no name of its own (see its `aria_label` doc comment);
@@ -262,6 +263,9 @@ pub(super) fn nav_row(
     };
     nav_list_row(id, nav_content(icon, color, title, value))
         .aria_label(aria_label)
+        .selected(false)
+        .tab_stop(false)
+        .active_descendant(active)
         .on_activate(move |_, _, cx| {
             let target = target.clone();
             view.update(cx, |s, cx| s.push(target, cx));
@@ -276,12 +280,16 @@ pub(super) fn pane_nav_row(
     icon: &'static str,
     color: Hsla,
     title: &'static str,
+    active: bool,
 ) -> AnyElement {
     let id = ElementId::from(SharedString::from(format!("pane-{title}")));
     nav_list_row(id, nav_content(icon, color, title.into(), None))
         // `ListRow` has no name of its own (see its `aria_label` doc
         // comment).
         .aria_label(title)
+        .selected(false)
+        .tab_stop(false)
+        .active_descendant(active)
         .on_activate(move |_, window, cx| {
             view.update(cx, |s, cx| {
                 s.select_category(title, window, cx);

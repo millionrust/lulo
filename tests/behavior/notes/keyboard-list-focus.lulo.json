@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "notes/keyboard-list-focus",
+  "platform": "Lulo local contract",
+  "observations": {
+    "initial": {"focus": {"role": "list", "label": "Notes"}}
+  }
+}

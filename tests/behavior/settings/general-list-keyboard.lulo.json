@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "settings/general-list-keyboard",
+  "platform": "Lulo local contract",
+  "observations": {
+    "general_list": {"focus": {"role": "list", "label": "General"}},
+    "after_down": {"focus": {"role": "list", "label": "General"}},
+    "after_up": {"focus": {"role": "list", "label": "General"}}
+  }
+}

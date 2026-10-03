@@ -379,7 +379,11 @@ impl Settings {
             self.pane_forward.clear();
         }
         self.sidebar_focused = false;
-        enter_content_focus(&self.content_focus, window, cx);
+        if self.current().name.as_ref() == "General" {
+            window.focus(&self.general_focus, cx);
+        } else {
+            enter_content_focus(&self.content_focus, window, cx);
+        }
     }
 
     /// The state change and focus move behind Back/Forward crossing panes
@@ -396,7 +400,11 @@ impl Settings {
             return;
         }
         self.sidebar_focused = false;
-        enter_content_focus(&self.content_focus, window, cx);
+        if self.current().name.as_ref() == "General" {
+            window.focus(&self.general_focus, cx);
+        } else {
+            enter_content_focus(&self.content_focus, window, cx);
+        }
     }
 
     /// The state change behind [`Self::select_position`], without moving

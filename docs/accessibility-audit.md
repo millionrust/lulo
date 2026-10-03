@@ -53,10 +53,7 @@ Shift-Tabs. Push buttons are never activated.
     # evidence: tests/accessibility/orca-run.json (default --output)
 
 Baseline run, build `fcafa5e4` (before this branch's fixes): 13 journeys,
-72 flags. Evidence: `tests/accessibility/orca-run.json`. The post-fix rerun
-was queued but did not get the journey lock before the time box; the fixes
-below are verified by unit tests and `clippy -D warnings`, not yet by a
-second Orca run.
+72 flags. Evidence: `tests/accessibility/orca-run.json`.
 
 | Surface | What Orca heard | Defects (flags) | Rows |
 |---|---|---|---|
@@ -74,9 +71,30 @@ second Orca run.
 | Control Centre | "Control Centre", every control, slider value | opens silent on the panel; Escape leaves no focus (nested session has no app behind) (6) | ACC-27 |
 | Notification Centre | "Notification Center" | empty in the nested run, Tab stays on the panel; Escape leaves no focus (2) | ACC-27 |
 
-✔ = fixed on this branch (pending the post-fix Orca rerun). Flags that are
-timing artefacts of the nested run (a few `silent-focus` where Orca spoke on
-the next key) are kept in the evidence but not counted as defects.
+✔ = code fixes from the earlier audit branch. Flags that are timing artefacts
+of the nested run (a few `silent-focus` where Orca spoke on the next key) are
+kept in the evidence but not counted as defects.
+
+### Targeted keyboard rerun
+
+Build `ead605a6`: Files, Settings, Notes, Preview, menu bar and Dock were
+rerun with Orca 50.2 in private nested sessions. Across these six journeys,
+the 35 baseline flags fell to 13. The Files journey was repeated after the
+audit learned that an arrow-selected list child belongs to its list's Tab
+stop; the complete cycle has 12 stops and returns to the named file list.
+Evidence: `tests/accessibility/orca-keyboard-apps.json`,
+`tests/accessibility/orca-keyboard-files-cycle.json`, and
+`tests/accessibility/orca-keyboard-shell.json`. Thirteen affected behavior
+scenarios passed in the same private runner.
+
+| Surface | Post-fix result | Remaining flags |
+|---|---|---|
+| Files | 12-stop Tab cycle through sidebar, toolbar actions and Search back to Files | 2: Escape from Search leaves window focus (ACC-18); rename exit speech omits the list name |
+| Settings | one sidebar stop and one General-list stop; arrows select rows | 3 low-severity no-effect probes on Search before the list receives focus |
+| Notes | named list on launch; Folders in Tab cycle; Body → Tags behavior scenario passed | 1: ⌘F leaves focus on the window (ACC-18). Some icon buttons appear twice in the Tab cycle, which this audit does not flag. |
+| Preview | first Tab reaches named document; toolbar includes Show Markup Toolbar | 2: launch focus remains on the window before Tab |
+| Menu bar (⌃F2) | AT-SPI focus lands on a named, showing and visible "Lulo menu" item; the first Orca utterance includes its name | 3: two later focus moves are silent; Escape returns to an unnamed frame in the empty nested session |
+| Dock (⌃F3) | first Files button is named, visible and spoken immediately | 2: one later focus move is silent; Escape returns to the empty session's frame |
 
 ## Owner final listen
 

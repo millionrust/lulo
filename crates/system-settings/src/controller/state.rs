@@ -168,6 +168,8 @@ pub(super) struct Settings {
     /// field moves here (a `Role::List`, not a `Role::TextInput`) so
     /// assistive technology sees focus leave the field, matching the Mac.
     pub(super) results_focus: FocusHandle,
+    pub(super) general_focus: FocusHandle,
+    pub(super) general_cursor: usize,
     pub(super) native_window_title: String,
     pub(super) focused_once: bool,
     pub(super) wifi_error: Option<SharedString>,

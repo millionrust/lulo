@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "notes/tags-tab-order",
+  "platform": "Lulo local contract",
+  "observations": {
+    "body": {"focus": {"role": "text-field", "label": "Body"}},
+    "tags": {"focus": {"role": "text-field", "label": "Tags"}}
+  }
+}

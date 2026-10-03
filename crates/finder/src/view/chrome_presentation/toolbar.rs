@@ -97,31 +97,52 @@ impl FinderView {
     ) -> impl IntoElement {
         let can_go_back = self.trash_view || self.applications_view || !self.back.is_empty();
         let can_go_forward = !self.fwd.is_empty();
+        let view = cx.entity();
         let navigation_control = capsule("navigation")
             .role(Role::Toolbar)
             .aria_label("Back/Forward")
             .child(
-                capsule_button(
-                    "back",
-                    "icons/chevron-left.svg",
-                    TOOLBAR_CHEVRON_GLYPH,
-                    "Back",
-                    false,
-                    can_go_back,
+                rmac_ui::KeyboardAction::new(
+                    "back-keyboard",
+                    capsule_button(
+                        "back",
+                        "icons/chevron-left.svg",
+                        TOOLBAR_CHEVRON_GLYPH,
+                        "Back",
+                        false,
+                        can_go_back,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
+                    {
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| this.go_back(cx));
+                        }
+                    },
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
+                .disabled(!can_go_back),
             )
             .child(capsule_rule(true))
             .child(
-                capsule_button(
-                    "fwd",
-                    "icons/chevron-right.svg",
-                    TOOLBAR_CHEVRON_GLYPH,
-                    "Forward",
-                    false,
-                    can_go_forward,
+                rmac_ui::KeyboardAction::new(
+                    "forward-keyboard",
+                    capsule_button(
+                        "fwd",
+                        "icons/chevron-right.svg",
+                        TOOLBAR_CHEVRON_GLYPH,
+                        "Forward",
+                        false,
+                        can_go_forward,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))),
+                    {
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| this.go_forward(cx));
+                        }
+                    },
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))),
+                .disabled(!can_go_forward),
             );
 
         let modes = [
@@ -140,7 +161,9 @@ impl FinderView {
                     view_control.child(capsule_rule(self.view != mode && self.view != previous));
             }
             let current = self.view == mode;
-            view_control = view_control.child(
+            let action_view = view.clone();
+            view_control = view_control.child(rmac_ui::KeyboardAction::new(
+                SharedString::from(format!("{id}-keyboard")),
                 capsule_button(id, glyph, TOOLBAR_GLYPH, tooltip, current, true)
                     .role(Role::RadioButton)
                     .aria_toggled(if current {
@@ -149,7 +172,10 @@ impl FinderView {
                         Toggled::False
                     })
                     .on_click(cx.listener(move |this, _, _, cx| this.select_view_mode(mode, cx))),
-            );
+                move |_, cx| {
+                    action_view.update(cx, |this, cx| this.select_view_mode(mode, cx));
+                },
+            ));
         }
 
         // Finder's "Group" pop-up. Files has no grouping, so it offers the
@@ -180,7 +206,8 @@ impl FinderView {
         let action_control = capsule("actions")
             .role(Role::Toolbar)
             .aria_label("Actions")
-            .child(
+            .child(rmac_ui::KeyboardAction::new(
+                "actions-keyboard",
                 capsule_button(
                     "more",
                     "icons/ellipsis.svg",
@@ -199,7 +226,28 @@ impl FinderView {
                     ));
                     cx.notify();
                 })),
-            );
+                {
+                    let view = view.clone();
+                    move |window, cx| {
+                        view.update(cx, |this, cx| {
+                            let width = f32::from(rmac_ui::window_content_size(window).width);
+                            let x = width
+                                - TRAILING_MARGIN
+                                - CAPSULE_BUTTON
+                                - TRAILING_GAP
+                                - CAPSULE_BUTTON / 2.0;
+                            this.menu_purpose = MenuPurpose::Context;
+                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                gpui::point(px(x), px(TOOLBAR_HEIGHT)),
+                                &this.focus,
+                                window,
+                                cx,
+                            ));
+                            cx.notify();
+                        });
+                    }
+                },
+            ));
 
         // Search is a 36 pt circle that opens into a field, as in Finder; it
         // stays open while it holds a query.
@@ -231,7 +279,8 @@ impl FinderView {
                 .into_any_element()
         } else {
             capsule("search")
-                .child(
+                .child(rmac_ui::KeyboardAction::new(
+                    "search-keyboard",
                     capsule_button(
                         "search-button",
                         "icons/search.svg",
@@ -241,7 +290,13 @@ impl FinderView {
                         true,
                     )
                     .on_click(cx.listener(|this, _, window, cx| this.open_search(window, cx))),
-                )
+                    {
+                        let view = view.clone();
+                        move |window, cx| {
+                            view.update(cx, |this, cx| this.open_search(window, cx));
+                        }
+                    },
+                ))
                 .into_any_element()
         };
 
@@ -329,7 +384,34 @@ impl FinderView {
                 toolbar
                     .child(view_control)
                     .child(div().w(px(VIEW_TO_GROUP_GAP)).flex_none())
-                    .child(sort_control)
+                    .child(rmac_ui::KeyboardAction::new(
+                        "sort-keyboard",
+                        sort_control,
+                        {
+                            let view = view.clone();
+                            move |window, cx| {
+                                view.update(cx, |this, cx| {
+                                    let width =
+                                        f32::from(rmac_ui::window_content_size(window).width);
+                                    let x = width
+                                        - TRAILING_MARGIN
+                                        - CAPSULE_BUTTON
+                                        - TRAILING_GAP
+                                        - CAPSULE_BUTTON
+                                        - TRAILING_GAP
+                                        - GROUP_CAPSULE_WIDTH / 2.0;
+                                    this.menu_purpose = MenuPurpose::Sort;
+                                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                        gpui::point(px(x), px(TOOLBAR_HEIGHT)),
+                                        &this.focus,
+                                        window,
+                                        cx,
+                                    ));
+                                    cx.notify();
+                                });
+                            }
+                        },
+                    ))
                     .child(div().w(px(TRAILING_GAP)).flex_none())
             })
             .child(action_control)

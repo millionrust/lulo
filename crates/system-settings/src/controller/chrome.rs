@@ -264,13 +264,11 @@ impl Settings {
         let mut list = div()
             .id(rmac_system_settings::accessibility::SIDEBAR_ID)
             .role(Role::List)
-            // A boundary, not an ordinary Tab stop (`content_focus` uses
-            // the same pattern): Tab already reaches the sidebar through
-            // its rows' own focus handles, so this only exists for Down in
-            // the search field to focus explicitly, giving assistive
-            // technology a `Role::List` node to report instead of the
-            // search field's own text-input state.
-            .track_focus(&self.results_focus.clone().tab_stop(false))
+            .aria_label("Settings Categories")
+            // One Tab stop for the source list. Its selected row is the
+            // active descendant, so arrows announce rows without sending
+            // Tab through every category.
+            .track_focus(&self.results_focus.clone().tab_stop(true).tab_index(0))
             .flex_1()
             .min_h(px(0.0))
             .v_flex()
@@ -429,9 +427,11 @@ impl Settings {
                             ),
                     )
                     .aria_label(aria_label)
+                    .tab_stop(false)
+                    .active_descendant(selected)
                     // The row paints its own Tahoe fill: accent only while the
                     // sidebar has focus, grey otherwise, and no hover wash.
-                    .selected(true)
+                    .selected(selected)
                     .bg(if selected {
                         highlight
                     } else {

@@ -368,6 +368,7 @@ struct Search {
 
 pub(crate) struct PreviewView {
     pub(crate) focus: FocusHandle,
+    page_focus: FocusHandle,
     slots: Vec<Slot>,
     selected: usize,
     back: Vec<Location>,
@@ -668,7 +669,7 @@ impl PreviewView {
             y1: point.1,
         });
         let point = (raw.x0, raw.y0);
-        window.focus(&self.focus, cx);
+        window.focus(&self.page_focus, cx);
         if self.markup_tool == Tool::Select {
             let hit = slot
                 .markup
@@ -1204,6 +1205,7 @@ impl PreviewView {
         let next_id = slots.len() as u64;
         let mut view = Self {
             focus: cx.focus_handle(),
+            page_focus: cx.focus_handle(),
             sidebar: slots.len() > 1,
             image_background: false,
             slots,
@@ -1253,6 +1255,7 @@ impl PreviewView {
             view.start_load(index, cx);
         }
         view.load_signatures(cx);
+        window.focus(&view.page_focus, cx);
         view
     }
 
@@ -1494,7 +1497,7 @@ impl PreviewView {
 
     fn close_go_to_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.go_to_page_open = false;
-        window.focus(&self.focus, cx);
+        window.focus(&self.page_focus, cx);
         cx.notify();
     }
 
@@ -2108,7 +2111,7 @@ impl PreviewView {
             cx.notify();
             return;
         };
-        window.focus(&self.focus, cx);
+        window.focus(&self.page_focus, cx);
         match event.click_count {
             2 => {
                 let Some(slot) = self.slot() else { return };
@@ -2624,8 +2627,15 @@ impl PreviewView {
                 .border_color(rgb(palette.control_edge))
         };
         let button = |id: &'static str, icon: &'static str, enabled: bool| {
+            let name = match id {
+                "preview-zoom-out" => "Zoom Out",
+                "preview-actual-size" => "Actual Size",
+                _ => "Zoom In",
+            };
             div()
                 .id(id)
+                .role(Role::Button)
+                .aria_label(name)
                 .w(px(metrics::ZOOM_BUTTON_WIDTH))
                 .h_full()
                 .flex()
@@ -2667,9 +2677,16 @@ impl PreviewView {
             })
             .flex()
             .items_center()
-            .child(
+            .child(rmac_ui::KeyboardAction::new(
+                "preview-sidebar-toggle-keyboard",
                 div()
                     .id("preview-sidebar-toggle")
+                    .role(Role::Button)
+                    .aria_label(if self.sidebar {
+                        "Hide Sidebar"
+                    } else {
+                        "Show Sidebar"
+                    })
                     .pl(px(7.5))
                     .h_full()
                     .flex()
@@ -2684,7 +2701,16 @@ impl PreviewView {
                         let shown = !this.sidebar;
                         this.set_sidebar(shown, cx);
                     })),
-            )
+                {
+                    let view = cx.entity();
+                    move |_, cx| {
+                        view.update(cx, |this, cx| {
+                            let shown = !this.sidebar;
+                            this.set_sidebar(shown, cx);
+                        });
+                    }
+                },
+            ))
             .child(
                 div()
                     .id("preview-sidebar-menu")
@@ -2751,26 +2777,58 @@ impl PreviewView {
             .flex()
             .items_center()
             .child(
-                button("preview-zoom-out", "icons/preview/zoom-out.svg", ready)
-                    .on_click(cx.listener(|this, _, _, cx| this.zoom_out(cx))),
-            )
-            .child(divider())
-            .child(
-                button(
-                    "preview-actual-size",
-                    "icons/preview/zoom-actual.svg",
-                    ready && !at_actual,
+                rmac_ui::KeyboardAction::new(
+                    "preview-zoom-out-keyboard",
+                    button("preview-zoom-out", "icons/preview/zoom-out.svg", ready)
+                        .on_click(cx.listener(|this, _, _, cx| this.zoom_out(cx))),
+                    {
+                        let view = cx.entity();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| this.zoom_out(cx));
+                        }
+                    },
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.actual_size(cx))),
+                .disabled(!ready),
             )
             .child(divider())
             .child(
-                button("preview-zoom-in", "icons/preview/zoom-in.svg", ready)
-                    .on_click(cx.listener(|this, _, _, cx| this.zoom_in(cx))),
+                rmac_ui::KeyboardAction::new(
+                    "preview-actual-size-keyboard",
+                    button(
+                        "preview-actual-size",
+                        "icons/preview/zoom-actual.svg",
+                        ready && !at_actual,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.actual_size(cx))),
+                    {
+                        let view = cx.entity();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| this.actual_size(cx));
+                        }
+                    },
+                )
+                .disabled(!ready || at_actual),
+            )
+            .child(divider())
+            .child(
+                rmac_ui::KeyboardAction::new(
+                    "preview-zoom-in-keyboard",
+                    button("preview-zoom-in", "icons/preview/zoom-in.svg", ready)
+                        .on_click(cx.listener(|this, _, _, cx| this.zoom_in(cx))),
+                    {
+                        let view = cx.entity();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| this.zoom_in(cx));
+                        }
+                    },
+                )
+                .disabled(!ready),
             );
 
         // Preview's toolbar rotate button turns left; ⌥-click turns right.
         let rotate = capsule("preview-rotate", group.rotate, metrics::CONTROL_HEIGHT)
+            .role(Role::Button)
+            .aria_label("Rotate Left")
             .flex()
             .items_center()
             .justify_center()
@@ -2786,6 +2844,8 @@ impl PreviewView {
             }));
 
         let info = capsule("preview-info", group.info, metrics::CONTROL_HEIGHT)
+            .role(Role::Button)
+            .aria_label("Show Inspector")
             .flex()
             .items_center()
             .justify_center()
@@ -2896,7 +2956,8 @@ impl PreviewView {
             .child(title_block)
             .when(self.toolbar_shown, |toolbar| toolbar.child(zoom_group))
             .when(self.toolbar_shown, |toolbar| {
-                toolbar.child(
+                toolbar.child(rmac_ui::KeyboardAction::new(
+                    "preview-toggle-markup-keyboard",
                     capsule("preview-toggle-markup", group.zoom - 48.0, 36.0)
                         .role(Role::Button)
                         .aria_label("Show Markup Toolbar")
@@ -2912,10 +2973,39 @@ impl PreviewView {
                             this.markup_shown = !this.markup_shown;
                             cx.notify();
                         })),
+                    {
+                        let view = cx.entity();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.markup_shown = !this.markup_shown;
+                                cx.notify();
+                            });
+                        }
+                    },
+                ))
+            })
+            .when(self.toolbar_shown, |toolbar| {
+                toolbar.child(
+                    rmac_ui::KeyboardAction::new("preview-rotate-keyboard", rotate, {
+                        let view = cx.entity();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| this.rotate(false, cx));
+                        }
+                    })
+                    .disabled(!ready),
                 )
             })
-            .when(self.toolbar_shown, |toolbar| toolbar.child(rotate))
-            .when(self.toolbar_shown, |toolbar| toolbar.child(info))
+            .when(self.toolbar_shown, |toolbar| {
+                toolbar.child(
+                    rmac_ui::KeyboardAction::new("preview-info-keyboard", info, {
+                        let view = cx.entity();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| this.toggle_inspector(cx));
+                        }
+                    })
+                    .disabled(!ready),
+                )
+            })
             .when(self.toolbar_shown, |toolbar| toolbar.children(search))
     }
 
@@ -3326,6 +3416,9 @@ impl PreviewView {
         };
         div()
             .id("preview-document")
+            .role(Role::Document)
+            .aria_label(self.title_and_subtitle().0)
+            .track_focus(&self.page_focus.clone().tab_stop(true).tab_index(0))
             .absolute()
             .left(px(left))
             .top(px(self.document_top()))

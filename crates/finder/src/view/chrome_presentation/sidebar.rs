@@ -27,6 +27,7 @@ impl FinderView {
     fn render_place(
         &self,
         p: &Place,
+        sidebar_index: usize,
         favourite_slot: Option<usize>,
         cx: &Context<Self>,
     ) -> impl IntoElement {
@@ -117,6 +118,11 @@ impl FinderView {
             .role(Role::ListBoxOption)
             .aria_label(p.name.clone())
             .aria_selected(selected)
+            .when(
+                self.sidebar_cursor == Some(sidebar_index)
+                    || (self.sidebar_cursor.is_none() && selected),
+                |row| row.aria_active_descendant(),
+            )
             .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
                 entity.update(cx, |this, cx| {
                     this.activate_place(kind, a11y_name.clone(), a11y_path.clone(), cx)
@@ -504,6 +510,7 @@ impl FinderView {
             .v_flex()
             .px(px(SIDEBAR_ROW_INSET))
             .pb(px(SIDEBAR_ROW_INSET));
+        let mut sidebar_index = 0;
         for section in &self.sections {
             if section.places.is_empty() && section.title.as_ref() != self.file_words.favourites() {
                 continue;
@@ -561,7 +568,13 @@ impl FinderView {
             }
             for (index, p) in section.places.iter().enumerate() {
                 let is_favourite = section.title.as_ref() == self.file_words.favourites();
-                contents = contents.child(self.render_place(p, is_favourite.then_some(index), cx));
+                contents = contents.child(self.render_place(
+                    p,
+                    sidebar_index,
+                    is_favourite.then_some(index),
+                    cx,
+                ));
+                sidebar_index += 1;
             }
         }
 
@@ -637,6 +650,52 @@ impl FinderView {
                             .id("sidebar-places")
                             .role(Role::ListBox)
                             .aria_label("Sidebar")
+                            .track_focus(&self.sidebar_focus.clone().tab_stop(true).tab_index(0))
+                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                                let delta = match event.keystroke.key.as_str() {
+                                    "down" => 1,
+                                    "up" => -1,
+                                    _ => return,
+                                };
+                                let places: Vec<Place> = this
+                                    .sections
+                                    .iter()
+                                    .flat_map(|section| section.places.iter().cloned())
+                                    .collect();
+                                if places.is_empty() {
+                                    return;
+                                }
+                                let current = this
+                                    .sidebar_cursor
+                                    .or_else(|| {
+                                        places.iter().position(|p| {
+                                            place_is_selected(
+                                                p.kind,
+                                                p.name.as_ref(),
+                                                &p.path,
+                                                &this.cwd,
+                                                this.trash_view,
+                                                this.applications_view,
+                                                this.result_title
+                                                    .as_ref()
+                                                    .map(|title| title.as_ref()),
+                                            )
+                                        })
+                                    })
+                                    .unwrap_or(0);
+                                let next =
+                                    current.saturating_add_signed(delta).min(places.len() - 1);
+                                this.sidebar_cursor = Some(next);
+                                let place = &places[next];
+                                this.activate_place(
+                                    place.kind,
+                                    place.name.clone(),
+                                    place.path.clone(),
+                                    cx,
+                                );
+                                cx.stop_propagation();
+                                cx.notify();
+                            }))
                             .flex_1()
                             .min_h(px(0.0))
                             .child(contents.overflow_y_scrollbar()),

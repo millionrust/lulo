@@ -14,6 +14,7 @@ impl Settings {
                     GENERAL_DESTINATIONS[0].into(),
                     self.sysinfo.hardware_model.clone().map(Into::into),
                     SubPage::About,
+                    self.general_cursor == 0,
                 ),
                 nav_row(
                     view.clone(),
@@ -22,6 +23,7 @@ impl Settings {
                     GENERAL_DESTINATIONS[1].into(),
                     Some(self.sysinfo.operating_system.clone().into()),
                     SubPage::SoftwareUpdate,
+                    self.general_cursor == 1,
                 ),
                 nav_row(
                     view.clone(),
@@ -30,25 +32,40 @@ impl Settings {
                     GENERAL_DESTINATIONS[2].into(),
                     None,
                     SubPage::Storage,
+                    self.general_cursor == 2,
                 ),
             ]),
             // macOS 26 files these panes under General rather than in the
             // sidebar; each row opens the pane itself.
             card(vec![
-                pane_nav_row(view.clone(), "icons/clock.svg", accent(), "Date & Time"),
+                pane_nav_row(
+                    view.clone(),
+                    "icons/clock.svg",
+                    accent(),
+                    "Date & Time",
+                    self.general_cursor == 3,
+                ),
                 pane_nav_row(
                     view.clone(),
                     "icons/languages.svg",
                     accent(),
                     "Language & Region",
+                    self.general_cursor == 4,
                 ),
                 pane_nav_row(
                     view.clone(),
                     "icons/app-window.svg",
                     hsl(0x8e8e93),
                     "Login Items",
+                    self.general_cursor == 5,
                 ),
-                pane_nav_row(view, "icons/globe.svg", hsl(0x8e8e93), "Sharing"),
+                pane_nav_row(
+                    view,
+                    "icons/globe.svg",
+                    hsl(0x8e8e93),
+                    "Sharing",
+                    self.general_cursor == 6,
+                ),
             ]),
         ];
         let mut cards = cards;
@@ -69,7 +86,31 @@ impl Settings {
             })
             .into_any_element()]));
         }
-        self.pane(cards)
+        self.pane(vec![div()
+            .id("general-navigation")
+            .role(Role::List)
+            .aria_label("General")
+            .track_focus(&self.general_focus.clone().tab_stop(true).tab_index(0))
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                match event.keystroke.key.as_str() {
+                    "down" => this.general_cursor = (this.general_cursor + 1).min(6),
+                    "up" => this.general_cursor = this.general_cursor.saturating_sub(1),
+                    "enter" | "space" => match this.general_cursor {
+                        0 => this.push(SubPage::About, cx),
+                        1 => this.push(SubPage::SoftwareUpdate, cx),
+                        2 => this.push(SubPage::Storage, cx),
+                        3 => this.select_category("Date & Time", window, cx),
+                        4 => this.select_category("Language & Region", window, cx),
+                        5 => this.select_category("Login Items", window, cx),
+                        _ => this.select_category("Sharing", window, cx),
+                    },
+                    _ => return,
+                }
+                window.prevent_default();
+                cx.stop_propagation();
+                cx.notify();
+            }))
+            .children(cards)])
     }
     /// macOS 26 About: the machine centred over its name, then the Name,
     /// chip and memory group, the operating system and the startup volume.

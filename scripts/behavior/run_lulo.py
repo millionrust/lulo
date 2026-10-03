@@ -1072,6 +1072,19 @@ class LuloRun:
         return {"present": week is not None,
                 "current_week": week == f"Week of {first.isoformat()}"}
 
+    def fact_calendar_month(self) -> dict[str, Any]:
+        """Selected Month cell, reported relative to today for stable fixtures."""
+        frame = self.active_frame()
+        pyatspi = atspi()
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            if role(node) == "table cell" and has_state(node, pyatspi.STATE_SELECTED):
+                try:
+                    selected = date.fromisoformat(name(node)[:10])
+                except ValueError:
+                    continue
+                return {"present": True, "selected_day_offset": (selected - date.today()).days}
+        return {"present": False}
+
     def fact_sidebar(self) -> dict[str, Any]:
         """Weather's city list owns the window's only editable search field."""
         frame = self.active_frame()

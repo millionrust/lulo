@@ -207,6 +207,7 @@ struct EditorView {
     mono: bool,
     font_size: f32,
     wrap_to_page: bool,
+    prevent_editing: bool,
     page_width_chars: u16,
 
     /// When an `.rtf` is opened, its parsed styled runs for the formatted

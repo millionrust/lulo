@@ -130,7 +130,7 @@ impl EditorView {
                         Button::new("replace-one", "Replace")
                             .ghost()
                             .with_size(Size::Small)
-                            .disabled(self.print_busy)
+                            .disabled(self.print_busy || self.prevent_editing)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.replace_current(window, cx)),
                             ),
@@ -139,7 +139,7 @@ impl EditorView {
                         Button::new("replace-all", "Replace All")
                             .ghost()
                             .with_size(Size::Small)
-                            .disabled(self.print_busy)
+                            .disabled(self.print_busy || self.prevent_editing)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.replace_all(window, cx)),
                             ),

@@ -162,6 +162,7 @@ impl EditorView {
         } else {
             if self.file_busy
                 || self.file_action_blocked()
+                || self.prevent_editing
                 || self.rtf_runs.is_some()
                 || self.long_lines.is_some()
             {
@@ -183,6 +184,7 @@ impl EditorView {
         if self.recovery_loading
             || self.file_busy
             || self.file_action_blocked()
+            || self.prevent_editing
             || self.rtf_runs.is_some()
             || self.long_lines.is_some()
         {
@@ -221,7 +223,7 @@ impl EditorView {
         } else {
             self.find_open = true;
             // The long-line view is read-only: Replace opens plain Find.
-            self.replace_mode = self.long_lines.is_none();
+            self.replace_mode = self.long_lines.is_none() && !self.prevent_editing;
             self.current = 0;
             self.recompute_matches(cx);
             self.find_input
@@ -352,7 +354,7 @@ impl EditorView {
     }
 
     pub(super) fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.print_busy || self.long_lines.is_some() {
+        if self.print_busy || self.prevent_editing || self.long_lines.is_some() {
             return;
         }
         self.recompute_matches(cx);
@@ -374,7 +376,7 @@ impl EditorView {
     }
 
     pub(super) fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.print_busy || self.long_lines.is_some() {
+        if self.print_busy || self.prevent_editing || self.long_lines.is_some() {
             return;
         }
         let needle = self.find_input.read(cx).value().to_string();
@@ -414,6 +416,7 @@ impl EditorView {
             cx,
         );
         rmac_ui::set_menu_checked("text_editor::ToggleMono", self.mono, cx);
+        rmac_ui::set_menu_checked("text_editor::PreventEditing", self.prevent_editing, cx);
         rmac_ui::set_menu_label(
             "text_editor::ToggleWrapToPage",
             if self.wrap_to_page {
@@ -456,6 +459,7 @@ impl EditorView {
             && (field != &self.input
                 || (!self.file_busy
                     && !self.file_action_blocked()
+                    && !self.prevent_editing
                     && self.rtf_runs.is_none()
                     && self.long_lines.is_none()));
         for action in [
@@ -468,6 +472,7 @@ impl EditorView {
         let can_insert = !self.recovery_loading
             && !self.file_busy
             && !self.file_action_blocked()
+            && !self.prevent_editing
             && self.rtf_runs.is_none()
             && self.long_lines.is_none();
         for action in [

@@ -407,6 +407,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 ]
             ),
             item!("Wrap to Page", "text_editor::ToggleWrapToPage", "⇧⌘W"),
+            item!("Prevent Editing", "text_editor::PreventEditing", ""),
         ],
     },
     MenuSpec {

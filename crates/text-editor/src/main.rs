@@ -39,6 +39,7 @@ gpui::actions!(
         CloseBar,
         ToggleMono,
         ToggleWrapToPage,
+        PreventEditing,
         SetEncodingUtf8,
         SetEncodingUtf8Bom,
         SetEncodingUtf16Le,

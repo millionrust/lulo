@@ -1,0 +1,15 @@
+{
+  "title": "Text Editor Prevent Editing blocks and restores document input",
+  "app": "text-editor",
+  "lulo_only": true,
+  "steps": [
+    {"type": "A"},
+    {"observe": "before", "facts": ["focus"]},
+    {"menu_action": "text_editor::PreventEditing"},
+    {"type": "B"},
+    {"observe": "prevented", "facts": ["focus"]},
+    {"menu_action": "text_editor::PreventEditing"},
+    {"type": "C"},
+    {"observe": "restored", "facts": ["focus"]}
+  ]
+}

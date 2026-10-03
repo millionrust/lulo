@@ -18,11 +18,11 @@ use crate::{
     DuplicateDocument, EnterFullScreen, ExportPdf, FindNext, FindPrev, IncreaseFont,
     InsertLineBreak, InsertPageBreak, InsertParagraphBreak, JumpToSelection, NewFile, OpenFile,
     OpenRecent0, OpenRecent1, OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6,
-    OpenRecent7, OpenRecent8, OpenRecent9, PrintFile, SaveFile, SaveFileAs, SaveGoToFolder,
-    SelectLine, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom,
-    SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ShowSettings, ToggleFind, ToggleMono,
-    ToggleReplace, ToggleWrapToPage, TransformCapitalise, TransformLowercase, TransformUppercase,
-    UseSelectionForFind, ZoomIn, ZoomOut,
+    OpenRecent7, OpenRecent8, OpenRecent9, PreventEditing, PrintFile, SaveFile, SaveFileAs,
+    SaveGoToFolder, SelectLine, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8,
+    SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ShowSettings,
+    ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage, TransformCapitalise,
+    TransformLowercase, TransformUppercase, UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use super::{
@@ -181,6 +181,10 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
             .on_action(cx.listener(|this, _: &ToggleWrapToPage, _, cx| {
                 this.wrap_to_page = !this.wrap_to_page;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &PreventEditing, _, cx| {
+                this.prevent_editing = !this.prevent_editing;
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &SetEncodingUtf8, _, cx| {
@@ -391,7 +395,10 @@ impl Render for EditorView {
                 // a 13 pt pitch (JetBrains Mono stands in for Menlo). The
                 // wrapper names the document for assistive technologies and
                 // accepts their SetValue / ReplaceSelectedText edits.
-                let editable = !(recovery_loading || self.print_busy || self.file_busy);
+                let editable = !(recovery_loading
+                    || self.print_busy
+                    || self.file_busy
+                    || self.prevent_editing);
                 div()
                     .id("document-body")
                     .role(Role::MultilineTextInput)

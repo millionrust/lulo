@@ -123,7 +123,9 @@ impl QuickSettingsView {
     ) -> Self {
         let focus = cx.focus_handle();
         let initial_control_focus = cx.focus_handle();
-        initial_control_focus.focus(window, cx);
+        focus.focus(window, cx);
+        let first_control = initial_control_focus.clone();
+        window.on_next_frame(move |window, cx| window.focus(&first_control, cx));
         // The outside catcher handles pointer dismissal. Compositor focus can
         // move back to an open menu-bar menu while this panel remains visible.
         cx.on_release(move |_, cx| {

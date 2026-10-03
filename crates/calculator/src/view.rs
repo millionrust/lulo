@@ -559,6 +559,7 @@ impl CalculatorView {
             // rather than through `with_description` (which uses its own
             // `a11y_synthetic_children` hook and would replace this one).
             builder.parent_node().set_description("Display");
+            builder.parent_node().set_read_only();
             builder.parent_node().set_live(accesskit::Live::Polite);
             builder.parent_node().set_live_atomic();
         }
@@ -619,8 +620,12 @@ impl CalculatorView {
             .child(
                 line(keypad::RESULT_TOP, keypad::RESULT_LINE)
                     .id("calculator-result")
-                    .role(Role::Label)
+                    .role(Role::TextInput)
                     .aria_label("Display")
+                    .aria_value(SharedString::from(result.clone()))
+                    .focusable()
+                    .tab_stop(false)
+                    .track_focus(&self.focus)
                     .a11y_synthetic_children(Self::accessible_display_text(result.clone()))
                     .text_size(px(result_size))
                     .font_weight(FontWeight::LIGHT)
@@ -941,7 +946,6 @@ impl Render for CalculatorView {
         let window_height = self.window_height();
         div()
             .id("calculator")
-            .track_focus(&self.focus)
             .key_context("Calculator")
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 this.on_key_down(event, cx);

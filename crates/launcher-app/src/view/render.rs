@@ -264,6 +264,22 @@ impl LauncherView {
         };
         let text_size = rmac_ui::text_px(metrics::TEXT_SIZE);
         let line_height = px(metrics::TEXT_LINE);
+        let active_result =
+            if self.keyboard_selection && self.panel.is_none() && self.browse_mode.is_none() {
+                self.visible_rows()
+                    .into_iter()
+                    .enumerate()
+                    .find(|(_, row)| row.selected)
+                    .map(|(index, row)| {
+                        let label = match row.subtitle {
+                            Some(subtitle) => format!("{}, {subtitle}", row.title),
+                            None => row.title,
+                        };
+                        (index, label)
+                    })
+            } else {
+                None
+            };
         div()
             .relative()
             .flex_1()
@@ -351,6 +367,18 @@ impl LauncherView {
                             .text_size(text_size)
                             .line_height(line_height),
                     )
+                    .when_some(active_result, |field, (index, label)| {
+                        field.child(
+                            div()
+                                .id(("spotlight-active-result", index))
+                                .role(Role::Button)
+                                .aria_label(label)
+                                .aria_selected(true)
+                                .aria_active_descendant()
+                                .absolute()
+                                .size_full(),
+                        )
+                    })
                     .on_a11y_action(
                         AccessibleAction::SetValue,
                         self.assistive_query_listener(cx),
@@ -726,17 +754,6 @@ impl Render for LauncherView {
             })
             .collect::<Vec<_>>();
         let rows = self.visible_rows();
-        let selected_announcement = if self.keyboard_selection {
-            rows.iter()
-                .find(|row| row.selected)
-                .map(|row| match &row.subtitle {
-                    Some(subtitle) => format!("{}, {subtitle}", row.title),
-                    None => row.title.clone(),
-                })
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
         let query = snapshot.query.clone();
         let compact = self.compact;
         // A typed query outside the Apps/Files browse modes: the bar grows
@@ -751,16 +768,6 @@ impl Render for LauncherView {
             .v_flex()
             .gap(px(metrics::RESULTS_GAP))
             .text_color(mac::text())
-            .child(
-                div()
-                    .id("spotlight-selected-result")
-                    .role(Role::Status)
-                    .a11y_synthetic_children(move |builder| {
-                        builder.parent_node().set_live(accesskit::Live::Polite);
-                        builder.parent_node().set_live_atomic();
-                        builder.parent_node().set_label(selected_announcement);
-                    }),
-            )
             // Presses that reach the surface itself missed every shape:
             // Spotlight closes, as on macOS.
             .on_mouse_down(

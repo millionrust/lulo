@@ -289,11 +289,7 @@ fn route_shortcut(cx: &mut App) {
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn route_activation(
-    activation: rmac_shell_activation_runtime::Activation,
-    previous_window: Option<rmac_compositor::WindowId>,
-    cx: &mut App,
-) {
+fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &mut App) {
     if dismiss_active(cx) {
         return;
     }
@@ -304,6 +300,14 @@ fn route_activation(
             return;
         }
     };
+    let previous_window = context.compositor().focus.window.or_else(|| {
+        context
+            .compositor()
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.focused)
+            .and_then(|workspace| workspace.active_window)
+    });
     let description = match rmac_quick_settings::surface::plan_invocation(
         context.invocation(),
         context.compositor(),
@@ -379,19 +383,7 @@ fn main() {
                                 blocking::unblock(notify_ready).await?;
                             }
                             rmac_shell_activation_runtime::Update::Activated(activation) => {
-                                let previous_window = rmac_compositor_niri::snapshot()
-                                    .await
-                                    .ok()
-                                    .and_then(|snapshot| {
-                                        snapshot.focus.window.or_else(|| {
-                                            snapshot
-                                                .workspaces
-                                                .iter()
-                                                .find(|workspace| workspace.focused)
-                                                .and_then(|workspace| workspace.active_window)
-                                        })
-                                    });
-                                cx.update(|cx| route_activation(*activation, previous_window, cx));
+                                cx.update(|cx| route_activation(*activation, cx));
                             }
                         }
                     }

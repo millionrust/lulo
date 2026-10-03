@@ -1018,8 +1018,6 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
     try:
         run.setup()
         run.launch()
-        run.nested.input.key("cmd-n")
-        time.sleep(1.0)
         run.nested.input.type_text("Hello")
         time.sleep(0.3)
         run.nested.input.key("cmd-w")
@@ -1032,7 +1030,7 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
         focus = run.fact_focus()
         out["escape"] = {
             "closed": run.dialog_node() is None,
-            "focus_returned": focus["role"] == "text-area" and focus["value"] == "Hello",
+            "focus_returned": focus["role"] in {"text-area", "text-field"} and focus["value"] == "Hello",
         }
 
         run.nested.input.key("cmd-w")

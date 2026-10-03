@@ -1659,7 +1659,11 @@ def inner(args: argparse.Namespace) -> int:
         if args.preview_markup_capture:
             capture_preview_markup(nested, bins, args.settle, Path(args.preview_markup_capture))
             return 0
-        for path in sc.scenario_paths(only=args.scenarios):
+        paths = runnable_scenarios(args.scenarios)
+        if args.shard:
+            index, count = parse_shard(args.shard)
+            paths = [path for position, path in enumerate(paths) if position % count == index]
+        for path in paths:
             sid = sc.scenario_id(path)
             scenario = sc.load(path)
             local_contract = bool(scenario.get("lulo_only"))
@@ -1708,6 +1712,23 @@ def inner(args: argparse.Namespace) -> int:
     passed = sum(r["status"] == "pass" for r in results)
     print(f"\n{passed}/{len(results)} scenarios passed")
     return 0 if passed == len(results) else 1
+
+
+def runnable_scenarios(only: list[str]) -> list[Path]:
+    """Keep shard assignment stable across runs and omit unrecorded cases."""
+    return [path for path in sc.scenario_paths(only=only)
+            if sc.expectation_path(path, "mac").exists()
+            or sc.expectation_path(path, "lulo").exists()]
+
+
+def parse_shard(value: str) -> tuple[int, int]:
+    try:
+        index, count = (int(part) for part in value.split("/"))
+    except (ValueError, TypeError) as error:
+        raise ValueError("--shard must be INDEX/COUNT (zero based)") from error
+    if count < 1 or not 0 <= index < count:
+        raise ValueError("--shard must be INDEX/COUNT with 0 <= INDEX < COUNT")
+    return index, count
 
 
 def check_settings_view_menu(nested: Nested, bins: list[Path], settle: float) -> None:
@@ -1890,6 +1911,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--bin-dir", action="append", default=[], help="directory with rmac-files etc. (repeatable)")
     parser.add_argument("--shell-bin-dir", action="append", default=[], help="directory with the shell's wallpaper binary")
     parser.add_argument("--output", help="write results JSON here (compare.py reads it)")
+    parser.add_argument("--shard", help="run zero-based INDEX/COUNT of recorded scenarios")
     parser.add_argument("--capture-dir", help="save scenario capture steps with grim into this directory")
     parser.add_argument("--settle", type=float, default=0.8)
     parser.add_argument("--keep", action="store_true", help="keep the temporary directory and logs")
@@ -1904,6 +1926,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--preview-markup-capture", help=argparse.SUPPRESS)
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.shard:
+        try:
+            parse_shard(args.shard)
+        except ValueError as error:
+            parser.error(str(error))
     if not sys.platform.startswith("linux"):
         parser.error("run_lulo.py runs on Linux (the reference laptop or CI)")
     # A timeout's SIGTERM still runs the cleanup (reap, then remove the tree).
@@ -1925,6 +1952,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt += ["--shell-bin-dir", directory]
     if args.output:
         rebuilt += ["--output", args.output]
+    if args.shard:
+        rebuilt += ["--shard", args.shard]
     if args.capture_dir:
         rebuilt += ["--capture-dir", args.capture_dir]
     rebuilt += ["--settle", str(args.settle), "--explore-steps", str(args.explore_steps)]

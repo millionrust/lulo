@@ -428,11 +428,11 @@ fn open_outside_click_catcher_impl(
                 focus.focus(window, cx);
             }
             OutsideClickCatcher {
-            left,
-            right,
-            escape: on_escape,
-            focus,
-            input_regions,
+                left,
+                right,
+                escape: on_escape,
+                focus,
+                input_regions,
             }
         })
     }) {

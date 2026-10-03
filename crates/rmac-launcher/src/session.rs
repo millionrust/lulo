@@ -430,18 +430,23 @@ impl Session {
         ranked.truncate(self.limit.saturating_sub(footer.len()));
         ranked.extend(footer);
         self.ranked = ranked;
-        // A selection the person made stays put. Until then the selection
-        // is the top hit and follows the first row as batches arrive: a
-        // slow provider's better match (Calculator for "calc") must win over
-        // an earlier, weaker one (Menu Bar), or Return opens the wrong thing.
+        // A selection the person made stays put. For a typed query an
+        // automatic selection is the top hit and follows the first row as
+        // batches arrive: a slow provider's better match (Calculator for
+        // "calc") must win over an earlier, weaker one (Menu Bar), or Return
+        // opens the wrong thing. With no query the idle list keeps its
+        // selection (no flicker as suggestions arrive), except that the
+        // "Search in" row never keeps it once real results exist.
         let chosen = self.chosen;
+        let idle = query.is_empty();
         self.selected = previous
             .filter(|selected| {
-                chosen
-                    && self
-                        .ranked
-                        .iter()
-                        .any(|ranked| &ranked.result.id == selected)
+                self.ranked
+                    .iter()
+                    .find(|ranked| &ranked.result.id == selected)
+                    .is_some_and(|ranked| {
+                        chosen || (idle && ranked.result.category != Category::SearchIn)
+                    })
             })
             .or_else(|| self.ranked.first().map(|ranked| ranked.result.id.clone()));
     }

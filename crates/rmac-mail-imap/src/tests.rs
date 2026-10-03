@@ -97,45 +97,47 @@ fn tls_plain_sync_move_uidplus_special_use_and_idle() {
             b"\0alice@example.test\0secret-password"
         );
         send(&mut stream, "L00000002 OK authenticated\r\n");
-        assert_eq!(read_line(&mut stream), "L00000003 ENABLE QRESYNC\r\n");
-        send(&mut stream, "* ENABLED QRESYNC\r\nL00000003 OK done\r\n");
+        assert_eq!(read_line(&mut stream), "L00000003 CAPABILITY\r\n");
+        send(&mut stream, "* CAPABILITY IMAP4rev1 CONDSTORE QRESYNC IDLE MOVE UIDPLUS SPECIAL-USE\r\nL00000003 OK done\r\n");
+        assert_eq!(read_line(&mut stream), "L00000004 ENABLE QRESYNC\r\n");
+        send(&mut stream, "* ENABLED QRESYNC\r\nL00000004 OK done\r\n");
         assert_eq!(
             read_line(&mut stream),
-            "L00000004 LIST \"\" \"*\" RETURN (SPECIAL-USE)\r\n"
+            "L00000005 LIST \"\" \"*\" RETURN (SPECIAL-USE)\r\n"
         );
-        send(&mut stream, "* LIST (\\HasNoChildren) \"/\" INBOX\r\n* LIST (\\Sent) \"/\" \"Sent Mail\"\r\nL00000004 OK done\r\n");
+        send(&mut stream, "* LIST (\\HasNoChildren) \"/\" INBOX\r\n* LIST (\\Sent) \"/\" \"Sent Mail\"\r\nL00000005 OK done\r\n");
         assert_eq!(
             read_line(&mut stream),
-            "L00000005 SELECT \"INBOX\" (QRESYNC (42 100))\r\n"
+            "L00000006 SELECT \"INBOX\" (QRESYNC (42 100))\r\n"
         );
-        send(&mut stream, "* 2 EXISTS\r\n* OK [UIDVALIDITY 42] valid\r\n* OK [UIDNEXT 9] next\r\n* OK [HIGHESTMODSEQ 105] modseq\r\n* VANISHED (EARLIER) 3:4\r\n* 1 FETCH (UID 7 FLAGS (\\Seen) MODSEQ (104))\r\nL00000005 OK done\r\n");
+        send(&mut stream, "* 2 EXISTS\r\n* OK [UIDVALIDITY 42] valid\r\n* OK [UIDNEXT 9] next\r\n* OK [HIGHESTMODSEQ 105] modseq\r\n* VANISHED (EARLIER) 3:4\r\n* 1 FETCH (UID 7 FLAGS (\\Seen) MODSEQ (104))\r\nL00000006 OK done\r\n");
         assert_eq!(
             read_line(&mut stream),
-            "L00000006 UID FETCH 1:* (UID FLAGS MODSEQ) (CHANGEDSINCE 100)\r\n"
+            "L00000007 UID FETCH 1:* (UID FLAGS MODSEQ) (CHANGEDSINCE 100)\r\n"
         );
         send(
             &mut stream,
-            "* 1 FETCH (UID 7 FLAGS (\\Seen \\Flagged) MODSEQ (105))\r\nL00000006 OK done\r\n",
+            "* 1 FETCH (UID 7 FLAGS (\\Seen \\Flagged) MODSEQ (105))\r\nL00000007 OK done\r\n",
         );
         assert_eq!(
             read_line(&mut stream),
-            "L00000007 UID FETCH 7 (UID BODY.PEEK[])\r\n"
+            "L00000008 UID FETCH 7 (UID BODY.PEEK[])\r\n"
         );
         send(
             &mut stream,
-            "* 1 FETCH (UID 7 BODY[] {12}\r\nhello\r\nworld)\r\nL00000007 OK done\r\n",
+            "* 1 FETCH (UID 7 BODY[] {12}\r\nhello\r\nworld)\r\nL00000008 OK done\r\n",
         );
         assert_eq!(
             read_line(&mut stream),
-            "L00000008 UID MOVE 7 \"Archive\"\r\n"
+            "L00000009 UID MOVE 7 \"Archive\"\r\n"
         );
-        send(&mut stream, "L00000008 OK [COPYUID 42 7 11] moved\r\n");
-        assert_eq!(read_line(&mut stream), "L00000009 UID EXPUNGE 7\r\n");
-        send(&mut stream, "L00000009 OK done\r\n");
-        assert_eq!(read_line(&mut stream), "L00000010 IDLE\r\n");
+        send(&mut stream, "L00000009 OK [COPYUID 42 7 11] moved\r\n");
+        assert_eq!(read_line(&mut stream), "L00000010 UID EXPUNGE 7\r\n");
+        send(&mut stream, "L00000010 OK done\r\n");
+        assert_eq!(read_line(&mut stream), "L00000011 IDLE\r\n");
         send(&mut stream, "+ idling\r\n* 3 EXISTS\r\n");
         assert_eq!(read_line(&mut stream), "DONE\r\n");
-        send(&mut stream, "L00000010 OK done\r\n");
+        send(&mut stream, "L00000011 OK done\r\n");
     });
     let mut client = Client::connect_with_roots(&config, roots()).unwrap();
     client
@@ -203,6 +205,11 @@ fn starttls_xoauth2_challenge_and_redaction() {
             b"user=alice@example.test\x01auth=Bearer planted-token\x01\x01"
         );
         send(&mut stream, "L00000002 OK done\r\n");
+        assert_eq!(read_line(&mut stream), "L00000003 CAPABILITY\r\n");
+        send(
+            &mut stream,
+            "* CAPABILITY IMAP4rev1 IDLE\r\nL00000003 OK done\r\n",
+        );
     });
     let secret = Secret::new("planted-token");
     assert_eq!(format!("{secret:?} {secret}"), "[redacted] [redacted]");
@@ -273,6 +280,21 @@ fn tls_login_password_fallback() {
             "L00000002 LOGIN \"alice\" \"secret-password\"\r\n"
         );
         send(&mut stream, "L00000002 OK done\r\n");
+        assert_eq!(read_line(&mut stream), "L00000003 CAPABILITY\r\n");
+        send(
+            &mut stream,
+            "* CAPABILITY IMAP4rev1\r\nL00000003 OK done\r\n",
+        );
+        assert_eq!(read_line(&mut stream), "L00000004 SELECT \"INBOX\"\r\n");
+        send(&mut stream, "* 1 EXISTS\r\nL00000004 OK done\r\n");
+        assert_eq!(
+            read_line(&mut stream),
+            "L00000005 UID FETCH 1:* (UID FLAGS)\r\n"
+        );
+        send(
+            &mut stream,
+            "* 1 FETCH (UID 7 FLAGS (\\Seen))\r\nL00000005 OK done\r\n",
+        );
     });
     let mut client = Client::connect_with_roots(&config, roots()).unwrap();
     client
@@ -281,6 +303,8 @@ fn tls_login_password_fallback() {
             password: &Secret::new("secret-password"),
         })
         .unwrap();
+    assert_eq!(client.select("INBOX", None).unwrap().exists, 1);
+    assert_eq!(client.fetch_changes(Some(100)).unwrap()[0].modseq, None);
     handle.join().unwrap();
 }
 
@@ -304,6 +328,11 @@ fn oauthbearer_escapes_authorization_identity() {
             b"n,a=alice=2Cwork=3D@example.test,\x01auth=Bearer token\x01\x01"
         );
         send(&mut stream, "L00000002 OK done\r\n");
+        assert_eq!(read_line(&mut stream), "L00000003 CAPABILITY\r\n");
+        send(
+            &mut stream,
+            "* CAPABILITY IMAP4rev1\r\nL00000003 OK done\r\n",
+        );
     });
     let mut client = Client::connect_with_roots(&config, roots()).unwrap();
     client

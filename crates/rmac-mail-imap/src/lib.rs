@@ -234,6 +234,8 @@ impl Client {
     }
 
     fn enable_extensions(&mut self) -> Result<(), Error> {
+        // Servers may advertise a different capability set after sign-in.
+        self.capabilities = parse_capabilities(&self.command("CAPABILITY")?);
         // ENABLE is connection-scoped; QRESYNC implicitly enables CONDSTORE.
         if self.capabilities.has("QRESYNC") {
             self.command("ENABLE QRESYNC")?;
@@ -279,8 +281,13 @@ impl Client {
 
     /// Returns flag/modseq changes. A server without CONDSTORE receives a full UID fetch.
     pub fn fetch_changes(&mut self, since: Option<u64>) -> Result<Vec<MessageChange>, Error> {
-        let mut cmd = "UID FETCH 1:* (UID FLAGS MODSEQ)".to_string();
-        if self.capabilities.has("CONDSTORE") {
+        let modseq = self.capabilities.has("CONDSTORE") || self.capabilities.has("QRESYNC");
+        let mut cmd = if modseq {
+            "UID FETCH 1:* (UID FLAGS MODSEQ)".to_string()
+        } else {
+            "UID FETCH 1:* (UID FLAGS)".to_string()
+        };
+        if modseq {
             if let Some(since) = since.filter(|value| *value > 0) {
                 cmd.push_str(&format!(" (CHANGEDSINCE {since})"));
             }

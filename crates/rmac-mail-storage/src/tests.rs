@@ -64,7 +64,7 @@ fn migration_is_idempotent_and_rejects_future_schema() {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .expect("version"),
-        1
+        2
     );
     drop(reopened);
     let db = Connection::open(path).expect("open raw");
@@ -75,6 +75,38 @@ fn migration_is_idempotent_and_rejects_future_schema() {
         MailStorage::open(&fixture.root, fixture.account),
         Err(Error::UnsupportedSchema(999))
     ));
+}
+
+#[test]
+fn outbox_claim_is_durable_and_crash_safe() {
+    let mut fixture = Fixture::new();
+    let id = fixture
+        .store
+        .queue_outbox(
+            "a@example.test",
+            &["b@example.test".into(), "hidden@example.test".into()],
+            b"From: a@example.test\r\n\r\nHello",
+        )
+        .unwrap();
+    assert_eq!(fixture.store.outbox_count(OutboxState::Queued).unwrap(), 1);
+    let claimed = fixture.store.claim_outbox().unwrap().unwrap();
+    assert_eq!(claimed.id, id);
+    assert_eq!(claimed.recipients.len(), 2);
+    assert!(fixture.store.claim_outbox().unwrap().is_none());
+    let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
+    assert_eq!(reopened.outbox_count(OutboxState::Sending).unwrap(), 1);
+    assert!(reopened.claim_outbox().unwrap().is_none());
+    reopened.update_outbox_state(id, OutboxState::Held).unwrap();
+    assert_eq!(reopened.outbox_count(OutboxState::Held).unwrap(), 1);
+    reopened
+        .update_outbox_state(id, OutboxState::Queued)
+        .unwrap();
+    assert_eq!(
+        reopened.claim_outbox().unwrap().unwrap().bytes,
+        claimed.bytes
+    );
+    reopened.complete_outbox(id).unwrap();
+    assert_eq!(reopened.outbox_count(OutboxState::Queued).unwrap(), 0);
 }
 
 #[test]

@@ -185,8 +185,9 @@ The IMAP client uses `imap-codec` 1.0.0 for ordinary tagged response validation,
 with bounded parsing for extension replies such as QRESYNC `VANISHED` and
 CONDSTORE `MODSEQ`. It is MIT OR Apache-2.0, as are its new transitive crates
 `imap-types` 1.0.0, `abnf-core` 0.6.0 and `base64` 0.21.7. The connection uses
-the already locked rustls 0.23 stack with the ring provider and native root
-certificates. No GPL/LGPL crate or new Git source enters the graph.
+rustls 0.23.45 with the ring provider and native root certificates; this
+version fixes RUSTSEC-2026-0285, which CI caught in the previously locked
+0.23.41. No GPL/LGPL crate or new Git source enters the graph.
 
 ## 6. Risks and blockers
 

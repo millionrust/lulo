@@ -9,6 +9,6 @@ publish = false
 [dependencies]
 base64 = "0.22"
 imap-codec = "=1.0.0"
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8"
 zeroize.workspace = true

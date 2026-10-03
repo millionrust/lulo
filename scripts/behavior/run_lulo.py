@@ -896,7 +896,7 @@ class LuloRun:
         frame = self.active_frame()
         return {
             "present": frame is not None and any(
-                role(node) in TEXT_ROLES and name(node) == "Find"
+                role(node) in TEXT_ROLES | {"entry"} and name(node) == "Find"
                 for node in descendants(frame, limit=3000)
             )
         }

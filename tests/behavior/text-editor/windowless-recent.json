@@ -6,6 +6,7 @@
   "launch": {"file": "report.txt"},
   "steps": [
     {"observe": "open", "facts": ["windows"]},
+    {"wait": 2},
     {"key": "cmd-w", "settle": 1.2},
     {"observe": "windowless", "facts": ["windows"]},
     {"menu_action": "text_editor::OpenRecent0", "settle": 1.2},

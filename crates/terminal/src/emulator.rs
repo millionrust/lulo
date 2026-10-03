@@ -341,6 +341,20 @@ mod tests {
     }
 
     #[test]
+    fn osc_zero_and_two_update_the_session_title() {
+        let proxy = TitleEventProxy::default();
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(10), &size, proxy.clone());
+        let mut parser: Processor = Processor::new();
+        parser.advance(&mut term, b"\x1b]0;first\x07\x1b]2;second\x07");
+        let events = proxy.0.lock().unwrap();
+        assert_eq!(
+            events.as_slice(),
+            &[Some("first".into()), Some("second".into())]
+        );
+    }
+
+    #[test]
     fn aggregate_scrollback_budget_covers_every_supported_tab_count() {
         assert_eq!(scrollback_limit_for_tab_count(0), 0);
         assert_eq!(scrollback_limit_for_tab_count(1), SCROLLBACK_LINES);

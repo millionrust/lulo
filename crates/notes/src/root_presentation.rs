@@ -88,7 +88,6 @@ impl NotesView {
         let bundle_import_dialog = self.render_bundle_import_dialog(cx);
 
         div()
-            .track_focus(&self.focus)
             .key_context("Notes")
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let key = &event.keystroke;

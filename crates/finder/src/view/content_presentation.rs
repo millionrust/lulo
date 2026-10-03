@@ -702,27 +702,38 @@ impl FinderView {
                     );
                 }
                 let destination = path.clone();
+                let keyboard_destination = path.clone();
+                let view = cx.entity();
                 crumbs = crumbs.child(
-                    div()
-                        .id(("path-crumb", index))
-                        .role(Role::Link)
-                        .aria_label(name.clone())
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap(px(PATH_BAR_ICON_GAP))
-                        .cursor_pointer()
-                        .child(if glyph == "icons/folder-fill.svg" {
-                            item_artwork(true, "", PATH_BAR_ICON)
-                        } else {
-                            icon(glyph, PATH_BAR_ICON, chrome_text()).into_any_element()
-                        })
-                        .child(name)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if destination.is_dir() {
-                                this.navigate(destination.clone(), cx);
-                            }
-                        })),
+                    rmac_ui::KeyboardAction::new(
+                        SharedString::from(format!("path-crumb-{index}-keyboard")),
+                        div()
+                            .id(("path-crumb", index))
+                            .role(Role::Link)
+                            .aria_label(name.clone())
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .gap(px(PATH_BAR_ICON_GAP))
+                            .cursor_pointer()
+                            .child(if glyph == "icons/folder-fill.svg" {
+                                item_artwork(true, "", PATH_BAR_ICON)
+                            } else {
+                                icon(glyph, PATH_BAR_ICON, chrome_text()).into_any_element()
+                            })
+                            .child(name)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if destination.is_dir() {
+                                    this.navigate(destination.clone(), cx);
+                                }
+                            })),
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.navigate(keyboard_destination.clone(), cx)
+                            });
+                        },
+                    )
+                    .disabled(!is_dir),
                 );
             }
         }

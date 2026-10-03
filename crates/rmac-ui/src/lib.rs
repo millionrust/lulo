@@ -42,10 +42,10 @@ pub use components::{
 };
 pub use controls::{
     slider_bulge_lerp, uniform_list_scrollbar, Button, ButtonRole, Checkbox, CollectionState,
-    DocumentTitleMenu, InputEvent, InputState, KeyboardAction, List, ListRow, PopUpButton, Position, Radio,
-    RadioGroup, Rope, RopeExt, SearchField, SegmentedControl, SelectAll, Slider, SliderAxis,
-    SliderBulge, SliderEvent, SliderState, SwitchSize, Table, Tabs, TextField, Toggle, ToggleState,
-    Tree, TreeRow, SLIDER_BULGE_MS,
+    DocumentTitleMenu, InputEvent, InputState, KeyboardAction, List, ListRow, PopUpButton,
+    Position, Radio, RadioGroup, Rope, RopeExt, SearchField, SegmentedControl, SelectAll, Slider,
+    SliderAxis, SliderBulge, SliderEvent, SliderState, SwitchSize, Table, Tabs, TextField, Toggle,
+    ToggleState, Tree, TreeRow, SLIDER_BULGE_MS,
 };
 pub use controls::{tooltip_view, Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{

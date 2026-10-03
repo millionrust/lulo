@@ -6,8 +6,8 @@ use gpui::{
     div, prelude::FluentBuilder as _, px, rgba, AccessibleAction, Anchor, AnyElement, App,
     ClickEvent, Context, DismissEvent, ElementId, Entity, Focusable as _, Hsla,
     InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement as _,
-    RenderOnce, Role, SharedString, Stateful, StatefulInteractiveElement as _, StyleRefinement, Styled,
-    Toggled, Window,
+    RenderOnce, Role, SharedString, Stateful, StatefulInteractiveElement as _, StyleRefinement,
+    Styled, Toggled, Window,
 };
 use gpui_component::{
     button::{
@@ -74,7 +74,12 @@ impl KeyboardAction {
         element: Stateful<gpui::Div>,
         activate: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
-        Self { id: id.into(), element, activate: Rc::new(activate), enabled: true }
+        Self {
+            id: id.into(),
+            element,
+            activate: Rc::new(activate),
+            enabled: true,
+        }
     }
 
     pub fn disabled(mut self, disabled: bool) -> Self {

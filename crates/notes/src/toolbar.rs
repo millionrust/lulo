@@ -56,23 +56,24 @@ pub(super) fn accessible_icon_button(
     rmac_ui::KeyboardAction::new(
         SharedString::from(format!("{id}-keyboard")),
         div()
-        .id(SharedString::from(format!("{id}-a11y")))
-        .role(Role::Button)
-        .aria_label(name)
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .when(enabled, move |element| {
-            element.on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
-                view.update(cx, |this, cx| a11y_activate(this, window, cx));
+            .id(SharedString::from(format!("{id}-a11y")))
+            .role(Role::Button)
+            .aria_label(name)
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .when(enabled, move |element| {
+                element.on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                    view.update(cx, |this, cx| a11y_activate(this, window, cx));
+                })
             })
-        })
-        .child(button),
+            .child(button),
         move |window, cx| {
             keyboard_view.update(cx, |this, cx| activate(this, window, cx));
         },
-    ).disabled(!enabled)
+    )
+    .disabled(!enabled)
 }
 
 impl NotesView {

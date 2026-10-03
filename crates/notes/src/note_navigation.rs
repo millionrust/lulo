@@ -782,6 +782,7 @@ impl NotesView {
                     .id("notes-scroll")
                     .role(Role::ListBox)
                     .aria_label(if search_active { "Results" } else { "Notes" })
+                    .track_focus(&self.focus.clone().tab_stop(true).tab_index(0))
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()

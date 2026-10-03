@@ -106,7 +106,7 @@ fn valid_content_type(value: &str) -> bool {
     !type_.is_empty()
         && !subtype.is_empty()
         && !subtype.contains('/')
-        && value.bytes().all(|byte| {
+        && type_.bytes().chain(subtype.bytes()).all(|byte| {
             byte.is_ascii_alphanumeric()
                 || matches!(
                     byte,

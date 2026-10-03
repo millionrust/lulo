@@ -261,6 +261,14 @@ pub(super) fn convert_action_sequence(
             wire::Action::FocusWindow { id: window.0 },
             convert_action(action),
         ]),
+        // niri's `focus: true` follows the move to the target workspace but
+        // leaves keyboard focus on that workspace's current window when the
+        // restored window floats, so a Dock click left the app behind the
+        // one in front. The Mac activates the restored window.
+        domain::Action::RestoreWindow { window, .. } => Ok(vec![
+            convert_action(action),
+            wire::Action::FocusWindow { id: window.0 },
+        ]),
         _ => Ok(vec![convert_action(action)]),
     }
 }

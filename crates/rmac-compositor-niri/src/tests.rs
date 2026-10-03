@@ -155,6 +155,11 @@ fn minimize_and_restore_use_the_named_parking_workspace() {
         serde_json::to_string(&restored[0]).unwrap(),
         r#"{"MoveWindowToWorkspace":{"window_id":4,"reference":{"Id":2},"focus":true}}"#
     );
+    assert_eq!(
+        serde_json::to_string(&restored[1]).unwrap(),
+        r#"{"FocusWindow":{"id":4}}"#
+    );
+    assert_eq!(restored.len(), 2);
 }
 
 #[test]

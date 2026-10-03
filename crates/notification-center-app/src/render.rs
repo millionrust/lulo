@@ -272,7 +272,7 @@ impl Render for NotificationCenterView {
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape" {
                     cx.stop_propagation();
-                    this.dismiss(window, cx);
+                    this.dismiss_and_restore_focus(window, cx);
                 }
             }))
             // A click on the backdrop, outside every card, closes the Center.

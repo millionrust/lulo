@@ -68,7 +68,7 @@ fn panel_options(bounds: Bounds<Pixels>) -> WindowOptions {
                 px(0.0),
                 px(0.0),
             )),
-            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            keyboard_interactivity: KeyboardInteractivity::Exclusive,
             ..Default::default()
         }),
         is_movable: false,
@@ -193,7 +193,11 @@ pub(crate) fn clear_active_panel(token: u64, cx: &mut App) {
     }
 }
 
-fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
+fn open_panel(
+    bounds: Bounds<Pixels>,
+    previous_window: Option<rmac_compositor::WindowId>,
+    cx: &mut App,
+) {
     let token = cx.update_global::<NotificationCenterService, _>(|service, _| {
         service.next_token = service.next_token.wrapping_add(1).max(1);
         service.next_token
@@ -202,7 +206,7 @@ fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
     let handle = cx.open_window(panel_options(bounds), |window, cx| {
         window.set_window_title("Notification Center");
         rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| NotificationCenterView::new(token, window, cx));
+        let view = cx.new(|cx| NotificationCenterView::new(token, previous_window, window, cx));
         panel = Some(view.downgrade());
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
@@ -248,7 +252,7 @@ fn route_shortcut(cx: &mut App) {
     if dismiss_active(cx) {
         return;
     }
-    open_panel(fallback_bounds(cx), cx);
+    open_panel(fallback_bounds(cx), None, cx);
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -263,6 +267,14 @@ fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &
             return;
         }
     };
+    let previous_window = context.compositor().focus.window.or_else(|| {
+        context
+            .compositor()
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.focused)
+            .and_then(|workspace| workspace.active_window)
+    });
     let description = match rmac_notifications_linux::center_surface::plan_invocation(
         context.invocation(),
         context.compositor(),
@@ -288,7 +300,7 @@ fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &
             return;
         }
     };
-    open_panel(bounds, cx);
+    open_panel(bounds, previous_window, cx);
 }
 
 /// The widget faces' glyphs, layered over rmac-ui's shared icons.

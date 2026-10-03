@@ -152,6 +152,7 @@ APP_JOURNEYS: list[dict[str, Any]] = [
     },
     {
         "id": "system-monitor", "title": "System Monitor", "app": "system-monitor",
+        "idle_seconds": 15,
         "extras": [
             ("down", "move", "next process"), ("down", "move", "next process"), ("up", "move", "previous process"),
         ],
@@ -184,12 +185,14 @@ SHELL_JOURNEYS: list[dict[str, Any]] = [
     },
     {
         "id": "control-centre", "title": "Control Centre", "open": "quick-settings",
-        "resident": "rmac-quick-settings", "cycle": True,
+        "resident": "rmac-quick-settings", "background": "rmac-calculator",
+        "background_tab": True, "cycle": True,
         "steps": [("escape", None, "close Control Centre")],
     },
     {
         "id": "notification-centre", "title": "Notification Centre", "open": "notification-center",
-        "resident": "rmac-notification-center-panel",
+        "resident": "rmac-notification-center-panel", "background": "rmac-calculator",
+        "background_tab": True,
         "steps": [("tab", None, "next control"), ("tab", None, "next control"), ("tab", None, "next control"),
                   ("escape", None, "close Notification Centre")],
     },
@@ -341,6 +344,8 @@ class Orca:
 
 
 EVENT_TYPES = (
+    "object:announcement",
+    "object:property-change:accessible-name",
     "object:state-changed:focused", "object:state-changed:checked", "object:state-changed:expanded",
     "object:state-changed:selected", "object:state-changed:pressed", "object:property-change:accessible-value",
     "object:value-changed", "object:selection-changed", "object:text-changed", "object:active-descendant-changed",
@@ -573,6 +578,8 @@ class Audit:
         step: dict[str, Any] = {
             "key": chord, "note": note, "expect": expect, "focus": after, "via": via,
             "heard": checks.describe(after), "speech": speech, "events": sorted(set(self.tracker.events)),
+            "name_events": sum(event.startswith("object:property-change:accessible-name")
+                               for event in self.tracker.events),
         }
         flags = []
         if expect is not None or chord in {"tab", "shift-tab"} or (before or {}).get("key") != (after or {}).get("key"):
@@ -720,6 +727,23 @@ class Audit:
                 (run.sandbox / png).write_bytes(tiny_png())
             # 1. Scripted keys from the window's own initial focus.
             previous = self.launch(run, steps, "window opens (scripted keys)")
+            if idle_seconds := journey.get("idle_seconds"):
+                offset = self.orca.offset()
+                self.tracker.reset()
+                deadline = time.monotonic() + idle_seconds
+                while time.monotonic() < deadline:
+                    pump()
+                    time.sleep(0.1)
+                speech = [entry["text"] for entry in self.orca.since(offset)
+                          if entry["kind"] in {"speech", "character"}]
+                name_events = sum(event.startswith("object:property-change:accessible-name")
+                                  for event in self.tracker.events)
+                steps.append({"key": "idle", "note": f"{idle_seconds}s without input",
+                              "focus": previous, "heard": checks.describe(previous),
+                              "speech": speech, "name_events": name_events,
+                              "events": sorted(set(self.tracker.events)), "flags": []})
+                print(f"     idle {idle_seconds}s -> {name_events} accessible-name events",
+                      flush=True)
             watch = self.find_watch(run, journey.get("watch"))
             for chord, expect, note in journey.get("extras", []):
                 if run.process.poll() is not None:
@@ -800,6 +824,10 @@ class Audit:
         result: dict[str, Any] = {"id": journey["id"], "title": journey["title"], "kind": "shell", "steps": []}
         steps = result["steps"]
         try:
+            if journey.get("background_tab"):
+                before, _ = self.current_focus()
+                steps.append(self.press("tab", "move", "focus a background control",
+                                        snapshot(before)))
             if journey.get("open"):
                 offset = self.orca.offset()
                 shell.dispatch(journey["open"])
@@ -834,6 +862,19 @@ class Audit:
                 previous = steps[-1]["focus"] if steps else None
             for chord, expect, note in journey["steps"]:
                 step = self.press(chord, expect, note, previous)
+                if chord == "escape" and journey.get("background"):
+                    focused_app = (step.get("focus") or {}).get("app")
+                    if focused_app != journey["background"]:
+                        step["flags"].append(checks.flag(
+                            "focus-lost", f"Escape returned focus to {focused_app!r}, not "
+                            f"{journey['background']!r}"))
+                    resident = shell.residents.get(journey.get("resident", ""))
+                    if resident is not None:
+                        pyatspi = atspi()
+                        showing = [name(frame) for frame in shell.session.frames_by_pid(resident.pid)
+                                   if has_state(frame, pyatspi.STATE_SHOWING)]
+                        step["showing_frames_after_escape"] = showing
+                        print(f"     panels still showing after Escape: {showing}", flush=True)
                 steps.append(step)
                 previous = step["focus"]
         except (StepFailed, wlinput.InjectorError) as error:
@@ -944,6 +985,8 @@ def inner(args: argparse.Namespace) -> int:
             audit.frames_provider = None
             for journey in shell_journeys:
                 print(f"== {journey['title']}", flush=True)
+                if journey.get("background"):
+                    shell.resident(journey["background"])
                 if journey.get("resident"):
                     try:
                         shell.resident(journey["resident"])

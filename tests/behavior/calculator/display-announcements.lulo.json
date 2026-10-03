@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "calculator/display-announcements",
+  "platform": "Lulo local contract",
+  "observations": {
+    "input": {"display": {"value": "12"}},
+    "result": {"display": {"value": "15"}},
+    "cleared": {"display": {"value": "0"}}
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "title": "Calculator: accessible display follows input and result changes",
+  "app": "calculator",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"key": "escape"},
+    {"type": "12"},
+    {"observe": "input", "facts": ["display"]},
+    {"type": "+3="},
+    {"observe": "result", "facts": ["display"]},
+    {"key": "escape"},
+    {"observe": "cleared", "facts": ["display"]}
+  ]
+}

@@ -2503,9 +2503,14 @@ impl RenderOnce for TreeRow {
 }
 
 /// rmac-owned boundary for the virtualized table implementation.
+type AccessibilityRowKey<D> = Rc<dyn Fn(&D, usize) -> u64>;
+type AccessibilityRowName<D> = Rc<dyn Fn(&D, usize) -> SharedString>;
+
 #[derive(IntoElement)]
 pub struct Table<D: TableDelegate> {
     state: Entity<TableState<D>>,
+    accessibility_row_key: Option<AccessibilityRowKey<D>>,
+    accessibility_row_name: Option<AccessibilityRowName<D>>,
     striped: bool,
     bordered: bool,
     vertical_scrollbar: bool,
@@ -2517,12 +2522,32 @@ impl<D: TableDelegate> Table<D> {
     pub fn new(state: &Entity<TableState<D>>) -> Self {
         Self {
             state: state.clone(),
+            accessibility_row_key: None,
+            accessibility_row_name: None,
             striped: false,
             bordered: true,
             vertical_scrollbar: true,
             horizontal_scrollbar: true,
             size: None,
         }
+    }
+
+    /// Stable model identity for synthetic off-screen accessibility rows.
+    /// A sorted table must provide this so an index change does not rename
+    /// every row in the accessibility tree.
+    pub fn accessibility_row_key(mut self, key: impl Fn(&D, usize) -> u64 + 'static) -> Self {
+        self.accessibility_row_key = Some(Rc::new(key));
+        self
+    }
+
+    /// A stable name for an off-screen row, independent of changing metrics
+    /// and of which column the user placed first.
+    pub fn accessibility_row_name(
+        mut self,
+        name: impl Fn(&D, usize) -> SharedString + 'static,
+    ) -> Self {
+        self.accessibility_row_name = Some(Rc::new(name));
+        self
     }
 
     pub fn striped(mut self, striped: bool) -> Self {
@@ -2588,7 +2613,14 @@ impl<D: TableDelegate> RenderOnce for Table<D> {
                 .into_iter()
                 .map(|index| crate::accessibility::AccessibleTableRow {
                     index,
-                    name: delegate.cell_text(index, 0, cx).into(),
+                    key: self
+                        .accessibility_row_key
+                        .as_ref()
+                        .map_or(index as u64, |key| key(delegate, index)),
+                    name: self.accessibility_row_name.as_ref().map_or_else(
+                        || delegate.cell_text(index, 0, cx).into(),
+                        |name| name(delegate, index),
+                    ),
                     selected: selected_row == Some(index),
                 })
                 .collect::<Vec<_>>();
@@ -2612,7 +2644,7 @@ impl<D: TableDelegate> RenderOnce for Table<D> {
             // Monitor's PID-keyed selection) stays in sync the same way it
             // already does for keyboard navigation.
             for row in &rows {
-                let node_id = crate::accessibility::table_row_node_id(salt, row.index);
+                let node_id = crate::accessibility::table_row_node_id(salt, row.key);
                 let row_index = row.index;
                 let select_state = self.state.clone();
                 window.on_a11y_action(node_id, AccessibleAction::Click, {

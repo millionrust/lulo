@@ -6599,6 +6599,8 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-compositor",
+ "rmac-compositor-niri",
  "rmac-media",
  "rmac-osd",
  "rmac-quick-settings",

@@ -5694,6 +5694,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/openssl-probe/openssl-probe-0.1.6.crate",
+        "sha256": "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e",
+        "dest": "cargo/vendor/openssl-probe-0.1.6"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e\", \"files\": {}}",
+        "dest": "cargo/vendor/openssl-probe-0.1.6",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/openssl-probe/openssl-probe-0.2.1.crate",
         "sha256": "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe",
         "dest": "cargo/vendor/openssl-probe-0.2.1"
@@ -7186,6 +7199,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/rustls-native-certs/rustls-native-certs-0.7.3.crate",
+        "sha256": "e5bfb394eeed242e909609f56089eecfe5fda225042e8b171791b9c95f5931e5",
+        "dest": "cargo/vendor/rustls-native-certs-0.7.3"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"e5bfb394eeed242e909609f56089eecfe5fda225042e8b171791b9c95f5931e5\", \"files\": {}}",
+        "dest": "cargo/vendor/rustls-native-certs-0.7.3",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/rustls-native-certs/rustls-native-certs-0.8.4.crate",
         "sha256": "dab5152771c58876a2146916e53e35057e1a4dfa2b9df0f0305b07f611fdea4d",
         "dest": "cargo/vendor/rustls-native-certs-0.8.4"
@@ -7420,6 +7446,19 @@
         "type": "inline",
         "contents": "{\"package\": \"1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b\", \"files\": {}}",
         "dest": "cargo/vendor/seahash-4.1.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/security-framework/security-framework-2.11.1.crate",
+        "sha256": "897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02",
+        "dest": "cargo/vendor/security-framework-2.11.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02\", \"files\": {}}",
+        "dest": "cargo/vendor/security-framework-2.11.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -9250,6 +9289,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/ureq/ureq-2.12.1.crate",
+        "sha256": "02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d",
+        "dest": "cargo/vendor/ureq-2.12.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d\", \"files\": {}}",
+        "dest": "cargo/vendor/ureq-2.12.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/url/url-2.5.8.crate",
         "sha256": "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed",
         "dest": "cargo/vendor/url-2.5.8"
@@ -9757,6 +9809,32 @@
         "type": "inline",
         "contents": "{\"package\": \"5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb\", \"files\": {}}",
         "dest": "cargo/vendor/web-time-1.1.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/webpki-roots/webpki-roots-0.26.11.crate",
+        "sha256": "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9",
+        "dest": "cargo/vendor/webpki-roots-0.26.11"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9\", \"files\": {}}",
+        "dest": "cargo/vendor/webpki-roots-0.26.11",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/webpki-roots/webpki-roots-1.0.9.crate",
+        "sha256": "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a",
+        "dest": "cargo/vendor/webpki-roots-1.0.9"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a\", \"files\": {}}",
+        "dest": "cargo/vendor/webpki-roots-1.0.9",
         "dest-filename": ".cargo-checksum.json"
     },
     {

@@ -1,0 +1,11 @@
+[package]
+name = "rmac-calendar-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+rmac-calendar-eds = { path = "../rmac-calendar-eds" }
+rmac-calendar-store = { path = "../rmac-calendar-store" }

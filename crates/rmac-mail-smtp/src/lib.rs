@@ -359,6 +359,7 @@ pub fn drain_outbox(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
 
     struct Fixture {
         read: io::Cursor<Vec<u8>>,
@@ -402,5 +403,51 @@ mod tests {
         let token = Secret::new("planted-secret".into());
         assert_eq!(format!("{token:?} {token}"), "[redacted] [redacted]");
         assert!(!valid_address("a@example.test\r\nRCPT TO:<b@example.test>"));
+    }
+
+    #[test]
+    fn starttls_is_required_before_authentication() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.write_all(b"220 fixture ready\r\n").unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut command = String::new();
+            reader.read_line(&mut command).unwrap();
+            stream.write_all(b"250 fixture hello\r\n").unwrap();
+            let mut rest = String::new();
+            reader.read_to_string(&mut rest).unwrap();
+            (command, rest)
+        });
+        let message = OutboxMessage {
+            id: 1,
+            envelope_from: "a@example.test".into(),
+            recipients: vec!["b@example.test".into()],
+            bytes: b"body".to_vec(),
+        };
+        let result = submit(
+            &Config {
+                host: "127.0.0.1".into(),
+                port,
+                helo_name: "lulo.test".into(),
+                security: Security::StartTls,
+            },
+            &Authentication::Plain {
+                user: "a@example.test".into(),
+                password: Secret::new("planted-secret".into()),
+            },
+            &message,
+        );
+        assert!(matches!(
+            result,
+            Err(SubmissionFailure {
+                error: Error::MissingStartTls,
+                retry: Retry::Safe
+            })
+        ));
+        let (command, rest) = server.join().unwrap();
+        assert_eq!(command, "EHLO lulo.test\r\n");
+        assert!(rest.is_empty());
     }
 }

@@ -5,7 +5,7 @@ mod rich_text;
 pub use rich_text::{sanitize_html, Block, BlockKind, Image, RichText, Span};
 
 use mail_builder::MessageBuilder;
-use mail_parser::MessageParser;
+use mail_parser::{MessageParser, MimeHeaders};
 
 #[derive(Clone, Debug, Default)]
 pub struct Draft {
@@ -39,6 +39,7 @@ pub struct BuiltMessage {
 #[derive(Debug)]
 pub enum Error {
     InvalidAddress,
+    InvalidMessageId,
     EmptyRecipients,
     Build(std::io::Error),
     Parse,
@@ -48,6 +49,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidAddress => write!(f, "invalid email address"),
+            Self::InvalidMessageId => write!(f, "invalid message ID"),
             Self::EmptyRecipients => write!(f, "message needs a recipient"),
             Self::Build(error) => write!(f, "MIME build failed: {error}"),
             Self::Parse => write!(f, "message could not be parsed"),
@@ -71,6 +73,16 @@ pub fn valid_address(address: &str) -> bool {
         && !address
             .bytes()
             .any(|b| b <= 32 || b == 127 || b == b'<' || b == b'>' || b == b',' || b == b';')
+}
+
+fn normalise_id(id: &str) -> Option<&str> {
+    let id = id.trim().trim_start_matches('<').trim_end_matches('>');
+    (id.is_ascii()
+        && id.contains('@')
+        && !id
+            .bytes()
+            .any(|byte| byte <= 32 || byte == 127 || matches!(byte, b'<' | b'>')))
+    .then_some(id)
 }
 
 pub fn build(draft: &Draft) -> Result<BuiltMessage, Error> {
@@ -101,10 +113,19 @@ pub fn build(draft: &Draft) -> Result<BuiltMessage, Error> {
         builder = builder.html_body(html.as_str());
     }
     if let Some(id) = &draft.in_reply_to {
-        builder = builder.in_reply_to(id.as_str());
+        builder = builder.in_reply_to(normalise_id(id).ok_or(Error::InvalidMessageId)?.to_owned());
     }
     if !draft.references.is_empty() {
-        builder = builder.references(draft.references.join(" "));
+        let ids = draft
+            .references
+            .iter()
+            .map(|id| {
+                normalise_id(id)
+                    .map(str::to_owned)
+                    .ok_or(Error::InvalidMessageId)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        builder = builder.references(ids);
     }
     for attachment in &draft.attachments {
         builder = builder.attachment(
@@ -149,7 +170,13 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMessage, Error> {
             filename: part.attachment_name().unwrap_or("attachment").to_owned(),
             content_type: part
                 .content_type()
-                .map(|value| value.c_type.to_string())
+                .map(|value| {
+                    format!(
+                        "{}/{}",
+                        value.c_type,
+                        value.c_subtype.as_deref().unwrap_or("octet-stream")
+                    )
+                })
                 .unwrap_or_else(|| "application/octet-stream".to_owned()),
             bytes: part.contents().to_vec(),
         });
@@ -220,6 +247,28 @@ mod tests {
         assert!(matches!(build(&draft), Err(Error::InvalidAddress)));
         draft.to.clear();
         assert!(matches!(build(&draft), Err(Error::EmptyRecipients)));
+    }
+
+    #[test]
+    fn references_are_normalised_and_cannot_inject_headers() {
+        let mut draft = Draft {
+            from: "a@example.test".into(),
+            to: vec!["b@example.test".into()],
+            in_reply_to: Some("<original@example.test>".into()),
+            references: vec![
+                "<older@example.test>".into(),
+                "<original@example.test>".into(),
+            ],
+            ..Draft::default()
+        };
+        let built = build(&draft).unwrap();
+        let source = String::from_utf8_lossy(&built.bytes);
+        assert!(source.contains("In-Reply-To: <original@example.test>"));
+        assert!(source.contains("References: <older@example.test> <original@example.test>"));
+        draft
+            .references
+            .push("bad@example.test\r\nBcc: thief@example.test".into());
+        assert!(matches!(build(&draft), Err(Error::InvalidMessageId)));
     }
 
     #[test]

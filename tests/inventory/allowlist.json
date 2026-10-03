@@ -32,6 +32,18 @@
       "reason": "TextEdit's Import From Device invokes Apple's Continuity service for an iPhone or iPad."
     },
     {
+      "app": "Text Editor",
+      "label": "Share",
+      "match": "exact",
+      "reason": "This opens macOS's system Share sheet for AirDrop, Messages, Mail and Apple share extensions; Lulo has no Apple Share service."
+    },
+    {
+      "app": "Text Editor",
+      "label": "No Document",
+      "match": "exact",
+      "reason": "AppKit inserts this disabled placeholder into the empty Revert To and Share submenus; it is not an action."
+    },
+    {
       "app": "*",
       "label": "Apple",
       "match": "exact",

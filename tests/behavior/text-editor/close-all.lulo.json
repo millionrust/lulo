@@ -1,14 +1,15 @@
 {
-  "title": "Close All reviews unsaved Text Editor documents",
-  "app": "text-editor",
-  "lulo_only": true,
-  "launch": {},
-  "steps": [
-    {"type": "Unsaved document"},
-    {"key": "cmd-n", "settle": 1.2},
-    {"menu_action": "text_editor::CloseAll", "settle": 1.2},
-    {"observe": "asked", "facts": ["dialog", "windows"]},
-    {"key": "escape"},
-    {"observe": "cancelled", "facts": ["dialog", "windows"]}
-  ]
+  "format": 1,
+  "scenario": "text-editor/close-all",
+  "platform": "Lulo local contract",
+  "observations": {
+    "asked": {
+      "dialog": {"present": true},
+      "windows": {"count": 1}
+    },
+    "cancelled": {
+      "dialog": {"present": false},
+      "windows": {"count": 1}
+    }
+  }
 }

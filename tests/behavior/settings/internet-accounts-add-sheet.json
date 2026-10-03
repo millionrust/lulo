@@ -1,0 +1,13 @@
+{
+  "title": "Internet Accounts add sheet opens and Escape cancels without creating an account",
+  "app": "settings",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"select": "Internet Accounts", "settle": 0.5},
+    {"select": "Add Account…", "settle": 0.5},
+    {"observe": "sheet", "facts": ["dialog"]},
+    {"key": "escape", "settle": 0.5},
+    {"observe": "cancelled", "facts": ["dialog"]}
+  ]
+}

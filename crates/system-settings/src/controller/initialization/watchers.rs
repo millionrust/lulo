@@ -24,5 +24,6 @@ impl Settings {
         Self::start_appearance_watchers(cx);
         Self::start_apps_focus_watchers(cx, catalog_event_rx);
         Self::start_shell_input_watchers(cx);
+        Self::watch_internet_accounts(cx);
     }
 }

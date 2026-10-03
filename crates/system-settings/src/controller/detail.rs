@@ -38,6 +38,7 @@ impl Settings {
                 "Accessibility" => self.render_accessibility(cx),
                 "Privacy & Security" => self.render_privacy_security(cx),
                 "Network" => self.render_network(cx),
+                "Internet Accounts" => self.render_internet_accounts(cx),
                 "VPN" => self.render_vpn(cx),
                 "Desktop & Dock" => self.render_desktop_dock(cx),
                 "Spotlight" => self.render_spotlight(cx),

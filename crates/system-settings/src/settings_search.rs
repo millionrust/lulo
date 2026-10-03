@@ -50,6 +50,17 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
             "router",
             "proxy configuration",
         ],
+        "Internet Accounts" => &[
+            "add account",
+            "email",
+            "mail account",
+            "calendar account",
+            "Google",
+            "Microsoft",
+            "iCloud",
+            "Yahoo",
+            "account services",
+        ],
         "VPN" => &[
             "VPN configurations",
             "connect VPN",

@@ -52,6 +52,8 @@ impl Render for Settings {
         let update_info_sheet = self.render_update_info_sheet(cx);
         let update_auto_sheet = self.render_update_auto_sheet(cx);
         let keyboard_shortcuts_sheet = self.render_keyboard_shortcuts_sheet(cx);
+        let internet_account_sheet = self.render_internet_account_sheet(cx);
+        let internet_account_delete = self.render_internet_account_delete(cx);
         div()
             .id(rmac_system_settings::accessibility::ROOT_ID)
             .size_full()
@@ -451,5 +453,7 @@ impl Render for Settings {
             .when_some(update_info_sheet, |root, sheet| root.child(sheet))
             .when_some(update_auto_sheet, |root, sheet| root.child(sheet))
             .when_some(keyboard_shortcuts_sheet, |root, sheet| root.child(sheet))
+            .when_some(internet_account_sheet, |root, sheet| root.child(sheet))
+            .when_some(internet_account_delete, |root, alert| root.child(alert))
     }
 }

@@ -445,6 +445,7 @@ impl Settings {
             match pane.as_str() {
                 "Wi-Fi" => self.refresh_wifi_state(cx),
                 "Network" => self.refresh_network(cx),
+                "Internet Accounts" => self.refresh_internet_accounts(cx),
                 "VPN" => self.refresh_vpn(cx),
                 "Battery" => self.refresh_power(cx),
                 _ => {}

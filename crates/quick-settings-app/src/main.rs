@@ -260,6 +260,14 @@ fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
             cx.update_global::<QuickSettingsService, _>(|service, _| service.catcher = catcher);
         }
         cx.activate(true);
+        // Shortcut activation has no pointer press to focus an OnDemand
+        // layer. Give the panel keyboard focus for its first Escape.
+        let active = cx.read_global::<QuickSettingsService, _>(|service, _| service.active.clone());
+        if let Some(active) = active {
+            let _ = active
+                .window
+                .update(cx, |_, window, _| window.activate_window());
+        }
     }
 }
 

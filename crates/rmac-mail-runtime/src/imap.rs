@@ -427,6 +427,7 @@ mod tests {
             let mut stream = StreamOwned::new(ServerConnection::new(config).unwrap(), socket);
             send(&mut stream, "* OK ready\r\n");
             let mut round = 0;
+            let mut selected_inbox = false;
             while let Some(command) = line(&mut stream) {
                 let (tag, rest) = command.trim_end().split_once(' ').unwrap();
                 match rest {
@@ -439,15 +440,23 @@ mod tests {
                         send(&mut stream, &format!("* LIST (\\HasNoChildren) \"/\" INBOX\r\n* LIST (\\Trash) \"/\" Trash\r\n{tag} OK done\r\n"));
                     }
                     "SELECT \"INBOX\"" => {
+                        selected_inbox = true;
                         let count = if round == 1 || round == 4 { 1 } else { 2 };
                         send(&mut stream, &format!("* {count} EXISTS\r\n* OK [UIDVALIDITY 42] valid\r\n{tag} OK done\r\n"));
                     }
-                    "SELECT \"Trash\"" => send(
-                        &mut stream,
-                        &format!("* 0 EXISTS\r\n* OK [UIDVALIDITY 43] valid\r\n{tag} OK done\r\n"),
-                    ),
+                    "SELECT \"Trash\"" => {
+                        selected_inbox = false;
+                        send(
+                            &mut stream,
+                            &format!(
+                                "* 0 EXISTS\r\n* OK [UIDVALIDITY 43] valid\r\n{tag} OK done\r\n"
+                            ),
+                        );
+                    }
                     "UID FETCH 1:* (UID FLAGS)" => {
-                        if round == 4 {
+                        if !selected_inbox {
+                            send(&mut stream, &format!("{tag} OK done\r\n"));
+                        } else if round == 4 {
                             send(
                                 &mut stream,
                                 &format!("* 1 FETCH (UID 8 FLAGS (\\Seen))\r\n{tag} OK done\r\n"),

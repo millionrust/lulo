@@ -1,7 +1,7 @@
 # Flatpak package sources
 
 `org.rmac.TextEditor.json` is the only reviewed application manifest.
-`decisions.json` records the native/sandbox boundary for all thirteen packaged
+`decisions.json` records the native/sandbox boundary for all fourteen packaged
 applications. Only Text Editor has a reviewed Flatpak build; entries marked
 native or native-pending-flatpak do not claim a working sandbox package.
 `cargo-sources.json` is generated data and must not be edited by hand.

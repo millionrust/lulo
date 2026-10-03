@@ -152,6 +152,7 @@ APP_JOURNEYS: list[dict[str, Any]] = [
     },
     {
         "id": "system-monitor", "title": "System Monitor", "app": "system-monitor",
+        "idle_seconds": 15,
         "extras": [
             ("down", "move", "next process"), ("down", "move", "next process"), ("up", "move", "previous process"),
         ],
@@ -724,6 +725,23 @@ class Audit:
                 (run.sandbox / png).write_bytes(tiny_png())
             # 1. Scripted keys from the window's own initial focus.
             previous = self.launch(run, steps, "window opens (scripted keys)")
+            if idle_seconds := journey.get("idle_seconds"):
+                offset = self.orca.offset()
+                self.tracker.reset()
+                deadline = time.monotonic() + idle_seconds
+                while time.monotonic() < deadline:
+                    pump()
+                    time.sleep(0.1)
+                speech = [entry["text"] for entry in self.orca.since(offset)
+                          if entry["kind"] in {"speech", "character"}]
+                name_events = sum(event.startswith("object:property-change:accessible-name")
+                                  for event in self.tracker.events)
+                steps.append({"key": "idle", "note": f"{idle_seconds}s without input",
+                              "focus": previous, "heard": checks.describe(previous),
+                              "speech": speech, "name_events": name_events,
+                              "events": sorted(set(self.tracker.events)), "flags": []})
+                print(f"     idle {idle_seconds}s -> {name_events} accessible-name events",
+                      flush=True)
             watch = self.find_watch(run, journey.get("watch"))
             for chord, expect, note in journey.get("extras", []):
                 if run.process.poll() is not None:

@@ -16,5 +16,5 @@ path = "src/main.rs"
 chrono.workspace = true
 chrono-tz.workspace = true
 gpui.workspace = true
-rmac-calendar-store = { path = "../rmac-calendar-store" }
+rmac-calendar-store.workspace = true
 rmac-ui.workspace = true

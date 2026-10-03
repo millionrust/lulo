@@ -77,7 +77,8 @@ impl CalendarView {
         bar = bar.child(self.control("calendar-inbox", "▢", "Invitations", false, |_, _| {}, cx));
         bar = bar.child(self.control("calendar-new", "+", "New Event", false, |_, _| {}, cx));
         bar = bar.child(div().flex_1());
-        let mut tabs = div().flex().role(Role::TabList).aria_label("Calendar views");
+        let mut tabs = div().id("calendar-view-tabs").flex().role(Role::TabList)
+            .aria_label("Calendar views");
         for view in View::ALL {
             tabs = tabs.child(div().id(format!("calendar-view-{}", view.label()))
                 .role(Role::Tab).aria_label(view.label())
@@ -185,7 +186,7 @@ impl CalendarView {
         let day_width = ((width - GUTTER) / 7.0).max(1.0);
         let grid_top = 60.0;
         let grid_height = (height - grid_top).max(0.0);
-        let mut week = div().relative().w_full().h_full().overflow_hidden()
+        let mut week = div().id("calendar-week").relative().w_full().h_full().overflow_hidden()
             .role(Role::Group).aria_label(format!("Week of {first}"));
         for index in 0..7 {
             let day = first + Duration::days(index);

@@ -1,0 +1,27 @@
+{
+  "title": "Calendar: unticking a calendar hides its events",
+  "app": "calendar",
+  "launch": {},
+  "pending": "Pending: needs the Calendar app (milestones CAL-3..CAL-8), `calendar` in scenario.APPS, and a Mac recording made only against a local 'On My Mac' calendar (never a synced account).",
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "observe": "shown",
+      "facts": [
+        "sidebar"
+      ]
+    },
+    {
+      "select": "Behaviour Suite",
+      "settle": 0.5
+    },
+    {
+      "observe": "hidden",
+      "facts": [
+        "sidebar"
+      ]
+    }
+  ]
+}

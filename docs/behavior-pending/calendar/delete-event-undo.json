@@ -1,0 +1,43 @@
+{
+  "title": "Calendar: Delete removes an event and ⌘Z restores it",
+  "app": "calendar",
+  "launch": {},
+  "pending": "Pending: needs the Calendar app (milestones CAL-3..CAL-8), `calendar` in scenario.APPS, and a Mac recording made only against a local 'On My Mac' calendar (never a synced account).",
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "key": "cmd-n",
+      "settle": 1
+    },
+    {
+      "type": "Delete me"
+    },
+    {
+      "key": "return",
+      "settle": 0.5
+    },
+    {
+      "key": "delete",
+      "settle": 0.5
+    },
+    {
+      "observe": "deleted",
+      "facts": [
+        "selection",
+        "dialog"
+      ]
+    },
+    {
+      "key": "cmd-z",
+      "settle": 0.5
+    },
+    {
+      "observe": "restored",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

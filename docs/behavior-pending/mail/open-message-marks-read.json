@@ -1,0 +1,29 @@
+{
+  "title": "Mail: selecting an unread message marks it read",
+  "app": "mail",
+  "launch": {},
+  "pending": "Pending: needs the Mail app (MAIL-5..MAIL-8), `mail` in scenario.APPS, the in-tree fixture IMAP/SMTP account on Lulo, and a Mac recording against a local 'On My Mac' mailbox only. Never send mail and never confirm a deletion on the Mac.",
+  "steps": [
+    {
+      "wait": 3
+    },
+    {
+      "observe": "inbox",
+      "facts": [
+        "sidebar",
+        "selection"
+      ]
+    },
+    {
+      "key": "down",
+      "settle": 2
+    },
+    {
+      "observe": "opened",
+      "facts": [
+        "selection",
+        "toolbar"
+      ]
+    }
+  ]
+}

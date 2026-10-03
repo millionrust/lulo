@@ -1,0 +1,38 @@
+{
+  "title": "Settings: Internet Accounts ▸ Add Account… opens the provider sheet; Escape cancels",
+  "app": "settings",
+  "launch": {},
+  "pending": "Pending: needs the Internet Accounts pane (ACC-3). Mac recording must only open the sheet and press Escape; never sign in.",
+  "steps": [
+    {
+      "select": "Internet Accounts",
+      "settle": 0.5
+    },
+    {
+      "observe": "pane",
+      "facts": [
+        "windows"
+      ]
+    },
+    {
+      "select": "Add Account…",
+      "settle": 1
+    },
+    {
+      "observe": "sheet",
+      "facts": [
+        "dialog"
+      ]
+    },
+    {
+      "key": "escape",
+      "settle": 0.5
+    },
+    {
+      "observe": "cancelled",
+      "facts": [
+        "dialog"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "title": "Mail: Delete moves a message to the Bin and ⌘Z brings it back",
+  "app": "mail",
+  "launch": {},
+  "pending": "Pending: needs the Mail app (MAIL-5..MAIL-8), `mail` in scenario.APPS, the in-tree fixture IMAP/SMTP account on Lulo, and a Mac recording against a local 'On My Mac' mailbox only. Never send mail and never confirm a deletion on the Mac.",
+  "steps": [
+    {
+      "wait": 3
+    },
+    {
+      "key": "down",
+      "settle": 1
+    },
+    {
+      "key": "delete",
+      "settle": 1
+    },
+    {
+      "observe": "deleted",
+      "facts": [
+        "selection",
+        "sidebar"
+      ]
+    },
+    {
+      "key": "cmd-z",
+      "settle": 1
+    },
+    {
+      "observe": "restored",
+      "facts": [
+        "selection",
+        "sidebar"
+      ]
+    }
+  ]
+}

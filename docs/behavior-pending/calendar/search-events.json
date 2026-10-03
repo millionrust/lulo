@@ -1,0 +1,34 @@
+{
+  "title": "Calendar: search lists a matching event",
+  "app": "calendar",
+  "launch": {},
+  "pending": "Pending: needs the Calendar app (milestones CAL-3..CAL-8), `calendar` in scenario.APPS, and a Mac recording made only against a local 'On My Mac' calendar (never a synced account).",
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "key": "cmd-alt-f",
+      "settle": 0.5
+    },
+    {
+      "observe": "search_focus",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "type": "Farmers"
+    },
+    {
+      "key": "return",
+      "settle": 1
+    },
+    {
+      "observe": "results",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

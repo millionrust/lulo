@@ -87,6 +87,16 @@ python3 scripts/behavior/run_lulo.py \
   --bin-dir ~/rmac-wt/target/iterate --check-settings-view-menu
 ```
 
+## Calendar and Mail (pending)
+
+`docs/behavior-pending/calendar/`, `docs/behavior-pending/mail/` and
+`docs/behavior-pending/settings/internet-accounts-add-sheet.json` are stubs for
+the apps planned in ADR 0022. They move to `tests/behavior` once the app exists,
+`scenario.APPS` lists `calendar`/`mail`, and a Mac recording exists. Mac
+recordings use only a local "On My Mac" calendar and mailbox: never send mail,
+sign in, or confirm a deletion on the owner's Mac. The Lulo side runs against
+in-tree fixture IMAP/SMTP/CalDAV servers and a fake goa-daemon on a private bus.
+
 ## Terminal profiles
 
 `docs/behavior-pending/terminal/profile-settings.json` describes the Settings

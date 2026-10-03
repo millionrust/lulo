@@ -1,0 +1,52 @@
+{
+  "title": "Calendar: ⌘1–⌘4 switch Day, Week, Month and Year",
+  "app": "calendar",
+  "launch": {},
+  "pending": "Pending: needs the Calendar app (milestones CAL-3..CAL-8), `calendar` in scenario.APPS, and a Mac recording made only against a local 'On My Mac' calendar (never a synced account).",
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "key": "cmd-1",
+      "settle": 0.5
+    },
+    {
+      "observe": "day",
+      "facts": [
+        "toolbar",
+        "windows"
+      ]
+    },
+    {
+      "key": "cmd-2",
+      "settle": 0.5
+    },
+    {
+      "observe": "week",
+      "facts": [
+        "toolbar"
+      ]
+    },
+    {
+      "key": "cmd-3",
+      "settle": 0.5
+    },
+    {
+      "observe": "month",
+      "facts": [
+        "toolbar"
+      ]
+    },
+    {
+      "key": "cmd-4",
+      "settle": 0.5
+    },
+    {
+      "observe": "year",
+      "facts": [
+        "toolbar"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "title": "Mail: ⇧⌘L flags and unflags a message",
+  "app": "mail",
+  "launch": {},
+  "pending": "Pending: needs the Mail app (MAIL-5..MAIL-8), `mail` in scenario.APPS, the in-tree fixture IMAP/SMTP account on Lulo, and a Mac recording against a local 'On My Mac' mailbox only. Never send mail and never confirm a deletion on the Mac.",
+  "steps": [
+    {
+      "wait": 3
+    },
+    {
+      "key": "down",
+      "settle": 1
+    },
+    {
+      "key": "cmd-shift-l",
+      "settle": 0.5
+    },
+    {
+      "observe": "flagged",
+      "facts": [
+        "selection",
+        "sidebar"
+      ]
+    },
+    {
+      "key": "cmd-shift-l",
+      "settle": 0.5
+    },
+    {
+      "observe": "unflagged",
+      "facts": [
+        "selection",
+        "sidebar"
+      ]
+    }
+  ]
+}

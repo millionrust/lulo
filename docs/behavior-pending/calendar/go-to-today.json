@@ -1,0 +1,37 @@
+{
+  "title": "Calendar: next week then ⌘T returns to today",
+  "app": "calendar",
+  "launch": {},
+  "pending": "Pending: needs the Calendar app (milestones CAL-3..CAL-8), `calendar` in scenario.APPS, and a Mac recording made only against a local 'On My Mac' calendar (never a synced account).",
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "key": "cmd-2",
+      "settle": 0.5
+    },
+    {
+      "key": "cmd-right",
+      "settle": 0.5
+    },
+    {
+      "observe": "next_week",
+      "facts": [
+        "toolbar",
+        "selection"
+      ]
+    },
+    {
+      "key": "cmd-t",
+      "settle": 0.5
+    },
+    {
+      "observe": "today",
+      "facts": [
+        "toolbar",
+        "selection"
+      ]
+    }
+  ]
+}

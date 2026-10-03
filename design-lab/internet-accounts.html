@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Internet Accounts — Add Account sheet</title>
+<link rel="stylesheet" href="lab.css">
+<!--
+  System Settings ▸ Internet Accounts and the shared Add Account sheet
+  (planned: crates/system-settings/src/controller/internet_accounts and
+  rmac-accounts-ui; ADR 0022). The same sheet opens from Mail ▸ Add Account…
+  and Calendar ▸ Add Account….
+  NOT measured on the Mac (SET-63 records only "Enter your email address, or
+  choose from a list, then Continue"). Sizes are estimates to verify:
+  Settings window 780 × 560, sidebar panel 248 (tokens --settings-sidebar),
+  sheet 460 wide, radius 24, padding 20, title 15 bold, provider rows 40
+  with a 28 monogram, buttons 28 tall (tokens --alert-btn-h).
+  Provider marks are plain text monograms on neutral plates: Lulo must not
+  ship Google, Microsoft, Yahoo or Apple logos without permission.
+-->
+<style>
+  .win{--win:#222025;--side:#29252E;--grp:#29272D;--text:#F5F5F7;--sec:#B9B9BF;--ter:#98989F;--hair:rgba(255,255,255,.10);
+       --sheet:#262227;--field:#181818;--btn:#363237;--plate:rgba(255,255,255,.10);--sel:rgba(255,255,255,.08)}
+  .win.light{--win:#FFFFFF;--side:#F2F2F4;--grp:#F5F5F7;--text:#1d1d1f;--sec:#6e6e73;--ter:#8e8e93;--hair:rgba(0,0,0,.10);
+       --sheet:#ECECEE;--field:#FFFFFF;--btn:#E1E1E5;--plate:rgba(0,0,0,.07);--sel:rgba(0,0,0,.06)}
+  .stage{padding:24px;display:flex;flex-wrap:wrap;gap:28px}
+  .cap-label{font:600 12px var(--font);color:#999;margin:0 0 6px}
+  .win{position:relative;width:780px;height:560px;background:var(--win);border-radius:27px;overflow:hidden;color:var(--text);font-size:13px;
+       box-shadow:0 0 0 .5px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.14)}
+  .win.light{box-shadow:0 0 0 .5px rgba(0,0,0,.25),0 12px 30px rgba(0,0,0,.25)}
+  .tl{position:absolute;top:19px;width:14px;height:14px;border-radius:50%}
+  .side{position:absolute;left:8px;top:8px;bottom:8px;width:240px;border-radius:19px;background:var(--side);padding:48px 10px 0}
+  .side .q{height:28px;border-radius:8px;background:var(--plate);color:var(--ter);padding:0 10px;line-height:28px;margin-bottom:10px}
+  .side .r{height:28px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:8px}
+  .side .r.on{background:var(--accent);color:#fff}
+  .side .ic{width:20px;height:20px;border-radius:5px;flex:none}
+  .pane{position:absolute;left:256px;right:0;top:0;bottom:0;padding:14px 20px}
+  .pane h1{font:700 15px/24px var(--font);margin:0 0 14px}
+  .group{background:var(--grp);border-radius:12px;box-shadow:inset 0 0 0 1px var(--hair)}
+  .acct{height:52px;display:flex;align-items:center;gap:10px;padding:0 12px;box-shadow:inset 0 -1px 0 var(--hair)}
+  .acct:last-child{box-shadow:none} .acct small{display:block;color:var(--sec);font-size:11px}
+  .acct .chev{margin-left:auto;color:var(--ter)}
+  .mono{width:28px;height:28px;border-radius:7px;background:var(--plate);display:flex;align-items:center;justify-content:center;font:700 13px var(--font);flex:none}
+  .addrow{display:flex;justify-content:flex-end;margin-top:10px}
+  .b{height:28px;padding:0 14px;border-radius:7px;background:var(--btn);display:inline-flex;align-items:center;font-weight:500;color:var(--text)}
+  .b.def{background:var(--accent);color:#fff} .b.off{opacity:.45}
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.28)}
+  .sheet{position:absolute;left:50%;top:44px;transform:translateX(-50%);width:460px;border-radius:24px;background:var(--sheet);padding:20px;
+         box-shadow:0 12px 32px rgba(0,0,0,.55),0 0 0 1px var(--hair);display:flex;flex-direction:column;gap:12px;z-index:3}
+  .sheet h2{font:700 15px var(--font);margin:0} .sheet p{margin:0;color:var(--sec);line-height:18px}
+  .fld{height:28px;border-radius:6px;background:var(--field);box-shadow:inset 0 0 0 1px var(--hair);padding:0 9px;line-height:28px;color:var(--text)}
+  .fld.focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 55%,transparent)} .fld.ph{color:var(--ter)}
+  .prov{background:var(--grp);border-radius:12px;box-shadow:inset 0 0 0 1px var(--hair)}
+  .prov div{height:40px;display:flex;align-items:center;gap:10px;padding:0 12px;box-shadow:inset 0 -1px 0 var(--hair)}
+  .prov div:last-child{box-shadow:none} .prov div.sel{background:var(--sel)} .prov small{margin-left:auto;color:var(--ter);font-size:11px}
+  .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:4px} .acts .left{margin-right:auto}
+  .lbl{display:grid;grid-template-columns:110px 1fr;gap:8px 10px;align-items:center} .lbl span{text-align:right;color:var(--sec)}
+  .spin{width:28px;height:28px;border-radius:50%;border:3px solid var(--plate);border-top-color:var(--accent);margin:6px auto}
+  .svc div{height:36px;display:flex;align-items:center;gap:10px;padding:0 12px;box-shadow:inset 0 -1px 0 var(--hair)}
+  .svc div:last-child{box-shadow:none}
+  .sw{margin-left:auto;width:36px;height:20px;border-radius:10px;background:var(--accent);position:relative}
+  .sw::after{content:"";position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+  .sw.no{background:var(--plate)} .sw.no::after{right:auto;left:2px}
+</style>
+</head>
+<body>
+<header class="lab">
+  <h1>Internet Accounts</h1>
+  <nav><a href="index.html">Overview</a><a href="calendar.html">Calendar</a><a href="mail.html">Mail</a><a href="internet-accounts.html" class="on">Internet Accounts</a><a href="settings.html">Settings</a></nav>
+  <span class="spacer"></span><span style="font-size:12px;color:#8b8b93">Estimates, not Mac measurements</span>
+</header>
+<div class="stage" id="stage"></div>
+<script>
+const tl = `<i class="tl" style="left:19px;background:#ff5f57"></i><i class="tl" style="left:42px;background:#febc2e"></i><i class="tl" style="left:65px;background:#28c840"></i>`;
+const side = `<div class="side"><div class="q">Search</div>
+  ${[['Wi-Fi','#0A84FF'],['Bluetooth','#0A84FF'],['Network','#0A84FF'],['Notifications','#FF453A'],['Sound','#FF375F'],['Focus','#5E5CE6'],['Internet Accounts','#0A84FF',1],['General','#8E8E93'],['Appearance','#3A3A3E'],['Desktop & Dock','#3A3A3E']]
+    .map(([n, c, on]) => `<div class="r${on ? ' on' : ''}"><i class="ic" style="background:${c}"></i>${n}</div>`).join('')}</div>`;
+const pane = `<div class="pane"><h1>Internet Accounts</h1><div class="group">
+  <div class="acct"><span class="mono">G</span><span>Google<small>Mail, Calendars</small></span><span class="chev">›</span></div>
+  <div class="acct"><span class="mono">i</span><span>iCloud<small>Mail, Calendars</small></span><span class="chev">›</span></div>
+  <div class="acct"><span class="mono">@</span><span>Example Mail<small>Mail</small></span><span class="chev">›</span></div></div>
+  <div class="addrow"><span class="b">Add Account…</span></div></div>`;
+const provs = [['i','iCloud','App-specific password'],['M','Microsoft','Outlook, Hotmail, Microsoft 365'],['G','Google','Gmail, Google Workspace'],['Y','Yahoo','App-specific password'],['@','Other Mail Account…',''],['C','Other Calendar Account…','CalDAV, subscriptions']];
+const chooser = sel => `<div class="sheet"><h2>Add an Internet Account</h2><p>Enter your email address, or choose a provider.</p>
+  <div class="fld focus ph">name@example.com</div>
+  <div class="prov">${provs.map(([m, n, s]) => `<div class="${n === sel ? 'sel' : ''}"><span class="mono">${m}</span>${n}<small>${s}</small></div>`).join('')}</div>
+  <div class="acts"><span class="b">Cancel</span><span class="b def off">Continue</span></div></div>`;
+const browser = `<div class="sheet"><h2>Sign in to Google</h2><p>Finish signing in in your web browser. Lulo will continue when Google sends you back here.</p>
+  <div class="spin"></div><div class="acts"><span class="b left">Open Browser Again</span><span class="b">Cancel</span></div></div>`;
+const icloud = `<div class="sheet"><h2>Sign in to iCloud</h2><p>iCloud needs an app-specific password for Lulo. Create one on your Apple Account page, then paste it here.</p>
+  <div class="lbl"><span>Name:</span><div class="fld">Jacob Samas</div><span>Email address:</span><div class="fld">jacob@icloud.com</div><span>Password:</span><div class="fld focus">••••-••••-••••-••••</div></div>
+  <div class="acts"><span class="b left">Get an App-Specific Password…</span><span class="b">Cancel</span><span class="b def">Sign In</span></div></div>`;
+const services = `<div class="sheet"><h2>Use this account with:</h2><p>jacob@gmail.com</p>
+  <div class="prov svc"><div>Mail<span class="sw"></span></div><div>Calendars<span class="sw"></span></div><div>Contacts<span class="sw no"></span></div></div>
+  <div class="acts"><span class="b def">Done</span></div></div>`;
+const frame = (label, theme, sheet) => `<div><p class="cap-label">${label}</p><div class="win ${theme}">${tl}${side}${pane}${sheet ? '<div class="dim"></div>' + sheet : ''}</div></div>`;
+document.getElementById('stage').innerHTML = [
+  frame('Internet Accounts pane — dark', 'dark', ''),
+  frame('Internet Accounts pane — light', 'light', ''),
+  frame('1 · Add Account sheet — dark', 'dark', chooser('Google')),
+  frame('1 · Add Account sheet — light', 'light', chooser('')),
+  frame('2 · OAuth providers: waiting for the browser', 'dark', browser),
+  frame('2 · Yahoo / iCloud: app-specific password', 'light', icloud),
+  frame('3 · Choose services, then Done', 'dark', services),
+].join('');
+</script>
+</body>
+</html>

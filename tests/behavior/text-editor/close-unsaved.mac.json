@@ -42,6 +42,14 @@
       "focus": {"role": "text-area", "value": "Hello"},
       "dialog": {"present": false},
       "windows": {"count": 1, "front": "Untitled", "titles": ["Untitled"]}
+    },
+    "cancelled-button": {
+      "focus": {"role": "text-area", "value": "Hello"},
+      "dialog": {"present": false},
+      "windows": {"count": 1, "front": "Untitled", "titles": ["Untitled"]}
+    },
+    "reopened-after-cancel": {
+      "dialog": {"present": true}
     }
   }
 }

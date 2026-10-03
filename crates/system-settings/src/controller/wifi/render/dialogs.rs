@@ -113,6 +113,7 @@ impl Settings {
 
         Some(
             rmac_ui::dialog("wifi-password-dialog", content)
+                .restore_focus_to(self.content_focus.clone())
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     match event.keystroke.key.as_str() {
                         "escape" => {
@@ -237,6 +238,7 @@ impl Settings {
 
         Some(
             rmac_ui::dialog("wifi-enterprise-dialog", content)
+                .restore_focus_to(self.content_focus.clone())
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     match event.keystroke.key.as_str() {
                         "escape" => {

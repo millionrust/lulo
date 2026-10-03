@@ -732,6 +732,7 @@ impl FinderView {
         div()
             .id("finder-content")
             .role(Role::ListBox)
+            .aria_label("Files")
             .track_focus(&self.focus.clone().tab_stop(true).tab_index(0))
             .key_context("Finder")
             .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))

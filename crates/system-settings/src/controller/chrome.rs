@@ -264,6 +264,7 @@ impl Settings {
         let mut list = div()
             .id(rmac_system_settings::accessibility::SIDEBAR_ID)
             .role(Role::List)
+            .aria_label("Settings Categories")
             // One Tab stop for the source list. Its selected row is the
             // active descendant, so arrows announce rows without sending
             // Tab through every category.

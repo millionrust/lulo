@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "settings/sidebar-keyboard",
+  "platform": "Lulo local contract",
+  "observations": {
+    "sidebar": {"focus": {"role": "list", "label": "Settings Categories"}},
+    "after_down": {"focus": {"role": "list", "label": "Settings Categories"}},
+    "after_up": {"focus": {"role": "list", "label": "Settings Categories"}}
+  }
+}

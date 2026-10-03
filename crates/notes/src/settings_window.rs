@@ -7,7 +7,7 @@ use gpui::{
     WindowHandle,
 };
 use rmac_notes_store::SortOrder;
-use rmac_ui::{Button, Root, StyledExt as _};
+use rmac_ui::{Button, Checkbox, Root, StyledExt as _};
 
 use crate::{NotesView, ShowSettings};
 
@@ -67,6 +67,14 @@ impl SettingsView {
         });
         cx.notify();
     }
+
+    fn set_group_by_date(&mut self, value: bool, cx: &mut Context<Self>) {
+        self.main.update(cx, |notes, cx| {
+            notes.group_notes_by_date = value;
+            cx.notify();
+        });
+        cx.notify();
+    }
 }
 
 impl Render for SettingsView {
@@ -78,6 +86,7 @@ impl Render for SettingsView {
             .map(|snapshot| snapshot.sort_order)
             .unwrap_or(SortOrder::Edited);
         let zoom = notes.note_zoom;
+        let group_by_date = notes.group_notes_by_date;
         div()
             .track_focus(&self.focus)
             .key_context("Notes")
@@ -142,6 +151,14 @@ impl Render for SettingsView {
                                     cx.listener(|this, _, _, cx| this.change_zoom(1, cx)),
                                 )),
                         ),
+                    )
+                    .child(
+                        Checkbox::new("notes-settings-group-by-date")
+                            .label("Group notes by date")
+                            .checked(group_by_date)
+                            .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                this.set_group_by_date(*value, cx);
+                            })),
                     ),
             )
     }

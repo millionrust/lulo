@@ -951,6 +951,10 @@
     "controls": [
       {
         "kind": "control",
+        "label": "Group notes by date"
+      },
+      {
+        "kind": "control",
         "label": "Notes Settings"
       },
       {

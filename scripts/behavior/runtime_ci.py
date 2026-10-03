@@ -43,13 +43,21 @@ def stage(root: Path, shell: Path, output: Path) -> None:
         source = shell / binary
         if not source.is_file():
             raise FileNotFoundError(source)
-        shutil.copy2(source, output / binary)
-        # Artifact uploads do not preserve symlinks or executable bits.
+        # Store the installed name once; each playback runner recreates the
+        # legacy shell names as symlinks after downloading the artifact.
         shutil.copy2(source, output / alias)
     missing = sorted(REQUIRED - {path.name for path in output.iterdir()})
     if missing:
         raise RuntimeError(f"runtime artifact lacks binaries: {', '.join(missing)}")
     print(f"Staged {sum(path.is_file() for path in output.iterdir())} binaries")
+
+
+def prepare(directory: Path) -> None:
+    for binary, alias in SHELL_BINARIES.items():
+        source = directory / alias
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        (directory / binary).symlink_to(alias)
 
 
 def summarize(root: Path, output: Path) -> int:
@@ -98,12 +106,17 @@ def main() -> int:
     stage_parser.add_argument("root", type=Path)
     stage_parser.add_argument("shell", type=Path)
     stage_parser.add_argument("output", type=Path)
+    prepare_parser = sub.add_parser("prepare")
+    prepare_parser.add_argument("directory", type=Path)
     summary_parser = sub.add_parser("summarize")
     summary_parser.add_argument("results", type=Path)
     summary_parser.add_argument("output", type=Path)
     args = parser.parse_args()
     if args.command == "stage":
         stage(args.root, args.shell, args.output)
+        return 0
+    if args.command == "prepare":
+        prepare(args.directory)
         return 0
     return summarize(args.results, args.output)
 

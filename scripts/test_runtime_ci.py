@@ -12,7 +12,19 @@ import runtime_ci  # noqa: E402
 
 
 class RuntimeCITest(unittest.TestCase):
+    def test_prepare_restores_shell_entry_points(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for alias in runtime_ci.SHELL_BINARIES.values():
+                (root / alias).write_bytes(b"binary")
+            runtime_ci.prepare(root)
+            for binary, alias in runtime_ci.SHELL_BINARIES.items():
+                self.assertEqual((root / binary).resolve(), (root / alias).resolve())
+
     def test_shards_partition_recorded_scenarios(self):
+        self.assertEqual(runtime_ci.JOURNEYS,
+                         {path.stem for path in (Path(__file__).resolve().parents[1]
+                                                  / "tests/parallel").glob("*.json")})
         paths = run_lulo.runnable_scenarios([])
         shards = [paths[index::runtime_ci.SHARDS] for index in range(runtime_ci.SHARDS)]
         self.assertEqual(len(paths), sum(map(len, shards)))

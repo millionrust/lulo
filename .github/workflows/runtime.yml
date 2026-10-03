@@ -21,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            clang libfontconfig1-dev libfreetype-dev libpam0g-dev libssl-dev \
+            binutils clang libfontconfig1-dev libfreetype-dev libpam0g-dev libssl-dev \
             libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev libxkbcommon-x11-dev
@@ -41,13 +41,14 @@ jobs:
           cargo build --locked --workspace --bins
           (cd shell && cargo build --locked --workspace --bins --features wayland)
           python3 scripts/behavior/runtime_ci.py stage target/debug shell/target/debug runtime-bin
+          strip --strip-unneeded runtime-bin/*
       - name: Upload binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: lulo-binaries
           path: runtime-bin/
           if-no-files-found: error
-          compression-level: 0
+          compression-level: 6
           retention-days: 3
 
   scenarios:
@@ -77,6 +78,7 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           chmod +x runtime-bin/*
+          python3 scripts/behavior/runtime_ci.py prepare runtime-bin
           result="$RUNNER_TEMP/runtime-results/scenario-$SHARD"
           mkdir -p "$result/screenshots"
           set +e
@@ -120,7 +122,7 @@ jobs:
           sudo add-apt-repository --yes ppa:avengemedia/danklinux
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            at-spi2-core dbus gir1.2-gtk-3.0 grim mesa-vulkan-drivers \
+            at-spi2-core dbus foot gir1.2-gtk-3.0 grim libglib2.0-bin mesa-vulkan-drivers \
             niri python3-dbus python3-gi python3-pil python3-pyatspi \
             sway xdg-desktop-portal
       - name: Run private nested compositor check
@@ -128,6 +130,7 @@ jobs:
           SUITE: ${{ matrix.suite }}
         run: |
           chmod +x runtime-bin/*
+          python3 scripts/behavior/runtime_ci.py prepare runtime-bin
           result="$RUNNER_TEMP/runtime-results/$SUITE"
           mkdir -p "$result"
           set +e
@@ -173,3 +176,11 @@ jobs:
           set -e
           cat runtime-summary.md >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+      - name: Upload merged summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lulo-runtime-summary
+          path: runtime-summary.md
+          if-no-files-found: warn
+          retention-days: 7

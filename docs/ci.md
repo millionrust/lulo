@@ -31,8 +31,9 @@ detail), `docs/journey-suite.md` (the package-scoped fixture runner).
 
 The `build` job compiles every root workspace app binary and every shell
 workspace binary with `--features wayland` using the debug profile without
-debug symbols. It stages the binaries under their installed names and uploads
-one artifact. Eight `scenarios` jobs divide all recorded Mac and Lulo behavior
+debug symbols. It strips and compresses one artifact of the installed binary
+names; playback jobs restore the short shell entry points after download.
+Eight `scenarios` jobs divide all recorded Mac and Lulo behavior
 cases with `run_lulo.py --shard INDEX/8`; each gets its own private D-Bus,
 Sway, XDG directories and app processes. Thirteen `checks` jobs run menu
 dismissal, power dialogs, window movement and the ten everyday journeys in
@@ -52,7 +53,8 @@ or regressions. It is currently **non-blocking** (`continue-on-error: true`).
 After two consecutive complete green runs, remove that setting so runtime
 regressions block merges. Runtime jobs have 25 minute timeouts; binaries are
 built once, and all playback jobs run in parallel. An `agent/*` push invokes
-the same workflow, so `.claude/ci-branch.sh wait <name>` covers it.
+the same workflow; `.claude/ci-branch.sh wait <name>` prints its merged runtime
+report even while the summary job is non-blocking.
 
 Run the partition and merger tests without a compositor:
 

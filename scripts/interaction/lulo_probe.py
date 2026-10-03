@@ -613,14 +613,22 @@ def run_control_centre_surface(shell: ShellSession, item: dict[str, Any]) -> dic
 
 
 def assert_alive(shell: ShellSession, process: subprocess.Popen, label: str, context: str) -> None:
-    """Fail loudly when a shell surface died, quoting its panic."""
+    """Fail loudly when a shell surface panicked or died, quoting the
+    panic. A panic is written before the abort, and the abort itself can
+    take seconds while the host's crash handler writes the core, so the
+    log is the earliest reliable signal."""
 
-    time.sleep(0.3)
-    if process.poll() is None:
-        return
     log = shell.logs / f"{label}.log"
-    tail = log.read_text(errors="replace")[-1500:] if log.exists() else ""
-    raise StepFailed(f"{label} exited with {process.returncode} while {context}:\n{tail}")
+    deadline = time.monotonic() + 1.0
+    while True:
+        text = log.read_text(errors="replace") if log.exists() else ""
+        panicked = "panicked at" in text
+        if panicked or process.poll() is not None:
+            tail = text[max(0, text.find("panicked at") - 200):] if panicked else text[-1500:]
+            raise StepFailed(f"{label} panicked or exited while {context}:\n{tail[-1500:]}")
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(0.1)
 
 
 def panel_sweep_points(left: float, top: float, width: float, height: float,

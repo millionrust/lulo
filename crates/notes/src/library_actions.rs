@@ -595,6 +595,11 @@ impl NotesView {
         ] {
             rmac_ui::set_menu_enabled(action, body_editable && body_focused, cx);
         }
+        rmac_ui::set_menu_enabled(
+            "notes::ConvertToText",
+            body_editable && body_focused && self.current_line_has_structure(cx),
+            cx,
+        );
         rmac_ui::set_menu_enabled("notes::DeleteSelectedNote", ready && has_note, cx);
         rmac_ui::set_menu_enabled(
             "notes::RenameSelectedFolder",

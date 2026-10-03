@@ -453,6 +453,13 @@
           "children": []
         },
         {
+          "label": "Convert to Text",
+          "action": "notes::ConvertToText",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Show Note with Light Background",
           "action": "notes::ToggleLightBackground",
           "shortcut": "",

@@ -26,13 +26,14 @@ use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
     ActualSize, ActualSizeOnAll, AnnotateArrow, AnnotateHighlight, AnnotateLine, AnnotateOval,
-    AnnotateRectangle, AnnotateSignature, AnnotateText, Back, CloseAll, CloseSelected, CloseWindow,
-    Copy, DeleteSelection, EnterFullScreen, ExportAsPdf, Find, FindNext, FindPrevious, Forward,
-    GoToPage, HideSidebar, JumpToSelection, MoveToTrash, NextDocument, NextItem, PageDown, PageUp,
-    PreviousDocument, PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft,
-    RotateRight, SaveAs, SaveMarkup, SelectAll, ShowImageBackground, ShowInspector, ShowThumbnails,
-    ToggleMarkup, ToggleToolbar, UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut,
-    ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
+    AnnotateRectangle, AnnotateSignature, AnnotateStrikeThrough, AnnotateText, AnnotateUnderline,
+    Back, CloseAll, CloseSelected, CloseWindow, Copy, DeleteSelection, EnterFullScreen,
+    ExportAsPdf, Find, FindNext, FindPrevious, Forward, GoToPage, HideSidebar, JumpToSelection,
+    MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem,
+    PrintDocument, RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs, SaveMarkup,
+    SelectAll, ShowImageBackground, ShowInspector, ShowThumbnails, ToggleMarkup, ToggleToolbar,
+    UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut,
+    ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -62,6 +63,8 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::ShowThumbnails",
         "preview::ShowImageBackground",
         "preview::AnnotateHighlight",
+        "preview::AnnotateUnderline",
+        "preview::AnnotateStrikeThrough",
         "preview::AnnotateRectangle",
         "preview::AnnotateSignature",
         "preview::AnnotateArrow",
@@ -550,8 +553,11 @@ impl PreviewView {
         }
         self.choose_markup_tool(tool, cx);
         self.markup_shown = true;
-        if tool == Tool::Highlight {
-            self.highlight_selection(cx);
+        if matches!(
+            tool,
+            Tool::Highlight | Tool::Underline | Tool::StrikeThrough
+        ) {
+            self.annotate_text_selection(tool, cx);
         }
     }
 
@@ -598,7 +604,7 @@ impl PreviewView {
         cx.notify();
     }
 
-    fn highlight_selection(&mut self, cx: &mut Context<Self>) {
+    fn annotate_text_selection(&mut self, tool: Tool, cx: &mut Context<Self>) {
         let Some((anchor, focus)) = self.text_selection else {
             return;
         };
@@ -615,7 +621,7 @@ impl PreviewView {
             for rect in poppler::selection_rects(&pages[page], start, end) {
                 annotations.push(Annotation::new(
                     page,
-                    Tool::Highlight,
+                    tool,
                     rotation.apply_unit_rect(rect),
                     self.markup_color,
                     1.0,
@@ -642,7 +648,10 @@ impl PreviewView {
         if !self.markup_shown || event.button != MouseButton::Left {
             return false;
         }
-        if self.markup_tool == Tool::Highlight {
+        if matches!(
+            self.markup_tool,
+            Tool::Highlight | Tool::Underline | Tool::StrikeThrough
+        ) {
             return false;
         }
         let Some((page, point)) = self.screen_to_page_point(event.position) else {
@@ -2177,8 +2186,13 @@ impl PreviewView {
     fn text_mouse_up(&mut self, cx: &mut Context<Self>) {
         if self.text_selecting {
             self.text_selecting = false;
-            if self.markup_shown && self.markup_tool == Tool::Highlight {
-                self.highlight_selection(cx);
+            if self.markup_shown
+                && matches!(
+                    self.markup_tool,
+                    Tool::Highlight | Tool::Underline | Tool::StrikeThrough
+                )
+            {
+                self.annotate_text_selection(self.markup_tool, cx);
             }
             cx.notify();
         }
@@ -3008,7 +3022,7 @@ impl PreviewView {
                 )
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.choose_markup_tool(Tool::Highlight, cx);
-                    this.highlight_selection(cx);
+                    this.annotate_text_selection(Tool::Highlight, cx);
                 })),
             )
             .child(
@@ -3723,6 +3737,20 @@ fn render_page(
                         .bg(rgba((item.color << 8) | 0x66))
                         .into_any_element(),
                 ),
+                Tool::Underline | Tool::StrikeThrough => Some(
+                    div()
+                        .absolute()
+                        .left(px(r.x0 * rect.width))
+                        .top(px(if item.tool == Tool::Underline {
+                            r.y1 * rect.height - 2.0
+                        } else {
+                            (r.y0 + r.y1) * rect.height / 2.0
+                        }))
+                        .w(px((r.x1 - r.x0) * rect.width))
+                        .h(px(2.0))
+                        .bg(rgb(item.color))
+                        .into_any_element(),
+                ),
                 Tool::Text => Some(
                     div()
                         .absolute()
@@ -3779,7 +3807,14 @@ fn render_page(
                         point(origin.x + px(p.0 * width), origin.y + px(p.1 * height))
                     };
                     for (index, item) in &draw_items {
-                        if matches!(item.tool, Tool::Highlight | Tool::Select | Tool::Text) {
+                        if matches!(
+                            item.tool,
+                            Tool::Highlight
+                                | Tool::Underline
+                                | Tool::StrikeThrough
+                                | Tool::Select
+                                | Tool::Text
+                        ) {
                             continue;
                         }
                         let r = rotation.apply_unit_rect(item.rect);
@@ -3891,6 +3926,8 @@ impl Render for PreviewView {
             rmac_ui::set_menu_checked("preview::ShowImageBackground", self.image_background, cx);
             for (action, tool) in [
                 ("preview::AnnotateHighlight", Tool::Highlight),
+                ("preview::AnnotateUnderline", Tool::Underline),
+                ("preview::AnnotateStrikeThrough", Tool::StrikeThrough),
                 ("preview::AnnotateRectangle", Tool::Rectangle),
                 ("preview::AnnotateSignature", Tool::Signature),
                 ("preview::AnnotateArrow", Tool::Arrow),
@@ -4002,6 +4039,8 @@ impl Render for PreviewView {
             rmac_ui::set_menu_enabled("preview::GoToPage", pdf, cx);
             for action in [
                 "preview::AnnotateHighlight",
+                "preview::AnnotateUnderline",
+                "preview::AnnotateStrikeThrough",
                 "preview::AnnotateRectangle",
                 "preview::AnnotateSignature",
                 "preview::AnnotateArrow",
@@ -4139,6 +4178,12 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &AnnotateHighlight, _, cx| {
                 this.choose_annotation(Tool::Highlight, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateUnderline, _, cx| {
+                this.choose_annotation(Tool::Underline, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateStrikeThrough, _, cx| {
+                this.choose_annotation(Tool::StrikeThrough, cx);
             }))
             .on_action(cx.listener(|this, _: &AnnotateRectangle, _, cx| {
                 this.choose_annotation(Tool::Rectangle, cx);

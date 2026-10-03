@@ -151,6 +151,10 @@ fn strip_leading_marker(line: &str) -> &str {
     line
 }
 
+fn plain_text_line(line: &str) -> &str {
+    strip_leading_marker(line.trim_start_matches("> "))
+}
+
 /// The byte range of a `- [ ] `/`- [x] `/`- [X] ` checkbox marker within
 /// `text`, searched only in a short prefix so a checklist item's own body
 /// text can never be mistaken for a marker further in.
@@ -233,6 +237,15 @@ fn moved_list_item(value: &str, cursor: usize, up: bool) -> Option<(String, usiz
 }
 
 impl NotesView {
+    pub(super) fn current_line_has_structure(&self, cx: &Context<Self>) -> bool {
+        let body = self.body.read(cx);
+        let value = body.value().to_string();
+        let Some(line) = value.get(current_line_range(&value, body.cursor())) else {
+            return false;
+        };
+        plain_text_line(line) != line
+    }
+
     pub(super) fn insert_table(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.body_format_editable() {
             return;
@@ -387,6 +400,11 @@ impl NotesView {
                 ParagraphStyle::Monospaced => format!("`{body}`"),
             }
         });
+    }
+
+    /// Turn the current structured Markdown line into an ordinary paragraph.
+    pub(super) fn convert_to_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_to_current_line(window, cx, |line| plain_text_line(line).to_string());
     }
 
     /// Format ▸ Lists: Bulleted and Numbered are line-prefix Markdown
@@ -619,6 +637,13 @@ mod tests {
             find_checkbox_marker("- A very long line of text before any [ ] appears"),
             None
         );
+    }
+
+    #[test]
+    fn convert_to_text_removes_structural_markers() {
+        assert_eq!(plain_text_line("- [x] Buy milk"), "Buy milk");
+        assert_eq!(plain_text_line("> ## Heading"), "Heading");
+        assert_eq!(plain_text_line("ordinary text"), "ordinary text");
     }
 
     #[test]

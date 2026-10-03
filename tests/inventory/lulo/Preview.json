@@ -445,6 +445,20 @@
               "children": []
             },
             {
+              "label": "Underline Text",
+              "action": "preview::AnnotateUnderline",
+              "shortcut": "⌃⌘U",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Strike Through Text",
+              "action": "preview::AnnotateStrikeThrough",
+              "shortcut": "⌃⌘S",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Rectangle",
               "action": "preview::AnnotateRectangle",
               "shortcut": "⌃⌘R",

@@ -251,6 +251,9 @@ impl NotesView {
             .on_action(
                 cx.listener(|this, _: &InsertTable, window, cx| this.insert_table(window, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &ConvertToText, window, cx| this.convert_to_text(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &ToggleBold, window, cx| this.toggle_bold(window, cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleItalic, window, cx| this.toggle_italic(window, cx)),

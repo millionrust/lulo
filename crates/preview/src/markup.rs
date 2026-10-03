@@ -11,6 +11,8 @@ use crate::layout::UnitRect;
 pub enum Tool {
     Select,
     Highlight,
+    Underline,
+    StrikeThrough,
     Text,
     Rectangle,
     Oval,
@@ -213,7 +215,7 @@ fn appearance(annotation: &Annotation, size: (f32, f32)) -> Vec<u8> {
             (h - 18.0).max(1.0),
             escape_pdf_text(&annotation.text)
         )),
-        Tool::Highlight | Tool::Select => {}
+        Tool::Highlight | Tool::Underline | Tool::StrikeThrough | Tool::Select => {}
     }
     s.push('Q');
     s.into_bytes()
@@ -253,14 +255,17 @@ pub fn write_pdf(source: &Path, destination: &Path, items: &[Annotation]) -> Res
         );
         let mut annotation = dictionary! {
             "Type" => "Annot",
-            "Subtype" => match item.tool { Tool::Highlight => "Highlight", Tool::Text => "FreeText", Tool::Oval => "Circle", Tool::Line | Tool::Arrow => "Line", Tool::Sketch | Tool::Signature => "Ink", _ => "Square" },
+            "Subtype" => match item.tool { Tool::Highlight => "Highlight", Tool::Underline => "Underline", Tool::StrikeThrough => "StrikeOut", Tool::Text => "FreeText", Tool::Oval => "Circle", Tool::Line | Tool::Arrow => "Line", Tool::Sketch | Tool::Signature => "Ink", _ => "Square" },
             "Rect" => Object::Array(rect_array(item.rect, size)),
             "C" => Object::Array(rgb(item.color)),
             "F" => 4,
             "NM" => format!("Lulo-{}-{}", item.page, doc.max_id + 1),
         };
         annotation.set("BS", dictionary! { "W" => number(item.width.max(0.5)) });
-        if item.tool == Tool::Highlight {
+        if matches!(
+            item.tool,
+            Tool::Highlight | Tool::Underline | Tool::StrikeThrough
+        ) {
             let q = rect_array(item.rect, size);
             annotation.set(
                 "QuadPoints",
@@ -275,7 +280,9 @@ pub fn write_pdf(source: &Path, destination: &Path, items: &[Annotation]) -> Res
                     q[1].clone(),
                 ],
             );
-            annotation.set("CA", number(0.4));
+            if item.tool == Tool::Highlight {
+                annotation.set("CA", number(0.4));
+            }
         } else {
             let r = item.rect;
             let w = ((r.x1 - r.x0) * size.0).max(1.0);
@@ -431,11 +438,44 @@ mod tests {
                 0xffff00,
                 1.0,
             ),
+            Annotation::new(
+                0,
+                Tool::Underline,
+                UnitRect {
+                    x0: 0.2,
+                    y0: 0.2,
+                    x1: 0.6,
+                    y1: 0.24,
+                },
+                0xff0000,
+                1.0,
+            ),
+            Annotation::new(
+                0,
+                Tool::StrikeThrough,
+                UnitRect {
+                    x0: 0.2,
+                    y0: 0.3,
+                    x1: 0.6,
+                    y1: 0.34,
+                },
+                0xff0000,
+                1.0,
+            ),
         ];
         write_pdf(&source, &saved, &items).unwrap();
         let original_content = Document::load(&source).unwrap().get_page_content(page);
         let after = Document::load(&saved).unwrap();
-        assert_eq!(after.get_page_annotations(page).unwrap().len(), 2);
+        let annotations = after.get_page_annotations(page).unwrap();
+        assert_eq!(annotations.len(), 4);
+        assert_eq!(
+            annotations[2].get(b"Subtype").unwrap().as_name().unwrap(),
+            b"Underline"
+        );
+        assert_eq!(
+            annotations[3].get(b"Subtype").unwrap().as_name().unwrap(),
+            b"StrikeOut"
+        );
         assert_eq!(after.get_page_content(page), original_content);
         let rectangle = after.get_page_annotations(page).unwrap()[0];
         let bounds = rectangle.get(b"Rect").unwrap().as_array().unwrap();

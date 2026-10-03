@@ -401,7 +401,7 @@ impl CalendarView {
             .role(Role::Group)
             .aria_label(format!("Week of {first}"));
         for index in 0..days {
-            let day = first + Duration::days(index);
+            let day = first + Duration::days(index as i64);
             let x = GUTTER + index as f32 * day_width;
             let today = day == current_date();
             let label = day.format("%a").to_string();

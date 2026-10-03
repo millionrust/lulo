@@ -10,10 +10,10 @@
   "launch": {"file": "guide.pdf"},
   "steps": [
     {"capture": "shown"},
-    {"key": "alt-cmd-t", "settle": 0.5},
+    {"key": "alt-cmd-t", "settle": 1.0},
     {"capture": "hidden"},
     {"observe": "hidden", "facts": ["toolbar", "windows"]},
-    {"key": "alt-cmd-t", "settle": 0.5},
+    {"key": "alt-cmd-t", "settle": 1.0},
     {"capture": "restored"},
     {"observe": "restored", "facts": ["toolbar", "windows"]}
   ]

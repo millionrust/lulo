@@ -108,7 +108,7 @@ fn popover_options(bounds: Bounds<Pixels>) -> WindowOptions {
                 px(0.0),
                 px(0.0),
             )),
-            keyboard_interactivity: KeyboardInteractivity::Exclusive,
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
             ..Default::default()
         }),
         is_movable: false,
@@ -246,11 +246,14 @@ fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
         #[cfg(target_os = "linux")]
         {
             let catcher = display.and_then(|display| {
-                rmac_ui::open_outside_click_catcher_around(
+                rmac_ui::open_outside_click_catcher_around_with_escape(
                     "rmac-quick-settings-click-catcher",
                     display,
                     px(TOP_BAR_RESERVED_HEIGHT),
                     Some(bounds),
+                    |cx| {
+                        dismiss_active(cx);
+                    },
                     |cx| {
                         dismiss_active(cx);
                     },
@@ -260,14 +263,6 @@ fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
             cx.update_global::<QuickSettingsService, _>(|service, _| service.catcher = catcher);
         }
         cx.activate(true);
-        // Shortcut activation has no pointer press to focus an OnDemand
-        // layer. Give the panel keyboard focus for its first Escape.
-        let active = cx.read_global::<QuickSettingsService, _>(|service, _| service.active.clone());
-        if let Some(active) = active {
-            let _ = active
-                .window
-                .update(cx, |_, window, _| window.activate_window());
-        }
     }
 }
 

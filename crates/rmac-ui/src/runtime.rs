@@ -308,6 +308,51 @@ pub fn open_outside_click_catcher_around(
     on_click: impl Fn(&mut App) + 'static,
     cx: &mut App,
 ) -> Option<gpui::AnyWindowHandle> {
+    open_outside_click_catcher_impl(
+        namespace,
+        display,
+        reserved_top,
+        excluded,
+        std::rc::Rc::new(on_click),
+        None,
+        cx,
+    )
+}
+
+/// Catch outside presses and Escape while leaving a popover's own controls
+/// pointer-interactive. Keyboard focus starts on the catcher and moves to the
+/// popover if the user clicks inside it.
+#[cfg(target_os = "linux")]
+pub fn open_outside_click_catcher_around_with_escape(
+    namespace: &str,
+    display: std::rc::Rc<dyn gpui::PlatformDisplay>,
+    reserved_top: gpui::Pixels,
+    excluded: Option<gpui::Bounds<gpui::Pixels>>,
+    on_click: impl Fn(&mut App) + 'static,
+    on_escape: impl Fn(&mut App) + 'static,
+    cx: &mut App,
+) -> Option<gpui::AnyWindowHandle> {
+    open_outside_click_catcher_impl(
+        namespace,
+        display,
+        reserved_top,
+        excluded,
+        std::rc::Rc::new(on_click),
+        Some(std::rc::Rc::new(on_escape)),
+        cx,
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn open_outside_click_catcher_impl(
+    namespace: &str,
+    display: std::rc::Rc<dyn gpui::PlatformDisplay>,
+    reserved_top: gpui::Pixels,
+    excluded: Option<gpui::Bounds<gpui::Pixels>>,
+    on_click: std::rc::Rc<dyn Fn(&mut App)>,
+    on_escape: Option<std::rc::Rc<dyn Fn(&mut App)>>,
+    cx: &mut App,
+) -> Option<gpui::AnyWindowHandle> {
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
     use gpui::{
         point, size, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
@@ -319,7 +364,6 @@ pub fn open_outside_click_catcher_around(
     if height <= reserved_top {
         return None;
     }
-    let on_click = std::rc::Rc::new(on_click);
     let width = f32::from(bounds.size.width);
     let height = f32::from(height);
     let reserved = f32::from(reserved_top).clamp(0.0, height);
@@ -362,7 +406,11 @@ pub fn open_outside_click_catcher_around(
             namespace: namespace.to_owned(),
             layer: Layer::Overlay,
             anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            keyboard_interactivity: if on_escape.is_some() {
+                KeyboardInteractivity::Exclusive
+            } else {
+                KeyboardInteractivity::OnDemand
+            },
             exclusive_zone: Some(gpui::px(-1.0)),
             ..Default::default()
         }),
@@ -371,13 +419,21 @@ pub fn open_outside_click_catcher_around(
         is_minimizable: false,
         ..Default::default()
     };
-    match cx.open_window(options, move |_, cx| {
+    match cx.open_window(options, move |window, cx| {
         let left = on_click.clone();
         let right = on_click.clone();
-        cx.new(|_| OutsideClickCatcher {
+        cx.new(|cx| {
+            let focus = cx.focus_handle();
+            if on_escape.is_some() {
+                focus.focus(window, cx);
+            }
+            OutsideClickCatcher {
             left,
             right,
+            escape: on_escape,
+            focus,
             input_regions,
+            }
         })
     }) {
         Ok(handle) => Some(AnyWindowHandle::from(handle)),
@@ -392,6 +448,8 @@ pub fn open_outside_click_catcher_around(
 struct OutsideClickCatcher {
     left: std::rc::Rc<dyn Fn(&mut App)>,
     right: std::rc::Rc<dyn Fn(&mut App)>,
+    escape: Option<std::rc::Rc<dyn Fn(&mut App)>>,
+    focus: gpui::FocusHandle,
     input_regions: Vec<gpui::Bounds<gpui::Pixels>>,
 }
 
@@ -404,10 +462,20 @@ impl gpui::Render for OutsideClickCatcher {
 
         let left = self.left.clone();
         let right = self.right.clone();
+        let escape = self.escape.clone();
         gpui::div()
             .id("outside-click-catcher")
             .size_full()
+            .track_focus(&self.focus)
             .bg(gpui::transparent_black())
+            .on_key_down(move |event: &gpui::KeyDownEvent, window, cx| {
+                if event.keystroke.key == "escape" {
+                    if let Some(escape) = &escape {
+                        window.remove_window();
+                        escape(cx);
+                    }
+                }
+            })
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 window.remove_window();
                 left(cx);

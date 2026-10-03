@@ -41,6 +41,12 @@ pub(crate) fn show(main: Entity<NotesView>, cx: &mut App) {
     }
 }
 
+pub(crate) fn close(cx: &mut App) {
+    if let Some(handle) = OPEN.with(std::cell::Cell::take) {
+        let _ = handle.update(cx, |_, window, _| window.remove_window());
+    }
+}
+
 struct SettingsView {
     focus: FocusHandle,
     main: Entity<NotesView>,

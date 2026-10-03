@@ -641,6 +641,8 @@ class LuloRun:
                 command += [str(self.sandbox / filename) for filename in launch["files"]]
             elif "file" in launch:
                 command += [str(self.sandbox / launch["file"])]
+        elif self.app == "text-editor" and "file" in launch:
+            command.append(str(self.sandbox / launch["file"]))
         self.log = open(
             self.nested.logs / f"{self.sid.replace('/', '-')}.log",
             "a" if launch_override is not None else "w",

@@ -623,6 +623,47 @@ class Run:
                                        {"VK_ICD_FILENAMES": LAVAPIPE})
                 self.wait_for(lambda: self.find_menu("Files") is None, 5)
 
+        foot = shutil.which("foot", path=self.env.get("PATH"))
+        if foot is None:
+            self.check("Dock focus: probe app available", False, "foot is required")
+            return
+        probe_id = "org.rmac.DockFocusProbe"
+        probe = self.spawn([foot, f"--app-id={probe_id}", "sleep", "60"], "dock-focus-probe")
+        focused = lambda: any(
+            item.get("app_id") == probe_id and item.get("is_focused")
+            for item in self.niri("windows") or []
+        )
+        try:
+            frontmost = self.wait_for(focused, 10)
+            self.check("Dock focus: probe app is frontmost", frontmost)
+            if not frontmost:
+                return
+            tile = self.find_node(("push button", "button"),
+                                  lambda name: name.startswith("Files") and not name.endswith(" menu"))
+            box = self.extents(tile) if tile is not None else None
+            if box is None:
+                self.check("Dock focus: Files tile has bounds", False)
+                return
+            x, _, w, _ = box
+            self.click_at(x + w / 2, OUTPUT_H - 48, "right")
+            opened = self.wait_for(lambda: self.find_menu("Files") is not None
+                                   and self.has_layer("rmac-dock-menu-keyboard"), 5)
+            self.check("Dock focus: context menu takes Escape", opened)
+            if not opened:
+                return
+            self.keys.key("escape")
+            closed = self.wait_for(lambda: self.find_menu("Files") is None, 5)
+            self.check("Dock focus: Escape closes the menu", closed)
+            self.check("Dock focus: Escape returns to the frontmost app",
+                       self.wait_for(focused, 5))
+        finally:
+            probe.terminate()
+            try:
+                probe.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                probe.kill()
+                probe.wait(timeout=3)
+
     def control_center_and_app_menu_close_on_wallpaper_click(self) -> None:
         self.close_everything()
         # Nothing has touched Control Center before this scenario, so this

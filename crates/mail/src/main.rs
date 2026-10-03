@@ -1,3 +1,5 @@
+mod compose_window;
+mod delivery;
 mod view;
 
 use gpui::{App, AppContext as _, KeyBinding};
@@ -23,7 +25,9 @@ gpui::actions!(
         Forward,
         Flag,
         Move,
-        Search
+        Search,
+        SendMessage,
+        AttachFile
     ]
 );
 
@@ -31,12 +35,19 @@ fn main() {
     // Parse the small fixture before starting the UI. MAIL-4 will deliver snapshots
     // from its workers; neither parsing nor mailbox I/O belongs in render().
     let fixture = MailState::fixture();
+    let accounts = delivery::accounts();
     rmac_ui::application()
         .with_assets(rmac_ui::shared_assets())
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
             cx.bind_keys([
                 KeyBinding::new("cmd-shift-u", ToggleRead, Some("Mail")),
+                KeyBinding::new("cmd-n", NewMessage, Some("Mail")),
+                KeyBinding::new("cmd-r", Reply, Some("Mail")),
+                KeyBinding::new("cmd-shift-r", ReplyAll, Some("Mail")),
+                KeyBinding::new("cmd-shift-f", Forward, Some("Mail")),
+                KeyBinding::new("cmd-shift-d", SendMessage, Some("MailCompose")),
+                KeyBinding::new("cmd-shift-a", AttachFile, Some("MailCompose")),
                 KeyBinding::new("down", NextMessage, Some("Mail")),
                 KeyBinding::new("up", PreviousMessage, Some("Mail")),
                 KeyBinding::new("cmd-w", CloseWindow, Some("Mail")),
@@ -44,13 +55,9 @@ fn main() {
             ]);
             rmac_ui::install_app_menu(MAIL, cx);
             for action in [
-                "mail::NewMessage",
                 "mail::Archive",
                 "mail::Delete",
                 "mail::Junk",
-                "mail::Reply",
-                "mail::ReplyAll",
-                "mail::Forward",
                 "mail::Flag",
                 "mail::Move",
                 "mail::Search",
@@ -63,7 +70,7 @@ fn main() {
                 rmac_ui::prepare_surface_window(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(MAIL, window, cx);
-                    MailView::new(fixture, cx)
+                    MailView::new(fixture, accounts, cx)
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);

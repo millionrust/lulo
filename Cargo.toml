@@ -110,6 +110,7 @@ rmac-mail-imap = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-imap" }
 rmac-mail-storage = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-storage" }
 rmac-mail-mime = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-mime" }
 rmac-mail-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-runtime" }
+rmac-mail-smtp = { version = "=0.9.0-beta.1", path = "crates/rmac-mail-smtp" }
 rmac-locale = { version = "=0.9.0-beta.1", path = "crates/rmac-locale" }
 rmac-locale-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-locale-linux" }
 rmac-power = { version = "=0.9.0-beta.1", path = "crates/rmac-power" }

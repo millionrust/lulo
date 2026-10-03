@@ -5,12 +5,13 @@ use gpui::{
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window,
 };
-use rmac_mail::{MailState, Mailbox, Message};
+use rmac_mail::{compose::ComposeKind, MailState, Mailbox, Message};
 use rmac_mail_mime::{BlockKind, RichText};
 use rmac_ui::mac;
 
 use crate::{
-    CloseWindow, NextMessage, PreviousMessage, ToggleRead, ToggleThreads, ToggleUnreadFilter,
+    compose_window, delivery::ComposeAccount, CloseWindow, Forward, NewMessage, NextMessage,
+    PreviousMessage, Reply, ReplyAll, ToggleRead, ToggleThreads, ToggleUnreadFilter,
 };
 
 const SIDEBAR: f32 = 220.0;
@@ -27,6 +28,7 @@ enum ControlMode {
 pub struct MailView {
     pub focus: FocusHandle,
     state: MailState,
+    accounts: Vec<ComposeAccount>,
 }
 
 #[derive(Clone)]
@@ -44,10 +46,11 @@ struct Row {
 }
 
 impl MailView {
-    pub fn new(state: MailState, cx: &mut Context<Self>) -> Self {
+    pub fn new(state: MailState, accounts: Vec<ComposeAccount>, cx: &mut Context<Self>) -> Self {
         Self {
             focus: cx.focus_handle(),
             state,
+            accounts,
         }
     }
 
@@ -121,8 +124,17 @@ impl MailView {
             cx,
         ));
         bar = bar.child(div().w(px(LIST - 66.0)));
+        bar = bar.child(self.control(
+            "mail-compose",
+            "▣",
+            "Compose",
+            ControlMode::Enabled,
+            |this, cx| {
+                compose_window::open(ComposeKind::New, None, this.accounts.clone(), cx);
+            },
+            cx,
+        ));
         for (id, glyph, label) in [
-            ("mail-compose", "▣", "Compose"),
             ("mail-archive", "▤", "Archive"),
             ("mail-trash", "⌫", "Delete"),
             ("mail-junk", "⊗", "Junk"),
@@ -568,6 +580,33 @@ impl Render for MailView {
             .bg(mac::window())
             .track_focus(&self.focus)
             .key_context("Mail")
+            .on_action(cx.listener(|this, _: &NewMessage, _, cx| {
+                compose_window::open(ComposeKind::New, None, this.accounts.clone(), cx)
+            }))
+            .on_action(cx.listener(|this, _: &Reply, _, cx| {
+                compose_window::open(
+                    ComposeKind::Reply,
+                    this.state.selected_message().cloned(),
+                    this.accounts.clone(),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &ReplyAll, _, cx| {
+                compose_window::open(
+                    ComposeKind::ReplyAll,
+                    this.state.selected_message().cloned(),
+                    this.accounts.clone(),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &Forward, _, cx| {
+                compose_window::open(
+                    ComposeKind::Forward,
+                    this.state.selected_message().cloned(),
+                    this.accounts.clone(),
+                    cx,
+                )
+            }))
             .on_action(cx.listener(|this, _: &ToggleThreads, _, cx| {
                 this.state.threads = !this.state.threads;
                 this.sync_menu(cx);

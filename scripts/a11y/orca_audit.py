@@ -676,12 +676,12 @@ class Audit:
             if probe:
                 self.probe(focus, steps, allow_toggle)
                 after_probe = steps[-1]["focus"]
-                if (after_probe or {}).get("key") != focus_key:
+                if not checks.probe_kept_tab_stop(focus, after_probe):
                     # The probe left focus somewhere else (a popup that did
                     # not close): stop rather than walk a different window.
                     outcome = "probe-left-focus"
                     break
-            previous = steps[-1]["focus"]
+            previous = focus
         return stops, outcome
 
     # -- apps -----------------------------------------------------------------

@@ -238,6 +238,18 @@ REACHABLE_ROLES = {"button", "push button", "push button menu", "toggle button",
                    "spin button", "link", "switch", "entry", "text", "password text", "page tab"}
 
 
+def probe_kept_tab_stop(stop: dict[str, Any], after: Optional[dict[str, Any]]) -> bool:
+    """An arrow-selected child still belongs to its container's Tab stop."""
+
+    if after is None:
+        return False
+    if after.get("key") == stop.get("key"):
+        return True
+    return (stop.get("role") in ARROW_CONTAINERS
+            and after.get("role") in ITEM_ROLES
+            and after.get("parent") == stop.get("key"))
+
+
 def reachability_flags(controls: list[dict[str, Any]], visited: set[str]) -> list[dict[str, Any]]:
     """controls: every showing, enabled control in the window, each with an
     `ancestors` list of roles. Those Tab never reached are reported: as

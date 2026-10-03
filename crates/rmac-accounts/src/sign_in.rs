@@ -117,6 +117,7 @@ impl SignIn {
             match key.as_ref() {
                 "state" if returned_state.is_none() => returned_state = Some(value.into_owned()),
                 "code" if code.is_none() => code = Some(value.into_owned()),
+                "error" => return Err(SignInError::InvalidCallback),
                 "state" | "code" => return Err(SignInError::InvalidCallback),
                 _ => {}
             }
@@ -250,6 +251,11 @@ mod tests {
             (
                 oauth.client_id,
                 format!("{}?code=c&code=d&state=s", oauth.redirect_uri),
+                SignInError::InvalidCallback,
+            ),
+            (
+                oauth.client_id,
+                format!("{}?code=c&state=s&error=denied", oauth.redirect_uri),
                 SignInError::InvalidCallback,
             ),
             (

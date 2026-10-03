@@ -1,16 +1,11 @@
 use quick_xml::{events::Event, Reader};
 
+pub use crate::provider::SocketSecurity;
 use crate::{model::email_domain, provider::Provider};
 
 const MAX_XML_BYTES: usize = 256 * 1024;
 const MAX_XML_EVENTS: usize = 4096;
 const MAX_XML_DEPTH: usize = 32;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SocketSecurity {
-    Tls,
-    StartTls,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MailServer {
@@ -53,10 +48,7 @@ impl Candidate {
             _ => return None,
         };
         let port = self.port.parse::<u16>().ok().filter(|port| *port != 0)?;
-        if !matches!(
-            self.authentication.to_ascii_lowercase().as_str(),
-            "password-cleartext" | "oauth2"
-        ) {
+        if self.authentication.to_ascii_lowercase() != "password-cleartext" {
             return None;
         }
         let host = self.host.trim().to_ascii_lowercase();
@@ -346,6 +338,13 @@ mod tests {
         assert_eq!(
             parse_ispdb("<!DOCTYPE x><clientConfig/>", "alice@example.com"),
             Err(AutoconfigError::MalformedXml)
+        );
+        assert_eq!(
+            parse_ispdb(
+                &XML.replace("password-cleartext", "OAuth2"),
+                "alice@example.com"
+            ),
+            Err(AutoconfigError::NoSecureServers)
         );
     }
 

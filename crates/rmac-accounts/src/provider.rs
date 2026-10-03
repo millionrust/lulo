@@ -13,6 +13,8 @@ pub enum Provider {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OAuthConfig {
     pub client_id: &'static str,
+    /// GOA's embedded desktop-client value; not a user credential.
+    pub client_secret: &'static str,
     pub authorization_uri: &'static str,
     pub token_uri: &'static str,
     pub redirect_uri: &'static str,
@@ -27,11 +29,19 @@ pub enum MailTransport {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SocketSecurity {
+    Tls,
+    StartTls,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServerPreset {
     pub imap_host: &'static str,
     pub imap_port: u16,
+    pub imap_security: SocketSecurity,
     pub smtp_host: &'static str,
     pub smtp_port: u16,
+    pub smtp_security: SocketSecurity,
     pub caldav_uri: Option<&'static str>,
 }
 
@@ -47,6 +57,7 @@ pub struct ProviderInfo {
 
 const GOOGLE_OAUTH: OAuthConfig = OAuthConfig {
     client_id: "44438659992-7kgjeitenc16ssihbtdjbgguch7ju55s.apps.googleusercontent.com",
+    client_secret: "-gMLuQyDiI0XrQS_vx_mhuYF",
     authorization_uri: "https://accounts.google.com/o/oauth2/v2/auth",
     token_uri: "https://oauth2.googleapis.com/token",
     redirect_uri: "com.googleusercontent.apps.44438659992-7kgjeitenc16ssihbtdjbgguch7ju55s:/oauth2redirect",
@@ -56,6 +67,7 @@ const GOOGLE_OAUTH: OAuthConfig = OAuthConfig {
 
 const MICROSOFT_OAUTH: OAuthConfig = OAuthConfig {
     client_id: "b155a604-3c31-4079-93b0-6bb6aa9d5464",
+    client_secret: "",
     authorization_uri: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
     token_uri: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     redirect_uri: "goa-oauth2://localhost/b155a604-3c31-4079-93b0-6bb6aa9d5464",
@@ -72,8 +84,10 @@ pub const PROVIDERS: [ProviderInfo; 5] = [
         servers: Some(ServerPreset {
             imap_host: "imap.gmail.com",
             imap_port: 993,
+            imap_security: SocketSecurity::Tls,
             smtp_host: "smtp.gmail.com",
             smtp_port: 587,
+            smtp_security: SocketSecurity::StartTls,
             caldav_uri: None, // GOA builds a per-account CalDAV URI.
         }),
         needs_app_password: false,
@@ -94,8 +108,10 @@ pub const PROVIDERS: [ProviderInfo; 5] = [
         servers: Some(ServerPreset {
             imap_host: "imap.mail.yahoo.com",
             imap_port: 993,
+            imap_security: SocketSecurity::Tls,
             smtp_host: "smtp.mail.yahoo.com",
             smtp_port: 465,
+            smtp_security: SocketSecurity::Tls,
             caldav_uri: Some("https://caldav.calendar.yahoo.com"),
         }),
         needs_app_password: true,
@@ -108,8 +124,10 @@ pub const PROVIDERS: [ProviderInfo; 5] = [
         servers: Some(ServerPreset {
             imap_host: "imap.mail.me.com",
             imap_port: 993,
+            imap_security: SocketSecurity::Tls,
             smtp_host: "smtp.mail.me.com",
             smtp_port: 587,
+            smtp_security: SocketSecurity::StartTls,
             caldav_uri: Some("https://caldav.icloud.com"),
         }),
         needs_app_password: true,
@@ -194,11 +212,19 @@ mod tests {
         assert_eq!(Provider::Microsoft.info().goa_ids, &["ms_graph"]);
         assert_eq!(Provider::Yahoo.info().goa_ids, &["imap_smtp", "webdav"]);
         assert!(GOOGLE_OAUTH.scopes.contains("https://mail.google.com/"));
+        assert_eq!(GOOGLE_OAUTH.client_secret, "-gMLuQyDiI0XrQS_vx_mhuYF");
         assert!(MICROSOFT_OAUTH.scopes.contains("mail.readwrite"));
         assert!(!MICROSOFT_OAUTH.scopes.contains("IMAP"));
         assert_eq!(
             Provider::Microsoft.info().mail_transport,
             MailTransport::Graph
+        );
+        assert_eq!(
+            Provider::Google
+                .info()
+                .servers
+                .map(|servers| servers.smtp_security),
+            Some(SocketSecurity::StartTls)
         );
     }
 }

@@ -180,6 +180,10 @@ impl NotesView {
             .border_color(row_rule())
             .child(
                 div()
+                    .id("note-find-field")
+                    .role(Role::SearchInput)
+                    .aria_label("Find")
+                    .accessible_text_input(&self.note_find_input, cx)
                     .w(px(220.0))
                     .child(rmac_ui::SearchField::new(&self.note_find_input).appearance(true)),
             )

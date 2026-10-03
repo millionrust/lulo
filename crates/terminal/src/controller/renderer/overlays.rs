@@ -27,6 +27,10 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.find_step(false, cx)))
             .child(
                 div()
+                    .id("terminal-find-field")
+                    .role(Role::SearchInput)
+                    .aria_label("Find")
+                    .accessible_text_input(&self.search, cx)
                     .flex_1()
                     .child(SearchField::new(&self.search).appearance(false)),
             )

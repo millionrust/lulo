@@ -32,6 +32,11 @@ fn selected_tab_fill() -> gpui::Hsla {
     gpui::hsla(0.0, 0.0, 1.0, 0.14)
 }
 
+/// The keyed-state id of one tab's focus handle in the toolbar's tab strip.
+fn tab_focus_id(tab: Tab) -> SharedString {
+    SharedString::from(format!("tab-{}", tab.label()))
+}
+
 /// Wrap an icon-only `rmac_ui::Button` with an outer accessible node.
 ///
 /// The wrapped component library's `Button` only sets `aria_label` from
@@ -206,13 +211,23 @@ impl MonitorView {
             .iter()
             .position(|&candidate| candidate == self.tab)
             .unwrap_or(0);
+        // Every tab's focus handle, resolved here during render: the key
+        // handler below runs outside render, where `use_keyed_state` has no
+        // current view and panics (an arrow key on a focused tab aborted
+        // the app; found by scripts/a11y/orca_audit.py).
+        let tab_focus: Vec<gpui::FocusHandle> = Tab::ALL
+            .iter()
+            .map(|tab| {
+                window
+                    .use_keyed_state(tab_focus_id(*tab), cx, |_, cx| cx.focus_handle())
+                    .read(cx)
+                    .clone()
+            })
+            .collect();
         let tabs = Tab::ALL.into_iter().enumerate().map(|(index, tab)| {
             let selected = tab == self.tab;
-            let tab_id = SharedString::from(format!("tab-{}", tab.label()));
-            let focus = window
-                .use_keyed_state(tab_id.clone(), cx, |_, cx| cx.focus_handle())
-                .read(cx)
-                .clone();
+            let tab_id = tab_focus_id(tab);
+            let focus = tab_focus[index].clone();
             let focused = focus.is_focused(window);
             div()
                 .id(tab_id)
@@ -249,12 +264,7 @@ impl MonitorView {
                 window.prevent_default();
                 cx.stop_propagation();
                 let target = Tab::ALL[next];
-                let target_id = SharedString::from(format!("tab-{}", target.label()));
-                let handle = window
-                    .use_keyed_state(target_id, cx, |_, cx| cx.focus_handle())
-                    .read(cx)
-                    .clone();
-                handle.focus(window, cx);
+                tab_focus[next].focus(window, cx);
                 view.update(cx, |this, cx| this.select_tab(target, cx));
             }
         });

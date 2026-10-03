@@ -81,6 +81,7 @@ impl TerminalView {
         })
         .detach();
 
+        cx.bind_keys(super::input::shell_owned_key_bindings());
         cx.bind_keys([
             KeyBinding::new(rmac_ui::shortcuts::COPY.keystroke, Copy, Some("Terminal")),
             KeyBinding::new("alt-shift-cmd-c", CopyPlainText, Some("Terminal")),

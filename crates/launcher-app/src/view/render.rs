@@ -18,7 +18,7 @@ use rmac_launcher_runtime::accessibility::{
     SEARCH_SCOPE_DESCRIPTION, SUGGESTIONS_SECTION_NAME,
 };
 use rmac_launcher_runtime::{KeyCommand, Phase, Row};
-use rmac_ui::{mac, Button, TextField};
+use rmac_ui::{mac, AccessibleTextInput as _, Button, TextField};
 
 use super::completion;
 use super::panel::PanelMode;
@@ -335,6 +335,11 @@ impl LauncherView {
                     .role(Role::TextInput)
                     .aria_label(QUERY_NAME)
                     .aria_value(SharedString::from(query.to_owned()))
+                    // Publish the field's text on this named node, so focus
+                    // lands here rather than on the unnamed inner input
+                    // (Orca read the query field as just "entry" once text
+                    // was typed; scripts/a11y/orca_audit.py).
+                    .accessible_text_input(&self.query, cx)
                     .size_full()
                     .child(
                         TextField::new(&self.query)

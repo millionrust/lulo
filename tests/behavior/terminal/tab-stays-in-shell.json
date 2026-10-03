@@ -1,0 +1,12 @@
+{
+  "title": "Tab and Shift-Tab go to the shell and keep focus in the terminal",
+  "app": "terminal",
+  "lulo_only": true,
+  "steps": [
+    {"key": "tab", "settle": 1.0},
+    {"observe": "after_tab", "facts": ["focus"]},
+    {"key": "shift-tab", "settle": 1.0},
+    {"observe": "after_shift_tab", "facts": ["focus"]}
+  ],
+  "tolerance": {"*.focus.label": "exact"}
+}

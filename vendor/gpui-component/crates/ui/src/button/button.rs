@@ -434,8 +434,24 @@ impl InteractiveElement for Button {
     }
 }
 
+/// The name a screen reader announces: the visible label, or for an
+/// icon-only button its tooltip, as macOS reads an icon button's help tag.
+fn accessible_name(
+    label: Option<&SharedString>,
+    tooltip: Option<&SharedString>,
+) -> Option<SharedString> {
+    label
+        .filter(|label| !label.is_empty())
+        .or(tooltip.filter(|tooltip| !tooltip.is_empty()))
+        .cloned()
+}
+
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let accessible_name = accessible_name(
+            self.label.as_ref(),
+            self.tooltip.as_ref().map(|(tooltip, _)| tooltip),
+        );
         let style: ButtonVariant = self.variant;
         let clickable = self.clickable();
         let is_disabled = self.disabled;
@@ -466,9 +482,7 @@ impl RenderOnce for Button {
             } else {
                 Role::Button
             })
-            .when_some(self.label.as_ref(), |this, label| {
-                this.aria_label(label.clone())
-            })
+            .when_some(accessible_name, |this, label| this.aria_label(label))
             .aria_selected(self.selected)
             .when(!self.disabled, |this| {
                 this.track_focus(
@@ -1148,6 +1162,21 @@ impl ButtonVariant {
 mod tests {
     use super::*;
     use gpui::{linear_color_stop, linear_gradient};
+
+    #[test]
+    fn icon_only_buttons_are_named_by_their_tooltip() {
+        let label = SharedString::from("Save");
+        let tooltip = SharedString::from("New Note");
+        let empty = SharedString::from("");
+        assert_eq!(
+            accessible_name(Some(&label), Some(&tooltip)),
+            Some(label.clone())
+        );
+        assert_eq!(accessible_name(None, Some(&tooltip)), Some(tooltip.clone()));
+        assert_eq!(accessible_name(Some(&empty), Some(&tooltip)), Some(tooltip));
+        assert_eq!(accessible_name(None, Some(&empty)), None);
+        assert_eq!(accessible_name(None, None), None);
+    }
 
     #[gpui::test]
     fn test_button_builder(_cx: &mut gpui::TestAppContext) {

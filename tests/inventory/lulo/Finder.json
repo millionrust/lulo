@@ -386,6 +386,13 @@
           "children": []
         },
         {
+          "label": "Show Preview",
+          "action": "finder::TogglePreview",
+          "shortcut": "⇧⌘P",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Show Tab Bar",
           "action": "finder::ToggleTabBar",
           "shortcut": "⇧⌘T",

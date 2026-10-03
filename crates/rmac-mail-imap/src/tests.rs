@@ -167,7 +167,14 @@ fn tls_plain_sync_move_uidplus_special_use_and_idle() {
         client.fetch_body(7).unwrap(),
         Some(b"hello\r\nworld".to_vec())
     );
-    client.move_uids("7", "Archive").unwrap();
+    assert_eq!(
+        client.move_uids("7", "Archive").unwrap(),
+        Some(CopyUid {
+            uid_validity: 42,
+            source_uids: "7".into(),
+            destination_uids: "11".into(),
+        })
+    );
     client.expunge_uids("7").unwrap();
     assert_eq!(
         client.idle_once(Duration::from_secs(2)).unwrap(),

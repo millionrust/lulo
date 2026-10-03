@@ -5,8 +5,12 @@
 mod protocol;
 mod transport;
 
-use protocol::{parse_capabilities, parse_list, parse_select, parse_uid_fetch, quote, Response};
-pub use protocol::{Capabilities, Mailbox, MailboxKind, MessageChange, SelectState, SyncCursor};
+use protocol::{
+    parse_capabilities, parse_copyuid, parse_list, parse_select, parse_uid_fetch, quote, Response,
+};
+pub use protocol::{
+    Capabilities, CopyUid, Mailbox, MailboxKind, MessageChange, SelectState, SyncCursor,
+};
 use std::{fmt, io, time::Duration};
 use transport::Transport;
 use zeroize::Zeroize;
@@ -159,7 +163,11 @@ impl Client {
             }
             validate_auth_field(user)?;
             validate_auth_field(password.expose())?;
-            let mut command = format!("LOGIN {} {}", quote(user)?, quote(password.expose())?);
+            let mut command = format!(
+                "LOGIN {} {}",
+                protocol::quote_string(user)?,
+                protocol::quote_string(password.expose())?
+            );
             let result = self.command(&command);
             command.zeroize();
             result?;
@@ -286,13 +294,18 @@ impl Client {
         Ok(responses.iter().find_map(Response::first_literal))
     }
 
-    pub fn move_uids(&mut self, uid_set: &str, destination: &str) -> Result<(), Error> {
+    pub fn move_uids(
+        &mut self,
+        uid_set: &str,
+        destination: &str,
+    ) -> Result<Option<CopyUid>, Error> {
         if !self.capabilities.has("MOVE") {
             return Err(Error::Unsupported("IMAP server does not support MOVE"));
         }
         protocol::validate_uid_set(uid_set)?;
-        self.command(&format!("UID MOVE {uid_set} {}", quote(destination)?))?;
-        Ok(())
+        let (_, completion) =
+            self.command_with_completion(&format!("UID MOVE {uid_set} {}", quote(destination)?))?;
+        Ok(parse_copyuid(&completion))
     }
 
     pub fn expunge_uids(&mut self, uid_set: &str) -> Result<(), Error> {
@@ -336,19 +349,32 @@ impl Client {
     }
 
     fn command(&mut self, command: &str) -> Result<Vec<Response>, Error> {
+        self.command_with_completion(command)
+            .map(|(responses, _)| responses)
+    }
+
+    fn command_with_completion(
+        &mut self,
+        command: &str,
+    ) -> Result<(Vec<Response>, Response), Error> {
         let tag = self.tag();
         self.transport.write_line(&format!("{tag} {command}"))?;
-        self.collect(&tag)
+        self.collect_with_completion(&tag)
     }
 
     fn collect(&mut self, tag: &str) -> Result<Vec<Response>, Error> {
+        self.collect_with_completion(tag)
+            .map(|(responses, _)| responses)
+    }
+
+    fn collect_with_completion(&mut self, tag: &str) -> Result<(Vec<Response>, Response), Error> {
         let mut responses = Vec::new();
         loop {
             let response = self.transport.read_response()?;
             let first = response.first_line();
             if first.starts_with(tag.as_bytes()) && first.get(tag.len()) == Some(&b' ') {
                 if first.get(tag.len() + 1..tag.len() + 3) == Some(b"OK") {
-                    return Ok(responses);
+                    return Ok((responses, response));
                 }
                 return Err(Error::Rejected("IMAP command rejected"));
             }

@@ -1008,10 +1008,14 @@ def run_text_editor_save_sheet_surface(nested: "run_lulo.Nested", bins: list[Pat
 
         frame = run.active_frame()
         box = extents(frame) if frame is not None else None
+        print(f"DIAG click_into_document: frame={name(frame) if frame is not None else None!r} box={box}", flush=True)
         if box is None:
             return
         ox, oy = run.window_origin(frame)
+        print(f"DIAG click_into_document: clicking ({ox + box[2] / 2}, {oy + box[3] / 2})", flush=True)
         run.nested.input.click(ox + box[2] / 2, oy + box[3] / 2, run_lulo.OUTPUT_W, run_lulo.OUTPUT_H)
+        time.sleep(0.2)
+        print(f"DIAG click_into_document: focus now {run.fact_focus()}", flush=True)
         time.sleep(0.3)
 
     def ensure_alert(attempts: int = 3) -> bool:

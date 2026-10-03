@@ -25,6 +25,83 @@ changed it), **Partial** (meets some but not all of the criterion), **Gap**
 (unmeasured — a real value is needed before this can be marked Pass), **N/A**
 (component does not exist yet, or the criterion does not apply).
 
+## Automated Orca run (2026-10-03)
+
+`scripts/a11y/orca_audit.py` runs the real Orca (50.2, installed on the
+reference laptop) inside the private nested session `run_lulo.py` builds:
+its own Sway (and nested niri with the shipped `shell.kdl` for the shell),
+private D-Bus and AT-SPI bus, temporary HOME/XDG dirs, memory GSettings, and
+no system bus. Orca gets no speech server (`scripts/a11y/orca_customizations.py`
+writes each utterance to a file instead), so nothing is audible and the
+owner's Orca settings and `screen-reader-enabled` are never touched. The
+harness drives each surface with `wlinput.py` keys only and, after every key,
+records the AT-SPI focus (role, name, states, value) and Orca's words.
+`scripts/a11y/orca_checks.py` flags unnamed controls, generic roles, missing
+checked/expanded/selected states, focus going nowhere or lost, Tab traps,
+items that are each a Tab stop, controls Tab never reaches (pointer-only),
+and focus/value changes Orca stayed silent about.
+
+Journeys: Files, Text Editor (incl. the unsaved-changes alert), System
+Settings, Terminal, Notes, Preview, Calculator, System Monitor, top-bar
+menus (⌃F2), Dock (⌃F3), Spotlight, Control Centre, Notification Centre.
+Each app gets scripted keys from its launch focus, then a fresh window gets
+a full Tab cycle with a role probe at every stop (Space on checkboxes,
+arrows on sliders/tabs/lists, Space+Down+Escape on pop-ups) and three
+Shift-Tabs. Push buttons are never activated.
+
+    python3 scripts/a11y/orca_audit.py --bin-dir DIR [JOURNEY ...]
+    # evidence: tests/accessibility/orca-run.json (default --output)
+
+Baseline run, build `fcafa5e4` (before this branch's fixes): 13 journeys,
+72 flags. Evidence: `tests/accessibility/orca-run.json`. The post-fix rerun
+was queued but did not get the journey lock before the time box; the fixes
+below are verified by unit tests and `clippy -D warnings`, not yet by a
+second Orca run.
+
+| Surface | What Orca heard | Defects (flags) | Rows |
+|---|---|---|---|
+| Files | "List with 3 items", file names on ↑/↓ | Tab from the list reaches only the three title-bar buttons and never returns; Escape from Search leaves focus on the window (2) | ACC-17, ACC-18 |
+| Text Editor | "Untitled entry", the alert title and buttons | Escape on the unsaved-changes alert leaves focus on the window; pop-ups read without collapsed/expanded (6) | ACC-18, ACC-21 |
+| System Settings | every category and pane row | 22 sidebar rows (and 7 General rows) are separate Tab stops; ↑/↓ don't move between rows; two rows silent (8) | ACC-19 |
+| Terminal | prompt, typed text | **Tab left the terminal for the title-bar buttons and never came back (no Tab completion)**; Find field unnamed (2) | ACC-13 ✔, ACC-15 ✔ |
+| Notes | toolbar, list, fields | **7 icon buttons read just "button"**; ⌘F field unnamed; Escape leaves focus on the window; Folders button pointer-only; Tags not in Tab order (13) | ACC-14 ✔, ACC-15 ✔, ACC-18, ACC-26 |
+| Preview | window title | only the title-bar buttons are Tab stops; Show Markup Toolbar pointer-only (3) | ACC-25 |
+| Calculator | window title | typed input and results silent; keypad not focusable (6) | ACC-22 |
+| System Monitor | "System Monitor", then nothing | **→/← on a focused toolbar tab aborted the app**; toolbar icon unnamed; Orca seconds behind (row-rename event flood) (9) | ACC-12 ✔, ACC-14 ✔, ACC-20 |
+| Menu bar (⌃F2) | "menu", "System menu", items | focus first lands on an unnamed invisible frame (silent); system title named "menu" (5) | ACC-23 |
+| Dock (⌃F3) | app names | same unnamed focus frame first (timing-dependent); Escape leaves focus there (4) | ACC-23 |
+| Spotlight | "Spotlight Search entry" | the field read as just "entry" once text was typed; ↑/↓ through results silent (6) | ACC-16 ✔, ACC-24 |
+| Control Centre | "Control Centre", every control, slider value | opens silent on the panel; Escape leaves no focus (nested session has no app behind) (6) | ACC-27 |
+| Notification Centre | "Notification Center" | empty in the nested run, Tab stays on the panel; Escape leaves no focus (2) | ACC-27 |
+
+✔ = fixed on this branch (pending the post-fix Orca rerun). Flags that are
+timing artefacts of the nested run (a few `silent-focus` where Orca spoke on
+the next key) are kept in the evidence but not counted as defects.
+
+## Owner final listen
+
+The automated run covers what Orca *would* say; this short pass confirms it
+*does* on the real desktop (≈15 minutes). On the reference laptop:
+
+1. Turn Orca on (⌘F5 or Settings ▸ Accessibility ▸ Screen Reader).
+2. ⌃F2, →, ↓, ↓, Esc, Esc: each menu title and item is spoken once; note
+   whether the first title is read straight away (ACC-23).
+3. ⌃F3, → ×3, Esc: each Dock app is spoken.
+4. ⌘Space, type "calc", ↓: the field stays "Spotlight Search"; note
+   whether the result is read (ACC-24). Esc.
+5. Terminal: type `ech` then Tab — the shell completes `echo` and Orca stays
+   in the terminal (ACC-13).
+6. System Monitor: Tab to the CPU tab, → then ←: tabs switch and are
+   spoken, the app stays open (ACC-12).
+7. Notes: Tab through the toolbar — every button has a name, none reads as
+   just "button" (ACC-14).
+8. Text Editor: type, ⌘W, Tab through the alert, Esc: note where focus
+   lands (ACC-18).
+9. Control Centre: open it, Tab to Display, → ←: the brightness value is
+   spoken as it changes.
+10. Turn Orca off (⌘F5). Record anything that differs from this table as a
+    parity row.
+
 ## The central finding
 
 Nearly every shared control in `crates/rmac-ui/src/controls.rs` was built by

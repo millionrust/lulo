@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "system-monitor/tab-strip-arrows",
+  "platform": "Lulo local contract",
+  "observations": {
+    "cpu_tab": {"focus": {"role": "page-tab", "label": "CPU"}},
+    "memory_tab": {"focus": {"role": "page-tab", "label": "Memory"}, "windows": {"count": 1}},
+    "back_to_cpu": {"focus": {"role": "page-tab", "label": "CPU"}, "windows": {"count": 1}}
+  }
+}

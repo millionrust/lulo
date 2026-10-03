@@ -220,7 +220,7 @@ passing:
 | Gate | Why it would move | Beta 1 disclosure if moved |
 |---|---|---|
 | NVIDIA station repeat | No NVIDIA hardware in the station matrix | known-limitations.md: tested on Intel graphics only |
-| Formal Orca/I3 accessibility audit (journey 9) | Only the owner may enable Orca; the AT-SPI `EditableText` gap is upstream | known-limitations.md: screen-reader support is incomplete |
+| Formal Orca/I3 accessibility audit (journey 9) | **Kept in Beta 1 (owner, 2026-10-03)**: automated by `scripts/a11y/orca_audit.py`; the owner does only the final listen. The AT-SPI `EditableText` gap is upstream | known-limitations.md: screen-reader support is incomplete |
 | Security native-station evidence (24 of 80 checks) | Needs Beta stations that don't exist yet | The verifier keeps failing closed; the 56 checks that ran are reported |
 
 **The owner declined this proposal on 2026-10-03: all three stay Beta 1
@@ -366,7 +366,7 @@ mistake recurring.
 | No clipping at 200% | **Not yet run** (S) | `docs/accessibility-audit.md`: static read-through only, no rendered check at 200%. This pass separately confirmed (nested compositor only) that a compositor output scale of 2 doesn't collapse the AT-SPI tree — a Files window still exposed all 27 nodes with named items — but that isn't a visual-clipping check |
 | Usable high-contrast colours | **Pass** (token level) | Theme contrast-ratio tests pass; no shared component hardcodes a raw color |
 | Reduced motion from the Settings portal | **Pass** (plumbing) / **Not yet run** (exercised) | Portal → theme wiring is tested end to end, but no shared component currently animates anything, so the gate has nothing live to violate yet |
-| Verify every release journey with Orca | **Fail** | Orca itself has not been run against any journey (only the owner may enable it). Journeys 1–6 now have real, live or nested AT-SPI-tree evidence (see §1); 7 has live backend checks but no Settings-UI run; 8's Control-F2 gap is confirmed; 9 is Owner/manual |
+| Verify every release journey with Orca | **Fail** (automated) | 2026-10-03: `scripts/a11y/orca_audit.py` runs the real Orca in the private nested session over 13 app and shell journeys (results: `docs/accessibility-audit.md`, "Automated Orca run"; ACC-12–27). Five defects fixed, eleven open; the owner's ~10-step "Owner final listen" on the live desktop remains. Journeys 1–6 now have real, live or nested AT-SPI-tree evidence (see §1); 7 has live backend checks but no Settings-UI run; 8's Control-F2 gap is confirmed; 9 is Owner/manual |
 | Formal I3 accessibility-release audit (442 observations) | **Not yet run** | `docs/accessibility-release-audit.md` / `scripts/verify-accessibility-audit.py`; no evidence file committed |
 
 **This is the release-blocking category.** `todo.md` states accessibility

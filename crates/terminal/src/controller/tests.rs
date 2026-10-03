@@ -124,3 +124,33 @@ fn enhanced_keyboard_protocol_modes_follow_the_parsed_stack() {
     parser.advance(&mut term, b"\x1b[<u");
     assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
 }
+
+#[test]
+fn tab_and_shift_tab_reach_the_shell_inside_the_terminal() {
+    gpui::actions!(terminal_test, [WindowFocusNext, WindowFocusPrevious]);
+    let mut bindings = vec![
+        KeyBinding::new("tab", WindowFocusNext, Some("Root")),
+        KeyBinding::new("shift-tab", WindowFocusPrevious, Some("Root")),
+    ];
+    bindings.extend(super::input::shell_owned_key_bindings());
+    let keymap = gpui::Keymap::new(bindings);
+    let root = gpui::KeyContext::parse("Root").unwrap();
+    let terminal = gpui::KeyContext::parse("Terminal").unwrap();
+    for key in ["tab", "shift-tab"] {
+        let keystroke = gpui::Keystroke::parse(key).unwrap();
+        let (inside, pending) = keymap.bindings_for_input(
+            std::slice::from_ref(&keystroke),
+            &[root.clone(), terminal.clone()],
+        );
+        assert!(
+            inside.is_empty() && !pending,
+            "{key} must fall through to the grid"
+        );
+        let (outside, _) = keymap.bindings_for_input(&[keystroke], std::slice::from_ref(&root));
+        assert_eq!(
+            outside.len(),
+            1,
+            "{key} still moves focus outside the terminal"
+        );
+    }
+}

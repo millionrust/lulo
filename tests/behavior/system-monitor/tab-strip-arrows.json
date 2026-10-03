@@ -1,0 +1,15 @@
+{
+  "title": "Arrow keys on a focused toolbar tab switch tabs without quitting",
+  "app": "system-monitor",
+  "lulo_only": true,
+  "steps": [
+    {"key": "tab"},
+    {"key": "tab"},
+    {"observe": "cpu_tab", "facts": ["focus"]},
+    {"key": "right"},
+    {"observe": "memory_tab", "facts": ["focus", "windows"]},
+    {"key": "left"},
+    {"observe": "back_to_cpu", "facts": ["focus", "windows"]}
+  ],
+  "tolerance": {"*.focus.label": "exact"}
+}

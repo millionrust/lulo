@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "terminal/tab-stays-in-shell",
+  "platform": "Lulo local contract",
+  "observations": {
+    "after_tab": {"focus": {"role": "terminal", "label": "Terminal"}},
+    "after_shift_tab": {"focus": {"role": "terminal", "label": "Terminal"}}
+  }
+}

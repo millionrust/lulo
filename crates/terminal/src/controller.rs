@@ -59,7 +59,7 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use rmac_terminal::accessibility::TerminalAccessibilitySnapshot;
-use rmac_ui::{Button, InputEvent, InputState, SearchField};
+use rmac_ui::{AccessibleTextInput as _, Button, InputEvent, InputState, SearchField};
 #[cfg(test)]
 use vte::ansi::Processor;
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor};

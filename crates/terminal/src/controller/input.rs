@@ -2,6 +2,19 @@
 
 use super::*;
 
+/// Tab and Shift-Tab belong to the shell (completion, reverse completion),
+/// as in macOS Terminal. Without these the window root's Tab binding moved
+/// keyboard focus to the title-bar buttons, so Tab never reached the shell
+/// and focus never came back (found by scripts/a11y/orca_audit.py).
+/// `NoAction` in the deeper "Terminal" context disables that binding there,
+/// so the key falls through to the grid's own key handler and its encoder.
+pub(super) fn shell_owned_key_bindings() -> [KeyBinding; 2] {
+    [
+        KeyBinding::new("tab", gpui::NoAction, Some("Terminal")),
+        KeyBinding::new("shift-tab", gpui::NoAction, Some("Terminal")),
+    ]
+}
+
 /// A selected manual topic becomes one shell argument, even if it contains
 /// spaces or quotes. Control characters are never sent as command input.
 pub(super) fn man_command(selection: &str, search_index: bool) -> Option<String> {

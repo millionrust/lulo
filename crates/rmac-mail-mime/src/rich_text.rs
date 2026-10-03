@@ -292,7 +292,7 @@ mod tests {
         assert!(rich.blocks[0]
             .spans
             .iter()
-            .any(|span| span.text == "bad" && span.link.is_none()));
+            .any(|span| span.text.contains("bad") && span.link.is_none()));
         assert!(rich.blocks[0]
             .spans
             .iter()

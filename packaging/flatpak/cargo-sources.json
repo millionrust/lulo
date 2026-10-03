@@ -7173,19 +7173,6 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/rustls/rustls-0.23.41.crate",
-        "sha256": "6b92b125634d9b795e7beca796cc790df15a7fb38323bf3196fda83292d06b1f",
-        "dest": "cargo/vendor/rustls-0.23.41"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"6b92b125634d9b795e7beca796cc790df15a7fb38323bf3196fda83292d06b1f\", \"files\": {}}",
-        "dest": "cargo/vendor/rustls-0.23.41",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/rustls-native-certs/rustls-native-certs-0.8.4.crate",
         "sha256": "dab5152771c58876a2146916e53e35057e1a4dfa2b9df0f0305b07f611fdea4d",
         "dest": "cargo/vendor/rustls-native-certs-0.8.4"
@@ -7220,19 +7207,6 @@
         "type": "inline",
         "contents": "{\"package\": \"30a7197ae7eb376e574fe940d068c30fe0462554a3ddbe4eca7838e049c937a9\", \"files\": {}}",
         "dest": "cargo/vendor/rustls-pki-types-1.14.1",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/rustls-webpki/rustls-webpki-0.103.13.crate",
-        "sha256": "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e",
-        "dest": "cargo/vendor/rustls-webpki-0.103.13"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e\", \"files\": {}}",
-        "dest": "cargo/vendor/rustls-webpki-0.103.13",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -11462,6 +11436,32 @@
         "type": "inline",
         "contents": "{\"package\": \"4ec00bda90c6e645a54506c630c2820cd6b1890cfd2b0a169b50f74b2b8c7c86\", \"files\": {}}",
         "dest": "cargo/vendor/mail-parser-0.11.9",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/rustls/rustls-0.23.45.crate",
+        "sha256": "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634",
+        "dest": "cargo/vendor/rustls-0.23.45"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634\", \"files\": {}}",
+        "dest": "cargo/vendor/rustls-0.23.45",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/rustls-webpki/rustls-webpki-0.103.15.crate",
+        "sha256": "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2",
+        "dest": "cargo/vendor/rustls-webpki-0.103.15"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2\", \"files\": {}}",
+        "dest": "cargo/vendor/rustls-webpki-0.103.15",
         "dest-filename": ".cargo-checksum.json"
     },
     {

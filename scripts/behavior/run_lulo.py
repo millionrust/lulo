@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Play behaviour scenarios on Lulo inside a nested, headless compositor.
 
-    python3 scripts/behavior/run_lulo.py --bin-dir DIR [--shell-bin-dir DIR] [SCENARIO…]
+    python3 scripts/behavior/run_lulo.py --bin-dir DIR [--shell-bin-dir DIR] [--shard I/N] [SCENARIO…]
 
 Every scenario with a recorded <name>.mac.json or an explicitly Lulo-only
 <name>.lulo.json runs against the Lulo apps in
---bin-dir (rmac-files, rmac-text-editor, rmac-system-settings,
-rmac-calculator; the desktop is the shell's `wallpaper` binary). Results go
+--bin-dir (the desktop is the shell's `wallpaper` binary). Results go
 to --output (JSON) and a readable report goes to stdout; see compare.py.
 
 Isolation (docs/behavior-suite.md):
@@ -659,7 +658,8 @@ class LuloRun:
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
-                raise StepFailed(f"{command[0]} exited with {self.process.returncode}")
+                detail = Path(self.log.name).read_text(errors="replace")[-500:]
+                raise StepFailed(f"{command[0]} exited with {self.process.returncode}: {detail}")
             if self.app == "desktop":
                 if self.application() is not None:
                     break

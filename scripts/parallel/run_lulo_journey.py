@@ -594,7 +594,7 @@ def outer(args) -> int:
                 links = work / "bins"
                 links.mkdir()
                 for source in bins.iterdir():
-                    if source.is_file():
+                    if source.is_file() and source.name not in {"dock", "mission-control"}:
                         (links / source.name).symlink_to(source)
                 if args.override_bin_dir:
                     overrides = Path(args.override_bin_dir).expanduser().resolve()

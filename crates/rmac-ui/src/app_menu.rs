@@ -189,7 +189,7 @@ fn current_menus(cx: &mut App) -> Vec<Menu> {
     if let Some(prefix) = rmac_app_menu::recent_documents_prefix(app_id) {
         rmac_app_menu::recent::refresh(&mut menus, prefix, || {
             rmac_recent_documents::Store::from_environment()
-                .and_then(|store| store.load_for_app(prefix))
+                .and_then(|store| store.load_for_app(app_id))
                 .unwrap_or_default()
         });
     }

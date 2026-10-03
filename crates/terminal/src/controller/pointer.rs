@@ -32,7 +32,7 @@ impl TerminalView {
     }
 
     pub(super) fn terminal_content_top(&self) -> f32 {
-        terminal_content_top(self.tabs.len())
+        terminal_content_top(self.tab_bar_visible())
     }
 
     fn pos_to_viewport_cell(&self, position: Point<Pixels>) -> (usize, usize) {

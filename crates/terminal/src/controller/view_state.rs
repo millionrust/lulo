@@ -3,6 +3,15 @@
 use super::*;
 
 impl TerminalView {
+    pub(super) fn tab_bar_visible(&self) -> bool {
+        self.show_tab_bar.unwrap_or(self.tabs.len() > 1)
+    }
+
+    pub(super) fn toggle_tab_bar(&mut self, cx: &mut Context<Self>) {
+        self.show_tab_bar = Some(!self.tab_bar_visible());
+        cx.notify();
+    }
+
     pub(super) fn active_cursor_viewport_cell(&self) -> Option<(usize, usize)> {
         let term = self.tabs[self.active].term.lock().ok()?;
         let grid = term.grid();

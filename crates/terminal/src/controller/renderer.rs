@@ -48,7 +48,10 @@ impl Render for TerminalView {
                 .is_some_and(|text| super::input::man_command(text, false).is_some());
             rmac_ui::set_menu_enabled("terminal::Copy", has_selection, cx);
             rmac_ui::set_menu_checked("terminal::ToggleOptionAsMeta", self.option_as_meta, cx);
+            rmac_ui::set_menu_checked("terminal::ShowTabBar", self.tab_bar_visible(), cx);
             rmac_ui::set_menu_enabled("terminal::CopyPlainText", has_selection, cx);
+            rmac_ui::set_menu_checked("terminal::CopyStylePlainText", true, cx);
+            rmac_ui::set_menu_enabled("terminal::CopyStyleHeading", false, cx);
             rmac_ui::set_menu_enabled("terminal::CopyWithoutBackgroundColour", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::OpenManPageForSelection", has_man_topic, cx);
             rmac_ui::set_menu_enabled(
@@ -134,7 +137,7 @@ impl Render for TerminalView {
             window.set_window_title(&native_window_title);
             self.native_window_title = native_window_title;
         }
-        let multi = self.tabs.len() > 1;
+        let show_tab_bar = self.tab_bar_visible();
         let operation_error_visible = self.operation_error.is_some();
         let terminal_error = self
             .operation_error
@@ -174,6 +177,7 @@ impl Render for TerminalView {
                 this.request_close_window(window, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
+            .on_action(cx.listener(|this, _: &ShowTabBar, _, cx| this.toggle_tab_bar(cx)))
             .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| window.toggle_fullscreen()))
             .on_action(cx.listener(|this, _: &SelectToPreviousMark, _, cx| {
                 this.select_to_mark(PromptDirection::Previous, false, cx)
@@ -190,7 +194,7 @@ impl Render for TerminalView {
             .child(rmac_ui::title_bar_content(
                 self.render_title(active_title, layout.title_max_width),
             ))
-            .when(multi, |terminal: Div| {
+            .when(show_tab_bar, |terminal: Div| {
                 terminal.child(self.render_tabs(layout.tab_title_max_width, cx))
             })
             .child(self.render_terminal_body(rows, ime_preedit, window.is_a11y_active(), cx))

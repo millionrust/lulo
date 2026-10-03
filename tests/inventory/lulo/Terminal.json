@@ -318,9 +318,9 @@
           "separator_before": false,
           "children": [
             {
-              "label": "Plain Text",
+              "label": "Copy Plain Text",
               "action": "terminal::CopyPlainText",
-              "shortcut": "",
+              "shortcut": "⌥⇧⌘C",
               "separator_before": false,
               "children": []
             },
@@ -328,6 +328,20 @@
               "label": "Copy Without Background Colour",
               "action": "terminal::CopyWithoutBackgroundColour",
               "shortcut": "⌃⇧⌘C",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Style for “Copy” Command",
+              "action": "terminal::CopyStyleHeading",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Plain Text",
+              "action": "terminal::CopyStylePlainText",
+              "shortcut": "",
               "separator_before": false,
               "children": []
             }
@@ -615,9 +629,9 @@
           "children": []
         },
         {
-          "label": "Next Profile",
-          "action": "terminal::CycleProfile",
-          "shortcut": "⇧⌘P",
+          "label": "Show Tab Bar",
+          "action": "terminal::ShowTabBar",
+          "shortcut": "⇧⌘T",
           "separator_before": true,
           "children": []
         },

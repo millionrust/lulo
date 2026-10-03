@@ -101,6 +101,7 @@ gpui::actions!(
     [
         Copy,
         CopyPlainText,
+        CopyStylePlainText,
         CopyWithoutBackgroundColour,
         OpenManPageForSelection,
         SearchManPageIndexForSelection,
@@ -145,6 +146,7 @@ gpui::actions!(
         NextTab,
         PrevTab,
         CycleProfile,
+        ShowTabBar,
         EnterFullScreen,
         ShowProfiles,
         ResetTerminal,
@@ -251,8 +253,8 @@ fn open_window_with_profile(name: &str, cx: &mut gpui::App) {
     rmac_ui::open_another_window(vec![format!("--profile={}", profile_named(name))], cx);
 }
 
-fn terminal_content_top(tab_count: usize) -> f32 {
-    TITLE_BAR_HEIGHT + if tab_count > 1 { TAB_BAR_HEIGHT } else { 0.0 } + PAD_TOP
+fn terminal_content_top(show_tab_bar: bool) -> f32 {
+    TITLE_BAR_HEIGHT + if show_tab_bar { TAB_BAR_HEIGHT } else { 0.0 } + PAD_TOP
 }
 
 fn focus_report(mode: TermMode, focused: bool) -> Option<&'static [u8]> {
@@ -331,6 +333,9 @@ pub(super) struct TerminalView {
     profile: usize,
     /// Color profile for each tab, in the same order as `tabs`.
     tab_profiles: Vec<usize>,
+    /// A menu override for automatic tab-strip visibility (normally shown
+    /// when there are multiple tabs).
+    show_tab_bar: Option<bool>,
     /// Whether the profile picker dropdown is open.
     picker_open: bool,
     /// Whether ⌥ sends Meta (an Escape prefix) instead of typing the

@@ -406,7 +406,6 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                     item!("Smaller", "text_editor::DecreaseFont", "⌘-"),
                 ]
             ),
-            item!("Monospaced", "text_editor::ToggleMono", "⇧⌘M", separator),
             item!("Wrap to Page", "text_editor::ToggleWrapToPage", "⇧⌘W"),
         ],
     },
@@ -496,12 +495,14 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 "Copy Special",
                 "terminal::CopySpecialMenu",
                 [
-                    item!("Plain Text", "terminal::CopyPlainText", ""),
+                    item!("Copy Plain Text", "terminal::CopyPlainText", "⌥⇧⌘C"),
                     item!(
                         "Copy Without Background Colour",
                         "terminal::CopyWithoutBackgroundColour",
                         "⌃⇧⌘C"
                     ),
+                    item!("Style for “Copy” Command", "terminal::CopyStyleHeading", ""),
+                    item!("Plain Text", "terminal::CopyStylePlainText", ""),
                 ]
             ),
             item!("Paste", "terminal::Paste", "⌘V"),
@@ -598,7 +599,7 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             item!("Default Font Size", "terminal::ZoomReset", "⌘0"),
             item!("Bigger", "terminal::ZoomIn", "⌘+"),
             item!("Smaller", "terminal::ZoomOut", "⌘-"),
-            item!("Next Profile", "terminal::CycleProfile", "⇧⌘P", separator),
+            item!("Show Tab Bar", "terminal::ShowTabBar", "⇧⌘T", separator),
             item!(
                 "Enter Full Screen",
                 "terminal::EnterFullScreen",

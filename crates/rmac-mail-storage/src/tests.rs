@@ -55,7 +55,12 @@ impl Drop for Fixture {
 fn sync_cursor_unread_and_pending_local_flags_survive_reopen() {
     let mut fixture = Fixture::new();
     let id = fixture.insert(7, "Unread", None);
-    assert_eq!(fixture.store.unread_inbox_count().unwrap(), 1);
+    fixture.insert(9, "Second", None);
+    assert_eq!(
+        fixture.store.cached_uids(fixture.inbox).unwrap(),
+        vec![7, 9]
+    );
+    assert_eq!(fixture.store.unread_inbox_count().unwrap(), 2);
     fixture
         .store
         .set_mailbox_modseq(fixture.inbox, 123)
@@ -69,7 +74,7 @@ fn sync_cursor_unread_and_pending_local_flags_survive_reopen() {
         fixture.store.get_message(id).unwrap().unwrap().flags,
         FLAG_SEEN
     );
-    assert_eq!(fixture.store.unread_inbox_count().unwrap(), 0);
+    assert_eq!(fixture.store.unread_inbox_count().unwrap(), 1);
     let reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
     assert_eq!(
         reopened.mailbox("INBOX").unwrap().unwrap().highest_modseq,

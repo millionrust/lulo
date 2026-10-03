@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -200,6 +201,12 @@ impl ImapBackend {
                     if let Some(trash) = &self.trash {
                         self.client.move_uids(&uid.to_string(), trash)?;
                     } else {
+                        if !self.client.capabilities().has("UIDPLUS") {
+                            return Err(rmac_mail_imap::Error::Unsupported(
+                                "IMAP server cannot safely expunge one message",
+                            )
+                            .into());
+                        }
                         self.client.mark_deleted(uid)?;
                         self.client.expunge_uids(&uid.to_string())?;
                     }
@@ -243,11 +250,23 @@ impl ImapBackend {
                 store.remove_server_uid(mailbox_id, uid)?;
             }
         }
-        let changes = self.client.fetch_changes(
+        let qresync = self.client.capabilities().has("QRESYNC");
+        let changes = self.client.fetch_changes(if qresync {
             previous
                 .as_ref()
-                .and_then(|old| (old.highest_modseq > 0).then_some(old.highest_modseq as u64)),
-        )?;
+                .and_then(|old| (old.highest_modseq > 0).then_some(old.highest_modseq as u64))
+        } else {
+            None
+        })?;
+        if !qresync {
+            let present: HashSet<i64> =
+                changes.iter().map(|change| i64::from(change.uid)).collect();
+            for uid in store.cached_uids(mailbox_id)? {
+                if !present.contains(&uid) {
+                    store.remove_server_uid(mailbox_id, uid)?;
+                }
+            }
+        }
         let mut new_mail = Vec::new();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)

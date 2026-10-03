@@ -410,6 +410,15 @@ impl MailStorage {
         ).optional().map_err(Error::from)
     }
 
+    pub fn cached_uids(&self, mailbox_id: i64) -> Result<Vec<i64>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT uid FROM messages WHERE mailbox_id=?1 ORDER BY uid")?;
+        let rows = statement.query_map([mailbox_id], |row| row.get(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
+    }
+
     pub fn set_server_flags(&mut self, mailbox_id: i64, uid: i64, flags: i64) -> Result<()> {
         self.connection.execute(
             "UPDATE messages SET flags=?1 WHERE mailbox_id=?2 AND uid=?3 AND NOT EXISTS (SELECT 1 FROM changes WHERE message_id=messages.id)",

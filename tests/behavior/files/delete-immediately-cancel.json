@@ -1,0 +1,18 @@
+{
+  "title": "Cancelling Delete Immediately returns focus to the Files list",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"report.txt": "Keep this file.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-alt-backspace", "settle": 1.0},
+    {"observe": "asked", "facts": ["dialog"]},
+    {"key": "escape"},
+    {"observe": "cancelled_escape", "facts": ["dialog", "files", "focus"]},
+    {"key": "cmd-alt-backspace", "settle": 1.0},
+    {"observe": "reopened", "facts": ["dialog"]},
+    {"select": "Cancel"},
+    {"observe": "cancelled_button", "facts": ["dialog", "files", "focus"]}
+  ]
+}

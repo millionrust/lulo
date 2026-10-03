@@ -53,10 +53,8 @@ Shift-Tabs. Push buttons are never activated.
     # evidence: tests/accessibility/orca-run.json (default --output)
 
 Baseline run, build `fcafa5e4` (before this branch's fixes): 13 journeys,
-72 flags. Evidence: `tests/accessibility/orca-run.json`. The post-fix rerun
-was queued but did not get the journey lock before the time box; the fixes
-below are verified by unit tests and `clippy -D warnings`, not yet by a
-second Orca run.
+72 flags. Evidence: `tests/accessibility/orca-run.json`. This table preserves
+that baseline; the focused rerun below records the branch fixes.
 
 | Surface | What Orca heard | Defects (flags) | Rows |
 |---|---|---|---|
@@ -74,9 +72,39 @@ second Orca run.
 | Control Centre | "Control Centre", every control, slider value | opens silent on the panel; Escape leaves no focus (nested session has no app behind) (6) | ACC-27 |
 | Notification Centre | "Notification Center" | empty in the nested run, Tab stays on the panel; Escape leaves no focus (2) | ACC-27 |
 
-✔ = fixed on this branch (pending the post-fix Orca rerun). Flags that are
+✔ = fixed on this branch. Flags that are
 timing artefacts of the nested run (a few `silent-focus` where Orca spoke on
 the next key) are kept in the evidence but not counted as defects.
+
+### Focused post-fix rerun
+
+The laptop rerun at `37681958` used
+`scripts/a11y/orca_audit.py calculator system-monitor spotlight control-centre notification-centre`
+with freshly built binaries. Its JSON evidence is
+`/tmp/orca-cx-a11y-final.json` on the reference laptop. Calculator spoke a
+changing input value during `12+3`, then `15` on Return and `0` on Escape.
+Spotlight spoke the highlighted result on each of ↓, ↓, ↑: `Apps, Application
+Launcher`, `Menu Bar, Status items, battery percentage, and clock seconds`,
+then `Apps, Application Launcher`. A second System Monitor Orca run at
+`9b94a2e0` measured zero accessible-name events over 15 seconds without
+input (`/tmp/orca-cx-a11y-monitor-idle.json`), and zero during its three
+process-arrow samples. The six events in its Tab cycle were tied to two
+toolbar-tab switches, rather than process rows.
+`calculator/display-announcements` and `system-monitor/tab-strip-arrows` both
+passed in the nested behavior runner. System Monitor still starts focused on
+the frame, with its table outside the Tab cycle (ACC-28). Spotlight still
+loses focus after Escape.
+
+After the panel focus fix at `030faff9`, a private Orca rerun with a Calculator
+button focused behind each panel (`/tmp/orca-cx-a11y-panels-control-focus.json`)
+heard `Wi-Fi details button` when Control Centre opened and returned to
+Calculator's `Close window` button on Escape. Notification Centre opened on
+its panel and returned to Calculator's `Minimize` button on Escape. Its empty
+panel still traps Tab (ACC-29). The panel interaction probe saw 13 accessible
+Control Centre nodes, five Wi-Fi detail nodes, and four Notification Centre
+nodes; its repeated dismissal checks returned inconsistent `closed` values,
+so the focus and Escape result above uses the Orca journey's direct AT-SPI
+observations.
 
 ## Owner final listen
 

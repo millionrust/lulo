@@ -74,6 +74,7 @@ pub struct Snapshot {
 pub trait EventSink: Send + Sync + 'static {
     fn snapshot(&self, value: Snapshot);
     fn new_mail(&self, value: NewMail);
+    fn failure(&self, _account: Uuid, _error: &Error) {}
 }
 
 /// MAIL-9 supplies the Graph implementation through this boundary. Graph
@@ -269,8 +270,12 @@ fn run_worker(
     interrupt: Arc<Mutex<Option<rmac_mail_imap::Interrupt>>>,
     mut online: bool,
 ) {
-    let Ok(mut store) = MailStorage::open(&root, account.id) else {
-        return;
+    let mut store = match MailStorage::open(&root, account.id) {
+        Ok(store) => store,
+        Err(error) => {
+            sink.failure(account.id, &Error::Storage(error));
+            return;
+        }
     };
     let mut backoff = Duration::from_secs(1);
     loop {
@@ -291,6 +296,7 @@ fn run_worker(
             *interrupt.lock().expect("mail interrupt lock poisoned") = backend.interrupt();
             let result = backend.sync(&mut store, account.id);
             if let Ok(messages) = &result {
+                backoff = Duration::from_secs(1);
                 for message in messages {
                     sink.new_mail(message.clone());
                 }
@@ -317,6 +323,22 @@ fn run_worker(
             result.map(|_| ())
         });
         *interrupt.lock().expect("mail interrupt lock poisoned") = None;
+        match receiver.try_recv() {
+            Ok(Command::Online(value)) => {
+                online = value;
+                backoff = Duration::from_secs(1);
+                continue;
+            }
+            Ok(Command::Sync) => {
+                backoff = Duration::from_secs(1);
+                continue;
+            }
+            Ok(Command::Stop) | Err(mpsc::TryRecvError::Disconnected) => break,
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
+        if let Err(error) = &result {
+            sink.failure(account.id, error);
+        }
         if result.is_ok() && matches!(&account.transport, Transport::Graph) {
             backoff = Duration::from_secs(1);
             match receiver.recv_timeout(GRAPH_REFRESH) {

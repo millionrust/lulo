@@ -136,6 +136,7 @@ pub fn watch_connectivity(runtime: Arc<Runtime>) -> thread::JoinHandle<()> {
 pub enum UiEvent {
     Snapshot(Snapshot),
     NewMail(NewMail),
+    Failure { account: Uuid, message: String },
 }
 
 /// Posts to the same freedesktop service owned by Lulo Notification Centre.
@@ -155,6 +156,14 @@ impl DesktopSink {
 }
 
 impl EventSink for DesktopSink {
+    fn failure(&self, account: Uuid, error: &Error) {
+        if let Some(ui) = &self.ui {
+            let _ = ui.send(UiEvent::Failure {
+                account,
+                message: error.to_string(),
+            });
+        }
+    }
     fn snapshot(&self, value: Snapshot) {
         let count = {
             let mut unread = self.unread.lock().expect("mail unread lock poisoned");

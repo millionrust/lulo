@@ -79,6 +79,40 @@ fn sync_cursor_unread_and_pending_local_flags_survive_reopen() {
 }
 
 #[test]
+fn existing_v2_cache_adds_cursor_without_losing_messages() {
+    let mut fixture = Fixture::new();
+    fixture.insert(11, "Keep me", None);
+    let path = fixture
+        .root
+        .join(fixture.account.to_string())
+        .join("index.sqlite3");
+    fixture
+        .store
+        .connection
+        .execute_batch("ALTER TABLE mailboxes DROP COLUMN highest_modseq; PRAGMA user_version=2;")
+        .unwrap();
+    let reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
+    assert_eq!(
+        reopened.mailbox("INBOX").unwrap().unwrap().highest_modseq,
+        0
+    );
+    assert_eq!(
+        reopened
+            .message_by_uid(fixture.inbox, 11)
+            .unwrap()
+            .unwrap()
+            .subject,
+        "Keep me"
+    );
+    let db = Connection::open(path).unwrap();
+    assert_eq!(
+        db.pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
+            .unwrap(),
+        3
+    );
+}
+
+#[test]
 fn migration_is_idempotent_and_rejects_future_schema() {
     let fixture = Fixture::new();
     let path = fixture

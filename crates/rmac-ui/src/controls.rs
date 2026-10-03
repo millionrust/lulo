@@ -2431,11 +2431,14 @@ impl RenderOnce for TreeRow {
 }
 
 /// rmac-owned boundary for the virtualized table implementation.
+type AccessibilityRowKey<D> = Rc<dyn Fn(&D, usize) -> u64>;
+type AccessibilityRowName<D> = Rc<dyn Fn(&D, usize) -> SharedString>;
+
 #[derive(IntoElement)]
 pub struct Table<D: TableDelegate> {
     state: Entity<TableState<D>>,
-    accessibility_row_key: Option<Rc<dyn Fn(&D, usize) -> u64>>,
-    accessibility_row_name: Option<Rc<dyn Fn(&D, usize) -> SharedString>>,
+    accessibility_row_key: Option<AccessibilityRowKey<D>>,
+    accessibility_row_name: Option<AccessibilityRowName<D>>,
     striped: bool,
     bordered: bool,
     vertical_scrollbar: bool,

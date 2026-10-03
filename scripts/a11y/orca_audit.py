@@ -184,12 +184,12 @@ SHELL_JOURNEYS: list[dict[str, Any]] = [
     },
     {
         "id": "control-centre", "title": "Control Centre", "open": "quick-settings",
-        "resident": "rmac-quick-settings", "cycle": True,
+        "resident": "rmac-quick-settings", "background": "rmac-calculator", "cycle": True,
         "steps": [("escape", None, "close Control Centre")],
     },
     {
         "id": "notification-centre", "title": "Notification Centre", "open": "notification-center",
-        "resident": "rmac-notification-center-panel",
+        "resident": "rmac-notification-center-panel", "background": "rmac-calculator",
         "steps": [("tab", None, "next control"), ("tab", None, "next control"), ("tab", None, "next control"),
                   ("escape", None, "close Notification Centre")],
     },
@@ -341,6 +341,7 @@ class Orca:
 
 
 EVENT_TYPES = (
+    "object:property-change:accessible-name",
     "object:state-changed:focused", "object:state-changed:checked", "object:state-changed:expanded",
     "object:state-changed:selected", "object:state-changed:pressed", "object:property-change:accessible-value",
     "object:value-changed", "object:selection-changed", "object:text-changed", "object:active-descendant-changed",
@@ -573,6 +574,8 @@ class Audit:
         step: dict[str, Any] = {
             "key": chord, "note": note, "expect": expect, "focus": after, "via": via,
             "heard": checks.describe(after), "speech": speech, "events": sorted(set(self.tracker.events)),
+            "name_events": sum(event.startswith("object:property-change:accessible-name")
+                               for event in self.tracker.events),
         }
         flags = []
         if expect is not None or chord in {"tab", "shift-tab"} or (before or {}).get("key") != (after or {}).get("key"):
@@ -834,6 +837,12 @@ class Audit:
                 previous = steps[-1]["focus"] if steps else None
             for chord, expect, note in journey["steps"]:
                 step = self.press(chord, expect, note, previous)
+                if chord == "escape" and journey.get("background"):
+                    focused_app = (step.get("focus") or {}).get("app")
+                    if focused_app != journey["background"]:
+                        step["flags"].append(checks.flag(
+                            "focus-lost", f"Escape returned focus to {focused_app!r}, not "
+                            f"{journey['background']!r}"))
                 steps.append(step)
                 previous = step["focus"]
         except (StepFailed, wlinput.InjectorError) as error:
@@ -944,6 +953,8 @@ def inner(args: argparse.Namespace) -> int:
             audit.frames_provider = None
             for journey in shell_journeys:
                 print(f"== {journey['title']}", flush=True)
+                if journey.get("background"):
+                    shell.resident(journey["background"])
                 if journey.get("resident"):
                     try:
                         shell.resident(journey["resident"])

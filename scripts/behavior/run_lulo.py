@@ -251,8 +251,13 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         (work / "logs").mkdir(exist_ok=True)
         with open(work / "logs" / "session.log", "w") as log:
             status = subprocess.call(command, env=env, close_fds=True, stderr=log)
-        if status not in (0, 1):
-            print((work / "logs" / "session.log").read_text()[-3000:], file=sys.stderr)
+        if status != 0 and (not args.output or not Path(args.output).exists()):
+            # An early Sway/D-Bus/AT-SPI exit otherwise leaves an empty CI
+            # runner log and no result JSON to explain the missing shard.
+            for name in ("session.log", "sway.log"):
+                log = work / "logs" / name
+                if log.exists():
+                    print(f"{name}:\n{log.read_text(errors='replace')[-3000:]}", file=sys.stderr)
         return status
     finally:
         if reap(work / "runtime"):

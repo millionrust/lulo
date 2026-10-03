@@ -42,7 +42,10 @@ screenshots are uploaded, together with result JSON and logs.
 
 Ubuntu 26.04 does not package niri in its archive (the project's
 `packaging/third-party/niri/debian/control` records this). The nested niri
-jobs currently install the Resolute package from `ppa:avengemedia/danklinux`.
+jobs download and checksum-pin the Resolute `26.04ppa3` package from
+`ppa:avengemedia/danklinux`, then extract its compositor binary into the
+job's temporary directory. The PPA package is no longer in its current apt
+index, so an `apt install niri` cannot be used.
 It lacks Lulo's minimize-request patch, so shell journeys that exercise that
 patch may report a known compositor difference until CI uses Lulo's package.
 Orca is not installed or started by this workflow.

@@ -754,7 +754,7 @@ similar — no plan, not tracked as rows here).
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| CI-01 | P1 | M | Partial (runtime summary non-blocking) | The old CI behavior job built five apps and ran every scenario serially, leaving Clock, Notes, Preview, Terminal, Weather, System Monitor and other recorded cases without a binary. The new runtime workflow builds all root and shell binaries once, plays all recorded scenarios in eight private shards, and runs three nested shell checks plus ten everyday journeys in parallel. Its merger detects missing results and regressions. Promotion to a blocking gate waits for two complete green runs and a CI source for Lulo's patched niri; the Ubuntu archive lacks niri and the temporary PPA build omits the minimize-request patch. | `.github/workflows/runtime.yml`, `scripts/behavior/{run_lulo,runtime_ci}.py`, `docs/ci.md` |
+| CI-01 | P1 | M | Partial (runtime summary non-blocking) | The old CI behavior job built five apps and ran every scenario serially, leaving Clock, Notes, Preview, Terminal, Weather, System Monitor and other recorded cases without a binary. The new runtime workflow builds all root and shell binaries once, plays all recorded scenarios in eight private shards, and runs three nested shell checks plus ten everyday journeys in parallel. Its merger detects missing results and regressions. Promotion to a blocking gate waits for two complete green runs and a CI source for Lulo's patched niri; the Ubuntu archive lacks niri and the checksum-pinned PPA build omits the minimize-request patch. | `.github/workflows/runtime.yml`, `scripts/behavior/{run_lulo,runtime_ci}.py`, `docs/ci.md` |
 
 ## Coverage
 

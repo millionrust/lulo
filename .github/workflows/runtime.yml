@@ -115,16 +115,25 @@ jobs:
         with:
           name: lulo-binaries
           path: runtime-bin
-      - name: Install private Wayland runtime and niri
+      - name: Install private Wayland runtime and pinned niri
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends software-properties-common
-          sudo add-apt-repository --yes ppa:avengemedia/danklinux
-          sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            at-spi2-core dbus foot gir1.2-gtk-3.0 grim libglib2.0-bin mesa-vulkan-drivers \
-            niri python3-dbus python3-gi python3-pil python3-pyatspi \
-            sway xdg-desktop-portal
+            at-spi2-core curl dbus foot gir1.2-gtk-3.0 grim libdisplay-info3 \
+            libgbm1 libglib2.0-bin libinput10 libpango-1.0-0 \
+            libpangocairo-1.0-0 libpipewire-0.3-0t64 libseat1 \
+            mesa-vulkan-drivers python3-dbus python3-gi python3-pil \
+            python3-pyatspi sway xdg-desktop-portal
+          curl --fail --silent --show-error --location --retry 3 \
+            https://ppa.launchpadcontent.net/avengemedia/danklinux/ubuntu/pool/main/n/niri/niri_26.04ppa3_amd64.deb \
+            --output "$RUNNER_TEMP/niri.deb"
+          printf '%s  %s\n' \
+            f44c5b1c9cb8838c538618caccbbed5a5173ba04569983beae61c59ec0e38cb0 \
+            "$RUNNER_TEMP/niri.deb" | sha256sum --check
+          dpkg-deb --extract "$RUNNER_TEMP/niri.deb" "$RUNNER_TEMP/niri-package"
+          ldd "$RUNNER_TEMP/niri-package/usr/bin/niri" | tee "$RUNNER_TEMP/niri-libs.txt"
+          ! grep -q 'not found' "$RUNNER_TEMP/niri-libs.txt"
+          test ! -e /usr/bin/orca
       - name: Run private nested compositor check
         env:
           SUITE: ${{ matrix.suite }}
@@ -132,13 +141,14 @@ jobs:
           chmod +x runtime-bin/*
           python3 scripts/behavior/runtime_ci.py prepare runtime-bin
           result="$RUNNER_TEMP/runtime-results/$SUITE"
+          niri="$RUNNER_TEMP/niri-package/usr/bin/niri"
           mkdir -p "$result"
           set +e
           case "$SUITE" in
-            menu-dismiss) /usr/bin/python3 scripts/behavior/run_menu_dismiss.py --bin-dir runtime-bin ;;
-            power-dialogs) /usr/bin/python3 scripts/behavior/run_power_dialogs.py --bin-dir runtime-bin --capture-dir "$result/screenshots" ;;
-            window-move) /usr/bin/python3 scripts/behavior/run_window_move.py --bin-dir runtime-bin ;;
-            *) /usr/bin/python3 scripts/parallel/run_lulo_journey.py --bin-dir runtime-bin --output "$result/screenshots" "$SUITE" ;;
+            menu-dismiss) /usr/bin/python3 scripts/behavior/run_menu_dismiss.py --niri "$niri" --bin-dir runtime-bin ;;
+            power-dialogs) /usr/bin/python3 scripts/behavior/run_power_dialogs.py --niri "$niri" --bin-dir runtime-bin --capture-dir "$result/screenshots" ;;
+            window-move) /usr/bin/python3 scripts/behavior/run_window_move.py --niri "$niri" --bin-dir runtime-bin ;;
+            *) /usr/bin/python3 scripts/parallel/run_lulo_journey.py --niri "$niri" --bin-dir runtime-bin --output "$result/screenshots" "$SUITE" ;;
           esac > "$result/runner.log" 2>&1
           status=$?
           set -e

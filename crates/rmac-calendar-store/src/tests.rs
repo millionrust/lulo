@@ -97,6 +97,36 @@ fn count_applies_before_window_filter() {
 }
 
 #[test]
+fn daily_interval_count_property() {
+    let start = utc("2025-01-01T09:00:00Z");
+    for interval in 1..=7 {
+        for count in 1..=20 {
+            let rule = format!("DTSTART:20250101T090000Z\r\nDTEND:20250101T100000Z\r\nRRULE:FREQ=DAILY;INTERVAL={interval};COUNT={count}");
+            let calendar = fixture(&rule);
+            let found = expand(
+                &calendar,
+                utc("2025-01-01T00:00:00Z"),
+                utc("2025-07-01T00:00:00Z"),
+                chrono_tz::UTC,
+                100,
+            )
+            .unwrap();
+            assert_eq!(found.len(), count as usize);
+            for (index, occurrence) in found.iter().enumerate() {
+                assert_eq!(
+                    occurrence.start,
+                    start + chrono::Duration::days((index as i64) * interval)
+                );
+                assert_eq!(
+                    occurrence.end - occurrence.start,
+                    chrono::Duration::hours(1)
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn exdate_and_rdate_form_a_set() {
     let result = occurrences("DTSTART:20250101T090000Z\r\nDTEND:20250101T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEXDATE:20250102T090000Z\r\nRDATE:20250104T090000Z,20250104T090000Z", "2025-01-01T00:00:00Z", "2025-01-05T00:00:00Z");
     let days: Vec<_> = result.iter().map(|event| event.start.day()).collect();
@@ -228,6 +258,18 @@ fn parse_serialise_round_trip_folded_unicode_and_alarm() {
 }
 
 #[test]
+fn serialization_folds_utf8_without_splitting_codepoints() {
+    let mut calendar = fixture("DTSTART:20250101T090000Z\r\nDTEND:20250101T100000Z");
+    calendar.events[0].summary = "Crème café 日本語 ".repeat(12);
+    let saved = calendar.to_ical();
+    assert!(saved.contains("\r\n "));
+    assert!(saved
+        .lines()
+        .all(|line| line.trim_end_matches('\r').len() <= 75));
+    assert_eq!(Calendar::parse(&saved).unwrap(), calendar);
+}
+
+#[test]
 fn invalid_external_data_returns_errors() {
     for source in [
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nEND:VEVENT\r\nEND:VCALENDAR",
@@ -258,6 +300,15 @@ fn spring_gap_uses_pre_transition_offset() {
 }
 
 #[test]
+fn fall_ambiguous_time_uses_first_occurrence() {
+    let calendar = fixture("DTSTART;TZID=America/New_York:20251102T013000\r\nDTEND;TZID=America/New_York:20251102T023000");
+    assert_eq!(
+        calendar.events[0].start.resolve(chrono_tz::UTC).unwrap(),
+        utc("2025-11-02T05:30:00Z")
+    );
+}
+
+#[test]
 fn occurrence_limit_reports_error() {
     let calendar =
         fixture("DTSTART:20250101T090000Z\r\nDTEND:20250101T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3");
@@ -267,6 +318,20 @@ fn occurrence_limit_reports_error() {
         utc("2025-01-05T00:00:00Z"),
         chrono_tz::UTC,
         2
+    )
+    .is_err());
+}
+
+#[test]
+fn malformed_rrule_returns_error() {
+    let calendar =
+        fixture("DTSTART:20250101T090000Z\r\nDTEND:20250101T100000Z\r\nRRULE:FREQ=GLORP");
+    assert!(expand(
+        &calendar,
+        utc("2025-01-01T00:00:00Z"),
+        utc("2025-01-05T00:00:00Z"),
+        chrono_tz::UTC,
+        10
     )
     .is_err());
 }

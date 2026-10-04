@@ -61,7 +61,7 @@ older confirmation.
 The real `UpdatePackages` call retains `ONLY_TRUSTED`. The pane's download
 adds `ONLY_DOWNLOAD` and no interactive hint, since it needs no
 authorization; the adapter's online install still sets the interactive hint,
-but Lulo OS runs no polkit agent (see "Authorization"). rmac does not collect
+and `rmac-polkit-agent` asks for the password (see "Authorization"). rmac does not collect
 or store administrator credentials. Authorization denial or
 cancellation, signing failures, untrusted packages, licences, required media,
 package-database changes, low disk space, backend errors, and timeouts become
@@ -339,10 +339,10 @@ update" (BAR-06).
 Measured on the reference PC (Ubuntu 26.04, polkit 127, PackageKit 1.3.4)
 on 2026-09-25:
 
-- **No polkit authentication agent runs in a Lulo OS session.** Only
-  `polkitd` is running; nothing registers
-  `org.freedesktop.PolicyKit1.AuthenticationAgent`. Any action that returns
-  `auth_admin` or `auth_admin_keep` is therefore refused, not prompted.
+- **No polkit authentication agent ran in a Lulo OS session** at the time:
+  only `polkitd`, so any action that returned `auth_admin` or
+  `auth_admin_keep` was refused, not prompted. `rmac-polkit-agent` now
+  answers them (below).
 - **PackageKit's implicit policy** (`pkaction --verbose`):
   `org.freedesktop.packagekit.system-update` is `auth_admin_keep` for the
   active session, `trigger-offline-update` is `yes` for active and inactive
@@ -377,56 +377,61 @@ Ubuntu's own policy (`trigger-offline-update` is `yes`); Lulo OS adds no
 polkit rule. The packages still pass `ONLY_TRUSTED`, so only packages the
 configured archives signed can be installed.
 
-### An authentication agent: the next step (not built)
+### The authentication agent (`rmac-polkit-agent`, SWU-07)
 
-Other privileged actions still have no password prompt in Lulo OS:
-`package-install` (installing a package file), CUPS administration outside
-`lpadmin`, `pkexec`, udisks actions for non-administrators, and more
-(SWU-07). The design for a minimal Mac-style agent, `rmac-polkit-agent`:
+Other privileged actions (installing a package file, CUPS administration
+outside `lpadmin`, `pkexec`, udisks for non-administrators, Users & Groups,
+Sharing) need an administrator's password. `rmac-polkit-agent`
+(`crates/rmac-polkit-agent`) asks for it the way macOS does:
 
-- **Registration.** A session user service
-  (`rmac-polkit-agent.service`, `PartOf=rmac-session.target`) calls
-  `org.freedesktop.PolicyKit1.Authority.RegisterAuthenticationAgentWithOptions`
-  for the `unix-session` subject of the graphical session, the locale, and
-  an object path, then exports `org.freedesktop.PolicyKit1.AuthenticationAgent`
-  (`BeginAuthentication(action_id, message, icon_name, details, cookie,
-  identities)`, `CancelAuthentication(cookie)`) with zbus. Pure D-Bus, no
-  GObject: `libpolkit-agent-1` would need GObject subclassing through FFI
-  for `PolkitAgentListener`, which is most of the complexity.
-- **Caller check.** As with the Wi-Fi and Bluetooth agents (SR-22), resolve
-  `org.freedesktop.PolicyKit1`'s unique name at registration and reject
-  every call from any other sender.
-- **Authentication.** polkit 127 on Ubuntu runs `polkit-agent-helper-1`
-  as a socket-activated root service (`polkit-agent-helper.socket`,
-  `/run/polkit/agent-helper.socket`; the helper binary is no longer setuid).
-  The agent connects to the socket, writes the identity's user name and the
-  cookie, and then speaks the helper's line protocol:
-  `PAM_PROMPT_ECHO_OFF <prompt>` → the password line, `PAM_TEXT_INFO` /
-  `PAM_ERROR_MSG` → shown, `SUCCESS` / `FAILURE` → done. The helper itself
-  answers polkitd (`AuthenticationAgentResponse2`); the agent never does, so
-  it never sees whether a cookie is valid. The exact socket handshake must
-  be checked against polkit 127's `polkitagentsession.c` before building it.
-- **The sheet.** A layer-shell overlay drawn like the Mac's authorization
-  dialog: the lock glyph, "<App> wants to make changes.", "Enter your
-  password to allow this.", the user name (the first `unix-user` identity
-  in the `sudo` group; a picker when there are several), a password field,
-  Cancel and OK. It names the action from polkit's `message`, never from
-  the caller's `details` alone.
-- **Password handling**, following the lock provider
-  (`crates/rmac-lock-provider-linux`, security review SR-08/SR-09 and
-  "secret-lifetime-and-zeroization-reviewed"): a fixed-capacity
-  `SecretInput` zeroized on every edit and on drop, a full field ignores
-  input instead of failing, one copy written straight from that buffer to
-  the socket followed by `explicit_bzero`, no `String`/`CString` of the
-  secret, `LimitCORE=0` and `MemoryDenyWriteExecute=yes` on the unit,
-  `panic = "abort"`, no logging of prompts' answers, and the field cleared
-  on cancel, failure, timeout and `CancelAuthentication`.
-- **Abuse limits.** One sheet at a time (queue others), a visible
-  requesting-app name from the subject's PID via `/proc` (bounded, never
-  trusted for the decision), cancel after 5 minutes, and three failures
-  end the request as polkit's own agents do.
+- **Registration.** A session user service (`rmac-polkit-agent.service`,
+  `PartOf=` and wanted by `rmac-session.target`) calls
+  `RegisterAuthenticationAgentWithOptions` (falling back to
+  `RegisterAuthenticationAgent`) for the `unix-session` subject of the
+  graphical session (`XDG_SESSION_ID`, else logind's `session/auto`, else the
+  user's `Display` session), the locale, and
+  `/org/rmac/PolicyKit1/AuthenticationAgent`, and exports
+  `org.freedesktop.PolicyKit1.AuthenticationAgent` with zbus. It registers
+  again whenever polkitd's name gets a new owner. Pure D-Bus, no GObject.
+- **Caller check.** polkitd's unique name comes from the reply to the
+  registration; every call from any other sender gets `NotAuthorized`.
+- **Authentication.** polkit's own `polkit-agent-helper-1` checks the
+  password, exactly as libpolkit-agent-1 drives it (polkit 127
+  `polkitagentsession.c`): on Ubuntu 26.04 the agent connects to
+  `/run/polkit/agent-helper.socket` (the socket-activated root helper) and
+  writes `<user>\n<cookie>\n`; elsewhere it spawns the setuid helper with the
+  user name as its only argument and writes the cookie on stdin. It then
+  answers `PAM_PROMPT_ECHO_OFF`/`ECHO_ON` lines and shows `PAM_ERROR_MSG` and
+  `PAM_TEXT_INFO` (fingerprint prompts included) until `SUCCESS` or
+  `FAILURE`. The helper tells polkitd the result; the agent never verifies a
+  password and never learns whether a cookie is valid.
+- **The dialog** (design-lab/authorization.html): a layer-shell overlay
+  centred on the focused output, above every window, with exclusive keyboard
+  focus; the lock icon (with polkit's icon as a badge when it names a theme
+  PNG), "<App> wants to make changes." (the requesting process from
+  `polkit.subject-pid`, Lulo apps by name), polkit's message as plain text,
+  "Enter your password to allow this." (or "Enter an administrator's name
+  and password …" when the signed-in user is not an allowed identity), User
+  Name (a list of polkit's identities when there are several) and Password,
+  Cancel and OK ("Modify Settings" for System Settings). A wrong password
+  shakes the panel and clears the field; three end the request.
+- **Password handling.** A fixed-capacity buffer zeroized on every edit, on
+  submit and on drop, written once to the helper; no `Debug`, no logging of
+  answers or PAM messages; the process is non-dumpable and the unit sets
+  `LimitCORE=0`. The unit omits `NoNewPrivileges=` only so the setuid helper
+  still works where polkit has no socket.
+- **Abuse limits.** One dialog at a time (others queue, and a queued request
+  can be cancelled), `CancelAuthentication` closes the dialog and the helper,
+  an unattended dialog gives up after 5 minutes, and nothing runs while no
+  request is open (no timers, no polling).
 
-It needs a security review of its own before it ships.
+Tests: the helper protocol against a fake helper over both transports
+(`tests/helper_protocol.rs`), and registration, BeginAuthentication,
+CancelAuthentication, queueing, retries and the caller check against a
+python-dbusmock polkitd (`tests/authority_mock.rs`,
+`tests/dbusmock/polkit_authority.py`). Security review checks
+`authentication-agent-*` (docs/security-review-0.9.0-beta.1.md) wait for a
+native run.
 
 ## What the reference PC still has to prove
 

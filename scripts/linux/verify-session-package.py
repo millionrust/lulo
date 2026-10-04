@@ -90,6 +90,7 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-mac-keyboard",
     "rmac-setup-assistant",
     "rmac-calendar-agent",
+    "rmac-polkit-agent",
 )
 EXPECTED_SYSTEMD_UNITS = (
     "rmac-app-drawer.service",
@@ -110,6 +111,7 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-notification-center-panel.service",
     "rmac-notification-center.service",
     "rmac-osd.service",
+    "rmac-polkit-agent.service",
     "rmac-quick-settings.service",
     "rmac-safe-mode-notice.service",
     "rmac-safe-mode.target",

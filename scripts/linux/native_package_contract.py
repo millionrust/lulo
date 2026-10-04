@@ -125,6 +125,7 @@ SESSION_BINARIES = (
     "rmac-mac-keyboard",
     "rmac-setup-assistant",
     "rmac-calendar-agent",
+    "rmac-polkit-agent",
 )
 
 # The seven shell surfaces are built from the separately locked Linux GPUI
@@ -211,6 +212,9 @@ PACKAGE_SPECS = (
             _third_party_floor("niri"),
             "packagekit",
             "pipewire-bin",
+            # rmac-polkit-agent (SWU-07) registers with polkitd and hands
+            # passwords to its polkit-agent-helper-1.
+            "polkitd",
             "python3-gi",
             "rmac-apps (= {version})",
             "swayidle",

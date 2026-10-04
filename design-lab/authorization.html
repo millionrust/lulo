@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Authorization dialog</title>
+<link rel="stylesheet" href="tokens.css">
+<!--
+  The macOS 26 administrator password dialog ("System Settings wants to make
+  changes."), as Lulo's polkit authentication agent draws it
+  (crates/rmac-polkit-agent/src/ui.rs `metrics` copies these numbers).
+
+  NOTHING HERE IS MEASURED. No capture of this dialog exists in
+  tests/inventory/mac, and the Mac must not be driven to raise one (it would
+  ask for the owner's password). Every value is S (from knowledge of the
+  macOS 26 alert-style authorization panel) until a capture replaces it.
+  Structure and wording are certain.
+
+  panel        260 wide, height follows the text; radius 13 (window radius);
+               floating, centred on the focused output, above every window
+               (a layer-shell overlay with exclusive keyboard focus); the
+               desktop behind it is not dimmed                                S
+  icon         64 pt plate centred, 20 from the top: a padlock glyph; when
+               polkit names an icon that exists in the icon theme, it sits
+               as a 28 pt badge at the plate's bottom-right corner            S
+  title        13 pt semibold, centred, 12 under the icon:
+               "<App> wants to make changes."                                 S
+               <App> is the requesting process (polkit.subject-pid) mapped to
+               its Lulo app name; an unknown process shows its command name
+  body         11 pt regular, secondary text, centred, 4 under the title:
+               polkit's own message for the action (plain text, never
+               markup), then "Enter your password to allow this." — or
+               "Enter an administrator’s name and password to allow this."
+               when the signed-in user is not one of polkit's identities     S
+  info         PAM text (fingerprint prompts, account notices), 11 pt,
+               secondary, under the body; errors in system red               S
+  fields       two stacked 236 × 24 fields, radius 6, 8 apart, 14 under the
+               body; placeholders "User Name" and "Password"                  S
+               User Name shows the identity's full name. With one identity it
+               is fixed; with several it opens a list of polkit's identities
+               (↑/↓ also switch). Password draws bullets only.
+  wrong        the panel shakes ±8 pt, three cycles in 400 ms, the password
+               clears and focus stays in it (macOS shows no text)             S
+               after three failures the request ends, as polkit's agents do
+  buttons      two equal 28 pt capsules, 8 apart, 16 under the fields, 14
+               from the bottom: Cancel (plain) and OK (blue, default/Return);
+               "Modify Settings" when System Settings asks                    S
+  keyboard     Return = OK, Escape = Cancel, Tab moves between the fields
+-->
+<style>
+  html, body { margin: 0; background: #2b3346; }
+  body { font-family: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+         -webkit-font-smoothing: antialiased; padding: 40px; display: flex; gap: 32px;
+         flex-wrap: wrap; align-items: flex-start; }
+  .panel { width: 260px; box-sizing: border-box; padding: 20px 12px 14px;
+           border-radius: 13px; background: var(--sheet); color: #f0f0f2;
+           box-shadow: 0 20px 46px rgba(0,0,0,.6); outline: 1px solid rgba(255,255,255,.1);
+           outline-offset: -1px; display: flex; flex-direction: column; align-items: center; }
+  .icon { position: relative; width: 64px; height: 64px; border-radius: 14px;
+          background: linear-gradient(#d8d8dc, #a9a9ae); display: flex;
+          align-items: center; justify-content: center; font-size: 34px; color: #4a4a4f; }
+  .badge { position: absolute; right: -6px; bottom: -6px; width: 28px; height: 28px;
+           border-radius: 7px; background: var(--accent); }
+  .title { margin-top: 12px; font-size: 13px; line-height: 16px; font-weight: 600;
+           text-align: center; }
+  .body { margin-top: 4px; font-size: 11px; line-height: 14px; color: #a9a9ae;
+          text-align: center; }
+  .info { margin-top: 6px; font-size: 11px; line-height: 14px; color: #a9a9ae; }
+  .error { color: var(--sys-red); }
+  .field { margin-top: 8px; width: 236px; height: 24px; box-sizing: border-box;
+           border-radius: 6px; background: rgba(255,255,255,.08);
+           border: 1px solid rgba(255,255,255,.12); font-size: 13px; line-height: 22px;
+           padding: 0 7px; color: #f0f0f2; }
+  .field.first { margin-top: 14px; }
+  .field.focus { outline: 3px solid rgba(19,114,249,.5); }
+  .field .ph { color: #8a8a8f; }
+  .chev { float: right; color: #a9a9ae; }
+  .buttons { margin-top: 16px; width: 236px; display: flex; gap: 8px; }
+  .btn { flex: 1; height: 28px; border-radius: 14px; font-size: 13px; display: flex;
+         align-items: center; justify-content: center; background: #48484c; }
+  .ok { background: var(--accent); color: #fff; }
+  .shake { animation: shake 400ms linear; }
+  @keyframes shake { 0%,100% { transform: translateX(0) } 17% { transform: translateX(8px) }
+    50% { transform: translateX(-8px) } 83% { transform: translateX(8px) } }
+</style>
+</head>
+<body>
+  <div class="panel" role="dialog" aria-label="System Settings wants to make changes.">
+    <div class="icon">🔒︎</div>
+    <div class="title">System Settings wants to make changes.</div>
+    <div class="body">Authentication is required to change another user’s data.<br>Enter your password to allow this.</div>
+    <div class="field first">Jacob Samas</div>
+    <div class="field focus"><span class="ph">Password</span></div>
+    <div class="buttons"><div class="btn">Cancel</div><div class="btn ok">Modify Settings</div></div>
+  </div>
+
+  <div class="panel shake" role="dialog" aria-label="pkexec wants to make changes.">
+    <div class="icon">🔒︎<div class="badge"></div></div>
+    <div class="title">pkexec wants to make changes.</div>
+    <div class="body">Authentication is needed to run `/usr/bin/true' as the super user<br>Enter an administrator’s name and password to allow this.</div>
+    <div class="field first">Amy Brown <span class="chev">⌃⌄</span></div>
+    <div class="field focus">••••••••</div>
+    <div class="info">Place your finger on the fingerprint reader</div>
+    <div class="buttons"><div class="btn">Cancel</div><div class="btn ok">OK</div></div>
+  </div>
+</body>
+</html>

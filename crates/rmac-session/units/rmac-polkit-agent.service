@@ -1,0 +1,21 @@
+[Unit]
+Description=rmac polkit authentication agent
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+OnFailure=rmac-component-failure@%N.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-polkit-agent
+
+[Service]
+Type=simple
+ExecStart=%h/.local/libexec/rmac/rmac-polkit-agent
+Restart=on-failure
+RestartSec=1s
+# No NoNewPrivileges=: where polkit has no helper socket, the password goes
+# through the setuid polkit-agent-helper-1, which NoNewPrivileges would
+# neuter. The agent itself never gains privileges (SWU-07).
+PrivateTmp=yes
+# The password must never reach a core dump (the process also makes itself
+# non-dumpable before any secret exists).
+LimitCORE=0

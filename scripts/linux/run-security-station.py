@@ -124,6 +124,7 @@ def sh(
     env: dict[str, str] | None = None,
     input_bytes: bytes | None = None,
     cwd: Path | None = None,
+    output_file: Path | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     if user is not None:
         command = ["runuser", "-u", user, "--", *command]
@@ -134,6 +135,32 @@ def sh(
     }
     if env:
         environment.update(env)
+    if output_file is not None:
+        # Session services that a test starts (portal backends, terminals,
+        # D-Bus activated helpers) can outlive the command; a file, unlike a
+        # pipe, never makes us wait for them.
+        with output_file.open("wb") as stream:
+            try:
+                completed = subprocess.run(
+                    command,
+                    check=False,
+                    stdin=subprocess.DEVNULL if input_bytes is None else None,
+                    stdout=stream,
+                    stderr=subprocess.STDOUT,
+                    timeout=timeout,
+                    env=environment,
+                    input=input_bytes,
+                    cwd=cwd,
+                )
+                returncode = completed.returncode
+            except subprocess.TimeoutExpired:
+                returncode = 124
+        result = subprocess.CompletedProcess(
+            command, returncode, output_file.read_bytes()[-65536:], b""
+        )
+        if check and returncode != 0:
+            raise StationError(f"command failed ({returncode}): {' '.join(command)[:300]}")
+        return result
     result = subprocess.run(
         command,
         check=False,
@@ -257,6 +284,7 @@ def check_candidate_provenance(state: dict) -> dict:
         "rmac_build_host_hits": hits,
         "third_party_build_host_hits_informational": third_party_hits,
     }
+    state["last_observations"] = observations
     state["version"] = document.get("version")
     require(verify.returncode == 0, "verify-native-packages.py failed on the candidate")
     require(not hits, "rmac packages contain build-host paths")
@@ -467,6 +495,7 @@ def check_install_effects(state: dict) -> dict:
         "rmac_keyd_config_removed_on_purge": not owned_after_purge,
         "allowed_trigger_caches": [pattern.pattern for pattern in TRIGGER_CACHES],
     }
+    state["last_observations"] = observations
     require(not unexpected_added, "install created files outside the package")
     require(not unexpected_changed, "install changed files outside the package")
     require(not removed, "install removed existing files")
@@ -523,6 +552,7 @@ def check_package_permissions(state: dict) -> dict:
         "file_capabilities": rmac_caps,
         "usr_local_rmac": local,
     }
+    state["last_observations"] = observations
     require(not problems, "package ownership or permissions are wrong")
     require(not rmac_caps, "an rmac executable carries file capabilities")
     require(not local, "rmac files appeared in /usr/local")
@@ -629,6 +659,7 @@ def check_package_lifecycle(state: dict) -> dict:
         "output": bounded(result.stdout + result.stderr, 1500),
         "report": report,
     }
+    state["last_observations"] = observations
     require(result.returncode == 0 and report is not None, "package lifecycle failed")
     return observations
 
@@ -671,6 +702,12 @@ def user_env(account: pwd.struct_passwd, extra: dict[str, str] | None = None) ->
     if extra:
         environment.update(extra)
     return environment
+
+
+def kill_user_processes(account: pwd.struct_passwd) -> None:
+    """End everything the synthetic test user still runs (runner only)."""
+    sh(["pkill", "-KILL", "-u", account.pw_name], check=False)
+    time.sleep(1)
 
 
 def write_owned(path: Path, data: bytes, account: pwd.struct_passwd, mode: int) -> None:
@@ -735,6 +772,7 @@ def check_systemd_hardening(state: dict) -> dict:
         "relay_unset_hardening_items": failing[:40],
         "relay_properties": parsed,
     }
+    state["last_observations"] = observations
     require(verify.returncode == 0, "systemd-analyze verify reported problems")
     require(exposure is not None and exposure <= 3.0, "relay exposure above 3.0 (OK)")
     require(parsed.get("DynamicUser") == "yes", "relay is not DynamicUser")
@@ -751,13 +789,19 @@ def relay_request(account: pwd.struct_passwd, payload: bytes) -> str:
         "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\n"
         "s.settimeout(8)\n"
         "s.connect('/run/rmac-mac-keyboard.socket')\n"
-        "s.sendall(sys.stdin.buffer.read())\n"
-        "s.shutdown(socket.SHUT_WR)\n"
+        "try:\n"
+        "    s.sendall(sys.stdin.buffer.read())\n"
+        "    s.shutdown(socket.SHUT_WR)\n"
+        "except OSError as error:\n"
+        "    sys.stdout.write('send-closed:%s ' % error.errno)\n"
         "data=b''\n"
-        "while True:\n"
-        "    chunk=s.recv(64)\n"
-        "    if not chunk: break\n"
-        "    data+=chunk\n"
+        "try:\n"
+        "    while True:\n"
+        "        chunk=s.recv(64)\n"
+        "        if not chunk: break\n"
+        "        data+=chunk\n"
+        "except OSError as error:\n"
+        "    sys.stdout.write('recv-closed:%s ' % error.errno)\n"
         "sys.stdout.write(data.decode('ascii','replace'))\n"
     )
     result = sh(
@@ -840,10 +884,18 @@ def check_keyboard_relay(state: dict) -> dict:
         "relay_log_echoes_request": "touch /tmp/sr-relay-pwned" in log,
         "relay_log_tail": bounded(log[-800:], 800),
     }
+    state["last_observations"] = observations
     for label in injected:
         if label == "valid-native":
             continue
-        require(replies[label] == "error", f"relay accepted {label}")
+        # Refused means "error", or the relay closing the connection on an
+        # oversized write; only "ok" means a request was applied.
+        reply = replies[label].split()
+        require(reply and reply[-1] != "ok", f"relay accepted {label}")
+        require(
+            reply[-1] == "error" or reply[0].startswith(("send-closed", "recv-closed")),
+            f"relay gave no refusal for {label}",
+        )
     if keyd_active == "active":
         require(replies["valid-native"] == "ok", "relay refused a valid profile")
     require(not pwn.exists(), "a relay request ran a command")
@@ -905,6 +957,7 @@ def check_polkit_policy(state: dict) -> dict:
         "pkcheck_exit": pkcheck.returncode,
         "pkcheck_output": bounded(pkcheck.stdout + pkcheck.stderr, 300),
     }
+    state["last_observations"] = observations
     require(
         implicit == {"any": "auth_admin", "inactive": "auth_admin", "active": "auth_admin_keep"},
         "keyboard polkit defaults differ from the reviewed policy",
@@ -998,7 +1051,9 @@ def check_untrusted_open(state: dict) -> dict:
             env=environment,
             check=False,
             timeout=60,
+            output_file=state["work"] / "untrusted-open.log",
         )
+        kill_user_processes(account)
         results[item.name] = {
             "mime": mime,
             "default_handler": handler,
@@ -1012,6 +1067,7 @@ def check_untrusted_open(state: dict) -> dict:
         "elf_fixture_built": compiled.returncode == 0,
         "markers_created": markers,
     }
+    state["last_observations"] = observations
     require(not markers, "opening untrusted content executed it")
     return observations
 
@@ -1081,7 +1137,9 @@ def check_terminal_wrapper(state: dict) -> dict:
         env=environment,
         check=False,
         timeout=120,
+        output_file=state["work"] / "terminal-wrapper.log",
     )
+    kill_user_processes(account)
     received = None
     if (home / "argv-probe.json").exists():
         received = json.loads((home / "argv-probe.json").read_text(encoding="utf-8"))
@@ -1099,6 +1157,7 @@ def check_terminal_wrapper(state: dict) -> dict:
             stderr_path.read_text(errors="replace") if stderr_path.exists() else "", 600
         ),
     }
+    state["last_observations"] = observations
     require(not markers, "the terminal re-parsed arguments through a shell")
     require(received == TERMINAL_ARGS, "the terminal did not preserve the argv boundary")
     return observations
@@ -1136,6 +1195,7 @@ def check_lock_units(state: dict) -> dict:
             "the reference laptop"
         ),
     }
+    state["last_observations"] = observations
     for key in (
         "assert_pam_service",
         "on_failure_fallback",
@@ -1331,6 +1391,8 @@ def run_update_unit(account: pwd.struct_passwd, label: str) -> dict:
         "checker_lines": [
             line for line in log.splitlines() if "rmac-update-check:" in line
         ][:20],
+        "unit_log_tail": log.splitlines()[-15:],
+        "unit_start_stderr": bounded(result.stderr, 600),
         "notifications": notifications,
         "status_file": status_file.read_text() if status_file.exists() else None,
         "packagekit_after": pk_state(),
@@ -1381,6 +1443,7 @@ def check_sr29_packagekit(state: dict) -> dict:
         "victim": build_fixture_deb(work, SYNTHETIC_PACKAGE_TOKEN, "1.0"),
     }
     cases: list[dict] = []
+    diagnostics: dict = {}
     try:
         sh(["dpkg", "-i", str(debs["v1"]), str(debs["victim"])])
         sh(["loginctl", "enable-linger", UPDATE_USER])
@@ -1388,13 +1451,28 @@ def check_sr29_packagekit(state: dict) -> dict:
             if Path(f"/run/user/{account.pw_uid}/bus").exists():
                 break
             time.sleep(0.2)
-        sh(
+        diagnostics["user_manager"] = text(
+            sh(["systemctl", "is-active", f"user@{account.pw_uid}.service"], check=False)
+        ).strip()
+        notify_start = sh(
             [
                 "systemd-run", "--user", "-M", f"{UPDATE_USER}@", "--unit", "sr29-notify",
                 "--collect", "/usr/bin/python3", str(capture_script),
                 f"{account.pw_dir}/notifications.jsonl",
-            ]
+            ],
+            check=False,
         )
+        diagnostics["notify_capture_start"] = [
+            notify_start.returncode,
+            bounded(notify_start.stderr, 400),
+        ]
+        diagnostics["update_unit"] = text(
+            sh(
+                ["systemctl", "--user", "-M", f"{UPDATE_USER}@", "cat",
+                 "rmac-update-check.service"],
+                check=False,
+            )
+        )[:1500]
         time.sleep(2)
 
         def schedule_safe(label: str, version_deb: str) -> dict:
@@ -1488,8 +1566,10 @@ def check_sr29_packagekit(state: dict) -> dict:
             "PackageKit tests (scripts/test_update_check.py)"
         ),
         "verdicts": verdicts,
+        "diagnostics": diagnostics,
         "cases": cases,
     }
+    state["last_observations"] = observations
     failed = [name for name, ok in verdicts.items() if not ok]
     require(not failed, f"SR-29 native cases failed: {', '.join(failed)}")
     return observations
@@ -1566,6 +1646,7 @@ def check_journal_redaction(state: dict) -> dict:
             "graphical-session components are covered by the source pass"
         ),
     }
+    state["last_observations"] = observations
     require(rmac_entries, "no rmac journal entries were produced to inspect")
     require(not any(leaks.values()), "a planted synthetic secret reached the journal")
     require(not control, "an rmac journal line contains control characters")
@@ -1627,17 +1708,18 @@ def run(arguments: argparse.Namespace) -> int:
                 print(f"reinstall failed: {error}", file=sys.stderr)
             continue
         started = time.time()
+        state.pop("last_observations", None)
         print(f"== {name}", flush=True)
         try:
             observations = function(state)
             status = "pass"
             failure = None
         except StationError as error:
-            observations = getattr(error, "observations", {})
+            observations = state.get("last_observations", {})
             status = "fail"
             failure = bounded(str(error), 1500)
         except Exception as error:  # record and continue with the next check
-            observations = {}
+            observations = state.get("last_observations", {})
             status = "error"
             failure = bounded(
                 "".join(traceback.format_exception_only(type(error), error))

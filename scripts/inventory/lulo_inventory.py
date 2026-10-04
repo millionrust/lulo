@@ -439,9 +439,23 @@ def read_settings_window(app_display_name: str) -> dict:
                     seen.add(key)
                     labels.append({"kind": "control", "label": m.group(1)})
         if app_display_name == "Terminal" and path.name == "settings_window.rs":
-            for label in ("Blink cursor", "Use Option as Meta Key"):
+            for label in (
+                "Blink cursor",
+                "Use Option as Meta Key",
+                "ANSI Colours",
+            ):
                 if f'.child("{label}")' in text:
                     labels.append({"kind": "control", "label": label})
+            # colour_label(...)/ansi_row(...)'s first argument is the visible
+            # AX label ("Text", "Bold Text", "Selection", "Cursor", "Normal",
+            # "Bright"); the generic `.label("...")` scanner above cannot see
+            # it since these pass through a helper, not a direct builder call.
+            for fn in ("colour_label", "ansi_row"):
+                for m in re.finditer(rf'{fn}\("([^"]+)"', text):
+                    key = ("control", m.group(1))
+                    if key not in seen:
+                        seen.add(key)
+                        labels.append({"kind": "control", "label": m.group(1)})
         if app_display_name == "Preview" and path.name == "settings_window.rs":
             # Button labels pass through the constructor's second argument,
             # and the "Window background:" row is a plain text child, not

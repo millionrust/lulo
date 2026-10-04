@@ -319,6 +319,7 @@ impl TerminalView {
             use_bold_fonts: settings.use_bold_fonts,
             bright_bold_text: settings.bright_bold_text,
             display_ansi_colours: settings.display_ansi_colours,
+            title_shows_window_size: settings.title_shows_window_size,
             blink_visible: true,
             blink_generation: 0,
             blink_last_input: std::time::Instant::now(),

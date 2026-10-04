@@ -6,17 +6,20 @@
     "default": {"settings_controls": {"checked": {
       "Use bold fonts": true,
       "Use bright colours for bold text": true,
-      "Display ANSI colours": true
+      "Display ANSI colours": true,
+      "Show window size in title": true
     }}},
     "bold_off": {"settings_controls": {"checked": {
       "Use bold fonts": false,
       "Use bright colours for bold text": true,
-      "Display ANSI colours": true
+      "Display ANSI colours": true,
+      "Show window size in title": true
     }}},
     "bright_off": {"settings_controls": {"checked": {
       "Use bold fonts": false,
       "Use bright colours for bold text": false,
-      "Display ANSI colours": true
+      "Display ANSI colours": true,
+      "Show window size in title": true
     }}}
   }
 }

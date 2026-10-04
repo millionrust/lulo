@@ -173,6 +173,19 @@ pub(crate) fn resolved(index: usize) -> &'static Profile {
     }
 }
 
+/// Terminal ▸ Settings… ▸ Text ▸ "Use bright colours for bold text", applied
+/// to plain (non-ANSI-coloured) bold text: lightens `rgb` toward white by
+/// the same fraction regardless of how dark or light it starts, so it stays
+/// a visibly bolder shade of the same colour rather than clipping to white.
+pub(crate) fn brighten(rgb: u32) -> u32 {
+    const MIX: f32 = 0.35;
+    let channel = |shift: u32| {
+        let value = ((rgb >> shift) & 0xff) as f32;
+        (value + (255.0 - value) * MIX).round().clamp(0.0, 255.0) as u32
+    };
+    (channel(16) << 16) | (channel(8) << 8) | channel(0)
+}
+
 fn config_path() -> Result<PathBuf, storage::Failure> {
     let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
         storage::Failure::message(
@@ -295,7 +308,20 @@ pub(crate) fn save_font_size(size: f32) -> Result<(), storage::Failure> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, PROFILES};
+    use super::{brighten, parse, PROFILES};
+
+    #[test]
+    fn brighten_lightens_every_channel_toward_white() {
+        assert_eq!(brighten(0x000000), 0x595959);
+        assert_eq!(brighten(0xffffff), 0xffffff);
+        assert_eq!(brighten(0xd4d4d4), 0xe3e3e3);
+        // Mid-tone colours brighten without any channel overshooting 0xff
+        // or a lighter channel ending up darker than a darker one started.
+        let dark = brighten(0x101010);
+        let light = brighten(0xe0e0e0);
+        assert!(dark < light);
+        assert!(dark <= 0xffffff);
+    }
 
     #[test]
     fn all_mac_profile_names_are_selectable() {

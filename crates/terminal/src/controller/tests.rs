@@ -177,3 +177,36 @@ fn cursor_blink_parks_two_seconds_after_the_last_keystroke() {
         3_600
     )));
 }
+
+#[test]
+fn ask_before_closing_policy_gates_the_terminate_review() {
+    use settings::AskBeforeClosing;
+
+    // Never: no review, whether or not a job is running.
+    assert!(!TerminalView::confirm_close_for_policy(
+        AskBeforeClosing::Never,
+        true
+    ));
+    assert!(!TerminalView::confirm_close_for_policy(
+        AskBeforeClosing::Never,
+        false
+    ));
+    // Active processes (the Mac-matching default): only while one is running.
+    assert!(TerminalView::confirm_close_for_policy(
+        AskBeforeClosing::ActiveProcesses,
+        true
+    ));
+    assert!(!TerminalView::confirm_close_for_policy(
+        AskBeforeClosing::ActiveProcesses,
+        false
+    ));
+    // Always: every close, even an idle shell.
+    assert!(TerminalView::confirm_close_for_policy(
+        AskBeforeClosing::Always,
+        true
+    ));
+    assert!(TerminalView::confirm_close_for_policy(
+        AskBeforeClosing::Always,
+        false
+    ));
+}

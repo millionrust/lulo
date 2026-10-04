@@ -397,6 +397,9 @@ pub(super) struct TerminalView {
     use_bold_fonts: bool,
     bright_bold_text: bool,
     display_ansi_colours: bool,
+    /// Terminal ▸ Settings… ▸ Window ▸ "Show window size in title", read
+    /// once at creation like the other Settings-backed fields above.
+    title_shows_window_size: bool,
     /// Current phase of the cursor-blink animation; always `true` (visible)
     /// when blink is disabled or the window is not focused. The animation
     /// task that flips this exits the instant focus is lost or blink turns

@@ -21,6 +21,33 @@ impl TerminalView {
         }
     }
 
+    /// Terminal ▸ Settings… ▸ General ▸ "Ask before closing": whether a
+    /// close (tab or window) should show the terminate-running-processes
+    /// review, given the saved policy and whether the closing scope
+    /// actually has a foreground job.
+    pub(super) fn confirm_close_for_policy(
+        policy: settings::AskBeforeClosing,
+        has_foreground_job: bool,
+    ) -> bool {
+        match policy {
+            settings::AskBeforeClosing::Never => false,
+            settings::AskBeforeClosing::ActiveProcesses => has_foreground_job,
+            settings::AskBeforeClosing::Always => true,
+        }
+    }
+
+    /// Same as `confirm_close_for_policy`, reading the policy fresh from
+    /// disk at each close rather than caching it at window creation — like
+    /// Shell ▸ "When the shell exits" below, since this only runs on a
+    /// user action (not a redraw loop) so a disk read here costs nothing
+    /// idle.
+    fn should_confirm_close(has_foreground_job: bool) -> bool {
+        Self::confirm_close_for_policy(
+            settings::load().unwrap_or_default().ask_before_closing,
+            has_foreground_job,
+        )
+    }
+
     fn apply_scrollback_limit(&mut self, limit: usize) -> Result<(), SessionWriteError> {
         // Acquire every authority before mutating any, so one poisoned session
         // cannot leave a partially applied cross-tab budget.
@@ -133,7 +160,7 @@ impl TerminalView {
             return;
         }
         let session_id = self.tabs[index].id;
-        if self.tabs[index].has_foreground_job() {
+        if Self::should_confirm_close(self.tabs[index].has_foreground_job()) {
             self.pending_close = Some(PendingClose::Tab { session_id });
             self.capture_active_search_query(cx);
             self.tabs[self.active].ui.search_open = false;
@@ -193,7 +220,8 @@ impl TerminalView {
         if self.pending_close.is_some() {
             return;
         }
-        if !self.tabs.iter().any(Session::has_foreground_job) {
+        let has_foreground_job = self.tabs.iter().any(Session::has_foreground_job);
+        if !Self::should_confirm_close(has_foreground_job) {
             if self.terminate_all().is_err() {
                 self.operation_error =
                     Some("Terminal could not terminate every shell safely.".into());

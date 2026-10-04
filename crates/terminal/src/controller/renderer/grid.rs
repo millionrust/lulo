@@ -254,7 +254,7 @@ impl TerminalView {
                 let flags = cell.flags;
                 let mut foreground = if self.display_ansi_colours {
                     conv(if self.bright_bold_text && flags.contains(Flags::BOLD) {
-                        bright_variant(cell.fg)
+                        effective_bold_foreground(cell.fg, active().fg)
                     } else {
                         cell.fg
                     })
@@ -429,6 +429,22 @@ fn bright_variant(color: Color) -> Color {
     }
 }
 
+/// Settings ▸ Text ▸ "Use bright colours for bold text", for one cell's bold
+/// foreground: the profile's 8 ANSI colours brighten through their explicit
+/// bright half (`bright_variant`); plain (default-coloured) bold text has
+/// no such pair, so it lightens the profile's own text colour instead
+/// (`profiles::brighten`) — the Settings window's "Bold Text" swatch shows
+/// exactly this computed colour.
+fn effective_bold_foreground(fg: Color, profile_fg: u32) -> Color {
+    match fg {
+        Color::Named(NamedColor::Foreground) => {
+            let (r, g, b) = split(profiles::brighten(profile_fg));
+            Color::Spec(vte::ansi::Rgb { r, g, b })
+        }
+        other => bright_variant(other),
+    }
+}
+
 fn named_color(color: NamedColor) -> (u8, u8, u8) {
     use NamedColor::*;
     let profile = active();
@@ -504,5 +520,26 @@ mod colour_preference_tests {
         assert_eq!(bright_variant(Color::Indexed(17)), Color::Indexed(17));
         let rgb = Color::Spec(vte::ansi::Rgb { r: 1, g: 2, b: 3 });
         assert_eq!(bright_variant(rgb), rgb);
+    }
+
+    #[test]
+    fn bold_default_coloured_text_brightens_the_profile_text_colour() {
+        // Basic's measured fg, #000000: NamedColor::Foreground has no
+        // bright half of its own, so it should lighten toward white
+        // (profiles::brighten) rather than pass through unchanged.
+        assert_eq!(
+            effective_bold_foreground(Color::Named(NamedColor::Foreground), 0x000000),
+            Color::Spec(vte::ansi::Rgb {
+                r: 0x59,
+                g: 0x59,
+                b: 0x59
+            }),
+        );
+        // An explicitly ANSI-coloured bold cell still uses the palette's
+        // own bright half, unaffected by the profile's text colour.
+        assert_eq!(
+            effective_bold_foreground(Color::Named(NamedColor::Red), 0x000000),
+            Color::Named(NamedColor::BrightRed),
+        );
     }
 }

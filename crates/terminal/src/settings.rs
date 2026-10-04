@@ -91,6 +91,30 @@ impl NewWindowWorkingDirectory {
     }
 }
 
+/// Terminal ▸ Settings… ▸ General ▸ "Ask before closing": gates the
+/// terminate-running-processes review (`controller/tab_lifecycle.rs`,
+/// TERM-14/18) beyond its hard-coded "only while a job is running" rule.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum AskBeforeClosing {
+    Never,
+    #[default]
+    ActiveProcesses,
+    Always,
+}
+
+impl AskBeforeClosing {
+    pub(crate) const ALL: [Self; 3] = [Self::Never, Self::ActiveProcesses, Self::Always];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Never => "Never",
+            Self::ActiveProcesses => "Active processes",
+            Self::Always => "Always",
+        }
+    }
+}
+
 /// Every value Terminal ▸ Settings… edits beyond Profile/Font/Option-as-Meta.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(default)]
@@ -104,6 +128,10 @@ pub(crate) struct Settings {
     pub(crate) rows: u16,
     pub(crate) when_shell_exits: ShellExitBehavior,
     pub(crate) new_window_directory: NewWindowWorkingDirectory,
+    pub(crate) ask_before_closing: AskBeforeClosing,
+    /// Terminal ▸ Settings… ▸ Window: whether the title bar's automatic
+    /// title includes the trailing "— cols×rows" (`controller/renderer/chrome.rs`).
+    pub(crate) title_shows_window_size: bool,
 }
 
 impl Default for Settings {
@@ -121,6 +149,8 @@ impl Default for Settings {
             rows: DEFAULT_ROWS,
             when_shell_exits: ShellExitBehavior::default(),
             new_window_directory: NewWindowWorkingDirectory::default(),
+            ask_before_closing: AskBeforeClosing::default(),
+            title_shows_window_size: true,
         }
     }
 }
@@ -251,6 +281,11 @@ mod tests {
             settings.new_window_directory,
             NewWindowWorkingDirectory::Home
         );
+        assert_eq!(
+            settings.ask_before_closing,
+            AskBeforeClosing::ActiveProcesses
+        );
+        assert!(settings.title_shows_window_size);
     }
 
     #[test]
@@ -265,6 +300,8 @@ mod tests {
             rows: 40,
             when_shell_exits: ShellExitBehavior::CloseIfCleanExit,
             new_window_directory: NewWindowWorkingDirectory::SameWorkingDirectory,
+            ask_before_closing: AskBeforeClosing::Always,
+            title_shows_window_size: false,
         };
         let document = StoredSettings {
             version: VERSION,
@@ -274,6 +311,29 @@ mod tests {
         let decoded: StoredSettings = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(decoded.version, VERSION);
         assert_eq!(decoded.settings, settings);
+    }
+
+    #[test]
+    fn ask_before_closing_serializes_to_stable_on_disk_strings() {
+        assert_eq!(
+            serde_json::to_string(&AskBeforeClosing::Never).unwrap(),
+            "\"never\""
+        );
+        assert_eq!(
+            serde_json::to_string(&AskBeforeClosing::ActiveProcesses).unwrap(),
+            "\"active-processes\""
+        );
+        assert_eq!(
+            serde_json::to_string(&AskBeforeClosing::Always).unwrap(),
+            "\"always\""
+        );
+        for value in AskBeforeClosing::ALL {
+            let json = serde_json::to_string(&value).unwrap();
+            assert_eq!(
+                serde_json::from_str::<AskBeforeClosing>(&json).unwrap(),
+                value
+            );
+        }
     }
 
     #[test]

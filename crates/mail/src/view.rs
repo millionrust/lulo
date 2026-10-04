@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use gpui::{
-    div, px, uniform_list, AnyElement, ClickEvent, Context, Entity, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window,
+    div, prelude::FluentBuilder as _, px, uniform_list, AnyElement, AppContext as _, ClickEvent,
+    Context, Entity, FocusHandle, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Window,
 };
 use rmac_editor::InputState;
 use rmac_mail::{MailState, Mailbox, Message, OrganizeAction, SearchScope};

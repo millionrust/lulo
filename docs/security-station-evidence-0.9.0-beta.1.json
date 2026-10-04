@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "note": "Summaries of the disposable-install station runs for 0.9.0-beta.1 (the full per-check JSON is the security-station-evidence workflow artifact). Run 37176094048's sr29-packagekit verdicts predate the corrected native semantics; see docs/security-review-0.9.0-beta.1.md.",
+  "note": "Summaries of the disposable-install station runs for 0.9.0-beta.1, oldest first; the last run (37182936329, candidate built from a633c70e) is the one the review cites. Full per-check JSON is each run's security-station-evidence workflow artifact (kept 90 days). Earlier runs failed on station-script and lifecycle-script bugs that are fixed.",
   "runs": [
     {
       "candidate": {
@@ -390,6 +390,396 @@
         "station": "github-disposable-ubuntu-26.04",
         "station_scripts_revision": "066f253c1a15351153cff55decc7c7d258073550",
         "workflow_run": "https://github.com/millionrust/lulo/actions/runs/37176094048"
+      }
+    },
+    {
+      "candidate": {
+        "head_sha": "a633c70e05cfd78c9b74d2371cce1254caf908e0",
+        "run_id": 37177582555,
+        "version": "0.9.0~beta.1-38"
+      },
+      "format": 1,
+      "generated": "2026-10-04T06:26:43+00:00",
+      "results": [
+        {
+          "check": "candidate-provenance",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "artifact-contains-no-build-host-data",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "install-effects",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "native-and-sandbox-boundaries-explicit",
+              "domain": "packages"
+            },
+            {
+              "check": "rollback-and-uninstall-tested",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "package-permissions",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "architecture-and-file-inventory-exact",
+              "domain": "packages"
+            },
+            {
+              "check": "unpackaged-executables-rejected",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "package-lifecycle",
+          "failure": "package lifecycle failed",
+          "review_checks": [
+            {
+              "check": "rollback-and-uninstall-tested",
+              "domain": "packages"
+            }
+          ],
+          "status": "fail"
+        },
+        {
+          "check": "systemd-hardening",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "system-bus-callers-treated-untrusted",
+              "domain": "dbus-polkit"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "keyboard-relay",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "no-credential-collection",
+              "domain": "dbus-polkit"
+            },
+            {
+              "check": "no-shell-interpolation",
+              "domain": "desktop-entry-execution"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "polkit-policy",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "interactive-authorization-only-from-user-action",
+              "domain": "dbus-polkit"
+            },
+            {
+              "check": "denial-and-cancel-distinct",
+              "domain": "dbus-polkit"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "lock-units",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "tty-recovery-proven",
+              "domain": "lock-boundary"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "untrusted-open",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "untrusted-content-never-executed",
+              "domain": "file-operations"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "terminal-wrapper",
+          "failure": "the terminal did not preserve the argv boundary",
+          "review_checks": [
+            {
+              "check": "terminal-wrapper-argument-boundary",
+              "domain": "desktop-entry-execution"
+            }
+          ],
+          "status": "fail"
+        },
+        {
+          "check": "sr29-packagekit",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "backend-failure-recovers-authoritatively",
+              "domain": "updates"
+            },
+            {
+              "check": "cancellation-and-restart-readback",
+              "domain": "updates"
+            },
+            {
+              "check": "signature-failure-fails-closed",
+              "domain": "updates"
+            },
+            {
+              "check": "trusted-only-install-enforced",
+              "domain": "updates"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "journal-redaction",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "no-secrets-credentials-or-tokens",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "no-private-paths-or-content",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "control-characters-normalized",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "failure-text-and-output-bounded",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "bus-peers-and-session-identities-redacted",
+              "domain": "logs-diagnostics"
+            }
+          ],
+          "status": "pass"
+        }
+      ],
+      "runner": {
+        "image_os": "ubuntu26",
+        "image_version": "20260927.149.1",
+        "kernel": "7.0.0-1012-azure",
+        "station": "github-disposable-ubuntu-26.04",
+        "station_scripts_revision": "a633c70e05cfd78c9b74d2371cce1254caf908e0",
+        "workflow_run": "https://github.com/millionrust/lulo/actions/runs/37181987160"
+      }
+    },
+    {
+      "candidate": {
+        "head_sha": "a633c70e05cfd78c9b74d2371cce1254caf908e0",
+        "run_id": 37177582555,
+        "version": "0.9.0~beta.1-38"
+      },
+      "format": 1,
+      "generated": "2026-10-04T06:45:24+00:00",
+      "results": [
+        {
+          "check": "candidate-provenance",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "artifact-contains-no-build-host-data",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "install-effects",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "native-and-sandbox-boundaries-explicit",
+              "domain": "packages"
+            },
+            {
+              "check": "rollback-and-uninstall-tested",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "package-permissions",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "architecture-and-file-inventory-exact",
+              "domain": "packages"
+            },
+            {
+              "check": "unpackaged-executables-rejected",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "package-lifecycle",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "rollback-and-uninstall-tested",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "systemd-hardening",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "system-bus-callers-treated-untrusted",
+              "domain": "dbus-polkit"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "keyboard-relay",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "no-credential-collection",
+              "domain": "dbus-polkit"
+            },
+            {
+              "check": "no-shell-interpolation",
+              "domain": "desktop-entry-execution"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "polkit-policy",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "interactive-authorization-only-from-user-action",
+              "domain": "dbus-polkit"
+            },
+            {
+              "check": "denial-and-cancel-distinct",
+              "domain": "dbus-polkit"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "lock-units",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "tty-recovery-proven",
+              "domain": "lock-boundary"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "untrusted-open",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "untrusted-content-never-executed",
+              "domain": "file-operations"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "terminal-wrapper",
+          "failure": "the terminal did not preserve the argv boundary",
+          "review_checks": [
+            {
+              "check": "terminal-wrapper-argument-boundary",
+              "domain": "desktop-entry-execution"
+            }
+          ],
+          "status": "fail"
+        },
+        {
+          "check": "sr29-packagekit",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "backend-failure-recovers-authoritatively",
+              "domain": "updates"
+            },
+            {
+              "check": "cancellation-and-restart-readback",
+              "domain": "updates"
+            },
+            {
+              "check": "signature-failure-fails-closed",
+              "domain": "updates"
+            },
+            {
+              "check": "trusted-only-install-enforced",
+              "domain": "updates"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "journal-redaction",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "no-secrets-credentials-or-tokens",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "no-private-paths-or-content",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "control-characters-normalized",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "failure-text-and-output-bounded",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "bus-peers-and-session-identities-redacted",
+              "domain": "logs-diagnostics"
+            }
+          ],
+          "status": "pass"
+        }
+      ],
+      "runner": {
+        "image_os": "ubuntu26",
+        "image_version": "20260927.149.1",
+        "kernel": "7.0.0-1012-azure",
+        "station": "github-disposable-ubuntu-26.04",
+        "station_scripts_revision": "6f9616a52884ba913b75fd0b201c483bf1a368ac",
+        "workflow_run": "https://github.com/millionrust/lulo/actions/runs/37182936329"
       }
     }
   ]

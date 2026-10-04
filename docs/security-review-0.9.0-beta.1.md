@@ -10,9 +10,8 @@ as [security-review-0.9.0-beta.1.json](security-review-0.9.0-beta.1.json).
 station ran on 2026-10-04 (see "Station evidence"), and nothing Critical or
 High is open. What still blocks the gate:
 
-- 3 findings are open (see "Open findings"). None is above Low.
-- 11 checks still need a station run, most of them on the
-  reference laptop (see "Reference-laptop checks").
+- 2 findings are open (see "Open findings"), SR-18 and SR-39. Neither is above Low.
+- 9 checks are still pending: 7 need the reference laptop, 1 needs the owner's asset record, and 1 is blocked on SR-39 (see "Reference-laptop checks").
 - The reference laptop (`amd64-intel-laptop`) station has not run.
   `amd64-amd-desktop` and `amd64-nvidia-desktop` are waived for Beta 1 (the
   owner has neither machine; decision of 2026-10-04), recorded in both
@@ -42,7 +41,7 @@ python3 scripts/verify-security-review.py \
   remaining D-Bus/polkit, notification, Files and terminal checks. Its fixes
   (SR-30 to SR-37) are on branch `op/security-stations`; GitHub CI builds and
   clippy-checks them on Linux and macOS. The JSON's `revision` is that pass's
-  last fix commit (`ef447b04`).
+  last fix commit (`6f9616a5`; that commit and this one have identical review sources).
 - **Method:** source review with `file:line` evidence, plus native execution
   on the disposable-install station. The review includes the crates,
   packaging, maintainer scripts, install and uninstall scripts, and the
@@ -64,7 +63,7 @@ python3 scripts/verify-security-review.py \
   list is the tier's H8 stations plus `disposable-install`; a waived station
   carries the owner decision's id.
 
-Of the 80 checks, 69 are `pass` and 11 are `pending` (the JSON is canonical).
+Of the 80 checks, 71 are `pass` and 9 are `pending` (the JSON is canonical).
 
 ## Station evidence
 
@@ -73,16 +72,17 @@ Of the 80 checks, 69 are `pass` and 11 are `pending` (the JSON is canonical).
 | `amd64-intel-laptop` (reference laptop) | pending | needs the owner; read-only steps in "Reference-laptop checks" |
 | `amd64-amd-desktop` | waived | owner decision 2026-10-04 (coordinator, under the owner's standing direction): the owner has no AMD desktop either. Waiver id `owner-2026-10-04-beta1-without-amd-nvidia-desktops`, beta tier only, also applied in `verify-beta-candidate.py` |
 | `amd64-nvidia-desktop` | waived | owner decision 2026-10-04: Beta 1 ships without NVIDIA testing because no NVIDIA machine is available ([known-limitations.md](known-limitations.md)). Same waiver id `owner-2026-10-04-beta1-without-amd-nvidia-desktops`. A waiver never passes a check or another station |
-| `disposable-install` | pending (ran; 9 of 12 station checks pass, 3 still need work) | `.github/workflows/security-station.yml`, run [37175024540](https://github.com/millionrust/lulo/actions/runs/37175024540) |
+| `disposable-install` | pending (ran: 11 of 12 checks pass) | `.github/workflows/security-station.yml`, final run [37182936329](https://github.com/millionrust/lulo/actions/runs/37182936329). Its gate stays red until SR-39 is resolved, so the station is not counted as passed |
 
 ### Disposable install (GitHub Actions `ubuntu-26.04`)
 
 A GitHub-hosted runner is a fresh Ubuntu 26.04 VM for each job. It has
 passwordless sudo and is thrown away afterwards, so the destructive checks run
-there and never on the reference laptop. The workflow takes the
-`lulo-candidate-<sha>` artifact that `candidate.yml` built for the latest
-green `dev` commit (`2f3ea7a4`, version `0.9.0~beta.1-38`) and verifies its `SHA256SUMS`. It then
-marks the runner disposable (`/run/rmac-disposable-vm`) and runs
+there and never on the reference laptop. The workflow runs only on request
+(`gh workflow run security-station.yml --ref <branch> -f candidate_run=<id>`).
+It takes the `lulo-candidate-<sha>` artifact of the given `candidate.yml` run
+(by default the latest green `dev` run) and verifies its `SHA256SUMS`. It
+then marks the runner disposable (`/run/rmac-disposable-vm`) and runs
 `scripts/linux/run-security-station.py` as root. The script refuses to run
 anywhere else.
 
@@ -94,26 +94,28 @@ All fixtures are synthetic: the users, the password, the package names, the
 APT repository and its key exist only on the runner. The journal check proves
 that none of the planted values reached the log.
 
-Run [37175024540](https://github.com/millionrust/lulo/actions/runs/37175024540)
-(image `ubuntu26` 20260927.149.1, station scripts `a19e5ae8`) tested
-candidate `0.9.0~beta.1-38` from `dev` `2f3ea7a4`
-(candidate run 37152104352). It is the third run of the workflow; the first
-two exposed bugs in the station script, which are fixed.
+Final run: [37182936329](https://github.com/millionrust/lulo/actions/runs/37182936329)
+(image `ubuntu26` 20260927.149.1, station scripts `6f9616a5`). It tested a
+candidate that `candidate.yml` built from this branch at `a633c70e` (run
+37177582555, version `0.9.0~beta.1-38`), so it includes the SR-15, SR-38,
+F-1 and F-2 fixes. Earlier runs (37175024540, 37176094048, 37181987160)
+found the station-script and lifecycle bugs noted below, which are fixed.
+Result: 11 of 12 station checks pass. `terminal-wrapper` fails on SR-39.
 
 | Station check | Result | What it proved |
 |---|---|---|
-| candidate-provenance | pass, with SR-15 still open | `SHA256SUMS` and `verify-native-packages.py` pass, and no personal home path is in any rmac file. Four shell binaries (`rmac-app-switcher`, `rmac-dock`, `rmac-mission-control`, `rmac-osd`) still embed the CI builder's checkout path through `env!("CARGO_MANIFEST_DIR")`. SR-15 stays open for this. |
+| candidate-provenance | pass | `SHA256SUMS` and `verify-native-packages.py` pass. With SR-15 fixed, no rmac file contains any build-host path: none from a personal home, the CI checkout or a Cargo home. `candidate.yml` also ran the tightened scanner on this build. |
 | install-effects | pass | With dependencies preinstalled, installing `rmac-apps` and `rmac-session` adds exactly the 288 paths dpkg lists. It changes and removes nothing else, apart from trigger-rebuilt caches. Purge restores the tree exactly. The maintainer scripts never create `/etc/keyd/rmac.conf`, never touch an administrator's own file there (on configure or purge), regenerate a stale rmac-owned file on configure, and remove it on purge. |
 | package-permissions | pass | All 288 package-owned paths are `root:root` with no setuid, setgid or sticky bit. Nothing is group- or world-writable, files are only `0644`/`0755`, there are no file capabilities and nothing lands in `/usr/local` (30 shared base directories skipped). |
-| package-lifecycle | not proven | `run-package-lifecycle.py` now gets past its preflight; its os-release bug is fixed (`f032fb9a`). In run 37176094048 it installed the baseline but stopped at its own metadata gate: Ubuntu 26.04's `appstreamcli validate --no-net` rejects rmac's installed metainfo (functional issue F-2). Rollback stays pending until that passes. |
+| package-lifecycle | pass | `run-package-lifecycle.py` ran all eight steps on the disposable VM. Baseline `0.9.0~beta.1-37` is the candidate's own binaries repackaged one Debian revision lower, so the upgrade and rollback exercise packaging, maintainer scripts and dpkg state, not different binaries. The steps: install the baseline; upgrade to `-38`; roll back with an interrupted `dpkg --unpack` of `-37`; recover with `dpkg --configure`; remove; purge; reinstall the candidate; purge again. Protected user data in a synthetic home and the GNOME recovery session survived every step. Getting here meant fixing two lifecycle-script bugs: the os-release symlink (`f032fb9a`) and config-files after a plain remove (`226aa104`). |
 | systemd-hardening | pass | `systemd-analyze verify` is clean for the relay socket and service. `systemd-analyze security` rates the relay 2.7 (OK): `DynamicUser`, `NoNewPrivileges`, an empty capability set, `PrivateNetwork` and `AF_UNIX` only. |
 | keyboard-relay | pass | SR-13 relay side: the socket is `0666 root`, and keyd and the relay ran. `native` was applied (`ok`). A `command()` binding, shell metacharacters, no newline, two lines, a NUL byte and 70 KB were all refused. No command ran, the session user is not in `keyd`, and the journal never echoes a request. |
 | polkit-policy | pass | `org.rmac.mac-keyboard.apply` is `auth_admin`/`auth_admin`/`auth_admin_keep`, and rmac ships no `.rules` file. Unprivileged `pkexec` without an agent exits 127 ("not authorised", distinct from 126 cancel) and the helper does not run. `pkcheck` answers `auth_admin`. |
 | lock-units | pass | `rmac-lock.service` has `AssertPathExists=/etc/pam.d/rmac-lock`, `OnFailure=rmac-lock-fallback.service` (swaylock, installed) and `LimitCORE=0`. `/etc/pam.d/rmac-lock` includes only `common-auth` and `common-account`. This proves only the runbook's prerequisites; the TTY recovery itself needs the laptop. |
 | untrusted-open | pass | Eight fixtures in a synthetic user's `~/Downloads`: an executable and a non-executable `.desktop`, `.sh`, an extensionless script, `.py`, an ELF binary, an executable `.txt` and a `$(…)` file name. Each went through Files' open path headless: the OpenURI portal on a private session bus, then `xdg-open` (`crates/rmac-portal/src/open.rs`), with `XDG_CURRENT_DESKTOP=rmac:niri` and rmac's MIME defaults. No marker file appeared, so nothing was executed. Scripts and text resolve to Text Editor. |
-| terminal-wrapper | not proven | Ptyxis, the default `x-terminal-emulator`, never ran the probe. In run 37175024540 there was no user manager for its systemd scope. In run 37176094048 there was, but Ptyxis then timed out waiting for the Settings portal on the headless runner. No marker appeared, and no argv was recorded either. |
-| sr29-packagekit | safety proven, script verdicts outdated | Run 37176094048, installed `rmac-update-check.service` against the real PackageKit 1.3.4 and a synthetic signed repository. (1) **Safe:** 2.0 was simulated, downloaded and scheduled (`reboot`, prepared ID exactly 2.0). (2) **Stale:** after the repository moved to 2.1, PackageKit itself discarded the prepared 2.0 at refresh, and the checker scheduled only a freshly simulated 2.1. (3) **Refused trigger:** with the offline action denied, `trigger failed` exits 1 and nothing is scheduled. (4) **Destructive:** a 3.0 that conflicts with an installed package was never scheduled, whether or not 2.0 had been scheduled before. (5) **Untrusted:** a repository re-signed by an unknown key fails at refresh (`cannot-fetch-sources`) with nothing scheduled. The station's own verdicts expected the checker to cancel stale plans itself and so reported failure; the corrected verdicts need one rerun. The cancellation-failure warning cannot be reached natively, because PackageKit drops a stale plan before the checker could cancel it. It stays covered by the fake PackageKit tests. |
-| journal-redaction | pass | This covers 93 rmac journal entries from package scripts, the keyboard helper and relay, polkit and the update checker. The planted password, private path, package name, repository path, relay request and key ID never appear. There are no control characters and no D-Bus unique names, and the longest line is 134 characters. |
+| terminal-wrapper | fail (SR-39) | Ptyxis, the default `x-terminal-emulator`, ran the probe under a headless Sway with a user manager. It received the exact argv rmac builds (`x-terminal-emulator -e PROGRAM ARGS…`) except that it **dropped** the argument `$(touch $HOME/MARKER-term-subst)`. Nothing was executed (no marker file), and the `;`, backtick, quote, `-e` and empty arguments arrived literally. |
+| sr29-packagekit | pass | Installed `rmac-update-check.service` against the real PackageKit 1.3.4 and a synthetic signed repository. (1) **Safe:** 2.0 was simulated, downloaded and scheduled (`reboot`, prepared ID exactly 2.0). (2) **Stale:** after the repository moved to 2.1, PackageKit discarded the prepared 2.0 at refresh, and the checker scheduled only a freshly simulated 2.1. (3) **Refused trigger:** with the offline action denied, `trigger failed` exits 1 and nothing is scheduled. (4) **Destructive:** a 3.0 that conflicts with an installed package was never scheduled, scheduled before or not. (5) **Untrusted:** a repository re-signed by an unknown key fails at refresh (`cannot-fetch-sources`). The cancellation-failure warning cannot be reached natively, because PackageKit drops a stale plan before the checker could cancel it; the fake PackageKit tests cover it. |
+| journal-redaction | pass | This covers 85 rmac journal entries from package scripts, the keyboard helper and relay, polkit and the update checker. The planted password, private path, package name, repository path, relay request and key ID never appear. There are no control characters and no D-Bus unique names, and the longest line is 134 characters. |
 
 
 ## Findings fixed in this review
@@ -178,7 +180,8 @@ Found and fixed in the 2026-10-04 pass (branch `op/security-stations`):
 
 SR-29 (Low, updates) is closed. Its source fix ships in the tested
 candidate `2f3ea7a4`, and the disposable station proved it natively against
-the real PackageKit (station check `sr29-packagekit`, run 37176094048):
+the real PackageKit (station check `sr29-packagekit`, runs 37176094048 and
+37182936329):
 - the automatic set is simulated before anything is scheduled;
 - a destructive plan is never scheduled;
 - a stale plan is never applied (PackageKit discards it at refresh, and only
@@ -208,6 +211,7 @@ Partly fixed; the rest stays open below:
 | ID | Severity | Boundary | Evidence | Exploit scenario | Recommended fix |
 |---|---|---|---|---|---|
 | SR-18 | Low (source fix pending native run) | packages | Release containers pin the reviewed Ubuntu 26.04 index digest. The rustup installer and `cargo-cyclonedx` source archive have checked SHA-256 pins in `release.yml`; focused workflow tests pass. Rust 1.95.0 toolchain artifacts remain version-selected, and no native release workflow has run with these changes. | Supply-chain drift or a broken release job. | Run the release workflow on native builders and review the resulting artifacts and provenance before closing this finding. |
+| SR-39 | Low | desktop-entry-execution | Found 2026-10-04 by the station (`terminal-wrapper`). Ptyxis, the Ubuntu 26.04 default `x-terminal-emulator`, drops an argument of the form `$(…)` from `-e PROGRAM ARGS…`. It executes nothing and keeps every other argument, including shell metacharacters, literally. | A `Terminal=true` desktop entry whose arguments include such a string runs with one argument missing, so the program sees different arguments from the ones the entry declares. That breaks the argument boundary, though not the execution boundary. | Reproduce with Ptyxis upstream and report it. For Ptyxis, launch with `ptyxis -- PROGRAM ARGS…`, or have Lulo's Terminal implement `-e` and become the session's `TERMINAL`. Re-run the station check. |
 
 A read-only PackageKitGlib probe on the reference PC on 2026-09-28 found
 `offline_get_action() == 3` (`UNSET`), so no offline update was scheduled at
@@ -227,6 +231,7 @@ Beta with this risk and mitigation; each has a Known issues note in
 | ID | Severity | Decision | Risk | Mitigation until fixed |
 |---|---|---|---|---|
 | SR-18 | Low | Accept for Beta | A release build can still fail or drift in untested toolchain artifact selection; the new content-pinned workflow has not had a native run. | Release containers, rustup installer, and `cargo-cyclonedx` archive are content-pinned in source. Actions are pinned by commit SHA (SR-16), builds use `Cargo.lock` with `--locked`, `cargo-deny` gates advisories and licences (SR-05), outputs carry a workflow-bound provenance attestation that `install.sh` now requires (SR-17), and the APT publisher re-verifies every input (SR-12). |
+| SR-39 | Low | Owner decides (proposed: accept for Beta with the mitigation) | A terminal app with `$(…)` in its declared arguments gets one argument fewer. Nothing is executed. | Only third-party desktop entries with such arguments are affected, and Lulo OS ships none. |
 
 **Informational, no severity:**
 
@@ -274,7 +279,7 @@ Legend:
 | hidden-tryexec-precedence | pass | the id is claimed before parsing (`platform.rs:148-151,193-203`); TryExec is checked by path or PATH plus the executable bit (`:642-664`) |
 | launch-diagnostics-redacted | pass | `crates/rmac-app-launch/src/application.rs` returns kinds only |
 | no-shell-interpolation | pass | only two `sh -c` uses in the tree, both constant scripts with positional arguments (`crates/rmac-clipboard-linux/src/wayland.rs:25,47`, `shell/compat/gpui_linux/src/linux/platform.rs:305-321`) |
-| terminal-wrapper-argument-boundary | pending (native) | rmac keeps argv after `-e` intact (`catalog.rs:283-334`) and the session never sets `TERMINAL`; x-terminal-emulator is `/usr/bin/ptyxis` on the reference laptop. Station `terminal-wrapper` has not yet run Ptyxis to completion (see Station evidence). |
+| terminal-wrapper-argument-boundary | pending (SR-39) | rmac keeps argv after `-e` intact (`catalog.rs:283-334`) and the session never sets `TERMINAL`. Lulo's own Terminal (`rmac-terminal`) takes no command arguments and is not an `x-terminal-emulator`, so the check covers whatever terminal that alternative names: Ptyxis on Ubuntu 26.04. Station `terminal-wrapper`: Ptyxis executes nothing it is given, but it drops an argument (SR-39) |
 | working-directory-validated | pass | only an absolute `Path=` becomes the working directory (`crates/rmac-apps/src/platform.rs` `working_directory`); SR-20 fixed |
 
 ### dbus-polkit
@@ -284,7 +289,7 @@ Legend:
 | bounded-call-time-and-output | pass | nmcli and helper output is bounded (`crates/rmac-network/src/vpn_import.rs:343-356`, `crates/rmac-privacy-linux/src/security.rs:33-80`); service and agent connections set a 5-second `method_timeout` (SR-25 fixed) |
 | denial-and-cancel-distinct | pass | pkexec 126 is "cancelled", 127 is "not authorised" (`rmac_keyboard::command_failure`); SR-26 fixed |
 | interactive-authorization-only-from-user-action | pass | 2026-10-04 trace: rmac never sets the message flag. Every `interactive=true` argument (hostnamed, timedated, localed, `SetX11Keyboard`) and the only `pkexec` come from a Save, Apply, switch or confirmation. The PackageKit interactive install has no caller, and the automatic path uses `interactive=false`. The one background call, NetworkManager `RequestScan`, is `allow_active`/`allow_inactive: yes` on the reference laptop (policy file read 2026-10-04), so it cannot prompt. Station: `polkit-policy` |
-| mutation-requires-authoritative-readback | pending (native) | hostname, time, locale, Bluetooth, Wi-Fi, VPN and updates re-read the authority. Sharing waits for systemd and re-snapshots, and SR-30 (ssh.socket) is fixed. A Remote Login toggle on a real session is still owed (Reference-laptop checks; functional issue F-1) |
+| mutation-requires-authoritative-readback | pending (native) | hostname, time, locale, Bluetooth, Wi-Fi, VPN and updates re-read the authority. Sharing waits for systemd and re-snapshots. SR-30 (`ssh.socket`) and F-1 (interactive authorization) are fixed. A Remote Login toggle on a real session is still owed (Reference-laptop checks) |
 | no-credential-collection | pass | admin credentials only through polkit agents; the keyboard helper takes enumerated flags only (`crates/rmac-keyboard/src/helper.rs:24-48`); Wi-Fi secrets are zeroized with redacted Debug (`crates/rmac-network/src/model.rs:191-260`) |
 | system-bus-callers-treated-untrusted | pass | the NetworkManager secret agent and BlueZ pairing agent accept calls only from the service's unique name, resolved at registration; SR-22 fixed |
 | unique-owner-revalidated | pass | the portal backends compare the caller with the owner of `org.freedesktop.portal.Desktop` (`crates/rmac-file-chooser/src/dbus.rs:245-266`); the safe-mode notice accepts answers only from the server that answered `Notify` (SR-23 fixed) |
@@ -332,7 +337,7 @@ Legend:
 | diagnostics-redacted | pass | 2026-10-04 trace: the notification crates log nothing, and `notification-center-app` prints only `Copy` error kinds and fixed strings. No summary, body, app name, icon path, action ID or sender is printed |
 | focus-suppression-authoritative | pass | the server asks Focus at delivery time (`service.rs` `policy` → `org.rmac.Focus1.DeliveryPolicy`) and fails closed. SR-31 (urgent posts no longer bypass the fallback) and SR-32 (2 s bound) are fixed |
 | history-and-payload-bounded | pass | payload limits (`crates/rmac-notifications/src/lib.rs:20-29`); history 500 records, 100 per app, 8 MiB; live notifications 100 and 4 MiB per sender, 1024 and 32 MiB overall (SR-11 fixed) |
-| lock-screen-content-redacted | pending (SR-38) | the lock provider has no notification path and `LockPreview` defaults to `Hide`, but the banner daemon ignores lock state (SR-38). A station check is in Reference-laptop checks |
+| lock-screen-content-redacted | pending (native) | SR-38 fixed (`8b97ae50`): banners are held while logind's `LockedHint` is set and presented on unlock. The lock provider has no notification path and `LockPreview` defaults to `Hide`. A locked-session check on the reference laptop is still owed (Reference-laptop checks) |
 | markup-treated-as-untrusted | pass | legacy body is plain text; portal markup is reduced to inert text, capped at 64 KiB (`decode.rs:29-31,196-270`); image paths are ignored and portal media accepted only as sealed memfds (`media.rs:749-790`) |
 | sender-attribution-not-invented | pass | identity is the unique bus name; the claimed `app_name` is ignored (`origin.rs:1-10`) |
 
@@ -351,11 +356,11 @@ Legend:
 | Check | Verdict | Evidence |
 |---|---|---|
 | architecture-and-file-inventory-exact | pass | `scripts/linux/verify-native-packages.py:390-436` (see SR-18 for the mode check) |
-| artifact-contains-no-build-host-data | pending (SR-15) | station `candidate-provenance`: no personal home path in any rmac file, but four shell binaries embed the builder's checkout path through `CARGO_MANIFEST_DIR` (SR-15) |
+| artifact-contains-no-build-host-data | pass | SR-15 fixed (`6c571827`). Station `candidate-provenance` on the branch-built candidate found no build-host path in any rmac file, and the tightened `verify-native-packages.py` passed in `candidate.yml` |
 | dependency-and-advisory-policy-passes | pass | cargo-deny `check` (advisories, licences, bans, sources) passed for the root workspace (`Dependency policy`) and the shell workspace (`Current GPUI Linux runtime gate`) on the candidate commit `2f3ea7a4` (CI run 37152104376). SR-37: `release.yml` now gates both workspaces |
 | license-inventory-complete | pending (native) | Rust dependencies are covered by cargo-deny. The provenance of the non-Rust assets (wallpapers, sounds, cursors, icons, brand, greeter art) needs the owner's record (Reference-laptop checks) |
 | native-and-sandbox-boundaries-explicit | pass (source policy) | `packaging/flatpak/decisions.json` covers all thirteen packaged apps and `verify-flatpak-package.py` binds each decision to its desktop executable; only Text Editor has a reviewed Flatpak manifest with `--socket=wayland --device=dri`. Maintainer scripts touch only `/etc/keyd/rmac.conf` (`packaging/rmac-session/debian/postinst`, `postrm`). Native station proof remains separate. |
-| rollback-and-uninstall-tested | pending (native) | station `install-effects`: install and purge are exact, and the maintainer scripts touch only `/etc/keyd/rmac.conf`. The baseline → candidate upgrade, interrupted rollback, remove, purge and reinstall cycle (`run-package-lifecycle.py`) has not completed on the station yet. |
+| rollback-and-uninstall-tested | pass | Station `package-lifecycle`: baseline install, upgrade, interrupted rollback and recovery, remove, purge, reinstall and final purge all pass with user data and the GNOME recovery session intact. Station `install-effects`: install and purge are exact, and the maintainer scripts touch only `/etc/keyd/rmac.conf` |
 | signature-and-origin-claims-bounded | pass | SR-14 and SR-17 fixed: the release attestation is mandatory and workflow-bound; without `gh` only an explicit `--allow-unattested` installs |
 | unpackaged-executables-rejected | pass | `verify-native-packages.py:430-436`; no setuid in source |
 
@@ -411,9 +416,9 @@ apart from the action it names. Keep raw logs and screenshots out of Git.
 | lock-boundary / provider-crash-fails-closed | As above. Also run `scripts/linux/run-lock-provider-recovery-gate.sh --execute` from a local graphical login (it refuses SSH). | The gate script passes; a crash or hang never unlocks; only a successful PAM authentication exits 0. |
 | lock-boundary / suspend-waits-for-lock-readiness | With the session unlocked, choose Sleep from the menu bar. Resume, then run `journalctl --user -u rmac-lock-coordinator -u rmac-lock -b -o short-monotonic`. | The lock-ready line comes before logind's `PrepareForSleep`, and the first frame after resume is the lock screen. |
 | lock-boundary / tty-recovery-proven | Follow [secure-lock-recovery.md](secure-lock-recovery.md) from Ctrl+Alt+F3 with the provider deliberately stopped. | Every runbook command works as written. The disposable station already proved the units, PAM service and swaylock it names are installed as documented (`lock-units`). |
-| notifications / lock-screen-content-redacted | Lock, with Orca off and then on. From a TTY in the same session, post `notify-send -u critical 'Synthetic title' 'Synthetic body'`. | Nothing but the lock surface is visible, and nothing is spoken. This stays pending until SR-38 is fixed. |
+| notifications / lock-screen-content-redacted | Lock, with Orca off and then on. From a TTY in the same session, post `notify-send -u critical 'Synthetic title' 'Synthetic body'`. | Nothing but the lock surface is visible, nothing is spoken and no sound plays. After unlock, the held banner appears (SR-38 fix). |
 | file-operations / mount-disappearance-recovers | Make a 64 MiB image with `truncate -s 64M /tmp/sr.img; mkfs.vfat /tmp/sr.img`, then run `udisksctl loop-setup -f /tmp/sr.img` and `udisksctl mount -b /dev/loopN`. In Files, start a large copy into the volume and a cross-volume move out of it, then run `udisksctl unmount -f -b /dev/loopN` mid-transfer. Browse inside the mount while it disappears. | The source hashes are unchanged, the error says the source was kept, no hidden staging is left after a remount, and a tab inside the mount returns to Home with the disconnect notice. |
-| dbus-polkit / mutation-requires-authoritative-readback | With `openssh-server` installed, run `systemctl is-enabled ssh.socket ssh.service; ss -ltn 'sport = :22'`. Toggle System Settings > General > Sharing > Remote Login on and off, and run the same commands after each toggle. Also toggle Date & Time > Set automatically. | The pane always matches systemd and the listening socket (SR-30). Today the Sharing calls carry no interactive-authorization flag, so they are likely to fail as "denied" (functional issue F-1 below). |
+| dbus-polkit / mutation-requires-authoritative-readback | With `openssh-server` installed, run `systemctl is-enabled ssh.socket ssh.service; ss -ltn 'sport = :22'`. Toggle System Settings > General > Sharing > Remote Login on and off, and run the same commands after each toggle. Also toggle Date & Time > Set automatically. | The pane always matches systemd and the listening socket (SR-30). F-1 is fixed, so polkit should prompt for the password. |
 | packages / license-inventory-complete | The owner confirms the provenance of the non-Rust assets that the packages ship (`packaging/rmac-session/wallpapers`, `assets/sounds`, `assets/cursors`, `assets/icons`, `assets/brand`, the greeter artwork) and records it in a `packaging/rmac-session/LICENSES.md`, as `packaging/rmac-apps/LICENSES.md` already does for the apps. | Every shipped non-ELF file falls under a recorded licence. |
 
 **Functional issues found and fixed (not security findings).**

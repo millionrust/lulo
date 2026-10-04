@@ -44,12 +44,13 @@ CI/candidate-package builds for recent `dev` commits.
    binaries.
 4. **The Orca accessibility audit (journey 9).** An automated run is in
    progress; the owner still needs to do the final listen.
-5. **Security-review native-station evidence (11 of 80 checks left).** The
-   disposable-install station runs on GitHub Actions (2026-10-04). The NVIDIA
-   station is waived for Beta 1 by the owner. The reference laptop's checks
-   (lock screen, TTY recovery, suspend, Sharing toggle, mount removal) need
+5. **Security-review native-station evidence (9 of 80 checks left).** The
+   disposable-install station runs on GitHub Actions. The AMD and NVIDIA
+   desktop stations are waived for Beta 1, because the owner has neither
+   machine. The reference laptop's checks (lock screen, TTY recovery,
+   suspend, Sharing toggle, mount removal, notifications while locked) need
    the owner; the read-only steps are in the review's "Reference-laptop
-   checks". The H8 tier still lists `amd64-amd-desktop`.
+   checks".
 6. **NVIDIA testing: dropped from Beta 1** (owner decision 2026-10-04: no NVIDIA machine is available; shipped as a known limitation in docs/known-limitations.md). Needs NVIDIA hardware, which the project doesn't
    have yet.
 7. **A real GitHub Actions release-workflow run on the actual tag.** There
@@ -575,23 +576,24 @@ pass's explanation of the same gates and remain directionally accurate:
 4. **Security review: Fail (source review and disposable station done,
    gate not met).**
    [docs/security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md)
-   and its canonical format 2 summary cover all 80 checks.
-   - **Disposable station, 2026-10-04:** the new disposable-install station
-     (`.github/workflows/security-station.yml`, a fresh GitHub `ubuntu-26.04`
-     VM) proved exact install and purge, maintainer-script scope, package
-     permissions, relay hardening and refusal, polkit denial, that untrusted
-     files never execute, and journal redaction against the dev candidate.
-   - **Fixes:** the same pass fixed SR-30 to SR-37: the Medium Remote Login
-     `ssh.socket` gap, plus Low issues in Focus, log privacy and the release
-     cargo-deny gate.
-   - **Counts:** 69 checks pass and 11 are pending. Most of the pending ones
-     need the reference laptop's lock screen, a live session or the owner.
-   - **SR-29:** closed after a native PackageKit run on the station.
-   - **Open findings:** three Low: SR-15, SR-18 and the new SR-38 (banners
-     while locked).
-   - **Stations:** NVIDIA is waived by the owner's 2026-10-04 decision. The
-     reference laptop and the AMD desktop H8 station have not run, so
-     `verify-security-review.py` still fails closed.
+   and its format 2 summary cover all 80 checks.
+   - **Disposable station:** it runs on GitHub Actions on request
+     (`.github/workflows/security-station.yml`, a fresh `ubuntu-26.04` VM).
+     Against a candidate built from the fix branch, it passed 11 of 12
+     checks: install/purge exactness, maintainer scripts, permissions, the
+     full package lifecycle and rollback, relay hardening, polkit denial,
+     untrusted files never executing, native PackageKit (SR-29) and journal
+     redaction. The 12th check found SR-39 (Ptyxis drops a `$(…)`
+     argument).
+   - **Fixes:** SR-15, SR-29 to SR-38, and functional issues F-1 (Sharing
+     polkit prompts) and F-2 (AppStream categories).
+   - **Counts:** 71 checks pass and 9 are pending: 7 on the reference laptop,
+     1 needing the owner's asset licence record, and 1 blocked on SR-39.
+   - **Open findings:** two Low, SR-18 and SR-39.
+   - **Stations:** the AMD and NVIDIA desktops are waived
+     (`owner-2026-10-04-beta1-without-amd-nvidia-desktops`). The reference
+     laptop station has not run, so `verify-security-review.py` still fails
+     closed.
 5. **Product journeys remain incomplete.** Journey 5's nested Save-panel
    scenario passes and the chooser service is deployed, but the live portal
    flow has not been retested; journey 6's process-stop path is live-confirmed

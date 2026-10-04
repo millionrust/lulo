@@ -8,9 +8,8 @@
   "hardware_manifest_sha256": "ab5a80a837594775e442c9a7d966ae0abf27e2e14ae4f2807303a30669f20b40",
   "journey_manifest_sha256": "6c3867951d1bdaf5742eb53c4a89e9409dc56510227bdf5acee2d57eb6acf264",
   "open_findings": [
-    "SR-15 low packages: four shell binaries embed the builder checkout path through CARGO_MANIFEST_DIR asset fallbacks (accepted for Beta: no personal home path in CI-built packages)",
     "SR-18 low packages: release toolchain artifacts version-selected and no native release-workflow run yet (accepted for Beta: content-pinned containers, rustup and cargo-cyclonedx, SHA-pinned actions, Cargo.lock, cargo-deny, attested outputs)",
-    "SR-38 low notifications: the banner daemon ignores lock state, so a screen reader may speak notification content while locked (owner decision pending; proposed fix before Beta)"
+    "SR-39 low desktop-entry-execution: the default x-terminal-emulator (Ptyxis) drops a $(...) argument from -e PROGRAM ARGS; nothing is executed (proposed accept for Beta; no shipped entry affected)"
   ],
   "results": [
     {
@@ -286,7 +285,7 @@
     {
       "check": "artifact-contains-no-build-host-data",
       "domain": "packages",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "dependency-and-advisory-policy-passes",
@@ -306,7 +305,7 @@
     {
       "check": "rollback-and-uninstall-tested",
       "domain": "packages",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "signature-and-origin-claims-bounded",
@@ -414,7 +413,7 @@
       "status": "pass"
     }
   ],
-  "revision": "ef447b04f22ecb669f63352b84500655e610cef8",
+  "revision": "6f9616a52884ba913b75fd0b201c483bf1a368ac",
   "source_sha256": {
     "crates/finder/SPEC.md": "6df7bd83231c0be08746fef8c356fe53f151162f17fcd5a68fe38ec8dc8cc6bf",
     "crates/notes/SPEC.md": "9c9aab3391de602bcde6162db06576f577d74d2ae4c63f729a525868ffc7f4fa",
@@ -451,7 +450,7 @@
     "scripts/linux/publish-apt-snapshot.py": "8360e3e4cf6dafac8564fbc96824d349e0d7266ce14e86018a9fc8b2a3d22241",
     "scripts/linux/verify-flatpak-package.py": "a0de2e40dafb0ed01cb1756ca4b3b2ce3ec999443852c2951009a90c8bfb77d6",
     "scripts/linux/verify-keyring-packages.py": "df9413aeb3dab43f7581667731056661fe9e72a28f67a183bff9418ae1193aba",
-    "scripts/linux/verify-native-packages.py": "dec165b37d2cc7cea1e957f8c25d1dd45d69232017e4f1dff9f8ed309c11650f",
+    "scripts/linux/verify-native-packages.py": "0d883e2eb2bda257b7555c4db379190e7101b9c23d6f8cfae1c3f471aae0dd2b",
     "scripts/linux/verify-update-trust.py": "328958f2e931c018d0a9d85ce69472f8d80e62b8519e9bc2e589b8ff4cb1f297"
   },
   "stations": [
@@ -461,12 +460,13 @@
     },
     {
       "id": "amd64-amd-desktop",
-      "status": "pending"
+      "status": "waived",
+      "waiver": "owner-2026-10-04-beta1-without-amd-nvidia-desktops"
     },
     {
       "id": "amd64-nvidia-desktop",
       "status": "waived",
-      "waiver": "owner-2026-10-04-beta1-without-nvidia"
+      "waiver": "owner-2026-10-04-beta1-without-amd-nvidia-desktops"
     },
     {
       "id": "disposable-install",

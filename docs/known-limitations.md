@@ -127,9 +127,10 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 
 ## Known issues: security findings accepted for Beta
 
-One Low finding from the
-[security review](security-review-0.9.0-beta.1.md) is open and accepted for
-Beta with a mitigation. It still counts against the security gate.
+Two Low findings from the
+[security review](security-review-0.9.0-beta.1.md) are open. Each has a
+mitigation, and both still count against the security gate. SR-18 is
+accepted for Beta; SR-39 is proposed for acceptance.
 
 - **SR-18, release build inputs.** Release containers, the rustup installer,
   and the `cargo-cyclonedx` source archive now have content pins in source.
@@ -137,6 +138,11 @@ Beta with a mitigation. It still counts against the security gate.
   workflow has not had a native release run. Actions are pinned by commit,
   Rust dependencies are locked and checked by cargo-deny, and every package
   carries a provenance attestation that `install.sh --from-release` verifies.
+- **SR-39, terminal apps can lose an argument.** When an app's desktop entry
+  asks to run in a terminal, Lulo OS hands its exact arguments to the
+  default terminal, Ptyxis. Ptyxis drops an argument written as `$(…)`. It
+  never runs it, but the app starts with that argument missing. No app that
+  Lulo OS ships is affected.
 - **Automatic updates on older installs (SR-29, fixed).** Builds before the
   fix, such as `8ba31b82`, schedule automatic updates without first checking
   whether they remove a package. Current packages simulate first and never

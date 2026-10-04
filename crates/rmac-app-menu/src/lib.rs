@@ -1296,6 +1296,10 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Basic", "calculator::ShowBasic", "⌘1"),
             item!("Scientific", "calculator::ShowScientific", "⌘2"),
+            item!("Programmer", "calculator::ShowProgrammer", "⌘3"),
+            item!("RPN Mode", "calculator::ToggleRpnMode", "⌘R"),
+            item!("Convert", "calculator::ShowConvert", "⌥⌘C"),
+            item!("Maths Notes…", "calculator::ShowMathsNotes", "⌥⌘M"),
             item!(
                 "Hide Thousands Separator",
                 "calculator::ToggleThousandsSeparator",

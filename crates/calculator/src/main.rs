@@ -1,5 +1,6 @@
 //! rmac Calculator: macOS Calculator's Basic and Scientific modes.
 
+mod maths_notes;
 mod view;
 
 use std::borrow::Cow;
@@ -20,6 +21,10 @@ gpui::actions!(
         Paste,
         ShowBasic,
         ShowScientific,
+        ShowProgrammer,
+        ShowConvert,
+        ToggleRpnMode,
+        ShowMathsNotes,
         ShowHistory,
         ToggleThousandsSeparator,
         DecimalPlaces0,
@@ -85,6 +90,10 @@ fn main() {
                 ),
                 KeyBinding::new("cmd-1", ShowBasic, Some("Calculator")),
                 KeyBinding::new("cmd-2", ShowScientific, Some("Calculator")),
+                KeyBinding::new("cmd-3", ShowProgrammer, Some("Calculator")),
+                KeyBinding::new("alt-cmd-c", ShowConvert, Some("Calculator")),
+                KeyBinding::new("cmd-r", ToggleRpnMode, Some("Calculator")),
+                KeyBinding::new("alt-cmd-m", ShowMathsNotes, Some("Calculator")),
                 KeyBinding::new("ctrl-cmd-s", ShowHistory, Some("Calculator")),
                 KeyBinding::new(
                     rmac_ui::shortcuts::CLOSE.keystroke,
@@ -99,9 +108,13 @@ fn main() {
             // Preview's open-file list), so this is the same quit as ⌘Q.
             cx.on_action(|_: &QuitAndKeepWindows, cx| cx.quit());
             rmac_ui::install_app_menu(CALCULATOR, cx);
-            // Basic is the only mode, so View ▸ Basic is always the ticked one.
+            // Basic is the starting mode, so View ▸ Basic is the ticked one.
             rmac_ui::set_menu_checked("calculator::ShowBasic", true, cx);
             rmac_ui::set_menu_checked("calculator::DecimalPlaces8", true, cx);
+            // RPN Mode only drives Basic's keypad (see `rpn.rs`'s module doc
+            // comment); it starts unchecked and enabled, since Basic is the
+            // starting mode.
+            rmac_ui::set_menu_checked("calculator::ToggleRpnMode", false, cx);
             // Calculator's fixed Basic and Scientific surfaces cannot enter
             // full screen on the Mac; the View row is present but greyed.
             rmac_ui::set_menu_enabled("calculator::EnterFullScreen", false, cx);

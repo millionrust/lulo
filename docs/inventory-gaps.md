@@ -15,16 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_485 gaps across 10 apps; 169 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
-
-## Calculator
-
-| id | impact | item | where | Mac shortcut | Lulo shortcut | note |
-|---|---|---|---|---|---|---|
-| CLC-MENU-002 | missing menu item (has a shortcut) | Convert | View ▸ Convert | ⌥⌘C |  | missing from Lulo's menu bar |
-| CLC-MENU-004 | missing menu item (has a shortcut) | Maths Notes… | View ▸ Maths Notes… | ⌥⌘M |  | missing from Lulo's menu bar |
-| CLC-MENU-001 | missing menu item (has a shortcut) | Programmer | View ▸ Programmer | ⌘3 |  | missing from Lulo's menu bar |
-| CLC-MENU-003 | missing menu item (has a shortcut) | RPN Mode | View ▸ RPN Mode | ⌘R |  | missing from Lulo's menu bar |
+_481 gaps across 9 apps; 169 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Clock
 

@@ -9,10 +9,15 @@ use gpui::{
     IntoElement, KeyDownEvent, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
+use rmac_calculator::convert::{self, ConvertState};
+use rmac_calculator::convert_keypad::{self, Key as ConvertKey};
 use rmac_calculator::engine::{fitted_font_size, Calculator, HistoryEntry, Key as BasicKey};
 use rmac_calculator::keypad::{
     self, key_face, key_for_input, key_origin, key_style, KeyFace, KeyStyle, Palette,
 };
+use rmac_calculator::programmer::{self, ProgrammerCalculator};
+use rmac_calculator::programmer_keypad;
+use rmac_calculator::rpn::{self, RpnEngine};
 use rmac_calculator::scientific::{self, ScientificCalculator};
 use rmac_calculator::scientific_keypad;
 use rmac_ui::mac;
@@ -21,26 +26,42 @@ use crate::{
     CloseWindow, Copy, DecimalPlaces0, DecimalPlaces1, DecimalPlaces10, DecimalPlaces11,
     DecimalPlaces12, DecimalPlaces13, DecimalPlaces14, DecimalPlaces15, DecimalPlaces2,
     DecimalPlaces3, DecimalPlaces4, DecimalPlaces5, DecimalPlaces6, DecimalPlaces7, DecimalPlaces8,
-    DecimalPlaces9, EnterFullScreen, Paste, ShowBasic, ShowHistory, ShowScientific,
-    ToggleThousandsSeparator,
+    DecimalPlaces9, EnterFullScreen, Paste, ShowBasic, ShowConvert, ShowHistory, ShowMathsNotes,
+    ShowProgrammer, ShowScientific, ToggleRpnMode, ToggleThousandsSeparator,
 };
 
 /// How long a key stays lit after a hardware key press.
 const KEY_FLASH: Duration = Duration::from_millis(110);
+
+/// RPN Mode reuses Basic's own `+ − × ÷` keys (see `rpn.rs`); this maps
+/// Basic's operator type to RPN's.
+fn rpn_operator(operator: rmac_calculator::engine::Operator) -> rpn::Operator {
+    use rmac_calculator::engine::Operator as BasicOperator;
+    match operator {
+        BasicOperator::Add => rpn::Operator::Add,
+        BasicOperator::Subtract => rpn::Operator::Subtract,
+        BasicOperator::Multiply => rpn::Operator::Multiply,
+        BasicOperator::Divide => rpn::Operator::Divide,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
 pub(crate) enum Mode {
     #[default]
     Basic,
     Scientific,
+    Programmer,
+    Convert,
 }
 
-/// Which key is lit from a hardware key press. Basic and Scientific use
-/// different `Key` types, so the flash marker carries whichever is active.
+/// Which key is lit from a hardware key press. Each mode with its own
+/// keypad carries its own `Key` type; RPN mode reuses Basic's own keys (see
+/// `rpn.rs`'s module doc comment) so it has no flash variant of its own.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum FlashKey {
     Basic(BasicKey),
     Scientific(scientific::Key),
+    Programmer(programmer::Key),
 }
 
 pub(crate) struct CalculatorView {
@@ -48,6 +69,13 @@ pub(crate) struct CalculatorView {
     mode: Mode,
     calculator: Calculator,
     scientific: ScientificCalculator,
+    programmer: ProgrammerCalculator,
+    convert: ConvertState,
+    /// RPN Mode (View ▸ RPN Mode, ⌘R): scoped to Basic's keypad (CALC-06's
+    /// doc comment explains why). `rpn` holds the stack even while the
+    /// toggle is off, so turning it back on does not lose work.
+    rpn_enabled: bool,
+    rpn: RpnEngine,
     /// The key lit by the last hardware key press, and a generation so an
     /// older timer cannot clear a newer flash.
     flash: Option<(FlashKey, u64)>,
@@ -65,6 +93,10 @@ impl CalculatorView {
             mode: Mode::Basic,
             calculator: Calculator::new(),
             scientific: ScientificCalculator::new(),
+            programmer: ProgrammerCalculator::new(),
+            convert: ConvertState::new(),
+            rpn_enabled: false,
+            rpn: RpnEngine::new(),
             flash: None,
             flash_generation: 0,
             mode_menu_open: false,
@@ -74,13 +106,38 @@ impl CalculatorView {
         }
     }
 
+    /// In RPN Mode, Basic's own keys drive the stack engine instead of the
+    /// ordinary algebraic one (see `rpn.rs`'s module doc comment).
     fn press_basic(&mut self, key: BasicKey, cx: &mut Context<Self>) {
+        if self.rpn_enabled {
+            self.press_rpn(key, cx);
+            return;
+        }
         self.calculator.press(key);
+        cx.notify();
+    }
+
+    fn press_rpn(&mut self, key: BasicKey, cx: &mut Context<Self>) {
+        match key {
+            BasicKey::Digit(digit) => self.rpn.digit(digit),
+            BasicKey::Decimal => self.rpn.decimal(),
+            BasicKey::Operator(operator) => self.rpn.operator(rpn_operator(operator)),
+            BasicKey::Equals => self.rpn.enter(),
+            BasicKey::ToggleSign => self.rpn.toggle_sign(),
+            BasicKey::Clear => self.rpn.clear(),
+            BasicKey::Backspace => self.rpn.backspace(),
+            BasicKey::Percent => self.rpn.percent(),
+        }
         cx.notify();
     }
 
     fn press_scientific(&mut self, key: scientific::Key, cx: &mut Context<Self>) {
         self.scientific.press(key);
+        cx.notify();
+    }
+
+    fn press_programmer(&mut self, key: programmer::Key, cx: &mut Context<Self>) {
+        self.programmer.press(key);
         cx.notify();
     }
 
@@ -124,13 +181,68 @@ impl CalculatorView {
                     cx.stop_propagation();
                 }
             }
+            Mode::Programmer => {
+                if let Some(key) = programmer_keypad::key_for_input(
+                    &keystroke.key,
+                    keystroke.key_char.as_deref(),
+                    shortcut,
+                ) {
+                    if programmer_keypad::key_enabled(key, self.programmer.base()) {
+                        self.press_programmer(key, cx);
+                        self.start_flash(FlashKey::Programmer(key), cx);
+                        cx.stop_propagation();
+                    }
+                }
+            }
+            Mode::Convert => {
+                if shortcut {
+                    return;
+                }
+                if let Some(character) = keystroke.key_char.as_deref().and_then(|text| {
+                    let mut chars = text.chars();
+                    let (Some(character), None) = (chars.next(), chars.next()) else {
+                        return None;
+                    };
+                    Some(character)
+                }) {
+                    match character {
+                        '0'..='9' => {
+                            self.convert.digit(character as u8 - b'0');
+                            cx.notify();
+                        }
+                        '.' | ',' => {
+                            self.convert.decimal();
+                            cx.notify();
+                        }
+                        _ => {}
+                    }
+                    cx.stop_propagation();
+                } else {
+                    match keystroke.key.as_str() {
+                        "backspace" | "delete" => {
+                            self.convert.backspace();
+                            cx.notify();
+                            cx.stop_propagation();
+                        }
+                        "escape" => {
+                            self.convert.clear();
+                            cx.notify();
+                            cx.stop_propagation();
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
     }
 
     fn copy(&mut self, cx: &mut Context<Self>) {
         let text = match self.mode {
+            Mode::Basic if self.rpn_enabled => self.rpn.current_text(),
             Mode::Basic => self.calculator.copy_text(),
             Mode::Scientific => self.scientific.copy_text(),
+            Mode::Programmer => self.programmer.display(),
+            Mode::Convert => self.convert.to_text(),
         };
         cx.write_to_clipboard(ClipboardItem::new_string(text));
     }
@@ -140,8 +252,10 @@ impl CalculatorView {
             return;
         };
         let pasted = match self.mode {
+            Mode::Basic if self.rpn_enabled => false,
             Mode::Basic => self.calculator.paste(&text),
             Mode::Scientific => self.scientific.paste(&text),
+            Mode::Programmer | Mode::Convert => false,
         };
         if pasted {
             cx.notify();
@@ -149,33 +263,102 @@ impl CalculatorView {
     }
 
     /// Switch mode, resizing the fixed-size window to that mode's geometry
-    /// (CALC-02). Both modes stay non-resizable-by-the-user; only the
-    /// programmatic size changes.
+    /// (CALC-02). Every mode stays non-resizable-by-the-user; only the
+    /// programmatic size changes. The current value carries across
+    /// Basic/Scientific/Programmer (CALC-14); Convert's From/To fields are
+    /// independent of the other modes' shared register, like on the Mac.
     fn set_mode(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
         self.mode_menu_open = false;
         if self.mode == mode {
             cx.notify();
             return;
         }
-        match mode {
-            Mode::Basic => self
-                .calculator
-                .restore_value(self.scientific.current_value()),
-            Mode::Scientific => self
-                .scientific
-                .restore_value(self.calculator.current_value()),
+        let outgoing_value = match self.mode {
+            Mode::Basic if self.rpn_enabled => None,
+            Mode::Basic => Some(self.calculator.current_value()),
+            Mode::Scientific => Some(self.scientific.current_value()),
+            Mode::Programmer => Some(self.programmer.current_value() as f64),
+            Mode::Convert => None,
+        };
+        if let Some(value) = outgoing_value {
+            match mode {
+                Mode::Basic => self.calculator.restore_value(value),
+                Mode::Scientific => self.scientific.restore_value(value),
+                Mode::Programmer => self.programmer.restore_value(value),
+                Mode::Convert => {}
+            }
         }
         self.mode = mode;
         rmac_ui::set_menu_checked("calculator::ShowBasic", mode == Mode::Basic, cx);
         rmac_ui::set_menu_checked("calculator::ShowScientific", mode == Mode::Scientific, cx);
+        rmac_ui::set_menu_checked("calculator::ShowProgrammer", mode == Mode::Programmer, cx);
+        rmac_ui::set_menu_checked("calculator::ShowConvert", mode == Mode::Convert, cx);
+        // RPN Mode only drives Basic's keypad (see `rpn.rs`'s module doc
+        // comment), so it is greyed everywhere else, like a Mac row that
+        // genuinely does not apply right now.
+        rmac_ui::set_menu_enabled("calculator::ToggleRpnMode", mode == Mode::Basic, cx);
         let (width, height) = match mode {
             Mode::Basic => (keypad::WINDOW_WIDTH, keypad::WINDOW_HEIGHT),
             Mode::Scientific => (
                 scientific_keypad::WINDOW_WIDTH,
                 scientific_keypad::WINDOW_HEIGHT,
             ),
+            Mode::Programmer => (
+                programmer_keypad::WINDOW_WIDTH,
+                programmer_keypad::WINDOW_HEIGHT,
+            ),
+            Mode::Convert => (convert_keypad::WINDOW_WIDTH, convert_keypad::WINDOW_HEIGHT),
         };
         window.resize(size(px(width), px(height)));
+        cx.notify();
+    }
+
+    /// View ▸ RPN Mode, ⌘R. Only meaningful in Basic (see `rpn.rs`'s
+    /// module doc comment); a stray ⌘R elsewhere is a no-op rather than
+    /// surprising whatever mode is actually showing.
+    fn toggle_rpn_mode(&mut self, cx: &mut Context<Self>) {
+        if self.mode != Mode::Basic {
+            return;
+        }
+        self.rpn_enabled = !self.rpn_enabled;
+        rmac_ui::set_menu_checked("calculator::ToggleRpnMode", self.rpn_enabled, cx);
+        self.mode_menu_open = false;
+        cx.notify();
+    }
+
+    fn set_base(&mut self, base: programmer::Base, cx: &mut Context<Self>) {
+        self.programmer.set_base(base);
+        cx.notify();
+    }
+
+    fn set_word_size(&mut self, word_size: programmer::WordSize, cx: &mut Context<Self>) {
+        self.programmer.set_word_size(word_size);
+        cx.notify();
+    }
+
+    fn convert_next_category(&mut self, cx: &mut Context<Self>) {
+        self.convert.next_category();
+        cx.notify();
+    }
+
+    fn convert_next_from_unit(&mut self, cx: &mut Context<Self>) {
+        self.convert.next_from_unit();
+        cx.notify();
+    }
+
+    fn convert_next_to_unit(&mut self, cx: &mut Context<Self>) {
+        self.convert.next_to_unit();
+        cx.notify();
+    }
+
+    fn press_convert(&mut self, key: ConvertKey, cx: &mut Context<Self>) {
+        match key {
+            ConvertKey::Digit(digit) => self.convert.digit(digit),
+            ConvertKey::Decimal => self.convert.decimal(),
+            ConvertKey::Clear => self.convert.clear(),
+            ConvertKey::Backspace => self.convert.backspace(),
+            ConvertKey::Swap => self.convert.swap(),
+        }
         cx.notify();
     }
 
@@ -234,7 +417,7 @@ impl CalculatorView {
     /// clicking a row in macOS's history tape.
     fn load_history(&mut self, index: usize, cx: &mut Context<Self>) {
         match self.mode {
-            Mode::Basic => {
+            Mode::Basic if !self.rpn_enabled => {
                 if let Some(entry) = self.calculator.history().get(index).cloned() {
                     self.calculator.paste(&entry.result);
                 }
@@ -244,16 +427,20 @@ impl CalculatorView {
                     self.scientific.paste(&entry.result);
                 }
             }
+            Mode::Basic | Mode::Programmer | Mode::Convert => {}
         }
         self.history_open = false;
         rmac_ui::set_menu_checked("calculator::ShowHistory", false, cx);
         cx.notify();
     }
 
+    /// Programmer and Convert have no history tape; RPN's working stack is
+    /// shown by the display itself, not the history panel.
     fn history(&self) -> &[HistoryEntry] {
         match self.mode {
-            Mode::Basic => self.calculator.history(),
+            Mode::Basic if !self.rpn_enabled => self.calculator.history(),
             Mode::Scientific => self.scientific.history(),
+            Mode::Basic | Mode::Programmer | Mode::Convert => &[],
         }
     }
 
@@ -261,6 +448,8 @@ impl CalculatorView {
         match self.mode {
             Mode::Basic => keypad::WINDOW_WIDTH,
             Mode::Scientific => scientific_keypad::WINDOW_WIDTH,
+            Mode::Programmer => programmer_keypad::WINDOW_WIDTH,
+            Mode::Convert => convert_keypad::WINDOW_WIDTH,
         }
     }
 
@@ -268,6 +457,8 @@ impl CalculatorView {
         match self.mode {
             Mode::Basic => keypad::WINDOW_HEIGHT,
             Mode::Scientific => scientific_keypad::WINDOW_HEIGHT,
+            Mode::Programmer => programmer_keypad::WINDOW_HEIGHT,
+            Mode::Convert => convert_keypad::WINDOW_HEIGHT,
         }
     }
 
@@ -275,6 +466,8 @@ impl CalculatorView {
         match self.mode {
             Mode::Basic => keypad::SIDEBAR_BUTTON_CENTER_X,
             Mode::Scientific => scientific_keypad::SIDEBAR_BUTTON_CENTER_X,
+            Mode::Programmer => programmer_keypad::SIDEBAR_BUTTON_CENTER_X,
+            Mode::Convert => keypad::SIDEBAR_BUTTON_CENTER_X,
         }
     }
 
@@ -282,6 +475,8 @@ impl CalculatorView {
         match self.mode {
             Mode::Basic => keypad::MODE_BUTTON_CENTER_X,
             Mode::Scientific => scientific_keypad::MODE_BUTTON_CENTER_X,
+            Mode::Programmer => programmer_keypad::MODE_BUTTON_CENTER_X,
+            Mode::Convert => keypad::MODE_BUTTON_CENTER_X,
         }
     }
 
@@ -396,12 +591,6 @@ impl CalculatorView {
                 })
                 .when(active, |style| style.bg(rgba(palette.menu_selected)))
         };
-        let soon = || {
-            div()
-                .text_size(px(10.0))
-                .text_color(rgb(palette.expression))
-                .child("Soon")
-        };
         div()
             .id("calculator-mode-menu")
             .role(Role::Menu)
@@ -444,16 +633,30 @@ impl CalculatorView {
                 })),
             )
             .child(
-                row("calculator-mode-programmer", "Programmer", false)
-                    .opacity(0.4)
-                    .child("Programmer")
-                    .child(soon()),
+                row(
+                    "calculator-mode-programmer",
+                    "Programmer",
+                    self.mode == Mode::Programmer,
+                )
+                .cursor_pointer()
+                .child("Programmer")
+                .when(self.mode == Mode::Programmer, |el| el.child("✓"))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.set_mode(Mode::Programmer, window, cx);
+                })),
             )
             .child(
-                row("calculator-mode-convert", "Convert", false)
-                    .opacity(0.4)
-                    .child("Convert")
-                    .child(soon()),
+                row(
+                    "calculator-mode-convert",
+                    "Convert",
+                    self.mode == Mode::Convert,
+                )
+                .cursor_pointer()
+                .child("Convert")
+                .when(self.mode == Mode::Convert, |el| el.child("✓"))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.set_mode(Mode::Convert, window, cx);
+                })),
             )
     }
 
@@ -567,7 +770,73 @@ impl CalculatorView {
         }
     }
 
-    fn render_display(&self, palette: Palette) -> impl IntoElement {
+    /// RPN Mode's display: up to three stack lines in small type, then the
+    /// current entry/top-of-stack in the same large type Basic's result
+    /// line uses. See `rpn.rs`'s module doc comment.
+    fn render_rpn_display(&self, palette: Palette) -> AnyElement {
+        let inset = keypad::DISPLAY_RIGHT_INSET;
+        let width = self.window_width() - inset * 2.0;
+        const STACK_LINE_HEIGHT: f32 = 13.0;
+        const STACK_TOP: f32 = 40.0;
+        let stack_rows = self
+            .rpn
+            .stack_lines()
+            .into_iter()
+            .enumerate()
+            .map(|(index, text)| {
+                div()
+                    .absolute()
+                    .left(px(inset))
+                    .right(px(inset))
+                    .top(px(STACK_TOP + index as f32 * STACK_LINE_HEIGHT))
+                    .h(px(STACK_LINE_HEIGHT))
+                    .line_height(px(STACK_LINE_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .text_size(px(11.0))
+                    .text_color(rgb(palette.expression))
+                    .child(SharedString::from(self.display_grouping(&text)))
+                    .into_any_element()
+            });
+        let current = self.display_grouping(&self.rpn.current_text());
+        let result_size = fitted_font_size(
+            &current,
+            width,
+            keypad::RESULT_MAX_SIZE,
+            keypad::RESULT_MIN_SIZE,
+        );
+        div()
+            .children(stack_rows)
+            .child(
+                div()
+                    .id("calculator-result")
+                    .role(Role::Label)
+                    .aria_label("Display")
+                    .absolute()
+                    .left(px(inset))
+                    .right(px(inset))
+                    .top(px(keypad::RESULT_TOP))
+                    .h(px(keypad::RESULT_LINE))
+                    .line_height(px(keypad::RESULT_LINE))
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .whitespace_nowrap()
+                    .overflow_hidden()
+                    .a11y_synthetic_children(Self::accessible_display_text(current.clone()))
+                    .text_size(px(result_size))
+                    .font_weight(FontWeight::LIGHT)
+                    .text_color(rgb(palette.result))
+                    .child(SharedString::from(current)),
+            )
+            .into_any_element()
+    }
+
+    fn render_display(&self, palette: Palette) -> AnyElement {
+        if self.mode == Mode::Basic && self.rpn_enabled {
+            return self.render_rpn_display(palette);
+        }
         let inset = keypad::DISPLAY_RIGHT_INSET;
         let width = self.window_width() - inset * 2.0;
         let (expression, result) = match self.mode {
@@ -579,6 +848,7 @@ impl CalculatorView {
                 self.scientific.expression().to_owned(),
                 self.scientific.display(),
             ),
+            Mode::Programmer | Mode::Convert => (String::new(), String::new()),
         };
         let expression = self.display_grouping(&expression);
         let settled_value = match self.mode {
@@ -630,6 +900,7 @@ impl CalculatorView {
                     .text_color(rgb(palette.result))
                     .child(SharedString::from(result)),
             )
+            .into_any_element()
     }
 
     fn render_basic_key(
@@ -790,6 +1061,310 @@ impl CalculatorView {
             .child(face)
             .on_click(cx.listener(move |this, _, _, cx| this.press_scientific(key, cx)))
     }
+
+    /// The HEX/DEC/OCT/BIN base tabs and the word-size cycle button shown
+    /// above Programmer's keypad.
+    fn render_base_strip(&self, palette: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let base = self.programmer.base();
+        let tabs = programmer_keypad::BASES.iter().map(|&candidate| {
+            let active = candidate == base;
+            div()
+                .id(SharedString::from(format!(
+                    "prog-base-{}",
+                    candidate.label()
+                )))
+                .role(Role::Button)
+                .aria_label(candidate.label())
+                .aria_selected(active)
+                .cursor_pointer()
+                .px(px(6.0))
+                .text_size(px(11.0))
+                .font_weight(if active {
+                    FontWeight::BOLD
+                } else {
+                    FontWeight::NORMAL
+                })
+                .text_color(if active {
+                    rgb(palette.result)
+                } else {
+                    rgb(palette.expression)
+                })
+                .child(candidate.label())
+                .on_click(cx.listener(move |this, _, _, cx| this.set_base(candidate, cx)))
+                .into_any_element()
+        });
+        let word_size = self.programmer.word_size();
+        let word_size_button = div()
+            .id("prog-word-size")
+            .role(Role::Button)
+            .aria_label(SharedString::from(format!(
+                "Word size: {}",
+                word_size.label()
+            )))
+            .cursor_pointer()
+            .px(px(6.0))
+            .text_size(px(11.0))
+            .text_color(rgb(palette.expression))
+            .child(word_size.label())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.set_word_size(word_size.next(), cx);
+            }));
+        div()
+            .absolute()
+            .left(px(programmer_keypad::KEYPAD_LEFT))
+            .right(px(programmer_keypad::KEYPAD_LEFT))
+            .top(px(programmer_keypad::BASE_STRIP_TOP))
+            .h(px(programmer_keypad::BASE_STRIP_HEIGHT))
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(div().flex().items_center().gap(px(8.0)).children(tabs))
+            .child(word_size_button)
+    }
+
+    /// Programmer's single display line (no formula echo — see CALC-06's
+    /// parity note for why this is simpler than Basic/Scientific's).
+    fn render_programmer_display(&self, palette: Palette) -> impl IntoElement {
+        let inset = programmer_keypad::DISPLAY_RIGHT_INSET;
+        let width = self.window_width() - inset * 2.0;
+        let text = self.programmer.display();
+        let size = fitted_font_size(
+            &text,
+            width,
+            programmer_keypad::RESULT_MAX_SIZE,
+            programmer_keypad::RESULT_MIN_SIZE,
+        );
+        div()
+            .id("calculator-result")
+            .role(Role::Label)
+            .aria_label("Display")
+            .absolute()
+            .left(px(inset))
+            .right(px(inset))
+            .top(px(programmer_keypad::RESULT_TOP))
+            .h(px(programmer_keypad::RESULT_LINE))
+            .line_height(px(programmer_keypad::RESULT_LINE))
+            .flex()
+            .items_center()
+            .justify_end()
+            .whitespace_nowrap()
+            .overflow_hidden()
+            .a11y_synthetic_children(Self::accessible_display_text(text.clone()))
+            .text_size(px(size))
+            .font_weight(FontWeight::LIGHT)
+            .text_color(rgb(palette.result))
+            .child(SharedString::from(text))
+    }
+
+    fn render_programmer_key(
+        &self,
+        key: programmer::Key,
+        row: usize,
+        column: usize,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let (x, y) = programmer_keypad::key_origin(row, column);
+        let enabled = programmer_keypad::key_enabled(key, self.programmer.base());
+        let selected = matches!(key, programmer::Key::Operator(operator)
+            if self.programmer.highlighted_operator() == Some(operator));
+        let (fill, label) = match programmer_keypad::key_style(key) {
+            programmer_keypad::KeyStyle::Function => (palette.function_key, palette.function_label),
+            programmer_keypad::KeyStyle::Digit => (palette.digit_key, palette.digit_label),
+            programmer_keypad::KeyStyle::Hex | programmer_keypad::KeyStyle::Bitwise => {
+                (palette.scientific_key, palette.scientific_label)
+            }
+            programmer_keypad::KeyStyle::Operator if selected => (
+                palette.operator_selected_key,
+                palette.operator_selected_label,
+            ),
+            programmer_keypad::KeyStyle::Operator => (palette.operator_key, palette.operator_label),
+        };
+        let pressed_fill = blend(fill, palette.pressed_overlay);
+        let flashing = self
+            .flash
+            .is_some_and(|(flash, _)| flash == FlashKey::Programmer(key));
+        let face = match (key, programmer_keypad::key_face(key)) {
+            (programmer::Key::Clear, _) => {
+                programmer_keypad::KeyFace::Text(self.programmer.clear_label().text())
+            }
+            (_, face) => face,
+        };
+        let label_size = match programmer_keypad::key_style(key) {
+            programmer_keypad::KeyStyle::Bitwise => programmer_keypad::FUNCTION_LABEL_SIZE,
+            _ => programmer_keypad::LABEL_SIZE,
+        };
+        let face = match face {
+            programmer_keypad::KeyFace::Text(text) => div()
+                .text_size(px(label_size))
+                .line_height(px(label_size))
+                .text_color(rgb(label))
+                .child(text)
+                .into_any_element(),
+            programmer_keypad::KeyFace::Glyph(path) => svg()
+                .path(path)
+                .size(px(programmer_keypad::GLYPH_SIZE))
+                .text_color(rgb(label))
+                .into_any_element(),
+        };
+        div()
+            .id(SharedString::from(format!(
+                "prog-key-{}",
+                programmer_keypad::key_name(key)
+            )))
+            .role(Role::Button)
+            .aria_label(programmer_keypad::key_name(key))
+            .absolute()
+            .left(px(x))
+            .top(px(y))
+            .w(px(programmer_keypad::KEY_WIDTH))
+            .h(px(programmer_keypad::KEY_HEIGHT))
+            .rounded(px(programmer_keypad::KEY_HEIGHT / 2.0))
+            .bg(rgb(if flashing { pressed_fill } else { fill }))
+            .border_1()
+            .border_color(rgba(palette.rim))
+            .flex()
+            .items_center()
+            .justify_center()
+            .opacity(if enabled { 1.0 } else { 0.35 })
+            .child(face)
+            .when(enabled, |el| {
+                el.cursor_pointer()
+                    .active(move |style| style.bg(rgb(pressed_fill)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.press_programmer(key, cx)))
+            })
+    }
+
+    /// Convert's category selector and From/To rows, above its keypad.
+    fn render_convert_header(&self, palette: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let category_label = convert::category_label(self.convert.category());
+        let category_row = div()
+            .id("convert-category")
+            .role(Role::Button)
+            .aria_label(SharedString::from(format!("Category: {category_label}")))
+            .cursor_pointer()
+            .absolute()
+            .left(px(keypad::DISPLAY_RIGHT_INSET))
+            .right(px(keypad::DISPLAY_RIGHT_INSET))
+            .top(px(convert_keypad::CATEGORY_ROW_TOP))
+            .h(px(convert_keypad::CATEGORY_ROW_HEIGHT))
+            .flex()
+            .items_center()
+            .justify_end()
+            .text_size(px(13.0))
+            .text_color(rgb(palette.expression))
+            .child(format!("{category_label} ▾"))
+            .on_click(cx.listener(|this, _, _, cx| this.convert_next_category(cx)));
+        // A plain (non-interactive) template; the caller attaches its own
+        // `.on_click` so this closure never has to capture `cx` itself.
+        let unit_row =
+            |id: &'static str, top: f32, value: String, unit_label: String, editable: bool| {
+                let value_color = if editable {
+                    palette.result
+                } else {
+                    palette.expression
+                };
+                div()
+                    .id(SharedString::from(id))
+                    .absolute()
+                    .left(px(keypad::DISPLAY_RIGHT_INSET))
+                    .right(px(keypad::DISPLAY_RIGHT_INSET))
+                    .top(px(top))
+                    .h(px(convert_keypad::ROW_HEIGHT))
+                    .flex()
+                    .flex_col()
+                    .items_end()
+                    .justify_center()
+                    .gap(px(2.0))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("{id}-value")))
+                            .text_size(px(22.0))
+                            .font_weight(FontWeight::LIGHT)
+                            .text_color(rgb(value_color))
+                            .child(SharedString::from(value)),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("{id}-unit")))
+                            .role(Role::Button)
+                            .aria_label(SharedString::from(format!("Unit: {unit_label}")))
+                            .cursor_pointer()
+                            .text_size(px(13.0))
+                            .text_color(rgb(palette.expression))
+                            .child(SharedString::from(format!("{unit_label} ▾"))),
+                    )
+            };
+        let from_row = unit_row(
+            "convert-from",
+            convert_keypad::FROM_ROW_TOP,
+            self.convert.from_text(),
+            self.convert.from_unit().plural.to_owned(),
+            true,
+        )
+        .on_click(cx.listener(|this, _, _, cx| this.convert_next_from_unit(cx)));
+        let to_row = unit_row(
+            "convert-to",
+            convert_keypad::TO_ROW_TOP,
+            self.convert.to_text(),
+            self.convert.to_unit().plural.to_owned(),
+            false,
+        )
+        .on_click(cx.listener(|this, _, _, cx| this.convert_next_to_unit(cx)));
+        div().child(category_row).child(from_row).child(to_row)
+    }
+
+    fn render_convert_key(
+        &self,
+        key: ConvertKey,
+        row: usize,
+        column: usize,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let (x, y) = convert_keypad::key_origin(row, column);
+        let (fill, label) = match convert_keypad::key_style(key) {
+            convert_keypad::KeyStyle::Function => (palette.function_key, palette.function_label),
+            convert_keypad::KeyStyle::Digit => (palette.digit_key, palette.digit_label),
+            convert_keypad::KeyStyle::Swap => (palette.operator_key, palette.operator_label),
+        };
+        let pressed_fill = blend(fill, palette.pressed_overlay);
+        let face = match convert_keypad::key_face(key) {
+            convert_keypad::KeyFace::Text(text) => div()
+                .text_size(px(keypad::LABEL_SIZE))
+                .line_height(px(keypad::LABEL_SIZE))
+                .text_color(rgb(label))
+                .child(text)
+                .into_any_element(),
+            convert_keypad::KeyFace::Glyph(path) => svg()
+                .path(path)
+                .size(px(keypad::GLYPH_SIZE))
+                .text_color(rgb(label))
+                .into_any_element(),
+        };
+        div()
+            .id(SharedString::from(format!(
+                "convert-key-{}",
+                convert_keypad::key_name(key).replace(' ', "-")
+            )))
+            .role(Role::Button)
+            .aria_label(convert_keypad::key_name(key))
+            .absolute()
+            .left(px(x))
+            .top(px(y))
+            .size(px(convert_keypad::KEY_DIAMETER))
+            .rounded_full()
+            .bg(rgb(fill))
+            .border_1()
+            .border_color(rgba(palette.rim))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .active(move |style| style.bg(rgb(pressed_fill)))
+            .child(face)
+            .on_click(cx.listener(move |this, _, _, cx| this.press_convert(key, cx)))
+    }
 }
 
 /// Round only the visible, settled result. The calculator keeps its full
@@ -933,7 +1508,39 @@ impl Render for CalculatorView {
                     }
                 }
             }
+            Mode::Programmer => {
+                for (row, cells) in programmer_keypad::LAYOUT.iter().enumerate() {
+                    for (column, cell) in cells.iter().enumerate() {
+                        if let Some(key) = cell {
+                            keys.push(
+                                self.render_programmer_key(*key, row, column, palette, cx)
+                                    .into_any_element(),
+                            );
+                        }
+                    }
+                }
+            }
+            Mode::Convert => {
+                for (row, cells) in convert_keypad::LAYOUT.iter().enumerate() {
+                    for (column, cell) in cells.iter().enumerate() {
+                        if let Some(key) = cell {
+                            keys.push(
+                                self.render_convert_key(*key, row, column, palette, cx)
+                                    .into_any_element(),
+                            );
+                        }
+                    }
+                }
+            }
         }
+        let prefix: AnyElement = match mode {
+            Mode::Basic | Mode::Scientific => self.render_display(palette),
+            Mode::Programmer => div()
+                .child(self.render_base_strip(palette, cx))
+                .child(self.render_programmer_display(palette))
+                .into_any_element(),
+            Mode::Convert => self.render_convert_header(palette, cx).into_any_element(),
+        };
         // The Mac shows a small persistent "Rad" label above the keypad
         // whenever radians is active — separate from the toggle key itself,
         // which always names the *other* mode (see `scientific_keypad`'s
@@ -956,6 +1563,17 @@ impl Render for CalculatorView {
             }))
             .on_action(cx.listener(|this, _: &ShowScientific, window, cx| {
                 this.set_mode(Mode::Scientific, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowProgrammer, window, cx| {
+                this.set_mode(Mode::Programmer, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowConvert, window, cx| {
+                this.set_mode(Mode::Convert, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleRpnMode, _, cx| this.toggle_rpn_mode(cx)))
+            .on_action(cx.listener(|_, _: &ShowMathsNotes, _, cx| {
+                let main = cx.entity();
+                cx.defer(move |cx| crate::maths_notes::show(main, cx));
             }))
             .on_action(cx.listener(|this, _: &ShowHistory, _, cx| this.toggle_history(cx)))
             .on_action(cx.listener(|this, _: &ToggleThousandsSeparator, _, cx| {
@@ -1020,7 +1638,7 @@ impl Render for CalculatorView {
             .bg(rgb(palette.window))
             .font_features(mac::tabular_font_features())
             .child(self.render_toolbar(palette, window, cx))
-            .child(self.render_display(palette))
+            .child(prefix)
             .children(keys)
             .when(show_angle_indicator, |el| {
                 el.child(

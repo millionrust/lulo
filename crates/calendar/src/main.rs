@@ -73,9 +73,7 @@ fn main() {
             ]);
             rmac_ui::install_app_menu(CALENDAR, cx);
             // Invitations arrive in CAL-8.
-            for action in ["calendar::ShowInvitations"] {
-                rmac_ui::set_menu_enabled(action, false, cx);
-            }
+            rmac_ui::set_menu_enabled("calendar::ShowInvitations", false, cx);
             let mut options = rmac_ui::window_options_for_app(CALENDAR, 1100.0, 720.0, cx);
             options.window_min_size = Some(gpui::size(gpui::px(760.0), gpui::px(560.0)));
             let opened = cx.open_window(options, |window, cx| {

@@ -1,3 +1,4 @@
+use super::bounded_cache::{bound_cache, touch_cache_key, CHILD_ENTRIES_CACHE_CAP};
 use super::*;
 
 impl FinderView {
@@ -68,8 +69,16 @@ impl FinderView {
                         }
                     }
                     this.expanded.insert(folder.clone());
+                    touch_cache_key(&mut this.child_entries_order, &folder);
                     this.child_entries.insert(folder, entries);
                 }
+                let expanded = this.expanded.clone();
+                bound_cache(
+                    &mut this.child_entries_order,
+                    &mut this.child_entries,
+                    CHILD_ENTRIES_CACHE_CAP,
+                    |key| expanded.contains(key),
+                );
                 this.rebuild_list_entries();
                 cx.notify();
             });
@@ -185,7 +194,15 @@ impl FinderView {
                 }
                 match result {
                     Ok(entries) => {
+                        touch_cache_key(&mut this.child_entries_order, &path);
                         this.child_entries.insert(path, entries);
+                        let expanded = this.expanded.clone();
+                        bound_cache(
+                            &mut this.child_entries_order,
+                            &mut this.child_entries,
+                            CHILD_ENTRIES_CACHE_CAP,
+                            |key| expanded.contains(key),
+                        );
                         this.rebuild_list_entries();
                     }
                     Err(error) => {
@@ -272,6 +289,9 @@ mod tests {
             kind: "Folder".into(),
             size_bytes: 0,
             mtime: SystemTime::UNIX_EPOCH,
+            created_time: SystemTime::UNIX_EPOCH,
+            last_opened_time: SystemTime::UNIX_EPOCH,
+            tag: None,
             search_detail: None,
             application: None,
         };

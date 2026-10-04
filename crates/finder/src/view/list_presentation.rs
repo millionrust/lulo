@@ -941,6 +941,54 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &SortByDate, _, cx| this.set_sort(SortKey::Date, cx)))
             .on_action(cx.listener(|this, _: &SortBySize, _, cx| this.set_sort(SortKey::Size, cx)))
             .on_action(cx.listener(|this, _: &SortByKind, _, cx| this.set_sort(SortKey::Kind, cx)))
+            .on_action(cx.listener(|this, _: &SortByLastOpened, _, cx| {
+                this.set_sort(SortKey::LastOpened, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &SortByAdded, _, cx| this.set_sort(SortKey::Added, cx)),
+            )
+            .on_action(cx.listener(|this, _: &SortByTags, _, cx| this.set_sort(SortKey::Tags, cx)))
+            .on_action(
+                cx.listener(|this, _: &SortByCreated, _, cx| this.set_sort(SortKey::Created, cx)),
+            )
+            .on_action(cx.listener(|this, _: &CleanUp, _, cx| this.clean_up(cx)))
+            .on_action(cx.listener(|this, _: &CleanUpSelection, _, cx| this.clean_up_selection(cx)))
+            .on_action(
+                cx.listener(|this, _: &CleanUpByName, _, cx| this.clean_up_by(SortKey::Name, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &CleanUpByKind, _, cx| this.clean_up_by(SortKey::Kind, cx)),
+            )
+            .on_action(cx.listener(|this, _: &CleanUpByCreated, _, cx| {
+                this.clean_up_by(SortKey::Created, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &CleanUpByDate, _, cx| this.clean_up_by(SortKey::Date, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &CleanUpBySize, _, cx| this.clean_up_by(SortKey::Size, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &CleanUpByTags, _, cx| this.clean_up_by(SortKey::Tags, cx)),
+            )
+            .on_action(cx.listener(|this, _: &ShowClipboard, _, cx| this.show_clipboard(cx)))
+            .on_action(cx.listener(|this, _: &GoLibrary, _, cx| this.go_library(cx)))
+            .on_action(cx.listener(|this, _: &ShowAllTabs, _, cx| this.toggle_show_all_tabs(cx)))
+            .on_action(cx.listener(|this, _: &ShowOpenWithMenu, window, cx| {
+                this.show_open_with_menu(false, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowAlwaysOpenWithMenu, window, cx| {
+                this.show_open_with_menu(true, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowRecentFolders, window, cx| {
+                this.show_recent_folders_menu(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &ClearRecentFolders, _, cx| this.clear_recent_folders(cx)),
+            )
+            .on_action(cx.listener(|this, action: &OpenRecentFolderAction, _, cx| {
+                this.open_recent_folder(action.index, cx)
+            }))
             .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                 this.close_tab_or_window(window, cx);

@@ -1,3 +1,4 @@
+use super::bounded_cache::{bound_cache, touch_cache_key, THUMBNAIL_CACHE_CAP};
 use super::*;
 
 impl FinderView {
@@ -46,9 +47,21 @@ impl FinderView {
                     if this.entries.iter().any(|entry| entry.path == p)
                         && rmac_thumbnails::is_current(&p, &t)
                     {
+                        touch_cache_key(&mut this.thumbs_order, &p);
                         this.thumbs.insert(p, t);
                     }
                 }
+                let visible = this
+                    .entries
+                    .iter()
+                    .map(|entry| entry.path.clone())
+                    .collect::<BTreeSet<_>>();
+                bound_cache(
+                    &mut this.thumbs_order,
+                    &mut this.thumbs,
+                    THUMBNAIL_CACHE_CAP,
+                    |key| visible.contains(key),
+                );
                 if this.cwd == directory && this.operation_error.is_none() {
                     this.operation_error = results.1.map(|error| {
                         if results.2 == 1 {

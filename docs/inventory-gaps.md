@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_485 gaps across 10 apps; 169 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_461 gaps across 10 apps; 169 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Calculator
 
@@ -55,49 +55,30 @@ _485 gaps across 10 apps; 169 Mac-only items were allowlisted (see `tests/invent
 
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
-| FIL-MENU-012 | missing menu item (has a shortcut) | Paste Exactly | Edit ▸ Paste Exactly | ⌥⇧⌘V |  | missing from Lulo's menu bar |
-| FIL-MENU-011 | missing menu item (has a shortcut) | Redo | Edit ▸ Redo | ⇧⌘Z |  | missing from Lulo's menu bar |
-| FIL-MENU-008 | missing menu item (has a shortcut) | Duplicate Exactly | File ▸ Duplicate Exactly | ⌥⇧⌘D |  | missing from Lulo's menu bar |
-| FIL-MENU-007 | missing menu item (has a shortcut) | Get Summary Info | File ▸ Get Summary Info | ⌃⌘I |  | missing from Lulo's menu bar |
-| FIL-MENU-009 | missing menu item (has a shortcut) | Print | File ▸ Print | ⌘P |  | missing from Lulo's menu bar |
-| FIL-MENU-006 | missing menu item (has a shortcut) | Show Inspector | File ▸ Show Inspector | ⌥⌘I |  | missing from Lulo's menu bar |
-| FIL-MENU-034 | missing menu item (has a shortcut) | Connect to Server… | Go ▸ Connect to Server… | ⌘K |  | missing from Lulo's menu bar |
-| FIL-MENU-031 | missing menu item (has a shortcut) | Network | Go ▸ Network | ⇧⌘K |  | missing from Lulo's menu bar |
-| FIL-MENU-023 | missing menu item (has a shortcut) | Date Modified | View ▸ Clean Up By ▸ Date Modified | ⌥⌘5 |  | missing from Lulo's menu bar |
-| FIL-MENU-022 | missing menu item (has a shortcut) | Kind | View ▸ Clean Up By ▸ Kind | ⌥⌘2 |  | missing from Lulo's menu bar |
-| FIL-MENU-021 | missing menu item (has a shortcut) | Name | View ▸ Clean Up By ▸ Name | ⌥⌘1 |  | missing from Lulo's menu bar |
-| FIL-MENU-025 | missing menu item (has a shortcut) | Size | View ▸ Clean Up By ▸ Size | ⌥⌘6 |  | missing from Lulo's menu bar |
-| FIL-MENU-026 | missing menu item (has a shortcut) | Tags | View ▸ Clean Up By ▸ Tags | ⌥⌘7 |  | missing from Lulo's menu bar |
-| FIL-MENU-027 | missing menu item (has a shortcut) | Show All Tabs | View ▸ Show All Tabs | ⇧⌘\ |  | missing from Lulo's menu bar |
-| FIL-MENU-015 | missing menu item (has a shortcut) | Date Added | View ▸ Sort By ▸ Date Added | ⌃⌥⌘4 |  | missing from Lulo's menu bar |
-| FIL-MENU-014 | missing menu item (has a shortcut) | Date Last Opened | View ▸ Sort By ▸ Date Last Opened | ⌃⌥⌘3 |  | missing from Lulo's menu bar |
-| FIL-MENU-017 | missing menu item (has a shortcut) | Tags | View ▸ Sort By ▸ Tags | ⌃⌥⌘7 |  | missing from Lulo's menu bar |
-| FIL-MENU-035 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
+| FIL-MENU-010 | missing menu item (has a shortcut) | Paste Exactly | Edit ▸ Paste Exactly | ⌥⇧⌘V |  | missing from Lulo's menu bar |
+| FIL-MENU-009 | missing menu item (has a shortcut) | Redo | Edit ▸ Redo | ⇧⌘Z |  | missing from Lulo's menu bar |
+| FIL-MENU-006 | missing menu item (has a shortcut) | Duplicate Exactly | File ▸ Duplicate Exactly | ⌥⇧⌘D |  | missing from Lulo's menu bar |
+| FIL-MENU-005 | missing menu item (has a shortcut) | Get Summary Info | File ▸ Get Summary Info | ⌃⌘I |  | missing from Lulo's menu bar |
+| FIL-MENU-007 | missing menu item (has a shortcut) | Print | File ▸ Print | ⌘P |  | missing from Lulo's menu bar |
+| FIL-MENU-004 | missing menu item (has a shortcut) | Show Inspector | File ▸ Show Inspector | ⌥⌘I |  | missing from Lulo's menu bar |
+| FIL-MENU-015 | missing menu item (has a shortcut) | Connect to Server… | Go ▸ Connect to Server… | ⌘K |  | missing from Lulo's menu bar |
+| FIL-MENU-013 | missing menu item (has a shortcut) | Network | Go ▸ Network | ⇧⌘K |  | missing from Lulo's menu bar |
+| FIL-MENU-016 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
 | FIL-CONTEXT-001 | missing context-menu item | Duplicate Exactly | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-002 | missing context-menu item | Show Inspector | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-003 | missing context-menu item | Duplicate Exactly | context menu ▸ folder |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-004 | missing context-menu item | Show Inspector | context menu ▸ folder |  |  | missing from Lulo's context menu |
-| FIL-MENU-013 | missing menu item | Show Clipboard | Edit ▸ Show Clipboard |  |  | missing from Lulo's menu bar |
-| FIL-MENU-004 | missing menu item | Always Open With | File ▸ Always Open With |  |  | missing from Lulo's menu bar |
-| FIL-MENU-005 | missing menu item | Other… | File ▸ Always Open With ▸ Other… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-010 | missing menu item | Manage Shared Folder… | File ▸ Manage Shared Folder… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-003 | missing menu item | Other… | File ▸ Always Open With ▸ Other… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-008 | missing menu item | Manage Shared Folder… | File ▸ Manage Shared Folder… |  |  | missing from Lulo's menu bar |
 | FIL-MENU-001 | missing menu item | New Smart Folder | File ▸ New Smart Folder |  |  | missing from Lulo's menu bar |
-| FIL-MENU-002 | missing menu item | Open With | File ▸ Open With |  |  | missing from Lulo's menu bar |
-| FIL-MENU-003 | missing menu item | Other… | File ▸ Open With ▸ Other… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-030 | missing menu item | Library | Go ▸ Library |  |  | missing from Lulo's menu bar |
-| FIL-MENU-032 | missing menu item | Recent Folders | Go ▸ Recent Folders |  |  | missing from Lulo's menu bar |
-| FIL-MENU-033 | missing menu item | Clear Menu | Go ▸ Recent Folders ▸ Clear Menu |  |  | missing from Lulo's menu bar |
-| FIL-MENU-018 | missing menu item | Clean Up | View ▸ Clean Up |  |  | missing from Lulo's menu bar |
-| FIL-MENU-020 | missing menu item | Clean Up By | View ▸ Clean Up By |  |  | missing from Lulo's menu bar |
-| FIL-MENU-024 | missing menu item | Date Created | View ▸ Clean Up By ▸ Date Created |  |  | missing from Lulo's menu bar |
-| FIL-MENU-019 | missing menu item | Clean Up Selection | View ▸ Clean Up Selection |  |  | missing from Lulo's menu bar |
-| FIL-MENU-028 | missing menu item | Customise Toolbar… | View ▸ Customise Toolbar… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-029 | missing menu item | Show Preview Options | View ▸ Show Preview Options |  |  | missing from Lulo's menu bar |
-| FIL-MENU-016 | missing menu item | Date Created | View ▸ Sort By ▸ Date Created |  |  | missing from Lulo's menu bar |
-| FIL-MENU-036 | missing menu item | Show Progress Window | Window ▸ Show Progress Window |  |  | missing from Lulo's menu bar |
-| FIL-MENU-037 | Lulo-only (not on the Mac) | Bin | Go ▸ Trash |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-039 | Lulo-only (not on the Mac) | Files Help | Help ▸ Files Help |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-038 | Lulo-only (not on the Mac) | Finder Help | Help ▸ Finder Help |  | ⌘? | present in Lulo but not found on the Mac |
+| FIL-MENU-002 | missing menu item | Other… | File ▸ Open With ▸ Other… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-014 | missing menu item | Clear Menu | Go ▸ Recent Folders ▸ Clear Menu |  |  | missing from Lulo's menu bar |
+| FIL-MENU-011 | missing menu item | Customise Toolbar… | View ▸ Customise Toolbar… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-012 | missing menu item | Show Preview Options | View ▸ Show Preview Options |  |  | missing from Lulo's menu bar |
+| FIL-MENU-017 | missing menu item | Show Progress Window | Window ▸ Show Progress Window |  |  | missing from Lulo's menu bar |
+| FIL-MENU-018 | Lulo-only (not on the Mac) | Bin | Go ▸ Trash |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-020 | Lulo-only (not on the Mac) | Files Help | Help ▸ Files Help |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-019 | Lulo-only (not on the Mac) | Finder Help | Help ▸ Finder Help |  | ⌘? | present in Lulo but not found on the Mac |
 
 ## Notes
 
@@ -280,47 +261,42 @@ _485 gaps across 10 apps; 169 Mac-only items were allowlisted (see `tests/invent
 |---|---|---|---|---|---|---|
 | MON-MENU-002 | missing menu item (has a shortcut) | Page Setup… | File ▸ Page Setup… | ⇧⌘P |  | missing from Lulo's menu bar |
 | MON-MENU-003 | missing menu item (has a shortcut) | Print… | File ▸ Print… | ⌘P |  | missing from Lulo's menu bar |
-| MON-MENU-035 | missing menu item (has a shortcut) | Sample Process | View ▸ Sample Process | ⌥⌘S |  | missing from Lulo's menu bar |
-| MON-MENU-037 | missing menu item (has a shortcut) | Show Deltas for Process | View ▸ Show Deltas for Process | ⌥⌘J |  | missing from Lulo's menu bar |
-| MON-MENU-039 | missing menu item (has a shortcut) | CPU History | Window ▸ CPU History | ⌘3 |  | missing from Lulo's menu bar |
-| MON-MENU-038 | missing menu item (has a shortcut) | CPU Usage | Window ▸ CPU Usage | ⌘2 |  | missing from Lulo's menu bar |
-| MON-MENU-040 | missing menu item (has a shortcut) | GPU History | Window ▸ GPU History | ⌘4 |  | missing from Lulo's menu bar |
+| MON-MENU-031 | missing menu item (has a shortcut) | Sample Process | View ▸ Sample Process | ⌥⌘S |  | missing from Lulo's menu bar |
+| MON-MENU-034 | missing menu item (has a shortcut) | CPU History | Window ▸ CPU History | ⌘3 |  | missing from Lulo's menu bar |
+| MON-MENU-033 | missing menu item (has a shortcut) | CPU Usage | Window ▸ CPU Usage | ⌘2 |  | missing from Lulo's menu bar |
+| MON-MENU-035 | missing menu item (has a shortcut) | GPU History | Window ▸ GPU History | ⌘4 |  | missing from Lulo's menu bar |
 | MON-MENU-001 | missing menu item | Quit and Keep Windows | Application ▸ Quit and Keep Windows |  |  | missing from Lulo's menu bar |
-| MON-MENU-030 | missing menu item | All Processes, Hierarchically | View ▸ All Processes, Hierarchically |  |  | missing from Lulo's menu bar |
-| MON-MENU-033 | missing menu item | Applications in last 12 hours | View ▸ Applications in last 12 hours |  |  | missing from Lulo's menu bar |
+| MON-MENU-026 | missing menu item | All Processes, Hierarchically | View ▸ All Processes, Hierarchically |  |  | missing from Lulo's menu bar |
+| MON-MENU-029 | missing menu item | Applications in last 12 hours | View ▸ Applications in last 12 hours |  |  | missing from Lulo's menu bar |
 | MON-MENU-007 | missing menu item | # Ports | View ▸ Columns ▸ # Ports |  |  | missing from Lulo's menu bar |
 | MON-MENU-005 | missing menu item | % GPU | View ▸ Columns ▸ % GPU |  |  | missing from Lulo's menu bar |
-| MON-MENU-022 | missing menu item | Bytes Read | View ▸ Columns ▸ Bytes Read |  |  | missing from Lulo's menu bar |
-| MON-MENU-021 | missing menu item | Bytes Written | View ▸ Columns ▸ Bytes Written |  |  | missing from Lulo's menu bar |
+| MON-MENU-021 | missing menu item | Bytes Read | View ▸ Columns ▸ Bytes Read |  |  | missing from Lulo's menu bar |
+| MON-MENU-020 | missing menu item | Bytes Written | View ▸ Columns ▸ Bytes Written |  |  | missing from Lulo's menu bar |
 | MON-MENU-004 | missing menu item | CPU Time | View ▸ Columns ▸ CPU Time |  |  | missing from Lulo's menu bar |
-| MON-MENU-020 | missing menu item | Compressed Memory | View ▸ Columns ▸ Compressed Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-014 | missing menu item | Energy Impact | View ▸ Columns ▸ Energy Impact |  |  | missing from Lulo's menu bar |
+| MON-MENU-019 | missing menu item | Compressed Memory | View ▸ Columns ▸ Compressed Memory |  |  | missing from Lulo's menu bar |
 | MON-MENU-006 | missing menu item | GPU Time | View ▸ Columns ▸ GPU Time |  |  | missing from Lulo's menu bar |
 | MON-MENU-013 | missing menu item | Idle Wake Ups | View ▸ Columns ▸ Idle Wake Ups |  |  | missing from Lulo's menu bar |
 | MON-MENU-010 | missing menu item | Kind | View ▸ Columns ▸ Kind |  |  | missing from Lulo's menu bar |
-| MON-MENU-019 | missing menu item | Memory | View ▸ Columns ▸ Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-023 | missing menu item | Preventing Sleep | View ▸ Columns ▸ Preventing Sleep |  |  | missing from Lulo's menu bar |
+| MON-MENU-018 | missing menu item | Memory | View ▸ Columns ▸ Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-022 | missing menu item | Preventing Sleep | View ▸ Columns ▸ Preventing Sleep |  |  | missing from Lulo's menu bar |
 | MON-MENU-008 | missing menu item | Real Private Memory | View ▸ Columns ▸ Real Private Memory |  |  | missing from Lulo's menu bar |
 | MON-MENU-009 | missing menu item | Real Shared Memory | View ▸ Columns ▸ Real Shared Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-017 | missing menu item | Received Bytes | View ▸ Columns ▸ Received Bytes |  |  | missing from Lulo's menu bar |
-| MON-MENU-018 | missing menu item | Received Packets | View ▸ Columns ▸ Received Packets |  |  | missing from Lulo's menu bar |
+| MON-MENU-016 | missing menu item | Received Bytes | View ▸ Columns ▸ Received Bytes |  |  | missing from Lulo's menu bar |
+| MON-MENU-017 | missing menu item | Received Packets | View ▸ Columns ▸ Received Packets |  |  | missing from Lulo's menu bar |
 | MON-MENU-012 | missing menu item | Restricted | View ▸ Columns ▸ Restricted |  |  | missing from Lulo's menu bar |
 | MON-MENU-011 | missing menu item | Sandbox | View ▸ Columns ▸ Sandbox |  |  | missing from Lulo's menu bar |
-| MON-MENU-015 | missing menu item | Sent Bytes | View ▸ Columns ▸ Sent Bytes |  |  | missing from Lulo's menu bar |
-| MON-MENU-016 | missing menu item | Sent Packets | View ▸ Columns ▸ Sent Packets |  |  | missing from Lulo's menu bar |
-| MON-MENU-024 | missing menu item | Dock Icon | View ▸ Dock Icon |  |  | missing from Lulo's menu bar |
-| MON-MENU-029 | missing menu item | Show Application Icon | View ▸ Dock Icon ▸ Show Application Icon |  |  | missing from Lulo's menu bar |
-| MON-MENU-026 | missing menu item | Show CPU History | View ▸ Dock Icon ▸ Show CPU History |  |  | missing from Lulo's menu bar |
-| MON-MENU-025 | missing menu item | Show CPU Usage | View ▸ Dock Icon ▸ Show CPU Usage |  |  | missing from Lulo's menu bar |
-| MON-MENU-028 | missing menu item | Show Disk Activity | View ▸ Dock Icon ▸ Show Disk Activity |  |  | missing from Lulo's menu bar |
-| MON-MENU-027 | missing menu item | Show Network Usage | View ▸ Dock Icon ▸ Show Network Usage |  |  | missing from Lulo's menu bar |
-| MON-MENU-031 | missing menu item | GPU Processes | View ▸ GPU Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-034 | missing menu item | Processes, by GPU | View ▸ Processes, by GPU |  |  | missing from Lulo's menu bar |
-| MON-MENU-036 | missing menu item | Send Signal to Process… | View ▸ Send Signal to Process… |  |  | missing from Lulo's menu bar |
-| MON-MENU-032 | missing menu item | Windowed Processes | View ▸ Windowed Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-041 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
-| MON-MENU-042 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
-| MON-MENU-043 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
+| MON-MENU-014 | missing menu item | Sent Bytes | View ▸ Columns ▸ Sent Bytes |  |  | missing from Lulo's menu bar |
+| MON-MENU-015 | missing menu item | Sent Packets | View ▸ Columns ▸ Sent Packets |  |  | missing from Lulo's menu bar |
+| MON-MENU-023 | missing menu item | Show CPU History | View ▸ Dock Icon ▸ Show CPU History |  |  | missing from Lulo's menu bar |
+| MON-MENU-025 | missing menu item | Show Disk Activity | View ▸ Dock Icon ▸ Show Disk Activity |  |  | missing from Lulo's menu bar |
+| MON-MENU-024 | missing menu item | Show Network Usage | View ▸ Dock Icon ▸ Show Network Usage |  |  | missing from Lulo's menu bar |
+| MON-MENU-027 | missing menu item | GPU Processes | View ▸ GPU Processes |  |  | missing from Lulo's menu bar |
+| MON-MENU-030 | missing menu item | Processes, by GPU | View ▸ Processes, by GPU |  |  | missing from Lulo's menu bar |
+| MON-MENU-032 | missing menu item | Send Signal to Process… | View ▸ Send Signal to Process… |  |  | missing from Lulo's menu bar |
+| MON-MENU-028 | missing menu item | Windowed Processes | View ▸ Windowed Processes |  |  | missing from Lulo's menu bar |
+| MON-MENU-036 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
+| MON-MENU-037 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
+| MON-MENU-038 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
 
 ## System Settings
 

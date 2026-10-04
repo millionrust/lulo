@@ -60,9 +60,21 @@ impl FinderView {
         rmac_ui::ContextMenu::new(pos)
             .header("Sort By")
             .checked_item("Name", check(SortKey::Name), Box::new(SortByName))
+            .checked_item("Kind", check(SortKey::Kind), Box::new(SortByKind))
+            .checked_item(
+                "Date Last Opened",
+                check(SortKey::LastOpened),
+                Box::new(SortByLastOpened),
+            )
+            .checked_item("Date Added", check(SortKey::Added), Box::new(SortByAdded))
             .checked_item("Date Modified", check(SortKey::Date), Box::new(SortByDate))
             .checked_item("Size", check(SortKey::Size), Box::new(SortBySize))
-            .checked_item("Kind", check(SortKey::Kind), Box::new(SortByKind))
+            .checked_item("Tags", check(SortKey::Tags), Box::new(SortByTags))
+            .checked_item(
+                "Date Created",
+                check(SortKey::Created),
+                Box::new(SortByCreated),
+            )
     }
 
     /// `compress_label` is Finder's "Compress “x”" / "Compress N Items",
@@ -279,6 +291,8 @@ impl FinderView {
                 .submenu("View", Self::build_view_submenu(pos))
                 .item("Use Groups", Box::new(UseGroups))
                 .submenu("Sort By", Self::build_sort_submenu(pos, sort_key))
+                .item("Clean Up", Box::new(CleanUp))
+                .submenu("Clean Up By", Self::build_clean_up_by_submenu(pos))
                 .item("Show View Options", Box::new(ShowViewOptions))
                 .separator()
                 .item("Import from iPhone", Box::new(ImportFromIphone));
@@ -304,9 +318,88 @@ impl FinderView {
         };
         rmac_ui::ContextMenu::new(pos)
             .checked_item("Name", check(SortKey::Name), Box::new(SortByName))
+            .checked_item("Kind", check(SortKey::Kind), Box::new(SortByKind))
+            .checked_item(
+                "Date Last Opened",
+                check(SortKey::LastOpened),
+                Box::new(SortByLastOpened),
+            )
+            .checked_item("Date Added", check(SortKey::Added), Box::new(SortByAdded))
             .checked_item("Date Modified", check(SortKey::Date), Box::new(SortByDate))
             .checked_item("Size", check(SortKey::Size), Box::new(SortBySize))
-            .checked_item("Kind", check(SortKey::Kind), Box::new(SortByKind))
+            .checked_item("Tags", check(SortKey::Tags), Box::new(SortByTags))
+            .checked_item(
+                "Date Created",
+                check(SortKey::Created),
+                Box::new(SortByCreated),
+            )
+    }
+
+    /// File ▸ Open With / Always Open With, triggered from the menu bar
+    /// rather than a right click: the same handler list and "Other…" entry
+    /// the context menu's submenu already offers (`build_context_menu`),
+    /// as a standalone popup anchored under the toolbar instead of at a
+    /// mouse position.
+    pub(in crate::view) fn build_open_with_menu(
+        pos: Point<Pixels>,
+        always_default: bool,
+        association: Option<&rmac_apps::FileAssociation>,
+    ) -> rmac_ui::ContextMenu {
+        let mut menu = rmac_ui::ContextMenu::new(pos).header(if always_default {
+            "Always Open With"
+        } else {
+            "Open With"
+        });
+        if let Some(association) = association {
+            for (index, handler) in association.handlers.iter().take(16).enumerate() {
+                menu = menu.item(
+                    handler.name.clone(),
+                    Box::new(OpenWithHandlerAction {
+                        index,
+                        make_default: always_default,
+                    }),
+                );
+            }
+            menu = menu.separator();
+        }
+        let other: Box<dyn gpui::Action> = if always_default {
+            Box::new(AlwaysOpenWithOther)
+        } else {
+            Box::new(OpenWith)
+        };
+        menu.item("Other…", other)
+    }
+
+    /// Go ▸ Recent Folders, as a standalone popup (the same reason as
+    /// `build_open_with_menu`: the menu-bar protocol has no dynamic-submenu
+    /// support, so the dynamic list renders as an in-app popup instead).
+    pub(in crate::view) fn build_recent_folders_menu(
+        pos: Point<Pixels>,
+        recent: &[PathBuf],
+    ) -> rmac_ui::ContextMenu {
+        let mut menu = rmac_ui::ContextMenu::new(pos).header("Recent Folders");
+        if recent.is_empty() {
+            return menu.disabled_item("No Recent Folders", Box::new(ShowRecentFolders));
+        }
+        for (index, path) in recent.iter().enumerate() {
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            menu = menu.item(name, Box::new(OpenRecentFolderAction { index }));
+        }
+        menu.separator()
+            .item("Clear Menu", Box::new(ClearRecentFolders))
+    }
+
+    fn build_clean_up_by_submenu(pos: Point<Pixels>) -> rmac_ui::ContextMenu {
+        rmac_ui::ContextMenu::new(pos)
+            .item("Name", Box::new(CleanUpByName))
+            .item("Kind", Box::new(CleanUpByKind))
+            .item("Date Created", Box::new(CleanUpByCreated))
+            .item("Date Modified", Box::new(CleanUpByDate))
+            .item("Size", Box::new(CleanUpBySize))
+            .item("Tags", Box::new(CleanUpByTags))
     }
 
     // ---- list ----
@@ -316,7 +409,6 @@ impl FinderView {
             .id("finder-tabs")
             .role(Role::TabList)
             .aria_label("Finder window tabs")
-            .h(px(30.0))
             .flex_none()
             .flex()
             .items_center()
@@ -325,6 +417,14 @@ impl FinderView {
             .bg(rmac_ui::mac::chrome())
             .border_b_1()
             .border_color(sep());
+        // View ▸ Show All Tabs wraps every tab onto as many rows as it
+        // takes, so none are scrolled out of sight; otherwise the strip is
+        // a single fixed-height row, same as the Mac's default.
+        bar = if self.show_all_tabs {
+            bar.flex_wrap().py_1()
+        } else {
+            bar.h(px(30.0))
+        };
         for (i, tab) in self.tabs.iter().enumerate() {
             let active = i == self.active;
             let name = tab

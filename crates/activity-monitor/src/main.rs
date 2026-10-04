@@ -2,6 +2,7 @@
 
 mod columns;
 mod cpu_ticks;
+mod dock_icon;
 mod host_stats;
 mod metrics;
 mod process_action;
@@ -43,6 +44,10 @@ gpui::actions!(
         ToggleCpuColumn,
         ToggleThreadsColumn,
         ToggleMemoryColumn,
+        ToggleEnergyColumn,
+        ShowDeltasForProcess,
+        SetDockIconApplication,
+        SetDockIconCpuUsage,
         RefreshEverySecond,
         RefreshEveryTwoSeconds,
         RefreshEveryFiveSeconds,
@@ -75,6 +80,7 @@ fn main() {
                 gpui::KeyBinding::new("shift-cmd-g", FindPrevious, Some("ActivityMonitor")),
                 gpui::KeyBinding::new("cmd-e", UseSelectionForFind, Some("ActivityMonitor")),
                 gpui::KeyBinding::new("cmd-j", JumpToSelection, Some("ActivityMonitor")),
+                gpui::KeyBinding::new("alt-cmd-j", ShowDeltasForProcess, Some("ActivityMonitor")),
                 gpui::KeyBinding::new("cmd-i", InspectProcess, Some("ActivityMonitor")),
                 gpui::KeyBinding::new("cmd-k", ClearCpuHistory, Some("ActivityMonitor")),
                 gpui::KeyBinding::new("alt-cmd-q", QuitProcess, Some("ActivityMonitor")),

@@ -2,6 +2,47 @@
 
 use super::*;
 
+/// View ▸ Show Deltas for Process, ⌥⌘J: the extra inspector rows showing
+/// the change since `baseline` was captured, or none when deltas are off
+/// or the baseline is for a different process than the one now inspected.
+/// `ProcRow::disk` is already a per-refresh-tick I/O rate rather than a
+/// running total (see its doc comment), so a delta of it would just be
+/// noise between two single-interval samples; only % CPU and Memory (both
+/// true point-in-time readings) get a meaningful delta.
+fn delta_rows(
+    show_deltas: bool,
+    baseline: Option<(u32, f32, u64)>,
+    row: &crate::process_table::ProcRow,
+) -> Vec<(&'static str, String)> {
+    if !show_deltas {
+        return Vec::new();
+    }
+    let Some((pid, base_cpu, base_mem)) = baseline else {
+        return Vec::new();
+    };
+    if pid != row.pid {
+        return Vec::new();
+    }
+    vec![
+        (
+            "Δ % CPU (since inspecting)",
+            format!("{:+.1}", row.cpu - base_cpu),
+        ),
+        (
+            "Δ Memory (since inspecting)",
+            format_signed_mem(row.mem as i64 - base_mem as i64),
+        ),
+    ]
+}
+
+fn format_signed_mem(delta_bytes: i64) -> String {
+    if delta_bytes >= 0 {
+        format!("+{}", format_mem(delta_bytes as u64))
+    } else {
+        format!("-{}", format_mem(delta_bytes.unsigned_abs()))
+    }
+}
+
 impl MonitorView {
     pub(super) fn render_confirm(&self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
         use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
@@ -144,6 +185,11 @@ impl MonitorView {
             .child(info_row("Virtual Memory", format_mem(row.vmem)))
             .child(info_row("Disk I/O", format_mem(row.disk)))
             .child(info_row("Run Time", format_duration(row.run_time)))
+            .children(
+                delta_rows(self.show_deltas, self.delta_baseline, row)
+                    .into_iter()
+                    .map(|(label, value)| info_row(label, value)),
+            )
             .child(
                 div()
                     .v_flex()

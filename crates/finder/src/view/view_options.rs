@@ -580,17 +580,25 @@ impl FinderView {
                         "Sort By:",
                         match o.sort_by {
                             SortKey::Name => "Name",
+                            SortKey::Kind => "Kind",
+                            SortKey::LastOpened => "Date Last Opened",
+                            SortKey::Added => "Date Added",
                             SortKey::Date => "Date Modified",
                             SortKey::Size => "Size",
-                            SortKey::Kind => "Kind",
+                            SortKey::Tags => "Tags",
+                            SortKey::Created => "Date Created",
                         }
                         .into(),
                         |o| {
                             o.sort_by = match o.sort_by {
-                                SortKey::Name => SortKey::Date,
+                                SortKey::Name => SortKey::Kind,
+                                SortKey::Kind => SortKey::LastOpened,
+                                SortKey::LastOpened => SortKey::Added,
+                                SortKey::Added => SortKey::Date,
                                 SortKey::Date => SortKey::Size,
-                                SortKey::Size => SortKey::Kind,
-                                SortKey::Kind => SortKey::Name,
+                                SortKey::Size => SortKey::Tags,
+                                SortKey::Tags => SortKey::Created,
+                                SortKey::Created => SortKey::Name,
                             }
                         },
                         cx,

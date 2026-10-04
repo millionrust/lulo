@@ -116,6 +116,20 @@
           "children": []
         },
         {
+          "label": "Open With",
+          "action": "finder::ShowOpenWithMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Always Open With",
+          "action": "finder::ShowAlwaysOpenWithMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Close Window",
           "action": "finder::CloseTab",
           "shortcut": "⌘W",
@@ -301,6 +315,13 @@
           "shortcut": "⌥⌘A",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Show Clipboard",
+          "action": "finder::ShowClipboard",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -363,6 +384,20 @@
               "children": []
             },
             {
+              "label": "Date Last Opened",
+              "action": "finder::SortByLastOpened",
+              "shortcut": "⌃⌥⌘3",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Date Added",
+              "action": "finder::SortByAdded",
+              "shortcut": "⌃⌥⌘4",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Date Modified",
               "action": "finder::SortByDate",
               "shortcut": "⌃⌥⌘5",
@@ -375,8 +410,86 @@
               "shortcut": "⌃⌥⌘6",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Tags",
+              "action": "finder::SortByTags",
+              "shortcut": "⌃⌥⌘7",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Date Created",
+              "action": "finder::SortByCreated",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
+        },
+        {
+          "label": "Clean Up",
+          "action": "finder::CleanUp",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Clean Up By",
+          "action": "finder::CleanUpByMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Name",
+              "action": "finder::CleanUpByName",
+              "shortcut": "⌥⌘1",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Kind",
+              "action": "finder::CleanUpByKind",
+              "shortcut": "⌥⌘2",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Date Created",
+              "action": "finder::CleanUpByCreated",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Date Modified",
+              "action": "finder::CleanUpByDate",
+              "shortcut": "⌥⌘5",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Size",
+              "action": "finder::CleanUpBySize",
+              "shortcut": "⌥⌘6",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Tags",
+              "action": "finder::CleanUpByTags",
+              "shortcut": "⌥⌘7",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Clean Up Selection",
+          "action": "finder::CleanUpSelection",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
         },
         {
           "label": "Show View Options",
@@ -389,6 +502,13 @@
           "label": "Show Preview",
           "action": "finder::TogglePreview",
           "shortcut": "⇧⌘P",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show All Tabs",
+          "action": "finder::ShowAllTabs",
+          "shortcut": "⇧⌘\\",
           "separator_before": false,
           "children": []
         },
@@ -524,6 +644,13 @@
           "children": []
         },
         {
+          "label": "Library",
+          "action": "finder::GoLibrary",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Shared",
           "action": "finder::GoShared",
           "shortcut": "⇧⌘S",
@@ -533,6 +660,13 @@
         {
           "label": "Bin",
           "action": "finder::GoTrash",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Recent Folders",
+          "action": "finder::ShowRecentFolders",
           "shortcut": "",
           "separator_before": false,
           "children": []
@@ -1175,6 +1309,14 @@
       },
       {
         "type": "item",
+        "label": "Clean Up"
+      },
+      {
+        "type": "submenu",
+        "label": "Clean Up By"
+      },
+      {
+        "type": "item",
         "label": "Show View Options"
       },
       {
@@ -1205,6 +1347,18 @@
       },
       {
         "type": "checked_item",
+        "label": "Kind"
+      },
+      {
+        "type": "checked_item",
+        "label": "Date Last Opened"
+      },
+      {
+        "type": "checked_item",
+        "label": "Date Added"
+      },
+      {
+        "type": "checked_item",
         "label": "Date Modified"
       },
       {
@@ -1213,7 +1367,11 @@
       },
       {
         "type": "checked_item",
-        "label": "Kind"
+        "label": "Tags"
+      },
+      {
+        "type": "checked_item",
+        "label": "Date Created"
       }
     ],
     "_view_submenu": [

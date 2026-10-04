@@ -19,6 +19,12 @@ use crate::sampling::Sampler;
 use crate::view_filter::ViewFilter;
 use crate::{process_action, process_signal};
 
+/// Overall host CPU usage as a 0.0..=1.0 fraction, from the sampler's
+/// (user%, system%, idle%) split — for the View ▸ Dock Icon CPU Usage tile.
+fn cpu_fraction((user, system, _idle): (f32, f32, f32)) -> f64 {
+    (f64::from(user) + f64::from(system)) / 100.0
+}
+
 fn process_signal_outcome(outcome: process_signal::SignalOutcome) -> process_action::Outcome {
     match outcome {
         process_signal::SignalOutcome::Delivered => process_action::Outcome::Delivered,
@@ -42,6 +48,15 @@ pub(crate) struct MonitorView {
     persistence_error: Option<SharedString>,
     /// PID whose detail inspector is open (double-click a row).
     inspect_pid: Option<u32>,
+    /// View ▸ Show Deltas for Process, ⌥⌘J: the inspector adds rows showing
+    /// the change in % CPU and Memory since `delta_baseline` was captured.
+    show_deltas: bool,
+    /// (pid, % CPU, Memory) sampled when deltas started being shown for
+    /// this process; cleared when deltas are turned off or a different
+    /// process is inspected while they're on.
+    delta_baseline: Option<(u32, f32, u64)>,
+    /// View ▸ Dock Icon.
+    dock_icon_mode: crate::dock_icon::DockIconMode,
     /// Whether the toolbar's search circle has expanded into a field.
     search_open: bool,
     /// Whether the View filter dropdown (MON-03) is open.
@@ -103,6 +118,9 @@ impl MonitorView {
             cols_menu_open: false,
             persistence_error,
             inspect_pid: None,
+            show_deltas: false,
+            delta_baseline: None,
+            dock_icon_mode: crate::dock_icon::DockIconMode::default(),
             search_open: false,
             filter_menu_open: false,
             refresh_seconds: REFRESH_SECS as u64,
@@ -172,6 +190,19 @@ impl MonitorView {
     /// Refresh the table snapshot and recompute the summary aggregates.
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.sampler.refresh(&self.table, cx);
+        if self.dock_icon_mode != crate::dock_icon::DockIconMode::Application {
+            crate::dock_icon::publish(
+                self.dock_icon_mode,
+                self.sampler.cpu_split.map(cpu_fraction),
+            );
+        }
+    }
+
+    /// View ▸ Dock Icon.
+    fn set_dock_icon_mode(&mut self, mode: crate::dock_icon::DockIconMode, cx: &mut Context<Self>) {
+        self.dock_icon_mode = mode;
+        crate::dock_icon::publish(mode, self.sampler.cpu_split.map(cpu_fraction));
+        cx.notify();
     }
 
     fn select_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
@@ -262,9 +293,25 @@ impl MonitorView {
             ("activity_monitor::ToggleCpuColumn", ColKey::Cpu),
             ("activity_monitor::ToggleThreadsColumn", ColKey::Threads),
             ("activity_monitor::ToggleMemoryColumn", ColKey::Mem),
+            ("activity_monitor::ToggleEnergyColumn", ColKey::Energy),
         ] {
             rmac_ui::set_menu_checked(action, visible.contains(&column), cx);
         }
+        rmac_ui::set_menu_checked(
+            "activity_monitor::ShowDeltasForProcess",
+            self.show_deltas,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "activity_monitor::SetDockIconApplication",
+            self.dock_icon_mode == crate::dock_icon::DockIconMode::Application,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "activity_monitor::SetDockIconCpuUsage",
+            self.dock_icon_mode == crate::dock_icon::DockIconMode::CpuUsage,
+            cx,
+        );
     }
 
     fn selected_proc(&self, cx: &Context<Self>) -> Option<process_action::ProcessIdentity> {
@@ -410,8 +457,37 @@ impl MonitorView {
         if let Some(process) = self.selected_proc(cx) {
             self.inspect_pid = Some(process.pid);
             self.cols_menu_open = false;
+            if self.show_deltas {
+                self.recapture_delta_baseline(process.pid, cx);
+            }
             cx.notify();
         }
+    }
+
+    /// (pid, % CPU, Memory) for `pid` right now, the Show Deltas for
+    /// Process baseline every later inspector render compares against.
+    fn recapture_delta_baseline(&mut self, pid: u32, cx: &Context<Self>) {
+        let state = self.table.read(cx);
+        let delegate = state.delegate();
+        self.delta_baseline = delegate
+            .rows
+            .iter()
+            .chain(delegate.all_rows.iter())
+            .find(|row| row.pid == pid)
+            .map(|row| (row.pid, row.cpu, row.mem));
+    }
+
+    /// View ▸ Show Deltas for Process, ⌥⌘J.
+    fn toggle_show_deltas(&mut self, cx: &mut Context<Self>) {
+        self.show_deltas = !self.show_deltas;
+        if self.show_deltas {
+            if let Some(pid) = self.inspect_pid {
+                self.recapture_delta_baseline(pid, cx);
+            }
+        } else {
+            self.delta_baseline = None;
+        }
+        cx.notify();
     }
 
     /// Toggle the column chooser (toolbar ⋯). A no-op when the current tab

@@ -419,6 +419,17 @@ fn read_file_tag(path: &Path) -> Result<Vec<u8>, rustix::io::Errno> {
     Ok(buffer[..length].to_vec())
 }
 
+/// The one Finder-style colour tag on `path`, by name (e.g. "blue"), for
+/// sorting and the Clean Up By/Sort By ▸ Tags commands. `None` covers both
+/// "no tag" and an unreadable xattr; both sort the same way.
+pub(super) fn file_tag_label(path: &Path) -> Option<SharedString> {
+    let raw = read_file_tag(path).ok()?;
+    FILE_TAGS
+        .iter()
+        .find(|tag| tag.as_bytes() == raw.as_slice())
+        .map(|tag| SharedString::from(*tag))
+}
+
 #[cfg(test)]
 mod tag_tests {
     use super::{clear_file_tag, read_file_tag, write_file_tag};

@@ -8,3 +8,5 @@ authors.workspace = true
 [dependencies]
 gpui.workspace = true
 gpui-component.workspace = true
+rmac-ui.workspace = true
+unicode-segmentation.workspace = true

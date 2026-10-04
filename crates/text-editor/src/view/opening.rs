@@ -63,8 +63,7 @@ impl EditorView {
                     let reuse_current = should_reuse_untitled_window(
                         this.dirty,
                         this.path.is_some(),
-                        this.rtf_runs.is_some(),
-                        this.input.read(cx).text().len() == 0 && this.long_lines.is_none(),
+                        this.body_is_empty(cx),
                     );
                     if reuse_current {
                         this.load_document_path(path, "The file could not be opened.", window, cx);
@@ -95,7 +94,9 @@ impl EditorView {
             format: self.text_format,
             mono: self.mono,
             font_size: self.font_size,
-            rtf_runs: self.rtf_runs.clone(),
+            rich: self
+                .rich_text
+                .then(|| self.rich.read(cx).document().clone()),
         };
         if open_duplicate_window(cx, content).is_err() {
             self.alert = Some(ActiveAlert::Error {
@@ -107,45 +108,13 @@ impl EditorView {
         }
     }
 
-    /// Leave the read-only RTF preview and continue editing the extracted
-    /// text as a new untitled plain-text document — the original `.rtf` is
-    /// never overwritten. TextEdit always warns before a rich document loses
-    /// its formatting this way, so this only asks; [`Self::alert_confirm`]
-    /// calls [`Self::perform_edit_as_plain_text`] once the user agrees.
-    pub(super) fn edit_as_plain_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_action_blocked() || self.rtf_runs.is_none() {
-            return;
-        }
-        self.alert = Some(ActiveAlert::ConfirmPlainTextConversion);
-        cx.notify();
-    }
-
-    /// The confirmed conversion itself — see [`Self::edit_as_plain_text`].
-    pub(super) fn perform_edit_as_plain_text(&mut self, cx: &mut Context<Self>) {
-        if self.rtf_runs.take().is_some() {
-            self.prevent_editing = false;
-            self.path = None;
-            self.saved_bytes = None;
-            self.text_format = document::TextFormat::default();
-            self.reset_document_watch();
-            self.dirty = true;
-            self.report_unsaved(cx);
-            self.schedule_autosave(cx);
-            cx.notify();
-        }
-    }
-
     fn do_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.file_busy {
             return;
         }
         self.file_busy = true;
-        let reuse_current = should_reuse_untitled_window(
-            self.dirty,
-            self.path.is_some(),
-            self.rtf_runs.is_some(),
-            self.input.read(cx).text().len() == 0 && self.long_lines.is_none(),
-        );
+        let reuse_current =
+            should_reuse_untitled_window(self.dirty, self.path.is_some(), self.body_is_empty(cx));
         cx.notify();
         let receiver = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -227,6 +196,7 @@ impl EditorView {
                 match loaded {
                     Ok(LoadedFile::Plain(document)) => {
                         this.prevent_editing = false;
+                        this.rich_text = false;
                         this.install_document_text(
                             document.text,
                             document.longest_line,
@@ -237,25 +207,26 @@ impl EditorView {
                         this.path = Some(path);
                         this.saved_bytes = Some(document.original_bytes);
                         this.text_format = document.format;
-                        this.rtf_runs = None;
                         this.reset_document_watch();
                         this.mark_clean(cx);
                         this.record_current_document(cx);
                     }
-                    Ok(LoadedFile::RichText { text, runs }) => {
+                    Ok(LoadedFile::RichText {
+                        document,
+                        original_bytes,
+                    }) => {
                         this.prevent_editing = false;
-                        this.long_lines = None;
                         this.input
-                            .update(cx, |state, cx| state.set_value(text, window, cx));
-                        this.text_revision = this.text_revision.wrapping_add(1);
+                            .update(cx, |state, cx| state.set_value("", window, cx));
+                        this.install_rich_document(document, cx);
                         this.release_untitled_slot();
                         this.path = Some(path);
-                        this.saved_bytes = None;
+                        this.saved_bytes = Some(original_bytes);
                         this.text_format = document::TextFormat::default();
-                        this.rtf_runs = Some(runs);
                         this.reset_document_watch();
                         this.mark_clean(cx);
                         this.record_current_document(cx);
+                        this.focus_body(window, cx);
                     }
                     Err(message) => {
                         this.alert = Some(ActiveAlert::Error {

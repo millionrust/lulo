@@ -6228,6 +6228,8 @@ version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
  "gpui-component",
+ "rmac-ui",
+ "unicode-segmentation",
 ]
 
 [[package]]

@@ -24,11 +24,34 @@ use gpui_component::{
     Disableable as _, Icon, Selectable, Sizable as _, Size, StyledExt as _,
 };
 
-pub use gpui_component::input::{
-    InputEvent, InputState, Paste, Position, Rope, RopeExt, SelectAll,
-};
 pub use gpui_component::slider::{SliderEvent, SliderState};
 pub use gpui_component::table::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
+pub use gpui_component::{
+    actions::{
+        SelectDown as InputSelectDown, SelectLeft as InputSelectLeft,
+        SelectRight as InputSelectRight, SelectUp as InputSelectUp,
+    },
+    input::{
+        Backspace as InputBackspace, Copy as InputCopy, Cut as InputCut, Delete as InputDelete,
+        DeleteToBeginningOfLine as InputDeleteToBeginningOfLine,
+        DeleteToEndOfLine as InputDeleteToEndOfLine,
+        DeleteToNextWordEnd as InputDeleteToNextWordEnd,
+        DeleteToPreviousWordStart as InputDeleteToPreviousWordStart, Enter as InputEnter,
+        IndentInline as InputIndentInline, InputEvent, InputState, MoveDown as InputMoveDown,
+        MoveEnd as InputMoveEnd, MoveHome as InputMoveHome, MoveLeft as InputMoveLeft,
+        MovePageDown as InputMovePageDown, MovePageUp as InputMovePageUp,
+        MoveRight as InputMoveRight, MoveToEnd as InputMoveToEnd,
+        MoveToEndOfLine as InputMoveToEndOfLine, MoveToNextWord as InputMoveToNextWord,
+        MoveToPreviousWord as InputMoveToPreviousWord, MoveToStart as InputMoveToStart,
+        MoveToStartOfLine as InputMoveToStartOfLine, MoveUp as InputMoveUp, Paste, Position,
+        Redo as InputRedo, Rope, RopeExt, SelectAll, SelectToEnd as InputSelectToEnd,
+        SelectToEndOfLine as InputSelectToEndOfLine,
+        SelectToNextWordEnd as InputSelectToNextWordEnd,
+        SelectToPreviousWordStart as InputSelectToPreviousWordStart,
+        SelectToStart as InputSelectToStart, SelectToStartOfLine as InputSelectToStartOfLine,
+        ShowCharacterPalette as InputShowCharacterPalette, Undo as InputUndo,
+    },
+};
 
 use crate::mac;
 

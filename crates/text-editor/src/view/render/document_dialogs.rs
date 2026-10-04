@@ -185,7 +185,7 @@ impl EditorView {
     }
 
     pub(super) fn render_spacing_dialog(&self, cx: &mut Context<Self>) -> AnyElement {
-        let spacing = self.ruler.line_spacing;
+        let spacing = self.paragraph_style(cx).line_spacing;
         sheet_card("spacing-sheet", 260.0, 190.0)
             .child(sheet_title("Spacing"))
             .child(radio_row(
@@ -220,12 +220,23 @@ impl EditorView {
             .into_any_element()
     }
 
-    /// Format ▸ Text ▸ Show Ruler: a thin alignment bar under the title
-    /// bar, shown only in rich-text mode (TXT-MENU-071). Lulo's document
-    /// model has no per-paragraph attributes, so these three buttons set
-    /// the whole document's alignment at once (see `view/format_text.rs`).
+    /// Format ▸ Text ▸ Show Ruler: a thin bar under the title bar with the
+    /// caret paragraph's alignment and list, shown only in rich-text mode
+    /// (TXT-MENU-071). Each button applies to the selected paragraphs.
     pub(super) fn render_ruler_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let alignment = self.ruler.alignment;
+        let ruler = self.paragraph_style(cx);
+        let alignment = ruler.alignment;
+        let align_button = |id: &'static str,
+                            label: &'static str,
+                            accessible: &'static str,
+                            value: rich::Alignment,
+                            cx: &mut Context<Self>| {
+            Button::new(id, label)
+                .small()
+                .tooltip(accessible)
+                .selected(alignment == value)
+                .on_click(cx.listener(move |this, _, _, cx| this.set_alignment(value, cx)))
+        };
         div()
             .id("ruler-bar")
             .flex_none()
@@ -237,31 +248,134 @@ impl EditorView {
             .bg(mac::chrome())
             .border_b_1()
             .border_color(mac::separator())
+            .child(align_button(
+                "ruler-align-left",
+                "⟸",
+                "Align Left",
+                rich::Alignment::Left,
+                cx,
+            ))
+            .child(align_button(
+                "ruler-align-centre",
+                "≡",
+                "Centre",
+                rich::Alignment::Center,
+                cx,
+            ))
+            .child(align_button(
+                "ruler-align-justify",
+                "☰",
+                "Justify",
+                rich::Alignment::Justified,
+                cx,
+            ))
+            .child(align_button(
+                "ruler-align-right",
+                "⟹",
+                "Align Right",
+                rich::Alignment::Right,
+                cx,
+            ))
             .child(
-                Button::new("ruler-align-left", "⟸")
+                Button::new("ruler-list", "• List")
                     .small()
-                    .selected(alignment == gpui::TextAlign::Left)
+                    .tooltip("List")
+                    .selected(ruler.list.is_some())
+                    .on_click(cx.listener(|this, _, _, cx| this.open_lists(cx))),
+            )
+    }
+
+    /// Format ▸ Font ▸ Show Colours (⇧⌘C): the Colours panel's crayon box.
+    /// Clicking a crayon colours the selection (or the next typing).
+    pub(super) fn render_colours_panel(&self, cx: &mut Context<Self>) -> AnyElement {
+        let current = self.rich.read(cx).style_at_selection().color;
+        let mut grid = div()
+            .flex()
+            .flex_wrap()
+            .gap(px(4.0))
+            .w(px(8.0 * 28.0 + 7.0 * 4.0));
+        for (name, color) in rich::palette::CRAYONS {
+            let selected = current == Some(color);
+            grid = grid.child(
+                div()
+                    .id(SharedString::from(format!("crayon-{name}")))
+                    .role(Role::RadioButton)
+                    .aria_label(name)
+                    .aria_selected(selected)
+                    .w(px(28.0))
+                    .h(px(20.0))
+                    .rounded(px(mac::radius_control()))
+                    .bg(rich::palette::to_hsla(color))
+                    .border_1()
+                    .border_color(if selected {
+                        mac::system_blue()
+                    } else {
+                        mac::separator()
+                    })
                     .on_click(
-                        cx.listener(|this, _, _, cx| this.set_alignment(gpui::TextAlign::Left, cx)),
+                        cx.listener(move |this, _, _, cx| this.set_text_colour(Some(color), cx)),
+                    ),
+            );
+        }
+        sheet_card("colours-sheet", 296.0, 300.0)
+            .child(sheet_title("Colours"))
+            .child(grid)
+            .child(
+                div()
+                    .mt_auto()
+                    .flex()
+                    .justify_between()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "colours-automatic",
+                            "Automatic",
+                            DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.set_text_colour(None, cx))),
+                    )
+                    .child(
+                        rmac_ui::dialog_button("colours-done", "Done", DialogButtonKind::Primary)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.close_colours(window, cx)),
+                            ),
                     ),
             )
+            .into_any_element()
+    }
+
+    /// Format ▸ List…: bullets, numbers, or no list for the selected
+    /// paragraphs.
+    pub(super) fn render_lists_dialog(&self, cx: &mut Context<Self>) -> AnyElement {
+        let list = self.paragraph_style(cx).list;
+        sheet_card("lists-sheet", 260.0, 190.0)
+            .child(sheet_title("List"))
+            .child(radio_row(
+                "list-none",
+                "None",
+                list.is_none(),
+                |this, _, cx| this.set_list(None, cx),
+                cx,
+            ))
+            .child(radio_row(
+                "list-bullets",
+                "• Bullets",
+                list == Some(rich::ListKind::Bullet),
+                |this, _, cx| this.set_list(Some(rich::ListKind::Bullet), cx),
+                cx,
+            ))
+            .child(radio_row(
+                "list-numbers",
+                "1. 2. 3. Numbers",
+                list == Some(rich::ListKind::Numbered),
+                |this, _, cx| this.set_list(Some(rich::ListKind::Numbered), cx),
+                cx,
+            ))
             .child(
-                Button::new("ruler-align-centre", "≡")
-                    .small()
-                    .selected(alignment == gpui::TextAlign::Center)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.set_alignment(gpui::TextAlign::Center, cx)
-                    })),
+                div().mt_auto().flex().justify_end().child(
+                    rmac_ui::dialog_button("lists-done", "Done", DialogButtonKind::Primary)
+                        .on_click(cx.listener(|this, _, window, cx| this.close_lists(window, cx))),
+                ),
             )
-            .child(
-                Button::new("ruler-align-right", "⟹")
-                    .small()
-                    .selected(alignment == gpui::TextAlign::Right)
-                    .on_click(
-                        cx.listener(|this, _, _, cx| {
-                            this.set_alignment(gpui::TextAlign::Right, cx)
-                        }),
-                    ),
-            )
+            .into_any_element()
     }
 }

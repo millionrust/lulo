@@ -4,6 +4,8 @@
 //! configuration so the Text Editor and Notes (and anything else with a text
 //! body) behave and look identical. Re-exports the `Input` element for rendering.
 
+pub mod rich;
+
 use std::ops::Range;
 
 use gpui::{AppContext as _, Context, Entity, EntityInputHandler, UTF16Selection, Window};

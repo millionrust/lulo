@@ -106,9 +106,67 @@ impl EditorView {
 
     /// The whole document as one string, for saving, printing and recovery.
     pub(super) fn document_text(&self, cx: &App) -> String {
+        if self.rich_text {
+            return self.rich.read(cx).text();
+        }
         match &self.long_lines {
             Some(document) => document.text.to_string(),
             None => self.input.read(cx).text().to_string(),
+        }
+    }
+
+    /// What a save of this document writes: RTF for rich text.
+    pub(super) fn save_content(&self, cx: &App) -> SaveContent {
+        if self.rich_text {
+            SaveContent::Rich(self.rich.read(cx).document().clone())
+        } else {
+            SaveContent::Plain(self.document_text(cx))
+        }
+    }
+
+    /// The recovery draft's content and whether it is RTF.
+    fn recovery_content(&self, cx: &App) -> (String, bool) {
+        if self.rich_text {
+            let rtf = rich::rtf::write(self.rich.read(cx).document());
+            // The writer emits only ASCII.
+            (String::from_utf8_lossy(&rtf).into_owned(), true)
+        } else {
+            (self.document_text(cx), false)
+        }
+    }
+
+    /// Show `document` in the rich-text editor and switch the window to
+    /// rich text.
+    pub(super) fn install_rich_document(
+        &mut self,
+        document: rich::Document,
+        cx: &mut Context<Self>,
+    ) {
+        self.rich_text = true;
+        self.long_lines = None;
+        self.rich
+            .update(cx, |editor, cx| editor.set_document(document, cx));
+        self.text_revision = self.text_revision.wrapping_add(1);
+    }
+
+    /// A rich document whose path is not an `.rtf` (a plain file made rich)
+    /// must be saved under a new name rather than over its plain source.
+    pub(super) fn needs_rich_destination(&self) -> bool {
+        self.rich_text
+            && self
+                .path
+                .as_deref()
+                .is_some_and(|path| !is_rich_text_path(path))
+    }
+
+    /// Move keyboard focus to the document body (the rich-text editor in
+    /// rich mode).
+    pub(super) fn focus_body(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.rich_text {
+            let handle = gpui::Focusable::focus_handle(self.rich.read(cx), cx);
+            window.focus(&handle, cx);
+        } else {
+            self.input.update(cx, |state, cx| state.focus(window, cx));
         }
     }
 
@@ -147,14 +205,10 @@ impl EditorView {
         self.mono = content.mono;
         self.font_size = content.font_size;
         self.text_format = content.format;
-        if let Some(runs) = content.rtf_runs {
-            self.long_lines = None;
-            self.input
-                .update(cx, |state, cx| state.set_value(content.text, window, cx));
-            self.text_revision = self.text_revision.wrapping_add(1);
-            self.rtf_runs = Some(runs);
+        if let Some(document) = content.rich {
+            self.install_rich_document(document, cx);
         } else {
-            self.rtf_runs = None;
+            self.rich_text = false;
             let longest_line = long_lines::longest_line_bytes(&content.text);
             self.install_document_text(content.text, longest_line, window, cx);
         }
@@ -174,7 +228,23 @@ impl EditorView {
     }
 
     pub(super) fn refresh_dirty_state(&mut self, cx: &mut Context<Self>) {
-        self.dirty = match &self.long_lines {
+        self.dirty = if self.rich_text {
+            self.needs_rich_destination()
+                || self.saved_rich.as_ref() != Some(self.rich.read(cx).document())
+        } else {
+            self.plain_dirty(cx)
+        };
+        self.report_unsaved(cx);
+        if self.dirty {
+            self.schedule_autosave(cx);
+        } else {
+            self.clear_recovery(cx);
+        }
+        cx.notify();
+    }
+
+    fn plain_dirty(&self, cx: &App) -> bool {
+        match &self.long_lines {
             // The read-only view changes text only by replacing it whole
             // (recovery restore), which bumps the revision.
             Some(_) => {
@@ -186,14 +256,7 @@ impl EditorView {
                 self.text_format,
                 self.saved_format,
             ),
-        };
-        self.report_unsaved(cx);
-        if self.dirty {
-            self.schedule_autosave(cx);
-        } else {
-            self.clear_recovery(cx);
         }
-        cx.notify();
     }
 
     /// Tell the session whether this window holds unsaved work, so a
@@ -209,9 +272,13 @@ impl EditorView {
         if !self.dirty || self.closing || self.recovery_loading {
             return;
         }
-        let content = self.document_text(cx);
-        let record =
-            recovery::RecoveryRecord::for_document(self.path.as_deref(), self.text_format, content);
+        let (content, rich_content) = self.recovery_content(cx);
+        let record = recovery::RecoveryRecord::for_document(
+            self.path.as_deref(),
+            self.text_format,
+            content,
+            rich_content,
+        );
         let result = self
             .recovery_writer
             .save(
@@ -250,13 +317,14 @@ impl EditorView {
                     this.recovery_clock
                         .should_write(generation, this.dirty)
                         .then(|| {
-                            let content = this.document_text(cx);
+                            let (content, rich_content) = this.recovery_content(cx);
                             (
                                 this.recovery_path.clone(),
                                 recovery::RecoveryRecord::for_document(
                                     this.path.as_deref(),
                                     this.text_format,
                                     content,
+                                    rich_content,
                                 ),
                                 this.recovery_cleanup_paths.clone(),
                                 this.document_generation,
@@ -339,7 +407,13 @@ impl EditorView {
 
     /// Record the current buffer as the saved baseline.
     pub(super) fn mark_clean(&mut self, cx: &mut Context<Self>) -> bool {
-        self.saved_text = self.input.read(cx).text().clone();
+        if self.rich_text {
+            self.saved_rich = Some(self.rich.read(cx).document().clone());
+            self.saved_text = Rope::new();
+        } else {
+            self.saved_rich = None;
+            self.saved_text = self.input.read(cx).text().clone();
+        }
         self.saved_revision = self.text_revision;
         self.saved_format = self.text_format;
         self.dirty = false;

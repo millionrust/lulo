@@ -25,10 +25,72 @@
 
 use std::ops::Range;
 
-use gpui::{App, Entity, EntityInputHandler as _, Window};
+use gpui::{App, Context, Entity, EntityInputHandler as _, Window};
 use unicode_segmentation::UnicodeSegmentation as _;
 
 use crate::InputState;
+
+/// An editable text surface the shared Edit-menu behaviour (Spelling and
+/// Grammar, Substitutions, Transformations, Speech) can work on: an
+/// [`InputState`] field or a rich-text editor. Offsets are UTF-8 bytes.
+pub trait EditableText: 'static + Sized {
+    fn editable_text(&self) -> String;
+    fn editable_selection(&self) -> Range<usize>;
+    fn select_editable_range(
+        &mut self,
+        range: Range<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    );
+    /// Replace `range` through the undoable edit path, leaving the caret
+    /// after the replacement.
+    fn replace_editable_range(
+        &mut self,
+        range: Range<usize>,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    );
+    fn focus_editable(&mut self, window: &mut Window, cx: &mut Context<Self>);
+}
+
+impl EditableText for InputState {
+    fn editable_text(&self) -> String {
+        self.text().to_string()
+    }
+
+    fn editable_selection(&self) -> Range<usize> {
+        self.selected_range()
+    }
+
+    fn select_editable_range(
+        &mut self,
+        range: Range<usize>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_selected_range(range, cx);
+    }
+
+    fn replace_editable_range(
+        &mut self,
+        range: Range<usize>,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // `replace_text_in_range`'s own range is UTF-16 (the IME path), so
+        // select the UTF-8 range first and replace the selection.
+        let end = range.start + text.len();
+        self.set_selected_range(range, cx);
+        self.replace_text_in_range(None, text, window, cx);
+        self.set_selected_range(end..end, cx);
+    }
+
+    fn focus_editable(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus(window, cx);
+    }
+}
 
 /// A dictionary-backed spelling checker. Implemented by `rmac-spelling`'s
 /// `HunspellChecker`; kept as a trait here so `rmac-ui` never depends on
@@ -150,8 +212,8 @@ pub fn next_issue(
 
 /// Edit ▸ Spelling and Grammar ▸ Check Document Now / Show Spelling and
 /// Grammar: select the next issue, if any. Returns whether one was found.
-pub fn check_document_now(
-    field: &Entity<InputState>,
+pub fn check_document_now<T: EditableText>(
+    field: &Entity<T>,
     checker: &dyn SpellChecker,
     include_grammar: bool,
     window: &mut Window,
@@ -159,14 +221,14 @@ pub fn check_document_now(
 ) -> bool {
     let (text, from) = {
         let input = field.read(cx);
-        (input.text().to_string(), input.selected_range().end)
+        (input.editable_text(), input.editable_selection().end)
     };
     let Some(issue) = next_issue(&text, from, checker, include_grammar) else {
         return false;
     };
     field.update(cx, |input, cx| {
-        input.set_selected_range(issue.range, cx);
-        input.focus(window, cx);
+        input.select_editable_range(issue.range, window, cx);
+        input.focus_editable(window, cx);
     });
     true
 }
@@ -176,8 +238,8 @@ pub fn check_document_now(
 /// becomes its smart equivalent immediately, and the word before a
 /// just-typed space/punctuation is checked against the replacement table
 /// and (when enabled) the dictionary. Never touches an active selection.
-pub fn on_text_changed(
-    field: &Entity<InputState>,
+pub fn on_text_changed<T: EditableText>(
+    field: &Entity<T>,
     settings: TextAssistSettings,
     checker: Option<&dyn SpellChecker>,
     window: &mut Window,
@@ -185,11 +247,11 @@ pub fn on_text_changed(
 ) {
     let (text, cursor) = {
         let input = field.read(cx);
-        let range = input.selected_range();
+        let range = input.editable_selection();
         if range.start != range.end {
             return;
         }
-        (input.text().to_string(), range.start)
+        (input.editable_text(), range.start)
     };
     if (settings.smart_quotes || settings.smart_dashes)
         && apply_smart_substitution(field, &text, cursor, settings, window, cx)
@@ -269,26 +331,23 @@ fn matching_replacement(text: &str, end: usize) -> Option<(Range<usize>, &'stati
 /// path), so this selects `range` first — documented as UTF-8 bytes —
 /// and replaces `None` (the just-set selection) instead of ever handing it
 /// a byte range to reinterpret as UTF-16.
-fn replace_and_place_cursor_after(
-    field: &Entity<InputState>,
+fn replace_and_place_cursor_after<T: EditableText>(
+    field: &Entity<T>,
     range: Range<usize>,
     replacement: &str,
     window: &mut Window,
     cx: &mut App,
 ) {
-    let end = range.start + replacement.len();
     field.update(cx, |input, cx| {
-        input.set_selected_range(range, cx);
-        input.replace_text_in_range(None, replacement, window, cx);
-        input.set_selected_range(end..end, cx);
+        input.replace_editable_range(range, replacement, window, cx);
     });
 }
 
 /// Smart Quotes/Dashes: the character just typed, inspected in place
 /// (never reaching back past it), decides its own replacement. Returns
 /// whether a substitution was made.
-fn apply_smart_substitution(
-    field: &Entity<InputState>,
+fn apply_smart_substitution<T: EditableText>(
+    field: &Entity<T>,
     text: &str,
     cursor: usize,
     settings: TextAssistSettings,

@@ -33,6 +33,8 @@ pub(super) struct RecoveryPrompt {
     pub(super) content: String,
     pub(super) document_label: String,
     pub(super) format: document::TextFormat,
+    /// The draft is a rich-text document, saved as RTF.
+    pub(super) rich: bool,
     pub(super) additional_drafts: usize,
 }
 
@@ -157,6 +159,7 @@ pub(super) fn startup_recovery() -> StartupRecovery {
             None,
             document::TextFormat::default(),
             draft.content,
+            false,
         );
         let migrated_path = recovery::fresh_record_path(&directory);
         if recovery::save(&storage::RealStorage, &migrated_path, &record).is_ok() {
@@ -179,6 +182,7 @@ pub(super) fn startup_recovery() -> StartupRecovery {
                         format!("Legacy unsaved document {}", index + 1)
                     },
                     format: record.format,
+                    rich: record.rich,
                     additional_drafts: 0,
                 },
                 draft.paths,
@@ -230,6 +234,7 @@ pub(super) fn startup_recovery() -> StartupRecovery {
         content: candidate.record.content,
         document_label: candidate.record.document_label,
         format: candidate.record.format,
+        rich: candidate.record.rich,
         additional_drafts: remaining,
     });
     StartupRecovery {

@@ -4,10 +4,47 @@ use super::*;
 
 pub(super) enum LoadedFile {
     Plain(document::DecodedDocument),
+    /// An `.rtf` document, editable with its formatting (TE-03).
     RichText {
-        text: String,
-        runs: Vec<rtf::RtfRun>,
+        document: rich::Document,
+        original_bytes: Vec<u8>,
     },
+}
+
+/// What a save writes: plain text in the document's text format, or the
+/// rich document as RTF.
+#[derive(Clone)]
+pub(super) enum SaveContent {
+    Plain(String),
+    Rich(rich::Document),
+}
+
+impl SaveContent {
+    pub(super) fn is_rich(&self) -> bool {
+        matches!(self, Self::Rich(_))
+    }
+
+    /// The extension a name typed without one gets.
+    pub(super) fn default_extension(&self) -> &'static str {
+        if self.is_rich() {
+            "rtf"
+        } else {
+            "txt"
+        }
+    }
+}
+
+/// What an exact save wrote and read back.
+pub(super) enum SavedDocument {
+    Plain(document::DecodedDocument),
+    Rich { original_bytes: Vec<u8> },
+}
+
+/// Whether `path` names a rich-text file (by extension, as TextEdit
+/// decides which format to open a file in).
+pub(super) fn is_rich_text_path(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("rtf"))
 }
 
 #[derive(Debug)]
@@ -41,14 +78,13 @@ pub(super) fn load_selected_document(path: &Path) -> Result<LoadedFile, String> 
         document::MAX_DOCUMENT_BYTES,
     )
     .map_err(|_| "Text Editor could not read the selected document".to_string())?;
-    let is_rtf = path
-        .extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("rtf"));
-    if is_rtf {
-        let runs = rtf::parse_rtf(&bytes)
+    if is_rich_text_path(path) {
+        let document = rich::rtf::parse(&bytes)
             .ok_or_else(|| "the RTF document could not be decoded safely".to_string())?;
-        let text = runs.iter().map(|run| run.text.as_str()).collect();
-        Ok(LoadedFile::RichText { text, runs })
+        Ok(LoadedFile::RichText {
+            document,
+            original_bytes: bytes,
+        })
     } else {
         document::decode(bytes)
             .map(LoadedFile::Plain)
@@ -59,15 +95,33 @@ pub(super) fn load_selected_document(path: &Path) -> Result<LoadedFile, String> 
 pub(super) fn save_document(
     path: &Path,
     expected: Option<&[u8]>,
-    text: &str,
+    content: &SaveContent,
     format: document::TextFormat,
-) -> Result<document::DecodedDocument, SaveFailure> {
-    let encoded = document::encode(text, format).map_err(SaveFailure::Codec)?;
-    storage::write_document_if_unchanged(&storage::RealStorage, path, expected, &encoded)
-        .map_err(SaveFailure::Storage)?;
-    // Encoding a valid Rust string through a supported format is guaranteed to
-    // decode. Keeping this fallible preserves the invariant without panicking.
-    document::decode(encoded).map_err(SaveFailure::Codec)
+) -> Result<SavedDocument, SaveFailure> {
+    match content {
+        SaveContent::Plain(text) => {
+            let encoded = document::encode(text, format).map_err(SaveFailure::Codec)?;
+            storage::write_document_if_unchanged(&storage::RealStorage, path, expected, &encoded)
+                .map_err(SaveFailure::Storage)?;
+            // Encoding a valid Rust string through a supported format is
+            // guaranteed to decode. Keeping this fallible preserves the
+            // invariant without panicking.
+            document::decode(encoded)
+                .map(SavedDocument::Plain)
+                .map_err(SaveFailure::Codec)
+        }
+        SaveContent::Rich(document) => {
+            let encoded = rich::rtf::write(document);
+            if encoded.len() > document::MAX_DOCUMENT_BYTES {
+                return Err(SaveFailure::Codec(document::CodecError::EncodedTooLarge));
+            }
+            storage::write_document_if_unchanged(&storage::RealStorage, path, expected, &encoded)
+                .map_err(SaveFailure::Storage)?;
+            Ok(SavedDocument::Rich {
+                original_bytes: encoded,
+            })
+        }
+    }
 }
 
 pub(super) fn same_file_identity(left: &Path, right: &Path) -> bool {
@@ -96,13 +150,13 @@ pub(super) fn same_file_identity(left: &Path, right: &Path) -> bool {
 pub(super) fn save_document_copy(
     path: &Path,
     forbidden_destination: Option<&Path>,
-    text: &str,
+    content: &SaveContent,
     format: document::TextFormat,
-) -> Result<document::DecodedDocument, SaveFailure> {
+) -> Result<SavedDocument, SaveFailure> {
     if forbidden_destination.is_some_and(|source| same_file_identity(source, path)) {
         Err(SaveFailure::ConflictingCopyDestination)
     } else {
-        save_document(path, None, text, format)
+        save_document(path, None, content, format)
     }
 }
 
@@ -122,13 +176,8 @@ pub(super) fn inspect_external_revision(path: &Path, expected: &[u8]) -> Option<
     }
 }
 
-pub(super) fn should_reuse_untitled_window(
-    dirty: bool,
-    has_path: bool,
-    rich_text_preview: bool,
-    empty: bool,
-) -> bool {
-    !dirty && !has_path && !rich_text_preview && empty
+pub(super) fn should_reuse_untitled_window(dirty: bool, has_path: bool, empty: bool) -> bool {
+    !dirty && !has_path && empty
 }
 
 pub(super) fn can_begin_print(
@@ -136,9 +185,9 @@ pub(super) fn can_begin_print(
     print_busy: bool,
     recovery_loading: bool,
     alert_open: bool,
-    rich_text_preview: bool,
+    rich_text: bool,
 ) -> bool {
-    !file_busy && !print_busy && !recovery_loading && !alert_open && !rich_text_preview
+    !file_busy && !print_busy && !recovery_loading && !alert_open && !rich_text
 }
 
 #[derive(Debug)]

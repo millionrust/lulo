@@ -15,8 +15,6 @@ use std::sync::{Mutex, OnceLock};
 
 use gpui::{App, Entity};
 
-use crate::InputState;
-
 fn speaking_pid() -> &'static Mutex<Option<u32>> {
     static PID: OnceLock<Mutex<Option<u32>>> = OnceLock::new();
     PID.get_or_init(|| Mutex::new(None))
@@ -39,11 +37,15 @@ fn null_stdio(command: &mut Command) -> &mut Command {
 /// selected. `stop_action` is the app's own `"…::StopSpeaking"` action
 /// name, enabled for exactly as long as this utterance is speaking so the
 /// menu greys it the way the Mac does.
-pub fn start_speaking(field: &Entity<InputState>, stop_action: &'static str, cx: &mut App) {
+pub fn start_speaking<T: crate::text_assist::EditableText>(
+    field: &Entity<T>,
+    stop_action: &'static str,
+    cx: &mut App,
+) {
     let text = {
         let input = field.read(cx);
-        let range = input.selected_range();
-        let full = input.text().to_string();
+        let range = input.editable_selection();
+        let full = input.editable_text();
         full.get(range)
             .filter(|selected| !selected.trim().is_empty())
             .map(str::to_owned)

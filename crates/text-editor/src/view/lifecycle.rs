@@ -13,6 +13,13 @@ impl EditorView {
     ) -> Self {
         let settings = crate::settings::current();
         let input = rmac_editor::multiline("", window, cx);
+        let rich_style = Self::rich_default_style();
+        let rich = cx.new(|cx| {
+            let mut editor = rich::RichTextEditor::new(window, cx);
+            editor.set_default_style(rich_style.clone());
+            editor.set_document(rich::Document::empty(&rich_style), cx);
+            editor
+        });
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         let select_line_input = cx.new(|cx| InputState::new(window, cx).placeholder("Line number"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
@@ -50,6 +57,28 @@ impl EditorView {
                     if !this.editing_blocked() {
                         rmac_ui::text_assist::on_text_changed(
                             field,
+                            this.text_assist,
+                            Some(this.spell_checker.as_ref()
+                                as &dyn rmac_ui::text_assist::SpellChecker),
+                            window,
+                            cx,
+                        );
+                    }
+                }
+            },
+        );
+        // The rich body: the same dirty tracking, Find refresh, autosave and
+        // live Spelling/Substitutions as the plain body.
+        let sub_rich = cx.subscribe_in(
+            &rich,
+            window,
+            |this, editor, event: &rich::RichTextEvent, window, cx| {
+                if *event == rich::RichTextEvent::Changed && this.rich_text {
+                    this.on_buffer_changed(cx);
+                    let composing = editor.read(cx).marked_range().is_some();
+                    if !this.editing_blocked() && !composing {
+                        rmac_ui::text_assist::on_text_changed(
+                            editor,
                             this.text_assist,
                             Some(this.spell_checker.as_ref()
                                 as &dyn rmac_ui::text_assist::SpellChecker),
@@ -163,6 +192,12 @@ impl EditorView {
             KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, Some(CTX)),
             KeyBinding::new("alt-cmd-w", CloseAll, Some(CTX)),
             KeyBinding::new("shift-cmd-t", ToggleRichText, Some(CTX)),
+            KeyBinding::new("cmd-b", crate::ToggleBold, Some(CTX)),
+            KeyBinding::new("cmd-i", crate::ToggleItalic, Some(CTX)),
+            KeyBinding::new("cmd-u", crate::ToggleUnderline, Some(CTX)),
+            KeyBinding::new("shift-cmd-c", crate::ShowColours, Some(CTX)),
+            KeyBinding::new("alt-cmd-c", crate::CopyStyle, Some(CTX)),
+            KeyBinding::new("alt-cmd-v", crate::PasteStyle, Some(CTX)),
             KeyBinding::new("shift-cmd-[", AlignLeft, Some(CTX)),
             KeyBinding::new("shift-cmd-\\", AlignCentre, Some(CTX)),
             KeyBinding::new("shift-cmd-]", AlignRight, Some(CTX)),
@@ -224,7 +259,7 @@ impl EditorView {
                     // TextEdit opens with the insertion point live in the
                     // text: focus the (now enabled) body so the caret shows
                     // and typing lands without a click.
-                    this.input.update(cx, |state, cx| state.focus(window, cx));
+                    this.focus_body(window, cx);
                     if let Some(path) = this.pending_startup_path.take() {
                         this.load_document_path(path, "The file could not be opened.", window, cx);
                     }
@@ -315,6 +350,9 @@ impl EditorView {
             spell_checker: rmac_spelling::shared(),
             data_detectors: true,
             input,
+            rich,
+            // An untitled rich window starts clean on its empty document.
+            saved_rich: Some(rich::Document::empty(&rich_style)),
             path: None,
             untitled_slot,
             saved_bytes: None,
@@ -370,10 +408,11 @@ impl EditorView {
             prevent_editing: false,
             page_width_chars: settings.width_chars,
             rich_text: settings.rich_text_default,
-            ruler: Ruler::default(),
+            rich_zoom: 1.0,
             show_ruler: settings.show_ruler_default,
+            colours_open: false,
+            lists_open: false,
             dark_background: false,
-            rtf_runs: None,
             rename_open: false,
             rename_input,
             rename_busy: false,
@@ -408,6 +447,7 @@ impl EditorView {
             pending_open_picker: open_picker_on_ready,
             _subscriptions: vec![
                 sub_main,
+                sub_rich,
                 sub_find,
                 sub_select_line,
                 sub_save_goto,

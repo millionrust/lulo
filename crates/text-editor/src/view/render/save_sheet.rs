@@ -288,7 +288,11 @@ impl EditorView {
                 "Save".to_string()
             })
             .attached()
-            .restore_focus_to(self.input.read(cx).focus_handle(cx))
+            .restore_focus_to(if self.rich_text {
+                self.rich.read(cx).focus_handle(cx)
+            } else {
+                self.input.read(cx).focus_handle(cx)
+            })
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 match event.keystroke.key.as_str() {
                     "escape" if this.save_goto_open => {

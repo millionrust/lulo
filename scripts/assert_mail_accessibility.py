@@ -13,7 +13,7 @@ Checks:
   selected, through the Selection interface;
 - "{n} conversations, {m} unread" is a second `list box` of named
   conversations, also with exactly one selected;
-- the message viewer is a named `document` and its name changes when a
+- the message viewer is a named `document frame` and its name changes when a
   different conversation is selected;
 - the toolbar's Filter Unread, Compose, Archive, Move to Bin, Junk or Not
   Junk, Reply, Reply All, Forward, Flag, Move or Copy to Mailbox and Search
@@ -97,7 +97,7 @@ if DUMP:
 
 viewer = support.wait_for(
     lambda: next(
-        (node for node in support.descendants(app()) if support.role(node) == "document"), None
+        (node for node in support.descendants(app()) if support.role(node) == "document frame"), None
     ),
     "the message viewer document",
 )
@@ -117,7 +117,7 @@ conversation_items = [
 ]
 assert support.selected_count(conversations) == 1, "selecting a conversation left none selected"
 viewer = next(
-    (node for node in support.descendants(app()) if support.role(node) == "document"), None
+    (node for node in support.descendants(app()) if support.role(node) == "document frame"), None
 )
 assert support.name(viewer) != first_name, "the viewer's name did not change with the selection"
 

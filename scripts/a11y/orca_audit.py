@@ -157,6 +157,31 @@ APP_JOURNEYS: list[dict[str, Any]] = [
             ("down", "move", "next process"), ("down", "move", "next process"), ("up", "move", "previous process"),
         ],
     },
+    {
+        # LuloRun sets RMAC_CALENDAR_FIXTURE=1 for app "calendar" (private
+        # sessions only), the only way Calendar ever shows sample events.
+        "id": "calendar", "title": "Calendar", "app": "calendar",
+        "extras": [
+            # Month view's heading is just the month name, which NextPeriod
+            # always changes (Week view's heading is the month containing
+            # the selected day, which a week step does not reliably cross).
+            ("cmd-3", None, "Month view"),
+            ("cmd-right", None, "next period: the heading should announce the new month"),
+            ("cmd-left", None, "previous period"), ("cmd-t", None, "go to today"),
+            ("cmd-f", None, "Search field"), ("escape", None, "leave search"),
+            ("cmd-n", None, "New Event sheet"), ("escape", None, "cancel the sheet"),
+        ],
+    },
+    {
+        # LuloRun sets RMAC_MAIL_FIXTURE=1 for app "mail" (private sessions
+        # only), the only way Mail ever shows sample messages.
+        "id": "mail", "title": "Mail", "app": "mail",
+        "extras": [
+            ("down", "move", "next conversation"), ("down", "move", "next conversation"),
+            ("up", "move", "previous conversation"),
+            ("cmd-f", None, "Search Mail field"), ("escape", None, "leave search"),
+        ],
+    },
 ]
 
 SHELL_JOURNEYS: list[dict[str, Any]] = [

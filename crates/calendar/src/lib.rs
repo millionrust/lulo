@@ -192,10 +192,19 @@ pub fn current_date() -> NaiveDate {
     Local::now().date_naive()
 }
 
+/// `RMAC_CALENDAR_FIXTURE=1` is the only path to [`fixture_snapshot`]
+/// (`editing::load`) — private nested a11y/behaviour sessions only
+/// (`scripts/a11y/orca_audit.py`, `scripts/behavior/run_lulo.py`). A real
+/// user with no calendar account configured sees the empty state instead
+/// (`CalendarView::accept_load`); Calendar never shows sample events to a
+/// real person.
+pub const FIXTURE_ENV: &str = "RMAC_CALENDAR_FIXTURE";
+
 /// The fixture's seed calendars, in the stable order `Event::calendar`
-/// indexes into. `CalendarView` falls back to `fixture_week` only when the
-/// EDS snapshot can't be loaded; either way `store::overlay` then applies the
-/// saved per-calendar prefs and appends local calendars and subscriptions.
+/// indexes into. `editing::load` returns [`fixture_snapshot`] instead of
+/// reading EDS when [`FIXTURE_ENV`] is set; either way `store::overlay`
+/// then applies the saved per-calendar prefs and appends local calendars
+/// and subscriptions.
 pub fn seed_calendars() -> Vec<Calendar> {
     vec![
         Calendar::new("Work", "Google", CalendarColor::Blue, true),
@@ -274,6 +283,13 @@ pub fn fixture_week(first_day: NaiveDate) -> WeekSnapshot {
         events,
         slots,
     }
+}
+
+/// [`fixture_week`] for the week containing today, for [`FIXTURE_ENV`].
+pub fn fixture_snapshot() -> WeekSnapshot {
+    let today = current_date();
+    let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+    fixture_week(monday)
 }
 
 pub fn month_grid_start(date: NaiveDate) -> NaiveDate {

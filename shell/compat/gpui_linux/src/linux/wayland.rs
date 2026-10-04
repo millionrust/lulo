@@ -2,6 +2,7 @@ mod client;
 mod clipboard;
 mod cursor;
 mod display;
+pub(crate) mod frame_trace;
 mod popup;
 mod serial;
 mod window;

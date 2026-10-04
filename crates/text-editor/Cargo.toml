@@ -19,6 +19,7 @@ rmac-ui.workspace = true
 rmac-editor.workspace = true
 rmac-print.workspace = true
 rmac-recent-documents.workspace = true
+rmac-spelling.workspace = true
 rmac-storage.workspace = true
 rmac-sound.workspace = true
 

@@ -38,6 +38,22 @@ gpui::actions!(
         StartRecentTimer7,
         CloseWindow,
         QuitAndKeepWindows,
+        ShowSpellingAndGrammar,
+        CheckDocumentNow,
+        ToggleCheckSpellingWhileTyping,
+        ToggleCheckGrammarWithSpelling,
+        ToggleCorrectSpellingAutomatically,
+        ToggleSmartSubstitutions,
+        ToggleSmartCopyPaste,
+        ToggleSmartQuotes,
+        ToggleSmartDashes,
+        ToggleSmartLinks,
+        ToggleTextReplacement,
+        TransformUppercase,
+        TransformLowercase,
+        TransformCapitalise,
+        StartSpeaking,
+        StopSpeaking,
     ]
 );
 

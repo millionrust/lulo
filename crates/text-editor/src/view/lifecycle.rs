@@ -40,11 +40,25 @@ impl EditorView {
             .ok();
 
         // Dirty tracking + live match refresh + autosave on every edit.
-        let sub_main = cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| {
-            if matches!(ev, InputEvent::Change) {
-                this.on_buffer_changed(cx);
-            }
-        });
+        let sub_main = cx.subscribe_in(
+            &input,
+            window,
+            |this, field, ev: &InputEvent, window, cx| {
+                if matches!(ev, InputEvent::Change) {
+                    this.on_buffer_changed(cx);
+                    if !this.editing_blocked() {
+                        rmac_ui::text_assist::on_text_changed(
+                            field,
+                            this.text_assist,
+                            Some(this.spell_checker.as_ref()
+                                as &dyn rmac_ui::text_assist::SpellChecker),
+                            window,
+                            cx,
+                        );
+                    }
+                }
+            },
+        );
         // Live match recompute as the query is edited; Return submits the
         // search (Shift+Return repeats backward), the way TextEdit's own
         // Find field does — `find_input` is single-line, so GPUI's
@@ -276,8 +290,11 @@ impl EditorView {
         let recovery_directory = std::env::temp_dir().join("rmac-text-editor-recovery-pending");
         let recovery_path = recovery::fresh_record_path(&recovery_directory);
 
-        Self {
+        let view = Self {
             alert: None,
+            text_assist: rmac_ui::text_assist::TextAssistSettings::default(),
+            spell_checker: rmac_spelling::shared(),
+            data_detectors: true,
             input,
             path: None,
             untitled_slot,
@@ -343,6 +360,49 @@ impl EditorView {
             pending_startup_path: initial_path,
             pending_open_picker: open_picker_on_ready,
             _subscriptions: vec![sub_main, sub_find, sub_select_line, sub_save_goto],
-        }
+        };
+        rmac_ui::set_menu_checked(
+            "text_editor::ToggleCheckSpellingWhileTyping",
+            view.text_assist.check_spelling_while_typing,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "text_editor::ToggleCheckGrammarWithSpelling",
+            view.text_assist.check_grammar_with_spelling,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "text_editor::ToggleCorrectSpellingAutomatically",
+            view.text_assist.correct_spelling_automatically,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "text_editor::ToggleSmartCopyPaste",
+            view.text_assist.smart_copy_paste,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "text_editor::ToggleSmartQuotes",
+            view.text_assist.smart_quotes,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "text_editor::ToggleSmartDashes",
+            view.text_assist.smart_dashes,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "text_editor::ToggleSmartLinks",
+            view.text_assist.smart_links,
+            cx,
+        );
+        rmac_ui::set_menu_checked("text_editor::ToggleDataDetectors", view.data_detectors, cx);
+        rmac_ui::set_menu_checked(
+            "text_editor::ToggleTextReplacement",
+            view.text_assist.text_replacement,
+            cx,
+        );
+        rmac_ui::set_menu_enabled("text_editor::StopSpeaking", false, cx);
+        view
     }
 }

@@ -141,6 +141,9 @@ rmac-sound = { version = "=0.9.0-beta.1", path = "crates/rmac-sound" }
 rmac-shortcuts = { version = "=0.9.0-beta.1", path = "crates/rmac-shortcuts" }
 rmac-sharing = { version = "=0.9.0-beta.1", path = "crates/rmac-sharing" }
 rmac-sharing-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-sharing-linux" }
+# Dictionary-backed spelling for Edit ▸ Spelling and Grammar, kept out of
+# `rmac-ui` so shell binaries never pull in the `spellbook` dependency.
+rmac-spelling = { version = "=0.9.0-beta.1", path = "crates/rmac-spelling" }
 rmac-storage = { version = "=0.9.0-beta.1", path = "crates/rmac-storage" }
 rmac-system-info = { version = "=0.9.0-beta.1", path = "crates/rmac-system-info" }
 rmac-thumbnails = { version = "=0.9.0-beta.1", path = "crates/rmac-thumbnails" }
@@ -173,6 +176,9 @@ rustls-native-certs = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10.9"
+# Hunspell-compatible pure-Rust spell checker (MPL-2.0; see deny.toml's
+# licence exception) for Edit ▸ Spelling and Grammar.
+spellbook = "0.4"
 sysinfo = "0.33"
 tar = { version = "0.4", default-features = false }
 trash = "5"

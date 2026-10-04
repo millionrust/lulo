@@ -255,6 +255,71 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Spelling and Grammar",
+          "action": "preview::SpellingAndGrammarMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Show Spelling and Grammar",
+              "action": "preview::ShowSpellingAndGrammar",
+              "shortcut": "⌘:",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Check Document Now",
+              "action": "preview::CheckDocumentNow",
+              "shortcut": "⌘;",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Check Spelling While Typing",
+              "action": "preview::ToggleCheckSpellingWhileTyping",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Check Grammar With Spelling",
+              "action": "preview::ToggleCheckGrammarWithSpelling",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Correct Spelling Automatically",
+              "action": "preview::ToggleCorrectSpellingAutomatically",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Speech",
+          "action": "preview::SpeechMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Start Speaking",
+              "action": "preview::StartSpeaking",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Stop Speaking",
+              "action": "preview::StopSpeaking",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         }
       ]
     },

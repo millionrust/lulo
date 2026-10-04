@@ -14,15 +14,19 @@ use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
-    document, ActualSize, ClearRecentMenu, CloseAll, CloseBar, CloseWindow, DecreaseFont,
-    DuplicateDocument, EnterFullScreen, ExportPdf, FindNext, FindPrev, IncreaseFont,
+    document, ActualSize, CheckDocumentNow, ClearRecentMenu, CloseAll, CloseBar, CloseWindow,
+    DecreaseFont, DuplicateDocument, EnterFullScreen, ExportPdf, FindNext, FindPrev, IncreaseFont,
     InsertLineBreak, InsertPageBreak, InsertParagraphBreak, JumpToSelection, NewFile, OpenFile,
     OpenRecent0, OpenRecent1, OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6,
     OpenRecent7, OpenRecent8, OpenRecent9, PreventEditing, PrintFile, SaveFile, SaveFileAs,
     SaveGoToFolder, SelectLine, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8,
     SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ShowSettings,
-    ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage, TransformCapitalise,
-    TransformLowercase, TransformUppercase, UseSelectionForFind, ZoomIn, ZoomOut,
+    ShowSpellingAndGrammar, ShowSubstitutions, StartSpeaking, StopSpeaking,
+    ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
+    ToggleCorrectSpellingAutomatically, ToggleDataDetectors, ToggleFind, ToggleMono, ToggleReplace,
+    ToggleSmartCopyPaste, ToggleSmartDashes, ToggleSmartLinks, ToggleSmartQuotes,
+    ToggleTextReplacement, ToggleWrapToPage, TransformCapitalise, TransformLowercase,
+    TransformUppercase, UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use super::{
@@ -163,6 +167,90 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &TransformCapitalise, window, cx| {
                 this.transform_selection(rmac_ui::TextTransformation::Capitalise, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ShowSpellingAndGrammar, window, cx| {
+                this.check_document_now(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &CheckDocumentNow, window, cx| {
+                this.check_document_now(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleCheckSpellingWhileTyping, _, cx| {
+                this.text_assist.check_spelling_while_typing =
+                    !this.text_assist.check_spelling_while_typing;
+                rmac_ui::set_menu_checked(
+                    "text_editor::ToggleCheckSpellingWhileTyping",
+                    this.text_assist.check_spelling_while_typing,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleCheckGrammarWithSpelling, _, cx| {
+                this.text_assist.check_grammar_with_spelling =
+                    !this.text_assist.check_grammar_with_spelling;
+                rmac_ui::set_menu_checked(
+                    "text_editor::ToggleCheckGrammarWithSpelling",
+                    this.text_assist.check_grammar_with_spelling,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleCorrectSpellingAutomatically, _, cx| {
+                this.text_assist.correct_spelling_automatically =
+                    !this.text_assist.correct_spelling_automatically;
+                rmac_ui::set_menu_checked(
+                    "text_editor::ToggleCorrectSpellingAutomatically",
+                    this.text_assist.correct_spelling_automatically,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|_, _: &ShowSubstitutions, _, cx| {
+                // No dedicated Substitutions panel exists yet; Settings…
+                // is the nearest real destination (see docs/parity.md TE-07).
+                crate::settings_window::show(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartCopyPaste, _, cx| {
+                this.text_assist.smart_copy_paste = !this.text_assist.smart_copy_paste;
+                rmac_ui::set_menu_checked(
+                    "text_editor::ToggleSmartCopyPaste",
+                    this.text_assist.smart_copy_paste,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartQuotes, _, cx| {
+                this.text_assist.smart_quotes = !this.text_assist.smart_quotes;
+                rmac_ui::set_menu_checked(
+                    "text_editor::ToggleSmartQuotes",
+                    this.text_assist.smart_quotes,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartDashes, _, cx| {
+                this.text_assist.smart_dashes = !this.text_assist.smart_dashes;
+                rmac_ui::set_menu_checked(
+                    "text_editor::ToggleSmartDashes",
+                    this.text_assist.smart_dashes,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartLinks, _, cx| {
+                this.text_assist.smart_links = !this.text_assist.smart_links;
+                rmac_ui::set_menu_checked(
+                    "text_editor::ToggleSmartLinks",
+                    this.text_assist.smart_links,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleDataDetectors, _, cx| {
+                this.data_detectors = !this.data_detectors;
+                rmac_ui::set_menu_checked("text_editor::ToggleDataDetectors", this.data_detectors, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleTextReplacement, _, cx| {
+                this.text_assist.text_replacement = !this.text_assist.text_replacement;
+                rmac_ui::set_menu_checked(
+                    "text_editor::ToggleTextReplacement",
+                    this.text_assist.text_replacement,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &StartSpeaking, _, cx| this.start_speaking(cx)))
+            .on_action(cx.listener(|_, _: &StopSpeaking, _, _| rmac_ui::stop_speaking()))
             .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
                 if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {
                     this.open_save_goto(window, cx);

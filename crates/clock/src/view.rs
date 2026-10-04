@@ -149,6 +149,10 @@ pub(crate) struct ClockView {
     /// The saved state could not be read; edits are not saved over it.
     read_failed: bool,
     error: Option<SharedString>,
+    /// Edit ▸ Spelling and Grammar / Substitutions for the alarm-name and
+    /// city-search fields, Clock's only editable text.
+    text_assist: rmac_ui::text_assist::TextAssistSettings,
+    spell_checker: Arc<rmac_spelling::HunspellChecker>,
 }
 
 impl ClockView {
@@ -207,6 +211,14 @@ impl ClockView {
             timer_setup: false,
             read_failed: error.is_some(),
             error,
+            text_assist: rmac_ui::text_assist::TextAssistSettings {
+                smart_quotes: false,
+                smart_dashes: false,
+                smart_copy_paste: false,
+                smart_links: false,
+                ..rmac_ui::text_assist::TextAssistSettings::default()
+            },
+            spell_checker: rmac_spelling::shared(),
         };
         if view.state.cities.is_none() && !view.read_failed {
             let local = tz::local_zone_name()
@@ -219,6 +231,44 @@ impl ClockView {
         // after an update moved the binary).
         view.persist(None, cx);
         view.start_ticker(window, ticker_events, cx);
+        rmac_ui::set_menu_checked(
+            "clock::ToggleCheckSpellingWhileTyping",
+            view.text_assist.check_spelling_while_typing,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "clock::ToggleCheckGrammarWithSpelling",
+            view.text_assist.check_grammar_with_spelling,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "clock::ToggleCorrectSpellingAutomatically",
+            view.text_assist.correct_spelling_automatically,
+            cx,
+        );
+        rmac_ui::set_menu_checked("clock::ToggleSmartSubstitutions", false, cx);
+        rmac_ui::set_menu_checked(
+            "clock::ToggleSmartCopyPaste",
+            view.text_assist.smart_copy_paste,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "clock::ToggleSmartQuotes",
+            view.text_assist.smart_quotes,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "clock::ToggleSmartDashes",
+            view.text_assist.smart_dashes,
+            cx,
+        );
+        rmac_ui::set_menu_checked("clock::ToggleSmartLinks", view.text_assist.smart_links, cx);
+        rmac_ui::set_menu_checked(
+            "clock::ToggleTextReplacement",
+            view.text_assist.text_replacement,
+            cx,
+        );
+        rmac_ui::set_menu_enabled("clock::StopSpeaking", false, cx);
         view
     }
 
@@ -400,8 +450,15 @@ impl ClockView {
             return;
         }
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
-        cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
+        cx.subscribe_in(&input, window, |this, field, event: &InputEvent, window, cx| {
             if matches!(event, InputEvent::Change) {
+                rmac_ui::text_assist::on_text_changed(
+                    field,
+                    this.text_assist,
+                    Some(this.spell_checker.as_ref() as &dyn rmac_ui::text_assist::SpellChecker),
+                    window,
+                    cx,
+                );
                 cx.notify();
             }
         })
@@ -424,6 +481,18 @@ impl ClockView {
         let label_text = alarm.label.clone();
         let label = cx.new(|cx| InputState::new(window, cx).placeholder("Alarm"));
         label.update(cx, |state, cx| state.set_value(label_text, window, cx));
+        cx.subscribe_in(&label, window, |this, field, event: &InputEvent, window, cx| {
+            if matches!(event, InputEvent::Change) {
+                rmac_ui::text_assist::on_text_changed(
+                    field,
+                    this.text_assist,
+                    Some(this.spell_checker.as_ref() as &dyn rmac_ui::text_assist::SpellChecker),
+                    window,
+                    cx,
+                );
+            }
+        })
+        .detach();
         self.editor = Some(AlarmEditor {
             alarm,
             is_new,
@@ -431,6 +500,55 @@ impl ClockView {
             label,
         });
         cx.notify();
+    }
+
+    /// The alarm-name field while the Add/Edit Alarm sheet is open, else
+    /// the city-search field while it is open, else `None`: Clock's only
+    /// editable text, for Transformations/Spelling/Substitutions/Speech.
+    fn active_text_field(&self) -> Option<&Entity<InputState>> {
+        self.editor
+            .as_ref()
+            .map(|editor| &editor.label)
+            .or(self.picker.as_ref())
+    }
+
+    /// Edit ▸ Transformations.
+    fn transform_selection(
+        &mut self,
+        transformation: rmac_ui::TextTransformation,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(field) = self.active_text_field() else {
+            return;
+        };
+        if rmac_ui::transform_selection(field, transformation, window, cx) {
+            cx.notify();
+        }
+    }
+
+    /// Edit ▸ Spelling and Grammar ▸ Show Spelling and Grammar / Check
+    /// Document Now.
+    fn check_document_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let include_grammar = self.text_assist.check_grammar_with_spelling;
+        let checker = Arc::clone(&self.spell_checker);
+        if let Some(field) = self.active_text_field() {
+            rmac_ui::text_assist::check_document_now(
+                field,
+                checker.as_ref(),
+                include_grammar,
+                window,
+                cx,
+            );
+        }
+    }
+
+    /// Edit ▸ Speech ▸ Start Speaking.
+    fn start_speaking(&mut self, cx: &mut Context<Self>) {
+        let Some(field) = self.active_text_field() else {
+            return;
+        };
+        rmac_ui::start_speaking(field, "clock::StopSpeaking", cx);
     }
 
     fn save_editor(&mut self, cx: &mut Context<Self>) {
@@ -2065,6 +2183,112 @@ impl Render for ClockView {
             .on_action(
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
             )
+            .on_action(cx.listener(|this, _: &ShowSpellingAndGrammar, window, cx| {
+                this.check_document_now(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CheckDocumentNow, window, cx| {
+                this.check_document_now(window, cx);
+            }))
+            .on_action(
+                cx.listener(|this, _: &ToggleCheckSpellingWhileTyping, _, cx| {
+                    this.text_assist.check_spelling_while_typing =
+                        !this.text_assist.check_spelling_while_typing;
+                    rmac_ui::set_menu_checked(
+                        "clock::ToggleCheckSpellingWhileTyping",
+                        this.text_assist.check_spelling_while_typing,
+                        cx,
+                    );
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleCheckGrammarWithSpelling, _, cx| {
+                    this.text_assist.check_grammar_with_spelling =
+                        !this.text_assist.check_grammar_with_spelling;
+                    rmac_ui::set_menu_checked(
+                        "clock::ToggleCheckGrammarWithSpelling",
+                        this.text_assist.check_grammar_with_spelling,
+                        cx,
+                    );
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleCorrectSpellingAutomatically, _, cx| {
+                    this.text_assist.correct_spelling_automatically =
+                        !this.text_assist.correct_spelling_automatically;
+                    rmac_ui::set_menu_checked(
+                        "clock::ToggleCorrectSpellingAutomatically",
+                        this.text_assist.correct_spelling_automatically,
+                        cx,
+                    );
+                }),
+            )
+            .on_action(cx.listener(|this, _: &ToggleSmartSubstitutions, _, cx| {
+                let all_on = this.text_assist.smart_quotes
+                    && this.text_assist.smart_dashes
+                    && this.text_assist.smart_copy_paste
+                    && this.text_assist.smart_links;
+                let turning_on = !all_on;
+                this.text_assist.smart_quotes = turning_on;
+                this.text_assist.smart_dashes = turning_on;
+                this.text_assist.smart_copy_paste = turning_on;
+                this.text_assist.smart_links = turning_on;
+                rmac_ui::set_menu_checked("clock::ToggleSmartSubstitutions", turning_on, cx);
+                rmac_ui::set_menu_checked("clock::ToggleSmartQuotes", turning_on, cx);
+                rmac_ui::set_menu_checked("clock::ToggleSmartDashes", turning_on, cx);
+                rmac_ui::set_menu_checked("clock::ToggleSmartCopyPaste", turning_on, cx);
+                rmac_ui::set_menu_checked("clock::ToggleSmartLinks", turning_on, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartCopyPaste, _, cx| {
+                this.text_assist.smart_copy_paste = !this.text_assist.smart_copy_paste;
+                rmac_ui::set_menu_checked(
+                    "clock::ToggleSmartCopyPaste",
+                    this.text_assist.smart_copy_paste,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartQuotes, _, cx| {
+                this.text_assist.smart_quotes = !this.text_assist.smart_quotes;
+                rmac_ui::set_menu_checked(
+                    "clock::ToggleSmartQuotes",
+                    this.text_assist.smart_quotes,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartDashes, _, cx| {
+                this.text_assist.smart_dashes = !this.text_assist.smart_dashes;
+                rmac_ui::set_menu_checked(
+                    "clock::ToggleSmartDashes",
+                    this.text_assist.smart_dashes,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartLinks, _, cx| {
+                this.text_assist.smart_links = !this.text_assist.smart_links;
+                rmac_ui::set_menu_checked(
+                    "clock::ToggleSmartLinks",
+                    this.text_assist.smart_links,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleTextReplacement, _, cx| {
+                this.text_assist.text_replacement = !this.text_assist.text_replacement;
+                rmac_ui::set_menu_checked(
+                    "clock::ToggleTextReplacement",
+                    this.text_assist.text_replacement,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &TransformUppercase, window, cx| {
+                this.transform_selection(rmac_ui::TextTransformation::Uppercase, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TransformLowercase, window, cx| {
+                this.transform_selection(rmac_ui::TextTransformation::Lowercase, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TransformCapitalise, window, cx| {
+                this.transform_selection(rmac_ui::TextTransformation::Capitalise, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &StartSpeaking, _, cx| this.start_speaking(cx)))
+            .on_action(cx.listener(|_, _: &StopSpeaking, _, _| rmac_ui::stop_speaking()))
             .relative()
             .size_full()
             .overflow_hidden()

@@ -145,11 +145,25 @@ impl NotesView {
             }
         })
         .detach();
-        cx.subscribe(&body, |this, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                this.schedule_current_edit(cx);
-            }
-        })
+        cx.subscribe_in(
+            &body,
+            window,
+            |this, field, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.schedule_current_edit(cx);
+                    if this.body_format_editable() {
+                        rmac_ui::text_assist::on_text_changed(
+                            field,
+                            this.text_assist,
+                            Some(this.spell_checker.as_ref()
+                                as &dyn rmac_ui::text_assist::SpellChecker),
+                            window,
+                            cx,
+                        );
+                    }
+                }
+            },
+        )
         .detach();
         cx.subscribe(&tags, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {

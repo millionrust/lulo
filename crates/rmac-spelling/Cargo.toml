@@ -1,0 +1,13 @@
+[package]
+name = "rmac-spelling"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+rmac-ui.workspace = true
+spellbook.workspace = true

@@ -18,6 +18,8 @@ mod runtime;
 pub mod scroll;
 pub mod session;
 pub mod shortcuts;
+mod speech;
+pub mod text_assist;
 mod text_keys;
 mod text_transform;
 pub mod theme;
@@ -66,6 +68,7 @@ pub use runtime::{
     install_surface_idle_exit, mark_content_ready, prepare_surface_window, shell_surface_root,
     text_px,
 };
+pub use speech::{speak, start_speaking, stop_speaking};
 pub use text_transform::{transform_selection, TextTransformation};
 pub use window::*;
 

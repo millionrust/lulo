@@ -6,6 +6,7 @@
 
 mod dialog_presentation;
 mod edit_recovery_controller;
+mod edit_text_assist_controller;
 mod editor_presentation;
 mod glyphs;
 mod input_support;
@@ -180,7 +181,22 @@ actions!(
         AddPhoto,
         PrintNote,
         ExportNotePdf,
-        ExportNoteMarkdown
+        ExportNoteMarkdown,
+        ShowSpellingAndGrammar,
+        CheckDocumentNow,
+        ToggleCheckSpellingWhileTyping,
+        ToggleCheckGrammarWithSpelling,
+        ToggleCorrectSpellingAutomatically,
+        ShowSubstitutions,
+        ToggleSmartCopyPaste,
+        ToggleSmartQuotes,
+        ToggleSmartLists,
+        ToggleSmartDashes,
+        ToggleSmartLinks,
+        ToggleSmartTags,
+        ToggleTextReplacement,
+        StartSpeaking,
+        StopSpeaking
     ]
 );
 
@@ -269,6 +285,14 @@ struct NotesView {
     recent_notes: Vec<NoteId>,
     recent_position: Option<usize>,
     last_editor_note: Option<NoteId>,
+    /// Edit ▸ Spelling and Grammar / Substitutions for the note body.
+    text_assist: rmac_ui::text_assist::TextAssistSettings,
+    spell_checker: Arc<rmac_spelling::HunspellChecker>,
+    /// Edit ▸ Substitutions ▸ Smart Lists and Smart Tags: checked,
+    /// persisted for this session, with no live effect wired yet (see
+    /// docs/parity.md NOTES-15).
+    smart_lists: bool,
+    smart_tags: bool,
 }
 
 impl NotesView {
@@ -353,7 +377,50 @@ impl NotesView {
             recent_notes: Vec::new(),
             recent_position: None,
             last_editor_note: None,
+            text_assist: rmac_ui::text_assist::TextAssistSettings::default(),
+            spell_checker: rmac_spelling::shared(),
+            smart_lists: false,
+            smart_tags: false,
         };
+        rmac_ui::set_menu_checked(
+            "notes::ToggleCheckSpellingWhileTyping",
+            view.text_assist.check_spelling_while_typing,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::ToggleCheckGrammarWithSpelling",
+            view.text_assist.check_grammar_with_spelling,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::ToggleCorrectSpellingAutomatically",
+            view.text_assist.correct_spelling_automatically,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::ToggleSmartCopyPaste",
+            view.text_assist.smart_copy_paste,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::ToggleSmartQuotes",
+            view.text_assist.smart_quotes,
+            cx,
+        );
+        rmac_ui::set_menu_checked("notes::ToggleSmartLists", view.smart_lists, cx);
+        rmac_ui::set_menu_checked(
+            "notes::ToggleSmartDashes",
+            view.text_assist.smart_dashes,
+            cx,
+        );
+        rmac_ui::set_menu_checked("notes::ToggleSmartLinks", view.text_assist.smart_links, cx);
+        rmac_ui::set_menu_checked("notes::ToggleSmartTags", view.smart_tags, cx);
+        rmac_ui::set_menu_checked(
+            "notes::ToggleTextReplacement",
+            view.text_assist.text_replacement,
+            cx,
+        );
+        rmac_ui::set_menu_enabled("notes::StopSpeaking", false, cx);
 
         view.start_workers(window, cx);
 

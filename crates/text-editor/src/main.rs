@@ -79,6 +79,20 @@ gpui::actions!(
         SheetEncodingUtf8Bom,
         SheetEncodingUtf16Le,
         SheetEncodingUtf16Be,
+        ShowSpellingAndGrammar,
+        CheckDocumentNow,
+        ToggleCheckSpellingWhileTyping,
+        ToggleCheckGrammarWithSpelling,
+        ToggleCorrectSpellingAutomatically,
+        ShowSubstitutions,
+        ToggleSmartCopyPaste,
+        ToggleSmartQuotes,
+        ToggleSmartDashes,
+        ToggleSmartLinks,
+        ToggleDataDetectors,
+        ToggleTextReplacement,
+        StartSpeaking,
+        StopSpeaking,
     ]
 );
 

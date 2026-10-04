@@ -254,7 +254,7 @@ struct MenuSpec {
 }
 
 macro_rules! item {
-    ($label:literal, $action:literal, $shortcut:literal) => {
+    ($label:literal, $action:expr, $shortcut:literal) => {
         ItemSpec {
             label: $label,
             action: $action,
@@ -263,7 +263,7 @@ macro_rules! item {
             children: &[],
         }
     };
-    ($label:literal, $action:literal, $shortcut:literal, separator) => {
+    ($label:literal, $action:expr, $shortcut:literal, separator) => {
         ItemSpec {
             label: $label,
             action: $action,
@@ -277,7 +277,7 @@ macro_rules! item {
 /// A submenu row. Its `action` is a stable name, never a command, and the
 /// row is left out when none of its items is available.
 macro_rules! submenu {
-    ($label:literal, $action:literal, [$($child:expr),* $(,)?]) => {
+    ($label:literal, $action:expr, [$($child:expr),* $(,)?]) => {
         ItemSpec {
             label: $label,
             action: $action,
@@ -286,7 +286,7 @@ macro_rules! submenu {
             children: &[$($child),*],
         }
     };
-    ($label:literal, $action:literal, [$($child:expr),* $(,)?], separator) => {
+    ($label:literal, $action:expr, [$($child:expr),* $(,)?], separator) => {
         ItemSpec {
             label: $label,
             action: $action,
@@ -303,6 +303,252 @@ macro_rules! submenu {
 pub const TEXT_FIELD_ACTION_PREFIX: &str = "input::";
 /// Plain-text fields already discard source styling when they paste.
 pub const PASTE_MATCH_STYLE_ACTION: &str = "rmac_ui::PasteAndMatchStyle";
+
+// The shared standard-Edit-menu submenus below (Spelling and Grammar,
+// Substitutions, Transformations, Speech) are each defined once here and
+// used by every app whose Mac menu has them, with `$prefix` the app's own
+// action namespace ("clock", "notes", "preview", "text_editor"). Labels,
+// shortcuts and placement are read from the matching `tests/inventory/mac/*.json`
+// capture; the real behaviour behind every action lives in `rmac-ui`
+// (`text_assist`, `speech`, `transform_selection`) and, for the
+// dictionary-backed spelling checks, `rmac-spelling`. Each app still
+// declares and handles its own `$prefix::...` actions (gpui-component's
+// `input::` namespace used by Undo/Cut/Copy/… is closed to new actions),
+// so these macros only remove the duplication in *which rows exist*, not
+// in who answers them.
+//
+// `scripts/inventory/rust_menu_parser.py` expands these macro calls the
+// same way for the source-derived inventory in tests/inventory/lulo; keep
+// the two in sync when a label, shortcut or shape changes here.
+
+/// Edit ▸ Spelling and Grammar: Clock, Notes, Preview and Text Editor all
+/// show the same five rows.
+macro_rules! spelling_and_grammar_submenu {
+    ($prefix:literal) => {
+        submenu!(
+            "Spelling and Grammar",
+            concat!($prefix, "::SpellingAndGrammarMenu"),
+            [
+                item!(
+                    "Show Spelling and Grammar",
+                    concat!($prefix, "::ShowSpellingAndGrammar"),
+                    "⌘:"
+                ),
+                item!(
+                    "Check Document Now",
+                    concat!($prefix, "::CheckDocumentNow"),
+                    "⌘;"
+                ),
+                item!(
+                    "Check Spelling While Typing",
+                    concat!($prefix, "::ToggleCheckSpellingWhileTyping"),
+                    "",
+                    separator
+                ),
+                item!(
+                    "Check Grammar With Spelling",
+                    concat!($prefix, "::ToggleCheckGrammarWithSpelling"),
+                    ""
+                ),
+                item!(
+                    "Correct Spelling Automatically",
+                    concat!($prefix, "::ToggleCorrectSpellingAutomatically"),
+                    ""
+                ),
+            ]
+        )
+    };
+    ($prefix:literal, separator) => {
+        submenu!(
+            "Spelling and Grammar",
+            concat!($prefix, "::SpellingAndGrammarMenu"),
+            [
+                item!(
+                    "Show Spelling and Grammar",
+                    concat!($prefix, "::ShowSpellingAndGrammar"),
+                    "⌘:"
+                ),
+                item!(
+                    "Check Document Now",
+                    concat!($prefix, "::CheckDocumentNow"),
+                    "⌘;"
+                ),
+                item!(
+                    "Check Spelling While Typing",
+                    concat!($prefix, "::ToggleCheckSpellingWhileTyping"),
+                    "",
+                    separator
+                ),
+                item!(
+                    "Check Grammar With Spelling",
+                    concat!($prefix, "::ToggleCheckGrammarWithSpelling"),
+                    ""
+                ),
+                item!(
+                    "Correct Spelling Automatically",
+                    concat!($prefix, "::ToggleCorrectSpellingAutomatically"),
+                    ""
+                ),
+            ],
+            separator
+        )
+    };
+}
+
+/// Edit ▸ Transformations: Clock's own; Notes and Text Editor already had
+/// their own identical-shaped submenu before this pass and keep it as is.
+macro_rules! transformations_submenu {
+    ($prefix:literal) => {
+        submenu!(
+            "Transformations",
+            concat!($prefix, "::TransformationsMenu"),
+            [
+                item!(
+                    "Make Uppercase",
+                    concat!($prefix, "::TransformUppercase"),
+                    ""
+                ),
+                item!(
+                    "Make Lowercase",
+                    concat!($prefix, "::TransformLowercase"),
+                    ""
+                ),
+                item!("Capitalise", concat!($prefix, "::TransformCapitalise"), ""),
+            ]
+        )
+    };
+}
+
+/// Edit ▸ Speech: Clock, Notes, Preview and Text Editor all show the same
+/// two rows.
+macro_rules! speech_submenu {
+    ($prefix:literal) => {
+        submenu!(
+            "Speech",
+            concat!($prefix, "::SpeechMenu"),
+            [
+                item!("Start Speaking", concat!($prefix, "::StartSpeaking"), ""),
+                item!("Stop Speaking", concat!($prefix, "::StopSpeaking"), ""),
+            ]
+        )
+    };
+    ($prefix:literal, separator) => {
+        submenu!(
+            "Speech",
+            concat!($prefix, "::SpeechMenu"),
+            [
+                item!("Start Speaking", concat!($prefix, "::StartSpeaking"), ""),
+                item!("Stop Speaking", concat!($prefix, "::StopSpeaking"), ""),
+            ],
+            separator
+        )
+    };
+}
+
+/// Edit ▸ Substitutions, Clock's shape: a plain `NSTextField` context
+/// (the alarm-name field) collapses the individual smart toggles under
+/// one "Smart Substitutions" master switch, with no "Show Substitutions"
+/// command row.
+macro_rules! substitutions_submenu_with_master_toggle {
+    ($prefix:literal) => {
+        submenu!(
+            "Substitutions",
+            concat!($prefix, "::SubstitutionsMenu"),
+            [
+                item!(
+                    "Smart Substitutions",
+                    concat!($prefix, "::ToggleSmartSubstitutions"),
+                    ""
+                ),
+                item!(
+                    "Smart Copy/Paste",
+                    concat!($prefix, "::ToggleSmartCopyPaste"),
+                    "",
+                    separator
+                ),
+                item!("Smart Quotes", concat!($prefix, "::ToggleSmartQuotes"), ""),
+                item!("Smart Dashes", concat!($prefix, "::ToggleSmartDashes"), ""),
+                item!("Smart Links", concat!($prefix, "::ToggleSmartLinks"), ""),
+                item!(
+                    "Text Replacement",
+                    concat!($prefix, "::ToggleTextReplacement"),
+                    ""
+                ),
+            ]
+        )
+    };
+}
+
+/// Edit ▸ Substitutions, Notes' shape: a rich-text document adds Smart
+/// Lists and Smart Tags beside the standard toggles.
+macro_rules! substitutions_submenu_with_lists_and_tags {
+    ($prefix:literal) => {
+        submenu!(
+            "Substitutions",
+            concat!($prefix, "::SubstitutionsMenu"),
+            [
+                item!(
+                    "Show Substitutions",
+                    concat!($prefix, "::ShowSubstitutions"),
+                    ""
+                ),
+                item!(
+                    "Smart Copy/Paste",
+                    concat!($prefix, "::ToggleSmartCopyPaste"),
+                    "",
+                    separator
+                ),
+                item!("Smart Quotes", concat!($prefix, "::ToggleSmartQuotes"), ""),
+                item!("Smart Lists", concat!($prefix, "::ToggleSmartLists"), ""),
+                item!("Smart Dashes", concat!($prefix, "::ToggleSmartDashes"), ""),
+                item!("Smart Links", concat!($prefix, "::ToggleSmartLinks"), ""),
+                item!("Smart Tags", concat!($prefix, "::ToggleSmartTags"), ""),
+                item!(
+                    "Text Replacement",
+                    concat!($prefix, "::ToggleTextReplacement"),
+                    ""
+                ),
+            ]
+        )
+    };
+}
+
+/// Edit ▸ Substitutions, Text Editor's shape: Data Detectors instead of
+/// Notes' Smart Lists/Smart Tags.
+macro_rules! substitutions_submenu_with_data_detectors {
+    ($prefix:literal) => {
+        submenu!(
+            "Substitutions",
+            concat!($prefix, "::SubstitutionsMenu"),
+            [
+                item!(
+                    "Show Substitutions",
+                    concat!($prefix, "::ShowSubstitutions"),
+                    ""
+                ),
+                item!(
+                    "Smart Copy/Paste",
+                    concat!($prefix, "::ToggleSmartCopyPaste"),
+                    "",
+                    separator
+                ),
+                item!("Smart Quotes", concat!($prefix, "::ToggleSmartQuotes"), ""),
+                item!("Smart Dashes", concat!($prefix, "::ToggleSmartDashes"), ""),
+                item!("Smart Links", concat!($prefix, "::ToggleSmartLinks"), ""),
+                item!(
+                    "Data Detectors",
+                    concat!($prefix, "::ToggleDataDetectors"),
+                    ""
+                ),
+                item!(
+                    "Text Replacement",
+                    concat!($prefix, "::ToggleTextReplacement"),
+                    ""
+                ),
+            ]
+        )
+    };
+}
 
 // Each app's menus follow the Mac app it stands for, as read from macOS
 // 26.2's Accessibility tree (docs/parity-audit-2026-09-24-apps.md), minus
@@ -384,6 +630,8 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
+            spelling_and_grammar_submenu!("text_editor"),
+            substitutions_submenu_with_data_detectors!("text_editor"),
             submenu!(
                 "Transformations",
                 "text_editor::TransformationsMenu",
@@ -393,6 +641,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                     item!("Capitalise", "text_editor::TransformCapitalise", ""),
                 ]
             ),
+            speech_submenu!("text_editor"),
         ],
     },
     MenuSpec {
@@ -696,6 +945,8 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
+            spelling_and_grammar_submenu!("notes"),
+            substitutions_submenu_with_lists_and_tags!("notes"),
             submenu!(
                 "Transformations",
                 "notes::TransformationsMenu",
@@ -705,6 +956,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
                     item!("Capitalise", "notes::Capitalise", ""),
                 ]
             ),
+            speech_submenu!("notes"),
         ],
     },
     MenuSpec {
@@ -1408,6 +1660,8 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
+            spelling_and_grammar_submenu!("preview"),
+            speech_submenu!("preview"),
         ],
     },
     MenuSpec {
@@ -1516,6 +1770,10 @@ const CLOCK_MENUS: &[MenuSpec] = &[
             item!("Paste", "input::Paste", "⌘V"),
             item!("Delete", "input::Delete", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
+            spelling_and_grammar_submenu!("clock", separator),
+            substitutions_submenu_with_master_toggle!("clock"),
+            transformations_submenu!("clock"),
+            speech_submenu!("clock"),
         ],
     },
     MenuSpec {

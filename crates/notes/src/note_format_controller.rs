@@ -345,7 +345,7 @@ impl NotesView {
     /// Whether the body accepts an edit right now — mirrors
     /// `edit_recovery_controller::assistive_fields_editable` and
     /// `insert_checklist`'s own guard.
-    fn body_format_editable(&self) -> bool {
+    pub(super) fn body_format_editable(&self) -> bool {
         self.is_interactive_ready()
             && !self.markdown_preview_visible
             && self

@@ -37,6 +37,7 @@ allow = [
 ]
 exceptions = [
     { crate = "cbindgen@0.28.0", allow = ["MPL-2.0"] },
+    { crate = "spellbook@0.4.2", allow = ["MPL-2.0"] },
     { crate = "option-ext@0.2.0", allow = ["MPL-2.0"] },
 ]
 

@@ -9,4 +9,5 @@ authors.workspace = true
 async-channel.workspace = true
 rmac-appearance.workspace = true
 rmac-process.workspace = true
+rmac-storage.workspace = true
 rmac-theme.workspace = true

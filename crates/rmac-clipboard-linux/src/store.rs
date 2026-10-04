@@ -2,9 +2,8 @@
 //! `$XDG_RUNTIME_DIR` (a per-user tmpfs that logind removes at logout), and
 //! the user's Allow choice in `$XDG_CONFIG_HOME/rmac/clipboard.json`.
 
-use std::fs::{self, DirBuilder, OpenOptions};
-use std::io::Write as _;
-use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
+use std::fs::{self, DirBuilder};
+use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 
 use rmac_clipboard::History;
@@ -162,26 +161,7 @@ impl Store {
 
 /// Write through a 0600 temporary file and rename it into place.
 fn write_private(path: &Path, bytes: &[u8]) -> Result<(), Error> {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or(Error::Store)?;
-    let temporary = path.with_file_name(format!(".{file_name}.{}.tmp", std::process::id()));
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&temporary)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result.map_err(|_| Error::Store)
+    rmac_storage::atomic_write_private(path, bytes).map_err(|_| Error::Store)
 }
 
 #[cfg(test)]

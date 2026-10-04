@@ -569,12 +569,14 @@ impl Settings {
     pub fn save(&self) -> io::Result<()> {
         let path = settings_path()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no configuration directory"))?;
+        self.save_to(&path)
+    }
+
+    fn save_to(&self, path: &Path) -> io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let temporary = path.with_extension("conf.tmp");
-        fs::write(&temporary, self.serialize())?;
-        fs::rename(temporary, path)
+        rmac_storage::atomic_write(path, self.serialize().as_bytes())
     }
 }
 
@@ -879,6 +881,42 @@ mod tests {
         assert_eq!(Settings::parse(&settings.serialize()), settings);
         let damaged = Settings::parse("timer=7\ndestination=mail\nselection=1,2,x,4\nnonsense\n");
         assert_eq!(damaged, Settings::default());
+    }
+
+    #[test]
+    fn settings_save_is_an_atomic_rename_with_no_stray_temp_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "rmac-screenshot-settings-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("rmac/screenshot.conf");
+
+        let settings = Settings {
+            destination: Destination::Downloads,
+            timer_seconds: 3,
+            ..Settings::default()
+        };
+        settings.save_to(&path).unwrap();
+        // A second save replaces the file through the same temp-sibling +
+        // fsync + rename path, never appending or leaving a `.tmp` behind.
+        settings.save_to(&path).unwrap();
+
+        let entries: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name())
+            .collect();
+        assert_eq!(entries, vec![std::ffi::OsString::from("screenshot.conf")]);
+        assert_eq!(
+            Settings::parse(&fs::read_to_string(&path).unwrap()),
+            settings
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

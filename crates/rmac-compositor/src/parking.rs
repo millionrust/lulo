@@ -164,11 +164,9 @@ impl ParkingStore {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let temporary = path.with_extension("json.tmp");
         let encoded = serde_json::to_vec_pretty(self)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        fs::write(&temporary, encoded)?;
-        fs::rename(&temporary, path)
+        rmac_storage::atomic_write(path, &encoded)
     }
 
     pub fn default_path() -> Option<PathBuf> {

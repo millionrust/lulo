@@ -307,4 +307,26 @@ mod toolkit {
         assert!(gtk4.contains("gtk-overlay-scrolling=true\n"));
         let _ = std::fs::remove_dir_all(&home);
     }
+
+    #[test]
+    fn write_atomic_replaces_in_place_with_no_stray_temp_file() {
+        let home = scratch("write-atomic");
+        std::fs::create_dir_all(&home).unwrap();
+        let path = home.join("settings.ini");
+
+        crate::toolkit::write_atomic(&path, "[Settings]\ngtk-theme-name=rmac\n").unwrap();
+        crate::toolkit::write_atomic(&path, "[Settings]\ngtk-theme-name=rmac2\n").unwrap();
+
+        let entries: Vec<_> = std::fs::read_dir(&home)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name())
+            .collect();
+        assert_eq!(entries, vec![std::ffi::OsString::from("settings.ini")]);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "[Settings]\ngtk-theme-name=rmac2\n"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }

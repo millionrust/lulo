@@ -25,4 +25,5 @@ rmac-compositor-niri.workspace = true
 rmac-shell-layer.workspace = true
 rmac-shell-ui.workspace = true
 rmac-sound.workspace = true
+rmac-storage.workspace = true
 uuid.workspace = true

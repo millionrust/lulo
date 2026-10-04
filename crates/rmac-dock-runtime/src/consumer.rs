@@ -99,8 +99,7 @@ fn recents_path() -> Option<std::path::PathBuf> {
 
 pub(super) fn load_recents() -> Vec<String> {
     recents_path()
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .map(|contents| rmac_dock::recents::decode(&contents))
+        .map(|path| load_recents_from(&path))
         .unwrap_or_default()
 }
 
@@ -108,13 +107,72 @@ pub(super) fn save_recents(recents: &[String]) -> std::io::Result<()> {
     let Some(path) = recents_path() else {
         return Ok(());
     };
+    save_recents_to(&path, recents)
+}
+
+fn load_recents_from(path: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|contents| rmac_dock::recents::decode(&contents))
+        .unwrap_or_default()
+}
+
+fn save_recents_to(path: &std::path::Path, recents: &[String]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    // Write beside and rename so a crash never leaves a torn file.
-    let temporary = path.with_extension("tmp");
-    std::fs::write(&temporary, rmac_dock::recents::encode(recents))?;
-    std::fs::rename(&temporary, &path)
+    rmac_storage::atomic_write(path, rmac_dock::recents::encode(recents).as_bytes())
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::{load_recents_from, save_recents_to};
+
+    #[test]
+    fn recents_round_trip_through_an_atomic_rename() {
+        let dir = std::env::temp_dir().join(format!(
+            "rmac-dock-recents-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = dir.join("state/rmac/dock-recents");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let recents = vec!["com.rmac.Files".to_string(), "com.rmac.Terminal".to_string()];
+        save_recents_to(&path, &recents).unwrap();
+        assert_eq!(load_recents_from(&path), recents);
+
+        // No leftover temporary sibling after a successful write.
+        let siblings: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name())
+            .collect();
+        assert_eq!(siblings, vec![std::ffi::OsString::from("dock-recents")]);
+
+        // A second write replaces the file atomically rather than appending.
+        let updated = vec!["com.rmac.Notes".to_string()];
+        save_recents_to(&path, &updated).unwrap();
+        assert_eq!(load_recents_from(&path), updated);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_file_loads_as_empty() {
+        let path = std::env::temp_dir().join(format!(
+            "rmac-dock-recents-missing-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        assert_eq!(load_recents_from(&path), Vec::<String>::new());
+    }
 }
 
 /// Parking-set upkeep a compositor event asks of the Dock, the one shell

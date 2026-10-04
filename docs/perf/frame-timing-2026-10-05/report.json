@@ -1,0 +1,52 @@
+{
+  "budgets": {
+    "input_to_present_p95_ms": 50.0,
+    "within_120hz_budget_share": 0.95,
+    "within_60hz_budget_share": 0.99
+  },
+  "captured_at": "2026-10-04T19:43:50Z",
+  "overall": {
+    "frame_count": 217,
+    "input_count": 322,
+    "input_to_present_p95_ms": 41.726,
+    "within_120hz_budget_share": 0.9723502304147466,
+    "within_60hz_budget_share": 0.9861751152073732,
+    "worst_frame_ms": 36.973
+  },
+  "profile": "iterate",
+  "scenarios": {
+    "control-centre": {
+      "frame_count": 6,
+      "input_count": 2,
+      "input_to_present_p95_ms": 11.964,
+      "within_120hz_budget_share": 0.6666666666666666,
+      "within_60hz_budget_share": 0.8333333333333334,
+      "worst_frame_ms": 23.574
+    },
+    "files-scrolling": {
+      "frame_count": 44,
+      "input_count": 42,
+      "input_to_present_p95_ms": 48.586,
+      "within_120hz_budget_share": 0.9772727272727273,
+      "within_60hz_budget_share": 0.9772727272727273,
+      "worst_frame_ms": 36.973
+    },
+    "mission-control": {
+      "frame_count": 28,
+      "input_count": 3,
+      "input_to_present_p95_ms": 25.082,
+      "within_120hz_budget_share": 0.9642857142857143,
+      "within_60hz_budget_share": 1.0,
+      "worst_frame_ms": 14.678
+    },
+    "text-editor-typing": {
+      "frame_count": 139,
+      "input_count": 275,
+      "input_to_present_p95_ms": 31.501,
+      "within_120hz_budget_share": 0.9856115107913669,
+      "within_60hz_budget_share": 0.9928057553956835,
+      "worst_frame_ms": 18.927
+    }
+  },
+  "schema_version": 1
+}

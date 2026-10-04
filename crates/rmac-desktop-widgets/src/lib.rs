@@ -9,8 +9,7 @@ use std::process::Stdio;
 use chrono::{Datelike as _, Local, NaiveDate, Timelike as _};
 use gpui::{
     canvas, div, point, prelude::*, px, rgb, rgba, svg, AnyElement, Bounds, ClickEvent, FontWeight,
-    Hsla, InteractiveElement as _, PathBuilder, Pixels, Role, SharedString,
-    StatefulInteractiveElement as _, Window,
+    Hsla, PathBuilder, Pixels, Role, SharedString, Window,
 };
 use rmac_calendar_agent::upcoming::UpcomingEvent;
 use rmac_desktop::widgets::{self, WidgetKind, WidgetSize};

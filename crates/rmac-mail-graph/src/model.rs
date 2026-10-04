@@ -91,7 +91,7 @@ pub fn mailbox_text(recipient: &Recipient) -> String {
     }
 }
 
-pub fn address_list(recipients: Option<&Vec<Recipient>>) -> String {
+pub fn address_list(recipients: Option<&[Recipient]>) -> String {
     recipients
         .into_iter()
         .flatten()

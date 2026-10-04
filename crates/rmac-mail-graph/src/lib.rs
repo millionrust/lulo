@@ -99,7 +99,7 @@ impl GraphFactory {
     pub fn goa(data_root: PathBuf) -> Self {
         Self::new(
             Arc::new(UreqTransport::new()),
-            Arc::new(|account| goa_token(&account.path)),
+            Arc::new(|account: &Account| goa_token(&account.path)),
             data_root,
         )
     }
@@ -283,12 +283,11 @@ fn uid_for(store: &MailStorage, mailbox_id: i64, remote_id: &str) -> Result<i64,
     let digest = Sha256::digest(remote_id.as_bytes());
     let mut raw = [0_u8; 8];
     raw[2..].copy_from_slice(&digest[..6]);
-    let mut uid = (u64::from_be_bytes(raw) & ((1 << 47) - 1)) as i64 + 1;
-    for _ in 0..64 {
+    let first = (u64::from_be_bytes(raw) & ((1 << 47) - 1)) as i64 + 1;
+    for uid in first..first + 64 {
         if store.message_by_uid(mailbox_id, uid)?.is_none() {
             return Ok(uid);
         }
-        uid += 1;
     }
     Err(remote(RemoteFailure::Protocol))
 }
@@ -551,8 +550,8 @@ impl GraphBackend {
             .and_then(|bytes| rmac_mail_mime::parse(bytes).ok());
         let subject = clean(message.subject.as_deref().unwrap_or(""));
         let sender = message.from.as_ref().map(mailbox_text).unwrap_or_default();
-        let recipients = address_list(message.to_recipients.as_ref());
-        let cc = address_list(message.cc_recipients.as_ref());
+        let recipients = address_list(message.to_recipients.as_deref());
+        let cc = address_list(message.cc_recipients.as_deref());
         let preview = clean(message.body_preview.as_deref().unwrap_or(""));
         let message_id = message
             .internet_message_id

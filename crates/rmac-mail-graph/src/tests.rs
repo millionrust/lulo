@@ -33,6 +33,11 @@ const OTHER_FOLDERS: [&str; 6] = [
     "AAMkProjects2026=",
 ];
 
+/// Canned replies by method and exact URL.
+type Routes = HashMap<(Method, String), VecDeque<(u16, Vec<u8>)>>;
+/// A non-GET request: method, URL, content type and body.
+type Write = (Method, String, Option<&'static str>, Vec<u8>);
+
 struct Recorded {
     method: Method,
     url: String,
@@ -45,7 +50,7 @@ struct Recorded {
 /// for a route repeats, like an unchanged server.
 #[derive(Default)]
 struct Fake {
-    routes: Mutex<HashMap<(Method, String), VecDeque<(u16, Vec<u8>)>>>,
+    routes: Mutex<Routes>,
     log: Mutex<Vec<Recorded>>,
 }
 
@@ -66,7 +71,7 @@ impl Fake {
         );
     }
 
-    fn writes(&self) -> Vec<(Method, String, Option<&'static str>, Vec<u8>)> {
+    fn writes(&self) -> Vec<Write> {
         self.log
             .lock()
             .unwrap()
@@ -159,7 +164,7 @@ impl Harness {
         let transport: Arc<dyn HttpTransport> = fake.clone();
         let factory = GraphFactory::new(
             transport,
-            Arc::new(|_| Ok(Secret::new(TOKEN.to_owned()))),
+            Arc::new(|_: &Account| Ok(Secret::new(TOKEN.to_owned()))),
             root.clone(),
         );
         let account = Account {

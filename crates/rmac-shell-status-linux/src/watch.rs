@@ -119,10 +119,67 @@ async fn watch_system_bus_once(
             .map_err(|error| Error::new("build system signal rule", error.to_string()))
             .map(|builder| builder.build())
     };
-    let mut network = MessageStream::for_match_rule(
-        rule("/org/freedesktop/NetworkManager")?,
+    // NetworkManager republishes a connected Wi-Fi link's AccessPoint
+    // Strength and Device.Wireless Bitrate every few seconds on real
+    // hardware. Neither changes what the bar shows (strength is throttled,
+    // bitrate is never shown), but receiving and parsing them still costs
+    // real CPU: ~20 wakes/minute, enough on its own to push top-bar's idle
+    // CPU over its 0.5% budget (measured 0.567%; CI's wifi-less runners
+    // never see this and so never caught it). Subscribe narrowly instead
+    // of filtering after delivery: skip the AccessPoint path and the
+    // Device.Wireless interface entirely, so the bus never delivers that
+    // chatter here at all. StateChanged still catches every real
+    // connect/disconnect/roam state transition; `network_tick` below
+    // covers the signal-strength display and an AP roam that keeps the
+    // same device state.
+    let mut network_state = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(Type::Signal)
+            .path_namespace("/org/freedesktop/NetworkManager/Devices")
+            .map_err(|error| Error::new("build system signal rule", error.to_string()))?
+            .member("StateChanged")
+            .map_err(|error| Error::new("build system signal rule", error.to_string()))?
+            .build(),
         &connection,
-        Some(32),
+        Some(16),
+    )
+    .await
+    .map_err(|error| {
+        Error::new(
+            "subscribe to NetworkManager device state",
+            error.to_string(),
+        )
+    })?
+    .fuse();
+    let mut network_props = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(Type::Signal)
+            .path_namespace("/org/freedesktop/NetworkManager/Devices")
+            .map_err(|error| Error::new("build system signal rule", error.to_string()))?
+            .member("PropertiesChanged")
+            .map_err(|error| Error::new("build system signal rule", error.to_string()))?
+            .arg(0, "org.freedesktop.NetworkManager.Device")
+            .map_err(|error| Error::new("build system signal rule", error.to_string()))?
+            .build(),
+        &connection,
+        Some(16),
+    )
+    .await
+    .map_err(|error| {
+        Error::new(
+            "subscribe to NetworkManager device properties",
+            error.to_string(),
+        )
+    })?
+    .fuse();
+    let mut network_root = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(Type::Signal)
+            .path("/org/freedesktop/NetworkManager")
+            .map_err(|error| Error::new("build system signal rule", error.to_string()))?
+            .build(),
+        &connection,
+        Some(16),
     )
     .await
     .map_err(|error| Error::new("subscribe to NetworkManager", error.to_string()))?
@@ -144,20 +201,29 @@ async fn watch_system_bus_once(
 
     send(sender, Event::Refresh(Sources::system_bus())).await?;
     *previous_error = None;
-    let mut network_read = Some(std::time::Instant::now());
+    // No per-signal throttle left to gate: AccessPoint and Device.Wireless
+    // are never subscribed, so nothing here can be the frequent, filtered
+    // "Unshown"/"SignalStrength" case `record_message` still defends
+    // against for any interface a future rule broadens to include.
+    let strength_due = false;
+    let mut next_network_tick = std::time::Instant::now() + crate::model::SIGNAL_STRENGTH_REFRESH;
 
     loop {
         let mut pending = Sources::empty();
-        let strength_due = crate::model::signal_strength_refresh_due(
-            network_read.map(|read: std::time::Instant| read.elapsed()),
-        );
         let closed = futures_util::FutureExt::fuse(sender.closed());
-        futures_util::pin_mut!(closed);
+        let network_tick = futures_util::FutureExt::fuse(async_io::Timer::at(next_network_tick));
+        futures_util::pin_mut!(closed, network_tick);
         futures_util::select! {
-            message = network.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
+            message = network_state.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
+            message = network_props.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
+            message = network_root.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
             message = bluetooth.next() => record_message(message, Sources { bluetooth: true, ..Sources::empty() }, strength_due, &mut pending)?,
             message = upower.next() => record_message(message, Sources { power: true, ..Sources::empty() }, strength_due, &mut pending)?,
             message = legacy_profiles.next() => record_message(message, Sources { power: true, ..Sources::empty() }, strength_due, &mut pending)?,
+            _ = network_tick => {
+                next_network_tick = std::time::Instant::now() + crate::model::SIGNAL_STRENGTH_REFRESH;
+                pending.merge(Sources { network: true, ..Sources::empty() });
+            }
             _ = closed => return Ok(()),
         }
         if pending.is_empty() {
@@ -169,16 +235,15 @@ async fn watch_system_bus_once(
             let closed = futures_util::FutureExt::fuse(sender.closed());
             futures_util::pin_mut!(quiet, closed);
             futures_util::select! {
-                message = network.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
+                message = network_state.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
+                message = network_props.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
+                message = network_root.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
                 message = bluetooth.next() => record_message(message, Sources { bluetooth: true, ..Sources::empty() }, strength_due, &mut pending)?,
                 message = upower.next() => record_message(message, Sources { power: true, ..Sources::empty() }, strength_due, &mut pending)?,
                 message = legacy_profiles.next() => record_message(message, Sources { power: true, ..Sources::empty() }, strength_due, &mut pending)?,
                 _ = quiet => break,
                 _ = closed => return Ok(()),
             }
-        }
-        if pending.network {
-            network_read = Some(std::time::Instant::now());
         }
         send(sender, Event::Refresh(pending)).await?;
     }

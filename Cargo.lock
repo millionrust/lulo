@@ -7039,6 +7039,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-printers-linux"
+version = "0.9.0-beta.1"
+dependencies = [
+ "zbus",
+]
+
+[[package]]
 name = "rmac-privacy"
 version = "0.9.0-beta.1"
 
@@ -7410,6 +7417,7 @@ dependencies = [
  "rmac-osd",
  "rmac-portal",
  "rmac-power",
+ "rmac-printers-linux",
  "rmac-privacy",
  "rmac-privacy-linux",
  "rmac-process",
@@ -7428,6 +7436,7 @@ dependencies = [
  "rmac-ui",
  "rmac-updates",
  "rmac-updates-linux",
+ "rmac-users-linux",
  "rmac-wallpaper",
  "rmac-wallpaper-image",
  "rmac-wallpaper-system",
@@ -7595,6 +7604,17 @@ dependencies = [
  "futures-util",
  "rmac-updates",
  "zbus",
+]
+
+[[package]]
+name = "rmac-users-linux"
+version = "0.9.0-beta.1"
+dependencies = [
+ "getrandom 0.4.3",
+ "libc",
+ "sha2 0.10.9",
+ "zbus",
+ "zeroize",
 ]
 
 [[package]]

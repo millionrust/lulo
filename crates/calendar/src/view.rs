@@ -1257,6 +1257,7 @@ impl CalendarView {
         let selected_month = self.nav.selected.month();
         let today = current_date();
         let mut grid = div()
+            .id("calendar-mini-month")
             .flex()
             .flex_wrap()
             .w_full()

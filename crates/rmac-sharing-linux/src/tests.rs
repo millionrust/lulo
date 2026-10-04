@@ -87,3 +87,28 @@ fn watcher_filters_firewall_files_and_systemd_idle_exit() {
     assert!(!owner_change_reappeared("org.freedesktop.systemd1", ""));
     assert!(owner_change_reappeared("org.freedesktop.systemd1", ":1.42"));
 }
+
+#[test]
+fn every_systemd_mutation_may_ask_polkit_interactively() {
+    // F-1: without ALLOW_INTERACTIVE_AUTHORIZATION, systemd refuses Sharing
+    // toggles under the default auth_admin_keep policy instead of prompting.
+    // Plain `.call(` is left only for read-only queries.
+    let source = include_str!("system.rs");
+    let mut plain_calls = 0;
+    for (index, _) in source.match_indices(".call") {
+        let rest = &source[index + ".call".len()..];
+        if rest.starts_with("_with_flags") {
+            continue;
+        }
+        plain_calls += 1;
+        let method = rest
+            .split('"')
+            .nth(1)
+            .expect("a D-Bus call names its method");
+        assert!(
+            ["ListUnitFiles", "LoadUnit"].contains(&method),
+            "{method} is called without interactive authorization"
+        );
+    }
+    assert!(plain_calls > 0);
+}

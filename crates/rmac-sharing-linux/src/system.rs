@@ -184,47 +184,73 @@ pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
     ))
 }
 
+/// Send a systemd1 mutation that polkit may authorize interactively. Every
+/// caller is a Sharing toggle the user just clicked, so polkit may show its
+/// password dialog; without the flag systemd refuses with
+/// InteractiveAuthorizationRequired under the default `auth_admin_keep`.
+#[cfg(target_os = "linux")]
+fn interactive<B, R>(
+    manager: &zbus::blocking::Proxy<'_>,
+    method: &'static str,
+    body: &B,
+) -> zbus::Result<R>
+where
+    B: zbus::export::serde::Serialize + zbus::zvariant::DynamicType,
+    R: for<'d> zbus::zvariant::DynamicDeserialize<'d>,
+{
+    manager
+        .call_with_flags(
+            method,
+            zbus::proxy::MethodFlags::AllowInteractiveAuth.into(),
+            body,
+        )?
+        .ok_or(zbus::Error::InvalidReply)
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) fn system_set_service(unit: &str, enabled: bool, label: &str) -> Result<(), Error> {
     let connection = system_connection()?;
     let manager = manager_proxy(&connection)?;
     let files = vec![unit];
     if enabled {
-        let (install, _changes): (bool, Vec<(String, String, String)>) = manager
-            .call("EnableUnitFiles", &(files, false, false))
-            .map_err(mutation_error)?;
+        let (install, _changes): (bool, Vec<(String, String, String)>) =
+            interactive(&manager, "EnableUnitFiles", &(files, false, false))
+                .map_err(mutation_error)?;
         if !install {
             return Err(Error::new(
                 ErrorKind::Mutation,
                 format!("the {label} service has no persistent install information"),
             ));
         }
-        manager
-            .call::<_, _, ()>("Reload", &())
-            .map_err(mutation_error)?;
-        if let Err(error) =
-            manager.call::<_, _, zbus::zvariant::OwnedObjectPath>("StartUnit", &(unit, "replace"))
-        {
-            let _ = manager.call::<_, _, Vec<(String, String, String)>>(
+        interactive::<_, ()>(&manager, "Reload", &()).map_err(mutation_error)?;
+        if let Err(error) = interactive::<_, zbus::zvariant::OwnedObjectPath>(
+            &manager,
+            "StartUnit",
+            &(unit, "replace"),
+        ) {
+            let _ = interactive::<_, Vec<(String, String, String)>>(
+                &manager,
                 "DisableUnitFiles",
                 &(vec![unit], false),
             );
             return Err(mutation_error(error));
         }
     } else {
-        manager
-            .call::<_, _, zbus::zvariant::OwnedObjectPath>("StopUnit", &(unit, "replace"))
+        interactive::<_, zbus::zvariant::OwnedObjectPath>(&manager, "StopUnit", &(unit, "replace"))
             .map_err(mutation_error)?;
-        if let Err(error) =
-            manager.call::<_, _, Vec<(String, String, String)>>("DisableUnitFiles", &(files, false))
-        {
-            let _ = manager
-                .call::<_, _, zbus::zvariant::OwnedObjectPath>("StartUnit", &(unit, "replace"));
+        if let Err(error) = interactive::<_, Vec<(String, String, String)>>(
+            &manager,
+            "DisableUnitFiles",
+            &(files, false),
+        ) {
+            let _ = interactive::<_, zbus::zvariant::OwnedObjectPath>(
+                &manager,
+                "StartUnit",
+                &(unit, "replace"),
+            );
             return Err(mutation_error(error));
         }
-        manager
-            .call::<_, _, ()>("Reload", &())
-            .map_err(mutation_error)?;
+        interactive::<_, ()>(&manager, "Reload", &()).map_err(mutation_error)?;
     }
     Ok(())
 }
@@ -238,20 +264,17 @@ pub(crate) fn restore_service(
     let connection = system_connection()?;
     let manager = manager_proxy(&connection)?;
     if was_enabled_at_boot {
-        let _: (bool, Vec<(String, String, String)>) = manager
-            .call("EnableUnitFiles", &(vec![unit], false, false))
-            .map_err(mutation_error)?;
+        let _: (bool, Vec<(String, String, String)>) =
+            interactive(&manager, "EnableUnitFiles", &(vec![unit], false, false))
+                .map_err(mutation_error)?;
     } else {
-        let _: Vec<(String, String, String)> = manager
-            .call("DisableUnitFiles", &(vec![unit], false))
-            .map_err(mutation_error)?;
+        let _: Vec<(String, String, String)> =
+            interactive(&manager, "DisableUnitFiles", &(vec![unit], false))
+                .map_err(mutation_error)?;
     }
-    manager
-        .call::<_, _, ()>("Reload", &())
-        .map_err(mutation_error)?;
+    interactive::<_, ()>(&manager, "Reload", &()).map_err(mutation_error)?;
     let method = if was_active { "StartUnit" } else { "StopUnit" };
-    manager
-        .call::<_, _, zbus::zvariant::OwnedObjectPath>(method, &(unit, "replace"))
+    interactive::<_, zbus::zvariant::OwnedObjectPath>(&manager, method, &(unit, "replace"))
         .map(|_| ())
         .map_err(mutation_error)
 }

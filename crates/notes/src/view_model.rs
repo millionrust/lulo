@@ -75,3 +75,114 @@ pub(super) struct BundleImportCompletion {
     pub(super) attachment_bytes: u64,
     pub(super) maintenance_pending: bool,
 }
+
+/// File ▸ Lock Note / Application ▸ Close All Locked Notes / Notes ▸
+/// Settings… ▸ Locked notes. Notes has no account password service and no
+/// Touch ID on Linux (NOTES-13), so the password lives only in this
+/// process's memory, hashed with SHA-256: it is never written to the
+/// durable library, which is why it does not survive relaunch (docs/
+/// parity.md documents this as an honest simplification, not iCloud
+/// Keychain-grade protection).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LockDialog {
+    /// Notes ▸ Settings… ▸ Change Password…, or File ▸ Lock Note on an
+    /// unlocked note before any password has ever been set: sets the one
+    /// password that locks/unlocks every locked note in this session. The
+    /// `Option<NoteId>` is the note to lock immediately afterwards, for
+    /// the File ▸ Lock Note path; `None` for the Settings path, which has
+    /// no note of its own in view.
+    SetPassword(Option<NoteId>),
+    /// File ▸ Lock Note on an already-locked, not-yet-unlocked note: ask
+    /// for the password before showing its content.
+    Unlock(NoteId),
+    /// Notes ▸ Settings… ▸ Reset Password…: clears the password and
+    /// unlocks every note, after confirmation.
+    ConfirmReset,
+}
+
+/// A session-only Smart Folder (File ▸ New Smart Folder / New Smart Folder
+/// with Tag Selection): a saved filter by one tag, not a real `FolderRecord`
+/// (NOTES-11 — Notes has no tag browser or smart-folder storage yet). It
+/// lives only in this session for the same reason `LockDialog`'s password
+/// does: adding it to the durable library's schema is a bigger, riskier
+/// change than this pass's scope (docs/parity.md).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct SmartFolder {
+    pub(super) id: u64,
+    pub(super) name: String,
+    pub(super) tag: String,
+}
+
+/// Format ▸ Maths Results / the toolbar's maths-results button. Lulo has
+/// no expression evaluator wired to the editor yet; the three settings are
+/// real, distinct, persisted-for-the-session choices (NOT-MENU-049..052),
+/// but only `Off` has an effect today — see docs/parity.md.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum MathsResultsMode {
+    #[default]
+    Off,
+    SuggestResults,
+    InsertResults,
+}
+
+/// Notes ▸ Settings… ▸ New notes start with:. Notes keeps the title in its
+/// own field rather than the Mac's single-document first line (NOTES-01),
+/// so this instead pre-seeds the new note's body with the matching
+/// Markdown paragraph-style marker and places the caret after it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum NewNoteBodyStyle {
+    #[default]
+    Title,
+    Heading,
+    Body,
+}
+
+impl NewNoteBodyStyle {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Title => "Title",
+            Self::Heading => "Heading",
+            Self::Body => "Body",
+        }
+    }
+
+    pub(super) fn marker(self) -> &'static str {
+        match self {
+            Self::Title => "# ",
+            Self::Heading => "## ",
+            Self::Body => "",
+        }
+    }
+}
+
+/// View ▸ Customise Toolbar…: the optional editor-toolbar buttons a person
+/// can hide. Compose, Format and Search are always shown, like the Mac's
+/// own undraggable items.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum ToolbarItem {
+    Checklist,
+    InsertTable,
+    Media,
+    MoveNote,
+    MathsResults,
+}
+
+impl ToolbarItem {
+    pub(super) const ALL: [Self; 5] = [
+        Self::Checklist,
+        Self::InsertTable,
+        Self::Media,
+        Self::MoveNote,
+        Self::MathsResults,
+    ];
+
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Checklist => "Checklist",
+            Self::InsertTable => "Table",
+            Self::Media => "Media",
+            Self::MoveNote => "Move Note…",
+            Self::MathsResults => "Maths Results",
+        }
+    }
+}

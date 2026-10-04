@@ -41,6 +41,40 @@ pub(super) enum TextTransform {
     Capitalise,
 }
 
+/// Format ▸ Font ▸ Copy Style/Paste Style: which of Notes' five inline
+/// Markdown wrap-pairs the copied selection was wrapped in. Notes has no
+/// rich-text run model (NOTES-01/03), so "style" here means exactly the
+/// marker pairs `note_format_controller.rs` itself can apply — there is no
+/// font, size, or colour to copy.
+#[derive(Clone, Copy, Default)]
+pub(super) struct CopiedStyle {
+    bold: bool,
+    italic: bool,
+    strikethrough: bool,
+    underline: bool,
+    highlight: bool,
+}
+
+/// The five inline wrap-pairs, outermost first, in the fixed nesting order
+/// [`CopiedStyle::rebuild`] always produces (bold > italic > strikethrough >
+/// underline > highlight > text) so copying and pasting style round-trips
+/// exactly for any selection Notes' own commands produced. A selection a
+/// person hand-typed in some other nesting order copies correctly (each
+/// pair is still detected independently) but may not fully re-wrap on
+/// paste, the same bounded, best-effort trade-off `strip_leading_marker`
+/// above already makes for paragraph markers.
+const STYLE_WRAP_PAIRS: [(&str, &str); 5] = [
+    ("**", "**"),
+    ("_", "_"),
+    ("~~", "~~"),
+    ("++", "++"),
+    ("==", "=="),
+];
+
+fn wrapped_by(text: &str, prefix: &str, suffix: &str) -> bool {
+    text.len() >= prefix.len() + suffix.len() && text.starts_with(prefix) && text.ends_with(suffix)
+}
+
 fn transformed_text(text: &str, transform: TextTransform) -> String {
     match transform {
         TextTransform::Uppercase => text.to_uppercase(),
@@ -244,6 +278,26 @@ impl NotesView {
             return false;
         };
         plain_text_line(line) != line
+    }
+
+    /// The current line's Format ▸ Text ▸ Align Left/Centre/Align Right
+    /// state, for the menu's live checkmarks.
+    pub(super) fn current_line_alignment(
+        &self,
+        cx: &Context<Self>,
+    ) -> rmac_notes_storage::TextAlign {
+        let body = self.body.read(cx);
+        let value = body.value().to_string();
+        let Some(line) = value.get(current_line_range(&value, body.cursor())) else {
+            return rmac_notes_storage::TextAlign::Left;
+        };
+        if line.ends_with(" :center:") {
+            rmac_notes_storage::TextAlign::Center
+        } else if line.ends_with(" :right:") {
+            rmac_notes_storage::TextAlign::Right
+        } else {
+            rmac_notes_storage::TextAlign::Left
+        }
     }
 
     pub(super) fn insert_table(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -535,6 +589,182 @@ impl NotesView {
         self.apply_inline_markdown("~~", "~~", window, cx);
     }
 
+    /// Format ▸ Font ▸ Underline: a `++marker++` span
+    /// (`markdown_preview::scan_custom_marker_spans`), the same
+    /// non-CommonMark convention Highlight and Baseline use.
+    pub(super) fn toggle_underline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_inline_markdown("++", "++", window, cx);
+    }
+
+    /// Format ▸ Font ▸ Highlight: a `==marker==` span.
+    pub(super) fn toggle_highlight(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_inline_markdown("==", "==", window, cx);
+    }
+
+    /// Format ▸ Font ▸ Baseline ▸ Superscript: a `^marker^` span.
+    pub(super) fn toggle_superscript(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_inline_markdown("^", "^", window, cx);
+    }
+
+    /// Format ▸ Font ▸ Baseline ▸ Subscript: a `::marker::` span. Not a
+    /// lone `~marker~`: this crate's GFM strikethrough accepts a single
+    /// `~` the same as a doubled `~~`, so that span is already claimed.
+    pub(super) fn toggle_subscript(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_inline_markdown("::", "::", window, cx);
+    }
+
+    /// Format ▸ Font ▸ Baseline ▸ Use Default: remove a Superscript or
+    /// Subscript wrap from the selection, if either is present.
+    pub(super) fn baseline_use_default(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        self.body.update(cx, |state, cx| {
+            let range = state.selected_range();
+            let value = state.value().to_string();
+            let Some(selected) = value.get(range) else {
+                return;
+            };
+            for (prefix, suffix) in [("^", "^"), ("::", "::")] {
+                if wrapped_by(selected, prefix, suffix) {
+                    let inner = selected[prefix.len()..selected.len() - suffix.len()].to_string();
+                    state.replace(inner, window, cx);
+                    state.focus(window, cx);
+                    return;
+                }
+            }
+        });
+        self.schedule_current_edit(cx);
+    }
+
+    /// Format ▸ Font ▸ Remove Style: strip every inline Markdown marker
+    /// Notes' own Format commands can produce from the selection, leaving
+    /// its plain text. Unlike the single-pair helpers above this removes
+    /// markers anywhere in the selection, not only at its edges, since a
+    /// selection can span several separately styled runs.
+    pub(super) fn remove_style(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        self.body.update(cx, |state, cx| {
+            let range = state.selected_range();
+            let value = state.value().to_string();
+            let Some(selected) = value.get(range) else {
+                return;
+            };
+            if selected.is_empty() {
+                return;
+            }
+            let stripped = selected
+                .replace("**", "")
+                .replace("~~", "")
+                .replace("++", "")
+                .replace("==", "")
+                .replace("::", "")
+                .replace('^', "");
+            if stripped != selected {
+                state.replace(stripped, window, cx);
+                state.focus(window, cx);
+            }
+        });
+        self.schedule_current_edit(cx);
+    }
+
+    /// Format ▸ Font ▸ Copy Style: record which of the five wrap-pairs the
+    /// current selection is wrapped in, for a later Paste Style.
+    pub(super) fn copy_style(&mut self, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let body = self.body.read(cx);
+        let value = body.value().to_string();
+        let Some(selected) = value.get(body.selected_range()) else {
+            return;
+        };
+        self.copied_style = Some(CopiedStyle {
+            bold: wrapped_by(selected, "**", "**"),
+            italic: wrapped_by(selected, "_", "_"),
+            strikethrough: wrapped_by(selected, "~~", "~~"),
+            underline: wrapped_by(selected, "++", "++"),
+            highlight: wrapped_by(selected, "==", "=="),
+        });
+    }
+
+    /// Format ▸ Font ▸ Paste Style: wrap/unwrap the current selection so it
+    /// carries exactly the Copy Style selection's set of markers.
+    pub(super) fn paste_style(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let Some(copied) = self.copied_style else {
+            return;
+        };
+        self.body.update(cx, |state, cx| {
+            let range = state.selected_range();
+            let value = state.value().to_string();
+            let Some(selected) = value.get(range) else {
+                return;
+            };
+            if selected.is_empty() {
+                return;
+            }
+            let mut inner = selected.to_string();
+            for (prefix, suffix) in STYLE_WRAP_PAIRS {
+                if wrapped_by(&inner, prefix, suffix) {
+                    inner = inner[prefix.len()..inner.len() - suffix.len()].to_string();
+                }
+            }
+            let mut rebuilt = inner;
+            if copied.highlight {
+                rebuilt = format!("=={rebuilt}==");
+            }
+            if copied.underline {
+                rebuilt = format!("++{rebuilt}++");
+            }
+            if copied.strikethrough {
+                rebuilt = format!("~~{rebuilt}~~");
+            }
+            if copied.italic {
+                rebuilt = format!("_{rebuilt}_");
+            }
+            if copied.bold {
+                rebuilt = format!("**{rebuilt}**");
+            }
+            if rebuilt != selected {
+                state.replace(rebuilt, window, cx);
+                state.focus(window, cx);
+            }
+        });
+        self.schedule_current_edit(cx);
+    }
+
+    /// Format ▸ Text ▸ Align Left/Centre/Align Right: a trailing
+    /// ` :center:`/` :right:` marker on the current line
+    /// (`markdown_preview::strip_trailing_alignment_marker`). There is no
+    /// Justify: GPUI's text layout has no justified line-breaking API, so
+    /// it is left out of the menu rather than faked (docs/parity.md).
+    pub(super) fn set_text_alignment(
+        &mut self,
+        align: rmac_notes_storage::TextAlign,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.apply_to_current_line(window, cx, |line| {
+            let mut base = line;
+            for marker in [" :center:", " :right:"] {
+                if let Some(stripped) = base.strip_suffix(marker) {
+                    base = stripped;
+                    break;
+                }
+            }
+            match align {
+                rmac_notes_storage::TextAlign::Left => base.to_string(),
+                rmac_notes_storage::TextAlign::Center => format!("{base} :center:"),
+                rmac_notes_storage::TextAlign::Right => format!("{base} :right:"),
+            }
+        });
+    }
+
     /// ⇧⌘U: mark the checklist item on the current line done/not done, like
     /// the Mac. A line that is not yet a checklist item becomes one, not
     /// done, matching Format ▸ Checklist's own insertion text.
@@ -552,6 +782,18 @@ impl NotesView {
             }
             None => format!("- [ ] {}", strip_leading_marker(line)),
         });
+        self.apply_auto_sort_ticked_items(window, cx);
+    }
+
+    /// Notes ▸ Settings… ▸ Automatically sort ticked items: reruns Format ▸
+    /// More ▸ Move Ticked to Bottom's own transform after any checklist
+    /// toggle. Simplification: the caret can land away from the line just
+    /// toggled when that line itself was the one moved, same as a Mac
+    /// animation moving an item out from under the caret.
+    fn apply_auto_sort_ticked_items(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.auto_sort_ticked_items {
+            self.apply_checklist_bulk(ChecklistBulkAction::MoveTickedToBottom, window, cx);
+        }
     }
 
     /// Clicking a checkbox in Markdown Preview (NOTES-02): flip the
@@ -596,6 +838,7 @@ impl NotesView {
         if toggled {
             self.schedule_current_edit(cx);
             cx.notify();
+            self.apply_auto_sort_ticked_items(window, cx);
         }
     }
 }

@@ -129,6 +129,7 @@ impl NotesView {
         let note_save_pending = self.latest_local_generation.is_some();
         let attachment_busy = self.attachment_chooser_open || self.attachment_action_pending();
         let preview_visible = self.markdown_preview_visible;
+        let maths_results_mode = self.maths_results_mode;
         // The search field narrows with the editor column, up to the Mac's
         // 326 pt at full width.
         let editor_width = f32::from(rmac_ui::window_content_size(window).width)
@@ -187,60 +188,132 @@ impl NotesView {
                             .menu("Numbered List", Box::new(InsertNumberedList))
                     }),
             )
-            .child(accessible_icon_button(
-                "checklist",
-                "Checklist",
-                ready && !deleted && has_note && !preview_visible,
-                glyph_button(
-                    "checklist",
-                    glyphs::CHECKLIST,
-                    CAPSULE_BUTTON_WIDTH,
-                    "Checklist",
-                )
-                .disabled(!ready || deleted || !has_note || preview_visible)
-                .on_click(cx.listener(|this, _, window, cx| this.insert_checklist(window, cx))),
-                view.clone(),
-                |this, window, cx| this.insert_checklist(window, cx),
-            ))
-            .child(accessible_icon_button(
-                "insert-table",
-                "Table",
-                ready && !deleted && has_note && !preview_visible,
-                glyph_button("insert-table", glyphs::TABLE, CAPSULE_BUTTON_WIDTH, "Table")
-                    .disabled(!ready || deleted || !has_note || preview_visible)
-                    .on_click(cx.listener(|this, _, window, cx| this.insert_table(window, cx))),
-                view.clone(),
-                |this, window, cx| this.insert_table(window, cx),
-            ))
-            .child(
-                PopUpButton::new("note-media", "Media")
-                    .menu_button(glyphs::ATTACH, TOOLBAR_GLYPH)
-                    .w(px(CAPSULE_BUTTON_WIDTH))
-                    .h(px(CAPSULE_HEIGHT - 2.0))
-                    .rounded(px(CAPSULE_HEIGHT / 2.0))
-                    .text_color(toolbar_glyph())
-                    .disabled(
-                        !ready || deleted || !has_note || note_save_pending || attachment_busy,
+            // View ▸ Customise Toolbar… (NOT-MENU-054): each optional
+            // button after Format can be hidden; Format itself, like the
+            // Mac's own undraggable items, always stays.
+            .when(
+                !self.hidden_toolbar_items.contains(&ToolbarItem::Checklist),
+                |el| {
+                    el.child(accessible_icon_button(
+                        "checklist",
+                        "Checklist",
+                        ready && !deleted && has_note && !preview_visible,
+                        glyph_button(
+                            "checklist",
+                            glyphs::CHECKLIST,
+                            CAPSULE_BUTTON_WIDTH,
+                            "Checklist",
+                        )
+                        .disabled(!ready || deleted || !has_note || preview_visible)
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.insert_checklist(window, cx)),
+                        ),
+                        view.clone(),
+                        |this, window, cx| this.insert_checklist(window, cx),
+                    ))
+                },
+            )
+            .when(
+                !self
+                    .hidden_toolbar_items
+                    .contains(&ToolbarItem::InsertTable),
+                |el| {
+                    el.child(accessible_icon_button(
+                        "insert-table",
+                        "Table",
+                        ready && !deleted && has_note && !preview_visible,
+                        glyph_button("insert-table", glyphs::TABLE, CAPSULE_BUTTON_WIDTH, "Table")
+                            .disabled(!ready || deleted || !has_note || preview_visible)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.insert_table(window, cx)),
+                            ),
+                        view.clone(),
+                        |this, window, cx| this.insert_table(window, cx),
+                    ))
+                },
+            )
+            .when(
+                !self
+                    .hidden_toolbar_items
+                    .contains(&ToolbarItem::MathsResults),
+                |el| {
+                    el.child(
+                        // NOT-TOOLBAR-001: the Mac's toolbar button between
+                        // Format and Table shows the current Format ▸ Maths
+                        // Results mode; this keeps a fixed face (like the
+                        // Format/Media buttons beside it) and shows the live
+                        // mode as the dropdown's checkmark instead.
+                        PopUpButton::new("note-maths-results", "Off")
+                            .w(px(CAPSULE_BUTTON_WIDTH + 14.0))
+                            .h(px(CAPSULE_HEIGHT - 2.0))
+                            .rounded(px(CAPSULE_HEIGHT / 2.0))
+                            .text_color(toolbar_glyph())
+                            .disabled(!ready)
+                            .dropdown_menu(move |menu, _, _| {
+                                menu.menu_with_check(
+                                    "Off",
+                                    maths_results_mode == MathsResultsMode::Off,
+                                    Box::new(MathsResultsOff),
+                                )
+                                .menu_with_check(
+                                    "Suggest Results",
+                                    maths_results_mode == MathsResultsMode::SuggestResults,
+                                    Box::new(MathsResultsSuggest),
+                                )
+                                .menu_with_check(
+                                    "Insert Results",
+                                    maths_results_mode == MathsResultsMode::InsertResults,
+                                    Box::new(MathsResultsInsert),
+                                )
+                            }),
                     )
-                    .dropdown_menu(|menu, _, _| menu.menu("Add Photo…", Box::new(AddPhoto))),
+                },
+            )
+            .when(
+                !self.hidden_toolbar_items.contains(&ToolbarItem::Media),
+                |el| {
+                    el.child(
+                        PopUpButton::new("note-media", "Media")
+                            .menu_button(glyphs::ATTACH, TOOLBAR_GLYPH)
+                            .w(px(CAPSULE_BUTTON_WIDTH))
+                            .h(px(CAPSULE_HEIGHT - 2.0))
+                            .rounded(px(CAPSULE_HEIGHT / 2.0))
+                            .text_color(toolbar_glyph())
+                            .disabled(
+                                !ready
+                                    || deleted
+                                    || !has_note
+                                    || note_save_pending
+                                    || attachment_busy,
+                            )
+                            .dropdown_menu(|menu, _, _| {
+                                menu.menu("Add Photo…", Box::new(AddPhoto))
+                            }),
+                    )
+                },
             );
 
         let more = capsule("note-capsule")
-            .child(accessible_icon_button(
-                "move-note",
-                "Move Note…",
-                ready && !deleted && has_note,
-                glyph_button(
-                    "move-note",
-                    glyphs::FOLDER,
-                    CAPSULE_BUTTON_WIDTH,
-                    "Move Note…",
-                )
-                .disabled(!ready || deleted || !has_note)
-                .on_click(cx.listener(|this, _, _, cx| this.begin_move_note(cx))),
-                view.clone(),
-                |this, _, cx| this.begin_move_note(cx),
-            ))
+            .when(
+                !self.hidden_toolbar_items.contains(&ToolbarItem::MoveNote),
+                |el| {
+                    el.child(accessible_icon_button(
+                        "move-note",
+                        "Move Note…",
+                        ready && !deleted && has_note,
+                        glyph_button(
+                            "move-note",
+                            glyphs::FOLDER,
+                            CAPSULE_BUTTON_WIDTH,
+                            "Move Note…",
+                        )
+                        .disabled(!ready || deleted || !has_note)
+                        .on_click(cx.listener(|this, _, _, cx| this.begin_move_note(cx))),
+                        view.clone(),
+                        |this, _, cx| this.begin_move_note(cx),
+                    ))
+                },
+            )
             .child(
                 PopUpButton::new("note-more", "More")
                     .menu_button(glyphs::MORE, TOOLBAR_GLYPH)

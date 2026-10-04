@@ -181,6 +181,39 @@ impl NotesView {
             ));
         }
 
+        // File ▸ New Smart Folder / New Smart Folder with Tag Selection
+        // (NOT-MENU-002/003/004): a session-only saved tag filter, not a
+        // real `FolderRecord` (`view_model::SmartFolder`'s doc comment).
+        // Reuses the plain folder glyph: Notes has no dedicated tag-folder
+        // icon asset.
+        for smart_folder in &self.smart_folders {
+            let smart_folder_id = smart_folder.id;
+            let tag = smart_folder.tag.to_lowercase();
+            let count = snapshot.map_or(0, |snapshot| {
+                snapshot
+                    .notes
+                    .iter()
+                    .filter(|note| {
+                        !note.deleted
+                            && note
+                                .tags
+                                .iter()
+                                .any(|note_tag| note_tag.to_lowercase() == tag)
+                    })
+                    .count()
+            });
+            rows = rows.child(folder_row(
+                ("smart-folder", smart_folder_id),
+                smart_folder.name.clone(),
+                glyphs::FOLDER,
+                self.show_note_count.then_some(count),
+                self.smart_folder_filter == Some(smart_folder_id),
+                cx.listener(move |this, _, window, cx| {
+                    this.select_smart_folder(smart_folder_id, window, cx)
+                }),
+            ));
+        }
+
         rows = rows.child(folder_row(
             "trash-notes",
             "Recently Deleted",
@@ -364,9 +397,20 @@ impl NotesView {
             } else if search_active {
                 Vec::new()
             } else {
+                let smart_folder_tag = self
+                    .smart_folder_filter
+                    .and_then(|id| self.smart_folders.iter().find(|folder| folder.id == id))
+                    .map(|folder| folder.tag.to_lowercase());
                 self.session
                     .visible_notes()
                     .into_iter()
+                    .filter(|note| {
+                        smart_folder_tag.as_deref().is_none_or(|tag| {
+                            note.tags
+                                .iter()
+                                .any(|note_tag| note_tag.to_lowercase() == tag)
+                        })
+                    })
                     .map(|note| (note, None))
                     .collect()
             };
@@ -514,6 +558,14 @@ impl NotesView {
                 body_fragment =
                     plain_search_fragment("No additional text", MAX_SEARCH_DETAIL_FRAGMENT_CHARS);
             }
+            // File ▸ Lock Note: the row keeps its title (as the Mac's does)
+            // but never shows the body snippet of a locked, not-yet-
+            // unlocked note.
+            let locked = self.locked_notes.contains(&note.id)
+                && !self.unlocked_this_session.contains(&note.id);
+            if locked {
+                body_fragment = plain_search_fragment("Locked", MAX_SEARCH_DETAIL_FRAGMENT_CHARS);
+            }
             let tags = note
                 .tags
                 .iter()
@@ -622,15 +674,22 @@ impl NotesView {
                             .child(
                                 div()
                                     .h(px(17.0))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(3.0))
                                     .text_size(rmac_ui::text_px(13.0))
                                     .line_height(px(17.0))
                                     .font_weight(mac::BOLD)
                                     .text_color(title_colour)
-                                    .truncate()
-                                    .child(styled_search_fragment_in(
-                                        title_fragment,
-                                        title_colour,
-                                        true,
+                                    .when(locked, |element| {
+                                        element.child(div().flex_none().child("🔒"))
+                                    })
+                                    .child(div().flex_1().min_w(px(0.0)).truncate().child(
+                                        styled_search_fragment_in(
+                                            title_fragment,
+                                            title_colour,
+                                            true,
+                                        ),
                                     )),
                             )
                             .child(

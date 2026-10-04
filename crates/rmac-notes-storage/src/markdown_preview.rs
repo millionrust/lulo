@@ -17,6 +17,34 @@ pub struct MarkdownPreviewTextStyle {
     pub code: bool,
     pub link_label: bool,
     pub inert_placeholder: bool,
+    /// Format ▸ Font ▸ Underline (`notes::ToggleUnderline`): a `++marker++`
+    /// span. Not a CommonMark/GFM construct, so it is recognised by
+    /// [`scan_custom_marker_spans`] rather than the `markdown` crate's AST.
+    pub underline: bool,
+    /// Format ▸ Font ▸ Highlight (`notes::ToggleHighlight`): a `==marker==`
+    /// span, scanned the same way as `underline`.
+    pub highlight: bool,
+    /// Format ▸ Font ▸ Baseline ▸ Superscript: a `^marker^` span.
+    pub superscript: bool,
+    /// Format ▸ Font ▸ Baseline ▸ Subscript: a `::marker::` span. Not a
+    /// lone `~marker~`: this crate's GFM strikethrough accepts a single
+    /// `~` the same as a doubled `~~`, so that span is already claimed
+    /// before it ever reaches the AST as literal text.
+    pub subscript: bool,
+}
+
+/// Format ▸ Text ▸ Align Left/Centre/Align Right: a trailing
+/// ` :center:`/` :right:` marker on a paragraph or heading line, stripped
+/// and recorded here by [`strip_trailing_alignment_marker`] rather than
+/// rendered as visible text. There is no "Justify" variant: GPUI's text
+/// layout has no justified line-breaking API, so Format ▸ Text ▸ Justify is
+/// intentionally left out of the menu rather than faked (docs/parity.md).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -47,8 +75,8 @@ impl fmt::Debug for MarkdownPreviewRun {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MarkdownPreviewBlockKind {
-    Paragraph,
-    Heading(u8),
+    Paragraph(TextAlign),
+    Heading(u8, TextAlign),
     BlockQuote,
     ListItem {
         depth: u8,
@@ -252,7 +280,7 @@ impl<'a> PreviewBuilder<'a> {
                 list_item_source_range(context),
             ),
             Node::Heading(heading) => self.push_inline_block(
-                MarkdownPreviewBlockKind::Heading(heading.depth),
+                MarkdownPreviewBlockKind::Heading(heading.depth, TextAlign::Left),
                 &heading.children,
                 depth + 1,
                 None,
@@ -395,6 +423,7 @@ impl<'a> PreviewBuilder<'a> {
             &mut self.remaining_text_bytes,
             &mut self.truncated,
         );
+        apply_trailing_alignment(&mut block);
         self.push_block(block);
     }
 
@@ -430,7 +459,7 @@ impl<'a> PreviewBuilder<'a> {
 
 fn context_kind(context: BlockContext) -> MarkdownPreviewBlockKind {
     match context {
-        BlockContext::Paragraph => MarkdownPreviewBlockKind::Paragraph,
+        BlockContext::Paragraph => MarkdownPreviewBlockKind::Paragraph(TextAlign::Left),
         BlockContext::BlockQuote => MarkdownPreviewBlockKind::BlockQuote,
         BlockContext::ListItem {
             depth,
@@ -465,7 +494,9 @@ fn render_inline_nodes(
             return;
         }
         match node {
-            Node::Text(text) => block.append(&text.value, style, remaining_text_bytes),
+            Node::Text(text) => {
+                scan_custom_marker_spans(&text.value, style, block, remaining_text_bytes)
+            }
             Node::Break(_) => block.append("\n", style, remaining_text_bytes),
             Node::InlineCode(code) => {
                 block.append(
@@ -604,6 +635,139 @@ fn render_inline_nodes(
         if *remaining_text_bytes == 0 {
             *truncated = true;
         }
+    }
+}
+
+/// The trailing line markers Format ▸ Text ▸ Align Left/Centre/Align Right
+/// write (`note_format_controller::set_text_alignment`). Checked longest
+/// first is unnecessary since the three are mutually exclusive by their `:`
+/// delimiters, but kept in a fixed, obvious order.
+const ALIGNMENT_MARKERS: [(&str, TextAlign); 2] = [
+    (" :center:", TextAlign::Center),
+    (" :right:", TextAlign::Right),
+];
+
+/// If `block`'s kind is a Paragraph or Heading whose rendered text ends with
+/// one of [`ALIGNMENT_MARKERS`], strip the marker from the visible text (and
+/// shrink/drop its trailing style run to match) and rewrite `block.kind` to
+/// carry the detected [`TextAlign`]. A line with no marker is left as Left.
+fn apply_trailing_alignment(block: &mut BlockBuilder) {
+    let align = match block.kind {
+        MarkdownPreviewBlockKind::Paragraph(_) | MarkdownPreviewBlockKind::Heading(_, _) => {
+            strip_trailing_alignment_marker(&mut block.text, &mut block.runs)
+        }
+        _ => return,
+    };
+    block.kind = match block.kind {
+        MarkdownPreviewBlockKind::Paragraph(_) => MarkdownPreviewBlockKind::Paragraph(align),
+        MarkdownPreviewBlockKind::Heading(depth, _) => {
+            MarkdownPreviewBlockKind::Heading(depth, align)
+        }
+        other => other,
+    };
+}
+
+fn strip_trailing_alignment_marker(
+    text: &mut String,
+    runs: &mut Vec<MarkdownPreviewRun>,
+) -> TextAlign {
+    for (marker, align) in ALIGNMENT_MARKERS {
+        let Some(kept_len) = text.len().checked_sub(marker.len()) else {
+            continue;
+        };
+        if text.get(kept_len..) != Some(marker) {
+            continue;
+        }
+        text.truncate(kept_len);
+        while let Some(last) = runs.last().cloned() {
+            if last.range.start >= text.len() {
+                runs.pop();
+            } else if last.range.end > text.len() {
+                runs.last_mut().expect("just checked non-empty").range.end = text.len();
+                break;
+            } else {
+                break;
+            }
+        }
+        return align;
+    }
+    TextAlign::Left
+}
+
+/// One of Format ▸ Font's custom, non-CommonMark inline markers: not
+/// produced by the `markdown` crate's parser, so plain [`Node::Text`]
+/// content is re-scanned for them here. `++marker++` is Underline,
+/// `==marker==` is Highlight, `^marker^` is Superscript, and `::marker::`
+/// is Subscript. A lone `~marker~` cannot be used for Subscript: this
+/// crate's GFM strikethrough accepts a single `~` the same as a doubled
+/// `~~`, so any `~...~` text is already consumed as a `Node::Delete`
+/// before it ever reaches this scan. Markers do not nest with each other;
+/// an opener with no matching closer is left as plain text for the
+/// remainder of this text node, the same bounded, best-effort approach
+/// `find_checkbox_marker` in `note_format_controller.rs` uses for its own
+/// marker search.
+type MarkerStyleFn = fn(MarkdownPreviewTextStyle) -> MarkdownPreviewTextStyle;
+
+const CUSTOM_MARKERS: [(&str, MarkerStyleFn); 4] = [
+    ("++", |style| MarkdownPreviewTextStyle {
+        underline: true,
+        ..style
+    }),
+    ("==", |style| MarkdownPreviewTextStyle {
+        highlight: true,
+        ..style
+    }),
+    ("^", |style| MarkdownPreviewTextStyle {
+        superscript: true,
+        ..style
+    }),
+    ("::", |style| MarkdownPreviewTextStyle {
+        subscript: true,
+        ..style
+    }),
+];
+
+fn scan_custom_marker_spans(
+    mut text: &str,
+    style: MarkdownPreviewTextStyle,
+    block: &mut BlockBuilder,
+    remaining_text_bytes: &mut usize,
+) {
+    while !text.is_empty() {
+        if *remaining_text_bytes == 0 {
+            return;
+        }
+        // The earliest-opening marker wins, not the first entry in
+        // `CUSTOM_MARKERS` that happens to appear anywhere in `text` — two
+        // different marker spans can both be present, in either order.
+        let found = CUSTOM_MARKERS
+            .iter()
+            .filter_map(|&(marker, apply)| {
+                let open = text.find(marker)?;
+                let after_open = open + marker.len();
+                let close_relative = text[after_open..].find(marker)?;
+                // A zero-length span (adjacent markers, "++++") is not a
+                // styled run: skip it rather than emit an empty one.
+                if close_relative == 0 {
+                    return None;
+                }
+                Some((open, marker.len(), after_open + close_relative, apply))
+            })
+            .min_by_key(|&(open, ..)| open);
+        let Some((open, marker_len, close, apply)) = found else {
+            block.append(text, style, remaining_text_bytes);
+            return;
+        };
+        if open > 0 {
+            block.append(&text[..open], style, remaining_text_bytes);
+        }
+        let inner_start = open + marker_len;
+        block.append(
+            &text[inner_start..close],
+            apply(style),
+            remaining_text_bytes,
+        );
+        text = &text[close + marker_len..];
     }
 }
 
@@ -838,8 +1002,77 @@ mod tests {
     }
 
     #[test]
+    fn custom_markers_style_underline_highlight_superscript_and_subscript() {
+        let document =
+            parse_inert_markdown_preview("++under++ ==mark== x^2^ H::2::O plain").unwrap();
+        let block = &document.blocks()[0];
+        assert_eq!(block.text(), "under mark x2 H2O plain");
+        assert!(block.runs().iter().any(|run| run.style().underline));
+        assert!(block.runs().iter().any(|run| run.style().highlight));
+        assert!(block.runs().iter().any(|run| run.style().superscript));
+        assert!(block.runs().iter().any(|run| run.style().subscript));
+        // Every byte is covered by exactly one run, like the existing
+        // bold/italic/code coverage test.
+        let mut cursor = 0;
+        for run in block.runs() {
+            assert_eq!(run.range().start, cursor);
+            cursor = run.range().end;
+        }
+        assert_eq!(cursor, block.text().len());
+    }
+
+    #[test]
+    fn an_unmatched_custom_marker_is_left_as_plain_text() {
+        let document = parse_inert_markdown_preview("a ++b not closed").unwrap();
+        let block = &document.blocks()[0];
+        assert_eq!(block.text(), "a ++b not closed");
+        assert!(block.runs().iter().all(|run| !run.style().underline));
+    }
+
+    #[test]
+    fn a_lone_tilde_span_is_gfm_strikethrough_not_subscript() {
+        // This crate's GFM strikethrough accepts a single `~` the same as
+        // a doubled `~~` (see `CUSTOM_MARKERS`'s doc comment), so there is
+        // no way to spell Subscript with `~`; both become strikethrough.
+        // Subscript's own `::marker::` still works, checked separately.
+        let document = parse_inert_markdown_preview("~~gone~~ H~2~O").unwrap();
+        let block = &document.blocks()[0];
+        assert!(block.runs().iter().any(|run| run.style().strikethrough));
+        assert!(!block.runs().iter().any(|run| run.style().subscript));
+        let with_subscript = parse_inert_markdown_preview("H::2::O").unwrap();
+        assert!(with_subscript.blocks()[0]
+            .runs()
+            .iter()
+            .any(|run| run.style().subscript));
+    }
+
+    #[test]
+    fn a_trailing_alignment_marker_is_stripped_and_recorded_on_the_block() {
+        let centered = parse_inert_markdown_preview("Hello :center:").unwrap();
+        assert_eq!(centered.blocks()[0].text(), "Hello");
+        assert_eq!(
+            centered.blocks()[0].kind(),
+            MarkdownPreviewBlockKind::Paragraph(TextAlign::Center)
+        );
+
+        let right = parse_inert_markdown_preview("## Heading :right:").unwrap();
+        assert_eq!(right.blocks()[0].text(), "Heading");
+        assert_eq!(
+            right.blocks()[0].kind(),
+            MarkdownPreviewBlockKind::Heading(2, TextAlign::Right)
+        );
+
+        let left = parse_inert_markdown_preview("No marker here").unwrap();
+        assert_eq!(left.blocks()[0].text(), "No marker here");
+        assert_eq!(
+            left.blocks()[0].kind(),
+            MarkdownPreviewBlockKind::Paragraph(TextAlign::Left)
+        );
+    }
+
+    #[test]
     fn excessive_style_runs_are_truncated_without_exceeding_the_run_cap() {
-        let mut block = BlockBuilder::new(MarkdownPreviewBlockKind::Paragraph);
+        let mut block = BlockBuilder::new(MarkdownPreviewBlockKind::Paragraph(TextAlign::Left));
         let mut remaining = MAX_MARKDOWN_PREVIEW_OUTPUT_BYTES;
         for index in 0..=MAX_MARKDOWN_PREVIEW_RUNS {
             block.append(

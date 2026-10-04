@@ -955,6 +955,14 @@ const NOTES_MENUS: &[MenuSpec] = &[
         label: APPLICATION_MENU,
         items: &[
             item!("Settings…", "notes::ShowSettings", "⌘,", separator),
+            // NOT-MENU-001: re-locks every locked note unlocked earlier in
+            // this session (`unlocked_this_session`); see File ▸ Lock Note.
+            item!(
+                "Close All Locked Notes",
+                "notes::CloseAllLockedNotes",
+                "",
+                separator
+            ),
             item!("Quit and Keep Windows", "notes::QuitAndKeepWindows", "⌥⌘Q"),
         ],
     },
@@ -963,6 +971,9 @@ const NOTES_MENUS: &[MenuSpec] = &[
         items: &[
             item!("New Note", "notes::ComposeNote", "⌘N"),
             item!("New Folder", "notes::CreateFolder", "⇧⌘N"),
+            // NOT-MENU-002: a session-only saved tag filter, not a real
+            // `FolderRecord` (NOTES-11; `view_model::SmartFolder`).
+            item!("New Smart Folder", "notes::CreateSmartFolder", ""),
             item!("Close", "rmac_ui::RequestClose", "⌘W", separator),
             item!("Close All", "notes::CloseAll", "⌥⌘W"),
             item!("Import to Notes…", "notes::ImportNote", "", separator),
@@ -978,6 +989,20 @@ const NOTES_MENUS: &[MenuSpec] = &[
             ),
             item!("Unpin Note", "notes::TogglePin", "", separator),
             item!("Duplicate Note", "notes::DuplicateNote", "⌘D"),
+            // NOT-MENU-005: File ▸ Lock Note; see Application ▸ Close All
+            // Locked Notes and Notes ▸ Settings… ▸ Locked notes above.
+            item!("Lock Note", "notes::ToggleLockNote", ""),
+            // NOT-MENU-003/004: "More" only ever has the one Tag-Selection
+            // variant of New Smart Folder on the Mac too.
+            submenu!(
+                "More",
+                "notes::FileMoreMenu",
+                [item!(
+                    "New Smart Folder with Tag Selection",
+                    "notes::CreateSmartFolderFromSelection",
+                    ""
+                )]
+            ),
             item!("Print…", "notes::PrintNote", "⌘P", separator),
         ],
     },
@@ -990,10 +1015,24 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("Copy", "input::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
             item!("Paste and Match Style", "notes::PastePlainText", "⌥⇧⌘V"),
+            // NOT-MENU-006: Notes' body is plain Markdown source with no
+            // separate rich-text clipboard representation to retain, so
+            // this behaves like an ordinary paste (see docs/parity.md).
+            item!("Paste and Retain Style", "notes::PasteAndRetainStyle", ""),
             item!("Delete Note", "notes::DeleteSelectedNote", "⌫", separator),
             item!("Rename", "notes::RenameSelectedFolder", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
             item!("Add Link…", "notes::InsertLink", "⌘K"),
+            // NOT-MENU-007: inserts a durable `📎 filename` chip line into
+            // the body (see `transfer_controller::choose_file_attachment`);
+            // opening it back up is a session-only convenience, since the
+            // durable `AttachmentRecord` kind is image-only (docs/parity.md).
+            item!("Attach File…", "notes::AttachFile", "⇧⌘A", separator),
+            // NOT-MENU-008 (Record Audio…) is left out: no microphone
+            // capture pipeline exists anywhere in rmac today (`rmac-audio`
+            // only controls playback/volume), so a menu item would have
+            // nothing real to do (docs/parity.md).
+            item!("Rename Attachment…", "notes::RenameAttachment", ""),
             submenu!(
                 "Find",
                 "notes::FindMenu",
@@ -1073,9 +1112,67 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 [
                     item!("Bold", "notes::ToggleBold", "⌘B"),
                     item!("Italic", "notes::ToggleItalic", "⌘I"),
+                    item!("Underline", "notes::ToggleUnderline", "⌘U"),
                     item!("Strikethrough", "notes::ToggleStrikethrough", ""),
+                    // NOT-MENU-030: a `==marker==` highlight span.
+                    item!("Highlight", "notes::ToggleHighlight", "⇧⌘E"),
+                    // NOT-MENU-031/032: reuse the same note-wide text scale
+                    // View ▸ Zoom In/Out already drives (NOTES-12); Notes
+                    // has no per-character font size model to grow or
+                    // shrink just the selection.
+                    item!("Bigger", "notes::FontBigger", "⌘+", separator),
+                    item!("Smaller", "notes::FontSmaller", "⌘-"),
+                    // NOT-MENU-038/039: copy/paste the selection's bold,
+                    // italic, strikethrough, underline and highlight
+                    // marker combination (`note_format_controller::
+                    // CopiedStyle`) — Notes has no other character
+                    // attribute to carry.
+                    item!("Copy Style", "notes::CopyStyle", "⌥⌘C", separator),
+                    item!("Paste Style", "notes::PasteStyle", "⌥⌘V"),
+                    submenu!(
+                        "Baseline",
+                        "notes::FontBaselineMenu",
+                        [
+                            item!("Superscript", "notes::ToggleSuperscript", ""),
+                            item!("Subscript", "notes::ToggleSubscript", ""),
+                            item!("Use Default", "notes::BaselineUseDefault", ""),
+                        ],
+                        separator
+                    ),
+                    item!("Remove Style", "notes::RemoveStyle", ""),
                 ],
                 separator
+            ),
+            // NOT-MENU-041..045: Notes' body is Markdown source with no
+            // native paragraph-alignment construct, so Align Left/Centre/
+            // Align Right write a trailing ` :center:`/` :right:` line
+            // marker the preview strips and renders as real flex alignment
+            // (`markdown_preview::strip_trailing_alignment_marker`). There
+            // is no Justify: GPUI's text layout has no justified
+            // line-breaking API, so it is left out rather than faked.
+            // Writing Direction is Edit-submenu-shared territory and is
+            // left for that pass.
+            submenu!(
+                "Text",
+                "notes::TextMenu",
+                [
+                    item!("Align Left", "notes::AlignLeft", "⌘{"),
+                    item!("Centre", "notes::AlignCentre", "⌘|"),
+                    item!("Align Right", "notes::AlignRight", "⌘}"),
+                ]
+            ),
+            // NOT-MENU-049..052: real, distinct, persisted-for-the-session
+            // settings (`view_model::MathsResultsMode`); only Off has a
+            // visible effect today since Notes has no expression evaluator
+            // wired to the editor yet (docs/parity.md).
+            submenu!(
+                "Maths Results",
+                "notes::MathsResultsMenu",
+                [
+                    item!("Off", "notes::MathsResultsOff", ""),
+                    item!("Suggest Results", "notes::MathsResultsSuggest", ""),
+                    item!("Insert Results", "notes::MathsResultsInsert", ""),
+                ]
             ),
             submenu!(
                 "Indentation",
@@ -1118,6 +1215,10 @@ const NOTES_MENUS: &[MenuSpec] = &[
             ),
             item!("Show in Note", "notes::ShowAttachmentInNote", ""),
             item!("Hide Toolbar", "notes::ToggleToolbar", ""),
+            item!("Customise Toolbar…", "notes::CustomiseToolbar", ""),
+            // NOT-MENU-053: hides/shows Format ▸ Font ▸ Highlight's yellow
+            // background without touching the `==marker==` text itself.
+            item!("Show Highlights", "notes::ToggleShowHighlights", "⌃⌘I"),
             item!("Enter Full Screen", "notes::ToggleFullScreen", "F"),
             item!("Zoom In", "notes::ZoomIn", "⇧⌘."),
             item!("Zoom Out", "notes::ZoomOut", "⇧⌘,"),
@@ -1135,6 +1236,22 @@ const NOTES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: WINDOW_MENU,
         items: &[item!("Notes", "notes::FocusMainWindow", "⌘0")],
+        // NOT-MENU-064 (Open Note in New Window) is left out: Notes is a
+        // single-window app (`rmac_ui::boot_single_window_app_with_assets`
+        // in main.rs); giving one note its own window is a real multi-
+        // window architecture change, beyond this pass's scope
+        // (docs/parity.md).
+    },
+    MenuSpec {
+        label: "Help",
+        items: &[
+            // NOT-MENU-065/066: Lulo has no online help site to open, so
+            // these show a short local alert with real usage guidance
+            // instead of the Mac's support.apple.com article
+            // (docs/parity.md).
+            item!("Using Smart Folders", "notes::ShowSmartFoldersHelp", ""),
+            item!("Using Tags", "notes::ShowTagsHelp", ""),
+        ],
     },
 ];
 

@@ -628,4 +628,131 @@ impl NotesView {
         self.export_dialog = None;
         cx.notify();
     }
+
+    /// Edit ▸ Attach File… (NOT-MENU-007). Notes' durable `AttachmentKind`
+    /// is image-only (`rmac_notes_store::AttachmentKind`), so an arbitrary
+    /// file is instead recorded as a `📎 filename` chip line inserted into
+    /// the body — a real, durable line in the note's own Markdown source,
+    /// not a stub. Reopening the file back up from that chip is a
+    /// session-only convenience (`attachment_chip_paths`), since the chip
+    /// is plain text with nothing else to identify the original path by
+    /// after a relaunch (docs/parity.md).
+    pub(super) fn choose_file_attachment(&mut self, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let choice = rmac_portal::choose_mail_attachments().await;
+            let _ = this.update_in(cx, |this, window, cx| match choice {
+                Ok(paths) => {
+                    for path in paths {
+                        this.insert_file_attachment_chip(path, window, cx);
+                    }
+                }
+                Err(_) => {
+                    this.message = Some("Notes could not open the Linux file chooser".into());
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn insert_file_attachment_chip(
+        &mut self,
+        path: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(note) = self.session.selected_note().filter(|note| !note.deleted) else {
+            return;
+        };
+        let note_id = note.id;
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            return;
+        };
+        let name = name.to_string();
+        let chip = format!("📎 {name}");
+        self.body.update(cx, |state, cx| {
+            let value = state.value().to_string();
+            let cursor = state.cursor();
+            let needs_newline = cursor > 0 && !value[..cursor].ends_with('\n');
+            let text = format!("{}{chip}\n", if needs_newline { "\n" } else { "" });
+            state.set_selected_range(cursor..cursor, cx);
+            state.replace(text, window, cx);
+        });
+        self.attachment_chip_paths
+            .entry(note_id)
+            .or_default()
+            .insert(name, path);
+        self.schedule_current_edit(cx);
+        cx.notify();
+    }
+
+    /// A click on a `📎 filename` chip the current note's
+    /// `attachment_chip_paths` still remembers: open the file with the
+    /// desktop's default handler.
+    pub(super) fn open_attachment_chip_path(path: std::path::PathBuf, cx: &mut Context<Self>) {
+        cx.spawn(async move |_this, _cx| {
+            let uri = format!("file://{}", path.display());
+            let _ = rmac_portal::open_uri(&uri).await;
+        })
+        .detach();
+    }
+
+    /// Edit ▸ Rename Attachment… (NOT-MENU-009): the selected attachment in
+    /// the Attachments Browser (`selected_attachment`).
+    pub(super) fn begin_rename_attachment(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(attachment_id) = self.selected_attachment else {
+            return;
+        };
+        let Some(current_name) = self.session.snapshot().and_then(|snapshot| {
+            snapshot
+                .attachments
+                .iter()
+                .find(|attachment| attachment.id == attachment_id && !attachment.deleted)
+                .map(|attachment| attachment.display_name.clone())
+        }) else {
+            return;
+        };
+        let Some(revision) = self.session.snapshot().and_then(|snapshot| {
+            snapshot
+                .attachments
+                .iter()
+                .find(|attachment| attachment.id == attachment_id)
+                .map(|attachment| attachment.revision)
+        }) else {
+            return;
+        };
+        self.attachment_rename_input.update(cx, |input, cx| {
+            input.set_value(current_name, window, cx);
+        });
+        self.attachment_rename = Some((attachment_id, revision));
+        cx.notify();
+    }
+
+    pub(super) fn cancel_attachment_rename(&mut self, cx: &mut Context<Self>) {
+        self.attachment_rename = None;
+        cx.notify();
+    }
+
+    pub(super) fn commit_attachment_rename(&mut self, cx: &mut Context<Self>) {
+        let Some((attachment_id, expected_revision)) = self.attachment_rename else {
+            return;
+        };
+        let display_name = self.attachment_rename_input.read(cx).value().to_string();
+        if display_name.trim().is_empty() {
+            return;
+        }
+        self.send_action(
+            LibraryAction::RenameAttachment {
+                attachment_id,
+                expected_attachment_revision: expected_revision,
+                display_name,
+            },
+            cx,
+        );
+        self.attachment_rename = None;
+        cx.notify();
+    }
 }

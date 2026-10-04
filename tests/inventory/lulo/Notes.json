@@ -20,6 +20,13 @@
           "children": []
         },
         {
+          "label": "Close All Locked Notes",
+          "action": "notes::CloseAllLockedNotes",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Services",
           "action": "app::services",
           "shortcut": "",
@@ -77,6 +84,13 @@
           "label": "New Folder",
           "action": "notes::CreateFolder",
           "shortcut": "⇧⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "New Smart Folder",
+          "action": "notes::CreateSmartFolder",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
@@ -145,6 +159,28 @@
           "children": []
         },
         {
+          "label": "Lock Note",
+          "action": "notes::ToggleLockNote",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "More",
+          "action": "notes::FileMoreMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "New Smart Folder with Tag Selection",
+              "action": "notes::CreateSmartFolderFromSelection",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Print…",
           "action": "notes::PrintNote",
           "shortcut": "⌘P",
@@ -199,6 +235,13 @@
           "children": []
         },
         {
+          "label": "Paste and Retain Style",
+          "action": "notes::PasteAndRetainStyle",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Delete Note",
           "action": "notes::DeleteSelectedNote",
           "shortcut": "⌫",
@@ -223,6 +266,20 @@
           "label": "Add Link…",
           "action": "notes::InsertLink",
           "shortcut": "⌘K",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Attach File…",
+          "action": "notes::AttachFile",
+          "shortcut": "⇧⌘A",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Rename Attachment…",
+          "action": "notes::RenameAttachment",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
@@ -623,8 +680,144 @@
               "children": []
             },
             {
+              "label": "Underline",
+              "action": "notes::ToggleUnderline",
+              "shortcut": "⌘U",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Strikethrough",
               "action": "notes::ToggleStrikethrough",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Highlight",
+              "action": "notes::ToggleHighlight",
+              "shortcut": "⇧⌘E",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bigger",
+              "action": "notes::FontBigger",
+              "shortcut": "⌘+",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Smaller",
+              "action": "notes::FontSmaller",
+              "shortcut": "⌘-",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Copy Style",
+              "action": "notes::CopyStyle",
+              "shortcut": "⌥⌘C",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Paste Style",
+              "action": "notes::PasteStyle",
+              "shortcut": "⌥⌘V",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Baseline",
+              "action": "notes::FontBaselineMenu",
+              "shortcut": "",
+              "separator_before": true,
+              "children": [
+                {
+                  "label": "Superscript",
+                  "action": "notes::ToggleSuperscript",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Subscript",
+                  "action": "notes::ToggleSubscript",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Use Default",
+                  "action": "notes::BaselineUseDefault",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "label": "Remove Style",
+              "action": "notes::RemoveStyle",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Text",
+          "action": "notes::TextMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Align Left",
+              "action": "notes::AlignLeft",
+              "shortcut": "⌘{",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Centre",
+              "action": "notes::AlignCentre",
+              "shortcut": "⌘|",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Align Right",
+              "action": "notes::AlignRight",
+              "shortcut": "⌘}",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Maths Results",
+          "action": "notes::MathsResultsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Off",
+              "action": "notes::MathsResultsOff",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Suggest Results",
+              "action": "notes::MathsResultsSuggest",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Insert Results",
+              "action": "notes::MathsResultsInsert",
               "shortcut": "",
               "separator_before": false,
               "children": []
@@ -755,6 +948,20 @@
           "label": "Hide Toolbar",
           "action": "notes::ToggleToolbar",
           "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Customise Toolbar…",
+          "action": "notes::CustomiseToolbar",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Highlights",
+          "action": "notes::ToggleShowHighlights",
+          "shortcut": "⌃⌘I",
           "separator_before": false,
           "children": []
         },
@@ -1070,6 +1277,20 @@
           "shortcut": "⌘?",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Using Smart Folders",
+          "action": "notes::ShowSmartFoldersHelp",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Using Tags",
+          "action": "notes::ShowTagsHelp",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
         }
       ]
     }
@@ -1080,7 +1301,39 @@
     "controls": [
       {
         "kind": "control",
+        "label": "On This PC"
+      },
+      {
+        "kind": "control",
+        "label": "Change Password…"
+      },
+      {
+        "kind": "control",
+        "label": "Reset Password…"
+      },
+      {
+        "kind": "control",
+        "label": "Help"
+      },
+      {
+        "kind": "control",
+        "label": "Use Custom Password"
+      },
+      {
+        "kind": "control",
         "label": "Group notes by date"
+      },
+      {
+        "kind": "control",
+        "label": "Automatically sort ticked items"
+      },
+      {
+        "kind": "control",
+        "label": "Use dark backgrounds for note content"
+      },
+      {
+        "kind": "control",
+        "label": "Enable the On My Mac account"
       },
       {
         "kind": "control",
@@ -1092,7 +1345,31 @@
       },
       {
         "kind": "control",
-        "label": "Text size:"
+        "label": "New notes start with:"
+      },
+      {
+        "kind": "control",
+        "label": "Default text size:"
+      },
+      {
+        "kind": "control",
+        "label": "When sorted by Date Edited or Date Created, group notes by date."
+      },
+      {
+        "kind": "control",
+        "label": "Automatically move checklist items to the bottom of the list as they are ticked off."
+      },
+      {
+        "kind": "control",
+        "label": "Default account:"
+      },
+      {
+        "kind": "control",
+        "label": "Locked notes:"
+      },
+      {
+        "kind": "control",
+        "label": "Notes in On My Mac are stored on this computer. Disabling this account doesn’t affect your other notes."
       },
       {
         "kind": "control",
@@ -1124,6 +1401,7 @@
       "Move Note…",
       "Folders",
       "Format",
+      "Off",
       "Media",
       "More",
       "View Options"

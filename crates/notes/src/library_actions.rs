@@ -73,6 +73,9 @@ impl NotesView {
         if !self.is_interactive_ready() {
             return;
         }
+        // Selecting an ordinary folder/All Notes/Trash always drops any
+        // Smart Folder filter layered on top of it.
+        self.smart_folder_filter = None;
         let previous = self.session.selected_note_id();
         self.session.select_folder(folder);
         if self.session.selected_note_id() != previous || self.latest_local_generation.is_none() {
@@ -116,7 +119,12 @@ impl NotesView {
                 // fall back to it for an empty title) until the first
                 // keystroke supplies real text.
                 title: String::new(),
-                body: String::new(),
+                // Notes ▸ Settings… ▸ New notes start with: (NOT-SETTINGS-010).
+                // Notes keeps the title in its own field rather than the
+                // Mac's single first line (NOTES-01), so this pre-seeds the
+                // body's paragraph-style marker instead; `Body` leaves it
+                // empty, matching Lulo's previous (NOTES-16) behaviour.
+                body: self.new_note_body_style.marker().to_string(),
                 tags: Vec::new(),
                 folder_id,
             }),
@@ -775,6 +783,111 @@ impl NotesView {
                 .separated(),
         );
         rmac_ui::set_menu_children("notes::RecentNotesMenu", recent_items, cx);
+
+        for action in [
+            "notes::ToggleUnderline",
+            "notes::ToggleHighlight",
+            "notes::ToggleSuperscript",
+            "notes::ToggleSubscript",
+            "notes::BaselineUseDefault",
+            "notes::RemoveStyle",
+            "notes::AlignLeft",
+            "notes::AlignCentre",
+            "notes::AlignRight",
+        ] {
+            rmac_ui::set_menu_enabled(action, body_editable && body_focused, cx);
+        }
+        rmac_ui::set_menu_enabled(
+            "notes::FontBigger",
+            ready && has_note && self.note_zoom < 12,
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::FontSmaller",
+            ready && has_note && self.note_zoom > -5,
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::CopyStyle",
+            body_editable && body_focused && body_has_selection,
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::PasteStyle",
+            body_editable && body_focused && self.copied_style.is_some(),
+            cx,
+        );
+        rmac_ui::set_menu_enabled("notes::PasteAndRetainStyle", body_editable, cx);
+        let alignment = self.current_line_alignment(cx);
+        rmac_ui::set_menu_checked(
+            "notes::AlignLeft",
+            alignment == rmac_notes_storage::TextAlign::Left,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::AlignCentre",
+            alignment == rmac_notes_storage::TextAlign::Center,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::AlignRight",
+            alignment == rmac_notes_storage::TextAlign::Right,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::MathsResultsOff",
+            self.maths_results_mode == MathsResultsMode::Off,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::MathsResultsSuggest",
+            self.maths_results_mode == MathsResultsMode::SuggestResults,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::MathsResultsInsert",
+            self.maths_results_mode == MathsResultsMode::InsertResults,
+            cx,
+        );
+        rmac_ui::set_menu_label(
+            "notes::ToggleShowHighlights",
+            if self.show_highlights {
+                "Hide Highlights"
+            } else {
+                "Show Highlights"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_checked("notes::ToggleShowHighlights", self.show_highlights, cx);
+        let locked = self
+            .session
+            .selected_note()
+            .is_some_and(|note| self.locked_notes.contains(&note.id));
+        rmac_ui::set_menu_enabled("notes::ToggleLockNote", ready && has_note && !locked, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::CloseAllLockedNotes",
+            !self.unlocked_this_session.is_empty(),
+            cx,
+        );
+        rmac_ui::set_menu_enabled("notes::CreateSmartFolder", ready, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::CreateSmartFolderFromSelection",
+            ready && !self.tags.read(cx).selected_range().is_empty(),
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::AttachFile",
+            ready
+                && has_note
+                && !pending
+                && self.session.selected_note().is_some_and(|n| !n.deleted),
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::RenameAttachment",
+            ready && self.selected_attachment.is_some(),
+            cx,
+        );
     }
 
     pub(super) fn set_sort(&mut self, sort_order: SortOrder, cx: &mut Context<Self>) {
@@ -799,5 +912,249 @@ impl NotesView {
 
     pub(super) fn retry_pending(&mut self, cx: &mut Context<Self>) {
         self.send(WorkerCommand::RetryPending, cx);
+    }
+
+    fn hash_password(password: &str) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(password.as_bytes());
+        hasher.finalize().into()
+    }
+
+    /// File ▸ Lock Note: lock the selected, not-yet-locked note (the menu
+    /// item is disabled once it is — see `publish_menu_state`), setting a
+    /// password first if none exists yet. See `view_model::LockDialog`'s
+    /// doc comment for why the password lives only in this process's
+    /// memory. Unlocking a locked note to view it is a separate action,
+    /// `request_unlock`, from the locked-note placeholder's own button.
+    pub(super) fn toggle_lock_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(note) = self.session.selected_note() else {
+            return;
+        };
+        let note_id = note.id;
+        if self.locked_notes.contains(&note_id) {
+            return;
+        }
+        if self.notes_password_hash.is_none() {
+            self.lock_password_input.update(cx, |input, cx| {
+                input.set_value("", window, cx);
+            });
+            self.lock_dialog = Some(LockDialog::SetPassword(Some(note_id)));
+            cx.notify();
+            return;
+        }
+        self.locked_notes.insert(note_id);
+        cx.notify();
+    }
+
+    /// The locked-note placeholder's "View Note…" button: ask for the
+    /// password before revealing this note for the rest of the session.
+    pub(super) fn request_unlock(
+        &mut self,
+        note_id: NoteId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.locked_notes.contains(&note_id) || self.unlocked_this_session.contains(&note_id) {
+            return;
+        }
+        self.lock_password_input.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+        });
+        self.lock_dialog = Some(LockDialog::Unlock(note_id));
+        cx.notify();
+    }
+
+    /// Application ▸ Close All Locked Notes: re-lock every note this
+    /// session unlocked, without touching which notes are locked at all.
+    pub(super) fn close_all_locked_notes(&mut self, cx: &mut Context<Self>) {
+        if self.unlocked_this_session.is_empty() {
+            return;
+        }
+        self.unlocked_this_session.clear();
+        cx.notify();
+    }
+
+    /// Notes ▸ Settings… ▸ Change Password…: open the single-field dialog
+    /// used to set or change the one password that locks every note. Opened
+    /// from the Settings window, a separate top-level window from the one
+    /// that owns `lock_password_input`, so unlike `toggle_lock_note`'s
+    /// first-lock path this does not clear the field first (GPUI ties a
+    /// `Window` to the render pass that produced it, so a Settings-window
+    /// event handler has no window reference for the main window's own
+    /// input); the field's own clear button covers it.
+    pub(super) fn begin_change_password(&mut self, cx: &mut Context<Self>) {
+        self.lock_dialog = Some(LockDialog::SetPassword(None));
+        cx.notify();
+    }
+
+    /// Notes ▸ Settings… ▸ Reset Password…: open the confirmation that
+    /// clears the password and unlocks every locked note.
+    pub(super) fn begin_reset_password(&mut self, cx: &mut Context<Self>) {
+        self.lock_dialog = Some(LockDialog::ConfirmReset);
+        cx.notify();
+    }
+
+    pub(super) fn cancel_lock_dialog(&mut self, cx: &mut Context<Self>) {
+        self.lock_dialog = None;
+        cx.notify();
+    }
+
+    pub(super) fn confirm_lock_dialog(&mut self, cx: &mut Context<Self>) {
+        let Some(dialog) = self.lock_dialog else {
+            return;
+        };
+        match dialog {
+            LockDialog::SetPassword(then_lock) => {
+                let password = self.lock_password_input.read(cx).value().to_string();
+                if password.is_empty() {
+                    return;
+                }
+                self.notes_password_hash = Some(Self::hash_password(&password));
+                if let Some(note_id) = then_lock {
+                    self.locked_notes.insert(note_id);
+                }
+            }
+            LockDialog::Unlock(note_id) => {
+                let password = self.lock_password_input.read(cx).value().to_string();
+                if self.notes_password_hash != Some(Self::hash_password(&password)) {
+                    self.message = Some("That password doesn't match".into());
+                    cx.notify();
+                    return;
+                }
+                self.unlocked_this_session.insert(note_id);
+            }
+            LockDialog::ConfirmReset => {
+                self.notes_password_hash = None;
+                self.locked_notes.clear();
+                self.unlocked_this_session.clear();
+            }
+        }
+        self.lock_dialog = None;
+        self.message = None;
+        cx.notify();
+    }
+
+    /// File ▸ New Smart Folder: a session-only saved tag filter
+    /// (`view_model::SmartFolder`'s doc comment explains why it is not a
+    /// real `FolderRecord`), named through the same dialog New Smart
+    /// Folder with Tag Selection prefills from the current tag selection.
+    pub(super) fn begin_create_smart_folder(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.smart_folder_name_input.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+        });
+        self.smart_folder_dialog = Some(String::new());
+        cx.notify();
+    }
+
+    pub(super) fn begin_create_smart_folder_from_selection(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let tags = self.tags.read(cx);
+        let selection = tags.selected_range();
+        let value = tags.value();
+        let Some(selected) = value.get(selection).filter(|text| !text.is_empty()) else {
+            return;
+        };
+        let prefill = selected.to_string();
+        self.smart_folder_name_input.update(cx, |input, cx| {
+            input.set_value(prefill.clone(), window, cx);
+        });
+        self.smart_folder_dialog = Some(prefill);
+        cx.notify();
+    }
+
+    pub(super) fn cancel_smart_folder_dialog(&mut self, cx: &mut Context<Self>) {
+        self.smart_folder_dialog = None;
+        cx.notify();
+    }
+
+    pub(super) fn commit_smart_folder(&mut self, cx: &mut Context<Self>) {
+        if self.smart_folder_dialog.is_none() {
+            return;
+        }
+        let name = self.smart_folder_name_input.read(cx).value().to_string();
+        let name = name.trim();
+        if name.is_empty() {
+            return;
+        }
+        let id = self.next_smart_folder_id;
+        self.next_smart_folder_id += 1;
+        self.smart_folders.push(SmartFolder {
+            id,
+            name: name.to_string(),
+            tag: name.to_string(),
+        });
+        self.smart_folder_dialog = None;
+        self.smart_folder_filter = Some(id);
+        cx.notify();
+    }
+
+    /// Selecting a Smart Folder in the sidebar: narrow the note list to
+    /// notes tagged with its one tag, on top of the ordinary All Notes
+    /// selection (Smart Folders have no folder membership of their own).
+    pub(super) fn select_smart_folder(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_folder(rmac_notes_runtime::FolderSelection::All, window, cx);
+        self.smart_folder_filter = Some(id);
+        cx.notify();
+    }
+
+    pub(super) fn set_maths_results_mode(
+        &mut self,
+        mode: MathsResultsMode,
+        cx: &mut Context<Self>,
+    ) {
+        self.maths_results_mode = mode;
+        cx.notify();
+    }
+
+    pub(super) fn toggle_show_highlights(&mut self, cx: &mut Context<Self>) {
+        self.show_highlights = !self.show_highlights;
+        cx.notify();
+    }
+
+    pub(super) fn toggle_customise_toolbar(&mut self, cx: &mut Context<Self>) {
+        self.customise_toolbar_open = !self.customise_toolbar_open;
+        cx.notify();
+    }
+
+    pub(super) fn toggle_hidden_toolbar_item(&mut self, item: ToolbarItem, cx: &mut Context<Self>) {
+        if !self.hidden_toolbar_items.insert(item) {
+            self.hidden_toolbar_items.remove(&item);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn show_smart_folders_help(&mut self, cx: &mut Context<Self>) {
+        self.notes_help = Some(
+            "A Smart Folder keeps every note with one tag together and updates itself as you tag \
+             and untag notes. Choose File ▸ New Smart Folder, or select a tag first and choose \
+             File ▸ More ▸ New Smart Folder with Tag Selection.",
+        );
+        cx.notify();
+    }
+
+    pub(super) fn show_tags_help(&mut self, cx: &mut Context<Self>) {
+        self.notes_help = Some(
+            "Add a tag to a note in its Tags field. Select a tag's text and choose File ▸ More ▸ \
+             New Smart Folder with Tag Selection to collect every note that shares it.",
+        );
+        cx.notify();
+    }
+
+    pub(super) fn dismiss_notes_help(&mut self, cx: &mut Context<Self>) {
+        self.notes_help = None;
+        cx.notify();
     }
 }

@@ -51,8 +51,8 @@ pub use legacy_scan::{
 pub use markdown_preview::{
     parse_inert_markdown_preview, MarkdownPreviewBlock, MarkdownPreviewBlockKind,
     MarkdownPreviewDocument, MarkdownPreviewError, MarkdownPreviewRun, MarkdownPreviewTextStyle,
-    MAX_MARKDOWN_PREVIEW_BLOCKS, MAX_MARKDOWN_PREVIEW_DEPTH, MAX_MARKDOWN_PREVIEW_OUTPUT_BYTES,
-    MAX_MARKDOWN_PREVIEW_RUNS,
+    TextAlign, MAX_MARKDOWN_PREVIEW_BLOCKS, MAX_MARKDOWN_PREVIEW_DEPTH,
+    MAX_MARKDOWN_PREVIEW_OUTPUT_BYTES, MAX_MARKDOWN_PREVIEW_RUNS,
 };
 pub use migration::{
     plan_legacy_library, LegacyAttachmentInput, LegacyLibraryInput, LegacyNoteInput,

@@ -531,8 +531,8 @@ pub fn window_menu(
             .enabled(!windows.is_empty()),
         command("Zoom", WindowCommand::Zoom, ""),
         Item::new("Zoom All", WindowCommand::ZoomAll.action(), "").enabled(!windows.is_empty()),
-        command("Fill", WindowCommand::Fill, "⌃F"),
-        command(words.centre(), WindowCommand::Centre, "⌃C"),
+        command("Fill", WindowCommand::Fill, "⌃⇧⌘F"),
+        command(words.centre(), WindowCommand::Centre, "⌃⌘C"),
         Item::submenu(
             "Move & Resize",
             "window::move-and-resize",
@@ -2079,8 +2079,8 @@ mod tests {
             WindowCommand::parse(&menu.items[3].action),
             Some(WindowCommand::ZoomAll)
         );
-        assert_eq!(menu.items[4].shortcut, "⌃F");
-        assert_eq!(menu.items[5].shortcut, "⌃C");
+        assert_eq!(menu.items[4].shortcut, "⌃⇧⌘F");
+        assert_eq!(menu.items[5].shortcut, "⌃⌘C");
         assert!(menu.items[6].is_submenu());
         assert!(!menu.items[6].children[0].enabled);
         assert_eq!(menu.items[6].children[1].shortcut, "⌃⌘←");

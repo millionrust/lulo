@@ -126,8 +126,16 @@ pub struct WaylandWindowState {
     handle: AnyWindowHandle,
     active: bool,
     hovered: bool,
+    /// Set while the scene GPUI last drew is not on screen (a lost device,
+    /// or a frame the renderer drew but could not present); the next frame
+    /// re-renders the whole scene even though GPUI has nothing dirty.
     pub(crate) force_render_after_recovery: bool,
     renderer_presented: bool,
+    /// rmac: whether any frame of this window reached the screen yet, and
+    /// how many later frames `RMAC_GPUI_TEST_UNPRESENTED_DRAWS` still drops
+    /// (see `test_unpresented_draws`).
+    presented_once: bool,
+    test_unpresented_left: u32,
     in_progress_configure: Option<InProgressConfigure>,
     resize_throttle: bool,
     /// rmac: idle frame scheduling. A frame callback is only requested while
@@ -622,6 +630,8 @@ impl WaylandWindowState {
             hovered: false,
             force_render_after_recovery: false,
             renderer_presented: false,
+            presented_once: false,
+            test_unpresented_left: test_unpresented_draws(),
             in_progress_window_controls: None,
             window_controls: WindowControls::default(),
             client_inset: None,
@@ -810,6 +820,37 @@ const INACTIVE_FRAME_INTERVAL: Duration = Duration::from_micros(33_334);
 const THROTTLE_RETRY_DELAY: Duration = Duration::from_millis(35);
 const _: () = assert!(THROTTLE_RETRY_DELAY.as_micros() > INACTIVE_FRAME_INTERVAL.as_micros());
 
+/// rmac: whether the frame loop keeps asking for frames after this one:
+/// it drew, or the scene on screen is stale and must be drawn again.
+fn keeps_drawing(drew: bool, force_render_pending: bool) -> bool {
+    drew || force_render_pending
+}
+
+/// rmac: whether the next frame must re-render a scene GPUI considers drawn:
+/// the renderer did not present it, or asked for a redraw.
+fn force_render_after_draw(presented: bool, renderer_needs_redraw: bool) -> bool {
+    !presented || renderer_needs_redraw
+}
+
+/// rmac, tests only: `RMAC_GPUI_TEST_UNPRESENTED_DRAWS=N` makes the N
+/// frames after a window's first presented one draw without presenting, as
+/// frames whose swapchain image came back suboptimal do on the reference
+/// laptop's niri. `scripts/behavior/run_desktop_first_paint.py` uses it to
+/// prove a dropped frame is redrawn without input.
+fn test_unpresented_draws() -> u32 {
+    parse_unpresented_draws(
+        std::env::var("RMAC_GPUI_TEST_UNPRESENTED_DRAWS")
+            .ok()
+            .as_deref(),
+    )
+}
+
+fn parse_unpresented_draws(value: Option<&str>) -> u32 {
+    value
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(0)
+}
+
 /// rmac: whether GPUI may have skipped this frame, leaving next-frame
 /// callbacks queued: it drew nothing, the window is inactive, and it came
 /// within GPUI's inactive frame interval of the previous frame. GPUI stamps
@@ -921,8 +962,9 @@ impl WaylandWindowStatePtr {
         state.drew_frame = false;
         state.idle_generation = state.idle_generation.wrapping_add(1);
         state.resize_throttle = false;
+        // Cleared only by a frame that reaches the screen (`draw`): a frame
+        // GPUI throttles, or one the renderer cannot present, keeps it.
         let force_render = state.force_render_after_recovery;
-        state.force_render_after_recovery = false;
         drop(state);
 
         {
@@ -937,7 +979,7 @@ impl WaylandWindowStatePtr {
         }
 
         let mut state = self.state.borrow_mut();
-        if state.drew_frame {
+        if keeps_drawing(state.drew_frame, state.force_render_after_recovery) {
             state.idle_streak = 0;
             if !state.frame_requested {
                 // Something became dirty while idle: resume vblank pacing.
@@ -1882,12 +1924,28 @@ impl PlatformWindow for WaylandWindow {
             return;
         }
 
-        state.renderer_presented = state.renderer.draw(scene);
+        state.renderer_presented = if state.presented_once && state.test_unpresented_left > 0 {
+            state.test_unpresented_left -= 1;
+            false
+        } else {
+            state.renderer.draw(scene)
+        };
+        state.presented_once |= state.renderer_presented;
         state.drew_frame = true;
 
-        if state.renderer.needs_redraw() {
-            state.force_render_after_recovery = true;
-        }
+        // rmac: GPUI now counts this scene as drawn and redraws only once
+        // something is dirty again, but the renderer returns without
+        // presenting when it cannot acquire a swapchain image as configured.
+        // Mesa's Wayland WSI reports the swapchain suboptimal whenever the
+        // compositor's dmabuf feedback for the surface changes its modifiers
+        // (niri sends a scanout tranche after it first composites a
+        // surface), so the frame right after a surface's first one was
+        // dropped and, with nothing dirty, never redrawn: the desktop's
+        // folder icon, which loads just after the first frame, stayed blank
+        // until a click. Re-render the scene on the next frame instead.
+        let needs_redraw = state.renderer.needs_redraw();
+        state.force_render_after_recovery =
+            force_render_after_draw(state.renderer_presented, needs_redraw);
     }
 
     fn completed_frame(&self) {
@@ -2249,8 +2307,9 @@ fn geometry_inside_frame(size: Size<Pixels>, inset: Pixels, tiling: Tiling) -> B
 #[cfg(test)]
 mod rmac_frame_loop_tests {
     use super::{
-        INACTIVE_FRAME_INTERVAL, THROTTLE_RETRY_DELAY, a11y_origin_inset, frame_loop_parked,
-        geometry_inside_frame, may_have_throttled,
+        INACTIVE_FRAME_INTERVAL, THROTTLE_RETRY_DELAY, a11y_origin_inset, force_render_after_draw,
+        frame_loop_parked, geometry_inside_frame, keeps_drawing, may_have_throttled,
+        parse_unpresented_draws,
     };
     use gpui::{Tiling, px, size};
     use std::time::Duration;
@@ -2299,6 +2358,30 @@ mod rmac_frame_loop_tests {
     #[test]
     fn a_pending_frame_callback_keeps_the_loop_awake() {
         assert!(!frame_loop_parked(5, true));
+    }
+
+    #[test]
+    fn a_frame_the_renderer_did_not_present_is_drawn_again() {
+        assert!(force_render_after_draw(false, false));
+        assert!(force_render_after_draw(true, true));
+        assert!(!force_render_after_draw(true, false));
+    }
+
+    #[test]
+    fn a_stale_scene_keeps_the_frame_loop_running_until_it_is_on_screen() {
+        assert!(keeps_drawing(true, false));
+        // A frame GPUI throttled or that drew nothing, while the scene on
+        // screen is stale: ask for the next one instead of parking.
+        assert!(keeps_drawing(false, true));
+        assert!(!keeps_drawing(false, false));
+    }
+
+    #[test]
+    fn unpresented_draws_are_off_unless_asked_for() {
+        assert_eq!(parse_unpresented_draws(None), 0);
+        assert_eq!(parse_unpresented_draws(Some("")), 0);
+        assert_eq!(parse_unpresented_draws(Some("junk")), 0);
+        assert_eq!(parse_unpresented_draws(Some(" 20 ")), 20);
     }
 
     #[test]

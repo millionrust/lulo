@@ -83,6 +83,28 @@ now parks instead:
   (fixed load delays on a never-focused layer surface, like the Dock and the
   menu bar) and the desktop itself, with no input before each capture, and
   checks that both main threads stay asleep when idle.
+- Unpresented frames (amended 2026-10-04): the owner still saw the folder's
+  name without its icon on every login with the fix above installed. The
+  inactive-frame retry was not the cause there. On the reference laptop's
+  niri (DRM backend, one GPU), a surface's per-surface dmabuf feedback puts a
+  scan-out tranche first once niri has composited it. Mesa's Wayland WSI
+  compares that tranche's modifiers with the ones the swapchain was allocated
+  with and marks the swapchain suboptimal (`surface_dmabuf_feedback_done`),
+  so the next `get_current_texture` returns `Suboptimal`. `gpui_wgpu`
+  reconfigures and returns without presenting, yet GPUI counts that scene as
+  drawn and redraws only when something is dirty again. The dropped frame
+  was the one right after the desktop's first, the one that adds the
+  just-loaded folder icon, so the screen kept the first frame until a click.
+  Nested niri (winit) never sends scan-out feedback, which is why nested runs
+  never showed it. Now a frame the renderer did not present (or one after a
+  lost device) keeps `force_render_after_recovery` set until a later frame
+  reaches the screen. That frame re-renders the whole scene, and the loop
+  keeps asking for frames meanwhile instead of parking; a throttled frame no
+  longer clears the flag. Once a frame is presented the loop parks as before.
+  `RMAC_GPUI_TEST_UNPRESENTED_DRAWS=N` drops the N frames after a window's
+  first presented one, so `run_desktop_first_paint.py`'s login case (the
+  owner's folder and four screenshots, nothing else open) proves the redraw
+  on CI's software renderer. It fails without this change.
 
 ### AT-SPI registration (amended 2026-09-24)
 

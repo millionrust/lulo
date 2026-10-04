@@ -73,6 +73,53 @@ pub fn complete(query: &str, candidates: &[Recipient]) -> Vec<Recipient> {
         .collect()
 }
 
+/// The token being typed right now: the field holds one or more completed
+/// addresses already, separated by `,`/`;`, and the last segment is what
+/// completion should match against.
+pub fn completion_query(field: &str) -> &str {
+    match field.rfind([',', ';']) {
+        Some(index) => field[index + 1..].trim(),
+        None => field.trim(),
+    }
+}
+
+/// Replace the token being typed with a chosen recipient, keeping whatever
+/// was already accepted before it and leaving the field ready for the next
+/// address, as the Mac's address field does.
+pub fn apply_completion(field: &str, chosen: &Recipient) -> String {
+    let kept = match field.rfind([',', ';']) {
+        Some(index) => field[..=index].trim_end().to_owned(),
+        None => String::new(),
+    };
+    let mut result = kept;
+    if !result.is_empty() {
+        result.push(' ');
+    }
+    result.push_str(&chosen.label());
+    result.push_str(", ");
+    result
+}
+
+/// Known addresses offered for completion: every distinct sender this
+/// mailbox has seen. EDS contacts (ADR 0022 §3) join this list once
+/// `rmac-accounts` grows an address-book adapter; recents alone already
+/// match what the Mac shows before an account has any contacts.
+pub fn known_recipients(messages: &[Message]) -> Vec<Recipient> {
+    let mut seen = std::collections::HashSet::new();
+    let mut recipients = Vec::new();
+    for message in messages {
+        if valid_address(message.sender_address)
+            && seen.insert(message.sender_address.to_ascii_lowercase())
+        {
+            recipients.push(Recipient {
+                name: message.sender.to_owned(),
+                address: message.sender_address.to_owned(),
+            });
+        }
+    }
+    recipients
+}
+
 pub fn initial_draft(kind: ComposeKind, message: Option<&Message>, from: &str) -> Draft {
     let mut draft = Draft {
         from: from.to_owned(),
@@ -97,9 +144,9 @@ pub fn initial_draft(kind: ComposeKind, message: Option<&Message>, from: &str) -
             }
             if kind == ComposeKind::ReplyAll {
                 for address in message
-                    .to
+                    .to_addresses
                     .split([',', ';'])
-                    .chain(message.cc.split([',', ';']))
+                    .chain(message.cc_addresses.split([',', ';']))
                 {
                     let address = address.trim();
                     if valid_address(address)
@@ -163,6 +210,46 @@ mod tests {
         assert_eq!(complete("kim", &candidates).len(), 1);
         assert_eq!(complete("example.test", &candidates).len(), 1);
         assert!(complete("sam", &candidates).is_empty());
+    }
+
+    #[test]
+    fn completion_query_is_the_token_after_the_last_separator() {
+        assert_eq!(completion_query("anna@example.test, sa"), "sa");
+        assert_eq!(completion_query("  kim"), "kim");
+        assert_eq!(completion_query("anna@example.test; "), "");
+    }
+
+    #[test]
+    fn applying_a_completion_keeps_earlier_addresses_and_adds_a_separator() {
+        let anna = Recipient {
+            name: "Anna Kim".into(),
+            address: "anna@example.test".into(),
+        };
+        assert_eq!(
+            apply_completion("ann", &anna),
+            "Anna Kim <anna@example.test>, "
+        );
+        assert_eq!(
+            apply_completion("bob@example.test, ann", &anna),
+            "bob@example.test, Anna Kim <anna@example.test>, "
+        );
+    }
+
+    #[test]
+    fn known_recipients_lists_distinct_senders_only() {
+        let state = MailState::fixture();
+        let recipients = known_recipients(&state.messages);
+        assert!(recipients
+            .iter()
+            .any(|recipient| recipient.address == "anna@example.test"));
+        assert!(recipients
+            .iter()
+            .any(|recipient| recipient.address == "sam@example.test"));
+        let anna_count = recipients
+            .iter()
+            .filter(|recipient| recipient.address == "anna@example.test")
+            .count();
+        assert_eq!(anna_count, 1);
     }
 
     #[test]

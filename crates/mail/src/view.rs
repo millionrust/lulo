@@ -59,6 +59,12 @@ impl MailView {
         rmac_ui::set_menu_checked("mail::ToggleUnreadFilter", self.state.unread_only, cx);
     }
 
+    /// Address completion candidates for a freshly opened compose window:
+    /// every distinct sender this mailbox has seen (`compose::known_recipients`).
+    fn compose_candidates(&self) -> Vec<rmac_mail::compose::Recipient> {
+        rmac_mail::compose::known_recipients(&self.state.messages)
+    }
+
     fn control(
         &self,
         id: &'static str,
@@ -130,7 +136,13 @@ impl MailView {
             "Compose",
             ControlMode::Enabled,
             |this, cx| {
-                compose_window::open(ComposeKind::New, None, this.accounts.clone(), cx);
+                compose_window::open(
+                    ComposeKind::New,
+                    None,
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                );
             },
             cx,
         ));
@@ -581,13 +593,20 @@ impl Render for MailView {
             .track_focus(&self.focus)
             .key_context("Mail")
             .on_action(cx.listener(|this, _: &NewMessage, _, cx| {
-                compose_window::open(ComposeKind::New, None, this.accounts.clone(), cx)
+                compose_window::open(
+                    ComposeKind::New,
+                    None,
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                )
             }))
             .on_action(cx.listener(|this, _: &Reply, _, cx| {
                 compose_window::open(
                     ComposeKind::Reply,
                     this.state.selected_message().cloned(),
                     this.accounts.clone(),
+                    this.compose_candidates(),
                     cx,
                 )
             }))
@@ -596,6 +615,7 @@ impl Render for MailView {
                     ComposeKind::ReplyAll,
                     this.state.selected_message().cloned(),
                     this.accounts.clone(),
+                    this.compose_candidates(),
                     cx,
                 )
             }))
@@ -604,6 +624,7 @@ impl Render for MailView {
                     ComposeKind::Forward,
                     this.state.selected_message().cloned(),
                     this.accounts.clone(),
+                    this.compose_candidates(),
                     cx,
                 )
             }))

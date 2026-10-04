@@ -275,6 +275,84 @@ fn attachment_metadata_points_to_durable_blob() {
 }
 
 #[test]
+fn draft_autosave_reuses_its_uid_and_replaces_attachments_until_discarded() {
+    let mut fixture = Fixture::new();
+    let drafts = fixture
+        .store
+        .upsert_mailbox("Drafts", 0, Some("\\Drafts"))
+        .expect("drafts mailbox");
+    let uid = fixture.store.allocate_local_uid(drafts).expect("uid");
+    assert_eq!(uid, 1);
+    let message_id = fixture
+        .store
+        .put_message(&NewMessage {
+            mailbox_id: drafts,
+            uid,
+            message_id: None,
+            in_reply_to: None,
+            references: &[],
+            subject: "Draft subject",
+            sender: "jacob@example.test",
+            recipients: "anna@example.test",
+            preview: "First draft",
+            received_at: 1,
+            flags: FLAG_DRAFT,
+            body: None,
+            body_text: Some("First draft"),
+        })
+        .expect("save draft");
+    fixture
+        .store
+        .put_attachment(message_id, "menu.pdf", "application/pdf", b"one")
+        .expect("attach");
+    // Allocating again before the same draft is edited would collide, so a
+    // live compose window keeps reusing its first UID across autosaves.
+    fixture.store.clear_attachments(message_id).expect("clear");
+    let updated_id = fixture
+        .store
+        .put_message(&NewMessage {
+            mailbox_id: drafts,
+            uid,
+            message_id: None,
+            in_reply_to: None,
+            references: &[],
+            subject: "Draft subject, edited",
+            sender: "jacob@example.test",
+            recipients: "anna@example.test",
+            preview: "Edited draft",
+            received_at: 2,
+            flags: FLAG_DRAFT,
+            body: None,
+            body_text: Some("Edited draft"),
+        })
+        .expect("update draft");
+    assert_eq!(updated_id, message_id);
+    fixture
+        .store
+        .put_attachment(message_id, "menu-v2.pdf", "application/pdf", b"two")
+        .expect("re-attach");
+    assert_eq!(fixture.store.attachments(message_id).unwrap().len(), 1);
+    assert_eq!(
+        fixture.store.attachments(message_id).unwrap()[0].filename,
+        "menu-v2.pdf"
+    );
+    assert_eq!(
+        fixture
+            .store
+            .get_message(message_id)
+            .unwrap()
+            .unwrap()
+            .subject,
+        "Draft subject, edited"
+    );
+    // Sending discards the local draft row; it must not reappear on reopen.
+    fixture.store.remove_server_uid(drafts, uid).unwrap();
+    assert!(fixture.store.get_message(message_id).unwrap().is_none());
+    let reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
+    assert!(reopened.message_by_uid(drafts, uid).unwrap().is_none());
+}
+
+#[test]
 fn fts_tracks_insert_update_and_delete_and_scopes_mailbox() {
     let mut fixture = Fixture::new();
     let id = fixture.insert(1, "Purple planets", None);

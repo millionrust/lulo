@@ -6513,6 +6513,7 @@ dependencies = [
  "rmac-mail-runtime",
  "rmac-mail-smtp",
  "rmac-mail-storage",
+ "rmac-portal",
  "rmac-ui",
  "uuid",
 ]

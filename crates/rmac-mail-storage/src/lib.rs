@@ -435,6 +435,18 @@ impl MailStorage {
         Ok(())
     }
 
+    /// A UID for a message that has no server identity yet, such as a draft
+    /// being autosaved before it is ever submitted. Scoped to one mailbox so
+    /// it never collides with a real UID assigned once the account syncs.
+    pub fn allocate_local_uid(&self, mailbox_id: i64) -> Result<i64> {
+        let highest: i64 = self.connection.query_row(
+            "SELECT COALESCE(MAX(uid), 0) FROM messages WHERE mailbox_id=?1",
+            [mailbox_id],
+            |row| row.get(0),
+        )?;
+        Ok(highest + 1)
+    }
+
     pub fn unread_inbox_count(&self) -> Result<i64> {
         self.connection.query_row(
             "SELECT COUNT(*) FROM messages m JOIN mailboxes b ON b.id=m.mailbox_id WHERE (b.name='INBOX' COLLATE NOCASE OR b.special_use='\\Inbox') AND (m.flags & 1)=0",
@@ -586,6 +598,14 @@ impl MailStorage {
             params![message_id, filename, mime_type, hash],
         )?;
         Ok(self.connection.last_insert_rowid())
+    }
+
+    /// Drop a message's attachment rows, for example before a draft autosave
+    /// re-adds whichever files are attached right now.
+    pub fn clear_attachments(&mut self, message_id: i64) -> Result<()> {
+        self.connection
+            .execute("DELETE FROM attachments WHERE message_id=?1", [message_id])?;
+        Ok(())
     }
 
     pub fn attachments(&self, message_id: i64) -> Result<Vec<Attachment>> {

@@ -28,6 +28,21 @@ pub async fn watch(sender: Sender<Event>) -> Result<(), Error> {
 #[cfg(target_os = "linux")]
 const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// `reconnecting_audio`'s cap: once PipeWire has been unavailable for a
+/// while, a failed `pw-dump` spawn-connect-exit cycle every second is a
+/// real, avoidable cost (a private test session with no PipeWire socket at
+/// all hits this constantly; a real machine would too for as long as
+/// PipeWire is down after a crash or before login finishes). Back off
+/// 1s, 2s, 4s... up to this ceiling instead of retrying at a fixed pace.
+#[cfg(target_os = "linux")]
+const AUDIO_RECONNECT_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// An attempt that stayed up at least this long really did connect (and
+/// later lost PipeWire, rather than never reaching it); reset the backoff
+/// so losing a working connection still reconnects quickly.
+#[cfg(target_os = "linux")]
+const AUDIO_CONNECTED_RESET_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[cfg(target_os = "linux")]
 // `pw-dump --monitor` prints the full PipeWire graph once, then a fresh JSON
 // array of changed objects on every subsequent state change. This debounce
@@ -61,7 +76,9 @@ async fn reconnecting_system_bus(sender: Sender<Event>) -> Result<(), Error> {
 #[cfg(target_os = "linux")]
 async fn reconnecting_audio(sender: Sender<Event>) -> Result<(), Error> {
     let mut previous_error = None;
+    let mut delay = RECONNECT_DELAY;
     loop {
+        let attempt_started = std::time::Instant::now();
         match watch_audio_once(&sender, &mut previous_error).await {
             Ok(()) => return Ok(()),
             Err(_) if sender.is_closed() => return Ok(()),
@@ -75,7 +92,12 @@ async fn reconnecting_audio(sender: Sender<Event>) -> Result<(), Error> {
                         Err(report_error)
                     };
                 }
-                async_io::Timer::after(RECONNECT_DELAY).await;
+                async_io::Timer::after(delay).await;
+                delay = if attempt_started.elapsed() >= AUDIO_CONNECTED_RESET_THRESHOLD {
+                    RECONNECT_DELAY
+                } else {
+                    (delay * 2).min(AUDIO_RECONNECT_MAX_DELAY)
+                };
             }
         }
     }
@@ -207,11 +229,18 @@ async fn watch_system_bus_once(
     // against for any interface a future rule broadens to include.
     let strength_due = false;
     let mut next_network_tick = std::time::Instant::now() + crate::model::SIGNAL_STRENGTH_REFRESH;
+    // A wired or offline machine has no Wi-Fi strength to display and no AP
+    // to roam between, so the tick would just be a wake with nothing to do.
+    let mut wifi_active = wifi_device_connected(&connection).await;
 
     loop {
         let mut pending = Sources::empty();
         let closed = futures_util::FutureExt::fuse(sender.closed());
-        let network_tick = futures_util::FutureExt::fuse(async_io::Timer::at(next_network_tick));
+        let network_tick = futures_util::FutureExt::fuse(if wifi_active {
+            futures_util::future::Either::Left(async_io::Timer::at(next_network_tick))
+        } else {
+            futures_util::future::Either::Right(std::future::pending())
+        });
         futures_util::pin_mut!(closed, network_tick);
         futures_util::select! {
             message = network_state.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
@@ -245,8 +274,60 @@ async fn watch_system_bus_once(
                 _ = closed => return Ok(()),
             }
         }
+        if pending.network {
+            wifi_active = wifi_device_connected(&connection).await;
+        }
         send(sender, Event::Refresh(pending)).await?;
     }
+}
+
+/// Whether any Wi-Fi device is currently activated, so `network_tick` can
+/// skip its periodic wake entirely on a wired or offline machine. Best
+/// effort: any D-Bus error (including no system bus) reads as "no", which
+/// just means the tick stays off rather than the watcher failing.
+#[cfg(target_os = "linux")]
+async fn wifi_device_connected(connection: &zbus::Connection) -> bool {
+    const WIFI_DEVICE_TYPE: u32 = 2;
+    const ACTIVATED_STATE: u32 = 100;
+
+    let Ok(manager) = zbus::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        "/org/freedesktop/NetworkManager",
+        "org.freedesktop.NetworkManager",
+    )
+    .await
+    else {
+        return false;
+    };
+    let Ok(devices) = manager
+        .call::<_, _, Vec<zbus::zvariant::OwnedObjectPath>>("GetDevices", &())
+        .await
+    else {
+        return false;
+    };
+    for path in devices {
+        let Ok(device) = zbus::Proxy::new(
+            connection,
+            "org.freedesktop.NetworkManager",
+            path.as_str(),
+            "org.freedesktop.NetworkManager.Device",
+        )
+        .await
+        else {
+            continue;
+        };
+        let Ok(device_type) = device.get_property::<u32>("DeviceType").await else {
+            continue;
+        };
+        if device_type != WIFI_DEVICE_TYPE {
+            continue;
+        }
+        if device.get_property::<u32>("State").await == Ok(ACTIVATED_STATE) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Record which services a signal asks to re-read. `strength_due` says

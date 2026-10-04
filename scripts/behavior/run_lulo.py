@@ -587,6 +587,13 @@ class LuloRun:
             "XDG_STATE_HOME": str(home / ".local/state"),
             "XDG_CACHE_HOME": str(home / ".cache"),
         })
+        if self.app == "mail":
+            # This private session has no GOA account, so without the
+            # fixture Mail would show its real empty state ("No Mail
+            # Accounts…") instead of the ten-message fixture mailbox every
+            # mail/* scenario's recording expects. Test-only, same switch
+            # `run-content-accessibility.sh` uses.
+            self.env["RMAC_MAIL_FIXTURE"] = "1"
         self.sandbox = home / "lulo-behavior" / sid.replace("/", "-") / "sandbox"
         self.files_root = home / "Desktop" if self.app == "desktop" else self.sandbox
         self.before: set[str] = set()

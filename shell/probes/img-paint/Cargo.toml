@@ -1,0 +1,20 @@
+[package]
+name = "rmac-shell-img-paint-probe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "img-paint"
+path = "src/main.rs"
+
+[features]
+default = []
+wayland = ["gpui_platform/wayland"]
+x11 = ["gpui_platform/x11"]
+
+[dependencies]
+async-channel.workspace = true
+gpui.workspace = true
+gpui_platform.workspace = true

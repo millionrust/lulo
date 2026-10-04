@@ -68,6 +68,21 @@ now parks instead:
   (`wake_frame`), which also keeps the kinetic-scroll momentum ticks drawing.
 - Known gap: a `Window::on_next_frame` callback queued by a frame that drew
   nothing waits for the next event-loop wake-up rather than the next vblank.
+- Inactive windows (amended 2026-10-04): GPUI skips an inactive window's frame
+  outright when next-frame callbacks are queued and less than 33.3 ms passed
+  since the last frame it ran. A finished `img()` load repaints its view
+  through such a callback, so a load that finished just before or after the
+  loop parked was skipped, the window parked with the callback queued, and the
+  picture stayed blank until the next input: the owner saw a desktop folder's
+  name without its icon until a click. Such a frame (drew nothing, inactive,
+  within 33.3 ms of the previous one) now arms one 35 ms timer; its wake-up
+  lets the end-of-iteration check run a frame GPUI cannot skip. It never
+  re-arms itself, so an idle surface takes at most one extra wake-up.
+  `scripts/behavior/run_desktop_first_paint.py` (runtime suite
+  `desktop-paint`) proves it in a nested niri with the `img-paint` probe
+  (fixed load delays on a never-focused layer surface, like the Dock and the
+  menu bar) and the desktop itself, with no input before each capture, and
+  checks that both main threads stay asleep when idle.
 
 ### AT-SPI registration (amended 2026-09-24)
 

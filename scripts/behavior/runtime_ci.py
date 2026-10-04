@@ -23,6 +23,8 @@ SHELL_BINARIES = {
     "mission-control": "rmac-mission-control",
     "osd": "rmac-osd",
     "screenshot": "rmac-screenshot",
+    # Probe for run_desktop_first_paint.py: img() loads on an idle surface.
+    "img-paint": "rmac-img-paint-probe",
 }
 REQUIRED_APPS = {name for choices in run_lulo.APP_BINARIES.values() for name in choices if name.startswith("rmac-")}
 REQUIRED_APPS.discard("rmac-wallpaper")
@@ -30,7 +32,7 @@ REQUIRED = REQUIRED_APPS | {"rmac-file-chooser", "rmac-shortcut-dispatch"}
 JOURNEYS = {f"{number:02d}-{name}" for number, name in enumerate(
     ("files", "text-editor", "settings", "calculator", "preview", "notes",
      "terminal", "shell", "menu-bar", "spotlight"), 1)}
-CHECKS = {"menu-dismiss", "power-dialogs", "window-move", "idle-cpu"} | JOURNEYS
+CHECKS = {"menu-dismiss", "power-dialogs", "window-move", "idle-cpu", "desktop-paint"} | JOURNEYS
 SHARDS = 8
 
 

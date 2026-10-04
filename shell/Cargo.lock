@@ -6025,6 +6025,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shell-img-paint-probe"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "gpui",
+ "gpui_platform",
+]
+
+[[package]]
 name = "rmac-shell-input-probe"
 version = "0.9.0-beta.1"
 dependencies = [

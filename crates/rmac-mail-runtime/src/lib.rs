@@ -21,7 +21,15 @@ use uuid::Uuid;
 pub use imap::{CredentialLookup, ImapAuth, ImapFactory, ImapSettings};
 
 pub const IMAP_REFRESH: Duration = Duration::from_secs(15 * 60);
+/// Microsoft Graph has no push channel a desktop client can hold open, so a
+/// Graph account syncs with one cheap delta query: when Mail starts, when the
+/// network comes back (`set_online`), when the Mail window is focused
+/// (`refresh_on_focus`), after an organise action (`sync_now`), and on this
+/// low-frequency deadline only while Mail is running. Between those the
+/// worker blocks on its command channel, so idle CPU stays at zero.
 pub const GRAPH_REFRESH: Duration = Duration::from_secs(5 * 60);
+/// Focusing the Mail window again within this window does not resync.
+pub const FOCUS_REFRESH_DEBOUNCE: Duration = Duration::from_secs(60);
 const MAX_BACKOFF: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,8 +96,9 @@ pub trait EventSink: Send + Sync + 'static {
     fn removed(&self, _account: Uuid) {}
 }
 
-/// MAIL-9 supplies the Graph implementation through this boundary. Graph
-/// workers use the same journal and notification path as IMAP workers.
+/// `rmac-mail-graph` (MAIL-9) supplies the Graph implementation through this
+/// boundary. Graph workers use the same journal and notification path as
+/// IMAP workers.
 pub trait Backend: Send {
     fn sync(&mut self, store: &mut MailStorage, account: Uuid) -> Result<Vec<NewMail>, Error>;
     /// IMAP waits in IDLE; Graph uses the coordinator's five-minute deadline.
@@ -122,11 +131,11 @@ pub trait BackendFactory: Send + Sync + 'static {
     fn connect(&self, account: &Account) -> Result<Box<dyn Backend>, Error>;
 }
 
-/// Plugs into `linux::ProviderFactory`'s `graph` slot until MAIL-9 builds
-/// the real Microsoft Graph backend. Every `ms_graph` account fails to
-/// connect with `Error::GraphUnavailable`, which the worker treats as a
-/// user-visible failure rather than a silent no-op — `docs/parity.md`
-/// APP-13.
+/// A `linux::ProviderFactory` `graph` slot for builds without the Microsoft
+/// Graph backend (`rmac-mail-graph`, MAIL-9, which Mail itself wires in).
+/// Every `ms_graph` account fails to connect with `Error::GraphUnavailable`,
+/// which the worker treats as a user-visible failure rather than a silent
+/// no-op.
 pub struct NoGraphFactory;
 
 impl BackendFactory for NoGraphFactory {
@@ -144,6 +153,23 @@ pub enum Error {
     StaleUidValidity,
     GraphUnavailable,
     Unsupported(&'static str),
+    /// An HTTPS mail service (Microsoft Graph, MAIL-9) failed. Carries only
+    /// a category, never server text, tokens or message data.
+    Remote(RemoteFailure),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoteFailure {
+    /// No connection, a timeout, or a TLS failure.
+    Network,
+    /// The account's sign-in was refused; GOA must refresh or re-authorise.
+    Unauthorized,
+    /// The server asked the client to slow down (HTTP 429/503).
+    Throttled,
+    /// The server definitely refused one request (other 4xx).
+    Rejected,
+    /// The reply was not the documented shape, or a link left the service.
+    Protocol,
 }
 
 impl std::fmt::Display for Error {
@@ -157,6 +183,13 @@ impl std::fmt::Display for Error {
             Self::StaleUidValidity => "mailbox identity changed; local changes need review",
             Self::GraphUnavailable => "Microsoft mail sync unavailable",
             Self::Unsupported(message) => message,
+            Self::Remote(RemoteFailure::Network) => "mail server unavailable",
+            Self::Remote(RemoteFailure::Unauthorized) => {
+                "mail account needs to sign in again in Internet Accounts"
+            }
+            Self::Remote(RemoteFailure::Throttled) => "mail server is busy; Mail will try again",
+            Self::Remote(RemoteFailure::Rejected) => "mail server refused the change",
+            Self::Remote(RemoteFailure::Protocol) => "mail server sent an unexpected reply",
         })
     }
 }
@@ -213,6 +246,7 @@ pub struct Runtime {
     sink: Arc<dyn EventSink>,
     data_root: PathBuf,
     online: Mutex<bool>,
+    last_focus_refresh: Mutex<Option<std::time::Instant>>,
 }
 
 impl Runtime {
@@ -227,6 +261,34 @@ impl Runtime {
             sink,
             data_root,
             online: Mutex::new(true),
+            last_focus_refresh: Mutex::new(None),
+        }
+    }
+
+    /// Called when the Mail window becomes active. Graph accounts have no
+    /// push, so focusing Mail runs one delta query — at most once per
+    /// `FOCUS_REFRESH_DEBOUNCE`. IMAP accounts already receive IDLE pushes
+    /// and are left alone. Only enqueues commands; never does I/O.
+    pub fn refresh_on_focus(&self) {
+        let now = std::time::Instant::now();
+        {
+            let mut last = self
+                .last_focus_refresh
+                .lock()
+                .expect("mail focus lock poisoned");
+            if last.is_some_and(|at| now.duration_since(at) < FOCUS_REFRESH_DEBOUNCE) {
+                return;
+            }
+            *last = Some(now);
+        }
+        for worker in self
+            .workers
+            .lock()
+            .expect("mail workers lock poisoned")
+            .values()
+            .filter(|worker| matches!(worker.account.transport, Transport::Graph))
+        {
+            worker.send(Command::Sync);
         }
     }
 

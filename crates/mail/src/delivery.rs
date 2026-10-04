@@ -209,6 +209,29 @@ fn smtp_authentication(_account: &ComposeAccount) -> Option<Authentication> {
     None
 }
 
+/// Microsoft accounts send through Graph's `sendMail` (MAIL-9) with GOA's
+/// token, fetched now and dropped after the call. Anything that fails stays
+/// in the Outbox; the account's sync worker retries queued messages.
+#[cfg(target_os = "linux")]
+fn graph_delivery(account: &ComposeAccount, storage: &mut MailStorage) -> DeliveryResult {
+    let Ok(token) = rmac_mail_graph::goa_token(&account.path) else {
+        return DeliveryResult::Queued;
+    };
+    let client = rmac_mail_graph::Client::new(
+        std::sync::Arc::new(rmac_mail_graph::UreqTransport::new()),
+        token,
+    );
+    match rmac_mail_graph::drain_outbox(&client, storage) {
+        Ok(_) => DeliveryResult::Sent,
+        Err(_) => DeliveryResult::Queued,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn graph_delivery(_account: &ComposeAccount, _storage: &mut MailStorage) -> DeliveryResult {
+    DeliveryResult::Queued
+}
+
 pub fn deliver(
     account: &ComposeAccount,
     mut draft: Draft,
@@ -238,7 +261,7 @@ pub fn deliver(
         discard_draft(account, location);
     }
     if account.provider == "ms_graph" {
-        return DeliveryResult::Queued;
+        return graph_delivery(account, &mut storage);
     }
     let domain = account
         .address

@@ -1,0 +1,21 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(message)",
+  "@odata.deltaLink": "https://graph.microsoft.com/v1.0/me/mailFolders('AAMkInbox%3D')/messages/delta?$deltatoken=inbox3",
+  "value": [
+    {
+      "@odata.type": "#microsoft.graph.message",
+      "@odata.etag": "W/\"CQAAABYAAAE\"",
+      "id": "AAMkMsgA=",
+      "subject": "Lunch on Friday",
+      "bodyPreview": "Shall we try the new place by the station?",
+      "receivedDateTime": "2026-10-01T09:30:00Z",
+      "isRead": false,
+      "isDraft": false,
+      "internetMessageId": "<a@example.test>",
+      "flag": { "flagStatus": "notFlagged" },
+      "from": { "emailAddress": { "name": "Ada Lovelace", "address": "ada@example.test" } },
+      "toRecipients": [ { "emailAddress": { "name": "Test User", "address": "test@example.test" } } ],
+      "ccRecipients": []
+    }
+  ]
+}

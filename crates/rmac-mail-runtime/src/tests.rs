@@ -107,6 +107,50 @@ fn graph_sleeps_until_command_and_reconnects_on_network_event() {
 }
 
 #[test]
+fn window_focus_refreshes_graph_once_per_debounce_window() {
+    let root = std::env::temp_dir().join(format!("mail-runtime-{}", Uuid::new_v4()));
+    let (sender, receiver) = mpsc::channel();
+    let runtime = Runtime::new(
+        root.clone(),
+        Arc::new(FakeFactory {
+            syncs: Arc::new(AtomicUsize::new(0)),
+            events: sender,
+        }),
+        Arc::new(FakeSink),
+    );
+    runtime.upsert_account(Account {
+        path: "focus-goa".into(),
+        id: Uuid::new_v4(),
+        address: "test@example.invalid".into(),
+        transport: Transport::Graph,
+    });
+    assert_eq!(receiver.recv_timeout(Duration::from_secs(3)).unwrap(), 1);
+    runtime.refresh_on_focus();
+    assert_eq!(receiver.recv_timeout(Duration::from_secs(3)).unwrap(), 2);
+    // A second activation right away is debounced: no extra request.
+    runtime.refresh_on_focus();
+    assert!(receiver.recv_timeout(Duration::from_millis(100)).is_err());
+    assert_eq!(FOCUS_REFRESH_DEBOUNCE, Duration::from_secs(60));
+    drop(runtime);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn remote_failures_print_categories_only() {
+    for failure in [
+        RemoteFailure::Network,
+        RemoteFailure::Unauthorized,
+        RemoteFailure::Throttled,
+        RemoteFailure::Rejected,
+        RemoteFailure::Protocol,
+    ] {
+        let error = Error::Remote(failure);
+        assert!(!error.needs_user_event());
+        assert!(!error.to_string().is_empty());
+    }
+}
+
+#[test]
 fn reconnect_backoff_caps_at_five_minutes() {
     let mut delay = Duration::from_secs(1);
     for _ in 0..20 {

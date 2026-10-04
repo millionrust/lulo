@@ -373,4 +373,25 @@ mod tests {
         assert_eq!(source.backend, "caldav");
         assert!(!source.enabled);
     }
+
+    /// CAL-9: with `evolution-ews-core` installed, EDS's GOA module turns a
+    /// GOA `ms_graph` account into a `microsoft365` collection whose
+    /// calendars look like this registry entry; they flow through the same
+    /// source list and calendar factory as CalDAV calendars.
+    #[test]
+    fn microsoft365_calendars_from_goa_are_ordinary_sources() {
+        let source = parse_source(
+            "2f4c-m365-calendar",
+            "[Data Source]\nDisplayName=Calendar\nEnabled=true\nParent=goa-account-ms\n\
+             [Calendar]\nBackendName=microsoft365\nColor=#62a0ea\nSelected=true\n\
+             [Microsoft365 Folder]\nId=AAMkAGI2THVSAAA=\nColor=#62a0ea\n\
+             [Offline]\nStaySynchronized=true\n\
+             [Refresh]\nEnabled=true\nIntervalMinutes=30",
+        )
+        .unwrap();
+        assert_eq!(source.backend, "microsoft365");
+        assert_eq!(source.display_name, "Calendar");
+        assert_eq!(source.parent_uid.as_deref(), Some("goa-account-ms"));
+        assert!(source.enabled);
+    }
 }

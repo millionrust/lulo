@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-const SCHEMA_VERSION: i32 = 4;
+const SCHEMA_VERSION: i32 = 5;
 pub const FLAG_SEEN: i64 = 1;
 pub const FLAG_ANSWERED: i64 = 2;
 pub const FLAG_FLAGGED: i64 = 4;
@@ -225,6 +225,14 @@ impl MailStorage {
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)?;
             tx.execute_batch(include_str!("schema_v4.sql"))?;
+            tx.pragma_update(None, "user_version", 4)?;
+            tx.commit()?;
+        }
+        if version < 5 {
+            let tx = self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            tx.execute_batch(include_str!("schema_v5.sql"))?;
             tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             tx.commit()?;
         }
@@ -806,6 +814,166 @@ impl MailStorage {
         tx.commit()?;
         Ok(())
     }
+
+    /// Drops a journal entry the server can no longer act on, such as a
+    /// change to a message that was already deleted remotely.
+    pub fn discard_change(&mut self, id: i64) -> Result<()> {
+        self.connection
+            .execute("DELETE FROM changes WHERE id=?1", [id])?;
+        Ok(())
+    }
+
+    /// The local mailbox bound to a Graph folder id, with its delta cursor.
+    pub fn remote_mailbox(&self, remote_id: &str) -> Result<Option<RemoteMailbox>> {
+        self.connection
+            .query_row(
+                "SELECT r.mailbox_id,r.remote_id,r.sync_cursor,b.name FROM remote_mailboxes r \
+                 JOIN mailboxes b ON b.id=r.mailbox_id WHERE r.remote_id=?1",
+                [remote_id],
+                remote_mailbox_from_row,
+            )
+            .optional()
+            .map_err(Error::from)
+    }
+
+    /// Every Graph-bound mailbox, for reconciling deleted folders.
+    pub fn remote_mailboxes(&self) -> Result<Vec<RemoteMailbox>> {
+        let mut statement = self.connection.prepare(
+            "SELECT r.mailbox_id,r.remote_id,r.sync_cursor,b.name FROM remote_mailboxes r \
+             JOIN mailboxes b ON b.id=r.mailbox_id ORDER BY r.mailbox_id",
+        )?;
+        let rows = statement.query_map([], remote_mailbox_from_row)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
+    }
+
+    /// The Graph folder id of a local mailbox, if it has one.
+    pub fn remote_id_of_mailbox(&self, mailbox_id: i64) -> Result<Option<String>> {
+        self.connection
+            .query_row(
+                "SELECT remote_id FROM remote_mailboxes WHERE mailbox_id=?1",
+                [mailbox_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Error::from)
+    }
+
+    /// Binds a mailbox to a Graph folder id, keeping an existing cursor.
+    pub fn bind_remote_mailbox(&mut self, mailbox_id: i64, remote_id: &str) -> Result<()> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "DELETE FROM remote_mailboxes WHERE remote_id=?1 AND mailbox_id<>?2",
+            params![remote_id, mailbox_id],
+        )?;
+        tx.execute(
+            "INSERT INTO remote_mailboxes(mailbox_id,remote_id) VALUES (?1,?2) \
+             ON CONFLICT(mailbox_id) DO UPDATE SET remote_id=excluded.remote_id, \
+             sync_cursor=CASE WHEN remote_mailboxes.remote_id=excluded.remote_id \
+             THEN remote_mailboxes.sync_cursor ELSE NULL END",
+            params![mailbox_id, remote_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn set_remote_cursor(&mut self, mailbox_id: i64, cursor: Option<&str>) -> Result<()> {
+        self.connection.execute(
+            "UPDATE remote_mailboxes SET sync_cursor=?1 WHERE mailbox_id=?2",
+            params![cursor, mailbox_id],
+        )?;
+        Ok(())
+    }
+
+    /// Follows a server-side folder rename. Fails, leaving the old name, if
+    /// another mailbox already has the new one.
+    pub fn rename_mailbox(&mut self, mailbox_id: i64, name: &str) -> Result<()> {
+        self.connection.execute(
+            "UPDATE mailboxes SET name=?1 WHERE id=?2",
+            params![name, mailbox_id],
+        )?;
+        Ok(())
+    }
+
+    /// Removes a mailbox the server deleted, with its cached messages.
+    /// Messages with unsent journal entries keep the mailbox alive.
+    pub fn remove_mailbox(&mut self, mailbox_id: i64) -> Result<()> {
+        self.connection.execute(
+            "DELETE FROM mailboxes WHERE id=?1 AND NOT EXISTS \
+             (SELECT 1 FROM changes c JOIN messages m ON m.id=c.message_id WHERE m.mailbox_id=?1)",
+            [mailbox_id],
+        )?;
+        Ok(())
+    }
+
+    /// The cached message bound to a Graph message id, in any mailbox.
+    pub fn message_by_remote_id(&self, remote_id: &str) -> Result<Option<MessageSummary>> {
+        self.connection.query_row(
+            "SELECT m.id,m.mailbox_id,m.uid,m.subject,m.sender,m.recipients,m.cc,m.preview,m.received_at,m.flags,m.body_hash \
+             FROM remote_messages r JOIN messages m ON m.id=r.message_id WHERE r.remote_id=?1",
+            [remote_id], summary_from_row,
+        ).optional().map_err(Error::from)
+    }
+
+    pub fn remote_id_of_message(&self, message_id: i64) -> Result<Option<String>> {
+        self.connection
+            .query_row(
+                "SELECT remote_id FROM remote_messages WHERE message_id=?1",
+                [message_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Error::from)
+    }
+
+    pub fn bind_remote_message(&mut self, message_id: i64, remote_id: &str) -> Result<()> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "DELETE FROM remote_messages WHERE remote_id=?1 AND message_id<>?2",
+            params![remote_id, message_id],
+        )?;
+        tx.execute(
+            "INSERT INTO remote_messages(message_id,remote_id) VALUES (?1,?2) \
+             ON CONFLICT(message_id) DO UPDATE SET remote_id=excluded.remote_id",
+            params![message_id, remote_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// `(uid, remote id)` for every Graph-bound message in one mailbox, used
+    /// to reconcile a full resync after Graph expires a delta cursor.
+    pub fn remote_uids(&self, mailbox_id: i64) -> Result<Vec<(i64, String)>> {
+        let mut statement = self.connection.prepare(
+            "SELECT m.uid,r.remote_id FROM remote_messages r JOIN messages m ON m.id=r.message_id \
+             WHERE m.mailbox_id=?1 ORDER BY m.uid",
+        )?;
+        let rows = statement.query_map([mailbox_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
+    }
+}
+
+/// A local mailbox bound to a Microsoft Graph folder (MAIL-9).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteMailbox {
+    pub mailbox_id: i64,
+    pub remote_id: String,
+    pub sync_cursor: Option<String>,
+    pub name: String,
+}
+
+fn remote_mailbox_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RemoteMailbox> {
+    Ok(RemoteMailbox {
+        mailbox_id: row.get(0)?,
+        remote_id: row.get(1)?,
+        sync_cursor: row.get(2)?,
+        name: row.get(3)?,
+    })
 }
 
 fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary> {

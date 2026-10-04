@@ -363,10 +363,12 @@ pub fn load() -> Result<WeekSnapshot, String> {
         let calendar_index = snapshot.calendars.len();
         snapshot.calendars.push(Calendar {
             name: source.display_name.clone(),
-            account: if source.backend == "local" {
-                "On My Computer".into()
-            } else {
-                source.backend.clone()
+            account: match source.backend.as_str() {
+                "local" => "On My Computer".into(),
+                // evolution-ews' Graph backend for GOA `ms_graph` accounts
+                // (CAL-9): Microsoft 365, Outlook.com and Hotmail.
+                "microsoft365" => "Microsoft".into(),
+                _ => source.backend.clone(),
             },
             color: match calendar_index % 6 {
                 0 => CalendarColor::Blue,

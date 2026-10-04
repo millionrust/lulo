@@ -74,7 +74,7 @@ pub fn show(cx: &mut App) {
     let opened = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Mail Settings");
-        let view = cx.new(|cx| SettingsView::new(cx));
+        let view = cx.new(SettingsView::new);
         let focus = view.read(cx).focus.clone();
         window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
@@ -267,11 +267,11 @@ impl SettingsView {
         id: &'static str,
         label: &'static str,
         value: u8,
-        min: u8,
-        max: u8,
+        range: std::ops::RangeInclusive<u8>,
         on_change: impl Fn(&mut Self, u8, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let (min, max) = (*range.start(), *range.end());
         let on_change = std::rc::Rc::new(on_change);
         let decrement = on_change.clone();
         let increment = on_change;
@@ -313,8 +313,7 @@ impl SettingsView {
                 "mail-settings-list-font",
                 "Message list font size:",
                 fonts.message_list_font_size,
-                9,
-                24,
+                9..=24,
                 |this, value, cx| {
                     this.settings.fonts_and_colours.message_list_font_size = value;
                     this.persist(cx);
@@ -325,8 +324,7 @@ impl SettingsView {
                 "mail-settings-message-font",
                 "Message font size:",
                 fonts.message_font_size,
-                9,
-                24,
+                9..=24,
                 |this, value, cx| {
                     this.settings.fonts_and_colours.message_font_size = value;
                     this.persist(cx);
@@ -356,8 +354,7 @@ impl SettingsView {
                 "mail-settings-preview-lines",
                 "Preview lines in the message list:",
                 viewing.preview_lines,
-                0,
-                5,
+                0..=5,
                 |this, value, cx| {
                     this.settings.viewing.preview_lines = value;
                     this.persist(cx);
@@ -513,71 +510,63 @@ impl SettingsView {
                     .small()
                     .on_click(cx.listener(|this, _, _, cx| this.add_signature(cx))),
             )
-            .child(
-                div().v_flex().gap(px(6.0)).children(
-                    self.settings
-                        .signatures
-                        .signatures
-                        .iter()
-                        .cloned()
-                        .map(|signature| {
-                            let default = is_default(&signature);
-                            let id_for_default = signature.id.clone();
-                            let id_for_delete = signature.id.clone();
+            .child(div().v_flex().gap(px(6.0)).children(
+                self.settings.signatures.signatures.iter().map(|signature| {
+                    let default = is_default(signature);
+                    let id_for_default = signature.id.clone();
+                    let id_for_delete = signature.id.clone();
+                    div()
+                        .p(px(8.0))
+                        .rounded(px(mac::radius_card()))
+                        .bg(mac::control_fill())
+                        .v_flex()
+                        .gap(px(4.0))
+                        .child(
                             div()
-                                .p(px(8.0))
-                                .rounded(px(mac::radius_card()))
-                                .bg(mac::control_fill())
-                                .v_flex()
-                                .gap(px(4.0))
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
                                 .child(
                                     div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(8.0))
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .text_size(px(13.0))
-                                                .child(signature.name.clone()),
-                                        )
-                                        .child(
-                                            Button::new(
-                                                format!(
-                                                    "mail-settings-signature-delete-{}",
-                                                    signature.id
-                                                ),
-                                                "Delete",
-                                            )
-                                            .small()
-                                            .on_click(
-                                                cx.listener(move |this, _, _, cx| {
-                                                    this.delete_signature(&id_for_delete, cx);
-                                                }),
-                                            ),
-                                        ),
+                                        .flex_1()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_size(px(13.0))
+                                        .child(signature.name.clone()),
                                 )
                                 .child(
-                                    div()
-                                        .text_size(px(12.0))
-                                        .text_color(mac::text_secondary())
-                                        .child(signature.body.clone()),
-                                )
-                                .child(
-                                    Checkbox::new(format!(
-                                        "mail-settings-signature-default-{}",
-                                        signature.id
-                                    ))
-                                    .label(format!("Use for {FIXTURE_ACCOUNT_ADDRESS}"))
-                                    .checked(default)
-                                    .on_change(cx.listener(move |this, value: &bool, _, cx| {
-                                        this.set_default_signature(&id_for_default, *value, cx);
-                                    })),
-                                )
-                        }),
-                ),
-            )
+                                    Button::new(
+                                        format!("mail-settings-signature-delete-{}", signature.id),
+                                        "Delete",
+                                    )
+                                    .small()
+                                    .on_click(cx.listener(
+                                        move |this, _, _, cx| {
+                                            this.delete_signature(&id_for_delete, cx);
+                                        },
+                                    )),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(mac::text_secondary())
+                                .child(signature.body.clone()),
+                        )
+                        .child(
+                            Checkbox::new(format!(
+                                "mail-settings-signature-default-{}",
+                                signature.id
+                            ))
+                            .label(format!("Use for {FIXTURE_ACCOUNT_ADDRESS}"))
+                            .checked(default)
+                            .on_change(cx.listener(
+                                move |this, value: &bool, _, cx| {
+                                    this.set_default_signature(&id_for_default, *value, cx);
+                                },
+                            )),
+                        )
+                }),
+            ))
             .when(self.settings.signatures.signatures.is_empty(), |parent| {
                 parent.child(
                     div()

@@ -671,7 +671,7 @@ impl Render for MailView {
                 this.open_new_message(cx);
             }))
             .on_action(cx.listener(|_, _: &crate::ShowSettings, _, cx| {
-                cx.defer(|cx| crate::settings_view::show(cx));
+                cx.defer(crate::settings_view::show);
             }))
             .child(self.toolbar(cx))
             .child(

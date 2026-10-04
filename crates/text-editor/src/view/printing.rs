@@ -13,10 +13,10 @@ impl EditorView {
         ) {
             return;
         }
-        if self.rtf_runs.is_some() {
+        if self.rich_text {
             self.alert = Some(ActiveAlert::Error {
                 title: "Could not print the document.",
-                message: "Printing the formatted RTF preview is not supported yet. Continue as plain text to print without implying the original formatting is preserved."
+                message: "Printing rich text with its formatting is not supported yet. Make Plain Text (or Duplicate it first) to print the text without implying the formatting is preserved."
                     .into(),
             });
             cx.notify();
@@ -103,10 +103,10 @@ impl EditorView {
         ) {
             return;
         }
-        if self.rtf_runs.is_some() {
+        if self.rich_text {
             self.alert = Some(ActiveAlert::Error {
                 title: "Could not export the document as PDF.",
-                message: "Exporting the formatted RTF preview as PDF is not supported yet. Continue as plain text to export without implying the original formatting is preserved."
+                message: "Exporting rich text with its formatting as PDF is not supported yet. Make Plain Text (or Duplicate it first) to export the text without implying the formatting is preserved."
                     .into(),
             });
             cx.notify();

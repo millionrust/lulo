@@ -79,11 +79,48 @@ fn replace_at_offsets(
 }
 
 impl EditorView {
+    /// The document body's selection in UTF-8 bytes (plain field or rich
+    /// editor).
+    pub(super) fn body_selection(&self, cx: &App) -> std::ops::Range<usize> {
+        if self.rich_text {
+            self.rich.read(cx).selected_range()
+        } else {
+            self.input.read(cx).selected_range()
+        }
+    }
+
+    /// The editable body's text (the read-only long-line view has its own).
+    pub(super) fn body_text(&self, cx: &App) -> String {
+        if self.rich_text {
+            self.rich.read(cx).text()
+        } else {
+            self.input.read(cx).text().to_string()
+        }
+    }
+
+    pub(super) fn body_is_empty(&self, cx: &App) -> bool {
+        if self.rich_text {
+            self.rich.read(cx).document().is_empty()
+        } else {
+            self.input.read(cx).text().len() == 0 && self.long_lines.is_none()
+        }
+    }
+
+    /// Select `range` in the body without moving focus.
+    fn body_select(&mut self, range: std::ops::Range<usize>, cx: &mut Context<Self>) {
+        if self.rich_text {
+            self.rich
+                .update(cx, |editor, cx| editor.select_range(range, cx));
+        } else {
+            self.input
+                .update(cx, |input, cx| input.set_selected_range(range, cx));
+        }
+    }
+
     pub(super) fn use_selection_for_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let query = {
-            let state = self.input.read(cx);
-            let range = state.selected_range();
-            let text = state.text().to_string();
+            let range = self.body_selection(cx);
+            let text = self.body_text(cx);
             let Some(selection) = text.get(range).filter(|selection| !selection.is_empty()) else {
                 return;
             };
@@ -97,8 +134,13 @@ impl EditorView {
     }
 
     pub(super) fn jump_to_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let range = self.input.read(cx).selected_range();
+        let range = self.body_selection(cx);
         if range.is_empty() {
+            return;
+        }
+        if self.rich_text {
+            self.body_select(range, cx);
+            self.focus_body(window, cx);
             return;
         }
         let position = self.input.read(cx).text().offset_to_position(range.start);
@@ -110,15 +152,15 @@ impl EditorView {
     }
 
     pub(super) fn select_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.rtf_runs.is_some() || self.long_lines.is_some() {
+        if self.long_lines.is_some() {
             return;
         }
         let current_line = {
-            let input = self.input.read(cx);
-            let text = input.text().to_string();
-            text[..input.selected_range().start]
-                .bytes()
-                .filter(|byte| *byte == b'\n')
+            let text = self.body_text(cx);
+            let start = self.body_selection(cx).start.min(text.len());
+            text.as_bytes()[..start]
+                .iter()
+                .filter(|byte| **byte == b'\n')
                 .count()
                 + 1
         };
@@ -136,15 +178,13 @@ impl EditorView {
             return;
         }
         let requested = self.select_line_input.read(cx).value().trim().parse().ok();
-        let text = self.input.read(cx).text().to_string();
+        let text = self.body_text(cx);
         let Some(range) = requested.and_then(|number| line_number_range(&text, number)) else {
             return;
         };
         self.select_line_open = false;
-        self.input.update(cx, |input, cx| {
-            input.set_selected_range(range, cx);
-            input.focus(window, cx);
-        });
+        self.body_select(range, cx);
+        self.focus_body(window, cx);
         cx.notify();
     }
 
@@ -157,15 +197,16 @@ impl EditorView {
         let focused_field = [&self.find_input, &self.replace_input]
             .into_iter()
             .find(|field| gpui::Focusable::focus_handle(field.read(cx), cx).is_focused(window));
-        let field = if let Some(field) = focused_field {
-            field
+        let changed = if let Some(field) = focused_field {
+            rmac_ui::transform_selection(field, transformation, window, cx)
+        } else if self.editing_blocked() {
+            return;
+        } else if self.rich_text {
+            rmac_ui::transform_selection(&self.rich, transformation, window, cx)
         } else {
-            if self.editing_blocked() {
-                return;
-            }
-            &self.input
+            rmac_ui::transform_selection(&self.input, transformation, window, cx)
         };
-        if rmac_ui::transform_selection(field, transformation, window, cx) {
+        if changed {
             cx.notify();
         }
     }
@@ -177,7 +218,6 @@ impl EditorView {
         self.file_busy
             || self.file_action_blocked()
             || self.prevent_editing
-            || self.rtf_runs.is_some()
             || self.long_lines.is_some()
     }
 
@@ -191,9 +231,16 @@ impl EditorView {
             || self.file_busy
             || self.file_action_blocked()
             || self.prevent_editing
-            || self.rtf_runs.is_some()
             || self.long_lines.is_some()
         {
+            return;
+        }
+        if self.rich_text {
+            self.rich.update(cx, |editor, cx| {
+                let range = editor.selected_range();
+                editor.replace_range(range, text, cx);
+            });
+            self.focus_body(window, cx);
             return;
         }
         self.input.update(cx, |state, cx| {
@@ -265,7 +312,7 @@ impl EditorView {
         // Once the field is removed from the tree, its focus handle is no
         // longer under the editor's key context. Return focus to the document
         // so File shortcuts (including Save) continue to dispatch.
-        self.input.update(cx, |state, cx| state.focus(window, cx));
+        self.focus_body(window, cx);
         cx.notify();
     }
 
@@ -278,7 +325,7 @@ impl EditorView {
         } else if let Some(document) = &self.long_lines {
             match_offsets(&document.text, &needle)
         } else {
-            match_offsets(&self.input.read(cx).text().to_string(), &needle)
+            match_offsets(&self.body_text(cx), &needle)
         };
         if self.current >= matches.len() {
             self.current = 0;
@@ -295,6 +342,13 @@ impl EditorView {
         if let Some(document) = &self.long_lines {
             if let Some(&offset) = self.matches.get(self.current) {
                 document.reveal_offset(offset);
+            }
+            return;
+        }
+        if self.rich_text {
+            if let Some(&offset) = self.matches.get(self.current) {
+                self.rich
+                    .update(cx, |editor, cx| editor.select_range(offset..offset, cx));
             }
             return;
         }
@@ -322,6 +376,12 @@ impl EditorView {
             return;
         };
         let needle_len = self.find_input.read(cx).text().len();
+        if self.rich_text {
+            self.rich.update(cx, |editor, cx| {
+                editor.select_range(offset..offset + needle_len, cx)
+            });
+            return;
+        }
         self.input.update(cx, |state, cx| {
             state.set_selected_range(offset..offset + needle_len, cx)
         });
@@ -382,6 +442,17 @@ impl EditorView {
         let offset = self.matches[self.current];
         let needle = self.find_input.read(cx).value().to_string();
         let replacement = self.replace_input.read(cx).value().to_string();
+        if self.rich_text {
+            let hay = self.body_text(cx);
+            if matches_needle_at(&hay, offset, &needle) {
+                self.rich.update(cx, |editor, cx| {
+                    editor.replace_range(offset..offset + needle.len(), &replacement, cx)
+                });
+                self.scroll_to_current(window, cx);
+                cx.notify();
+            }
+            return;
+        }
         let mut hay = self.input.read(cx).text().to_string();
         if matches_needle_at(&hay, offset, &needle) {
             hay.replace_range(offset..offset + needle.len(), &replacement);
@@ -402,9 +473,21 @@ impl EditorView {
             return;
         }
         let replacement = self.replace_input.read(cx).value().to_string();
-        let hay = self.input.read(cx).text().to_string();
+        let hay = self.body_text(cx);
         let offsets = match_offsets(&hay, &needle);
         if offsets.is_empty() {
+            return;
+        }
+        if self.rich_text {
+            let ranges: Vec<std::ops::Range<usize>> = offsets
+                .iter()
+                .map(|offset| *offset..*offset + needle.len())
+                .collect();
+            self.rich.update(cx, |editor, cx| {
+                editor.replace_ranges(&ranges, &replacement, cx)
+            });
+            self.current = 0;
+            cx.notify();
             return;
         }
         let value = replace_at_offsets(&hay, &offsets, needle.len(), &replacement);
@@ -453,32 +536,29 @@ impl EditorView {
             },
             cx,
         );
-        let field = [&self.find_input, &self.replace_input]
+        let focused_field = [&self.find_input, &self.replace_input]
             .into_iter()
-            .find(|field| gpui::Focusable::focus_handle(field.read(cx), cx).is_focused(window))
-            .unwrap_or(&self.input);
-        let has_selection = !field.read(cx).selected_range().is_empty();
+            .find(|field| gpui::Focusable::focus_handle(field.read(cx), cx).is_focused(window));
+        let has_document_selection = !self.body_selection(cx).is_empty();
+        let has_selection = match focused_field {
+            Some(field) => !field.read(cx).selected_range().is_empty(),
+            None => has_document_selection,
+        };
         for action in ["input::Cut", "input::Copy", "input::Delete"] {
             rmac_ui::set_menu_enabled(action, has_selection, cx);
         }
-        let has_document_selection = !self.input.read(cx).selected_range().is_empty();
         for action in [
             "text_editor::UseSelectionForFind",
             "text_editor::JumpToSelection",
         ] {
             rmac_ui::set_menu_enabled(action, has_document_selection, cx);
         }
-        rmac_ui::set_menu_enabled(
-            "text_editor::SelectLine",
-            self.rtf_runs.is_none() && self.long_lines.is_none(),
-            cx,
-        );
+        rmac_ui::set_menu_enabled("text_editor::SelectLine", self.long_lines.is_none(), cx);
         let can_transform = has_selection
-            && (field != &self.input
+            && (focused_field.is_some()
                 || (!self.file_busy
                     && !self.file_action_blocked()
                     && !self.prevent_editing
-                    && self.rtf_runs.is_none()
                     && self.long_lines.is_none()));
         for action in [
             "text_editor::TransformUppercase",
@@ -491,7 +571,6 @@ impl EditorView {
             && !self.file_busy
             && !self.file_action_blocked()
             && !self.prevent_editing
-            && self.rtf_runs.is_none()
             && self.long_lines.is_none();
         for action in [
             "text_editor::InsertLineBreak",
@@ -507,11 +586,7 @@ impl EditorView {
         let has_path = self.path.is_some();
         rmac_ui::set_menu_enabled("text_editor::RenameDocument", has_path, cx);
         rmac_ui::set_menu_enabled("text_editor::MoveToFolder", has_path, cx);
-        rmac_ui::set_menu_enabled(
-            "text_editor::RevertToLastSaved",
-            has_path && self.dirty && self.rtf_runs.is_none(),
-            cx,
-        );
+        rmac_ui::set_menu_enabled("text_editor::RevertToLastSaved", has_path && self.dirty, cx);
 
         // Format ▸ Make Rich Text / Make Plain Text (TXT-MENU-075) and the
         // Format ▸ Text submenu it gates (TXT-MENU-060..074).
@@ -524,33 +599,89 @@ impl EditorView {
             },
             cx,
         );
+        // Format ▸ Font's styles and Format ▸ Text belong to rich text; the
+        // Mac greys them out in a plain document.
         let text_format_enabled = self.rich_text && can_insert;
         for action in [
+            "text_editor::ToggleBold",
+            "text_editor::ToggleItalic",
+            "text_editor::ToggleUnderline",
+            "text_editor::ShowColours",
+            "text_editor::CopyStyle",
+            "text_editor::HighlightNone",
+            "text_editor::HighlightAccent",
+            "text_editor::HighlightPurple",
+            "text_editor::HighlightPink",
+            "text_editor::HighlightOrange",
+            "text_editor::HighlightMint",
+            "text_editor::HighlightBlue",
             "text_editor::AlignLeft",
             "text_editor::AlignCentre",
+            "text_editor::AlignJustify",
             "text_editor::AlignRight",
             "text_editor::ShowRuler",
             "text_editor::CopyRuler",
             "text_editor::PasteRuler",
             "text_editor::OpenSpacing",
+            "text_editor::ShowLists",
         ] {
             rmac_ui::set_menu_enabled(action, text_format_enabled, cx);
         }
-        rmac_ui::set_menu_checked(
-            "text_editor::AlignLeft",
-            self.ruler.alignment == gpui::TextAlign::Left,
+        rmac_ui::set_menu_enabled(
+            "text_editor::PasteStyle",
+            text_format_enabled && Self::style_copied(),
             cx,
         );
+        let (style, paragraph, highlight) = if self.rich_text {
+            let editor = self.rich.read(cx);
+            (
+                editor.style_at_selection(),
+                editor.paragraph_style_at_selection(),
+                self.highlight_at_selection(cx),
+            )
+        } else {
+            (
+                rich::CharStyle::default(),
+                rich::ParagraphStyle::default(),
+                None,
+            )
+        };
+        let rich_text = self.rich_text;
+        rmac_ui::set_menu_checked("text_editor::ToggleBold", rich_text && style.bold, cx);
+        rmac_ui::set_menu_checked("text_editor::ToggleItalic", rich_text && style.italic, cx);
         rmac_ui::set_menu_checked(
-            "text_editor::AlignCentre",
-            self.ruler.alignment == gpui::TextAlign::Center,
+            "text_editor::ToggleUnderline",
+            rich_text && style.underline,
             cx,
         );
-        rmac_ui::set_menu_checked(
-            "text_editor::AlignRight",
-            self.ruler.alignment == gpui::TextAlign::Right,
-            cx,
-        );
+        for (action, row) in [
+            ("text_editor::HighlightNone", format_text::Highlight::None),
+            (
+                "text_editor::HighlightAccent",
+                format_text::Highlight::Accent,
+            ),
+            (
+                "text_editor::HighlightPurple",
+                format_text::Highlight::Purple,
+            ),
+            ("text_editor::HighlightPink", format_text::Highlight::Pink),
+            (
+                "text_editor::HighlightOrange",
+                format_text::Highlight::Orange,
+            ),
+            ("text_editor::HighlightMint", format_text::Highlight::Mint),
+            ("text_editor::HighlightBlue", format_text::Highlight::Blue),
+        ] {
+            rmac_ui::set_menu_checked(action, rich_text && highlight == Some(row), cx);
+        }
+        for (action, alignment) in [
+            ("text_editor::AlignLeft", rich::Alignment::Left),
+            ("text_editor::AlignCentre", rich::Alignment::Center),
+            ("text_editor::AlignJustify", rich::Alignment::Justified),
+            ("text_editor::AlignRight", rich::Alignment::Right),
+        ] {
+            rmac_ui::set_menu_checked(action, rich_text && paragraph.alignment == alignment, cx);
+        }
         rmac_ui::set_menu_checked("text_editor::ShowRuler", self.show_ruler, cx);
         rmac_ui::set_menu_checked(
             "text_editor::ToggleDarkBackground",
@@ -579,7 +710,7 @@ impl EditorView {
         encoding: document::TextEncoding,
         cx: &mut Context<Self>,
     ) {
-        if self.file_busy || self.rtf_runs.is_some() || self.file_action_blocked() {
+        if self.file_busy || self.rich_text || self.file_action_blocked() {
             return;
         }
         if self.text_format.encoding != encoding {
@@ -593,7 +724,7 @@ impl EditorView {
         line_ending: document::LineEnding,
         cx: &mut Context<Self>,
     ) {
-        if self.file_busy || self.rtf_runs.is_some() || self.file_action_blocked() {
+        if self.file_busy || self.rich_text || self.file_action_blocked() {
             return;
         }
         if !matches!(
@@ -620,6 +751,11 @@ impl EditorView {
         let value = match &self.long_lines {
             Some(document) => {
                 accessible_value_fits(document.text.len()).then(|| document.text.clone())
+            }
+            None if self.rich_text => {
+                let editor = self.rich.read(cx);
+                accessible_value_fits(editor.document().len())
+                    .then(|| SharedString::from(editor.text()))
             }
             None => {
                 let text = self.input.read(cx).text();
@@ -657,11 +793,17 @@ impl EditorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.recovery_loading
-            || self.print_busy
-            || self.rtf_runs.is_some()
-            || self.long_lines.is_some()
-        {
+        if self.recovery_loading || self.print_busy || self.long_lines.is_some() {
+            return;
+        }
+        if self.rich_text {
+            self.rich.update(cx, |editor, cx| {
+                let range = match edit {
+                    AssistiveEdit::SetValue => 0..editor.document().len(),
+                    AssistiveEdit::ReplaceSelection => editor.selected_range(),
+                };
+                editor.replace_range(range, &text, cx);
+            });
             return;
         }
         self.input.update(cx, |state, cx| match edit {

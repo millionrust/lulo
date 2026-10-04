@@ -490,16 +490,115 @@
           "separator_before": false,
           "children": [
             {
+              "label": "Bold",
+              "action": "text_editor::ToggleBold",
+              "shortcut": "⌘B",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Italic",
+              "action": "text_editor::ToggleItalic",
+              "shortcut": "⌘I",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Underline",
+              "action": "text_editor::ToggleUnderline",
+              "shortcut": "⌘U",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Highlight",
+              "action": "text_editor::HighlightMenu",
+              "shortcut": "",
+              "separator_before": false,
+              "children": [
+                {
+                  "label": "Accent",
+                  "action": "text_editor::HighlightAccent",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "None",
+                  "action": "text_editor::HighlightNone",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Purple",
+                  "action": "text_editor::HighlightPurple",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Pink",
+                  "action": "text_editor::HighlightPink",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Orange",
+                  "action": "text_editor::HighlightOrange",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Mint",
+                  "action": "text_editor::HighlightMint",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Blue",
+                  "action": "text_editor::HighlightBlue",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
+            },
+            {
               "label": "Bigger",
               "action": "text_editor::IncreaseFont",
               "shortcut": "⌘+",
-              "separator_before": false,
+              "separator_before": true,
               "children": []
             },
             {
               "label": "Smaller",
               "action": "text_editor::DecreaseFont",
               "shortcut": "⌘-",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Show Colours",
+              "action": "text_editor::ShowColours",
+              "shortcut": "⇧⌘C",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Copy Style",
+              "action": "text_editor::CopyStyle",
+              "shortcut": "⌥⌘C",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Paste Style",
+              "action": "text_editor::PasteStyle",
+              "shortcut": "⌥⌘V",
               "separator_before": false,
               "children": []
             }
@@ -522,6 +621,13 @@
               "label": "Centre",
               "action": "text_editor::AlignCentre",
               "shortcut": "⌘|",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Justify",
+              "action": "text_editor::AlignJustify",
+              "shortcut": "",
               "separator_before": false,
               "children": []
             },
@@ -557,7 +663,7 @@
               "label": "Spacing…",
               "action": "text_editor::OpenSpacing",
               "shortcut": "",
-              "separator_before": false,
+              "separator_before": true,
               "children": []
             }
           ]
@@ -566,6 +672,13 @@
           "label": "Make Rich Text",
           "action": "text_editor::ToggleRichText",
           "shortcut": "⇧⌘T",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Prevent Editing",
+          "action": "text_editor::PreventEditing",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
@@ -577,10 +690,10 @@
           "children": []
         },
         {
-          "label": "Prevent Editing",
-          "action": "text_editor::PreventEditing",
+          "label": "List…",
+          "action": "text_editor::ShowLists",
           "shortcut": "",
-          "separator_before": false,
+          "separator_before": true,
           "children": []
         }
       ]

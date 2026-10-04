@@ -35,11 +35,12 @@ use gpui::{
 };
 use gpui_component::Root;
 use notify::Watcher as _;
+use rmac_editor::rich;
 use rmac_ui::{InputEvent, InputState, Position, Rope, RopeExt as _};
 
 #[cfg(target_os = "linux")]
 use crate::PrintFile;
-use crate::{document, long_lines, recovery, rtf, storage};
+use crate::{document, long_lines, recovery, storage};
 use crate::{
     ActualSize, AlignCentre, AlignLeft, AlignRight, CloseAll, CloseBar, CloseWindow, CopyRuler,
     DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont, JumpToSelection, NewFile,
@@ -49,9 +50,9 @@ use crate::{
 };
 
 use document_io::{
-    can_begin_print, inspect_external_revision, load_selected_document, pdf_export_filename,
-    render_pdf_export, save_document, save_document_copy, should_reuse_untitled_window, LoadedFile,
-    SaveFailure,
+    can_begin_print, inspect_external_revision, is_rich_text_path, load_selected_document,
+    pdf_export_filename, render_pdf_export, save_document, save_document_copy,
+    should_reuse_untitled_window, LoadedFile, SaveContent, SaveFailure, SavedDocument,
 };
 use recovery_state::{recovery_failure_message, startup_recovery, RecoveryClock, RecoveryPrompt};
 use startup::{open_duplicate_window, open_editor_window};
@@ -107,7 +108,8 @@ pub(super) struct DuplicateContent {
     pub(super) format: document::TextFormat,
     pub(super) mono: bool,
     pub(super) font_size: f32,
-    pub(super) rtf_runs: Option<Vec<rtf::RtfRun>>,
+    /// The rich document, formatting included, when the source is rich.
+    pub(super) rich: Option<rich::Document>,
 }
 
 /// An edit an assistive technology asks of the document body.
@@ -132,8 +134,8 @@ enum ActiveAlert {
     Conflict,
     /// The external bytes reviewed immediately before an explicit overwrite.
     ConfirmOverwrite { reviewed_revision: Vec<u8> },
-    /// Edit as Plain Text (the RTF preview's only way to edit): confirms
-    /// before discarding the document's formatting, as TextEdit does.
+    /// Format ▸ Make Plain Text on a rich document: confirms before
+    /// discarding the document's formatting, as TextEdit does.
     ConfirmPlainTextConversion,
     /// File ▸ Revert To ▸ Last Saved: confirms before discarding unsaved
     /// edits, since reverting cannot be undone.
@@ -143,26 +145,6 @@ enum ActiveAlert {
         title: &'static str,
         message: String,
     },
-}
-
-/// Format ▸ Text's whole-document alignment and line spacing, the "ruler"
-/// (TXT-MENU-071/072/073): Lulo's document model has no per-paragraph
-/// attributes, so a rich-text document's ruler applies to the whole buffer
-/// at once rather than to each paragraph individually.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Ruler {
-    pub(super) alignment: gpui::TextAlign,
-    /// A line-height multiplier over the document's own font size.
-    pub(super) line_spacing: f32,
-}
-
-impl Default for Ruler {
-    fn default() -> Self {
-        Self {
-            alignment: gpui::TextAlign::Left,
-            line_spacing: 1.0,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,6 +161,11 @@ enum DocumentWatchEvent {
 
 struct EditorView {
     input: Entity<InputState>,
+    /// The rich-text body, shown while `rich_text` is on (TE-03).
+    rich: Entity<rich::RichTextEditor>,
+    /// The rich document as last saved or opened: the rich dirty baseline.
+    /// `None` until a rich document has an exact saved revision.
+    saved_rich: Option<rich::Document>,
     path: Option<PathBuf>,
     /// This window's TextEdit-style untitled number ("Untitled", "Untitled
     /// 2", …), held while `path` is `None`. `None` once the document has a
@@ -236,22 +223,22 @@ struct EditorView {
     wrap_to_page: bool,
     prevent_editing: bool,
     page_width_chars: u16,
-    /// Format ▸ Make Rich Text / Make Plain Text (TXT-MENU-075): gates the
-    /// Format ▸ Text submenu (alignment, ruler), as the Mac greys that whole
-    /// submenu out for a plain-text document.
+    /// Format ▸ Make Rich Text / Make Plain Text (TXT-MENU-075): the body is
+    /// the rich-text editor, and Format ▸ Font's styles and Format ▸ Text
+    /// apply; the Mac greys those out for a plain-text document.
     rich_text: bool,
-    /// Format ▸ Text's current whole-document alignment and line spacing.
-    ruler: Ruler,
+    /// View ▸ Zoom for a rich document (its text keeps its own sizes).
+    rich_zoom: f32,
     /// Format ▸ Text ▸ Show Ruler: shows the alignment/spacing bar under
     /// the title bar, only while `rich_text` is on.
     show_ruler: bool,
+    /// Format ▸ Font ▸ Show Colours.
+    colours_open: bool,
+    /// Format ▸ List….
+    lists_open: bool,
     /// View ▸ Use Dark Background for Windows: a per-window paper-colour
     /// override, independent of the system's light/dark appearance.
     dark_background: bool,
-
-    /// When an `.rtf` is opened, its parsed styled runs for the formatted
-    /// preview. `Some` puts the editor in read-only RTF-viewer mode.
-    rtf_runs: Option<Vec<rtf::RtfRun>>,
 
     // File ▸ Rename…
     rename_open: bool,
@@ -308,9 +295,11 @@ mod tests {
     use super::document_io::same_file_identity;
     use super::recovery_state::recovery_path_for_platform;
     use super::{
-        can_begin_print, document, pdf_export_filename, render_pdf_export, save_document_copy,
-        should_reuse_untitled_window, RecoveryClock, SaveFailure,
+        can_begin_print, document, pdf_export_filename, render_pdf_export, save_document,
+        save_document_copy, should_reuse_untitled_window, RecoveryClock, SaveContent, SaveFailure,
+        SavedDocument,
     };
+    use rmac_editor::rich;
     use std::path::PathBuf;
 
     #[test]
@@ -409,7 +398,7 @@ mod tests {
         let error = save_document_copy(
             &source,
             Some(&source),
-            "local buffer",
+            &SaveContent::Plain("local buffer".into()),
             document::TextFormat::default(),
         )
         .unwrap_err();
@@ -421,11 +410,56 @@ mod tests {
 
     #[test]
     fn open_reuses_only_a_clean_empty_untitled_window() {
-        assert!(should_reuse_untitled_window(false, false, false, true));
-        assert!(!should_reuse_untitled_window(true, false, false, false));
-        assert!(!should_reuse_untitled_window(false, true, false, false));
-        assert!(!should_reuse_untitled_window(false, false, true, false));
-        assert!(!should_reuse_untitled_window(false, false, false, false));
+        assert!(should_reuse_untitled_window(false, false, true));
+        assert!(!should_reuse_untitled_window(true, false, true));
+        assert!(!should_reuse_untitled_window(false, true, true));
+        assert!(!should_reuse_untitled_window(false, false, false));
+    }
+
+    #[test]
+    fn rich_documents_save_as_rtf_and_read_back_with_their_formatting() {
+        let directory =
+            std::env::temp_dir().join(format!("rmac-text-editor-rich-save-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("styled.rtf");
+
+        // Type "Hello world", select "world", ⌘B, centre the paragraph.
+        let mut rich_document =
+            rich::Document::from_plain_text("Hello world", &rich::CharStyle::default());
+        rich_document.update_char_style(6..11, |style| style.bold = true);
+        rich_document
+            .update_paragraph_style(0..0, |style| style.alignment = rich::Alignment::Center);
+        let saved = save_document(
+            &path,
+            None,
+            &SaveContent::Rich(rich_document.clone()),
+            document::TextFormat::default(),
+        )
+        .unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(
+            matches!(saved, SavedDocument::Rich { ref original_bytes } if *original_bytes == bytes)
+        );
+        assert!(bytes.starts_with(b"{\\rtf1"));
+        assert!(String::from_utf8_lossy(&bytes).contains("\\b world"));
+
+        let loaded = super::load_selected_document(&path).unwrap();
+        let super::LoadedFile::RichText {
+            document: reopened, ..
+        } = loaded
+        else {
+            panic!("an .rtf opens as rich text");
+        };
+        assert_eq!(reopened, rich_document);
+        assert!(reopened.style_of_char_at(6).bold);
+        assert!(!reopened.style_of_char_at(0).bold);
+        assert_eq!(
+            reopened.paragraph(0).style().alignment,
+            rich::Alignment::Center
+        );
+
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

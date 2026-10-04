@@ -69,6 +69,42 @@ pub use runtime::{
     text_px,
 };
 pub use speech::{speak, start_speaking, stop_speaking};
+pub use text_assist::EditableText;
+
+/// The text-field actions every rmac text field answers (the "Input" key
+/// context's bindings and the Edit menu's `input::` rows), for an editor
+/// that is not an [`InputState`] to answer the same keys and menu rows.
+pub mod input_actions {
+    pub use crate::controls::{
+        InputBackspace as Backspace, InputCopy as Copy, InputCut as Cut, InputDelete as Delete,
+        InputDeleteToBeginningOfLine as DeleteToBeginningOfLine,
+        InputDeleteToEndOfLine as DeleteToEndOfLine,
+        InputDeleteToNextWordEnd as DeleteToNextWordEnd,
+        InputDeleteToPreviousWordStart as DeleteToPreviousWordStart, InputEnter as Enter,
+        InputIndentInline as IndentInline, InputMoveDown as MoveDown, InputMoveEnd as MoveEnd,
+        InputMoveHome as MoveHome, InputMoveLeft as MoveLeft, InputMovePageDown as MovePageDown,
+        InputMovePageUp as MovePageUp, InputMoveRight as MoveRight, InputMoveToEnd as MoveToEnd,
+        InputMoveToEndOfLine as MoveToEndOfLine, InputMoveToNextWord as MoveToNextWord,
+        InputMoveToPreviousWord as MoveToPreviousWord, InputMoveToStart as MoveToStart,
+        InputMoveToStartOfLine as MoveToStartOfLine, InputMoveUp as MoveUp, InputRedo as Redo,
+        InputSelectToEnd as SelectToEnd, InputSelectToEndOfLine as SelectToEndOfLine,
+        InputSelectToNextWordEnd as SelectToNextWordEnd,
+        InputSelectToPreviousWordStart as SelectToPreviousWordStart,
+        InputSelectToStart as SelectToStart, InputSelectToStartOfLine as SelectToStartOfLine,
+        InputShowCharacterPalette as ShowCharacterPalette, InputUndo as Undo, Paste, SelectAll,
+    };
+
+    /// The key context those bindings live in.
+    pub const KEY_CONTEXT: &str = "Input";
+
+    /// gpui-component binds ⇧←/⇧→/⇧↑/⇧↓ in that context to actions it does
+    /// not export; an editor answers them by these names
+    /// (`App::build_action`) instead.
+    pub const SELECT_LEFT: &str = "ui::SelectLeft";
+    pub const SELECT_RIGHT: &str = "ui::SelectRight";
+    pub const SELECT_UP: &str = "ui::SelectUp";
+    pub const SELECT_DOWN: &str = "ui::SelectDown";
+}
 pub use text_transform::{transform_selection, TextTransformation};
 pub use window::*;
 

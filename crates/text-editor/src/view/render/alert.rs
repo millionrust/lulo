@@ -93,14 +93,14 @@ impl EditorView {
                 ],
             ),
             ActiveAlert::ConfirmPlainTextConversion => (
-                "Convert to plain text?".to_owned(),
-                "This document's formatting — bold, italic, underline, fonts, sizes and colour — will be lost. This cannot be undone, though the original file is never changed unless you save over it."
+                "Convert this document to plain text?".to_owned(),
+                "Making a rich text document plain will lose all text styles (such as fonts and colours) and attachments."
                     .into(),
                 vec![
                     rmac_ui::dialog_button("alert-cancel-plain-text", "Cancel", Normal)
                         .on_click(cx.listener(|this, _, window, cx| this.alert_cancel(window, cx)))
                         .into_any_element(),
-                    rmac_ui::dialog_button("alert-confirm-plain-text", "Convert", Destructive)
+                    rmac_ui::dialog_button("alert-confirm-plain-text", "OK", Primary)
                         .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
                         .into_any_element(),
                 ],

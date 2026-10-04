@@ -50,7 +50,8 @@ impl EditorView {
         let title = self.filename();
         let format = self.text_format;
         let format_status = format.status_against(self.saved_format);
-        let format_locked = self.file_busy || self.rtf_runs.is_some() || self.file_action_blocked();
+        // Encodings and line endings belong to plain text; RTF has its own.
+        let format_locked = self.file_busy || self.rich_text || self.file_action_blocked();
         let row = div()
             .size_full()
             .flex()

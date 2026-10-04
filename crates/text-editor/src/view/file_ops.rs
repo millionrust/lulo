@@ -24,7 +24,7 @@ impl EditorView {
     pub(super) fn cancel_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.rename_open = false;
         self.rename_error = None;
-        self.input.update(cx, |state, cx| state.focus(window, cx));
+        self.focus_body(window, cx);
         cx.notify();
     }
 
@@ -47,7 +47,7 @@ impl EditorView {
         };
         if destination == current {
             self.rename_open = false;
-            self.input.update(cx, |state, cx| state.focus(window, cx));
+            self.focus_body(window, cx);
             cx.notify();
             return;
         }
@@ -70,7 +70,7 @@ impl EditorView {
                         this.rename_error = None;
                         this.reset_document_watch();
                         this.record_current_document(cx);
-                        this.input.update(cx, |state, cx| state.focus(window, cx));
+                        this.focus_body(window, cx);
                     }
                     Err(_) => {
                         this.rename_error = Some("The document could not be renamed.".into());
@@ -162,11 +162,7 @@ impl EditorView {
     /// unsaved changes has anything to revert; "Browse All Versions…" is
     /// omitted (Linux has no Time Machine-style version store).
     pub(super) fn revert_to_last_saved(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.path.is_none()
-            || !self.dirty
-            || self.file_action_blocked()
-            || self.rtf_runs.is_some()
-        {
+        if self.path.is_none() || !self.dirty || self.file_action_blocked() {
             return;
         }
         self.alert = Some(ActiveAlert::ConfirmRevert);
@@ -197,14 +193,14 @@ impl EditorView {
             self.page_setup_landscape = landscape;
         }
         self.page_setup_open = false;
-        self.input.update(cx, |state, cx| state.focus(window, cx));
+        self.focus_body(window, cx);
         cx.notify();
     }
 
     pub(super) fn close_page_setup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.page_setup_before = None;
         self.page_setup_open = false;
-        self.input.update(cx, |state, cx| state.focus(window, cx));
+        self.focus_body(window, cx);
         cx.notify();
     }
 

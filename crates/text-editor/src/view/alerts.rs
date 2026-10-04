@@ -12,9 +12,8 @@ impl EditorView {
     /// "save" first has to ask where. A document that already has a path
     /// autosaves there and closes without asking, the same as the Mac (which
     /// autosaves continuously and reopens "with unsaved changes" instead of
-    /// ever prompting on close for a saved document). The RTF preview
-    /// (`rtf_runs.is_some()`) is read-only and was never written to its own
-    /// path by this window, so it still needs the sheet.
+    /// ever prompting on close for a saved document). A plain file made rich
+    /// cannot be written over its plain source, so it still needs the sheet.
     pub(super) fn guarded(
         &mut self,
         pending: Pending,
@@ -30,7 +29,7 @@ impl EditorView {
             }
             return;
         }
-        if self.path.is_some() && self.rtf_runs.is_none() {
+        if self.path.is_some() && !self.needs_rich_destination() {
             self.save_with(Some(pending), window, cx);
             return;
         }
@@ -68,8 +67,19 @@ impl EditorView {
                 self.saved_format = prompt.format;
                 self.path = None;
                 self.saved_bytes = None;
-                let longest_line = long_lines::longest_line_bytes(&prompt.content);
-                self.install_document_text(prompt.content, longest_line, window, cx);
+                self.saved_rich = None;
+                let restored_rich = if prompt.rich {
+                    rich::rtf::parse(prompt.content.as_bytes())
+                } else {
+                    None
+                };
+                if let Some(document) = restored_rich {
+                    self.install_rich_document(document, cx);
+                } else {
+                    self.rich_text = false;
+                    let longest_line = long_lines::longest_line_bytes(&prompt.content);
+                    self.install_document_text(prompt.content, longest_line, window, cx);
+                }
                 if prompt.additional_drafts > 0 {
                     self.status_notice = Some(
                         format!(
@@ -102,7 +112,7 @@ impl EditorView {
                 self.overwrite_conflicting_document(reviewed_revision, window, cx);
             }
             Some(ActiveAlert::ConfirmPlainTextConversion) => {
-                self.perform_edit_as_plain_text(cx);
+                self.perform_make_plain_text(window, cx);
             }
             Some(ActiveAlert::ConfirmRevert) => {
                 self.perform_revert(window, cx);
@@ -154,7 +164,7 @@ impl EditorView {
     /// Mac returns focus to the document as the sheet closes.
     fn refocus_document_after_alert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.alert.is_none() {
-            self.input.update(cx, |state, cx| state.focus(window, cx));
+            self.focus_body(window, cx);
         }
     }
 

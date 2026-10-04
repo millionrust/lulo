@@ -24,10 +24,20 @@ pub(crate) struct RecoveryRecord {
     pub(crate) source_path: Option<String>,
     pub(crate) format: TextFormat,
     pub(crate) content: String,
+    /// `content` is a rich-text draft, written as RTF.
+    pub(crate) rich: bool,
 }
 
+/// Set in the encoding byte for a rich-text draft; older records never set it.
+const RICH_FLAG: u8 = 0x80;
+
 impl RecoveryRecord {
-    pub(crate) fn for_document(path: Option<&Path>, format: TextFormat, content: String) -> Self {
+    pub(crate) fn for_document(
+        path: Option<&Path>,
+        format: TextFormat,
+        content: String,
+        rich: bool,
+    ) -> Self {
         let document_label = path
             .and_then(Path::file_name)
             .map(|name| name.to_string_lossy().into_owned())
@@ -42,6 +52,7 @@ impl RecoveryRecord {
                 .map(ToOwned::to_owned),
             format,
             content,
+            rich,
         }
     }
 }
@@ -322,7 +333,7 @@ fn encode(record: &RecoveryRecord) -> Result<Vec<u8>, &'static str> {
     );
     output.extend_from_slice(MAGIC);
     output.extend_from_slice(&record.created_unix_ms.to_le_bytes());
-    output.push(encoding_code(record.format.encoding));
+    output.push(encoding_code(record.format.encoding) | if record.rich { RICH_FLAG } else { 0 });
     output.push(line_ending_code(record.format.source_line_ending));
     output.push(line_ending_code(record.format.save_line_ending));
     output.extend_from_slice(&label_len.to_le_bytes());
@@ -345,7 +356,9 @@ fn decode(bytes: &[u8]) -> Result<RecoveryRecord, &'static str> {
     }
     let mut cursor = MAGIC.len();
     let created_unix_ms = take_u64(bytes, &mut cursor)?;
-    let encoding = decode_encoding(take_byte(bytes, &mut cursor)?)?;
+    let encoding_byte = take_byte(bytes, &mut cursor)?;
+    let rich = encoding_byte & RICH_FLAG != 0;
+    let encoding = decode_encoding(encoding_byte & !RICH_FLAG)?;
     let source_line_ending = decode_line_ending(take_byte(bytes, &mut cursor)?)?;
     let save_line_ending = decode_line_ending(take_byte(bytes, &mut cursor)?)?;
     if matches!(save_line_ending, LineEnding::None | LineEnding::Mixed) {
@@ -383,6 +396,7 @@ fn decode(bytes: &[u8]) -> Result<RecoveryRecord, &'static str> {
             save_line_ending,
         },
         content,
+        rich,
     })
 }
 
@@ -526,6 +540,7 @@ mod tests {
                 save_line_ending: LineEnding::CrLf,
             },
             content: content.into(),
+            rich: false,
         }
     }
 
@@ -533,6 +548,11 @@ mod tests {
     fn versioned_record_round_trips_format_identity_and_content() {
         let expected = record("hello 🦀\n");
         assert_eq!(decode(&encode(&expected).unwrap()).unwrap(), expected);
+        let rich = RecoveryRecord {
+            rich: true,
+            ..record("{\\rtf1 rich}")
+        };
+        assert_eq!(decode(&encode(&rich).unwrap()).unwrap(), rich);
     }
 
     #[test]
@@ -552,6 +572,7 @@ mod tests {
             Some(Path::new("bad\nname.txt")),
             TextFormat::default(),
             "draft".into(),
+            false,
         );
         assert_eq!(record.document_label, "bad name.txt");
         let directory = Path::new("recovery");
@@ -661,6 +682,7 @@ mod tests {
             Some(Path::new("/home/user/Letter.txt")),
             TextFormat::default(),
             "typed just before the power went".into(),
+            false,
         );
         draft.created_unix_ms = 99;
         writer

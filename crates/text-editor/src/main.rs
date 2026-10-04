@@ -3,7 +3,6 @@
 mod document;
 mod long_lines;
 mod recovery;
-mod rtf;
 mod settings;
 mod settings_window;
 mod storage;
@@ -115,6 +114,26 @@ gpui::actions!(
         OpenSpacing,
         // View ▸ Use Dark Background for Windows (TXT-MENU-082).
         ToggleDarkBackground,
+        // Format ▸ Font (rich text): character styles of the selection or
+        // the next typing (TE-03).
+        ToggleBold,
+        ToggleItalic,
+        ToggleUnderline,
+        ShowColours,
+        CopyStyle,
+        PasteStyle,
+        // Format ▸ Font ▸ Highlight ▸ …
+        HighlightNone,
+        HighlightAccent,
+        HighlightPurple,
+        HighlightPink,
+        HighlightOrange,
+        HighlightMint,
+        HighlightBlue,
+        // Format ▸ Text ▸ Justify.
+        AlignJustify,
+        // Format ▸ List…
+        ShowLists,
     ]
 );
 

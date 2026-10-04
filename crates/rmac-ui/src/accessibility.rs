@@ -33,8 +33,8 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use gpui::{
-    accesskit, A11ySubtreeBuilder, AccessibleAction, App, Div, Entity, Focusable as _,
-    SharedString, Stateful, StatefulInteractiveElement as _,
+    accesskit, A11ySubtreeBuilder, AccessibleAction, App, Div, Entity, FocusHandle, Focusable as _,
+    SharedString, Stateful, StatefulInteractiveElement as _, Window,
 };
 
 use crate::InputState;
@@ -233,6 +233,19 @@ pub trait AccessibleTextInput: Sized {
     /// and a text role (`Role::TextInput`, `MultilineTextInput` or
     /// `SearchInput`), and contain the field.
     fn accessible_text_input(self, state: &Entity<InputState>, cx: &App) -> Self;
+
+    /// The same for any text surface (a rich-text editor): `text` is read
+    /// only when the tree is built, `selection` is the `(anchor, focus)`
+    /// caret/selection in UTF-8 bytes, `focus` is the surface's own focus
+    /// handle, and `select` applies a UTF-8 byte range assistive technology
+    /// asks for.
+    fn accessible_text(
+        self,
+        text: impl FnOnce() -> String + 'static,
+        selection: (usize, usize),
+        focus: FocusHandle,
+        select: impl Fn(Range<usize>, &mut Window, &mut App) + 'static,
+    ) -> Self;
 }
 
 impl AccessibleTextInput for Stateful<Div> {
@@ -242,24 +255,44 @@ impl AccessibleTextInput for Stateful<Div> {
         let rope = input.text().clone();
         let selected = input.selected_range();
         let cursor = input.cursor();
-        let runs: Rc<RefCell<Vec<(accesskit::NodeId, usize)>>> = Rc::default();
-        let published = runs.clone();
-        let focus_state = state.clone();
+        let (anchor, focus) = if cursor == selected.start {
+            (selected.end, selected.start)
+        } else {
+            (selected.start, selected.end)
+        };
         let selection_state = state.clone();
+        self.accessible_text(
+            move || rope.to_string(),
+            (anchor, focus),
+            input.focus_handle(cx),
+            move |range, _window, cx| {
+                selection_state.update(cx, |state, cx| state.set_selected_range(range, cx));
+            },
+        )
+    }
+
+    fn accessible_text(
+        self,
+        text: impl FnOnce() -> String + 'static,
+        selection: (usize, usize),
+        focus: FocusHandle,
+        select: impl Fn(Range<usize>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        let runs: Rc<RefCell<Vec<(accesskit::NodeId, usize)>>> = Rc::default();
+        let published_text: Rc<RefCell<String>> = Rc::default();
+        let published = runs.clone();
+        let published_into = published_text.clone();
+        let focus_handle = focus.clone();
         self.a11y_synthetic_children(move |builder| {
             builder.parent_node().set_class_name(TEXT_PROXY_CLASS);
-            let text = rope.to_string();
-            let (anchor, focus) = if cursor == selected.start {
-                (selected.end, selected.start)
-            } else {
-                (selected.start, selected.end)
-            };
+            let text = text();
+            let (anchor, focus) = selection;
             let selection = Some((char_offset(&text, anchor), char_offset(&text, focus)));
             *published.borrow_mut() = push_text_runs(builder, &text, selection);
+            *published_into.borrow_mut() = text;
         })
         .on_a11y_action(AccessibleAction::Focus, move |_, window, cx| {
-            let handle = focus_state.read(cx).focus_handle(cx);
-            window.focus(&handle, cx);
+            window.focus(&focus_handle, cx);
         })
         .on_a11y_action(
             AccessibleAction::SetTextSelection,
@@ -268,20 +301,17 @@ impl AccessibleTextInput for Stateful<Div> {
                     return;
                 };
                 let runs = runs.borrow();
-                let (Some(anchor), Some(focus)) = (
+                let (Some(anchor), Some(focus_at)) = (
                     offset_of(&runs, &selection.anchor),
                     offset_of(&runs, &selection.focus),
                 ) else {
                     return;
                 };
-                let handle = selection_state.read(cx).focus_handle(cx);
-                window.focus(&handle, cx);
-                selection_state.update(cx, |state, cx| {
-                    let text = state.value();
-                    let range: Range<usize> = byte_offset(&text, anchor.min(focus))
-                        ..byte_offset(&text, anchor.max(focus));
-                    state.set_selected_range(range, cx);
-                });
+                window.focus(&focus, cx);
+                let text = published_text.borrow();
+                let range: Range<usize> = byte_offset(&text, anchor.min(focus_at))
+                    ..byte_offset(&text, anchor.max(focus_at));
+                select(range, window, cx);
             },
         )
     }

@@ -2,35 +2,37 @@ mod alert;
 mod chrome;
 mod document_dialogs;
 mod find;
-mod rtf;
 mod save_sheet;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, font, px, AccessibleAction, ClickEvent, Context, InteractiveElement as _, IntoElement,
+    div, px, AccessibleAction, ClickEvent, Context, InteractiveElement as _, IntoElement,
     KeyDownEvent, ParentElement, Render, Role, SharedString, StatefulInteractiveElement as _,
-    Styled, StyledText, TextRun, UnderlineStyle, Window,
+    Styled, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
+use rmac_editor::rich;
 use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
-    document, ActualSize, AlignCentre, AlignLeft, AlignRight, CheckDocumentNow, ClearRecentMenu,
-    CloseAll, CloseBar, CloseWindow, CopyRuler, DecreaseFont, DuplicateDocument, EnterFullScreen,
-    ExportPdf, FindNext, FindPrev, IncreaseFont, InsertLineBreak, InsertPageBreak,
-    InsertParagraphBreak, JumpToSelection, MoveToFolder, NewFile, OpenFile, OpenPageSetup,
-    OpenRecent0, OpenRecent1, OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6,
-    OpenRecent7, OpenRecent8, OpenRecent9, OpenSpacing, PasteRuler, PreventEditing, PrintFile,
-    QuitAndKeepWindows, RenameDocument, RevertToLastSaved, SaveFile, SaveFileAs, SaveGoToFolder,
-    SelectLine, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom,
-    SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ShowRuler, ShowSettings,
-    ShowSpellingAndGrammar, ShowSubstitutions, StartSpeaking, StopSpeaking,
+    document, ActualSize, AlignCentre, AlignJustify, AlignLeft, AlignRight, CheckDocumentNow,
+    ClearRecentMenu, CloseAll, CloseBar, CloseWindow, CopyRuler, CopyStyle, DecreaseFont,
+    DuplicateDocument, EnterFullScreen, ExportPdf, FindNext, FindPrev, HighlightAccent,
+    HighlightBlue, HighlightMint, HighlightNone, HighlightOrange, HighlightPink, HighlightPurple,
+    IncreaseFont, InsertLineBreak, InsertPageBreak, InsertParagraphBreak, JumpToSelection,
+    MoveToFolder, NewFile, OpenFile, OpenPageSetup, OpenRecent0, OpenRecent1, OpenRecent2,
+    OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8, OpenRecent9,
+    OpenSpacing, PasteRuler, PasteStyle, PreventEditing, PrintFile, QuitAndKeepWindows,
+    RenameDocument, RevertToLastSaved, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine,
+    SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr,
+    SetLineEndingCrLf, SetLineEndingLf, ShowColours, ShowLists, ShowRuler, ShowSettings,
+    ShowSpellingAndGrammar, ShowSubstitutions, StartSpeaking, StopSpeaking, ToggleBold,
     ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
     ToggleCorrectSpellingAutomatically, ToggleDarkBackground, ToggleDataDetectors, ToggleFind,
-    ToggleMono, ToggleReplace, ToggleRichText, ToggleSmartCopyPaste, ToggleSmartDashes,
-    ToggleSmartLinks, ToggleSmartQuotes, ToggleTextReplacement, ToggleWrapToPage,
-    TransformCapitalise, TransformLowercase, TransformUppercase, UseSelectionForFind, ZoomIn,
-    ZoomOut,
+    ToggleItalic, ToggleMono, ToggleReplace, ToggleRichText, ToggleSmartCopyPaste,
+    ToggleSmartDashes, ToggleSmartLinks, ToggleSmartQuotes, ToggleTextReplacement, ToggleUnderline,
+    ToggleWrapToPage, TransformCapitalise, TransformLowercase, TransformUppercase,
+    UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use super::{
@@ -71,6 +73,84 @@ impl EditorView {
     }
 }
 
+impl EditorView {
+    /// Keep the rich editor's zoom, column and colours in step with the
+    /// window (Wrap to Page, View ▸ Zoom, Use Dark Background). Each setter
+    /// only notifies on a real change.
+    fn sync_rich_presentation(&mut self, page_column: f32, cx: &mut Context<Self>) {
+        let paper_dark = self.text_background().l < 0.5;
+        let default_color = if paper_dark {
+            mac::white()
+        } else {
+            mac::black()
+        };
+        let editable =
+            !(self.recovery_loading || self.print_busy || self.file_busy || self.prevent_editing);
+        let zoom = self.rich_zoom;
+        let page_width = self.wrap_to_page.then(|| px(page_column));
+        self.rich.update(cx, |editor, cx| {
+            editor.set_zoom(zoom, cx);
+            editor.set_editable(editable, cx);
+            editor.set_column(px(TEXT_INSET_X), page_width, cx);
+            editor.set_appearance(default_color, mac::text_selection(), mac::text_caret(), cx);
+        });
+    }
+
+    /// The rich-text body: the ruler (when shown) over the attributed-text
+    /// editor, named for assistive technology and accepting its edits like
+    /// the plain body.
+    fn render_rich_body(
+        &self,
+        filename: SharedString,
+        accessible_value: Option<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let editor = self.rich.read(cx);
+        let selection = editor.selected_range();
+        let head = editor.cursor();
+        let anchor = if head == selection.start {
+            selection.end
+        } else {
+            selection.start
+        };
+        let document = editor.document().clone();
+        let focus = gpui::Focusable::focus_handle(editor, cx);
+        let editable = editor.is_editable();
+        let rich = self.rich.clone();
+        div()
+            .id("document-body")
+            .role(Role::MultilineTextInput)
+            .aria_label(filename)
+            .when_some(accessible_value, |body, value| body.aria_value(value))
+            .accessible_text(
+                move || document.text(),
+                (anchor, head),
+                focus,
+                move |range, _window, cx| {
+                    rich.update(cx, |editor, cx| editor.select_range(range, cx));
+                },
+            )
+            .flex_1()
+            .min_h(px(0.0))
+            .v_flex()
+            .bg(self.text_background())
+            .when(self.show_ruler, |body| {
+                body.child(self.render_ruler_bar(cx))
+            })
+            .child(div().flex_1().min_h(px(0.0)).child(self.rich.clone()))
+            .when(editable, |body| {
+                body.on_a11y_action(
+                    AccessibleAction::SetValue,
+                    self.assistive_edit_listener(AssistiveEdit::SetValue, cx),
+                )
+                .on_a11y_action(
+                    AccessibleAction::ReplaceSelectedText,
+                    self.assistive_edit_listener(AssistiveEdit::ReplaceSelection, cx),
+                )
+            })
+    }
+}
+
 impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Text Editor's document is loaded before its window is even created
@@ -103,14 +183,16 @@ impl Render for EditorView {
         let line_height = (size * PLAIN_LINE_RATIO).round();
         let page_width = f32::from(self.page_width_chars) * size * 0.596 + TEXT_INSET_X * 2.0;
         let wrap_to_page = self.wrap_to_page;
-        let ruler = self.ruler;
         let recovery_loading = self.recovery_loading;
         let recovery_error = self.recovery_error.clone();
         let status_notice = self.status_notice.clone();
         let external_change = self.external_change;
         let document_watch_warning = self.document_watch_warning;
         let accessible_value = self.accessible_document_value(cx);
-        let long_line_body = if self.long_lines.is_some() && self.rtf_runs.is_none() {
+        if self.rich_text {
+            self.sync_rich_presentation(page_width - TEXT_INSET_X * 2.0, cx);
+        }
+        let long_line_body = if self.long_lines.is_some() && !self.rich_text {
             Some(
                 self.render_long_line_view(
                     font_family,
@@ -311,15 +393,48 @@ impl Render for EditorView {
             .on_action(
                 cx.listener(|this, _: &QuitAndKeepWindows, _, cx| this.quit_and_keep_windows(cx)),
             )
-            .on_action(cx.listener(|this, _: &ToggleRichText, _, cx| this.toggle_rich_text(cx)))
+            .on_action(cx.listener(|this, _: &ToggleRichText, window, cx| {
+                this.toggle_rich_text(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleBold, _, cx| this.toggle_bold(cx)))
+            .on_action(cx.listener(|this, _: &ToggleItalic, _, cx| this.toggle_italic(cx)))
+            .on_action(cx.listener(|this, _: &ToggleUnderline, _, cx| this.toggle_underline(cx)))
+            .on_action(cx.listener(|this, _: &ShowColours, _, cx| this.show_colours(cx)))
+            .on_action(cx.listener(|this, _: &CopyStyle, _, cx| this.copy_style(cx)))
+            .on_action(cx.listener(|this, _: &PasteStyle, _, cx| this.paste_style(cx)))
+            .on_action(cx.listener(|this, _: &HighlightNone, _, cx| {
+                this.set_highlight(super::format_text::Highlight::None, cx)
+            }))
+            .on_action(cx.listener(|this, _: &HighlightAccent, _, cx| {
+                this.set_highlight(super::format_text::Highlight::Accent, cx)
+            }))
+            .on_action(cx.listener(|this, _: &HighlightPurple, _, cx| {
+                this.set_highlight(super::format_text::Highlight::Purple, cx)
+            }))
+            .on_action(cx.listener(|this, _: &HighlightPink, _, cx| {
+                this.set_highlight(super::format_text::Highlight::Pink, cx)
+            }))
+            .on_action(cx.listener(|this, _: &HighlightOrange, _, cx| {
+                this.set_highlight(super::format_text::Highlight::Orange, cx)
+            }))
+            .on_action(cx.listener(|this, _: &HighlightMint, _, cx| {
+                this.set_highlight(super::format_text::Highlight::Mint, cx)
+            }))
+            .on_action(cx.listener(|this, _: &HighlightBlue, _, cx| {
+                this.set_highlight(super::format_text::Highlight::Blue, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowLists, _, cx| this.open_lists(cx)))
             .on_action(cx.listener(|this, _: &AlignLeft, _, cx| {
-                this.set_alignment(gpui::TextAlign::Left, cx)
+                this.set_alignment(rich::Alignment::Left, cx)
             }))
             .on_action(cx.listener(|this, _: &AlignCentre, _, cx| {
-                this.set_alignment(gpui::TextAlign::Center, cx)
+                this.set_alignment(rich::Alignment::Center, cx)
+            }))
+            .on_action(cx.listener(|this, _: &AlignJustify, _, cx| {
+                this.set_alignment(rich::Alignment::Justified, cx)
             }))
             .on_action(cx.listener(|this, _: &AlignRight, _, cx| {
-                this.set_alignment(gpui::TextAlign::Right, cx)
+                this.set_alignment(rich::Alignment::Right, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowRuler, _, cx| this.toggle_show_ruler(cx)))
             .on_action(cx.listener(|this, _: &CopyRuler, _, cx| this.copy_ruler(cx)))
@@ -349,11 +464,11 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &SetLineEndingCr, _, cx| {
                 this.set_line_ending(document::LineEnding::Cr, cx)
             }))
-            .on_action(cx.listener(|this, _: &IncreaseFont, _, cx| this.increase_font(cx)))
-            .on_action(cx.listener(|this, _: &DecreaseFont, _, cx| this.decrease_font(cx)))
-            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.increase_font(cx)))
-            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.decrease_font(cx)))
-            .on_action(cx.listener(|this, _: &ActualSize, _, cx| this.actual_size(cx)))
+            .on_action(cx.listener(|this, _: &IncreaseFont, _, cx| this.bigger(cx)))
+            .on_action(cx.listener(|this, _: &DecreaseFont, _, cx| this.smaller(cx)))
+            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom(Some(0.1), cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.zoom(Some(-0.1), cx)))
+            .on_action(cx.listener(|this, _: &ActualSize, _, cx| this.zoom(None, cx)))
             .on_action(cx.listener(|_, _: &EnterFullScreen, window, _| window.toggle_fullscreen()))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.guarded(Pending::Close, window, cx)
@@ -515,8 +630,9 @@ impl Render for EditorView {
             .when(self.find_open || self.select_line_open, |d| {
                 d.child(self.render_find_bar(layout, cx))
             })
-            .child(if self.rtf_runs.is_some() {
-                self.render_rtf_preview(layout, cx).into_any_element()
+            .child(if self.rich_text {
+                self.render_rich_body(filename.clone(), accessible_value.clone(), cx)
+                    .into_any_element()
             } else if let Some(body) = long_line_body {
                 div()
                     .id("document-body")
@@ -550,9 +666,6 @@ impl Render for EditorView {
                     .min_h(px(0.0))
                     .v_flex()
                     .bg(self.text_background())
-                    .when(self.rich_text && self.show_ruler, |body| {
-                        body.child(self.render_ruler_bar(cx))
-                    })
                     .child(
                         TextField::new(&self.input)
                             .large()
@@ -562,8 +675,7 @@ impl Render for EditorView {
                             .disabled(!editable)
                             .font_family(font_family)
                             .text_size(px(size))
-                            .text_align(ruler.alignment)
-                            .line_height(px(line_height * ruler.line_spacing))
+                            .line_height(px(line_height))
                             .pl(px(TEXT_INSET_X))
                             .pr(px(TEXT_INSET_X))
                             .pt(px(0.0))
@@ -603,6 +715,20 @@ impl Render for EditorView {
                 d.child(
                     rmac_ui::dialog("text-editor-page-setup", self.render_page_setup_dialog(cx))
                         .aria_label("Page Setup")
+                        .attached(),
+                )
+            })
+            .when(self.colours_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-colours", self.render_colours_panel(cx))
+                        .aria_label("Colours")
+                        .attached(),
+                )
+            })
+            .when(self.lists_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-lists", self.render_lists_dialog(cx))
+                        .aria_label("List")
                         .attached(),
                 )
             })

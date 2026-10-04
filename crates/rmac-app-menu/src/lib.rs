@@ -657,33 +657,60 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Format",
         items: &[
+            // Character styles apply to rich text only (the app greys them
+            // out in a plain document, as TextEdit does): the selection's
+            // characters, or the next typing at an empty selection.
             submenu!(
                 "Font",
                 "text_editor::FontMenu",
                 [
-                    item!("Bigger", "text_editor::IncreaseFont", "⌘+"),
+                    item!("Bold", "text_editor::ToggleBold", "⌘B"),
+                    item!("Italic", "text_editor::ToggleItalic", "⌘I"),
+                    item!("Underline", "text_editor::ToggleUnderline", "⌘U"),
+                    submenu!(
+                        "Highlight",
+                        "text_editor::HighlightMenu",
+                        [
+                            item!("Accent", "text_editor::HighlightAccent", ""),
+                            item!("None", "text_editor::HighlightNone", ""),
+                            item!("Purple", "text_editor::HighlightPurple", ""),
+                            item!("Pink", "text_editor::HighlightPink", ""),
+                            item!("Orange", "text_editor::HighlightOrange", ""),
+                            item!("Mint", "text_editor::HighlightMint", ""),
+                            item!("Blue", "text_editor::HighlightBlue", ""),
+                        ]
+                    ),
+                    item!("Bigger", "text_editor::IncreaseFont", "⌘+", separator),
                     item!("Smaller", "text_editor::DecreaseFont", "⌘-"),
+                    item!("Show Colours", "text_editor::ShowColours", "⇧⌘C", separator),
+                    item!("Copy Style", "text_editor::CopyStyle", "⌥⌘C", separator),
+                    item!("Paste Style", "text_editor::PasteStyle", "⌥⌘V"),
                 ]
             ),
-            // Lulo's document model has no per-paragraph attributes
-            // (TE-03/TE-14): these alignment/ruler/spacing commands apply
-            // to the whole document at once, gated by Make Rich Text below.
+            // Paragraph attributes of the selected paragraphs (rich text).
             submenu!(
                 "Text",
                 "text_editor::TextFormatMenu",
                 [
                     item!("Align Left", "text_editor::AlignLeft", "⌘{"),
                     item!("Centre", "text_editor::AlignCentre", "⌘|"),
+                    item!("Justify", "text_editor::AlignJustify", ""),
                     item!("Align Right", "text_editor::AlignRight", "⌘}"),
                     item!("Show Ruler", "text_editor::ShowRuler", "⌘R", separator),
                     item!("Copy Ruler", "text_editor::CopyRuler", "⌃⌘C"),
                     item!("Paste Ruler", "text_editor::PasteRuler", "⌃⌘V"),
-                    item!("Spacing…", "text_editor::OpenSpacing", ""),
+                    item!("Spacing…", "text_editor::OpenSpacing", "", separator),
                 ]
             ),
-            item!("Make Rich Text", "text_editor::ToggleRichText", "⇧⌘T"),
-            item!("Wrap to Page", "text_editor::ToggleWrapToPage", "⇧⌘W"),
+            item!(
+                "Make Rich Text",
+                "text_editor::ToggleRichText",
+                "⇧⌘T",
+                separator
+            ),
             item!("Prevent Editing", "text_editor::PreventEditing", ""),
+            item!("Wrap to Page", "text_editor::ToggleWrapToPage", "⇧⌘W"),
+            item!("List…", "text_editor::ShowLists", "", separator),
         ],
     },
     MenuSpec {

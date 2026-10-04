@@ -3,7 +3,7 @@
 use super::*;
 
 struct NewPathRequest {
-    content: String,
+    content: SaveContent,
     format: document::TextFormat,
     then: Option<Pending>,
     forbidden_destination: Option<PathBuf>,
@@ -44,7 +44,7 @@ impl EditorView {
         if self.save_location == SaveLocation::Other {
             self.save_to_new_path_request(
                 NewPathRequest {
-                    content: self.document_text(cx),
+                    content: self.save_content(cx),
                     format: self.text_format,
                     then,
                     forbidden_destination: None,
@@ -63,13 +63,13 @@ impl EditorView {
             self.alert = Some(ActiveAlert::ConfirmSave(then));
             return;
         };
+        let content = self.save_content(cx);
         let path = directory.join(name);
         let path = if path.extension().is_none() {
-            path.with_extension("txt")
+            path.with_extension(content.default_extension())
         } else {
             path
         };
-        let content = self.document_text(cx);
         let format = self.text_format;
         self.file_busy = true;
         cx.notify();
@@ -109,10 +109,10 @@ impl EditorView {
     }
 
     pub(super) fn save_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy || self.rtf_runs.is_some() || self.file_action_blocked() {
+        if self.file_busy || self.file_action_blocked() {
             return;
         }
-        let content = self.document_text(cx);
+        let content = self.save_content(cx);
         self.save_to_new_path(content, self.text_format, None, None, window, cx);
     }
 
@@ -125,10 +125,6 @@ impl EditorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // The RTF preview is read-only — never write plain text over the .rtf.
-        if self.rtf_runs.is_some() {
-            return;
-        }
         if self.file_busy {
             return;
         }
@@ -138,8 +134,11 @@ impl EditorView {
             }
             return;
         }
-        let content = self.document_text(cx);
-        if let Some(path) = self.path.clone() {
+        let content = self.save_content(cx);
+        // A plain file made rich is never overwritten with RTF: it saves
+        // under a new `.rtf` name, as TextEdit asks for one.
+        let path = self.path.clone().filter(|_| !self.needs_rich_destination());
+        if let Some(path) = path {
             let Some(expected) = self.saved_bytes.clone() else {
                 self.alert = Some(ActiveAlert::Error {
                     title: "The file could not be saved.",
@@ -172,7 +171,7 @@ impl EditorView {
 
     pub(super) fn save_to_new_path(
         &mut self,
-        content: String,
+        content: SaveContent,
         format: document::TextFormat,
         then: Option<Pending>,
         forbidden_destination: Option<PathBuf>,
@@ -217,12 +216,21 @@ impl EditorView {
         // the format, not typed; a saved document's own name (with its
         // extension) is suggested as-is.
         let suggested_name = suggested_name.unwrap_or_else(|| {
-            self.path
-                .as_deref()
-                .and_then(Path::file_name)
-                .and_then(|name| name.to_str())
-                .unwrap_or("Untitled")
-                .to_owned()
+            let current = self.path.as_deref();
+            // A plain file made rich is offered under its `.rtf` name.
+            let name = if content.is_rich() && current.is_some_and(|path| !is_rich_text_path(path))
+            {
+                current
+                    .and_then(Path::file_stem)
+                    .and_then(|stem| stem.to_str())
+                    .map(|stem| format!("{stem}.rtf"))
+            } else {
+                current
+                    .and_then(Path::file_name)
+                    .and_then(|name| name.to_str())
+                    .map(ToOwned::to_owned)
+            };
+            name.unwrap_or_else(|| "Untitled".to_owned())
         });
         self.file_busy = true;
         cx.notify();
@@ -248,7 +256,7 @@ impl EditorView {
             // document's own, the same way the hidden extension in the
             // Save panel's Format popup would on the Mac.
             let path = if path.extension().is_none() {
-                path.with_extension("txt")
+                path.with_extension(content.default_extension())
             } else {
                 path
             };
@@ -280,8 +288,8 @@ impl EditorView {
 
     pub(super) fn finish_document_save(
         &mut self,
-        result: Result<document::DecodedDocument, SaveFailure>,
-        requested_text: String,
+        result: Result<SavedDocument, SaveFailure>,
+        requested: SaveContent,
         then: Option<Pending>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -289,11 +297,21 @@ impl EditorView {
         self.file_busy = false;
         match result {
             Ok(saved) => {
-                if saved.text != requested_text {
-                    self.install_document_text(saved.text, saved.longest_line, window, cx);
+                match (saved, requested) {
+                    (SavedDocument::Plain(saved), SaveContent::Plain(requested_text)) => {
+                        if saved.text != requested_text {
+                            self.install_document_text(saved.text, saved.longest_line, window, cx);
+                        }
+                        self.saved_bytes = Some(saved.original_bytes);
+                        self.text_format = saved.format;
+                    }
+                    (SavedDocument::Plain(saved), SaveContent::Rich(_)) => {
+                        self.saved_bytes = Some(saved.original_bytes);
+                    }
+                    (SavedDocument::Rich { original_bytes }, _) => {
+                        self.saved_bytes = Some(original_bytes);
+                    }
                 }
-                self.saved_bytes = Some(saved.original_bytes);
-                self.text_format = saved.format;
                 self.reset_document_watch();
                 let recovery_cleared = self.mark_clean(cx);
                 self.record_current_document(cx);

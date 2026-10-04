@@ -1,9 +1,9 @@
 //! Shared Edit ▸ Transformations behavior for editable text fields.
 
-use gpui::{App, Entity, EntityInputHandler as _, Window};
+use gpui::{App, Entity, Window};
 use unicode_segmentation::UnicodeSegmentation as _;
 
-use crate::InputState;
+use crate::text_assist::EditableText;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextTransformation {
@@ -35,16 +35,16 @@ fn transformed(text: &str, transformation: TextTransformation) -> String {
 /// Transform the selected text through the field's undoable edit path. The
 /// new selection follows the replacement even when Unicode case conversion
 /// changes its byte length (for example, `ß` → `SS`).
-pub fn transform_selection(
-    field: &Entity<InputState>,
+pub fn transform_selection<T: EditableText>(
+    field: &Entity<T>,
     transformation: TextTransformation,
     window: &mut Window,
     cx: &mut App,
 ) -> bool {
     let (range, replacement) = {
         let input = field.read(cx);
-        let range = input.selected_range();
-        let text = input.text().to_string();
+        let range = input.editable_selection();
+        let text = input.editable_text();
         let Some(selected) = text.get(range.clone()).filter(|text| !text.is_empty()) else {
             return false;
         };
@@ -56,8 +56,8 @@ pub fn transform_selection(
     };
     let end = range.start + replacement.len();
     field.update(cx, |input, cx| {
-        input.replace_text_in_range(None, &replacement, window, cx);
-        input.set_selected_range(range.start..end, cx);
+        input.replace_editable_range(range.clone(), &replacement, window, cx);
+        input.select_editable_range(range.start..end, window, cx);
     });
     true
 }

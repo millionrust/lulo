@@ -1,0 +1,396 @@
+{
+  "format": 1,
+  "note": "Summaries of the disposable-install station runs for 0.9.0-beta.1 (the full per-check JSON is the security-station-evidence workflow artifact). Run 37176094048's sr29-packagekit verdicts predate the corrected native semantics; see docs/security-review-0.9.0-beta.1.md.",
+  "runs": [
+    {
+      "candidate": {
+        "head_sha": "2f3ea7a4b0dd1a24007037cb3ab15fb992b65c84",
+        "run_id": 37152104352,
+        "version": "0.9.0~beta.1-38"
+      },
+      "format": 1,
+      "generated": "2026-10-04T04:06:08+00:00",
+      "results": [
+        {
+          "check": "candidate-provenance",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "artifact-contains-no-build-host-data",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "install-effects",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "native-and-sandbox-boundaries-explicit",
+              "domain": "packages"
+            },
+            {
+              "check": "rollback-and-uninstall-tested",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "package-permissions",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "architecture-and-file-inventory-exact",
+              "domain": "packages"
+            },
+            {
+              "check": "unpackaged-executables-rejected",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "package-lifecycle",
+          "failure": "package lifecycle failed",
+          "review_checks": [
+            {
+              "check": "rollback-and-uninstall-tested",
+              "domain": "packages"
+            }
+          ],
+          "status": "fail"
+        },
+        {
+          "check": "systemd-hardening",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "system-bus-callers-treated-untrusted",
+              "domain": "dbus-polkit"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "keyboard-relay",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "no-credential-collection",
+              "domain": "dbus-polkit"
+            },
+            {
+              "check": "no-shell-interpolation",
+              "domain": "desktop-entry-execution"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "polkit-policy",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "interactive-authorization-only-from-user-action",
+              "domain": "dbus-polkit"
+            },
+            {
+              "check": "denial-and-cancel-distinct",
+              "domain": "dbus-polkit"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "lock-units",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "tty-recovery-proven",
+              "domain": "lock-boundary"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "untrusted-open",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "untrusted-content-never-executed",
+              "domain": "file-operations"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "terminal-wrapper",
+          "failure": "the terminal did not preserve the argv boundary",
+          "review_checks": [
+            {
+              "check": "terminal-wrapper-argument-boundary",
+              "domain": "desktop-entry-execution"
+            }
+          ],
+          "status": "fail"
+        },
+        {
+          "check": "sr29-packagekit",
+          "failure": "SR-29 native cases failed: safe_scheduled, stale_cancelled, cancellation_failure_warns",
+          "review_checks": [
+            {
+              "check": "backend-failure-recovers-authoritatively",
+              "domain": "updates"
+            },
+            {
+              "check": "cancellation-and-restart-readback",
+              "domain": "updates"
+            },
+            {
+              "check": "signature-failure-fails-closed",
+              "domain": "updates"
+            },
+            {
+              "check": "trusted-only-install-enforced",
+              "domain": "updates"
+            }
+          ],
+          "status": "fail"
+        },
+        {
+          "check": "journal-redaction",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "no-secrets-credentials-or-tokens",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "no-private-paths-or-content",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "control-characters-normalized",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "failure-text-and-output-bounded",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "bus-peers-and-session-identities-redacted",
+              "domain": "logs-diagnostics"
+            }
+          ],
+          "status": "pass"
+        }
+      ],
+      "runner": {
+        "image_os": "ubuntu26",
+        "image_version": "20260927.149.1",
+        "kernel": "7.0.0-1012-azure",
+        "station": "github-disposable-ubuntu-26.04",
+        "station_scripts_revision": "a19e5ae8233f7b4e6f600d6604aa0043359f389a",
+        "workflow_run": "https://github.com/millionrust/lulo/actions/runs/37175024540"
+      }
+    },
+    {
+      "candidate": {
+        "head_sha": "2f3ea7a4b0dd1a24007037cb3ab15fb992b65c84",
+        "run_id": 37152104352,
+        "version": "0.9.0~beta.1-38"
+      },
+      "format": 1,
+      "generated": "2026-10-04T04:25:28+00:00",
+      "results": [
+        {
+          "check": "candidate-provenance",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "artifact-contains-no-build-host-data",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "install-effects",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "native-and-sandbox-boundaries-explicit",
+              "domain": "packages"
+            },
+            {
+              "check": "rollback-and-uninstall-tested",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "package-permissions",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "architecture-and-file-inventory-exact",
+              "domain": "packages"
+            },
+            {
+              "check": "unpackaged-executables-rejected",
+              "domain": "packages"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "package-lifecycle",
+          "failure": "package lifecycle failed",
+          "review_checks": [
+            {
+              "check": "rollback-and-uninstall-tested",
+              "domain": "packages"
+            }
+          ],
+          "status": "fail"
+        },
+        {
+          "check": "systemd-hardening",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "system-bus-callers-treated-untrusted",
+              "domain": "dbus-polkit"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "keyboard-relay",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "no-credential-collection",
+              "domain": "dbus-polkit"
+            },
+            {
+              "check": "no-shell-interpolation",
+              "domain": "desktop-entry-execution"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "polkit-policy",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "interactive-authorization-only-from-user-action",
+              "domain": "dbus-polkit"
+            },
+            {
+              "check": "denial-and-cancel-distinct",
+              "domain": "dbus-polkit"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "lock-units",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "tty-recovery-proven",
+              "domain": "lock-boundary"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "untrusted-open",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "untrusted-content-never-executed",
+              "domain": "file-operations"
+            }
+          ],
+          "status": "pass"
+        },
+        {
+          "check": "terminal-wrapper",
+          "failure": "the terminal did not preserve the argv boundary",
+          "review_checks": [
+            {
+              "check": "terminal-wrapper-argument-boundary",
+              "domain": "desktop-entry-execution"
+            }
+          ],
+          "status": "fail"
+        },
+        {
+          "check": "sr29-packagekit",
+          "failure": "SR-29 native cases failed: stale_cancelled, cancellation_failure_warns, destructive_scheduled_cancelled",
+          "review_checks": [
+            {
+              "check": "backend-failure-recovers-authoritatively",
+              "domain": "updates"
+            },
+            {
+              "check": "cancellation-and-restart-readback",
+              "domain": "updates"
+            },
+            {
+              "check": "signature-failure-fails-closed",
+              "domain": "updates"
+            },
+            {
+              "check": "trusted-only-install-enforced",
+              "domain": "updates"
+            }
+          ],
+          "status": "fail"
+        },
+        {
+          "check": "journal-redaction",
+          "failure": null,
+          "review_checks": [
+            {
+              "check": "no-secrets-credentials-or-tokens",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "no-private-paths-or-content",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "control-characters-normalized",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "failure-text-and-output-bounded",
+              "domain": "logs-diagnostics"
+            },
+            {
+              "check": "bus-peers-and-session-identities-redacted",
+              "domain": "logs-diagnostics"
+            }
+          ],
+          "status": "pass"
+        }
+      ],
+      "runner": {
+        "image_os": "ubuntu26",
+        "image_version": "20260927.149.1",
+        "kernel": "7.0.0-1012-azure",
+        "station": "github-disposable-ubuntu-26.04",
+        "station_scripts_revision": "066f253c1a15351153cff55decc7c7d258073550",
+        "workflow_run": "https://github.com/millionrust/lulo/actions/runs/37176094048"
+      }
+    }
+  ]
+}

@@ -120,30 +120,30 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 ## Known issues: security findings accepted for Beta
 
 Three Low findings from the
-[security review](security-review-0.9.0-beta.1.md) stay open for Beta, each
-with a mitigation. They still count against the security gate.
+[security review](security-review-0.9.0-beta.1.md) are open. Each has a
+mitigation, and all three still count against the security gate. SR-15 and
+SR-18 are accepted for Beta. SR-38 is waiting for the owner's decision.
 
 - **SR-15, build paths in binaries.** A package built on your own machine
-  may name your home directory in its panic messages. Source builds now remap
-  the checkout and Cargo home paths, and native package verification now scans
-  inventoried executables for home-directory paths. A fresh package build has
-  not yet passed that check. Don't share locally built packages until their
-  binaries are checked.
+  may name your home directory. The CI-built candidate passed the package
+  scan with no personal path, but four shell binaries (Dock, App Switcher,
+  Mission Control, OSD) still embed the builder's checkout path through
+  development asset fallbacks. Don't share locally built packages.
 - **SR-18, release build inputs.** Release containers, the rustup installer,
   and the `cargo-cyclonedx` source archive now have content pins in source.
   Rust toolchain artifacts are still selected by version, and the changed
   workflow has not had a native release run. Actions are pinned by commit,
   Rust dependencies are locked and checked by cargo-deny, and every package
   carries a provenance attestation that `install.sh --from-release` verifies.
-- **SR-29, automatic updates can remove a package.** The daily automatic
-  updater in the installed `8ba31b82` build schedules Lulo OS and security
-  updates for the next restart without first checking whether they remove
-  anything. The newer source also re-simulates previously scheduled plans and
-  cancels still-matching unsafe or unverifiable offline triggers, but has not
-  been installed or tested with native PackageKit.
-  Only signed, trusted packages are used. To review every update yourself, turn off
-  the Automatic Updates switches in System Settings > General > Software
-  Update and use Update Now, which shows any removal before it proceeds.
+- **Automatic updates on older installs (SR-29, fixed).** Builds before the
+  fix, such as `8ba31b82`, schedule automatic updates without first checking
+  whether they remove a package. Current packages simulate first and never
+  schedule a removal; this was tested against the real PackageKit. On an older
+  install, turn off Automatic Updates and use Update Now until you update.
+- **SR-38, notifications while locked.** Banners are not suppressed while
+  the screen is locked. The lock screen hides them, but with the screen
+  reader on, an incoming notification's text may be read aloud. Turn the
+  screen reader off before leaving a locked machine.
 
 `install.sh --from-release` now needs `gh` (and `gh auth login`) to verify
 who built the packages. Without it the install stops; `--allow-unattested`

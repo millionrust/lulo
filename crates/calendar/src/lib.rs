@@ -196,7 +196,13 @@ pub fn fixture_week(first_day: NaiveDate) -> WeekSnapshot {
         },
     ];
     let mut events = Vec::new();
-    let mut add = |day: i64, from: u32, to: u32, title, location, calendar, all_day| {
+    let mut add = |day: i64,
+                   from: u32,
+                   to: u32,
+                   title: &str,
+                   location: &str,
+                   calendar: usize,
+                   all_day: bool| {
         let date = first_day + Duration::days(day);
         // Fixture hours are UTC, making the screenshot reproducible across machines.
         let start = Utc.from_utc_datetime(&date.and_hms_opt(from, 0, 0).unwrap());

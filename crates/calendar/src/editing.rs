@@ -1,8 +1,14 @@
 //! Event persistence and undo commands. Call `load` and `apply` only on workers.
 
-use crate::{Calendar, CalendarColor, Event, WeekSnapshot};
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
-use rmac_calendar_store::{expand, Calendar as IcalCalendar, Event as IcalEvent, TimeValue, Zone};
+use crate::WeekSnapshot;
+#[cfg(target_os = "linux")]
+use crate::{Calendar, CalendarColor, Event};
+#[cfg(target_os = "linux")]
+use chrono::Datelike;
+use chrono::{DateTime, Duration, NaiveDate, Utc};
+#[cfg(target_os = "linux")]
+use rmac_calendar_store::expand;
+use rmac_calendar_store::{Calendar as IcalCalendar, Event as IcalEvent, TimeValue, Zone};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_UID: AtomicU64 = AtomicU64::new(1);

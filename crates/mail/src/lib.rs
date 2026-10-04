@@ -121,6 +121,28 @@ pub struct MessageAttachment {
     pub bytes: Vec<u8>,
 }
 
+/// How far along `Message::body`/`attachment` are towards reflecting the
+/// message's real content. A live message loads as a lightweight row
+/// first; `crate::live` fetches the full body only once it is actually
+/// selected, so a 10 000-message mailbox never parses MIME for rows nobody
+/// has opened, and a header-only message (any mail from before an
+/// account's first full sync) downloads it on demand instead of showing
+/// just the one-line preview forever.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BodyState {
+    /// Nothing requested yet.
+    NotLoaded,
+    /// Checking whether a copy is already cached locally.
+    Loading,
+    /// No local copy; fetching it over the network.
+    Downloading,
+    /// `body`/`attachment` reflect the real content.
+    Loaded,
+    /// The network fetch failed (offline, server error, etc). The message
+    /// to show the person, with a Retry action.
+    Failed(String),
+}
+
 #[derive(Clone, Debug)]
 pub struct Message {
     pub id: String,
@@ -145,12 +167,7 @@ pub struct Message {
     pub attachment: Option<MessageAttachment>,
     pub thread_id: String,
     pub body: RichText,
-    /// Whether `body`/`attachment` reflect the message's real content yet.
-    /// A live message loads as a lightweight row first; `crate::live`
-    /// fetches and parses the full body in the background only once it is
-    /// actually selected, so a 10 000-message mailbox never parses MIME for
-    /// rows nobody has opened.
-    pub body_loaded: bool,
+    pub body_state: BodyState,
     pub junk_origin: Option<Mailbox>,
 }
 
@@ -478,7 +495,7 @@ impl MailState {
                 .messages
                 .iter()
                 .find(|message| message.id == selected_id)
-                .filter(|message| message.body_loaded)
+                .filter(|message| message.body_state == BodyState::Loaded)
                 .cloned();
             if let Some(loaded) = already_loaded {
                 if let Some(refreshed) = messages
@@ -487,7 +504,7 @@ impl MailState {
                 {
                     refreshed.body = loaded.body;
                     refreshed.attachment = loaded.attachment;
-                    refreshed.body_loaded = true;
+                    refreshed.body_state = BodyState::Loaded;
                 }
             }
         }
@@ -505,7 +522,7 @@ impl MailState {
     }
 
     /// Replaces a lightweight live row's placeholder body/attachment with
-    /// its real, parsed content once `crate::live::load_body` has fetched
+    /// its real, parsed content once `crate::live` has loaded or fetched
     /// it in the background. A no-op if `id` has since scrolled out or
     /// changed mailbox.
     pub fn set_loaded_body(
@@ -517,7 +534,16 @@ impl MailState {
         if let Some(message) = self.messages.iter_mut().find(|message| message.id == id) {
             message.body = body;
             message.attachment = attachment;
-            message.body_loaded = true;
+            message.body_state = BodyState::Loaded;
+        }
+    }
+
+    /// Marks a message's body loading/downloading/failed, for the
+    /// "Downloading…"/"Retry" states while `crate::live::fetch_and_store_body`
+    /// runs in the background. A no-op if `id` has since scrolled out.
+    pub fn set_body_state(&mut self, id: &str, state: BodyState) {
+        if let Some(message) = self.messages.iter_mut().find(|message| message.id == id) {
+            message.body_state = state;
         }
     }
 
@@ -941,7 +967,7 @@ fn fixture_message(
         attachment,
         thread_id: thread_id.to_owned(),
         body,
-        body_loaded: true,
+        body_state: BodyState::Loaded,
         junk_origin: None,
     }
 }

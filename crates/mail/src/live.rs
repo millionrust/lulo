@@ -4,6 +4,8 @@
 //! thread — `view.rs` calls these through `cx.background_executor()`,
 //! mirroring `compose_window.rs`'s pattern for drafts and attachments.
 
+use std::sync::Arc;
+
 use chrono::{Datelike, Local, TimeZone};
 use rmac_mail::{
     Mailbox, Message, MessageAttachment, Persist, PersistChange, RealMailbox, SpecialUse,
@@ -118,7 +120,7 @@ fn summary_to_message(mailbox: Mailbox, account: Uuid, summary: MessageSummary) 
         // one-row thread for now (`docs/parity.md` MAIL-4).
         thread_id,
         body,
-        body_loaded: false,
+        body_state: rmac_mail::BodyState::NotLoaded,
         junk_origin: None,
     }
 }
@@ -169,11 +171,24 @@ pub fn load(accounts: &[ComposeAccount]) -> (Vec<Mailbox>, Vec<Message>) {
     (mailboxes, messages)
 }
 
-/// Fetches and parses one message's full body, off the GPUI thread, for
-/// `MailState::set_loaded_body` once a lightweight live row is selected. A
-/// message synced header-only (no cached blob yet) falls back to its
-/// preview text rather than blocking on a network fetch.
-pub fn load_body(
+/// The one inline (non-CID) attachment Mail's viewer shows a chip for, if
+/// any, from a parsed message.
+fn attachment_from(attachments: Vec<rmac_mail_mime::Attachment>) -> Option<MessageAttachment> {
+    attachments
+        .into_iter()
+        .find(|attachment| attachment.content_id.is_none())
+        .map(|attachment| MessageAttachment {
+            filename: attachment.filename,
+            size_label: human_size(attachment.bytes.len()),
+            bytes: attachment.bytes,
+        })
+}
+
+/// Whether `row_id` already has a body cached locally — a quick, local-only
+/// check, off the GPUI thread. `None` means there is nothing cached yet
+/// (synced header-only), not that the message has no body: the caller
+/// should then fall back to `fetch_and_store_body`.
+pub fn cached_body(
     account: Uuid,
     mailbox_id: i64,
     row_id: i64,
@@ -184,25 +199,45 @@ pub fn load_body(
     if summary.mailbox_id != mailbox_id {
         return None;
     }
-    let Some(hash) = &summary.body_hash else {
-        return Some((rmac_mail_mime::RichText::from_plain(&summary.preview), None));
-    };
-    let Ok(bytes) = storage.read_blob(hash) else {
-        return Some((rmac_mail_mime::RichText::from_plain(&summary.preview), None));
-    };
-    let Ok(parsed) = rmac_mail_mime::parse(&bytes) else {
-        return Some((rmac_mail_mime::RichText::from_plain(&summary.preview), None));
-    };
-    let attachment = parsed
-        .attachments
-        .into_iter()
-        .find(|attachment| attachment.content_id.is_none())
-        .map(|attachment| MessageAttachment {
-            filename: attachment.filename,
-            size_label: human_size(attachment.bytes.len()),
-            bytes: attachment.bytes,
-        });
-    Some((parsed.rich_text, attachment))
+    let hash = summary.body_hash?;
+    let bytes = storage.read_blob(&hash).ok()?;
+    let parsed = rmac_mail_mime::parse(&bytes).ok()?;
+    Some((parsed.rich_text, attachment_from(parsed.attachments)))
+}
+
+/// Downloads a header-only message's full body over the network — the way
+/// Mac Mail downloads on demand when you open an older message — and
+/// caches it, so the viewer never again has to wait for it. Blocking: call
+/// this off the GPUI thread. Never marks the message \Seen; that stays
+/// Mail's own decision, made separately when the message is selected.
+pub fn fetch_and_store_body(
+    runtime: Arc<rmac_mail_runtime::Runtime>,
+    account: Uuid,
+    account_path: String,
+    mailbox_name: String,
+    mailbox_id: i64,
+    row_id: i64,
+) -> Result<(rmac_mail_mime::RichText, Option<MessageAttachment>), String> {
+    let root = data_root().ok_or("Mail could not find its data folder")?;
+    let mut storage =
+        MailStorage::open(&root, account).map_err(|_| "Mail cache unavailable".to_owned())?;
+    let summary = storage
+        .get_message(row_id)
+        .map_err(|_| "Mail cache unavailable".to_owned())?
+        .ok_or_else(|| "This message no longer exists".to_owned())?;
+    if summary.mailbox_id != mailbox_id {
+        return Err("This message has moved".to_owned());
+    }
+    let bytes = runtime
+        .fetch_body_now(&account_path, &mailbox_name, summary.uid)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "This message is no longer on the server".to_owned())?;
+    let parsed =
+        rmac_mail_mime::parse(&bytes).map_err(|_| "This message could not be read".to_owned())?;
+    storage
+        .attach_body(row_id, &bytes, &parsed.plain_text)
+        .map_err(|_| "Mail cache unavailable".to_owned())?;
+    Ok((parsed.rich_text, attachment_from(parsed.attachments)))
 }
 
 fn human_size(bytes: usize) -> String {

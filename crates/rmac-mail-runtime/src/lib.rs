@@ -97,6 +97,25 @@ pub trait Backend: Send {
     fn interrupt(&self) -> Option<rmac_mail_imap::Interrupt> {
         None
     }
+    /// Fetches one message's full body on demand — Mail calls this when
+    /// someone opens a message that was only ever synced header-only, over
+    /// a connection separate from this account's own long-lived one. Must
+    /// never mark the message \Seen; that stays Mail's own decision. The
+    /// default errs for a backend that does not support this yet.
+    fn fetch_one(&mut self, _mailbox_name: &str, _uid: i64) -> Result<Option<Vec<u8>>, Error> {
+        Err(Error::Unsupported(
+            "downloading a single message is not supported for this account",
+        ))
+    }
+    /// Downloads bodies for the newest messages per mailbox that are still
+    /// header-only, in the background right after a sync — the way Mail
+    /// prefetches recent mail instead of leaving it a one-line preview
+    /// until someone opens it. Bounded and run-once per call: once nothing
+    /// is missing, it is a handful of cheap local lookups, not a poll. The
+    /// default is a no-op for a backend with nothing to prefetch.
+    fn prefetch_recent_bodies(&mut self, _store: &mut MailStorage) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 pub trait BackendFactory: Send + Sync + 'static {
@@ -124,6 +143,7 @@ pub enum Error {
     Mime(rmac_mail_mime::Error),
     StaleUidValidity,
     GraphUnavailable,
+    Unsupported(&'static str),
 }
 
 impl std::fmt::Display for Error {
@@ -136,6 +156,7 @@ impl std::fmt::Display for Error {
             Self::Mime(_) => "mail message could not be parsed",
             Self::StaleUidValidity => "mailbox identity changed; local changes need review",
             Self::GraphUnavailable => "Microsoft mail sync unavailable",
+            Self::Unsupported(message) => message,
         })
     }
 }
@@ -271,6 +292,28 @@ impl Runtime {
             worker.send(Command::Sync);
         }
     }
+
+    /// Fetches one message's full body right now, over a short-lived
+    /// connection separate from the account's own long-lived IDLE
+    /// connection, so opening an older, header-only message downloads it
+    /// instead of showing just the one-line preview forever. Blocking —
+    /// call this off the UI thread. Never marks the message \Seen.
+    pub fn fetch_body_now(
+        &self,
+        account_path: &str,
+        mailbox_name: &str,
+        uid: i64,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let account = self
+            .workers
+            .lock()
+            .expect("mail workers lock poisoned")
+            .get(account_path)
+            .map(|worker| worker.account.clone())
+            .ok_or(Error::Account)?;
+        let mut backend = self.factory.connect(&account)?;
+        backend.fetch_one(mailbox_name, uid)
+    }
 }
 
 impl Drop for Runtime {
@@ -334,6 +377,11 @@ fn run_worker(
                     unread_inbox: store.unread_inbox_count().unwrap_or(0),
                     online: true,
                 });
+                // Best-effort: a prefetch hiccup must never fail the sync
+                // that just succeeded. Once every mailbox has caught up
+                // this is a handful of local lookups that find nothing
+                // missing, not an ongoing poll.
+                let _ = backend.prefetch_recent_bodies(&mut store);
             }
             if result.is_ok() && matches!(&account.transport, Transport::Imap(_)) {
                 loop {
@@ -347,6 +395,7 @@ fn run_worker(
                         unread_inbox: store.unread_inbox_count().unwrap_or(0),
                         online: true,
                     });
+                    let _ = backend.prefetch_recent_bodies(&mut store);
                 }
             }
             result.map(|_| ())

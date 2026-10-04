@@ -594,6 +594,35 @@ impl MailStorage {
         ).optional()?)
     }
 
+    /// Attaches a full body to a message that was synced header-only,
+    /// whether fetched on demand when someone opens it or prefetched in
+    /// the background — without touching its flags (the fetch itself must
+    /// never mark a message \Seen; that stays the app's own decision).
+    pub fn attach_body(&mut self, message_id: i64, bytes: &[u8], body_text: &str) -> Result<()> {
+        let hash = self.write_blob(bytes)?;
+        self.connection.execute(
+            "UPDATE messages SET body_hash=?1, body_text=?2 WHERE id=?3",
+            params![hash, body_text, message_id],
+        )?;
+        Ok(())
+    }
+
+    /// The newest `limit` message UIDs in one mailbox that have no cached
+    /// body yet (synced header-only). Drives both the on-demand "open a
+    /// message" fetch and the background prefetch of recent mail.
+    pub fn uids_missing_body(&self, mailbox_id: i64, limit: usize) -> Result<Vec<i64>> {
+        let mut statement = self.connection.prepare(
+            "SELECT uid FROM messages WHERE mailbox_id=?1 AND body_hash IS NULL \
+             ORDER BY received_at DESC LIMIT ?2",
+        )?;
+        let rows = statement.query_map(
+            params![mailbox_id, i64::try_from(limit).unwrap_or(i64::MAX)],
+            |row| row.get(0),
+        )?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
+    }
+
     pub fn search(
         &self,
         text: &str,

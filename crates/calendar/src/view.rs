@@ -1,8 +1,8 @@
 use chrono::{Datelike, Duration, NaiveDate, Timelike};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, AnyElement, ClickEvent, Context, Entity, FocusHandle,
-    FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement as _, Render, Role, ScrollDelta, ScrollWheelEvent, SharedString,
+    div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, ClickEvent, Context, Entity,
+    FocusHandle, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, ParentElement as _, Render, Role, ScrollDelta, ScrollWheelEvent, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_calendar::{
@@ -1361,6 +1361,7 @@ impl CalendarView {
             .w(px(260.0))
             .child(rmac_ui::SearchField::new(&self.search_input).small());
         let mut popover = div()
+            .id("calendar-search-results")
             .absolute()
             .right(px(9.0))
             .top(px(44.0))

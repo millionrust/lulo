@@ -204,13 +204,14 @@ impl SettingsView {
                 .children([("Monday", false), ("Sunday", true)].into_iter().map(
                     |(label, sunday)| {
                         let selected = general.start_of_week_sunday == sunday;
-                        let mut next = week_general.clone();
+                        let week_general = week_general.clone();
                         Button::new(format!("calendar-settings-week-{label}"), label)
                             .small()
                             .selected(selected)
                             .on_click(cx.listener(move |this, _, _, cx| {
+                                let mut next = week_general.clone();
                                 next.start_of_week_sunday = sunday;
-                                this.set_general(next.clone(), cx);
+                                this.set_general(next, cx);
                             }))
                     },
                 ));

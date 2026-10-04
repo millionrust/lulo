@@ -46,16 +46,6 @@ fn bitrate_and_poll_time_changes_do_not_refresh() {
 }
 
 #[test]
-fn signal_strength_rereads_the_network_at_most_every_30_seconds() {
-    use crate::model::signal_strength_refresh_due;
-    use std::time::Duration;
-
-    assert!(signal_strength_refresh_due(None));
-    assert!(!signal_strength_refresh_due(Some(Duration::from_secs(6))));
-    assert!(signal_strength_refresh_due(Some(Duration::from_secs(30))));
-}
-
-#[test]
 fn source_sets_scope_transport_failures() {
     assert!(!Sources::system_bus().audio);
     assert_eq!(

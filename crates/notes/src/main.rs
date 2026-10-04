@@ -368,8 +368,6 @@ struct NotesView {
     /// behaviour is session-only (see docs/parity.md).
     attachment_chip_paths:
         std::collections::BTreeMap<NoteId, std::collections::BTreeMap<String, std::path::PathBuf>>,
-    /// Notes ▸ Settings… ▸ New notes start with:
-    new_note_body_style: NewNoteBodyStyle,
     /// Notes ▸ Settings… ▸ Automatically sort ticked items.
     auto_sort_ticked_items: bool,
     /// Help ▸ Using Smart Folders/Using Tags: `Some(body text)` while the
@@ -493,7 +491,6 @@ impl NotesView {
             hidden_toolbar_items: BTreeSet::new(),
             customise_toolbar_open: false,
             attachment_chip_paths: std::collections::BTreeMap::new(),
-            new_note_body_style: NewNoteBodyStyle::default(),
             auto_sort_ticked_items: false,
             notes_help: None,
             attachment_rename: None,

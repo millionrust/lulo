@@ -305,10 +305,8 @@ def check_candidate_provenance(state: dict) -> dict:
     state["last_observations"] = observations
     state["version"] = document.get("version")
     require(verify.returncode == 0, "verify-native-packages.py failed on the candidate")
-    # SR-15 is about a person's home directory (local and reference-PC
-    # builds). Paths of the disposable CI builder are recorded above but name
-    # nobody; only a real user home fails the check.
-    require(not personal, "rmac packages contain a personal home-directory path")
+    # SR-15: no build-host path at all, personal or the CI builder's.
+    require(not hits, "rmac packages contain a build-host path")
     return observations
 
 

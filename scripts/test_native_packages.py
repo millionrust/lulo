@@ -80,6 +80,19 @@ class NativePackageContractTests(unittest.TestCase):
             )
             self.assertEqual(scanned, binary.stat().st_size)
 
+            # Literals are packed back to back, so a leaked checkout path can
+            # directly follow other text (SR-15).
+            binary.write_bytes(
+                b"/usr/share/icons/hicolor/scalable/apps/home/runner/work/lulo/shell\0"
+            )
+            with self.assertRaisesRegex(
+                package_verifier.VerificationError,
+                "contains a build-host home path",
+            ):
+                package_verifier._scan_binary_for_build_host_home(
+                    binary, package_verifier.MAX_PACKAGE_SET_SCAN_BYTES
+                )
+
             binary.write_bytes(b"location: /Users/alice/checkout/rmac/src/lib.rs\0")
             with self.assertRaisesRegex(
                 package_verifier.VerificationError,

@@ -207,12 +207,15 @@ REVIEW_SOURCES = tuple(
 # on a GitHub-hosted runner; it adds to the H8 hardware stations and never
 # replaces one.
 DISPOSABLE_STATION = "disposable-install"
-# Owner-recorded station waivers, by (tier, station). A waived station is
+# Owner-recorded station waivers, by (tier, station). The owner has neither an
+# AMD nor an NVIDIA desktop, so Beta 1 ships without both (2026-10-04). A waived station is
 # written into the evidence as {"id", "status": "waived", "waiver": <id>} with
 # this exact decision id. A waiver only removes that station's run from the
 # gate: every check must still pass, and every other station must still run.
+BETA1_DESKTOP_WAIVER = "owner-2026-10-04-beta1-without-amd-nvidia-desktops"
 STATION_WAIVERS = {
-    ("beta", "amd64-nvidia-desktop"): "owner-2026-10-04-beta1-without-nvidia",
+    ("beta", "amd64-amd-desktop"): BETA1_DESKTOP_WAIVER,
+    ("beta", "amd64-nvidia-desktop"): BETA1_DESKTOP_WAIVER,
 }
 
 

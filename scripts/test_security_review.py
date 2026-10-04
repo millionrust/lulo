@@ -162,7 +162,7 @@ class SecurityReviewTests(unittest.TestCase):
             with patch.object(verify, "_verify_checkout"):
                 verify.verify_evidence(contract, path, tier=tier, revision=revision)
 
-    def test_beta_needs_the_disposable_install_and_records_the_nvidia_waiver(self):
+    def test_beta_needs_the_disposable_install_and_records_the_desktop_waivers(self):
         contract = verify.load_contract()
         revision = "e" * 40
         document = self._passing_beta_evidence(contract, revision)
@@ -180,11 +180,13 @@ class SecurityReviewTests(unittest.TestCase):
             {
                 "id": "amd64-nvidia-desktop",
                 "status": "waived",
-                "waiver": "owner-2026-10-04-beta1-without-nvidia",
+                "waiver": "owner-2026-10-04-beta1-without-amd-nvidia-desktops",
             },
         )
         self._verify_document(contract, document, revision)
-        # A real NVIDIA run is still accepted in place of the waiver.
+        self.assertEqual(document["stations"][1]["status"], "waived")
+        # A real run is still accepted in place of either waiver.
+        document["stations"][1] = {"id": "amd64-amd-desktop", "status": "pass"}
         document["stations"][2] = {"id": "amd64-nvidia-desktop", "status": "pass"}
         self._verify_document(contract, document, revision)
 
@@ -200,7 +202,7 @@ class SecurityReviewTests(unittest.TestCase):
             document["stations"][index] = {
                 "id": station,
                 "status": "waived",
-                "waiver": "owner-2026-10-04-beta1-without-nvidia",
+                "waiver": "owner-2026-10-04-beta1-without-amd-nvidia-desktops",
             }
             with self.assertRaisesRegex(verify.SecurityError, "required station"):
                 self._verify_document(contract, document, revision)
@@ -224,7 +226,7 @@ class SecurityReviewTests(unittest.TestCase):
         document["stations"][3] = {
             "id": "amd64-nvidia-desktop",
             "status": "waived",
-            "waiver": "owner-2026-10-04-beta1-without-nvidia",
+            "waiver": "owner-2026-10-04-beta1-without-amd-nvidia-desktops",
         }
         with self.assertRaisesRegex(verify.SecurityError, "required station"):
             self._verify_document(contract, document, revision, tier="one-dot-zero")

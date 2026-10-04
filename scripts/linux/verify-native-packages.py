@@ -45,9 +45,11 @@ MAX_PACKAGE_SET_SCAN_BYTES = 4 * 1024 * 1024 * 1024
 PATH_SCAN_CHUNK_BYTES = 64 * 1024
 # Require a username and at least one following path component. This avoids
 # rejecting ordinary references such as the generic string "/home/" while
-# catching compiler/panic locations from a developer checkout.
+# catching compiler/panic locations from a developer checkout. There is no
+# lookbehind: string literals are packed back to back in .rodata, so a leaked
+# path often directly follows other text ("…/apps/home/<user>/…", SR-15).
 BUILD_HOST_HOME_PATH = re.compile(
-    rb"(?<![A-Za-z0-9_.-])/(?:home|Users)/[A-Za-z0-9_.-]+/[A-Za-z0-9_./+@ -]*"
+    rb"/(?:home|Users)/[A-Za-z0-9_.-]+/[A-Za-z0-9_./+@ -]*"
 )
 
 

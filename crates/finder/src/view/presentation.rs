@@ -547,6 +547,7 @@ impl Render for FinderView {
                         can_paste,
                         self.trash_view,
                         self.applications_view,
+                        self.view == ViewMode::Icon,
                         undo_label,
                         self.selected_tag_checks(),
                         self.file_words,

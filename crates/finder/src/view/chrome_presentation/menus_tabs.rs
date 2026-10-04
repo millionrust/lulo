@@ -93,6 +93,7 @@ impl FinderView {
         _can_paste: bool,
         trash_view: bool,
         applications_view: bool,
+        icon_view: bool,
         undo_label: Option<String>,
         tag_checks: [rmac_ui::MenuCheck; 7],
         file_words: rmac_locale::FileVocabulary,
@@ -290,9 +291,17 @@ impl FinderView {
                 .separator()
                 .submenu("View", Self::build_view_submenu(pos))
                 .item("Use Groups", Box::new(UseGroups))
-                .submenu("Sort By", Self::build_sort_submenu(pos, sort_key))
-                .item("Clean Up", Box::new(CleanUp))
-                .submenu("Clean Up By", Self::build_clean_up_by_submenu(pos))
+                .submenu("Sort By", Self::build_sort_submenu(pos, sort_key));
+            // Clean Up / Clean Up By only make sense for Icon view's
+            // auto-flowed grid (matches the View menu's own gating in
+            // presentation.rs); List/Column/Gallery backgrounds never show
+            // them on the Mac.
+            if icon_view {
+                m = m
+                    .item("Clean Up", Box::new(CleanUp))
+                    .submenu("Clean Up By", Self::build_clean_up_by_submenu(pos));
+            }
+            m = m
                 .item("Show View Options", Box::new(ShowViewOptions))
                 .separator()
                 .item("Import from iPhone", Box::new(ImportFromIphone));

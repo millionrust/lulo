@@ -536,13 +536,23 @@ class Run:
             if not opened:
                 continue
             # Both layer surfaces can be listed before the catcher's first
-            # input-region commit. Let that frame present before input.
+            # input-region commit, so a dismiss input sent right away can
+            # still land before the catcher accepts it. This nested session
+            # has no working GPU ("ZINK: failed to choose pdev" in its
+            # logs), and `rmac-quick-settings` in particular now does more
+            # work on its first frame (live Wi-Fi/Bluetooth/Sound rows),
+            # so a single fixed delay before the click is not always long
+            # enough. Escape and an outside click only ever dismiss, never
+            # toggle back open, so retrying either is safe.
             time.sleep(0.5)
-            if method == "Escape":
-                self.keys.key("escape")
-            else:
-                self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
-            closed = self.wait_for(lambda: self.popover_gone(namespace), 10)
+
+            def dismiss_input() -> None:
+                if method == "Escape":
+                    self.keys.key("escape")
+                else:
+                    self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
+
+            closed = self.retry_until(dismiss_input, lambda: self.popover_gone(namespace), attempts=3, step=2.0)
             self.check(f"{shortcut}: closes on {method}", closed)
             if not closed:
                 self.dispatch(shortcut)

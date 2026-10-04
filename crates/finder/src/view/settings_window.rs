@@ -11,7 +11,7 @@
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
 use rmac_ui::{Button, Checkbox, Root, StyledExt as _};
@@ -166,13 +166,25 @@ impl SettingsView {
             .border_color(rmac_ui::mac::separator())
             .children(Tab::ALL.into_iter().enumerate().map(|(index, tab)| {
                 let selected = tab == self.tab;
-                Button::new(("settings-tab", index), tab.label())
-                    .small()
-                    .selected(selected)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.tab = tab;
-                        cx.notify();
-                    }))
+                // See `crates/mail/src/settings_view.rs::tabs` (same fix,
+                // same shared bug): `Button::selected` is a visual-only
+                // highlight, so the strip itself needs the real tab
+                // semantics, the way Finder's own window-tab strip
+                // (`view/chrome_presentation/menus_tabs.rs`) already has.
+                div()
+                    .id(("settings-tab", index))
+                    .role(Role::Tab)
+                    .aria_label(tab.label())
+                    .aria_selected(selected)
+                    .child(
+                        Button::new(("settings-tab-button", index), tab.label())
+                            .small()
+                            .selected(selected)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.tab = tab;
+                                cx.notify();
+                            })),
+                    )
             }))
     }
 

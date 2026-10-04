@@ -6,7 +6,7 @@
     "settings": {"windows": {"count": 2, "front": "Mail Settings"}},
     "signatures": {
       "windows": {"count": 2, "front": "Mail Settings"},
-      "selection": {"items": ["Signatures"]}
+      "tabs": {"selected": ["Signatures"]}
     }
   }
 }

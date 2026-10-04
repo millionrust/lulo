@@ -10,7 +10,7 @@
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
 use rmac_mail::settings::{self, ComposeFormat, JunkMailAction, MailSettings, Signature};
@@ -125,13 +125,27 @@ impl SettingsView {
             .border_b_1()
             .border_color(mac::separator())
             .children(Pane::ALL.into_iter().enumerate().map(|(index, pane)| {
-                Button::new(("mail-settings-tab", index), pane.label())
-                    .small()
-                    .selected(self.pane == pane)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.pane = pane;
-                        cx.notify();
-                    }))
+                let selected = self.pane == pane;
+                // The strip itself carries the real tab semantics (role and
+                // selected state) the way Finder's own window-tab strip does
+                // (`crates/finder/src/view/chrome_presentation/menus_tabs.rs`):
+                // `Button::selected` is purely a visual highlight with no
+                // accessibility signal of its own, so without this wrapper
+                // AT-SPI never reported which Settings pane was showing.
+                div()
+                    .id(("mail-settings-tab", index))
+                    .role(Role::Tab)
+                    .aria_label(pane.label())
+                    .aria_selected(selected)
+                    .child(
+                        Button::new(("mail-settings-tab-button", index), pane.label())
+                            .small()
+                            .selected(selected)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.pane = pane;
+                                cx.notify();
+                            })),
+                    )
             }))
             .into_any_element()
     }

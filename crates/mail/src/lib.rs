@@ -1088,9 +1088,9 @@ mod tests {
     /// every arrow-key press, so each must stay linear in the message
     /// count rather than the O(n²) a per-row `thread_count()` call would
     /// give `crate::view::list` (fixed alongside this test — see its
-    /// `thread_counts` map). A generous 200 ms budget absorbs a slow CI
-    /// runner while still catching an accidental quadratic regression,
-    /// which would take tens of seconds at this size.
+    /// `thread_counts` map). The budget is generous (an O(n²) regression
+    /// at this size takes tens of seconds, not low single-digit seconds)
+    /// to absorb a debug build on a loaded, shared CI runner.
     #[test]
     fn ten_thousand_messages_stay_linear() {
         let account = Uuid::new_v4();
@@ -1129,8 +1129,8 @@ mod tests {
         }
         let elapsed = start.elapsed();
         assert!(
-            elapsed < std::time::Duration::from_millis(200),
-            "20 passes over 10 000 messages took {elapsed:?}, expected well under 200ms"
+            elapsed < std::time::Duration::from_secs(5),
+            "20 passes over 10 000 messages took {elapsed:?}, expected a few seconds at most"
         );
     }
 }

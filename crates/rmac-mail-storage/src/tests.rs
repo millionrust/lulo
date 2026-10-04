@@ -110,6 +110,74 @@ fn search_tokens_scope_and_fts_escaping() {
     );
 }
 
+/// MAIL-4: `crate::live::load` (`crates/mail`) builds the window's sidebar
+/// and message list entirely from these two reads.
+#[test]
+fn all_mailboxes_and_messages_in_mailbox_feed_the_live_window() {
+    let mut fixture = Fixture::new();
+    let inbox = fixture.inbox;
+    let mut message = |uid: i64, subject: &str, received_at: i64| {
+        fixture
+            .store
+            .put_message(&NewMessage {
+                mailbox_id: inbox,
+                uid,
+                message_id: None,
+                in_reply_to: None,
+                references: &[],
+                subject,
+                sender: "Ada <ada@example.test>",
+                recipients: "Bob <bob@example.test>",
+                cc: "",
+                preview: "preview",
+                received_at,
+                flags: 0,
+                body: None,
+                body_text: None,
+            })
+            .unwrap()
+    };
+    message(1, "Oldest", 100);
+    message(2, "Middle", 200);
+    let newest = message(3, "Newest", 300);
+    let archive = fixture
+        .store
+        .upsert_mailbox("Archive", 43, Some("\\Archive"))
+        .unwrap();
+
+    let listing = fixture.store.all_mailboxes().unwrap();
+    assert_eq!(listing.len(), 2);
+    let inbox_listing = listing
+        .iter()
+        .find(|mailbox| mailbox.id == fixture.inbox)
+        .expect("INBOX listed");
+    assert_eq!(inbox_listing.name, "INBOX");
+    assert_eq!(inbox_listing.special_use.as_deref(), Some("\\Inbox"));
+    let archive_listing = listing
+        .iter()
+        .find(|mailbox| mailbox.id == archive)
+        .expect("Archive listed");
+    assert_eq!(archive_listing.special_use.as_deref(), Some("\\Archive"));
+
+    // Newest first, and bounded by `limit`.
+    let newest_first = fixture
+        .store
+        .messages_in_mailbox(fixture.inbox, 10)
+        .unwrap();
+    assert_eq!(
+        newest_first.iter().map(|m| m.id).collect::<Vec<_>>(),
+        vec![newest, 2, 1]
+    );
+    let bounded = fixture.store.messages_in_mailbox(fixture.inbox, 1).unwrap();
+    assert_eq!(bounded.len(), 1);
+    assert_eq!(bounded[0].id, newest);
+    assert!(fixture
+        .store
+        .messages_in_mailbox(archive, 10)
+        .unwrap()
+        .is_empty());
+}
+
 #[test]
 fn sync_cursor_unread_and_pending_local_flags_survive_reopen() {
     let mut fixture = Fixture::new();

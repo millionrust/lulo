@@ -13,6 +13,13 @@
           "children": []
         },
         {
+          "label": "Settings…",
+          "action": "preview::ShowSettings",
+          "shortcut": "⌘,",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Services",
           "action": "app::services",
           "shortcut": "",
@@ -139,10 +146,46 @@
           ]
         },
         {
+          "label": "Take Screenshot",
+          "action": "preview::TakeScreenshotMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "From Selection…",
+              "action": "preview::TakeScreenshotSelection",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "From Window…",
+              "action": "preview::TakeScreenshotWindow",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "From Entire Screen",
+              "action": "preview::TakeScreenshotEntireScreen",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Export As…",
+          "action": "preview::ExportAs",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Export as PDF…",
           "action": "preview::ExportAsPdf",
           "shortcut": "",
-          "separator_before": true,
+          "separator_before": false,
           "children": []
         },
         {
@@ -327,6 +370,20 @@
       "label": "View",
       "items": [
         {
+          "label": "Show Tab Bar",
+          "action": "preview::ShowTabBar",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show All Tabs",
+          "action": "preview::ShowAllTabs",
+          "shortcut": "⇧⌘\\",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Hide Sidebar",
           "action": "preview::HideSidebar",
           "shortcut": "⌥⌘1",
@@ -341,6 +398,20 @@
           "children": []
         },
         {
+          "label": "Table of Contents",
+          "action": "preview::ShowTableOfContents",
+          "shortcut": "⌥⌘3",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Highlights and Notes",
+          "action": "preview::ShowHighlightsAndNotes",
+          "shortcut": "⌥⌘4",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Bookmarks",
           "action": "preview::ShowBookmarks",
           "shortcut": "⌥⌘5",
@@ -348,10 +419,52 @@
           "children": []
         },
         {
+          "label": "Contact Sheet",
+          "action": "preview::ContactSheet",
+          "shortcut": "⌥⌘6",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Continuous Scroll",
+          "action": "preview::ContinuousScroll",
+          "shortcut": "⌘1",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Single Page",
+          "action": "preview::SinglePage",
+          "shortcut": "⌘2",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Two Pages",
+          "action": "preview::TwoPages",
+          "shortcut": "⌘3",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Show Image Background",
+          "action": "preview::ShowImageBackground",
+          "shortcut": "⌥⌘B",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Use Dark Appearance for PDF",
+          "action": "preview::UseDarkAppearanceForPdf",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Actual Size",
           "action": "preview::ActualSize",
           "shortcut": "⌘0",
-          "separator_before": true,
+          "separator_before": false,
           "children": []
         },
         {
@@ -404,9 +517,9 @@
           "children": []
         },
         {
-          "label": "Show Image Background",
-          "action": "preview::ShowImageBackground",
-          "shortcut": "⌥⌘B",
+          "label": "Zoom to Selection",
+          "action": "preview::ZoomToSelection",
+          "shortcut": "⌘*",
           "separator_before": true,
           "children": []
         },
@@ -414,13 +527,6 @@
           "label": "Show Markup Toolbar",
           "action": "preview::ToggleMarkup",
           "shortcut": "⇧⌘A",
-          "separator_before": true,
-          "children": []
-        },
-        {
-          "label": "Enter Full Screen",
-          "action": "preview::EnterFullScreen",
-          "shortcut": "F",
           "separator_before": false,
           "children": []
         },
@@ -428,7 +534,28 @@
           "label": "Show Toolbar",
           "action": "preview::ToggleToolbar",
           "shortcut": "⌥⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Customise Toolbar…",
+          "action": "preview::CustomiseToolbar",
+          "shortcut": "",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Slideshow",
+          "action": "preview::Slideshow",
+          "shortcut": "⇧⌘F",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "action": "preview::EnterFullScreen",
+          "shortcut": "F",
+          "separator_before": false,
           "children": []
         }
       ]
@@ -512,10 +639,10 @@
           "children": []
         },
         {
-          "label": "Add Bookmark",
-          "action": "preview::AddBookmark",
-          "shortcut": "⌘D",
-          "separator_before": false,
+          "label": "Adjust Size…",
+          "action": "preview::AdjustSize",
+          "shortcut": "",
+          "separator_before": true,
           "children": []
         },
         {
@@ -549,7 +676,7 @@
               "label": "Rectangle",
               "action": "preview::AnnotateRectangle",
               "shortcut": "⌃⌘R",
-              "separator_before": false,
+              "separator_before": true,
               "children": []
             },
             {
@@ -574,6 +701,20 @@
               "children": []
             },
             {
+              "label": "Polygon",
+              "action": "preview::AnnotatePolygon",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Star",
+              "action": "preview::AnnotateStar",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Text",
               "action": "preview::AnnotateText",
               "shortcut": "⌃⌘T",
@@ -581,13 +722,63 @@
               "children": []
             },
             {
-              "label": "Signature",
-              "action": "preview::AnnotateSignature",
+              "label": "Speech Bubble",
+              "action": "preview::AnnotateSpeechBubble",
               "shortcut": "",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Mask",
+              "action": "preview::AnnotateMask",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Loupe",
+              "action": "preview::AnnotateLoupe",
+              "shortcut": "⌃⌘L",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Note",
+              "action": "preview::AnnotateNote",
+              "shortcut": "⌃⌘N",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Signature",
+              "action": "preview::SignatureMenu",
+              "shortcut": "",
+              "separator_before": false,
+              "children": [
+                {
+                  "label": "Add Signature",
+                  "action": "preview::AnnotateSignature",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Manage Signatures…",
+                  "action": "preview::ManageSignatures",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
             }
           ]
+        },
+        {
+          "label": "Add Bookmark",
+          "action": "preview::AddBookmark",
+          "shortcut": "⌘D",
+          "separator_before": true,
+          "children": []
         },
         {
           "label": "Rotate Left",
@@ -600,6 +791,27 @@
           "label": "Rotate Right",
           "action": "preview::RotateRight",
           "shortcut": "⌘R",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Flip Horizontal",
+          "action": "preview::FlipHorizontal",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Flip Vertical",
+          "action": "preview::FlipVertical",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Crop",
+          "action": "preview::Crop",
+          "shortcut": "⌘K",
           "separator_before": false,
           "children": []
         }
@@ -857,9 +1069,42 @@
     }
   ],
   "settings": {
-    "present": false,
-    "extraction": "none",
-    "controls": []
+    "present": true,
+    "extraction": "heuristic",
+    "controls": [
+      {
+        "kind": "control",
+        "label": "Show image background in new windows"
+      },
+      {
+        "kind": "control",
+        "label": "Use dark appearance for PDF in new windows"
+      },
+      {
+        "kind": "control",
+        "label": "Preview Settings"
+      },
+      {
+        "kind": "control",
+        "label": "Window background:"
+      },
+      {
+        "kind": "control",
+        "label": "Reset"
+      },
+      {
+        "kind": "control",
+        "label": "General"
+      },
+      {
+        "kind": "control",
+        "label": "Images"
+      },
+      {
+        "kind": "control",
+        "label": "PDF"
+      }
+    ]
   },
   "toolbar": {
     "present": false,

@@ -1,5 +1,6 @@
 //! rmac Preview: macOS Preview for images and PDF documents.
 
+mod settings_window;
 mod view;
 
 use std::borrow::Cow;
@@ -25,6 +26,7 @@ gpui::actions!(
         OpenFile,
         NewFromClipboard,
         QuitAndKeepWindows,
+        ShowSettings,
         CloseWindow,
         CloseAll,
         CloseSelected,
@@ -39,8 +41,20 @@ gpui::actions!(
         HideSidebar,
         ShowThumbnails,
         ShowBookmarks,
+        ShowTableOfContents,
+        ShowHighlightsAndNotes,
+        ShowTabBar,
+        ShowAllTabs,
         AddBookmark,
         ShowImageBackground,
+        UseDarkAppearanceForPdf,
+        ContinuousScroll,
+        SinglePage,
+        TwoPages,
+        ContactSheet,
+        Slideshow,
+        CustomiseToolbar,
+        ZoomToSelection,
         ActualSize,
         ZoomToFit,
         ZoomIn,
@@ -56,8 +70,12 @@ gpui::actions!(
         PageUp,
         PageDown,
         ShowInspector,
+        AdjustSize,
         RotateLeft,
         RotateRight,
+        FlipHorizontal,
+        FlipVertical,
+        Crop,
         AnnotateHighlight,
         AnnotateUnderline,
         AnnotateStrikeThrough,
@@ -67,12 +85,23 @@ gpui::actions!(
         AnnotateOval,
         AnnotateLine,
         AnnotateText,
+        AnnotatePolygon,
+        AnnotateStar,
+        AnnotateSpeechBubble,
+        AnnotateMask,
+        AnnotateLoupe,
+        AnnotateNote,
+        ManageSignatures,
         SelectAll,
         GoToPage,
         Back,
         Forward,
         PrintDocument,
         ExportAsPdf,
+        ExportAs,
+        TakeScreenshotSelection,
+        TakeScreenshotWindow,
+        TakeScreenshotEntireScreen,
         SaveAs,
         ToggleToolbar,
         ToggleMarkup,
@@ -197,6 +226,19 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-cmd-o", AnnotateOval, context),
         KeyBinding::new("ctrl-cmd-i", AnnotateLine, context),
         KeyBinding::new("ctrl-cmd-t", AnnotateText, context),
+        KeyBinding::new("ctrl-cmd-l", AnnotateLoupe, context),
+        KeyBinding::new("ctrl-cmd-n", AnnotateNote, context),
+        KeyBinding::new("cmd-,", ShowSettings, None),
+        KeyBinding::new("alt-cmd-3", ShowTableOfContents, context),
+        KeyBinding::new("alt-cmd-4", ShowHighlightsAndNotes, context),
+        KeyBinding::new("alt-cmd-6", ContactSheet, context),
+        KeyBinding::new("shift-cmd-\\", ShowAllTabs, context),
+        KeyBinding::new("cmd-1", ContinuousScroll, context),
+        KeyBinding::new("cmd-2", SinglePage, context),
+        KeyBinding::new("cmd-3", TwoPages, context),
+        KeyBinding::new("shift-cmd-8", ZoomToSelection, context),
+        KeyBinding::new("shift-cmd-f", Slideshow, context),
+        KeyBinding::new("cmd-k", Crop, context),
     ]);
 }
 
@@ -673,6 +715,10 @@ fn main() {
             })
             .detach();
             cx.on_action(|_: &QuitAndKeepWindows, cx| quit_and_keep_windows(cx));
+            // Preview's Settings window is app-wide (not a per-document
+            // preference), so it opens even with no document window, like
+            // Notes' own ShowSettings.
+            cx.on_action(|_: &ShowSettings, cx| settings_window::show(cx));
             cx.on_action(|_: &OpenFile, cx| choose_and_open(false, cx));
             cx.on_action(|_: &NewFromClipboard, cx| new_from_clipboard(cx));
             cx.on_action(|_: &OpenRecent0, cx| open_recent_menu_entry(0, cx));

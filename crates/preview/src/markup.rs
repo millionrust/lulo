@@ -20,6 +20,21 @@ pub enum Tool {
     Arrow,
     Sketch,
     Signature,
+    /// A closed, multi-point shape (Tools ▸ Annotate ▸ Polygon): `path`
+    /// holds its vertices, like `Sketch`, but the outline closes back to
+    /// the first point instead of staying open.
+    Polygon,
+    /// A 5-point star inscribed in `rect` (Tools ▸ Annotate ▸ Star).
+    Star,
+    /// A rectangle with a small tail (Tools ▸ Annotate ▸ Speech Bubble).
+    SpeechBubble,
+    /// An opaque, filled cover over `rect` (Tools ▸ Annotate ▸ Mask):
+    /// unlike the other shapes this fills rather than strokes, so the
+    /// content underneath is actually hidden, not just outlined.
+    Mask,
+    /// A small sticky-note icon placed at `rect`'s top-left corner
+    /// (Tools ▸ Annotate ▸ Note); `text` holds the note's body.
+    Note,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -207,6 +222,74 @@ fn appearance(annotation: &Annotation, size: (f32, f32)) -> Vec<u8> {
                 s.push_str("S ");
             }
         }
+        Tool::Polygon => {
+            if annotation.path.len() >= 2 {
+                for (index, &(x, y)) in annotation.path.iter().enumerate() {
+                    let (px, py) = (x * w, (1.0 - y) * h);
+                    s.push_str(&format!(
+                        "{px} {py} {} ",
+                        if index == 0 { "m" } else { "l" }
+                    ));
+                }
+                // Close the outline back to the first vertex.
+                if let Some(&(x, y)) = annotation.path.first() {
+                    s.push_str(&format!("{} {} l ", x * w, (1.0 - y) * h));
+                }
+                s.push_str("S ");
+            }
+        }
+        Tool::Star => {
+            // 10 vertices alternating the outer and inner radius of a
+            // standard 5-point star (inner = outer * 0.382), starting at
+            // the top and going clockwise, closed back to the first point.
+            let (cx, cy) = (w / 2.0, h / 2.0);
+            let outer = w.min(h) / 2.0;
+            let inner = outer * 0.382;
+            for step in 0..=10 {
+                let index = step % 10;
+                let radius = if index % 2 == 0 { outer } else { inner };
+                let angle = std::f32::consts::FRAC_PI_2 - index as f32 * std::f32::consts::PI / 5.0;
+                let x = cx + radius * angle.cos();
+                let y = cy + radius * angle.sin();
+                s.push_str(&format!("{x} {y} {} ", if step == 0 { "m" } else { "l" }));
+            }
+            s.push_str("S ");
+        }
+        Tool::SpeechBubble => {
+            s.push_str(&format!("1 1 {} {} re S ", w - 2.0, h - 2.0));
+            // A small tail near the bottom-left, kept inside the box's own
+            // 0‥w/0‥h bounds so the Form XObject's BBox does not clip it.
+            s.push_str(&format!(
+                "{} {} m {} {} l {} {} l S ",
+                w * 0.25,
+                h * 0.15,
+                w * 0.08,
+                h * 0.02,
+                w * 0.35,
+                h * 0.15,
+            ));
+        }
+        Tool::Mask => {
+            // Filled, not stroked: a Mask actually covers the content
+            // underneath instead of just outlining it.
+            s.push_str(&format!("{} {} {} rg 0 0 {w} {h} re f ", f(0), f(1), f(2)));
+        }
+        Tool::Note => {
+            // A small fixed-size sticky-note icon at the top-left corner,
+            // regardless of how big `rect` is, plus a folded-corner mark.
+            let icon = 20.0_f32.min(w).min(h);
+            s.push_str(&format!(
+                "{} {} {} rg 0 0 {icon} {icon} re f ",
+                f(0),
+                f(1),
+                f(2)
+            ));
+            s.push_str(&format!(
+                "{} {icon} m {icon} {icon} l {icon} {} l S ",
+                icon * 0.9,
+                icon * 0.9,
+            ));
+        }
         Tool::Text => s.push_str(&format!(
             "BT /F1 16 Tf {} {} {} rg 2 {} Td ({}) Tj ET ",
             f(0),
@@ -255,7 +338,7 @@ pub fn write_pdf(source: &Path, destination: &Path, items: &[Annotation]) -> Res
         );
         let mut annotation = dictionary! {
             "Type" => "Annot",
-            "Subtype" => match item.tool { Tool::Highlight => "Highlight", Tool::Underline => "Underline", Tool::StrikeThrough => "StrikeOut", Tool::Text => "FreeText", Tool::Oval => "Circle", Tool::Line | Tool::Arrow => "Line", Tool::Sketch | Tool::Signature => "Ink", _ => "Square" },
+            "Subtype" => match item.tool { Tool::Highlight => "Highlight", Tool::Underline => "Underline", Tool::StrikeThrough => "StrikeOut", Tool::Text => "FreeText", Tool::Oval => "Circle", Tool::Line | Tool::Arrow => "Line", Tool::Sketch | Tool::Signature => "Ink", Tool::Polygon => "Polygon", Tool::Note => "Text", _ => "Square" },
             "Rect" => Object::Array(rect_array(item.rect, size)),
             "C" => Object::Array(rgb(item.color)),
             "F" => 4,
@@ -337,6 +420,22 @@ pub fn write_pdf(source: &Path, destination: &Path, items: &[Annotation]) -> Res
                     );
                 }
             }
+            if item.tool == Tool::Polygon {
+                let vertices: Vec<Object> = item
+                    .path
+                    .iter()
+                    .flat_map(|&(x, y)| {
+                        [
+                            number((r.x0 + x * (r.x1 - r.x0)) * size.0),
+                            number((1.0 - r.y0 - y * (r.y1 - r.y0)) * size.1),
+                        ]
+                    })
+                    .collect();
+                annotation.set("Vertices", vertices);
+            }
+            if item.tool == Tool::Note {
+                annotation.set("Contents", item.text.clone());
+            }
         }
         let id = doc.add_object(annotation);
         let existing = doc
@@ -361,6 +460,139 @@ pub fn write_pdf(source: &Path, destination: &Path, items: &[Annotation]) -> Res
     }
     doc.save(destination).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// One row of View ▸ Table of Contents: a PDF outline (bookmark) entry,
+/// flattened from its tree with `depth` recording how nested it was.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutlineEntry {
+    pub depth: usize,
+    pub title: String,
+    pub page: usize,
+}
+
+/// Reads a PDF's `/Outlines` tree (its Table of Contents) into a flat,
+/// depth-tagged list in document order. Returns an empty list for a PDF
+/// with no outline, a malformed one, or one that cannot be opened — the
+/// sidebar then shows "No Table of Contents" rather than failing to show
+/// the document itself. Caller runs this on a blocking worker.
+pub fn read_outline(path: &Path) -> Vec<OutlineEntry> {
+    let Ok(doc) = Document::load(path) else {
+        return Vec::new();
+    };
+    let page_index: std::collections::HashMap<(u32, u16), usize> = doc
+        .get_pages()
+        .into_values()
+        .enumerate()
+        .map(|(index, id)| (id, index))
+        .collect();
+    let Some(first) = outline_root(&doc) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    walk_outline(&doc, first, 0, &page_index, &mut visited, &mut out);
+    out
+}
+
+fn outline_root(doc: &Document) -> Option<(u32, u16)> {
+    let root = doc.trailer.get(b"Root").ok()?.as_reference().ok()?;
+    let catalog = doc.get_dictionary(root).ok()?;
+    let outlines_id = catalog.get(b"Outlines").ok()?.as_reference().ok()?;
+    let outlines = doc.get_dictionary(outlines_id).ok()?;
+    outlines.get(b"First").ok()?.as_reference().ok()
+}
+
+/// The first page a `/Dest` or `/A` (GoTo action) destination resolves to,
+/// for the common "array starting with a direct page reference" shape.
+/// Named destinations (looked up through the catalog's `/Names` tree) are
+/// not resolved; such an entry simply has no page (falls back to 0 by the
+/// caller), which is a real but minor gap rather than a crash or a stub.
+fn resolve_outline_page(
+    doc: &Document,
+    dict: &lopdf::Dictionary,
+    page_index: &std::collections::HashMap<(u32, u16), usize>,
+) -> Option<usize> {
+    fn first_reference(object: &Object) -> Option<(u32, u16)> {
+        match object {
+            Object::Reference(r) => Some(*r),
+            Object::Array(items) => items.first().and_then(|first| first.as_reference().ok()),
+            _ => None,
+        }
+    }
+    if let Ok(dest) = dict.get(b"Dest") {
+        if let Some(page) = first_reference(dest).and_then(|id| page_index.get(&id).copied()) {
+            return Some(page);
+        }
+    }
+    if let Ok(action) = dict.get(b"A") {
+        let action_dict = match action {
+            Object::Reference(r) => doc.get_dictionary(*r).ok(),
+            Object::Dictionary(inline) => Some(inline),
+            _ => None,
+        };
+        if let Some(dest) = action_dict.and_then(|action| action.get(b"D").ok()) {
+            if let Some(page) = first_reference(dest).and_then(|id| page_index.get(&id).copied()) {
+                return Some(page);
+            }
+        }
+    }
+    None
+}
+
+fn decode_outline_title(object: &Object) -> Option<String> {
+    let Object::String(bytes, _) = object else {
+        return None;
+    };
+    if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
+        let units: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+            .collect();
+        Some(String::from_utf16_lossy(&units))
+    } else {
+        Some(String::from_utf8_lossy(bytes).into_owned())
+    }
+}
+
+/// Walks one outline level (siblings via `/Next`) and recurses into each
+/// item's children (`/First`), bounded by a visited-set (a malformed PDF
+/// could otherwise cycle) and a hard cap so a pathological file cannot
+/// hang the blocking worker that calls this.
+fn walk_outline(
+    doc: &Document,
+    first: (u32, u16),
+    depth: usize,
+    page_index: &std::collections::HashMap<(u32, u16), usize>,
+    visited: &mut std::collections::HashSet<(u32, u16)>,
+    out: &mut Vec<OutlineEntry>,
+) {
+    const MAX_ENTRIES: usize = 2000;
+    let mut current = Some(first);
+    while let Some(id) = current {
+        if out.len() >= MAX_ENTRIES || !visited.insert(id) {
+            break;
+        }
+        let Ok(dict) = doc.get_dictionary(id) else {
+            break;
+        };
+        let title = dict
+            .get(b"Title")
+            .ok()
+            .and_then(decode_outline_title)
+            .unwrap_or_default();
+        if !title.trim().is_empty() {
+            let page = resolve_outline_page(doc, dict, page_index).unwrap_or(0);
+            out.push(OutlineEntry { depth, title, page });
+        }
+        if let Ok(child) = dict.get(b"First").and_then(Object::as_reference) {
+            walk_outline(doc, child, depth + 1, page_index, visited, out);
+        }
+        current = dict
+            .get(b"Next")
+            .ok()
+            .and_then(|next| next.as_reference().ok());
+    }
 }
 
 #[cfg(test)]
@@ -482,5 +714,168 @@ mod tests {
         assert!((bounds[0].as_float().unwrap() - 61.2).abs() < 0.01);
         assert!((bounds[1].as_float().unwrap() - 396.0).abs() < 0.01);
         std::fs::remove_dir_all(base).unwrap();
+    }
+
+    fn rect(x0: f32, y0: f32, x1: f32, y1: f32) -> UnitRect {
+        UnitRect { x0, y0, x1, y1 }
+    }
+
+    #[test]
+    fn polygon_round_trips_as_a_polygon_with_vertices() {
+        let base =
+            std::env::temp_dir().join(format!("rmac-markup-test-polygon-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let source = base.join("source.pdf");
+        let saved = base.join("saved.pdf");
+        let mut doc = Document::with_version("1.4");
+        let pages = doc.new_object_id();
+        let content = doc.add_object(Stream::new(dictionary! {}, b"q Q".to_vec()));
+        let page = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()], "Contents" => content });
+        doc.objects.insert(
+            pages,
+            Object::Dictionary(
+                dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 },
+            ),
+        );
+        let root = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        doc.trailer.set("Root", root);
+        doc.save(&source).unwrap();
+        let mut polygon =
+            Annotation::new(0, Tool::Polygon, rect(0.1, 0.1, 0.5, 0.5), 0x00ff00, 1.5);
+        polygon.path = vec![(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)];
+        write_pdf(&source, &saved, &[polygon]).unwrap();
+        let after = Document::load(&saved).unwrap();
+        let annotations = after.get_page_annotations(page).unwrap();
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(
+            annotations[0].get(b"Subtype").unwrap().as_name().unwrap(),
+            b"Polygon"
+        );
+        let vertices = annotations[0].get(b"Vertices").unwrap().as_array().unwrap();
+        // Three path points, each an (x, y) pair.
+        assert_eq!(vertices.len(), 6);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn note_round_trips_as_a_text_annotation() {
+        let base =
+            std::env::temp_dir().join(format!("rmac-markup-test-note-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let source = base.join("source.pdf");
+        let saved = base.join("saved.pdf");
+        let mut doc = Document::with_version("1.4");
+        let pages = doc.new_object_id();
+        let content = doc.add_object(Stream::new(dictionary! {}, b"q Q".to_vec()));
+        let page = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()], "Contents" => content });
+        doc.objects.insert(
+            pages,
+            Object::Dictionary(
+                dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 },
+            ),
+        );
+        let root = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        doc.trailer.set("Root", root);
+        doc.save(&source).unwrap();
+        let mut note = Annotation::new(0, Tool::Note, rect(0.1, 0.1, 0.15, 0.15), 0xffff00, 1.0);
+        note.text = "Remember this".to_owned();
+        write_pdf(&source, &saved, &[note]).unwrap();
+        let after = Document::load(&saved).unwrap();
+        let annotations = after.get_page_annotations(page).unwrap();
+        assert_eq!(
+            annotations[0].get(b"Subtype").unwrap().as_name().unwrap(),
+            b"Text"
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn read_outline_flattens_titles_depth_and_destination_pages() {
+        let base =
+            std::env::temp_dir().join(format!("rmac-markup-test-outline-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let path = base.join("outline.pdf");
+        let mut doc = Document::with_version("1.4");
+        let pages_id = doc.new_object_id();
+        let content = doc.add_object(Stream::new(dictionary! {}, b"q Q".to_vec()));
+        let page0 = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()], "Contents" => content });
+        let page1 = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()], "Contents" => content });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => vec![page0.into(), page1.into()], "Count" => 2 }),
+        );
+        // A child item under "Chapter 1", pointing at page1 (index 1).
+        let child = doc.add_object(dictionary! {
+            "Title" => Object::String(b"Section 1.1".to_vec(), lopdf::StringFormat::Literal),
+            "Dest" => vec![Object::Reference(page1), "XYZ".into(), 0.into(), 792.into(), 0.into()],
+        });
+        let chapter = doc.add_object(dictionary! {
+            "Title" => Object::String(b"Chapter 1".to_vec(), lopdf::StringFormat::Literal),
+            "Dest" => vec![Object::Reference(page0), "XYZ".into(), 0.into(), 792.into(), 0.into()],
+            "First" => child,
+        });
+        let outlines = doc.add_object(dictionary! { "Type" => "Outlines", "First" => chapter });
+        let root = doc.add_object(
+            dictionary! { "Type" => "Catalog", "Pages" => pages_id, "Outlines" => outlines },
+        );
+        doc.trailer.set("Root", root);
+        doc.save(&path).unwrap();
+
+        let entries = read_outline(&path);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].title, "Chapter 1");
+        assert_eq!(entries[0].depth, 0);
+        assert_eq!(entries[0].page, 0);
+        assert_eq!(entries[1].title, "Section 1.1");
+        assert_eq!(entries[1].depth, 1);
+        assert_eq!(entries[1].page, 1);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn read_outline_is_empty_for_a_pdf_with_no_outline() {
+        let base = std::env::temp_dir().join(format!(
+            "rmac-markup-test-no-outline-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let path = base.join("plain.pdf");
+        let mut doc = Document::with_version("1.4");
+        let pages_id = doc.new_object_id();
+        let content = doc.add_object(Stream::new(dictionary! {}, b"q Q".to_vec()));
+        let page = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()], "Contents" => content });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(
+                dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 },
+            ),
+        );
+        let root = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", root);
+        doc.save(&path).unwrap();
+
+        assert!(read_outline(&path).is_empty());
+        assert!(read_outline(&base.join("missing.pdf")).is_empty());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn star_speech_bubble_and_mask_each_draw_distinct_appearances() {
+        let annotation_with =
+            |tool| Annotation::new(0, tool, rect(0.1, 0.1, 0.6, 0.6), 0x3366ff, 2.0);
+        let size = (400.0, 400.0);
+        let rectangle = appearance(&annotation_with(Tool::Rectangle), size);
+        let star = appearance(&annotation_with(Tool::Star), size);
+        let speech_bubble = appearance(&annotation_with(Tool::SpeechBubble), size);
+        let mask = appearance(&annotation_with(Tool::Mask), size);
+        let note = appearance(&annotation_with(Tool::Note), size);
+        for drawing in [&star, &speech_bubble, &mask, &note] {
+            assert!(!drawing.is_empty());
+            assert_ne!(drawing, &rectangle);
+        }
+        // Mask fills (rg/f); it does not just stroke an outline.
+        let mask_text = String::from_utf8(mask).unwrap();
+        assert!(mask_text.contains(" rg "));
+        assert!(mask_text.contains(" f "));
     }
 }

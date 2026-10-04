@@ -158,19 +158,23 @@ fn load_image(path: &Path) -> Result<ImageContent, String> {
     }
     let mut pixels = decoded.into_rgba8();
     swap_red_blue(&mut pixels);
-    let thumbnail = image::imageops::thumbnail(
-        &pixels,
-        THUMB_PIXELS.min(pixels.width()),
-        ((THUMB_PIXELS.min(pixels.width()) as u64 * pixels.height() as u64)
-            / pixels.width().max(1) as u64)
-            .max(1) as u32,
-    );
+    let thumbnail = image_thumbnail(&pixels);
     Ok(ImageContent {
         pixels: Arc::new(pixels),
         size,
         colour_model,
-        thumbnail: to_render_image(thumbnail),
+        thumbnail,
     })
+}
+
+/// A sidebar/tab-strip-sized thumbnail (same [`THUMB_PIXELS`] cap `load_image`
+/// uses) for pixels that did not come straight from disk — e.g. after Tools
+/// ▸ Crop / Adjust Size / Flip change `ImageContent::pixels` in place and
+/// need a matching thumbnail rebuilt from the edited image.
+pub fn image_thumbnail(pixels: &RgbaImage) -> Arc<RenderImage> {
+    let width = THUMB_PIXELS.min(pixels.width().max(1));
+    let height = ((width as u64 * pixels.height() as u64) / pixels.width().max(1) as u64).max(1);
+    to_render_image(image::imageops::thumbnail(pixels, width, height as u32))
 }
 
 /// RGBA ⇄ BGRA in place.
@@ -191,6 +195,64 @@ pub fn rotate(pixels: &RgbaImage, rotation: Rotation) -> RgbaImage {
         3 => image::imageops::rotate270(pixels),
         _ => pixels.clone(),
     }
+}
+
+/// View ▸ Use Dark Appearance for PDF (PRV-MENU-049): a plain RGB invert
+/// of the rendered page, the same low-cost "dark mode" trick many PDF
+/// readers use. Preview has no ICC colour-management engine (see Soft
+/// Proof's note in docs/parity.md), so this is a pixel filter, not a real
+/// colour-managed dark rendering — honest about what it is, but a real,
+/// visible effect rather than a menu item that does nothing.
+pub fn invert(pixels: &mut RgbaImage) {
+    for pixel in pixels.pixels_mut() {
+        pixel.0[0] = 255 - pixel.0[0];
+        pixel.0[1] = 255 - pixel.0[1];
+        pixel.0[2] = 255 - pixel.0[2];
+    }
+}
+
+/// Tools ▸ Flip Horizontal (PRV-MENU-066): mirrors left-right.
+pub fn flip_horizontal(pixels: &RgbaImage) -> RgbaImage {
+    image::imageops::flip_horizontal(pixels)
+}
+
+/// Tools ▸ Flip Vertical (PRV-MENU-067): mirrors top-bottom.
+pub fn flip_vertical(pixels: &RgbaImage) -> RgbaImage {
+    image::imageops::flip_vertical(pixels)
+}
+
+/// Tools ▸ Adjust Size… (PRV-MENU-054): resizes to an exact new pixel size
+/// (not a fit/letterbox). The caller works out width/height, including any
+/// aspect-ratio locking; this only resamples.
+pub fn adjust_size(pixels: &RgbaImage, width: u32, height: u32) -> RgbaImage {
+    if width == 0 || height == 0 {
+        return RgbaImage::new(width.max(1), height.max(1));
+    }
+    image::imageops::resize(pixels, width, height, image::imageops::FilterType::Triangle)
+}
+
+/// File ▸ Export As… (PRV-MENU-013): re-encodes `pixels` (kept in GPUI's
+/// BGRA order) to whatever format `destination`'s extension names, by
+/// swapping back to RGBA first. Save As / Save, by contrast, send the
+/// original file's own bytes unchanged — this is the one path that
+/// actually converts formats.
+pub fn export_image(pixels: &RgbaImage, destination: &Path) -> Result<(), String> {
+    let mut rgba = pixels.clone();
+    swap_red_blue(&mut rgba);
+    rgba.save(destination).map_err(|error| error.to_string())
+}
+
+/// Tools ▸ Crop (PRV-MENU-068): crops to a pixel rectangle, top-left
+/// origin, clamped to the image bounds so it can never panic. `x`/`y` are
+/// clamped inside the image and `width`/`height` are clamped to what
+/// remains from there, with a floor of one pixel either way.
+pub fn crop(pixels: &RgbaImage, x: u32, y: u32, width: u32, height: u32) -> RgbaImage {
+    let (image_width, image_height) = pixels.dimensions();
+    let x = x.min(image_width.saturating_sub(1));
+    let y = y.min(image_height.saturating_sub(1));
+    let width = width.min(image_width.saturating_sub(x)).max(1);
+    let height = height.min(image_height.saturating_sub(y)).max(1);
+    image::imageops::crop_imm(pixels, x, y, width, height).to_image()
 }
 
 fn run(tool: &str, args: Vec<std::ffi::OsString>) -> Result<Vec<u8>, String> {
@@ -377,5 +439,60 @@ mod print_tests {
             .0
             .iter()
             .all(|channel| *channel > 240));
+    }
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::*;
+
+    /// A 2×2 image with a distinct colour in each corner: red top-left,
+    /// green top-right, blue bottom-left, white bottom-right.
+    fn swatch() -> RgbaImage {
+        let mut pixels = RgbaImage::new(2, 2);
+        pixels.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
+        pixels.put_pixel(1, 0, image::Rgba([0, 255, 0, 255]));
+        pixels.put_pixel(0, 1, image::Rgba([0, 0, 255, 255]));
+        pixels.put_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
+        pixels
+    }
+
+    #[test]
+    fn flip_horizontal_mirrors_left_and_right() {
+        let flipped = flip_horizontal(&swatch());
+        assert_eq!(flipped.get_pixel(0, 0).0, [0, 255, 0, 255]); // was top-right
+        assert_eq!(flipped.get_pixel(1, 0).0, [255, 0, 0, 255]); // was top-left
+        assert_eq!(flipped.get_pixel(0, 1).0, [255, 255, 255, 255]); // was bottom-right
+        assert_eq!(flipped.get_pixel(1, 1).0, [0, 0, 255, 255]); // was bottom-left
+    }
+
+    #[test]
+    fn flip_vertical_mirrors_top_and_bottom() {
+        let flipped = flip_vertical(&swatch());
+        assert_eq!(flipped.get_pixel(0, 0).0, [0, 0, 255, 255]); // was bottom-left
+        assert_eq!(flipped.get_pixel(1, 0).0, [255, 255, 255, 255]); // was bottom-right
+        assert_eq!(flipped.get_pixel(0, 1).0, [255, 0, 0, 255]); // was top-left
+        assert_eq!(flipped.get_pixel(1, 1).0, [0, 255, 0, 255]); // was top-right
+    }
+
+    #[test]
+    fn adjust_size_resamples_to_the_requested_pixel_size() {
+        let resized = adjust_size(&swatch(), 10, 4);
+        assert_eq!(resized.dimensions(), (10, 4));
+    }
+
+    #[test]
+    fn crop_returns_the_requested_rectangle_and_clamps_without_panicking() {
+        let image = swatch();
+        let cropped = crop(&image, 1, 0, 1, 2);
+        assert_eq!(cropped.dimensions(), (1, 2));
+        assert_eq!(cropped.get_pixel(0, 0).0, [0, 255, 0, 255]);
+        // A rectangle starting past the image's far edge clamps down to a
+        // single pixel instead of panicking.
+        let far_edge = crop(&image, 5, 5, 3, 3);
+        assert_eq!(far_edge.dimensions(), (1, 1));
+        // A rectangle wider than the image clamps instead of panicking.
+        let clamped = crop(&image, 0, 0, 100, 100);
+        assert_eq!(clamped.dimensions(), (2, 2));
     }
 }

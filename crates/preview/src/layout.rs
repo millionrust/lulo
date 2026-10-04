@@ -6,6 +6,12 @@ use std::ops::Range;
 
 /// Space above the first page and between pages in continuous scroll.
 pub const PAGE_MARGIN: f32 = 16.0;
+/// Gap between the two pages of a Two Pages spread.
+pub const SPREAD_GAP: f32 = 16.0;
+/// Contact Sheet tile width (wider than the 120 pt sidebar thumbnail, to
+/// read page content at a glance) and the gap between tiles.
+pub const CONTACT_TILE_WIDTH: f32 = 160.0;
+pub const CONTACT_GAP: f32 = 20.0;
 
 /// Sidebar thumbnails: 120 pt wide, a 6 pt selection pad, a 19 pt label strip
 /// and 10 pt between items.
@@ -143,6 +149,102 @@ pub fn continuous(page_sizes: &[(f32, f32)], scale: f32, column_width: f32) -> P
         width,
         height: y,
     }
+}
+
+/// Two-page-spread layout: pages paired (0,1), (2,3), … side by side with
+/// [`SPREAD_GAP`] between them, each pair centred as a row and the rows
+/// stacked with [`PAGE_MARGIN`] between them, like [`continuous`]. A lone
+/// trailing page (odd count) sits centred by itself.
+pub fn spreads(page_sizes: &[(f32, f32)], scale: f32, column_width: f32) -> PageLayout {
+    let scaled: Vec<(f32, f32)> = page_sizes
+        .iter()
+        .map(|&(w, h)| (w * scale, h * scale))
+        .collect();
+    let row_metrics = |start: usize, end: usize| -> (f32, f32) {
+        let width = scaled[start..=end].iter().map(|s| s.0).sum::<f32>()
+            + if end > start { SPREAD_GAP } else { 0.0 };
+        let height = scaled[start..=end]
+            .iter()
+            .map(|s| s.1)
+            .fold(0.0_f32, f32::max);
+        (width, height)
+    };
+    let mut widest_row = 0.0_f32;
+    let mut index = 0;
+    while index < scaled.len() {
+        let end = (index + 1).min(scaled.len() - 1);
+        widest_row = widest_row.max(row_metrics(index, end).0);
+        index += 2;
+    }
+    let width = column_width.max(widest_row + crate::zoom::PDF_FIT_MARGIN);
+    let mut pages = Vec::with_capacity(scaled.len());
+    let mut y = PAGE_MARGIN;
+    let mut index = 0;
+    while index < scaled.len() {
+        let end = (index + 1).min(scaled.len() - 1);
+        let (row_width, row_height) = row_metrics(index, end);
+        let mut x = ((width - row_width) / 2.0).max(0.0);
+        for (width, height) in &scaled[index..=end] {
+            pages.push(Rect {
+                x,
+                y: y + (row_height - height) / 2.0,
+                width: *width,
+                height: *height,
+            });
+            x += width + SPREAD_GAP;
+        }
+        y += row_height + PAGE_MARGIN;
+        index += 2;
+    }
+    PageLayout {
+        pages,
+        width,
+        height: y,
+    }
+}
+
+/// Contact Sheet: every page as a [`CONTACT_TILE_WIDTH`]-wide tile, wrapped
+/// into as many columns as fit `column_width`, left to right then top to
+/// bottom (like a Finder icon grid). Returns each page's tile rectangle
+/// (the thumbnail only; the caller adds its own label strip and selection
+/// pad) and the grid's total height.
+pub fn contact_sheet(page_sizes: &[(f32, f32)], column_width: f32) -> (Vec<Rect>, f32) {
+    let columns = ((column_width + CONTACT_GAP) / (CONTACT_TILE_WIDTH + CONTACT_GAP))
+        .floor()
+        .max(1.0) as usize;
+    let grid_width = columns as f32 * CONTACT_TILE_WIDTH + (columns as f32 - 1.0) * CONTACT_GAP;
+    let left_margin = ((column_width - grid_width) / 2.0).max(CONTACT_GAP);
+    let mut tiles = Vec::with_capacity(page_sizes.len());
+    let mut row_height = 0.0_f32;
+    let mut y = CONTACT_GAP;
+    for (index, size) in page_sizes.iter().enumerate() {
+        let column = index % columns;
+        if column == 0 && index > 0 {
+            y += row_height + CONTACT_GAP;
+            row_height = 0.0;
+        }
+        let (page_width, page_height) = *size;
+        let (width, height) = if page_width <= 0.0 || page_height <= 0.0 {
+            (CONTACT_TILE_WIDTH, CONTACT_TILE_WIDTH)
+        } else {
+            // Mirrors thumbnail_size's width/tall-page ratio at the bigger
+            // contact-sheet tile size (CONTACT_TILE_WIDTH : its 2x height cap
+            // is THUMB_WIDTH : THUMB_MAX_HEIGHT).
+            let max_height = CONTACT_TILE_WIDTH * (THUMB_MAX_HEIGHT / THUMB_WIDTH);
+            let scale = (CONTACT_TILE_WIDTH / page_width).min(max_height / page_height);
+            (page_width * scale, page_height * scale)
+        };
+        tiles.push(Rect {
+            x: left_margin
+                + column as f32 * (CONTACT_TILE_WIDTH + CONTACT_GAP)
+                + (CONTACT_TILE_WIDTH - width) / 2.0,
+            y: y + (CONTACT_TILE_WIDTH - height).max(0.0) / 2.0,
+            width,
+            height,
+        });
+        row_height = row_height.max(CONTACT_TILE_WIDTH);
+    }
+    (tiles, y + row_height + CONTACT_GAP)
 }
 
 /// Indices of pages intersecting the viewport, widened by `overscan` pages
@@ -425,6 +527,29 @@ mod tests {
         );
         assert_eq!(max_scroll(1000.0, 800.0), 200.0);
         assert_eq!(max_scroll(100.0, 800.0), 0.0);
+    }
+
+    #[test]
+    fn spreads_pair_pages_side_by_side_and_centre_an_odd_trailer() {
+        let layout = spreads(&[LETTER; 3], 1.0, 2000.0);
+        assert_eq!(layout.pages.len(), 3);
+        // First spread: two Letter pages side by side with the gap between.
+        assert_eq!(layout.pages[0].y, layout.pages[1].y);
+        assert!((layout.pages[1].x - (layout.pages[0].x + 612.0 + SPREAD_GAP)).abs() < 0.01);
+        // The lone third page starts a new, lower row and is centred alone.
+        assert!(layout.pages[2].y > layout.pages[0].y);
+        assert_eq!(layout.pages[2].width, 612.0);
+    }
+
+    #[test]
+    fn contact_sheet_wraps_into_a_grid() {
+        let width = CONTACT_TILE_WIDTH * 2.0 + CONTACT_GAP * 3.0;
+        let (tiles, total_height) = contact_sheet(&[LETTER; 3], width);
+        assert_eq!(tiles.len(), 3);
+        // Two columns fit; the third tile wraps to a new, lower row.
+        assert_eq!(tiles[0].y, tiles[1].y);
+        assert!(tiles[2].y > tiles[0].y);
+        assert!(total_height > tiles[2].y);
     }
 
     #[test]

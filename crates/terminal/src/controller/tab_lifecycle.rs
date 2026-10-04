@@ -48,6 +48,29 @@ impl TerminalView {
     }
 
     pub(super) fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.new_tab_with_program(InitialProgram::Shell, window, cx);
+    }
+
+    /// Shell ▸ New Tab with Same Command: a new tab execing exactly what
+    /// the active tab is running, when it is running anything in
+    /// particular (a plain shell has nothing to repeat, so the menu item
+    /// stays disabled for it — see `renderer.rs`).
+    pub(super) fn new_tab_with_same_command(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(exec) = self.tabs[self.active].exec_origin() {
+            self.new_tab_with_program(InitialProgram::from(exec), window, cx);
+        }
+    }
+
+    fn new_tab_with_program(
+        &mut self,
+        program: InitialProgram,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.modal_open() {
             return;
         }
@@ -77,6 +100,7 @@ impl TerminalView {
                 scrollback_lines,
                 starting_directory,
                 self.redraw.clone(),
+                program,
             )
             .unwrap_or_else(|error| Session::failed(c, r, scrollback_lines, error)),
         );

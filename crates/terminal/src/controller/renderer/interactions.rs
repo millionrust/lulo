@@ -127,6 +127,28 @@ impl TerminalView {
             }))
             .on_action(cx.listener(|this, _: &JumpToSelection, _, cx| this.jump_to_selection(cx)))
             .on_action(
+                cx.listener(|this, _: &UseSettingsAsDefault, _, cx| {
+                    this.use_settings_as_default(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ExportSettings, window, cx| {
+                    this.export_settings(window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ExportTextAs, window, cx| this.export_text_as(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &ExportSelectedTextAs, window, cx| {
+                this.export_selected_text_as(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &Print, window, cx| this.print(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &PrintSelection, window, cx| {
+                    this.print_selection(window, cx)
+                }),
+            )
+            .on_action(
                 cx.listener(|this, _: &ScrollToTop, _, cx| this.scroll_view(Scroll::Top, cx)),
             )
             .on_action(
@@ -259,6 +281,14 @@ impl TerminalView {
             }))
             .on_action(cx.listener(|this, _: &PrevTab, window, cx| {
                 this.prev_tab(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &NewWindowWithSameCommand, _, cx| {
+                if let Some(exec) = this.tabs[this.active].exec_origin() {
+                    open_window_with_same_command(exec, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &NewTabWithSameCommand, window, cx| {
+                this.new_tab_with_same_command(window, cx);
             }))
             .on_action(cx.listener(|this, _: &CycleProfile, _, cx| {
                 // ⌘⇧P toggles the profile picker.

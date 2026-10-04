@@ -110,7 +110,10 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             cursor_style: CursorStyle::default(),
-            cursor_blink: true,
+            // macOS Terminal's Basic profile ships with "Blink cursor"
+            // unchecked (tests/inventory/mac/Terminal.json: AXCheckBox
+            // "Blink cursor" is off by default).
+            cursor_blink: false,
             use_bold_fonts: true,
             bright_bold_text: true,
             display_ansi_colours: true,
@@ -212,6 +215,23 @@ pub(crate) fn save(settings: &Settings) -> Result<(), storage::Failure> {
         .map_err(|error| storage::Failure::from_io(storage::Operation::SaveSetting, &path, error))
 }
 
+/// Shell ▸ Export Settings…: the same document `save`/`load` use, as text
+/// a user can keep or hand to another machine running Terminal.
+pub(crate) fn export_json() -> Result<String, storage::Failure> {
+    let settings = load()?;
+    let document = StoredSettings {
+        version: VERSION,
+        settings,
+    };
+    serde_json::to_string_pretty(&document).map_err(|error| {
+        storage::Failure::message(
+            storage::Operation::SaveSetting,
+            Path::new(FILE_NAME),
+            error.to_string(),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,7 +242,7 @@ mod tests {
         assert_eq!(settings.columns, 80);
         assert_eq!(settings.rows, 24);
         assert_eq!(settings.cursor_style, CursorStyle::Block);
-        assert!(settings.cursor_blink);
+        assert!(!settings.cursor_blink);
         assert!(settings.use_bold_fonts);
         assert!(settings.bright_bold_text);
         assert!(settings.display_ansi_colours);

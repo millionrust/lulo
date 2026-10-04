@@ -7,6 +7,7 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
         initial_profile: Option<usize>,
+        initial_exec: Option<crate::cli::ExecCommand>,
     ) -> Self {
         let (redraw, redraw_rx) = async_channel::bounded(1);
         let (profile, persistence_error) = match load_profile() {
@@ -42,12 +43,14 @@ impl TerminalView {
                 crate::working_directory::last_front_directory()
             }
         };
+        let program = initial_exec.map_or(InitialProgram::Shell, InitialProgram::from);
         let session = Session::spawn(
             cols,
             rows,
             scrollback_lines,
             starting_directory,
             redraw.clone(),
+            program,
         )
         .unwrap_or_else(|error| Session::failed(cols, rows, scrollback_lines, error));
         // Settings ▸ Window ▸ Size: the OS window itself is resized to the
@@ -229,6 +232,12 @@ impl TerminalView {
             ),
             KeyBinding::new("alt-cmd-r", ResetTerminal, Some("Terminal")),
             KeyBinding::new("ctrl-alt-cmd-r", HardResetTerminal, Some("Terminal")),
+            KeyBinding::new("ctrl-cmd-n", NewWindowWithSameCommand, Some("Terminal")),
+            KeyBinding::new("ctrl-cmd-t", NewTabWithSameCommand, Some("Terminal")),
+            KeyBinding::new("cmd-s", ExportTextAs, Some("Terminal")),
+            KeyBinding::new("shift-cmd-s", ExportSelectedTextAs, Some("Terminal")),
+            KeyBinding::new("cmd-p", Print, Some("Terminal")),
+            KeyBinding::new("alt-cmd-p", PrintSelection, Some("Terminal")),
         ]);
 
         // A close request from outside the window — the Dock's or the menu
@@ -309,6 +318,7 @@ impl TerminalView {
             pending_paste: None,
             menu_at: None,
             a11y_cache: None,
+            window_generation: NEXT_WINDOW_GENERATION.fetch_add(1, AtomicOrdering::Relaxed),
         };
         if window_active {
             view.start_cursor_blink(window, cx);

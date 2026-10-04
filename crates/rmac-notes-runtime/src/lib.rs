@@ -4,6 +4,7 @@
 //! debounce, background repository, and conflict state so the Notes view can
 //! remain a renderer of accepted snapshots rather than a filesystem authority.
 
+mod keyring;
 mod markdown_preview_worker;
 mod preview_worker;
 mod scheduler;
@@ -12,6 +13,7 @@ mod search_worker;
 mod session;
 mod worker;
 
+pub use keyring::NotesKeyring;
 pub use markdown_preview_worker::{
     MarkdownPreviewRequest, MarkdownPreviewRequestError, MarkdownPreviewState,
     MarkdownPreviewWorkerEvent, MarkdownPreviewWorkerSendError, MarkdownPreviewWorkerStartError,
@@ -44,9 +46,9 @@ pub use session::{FolderSelection, NotesSession, SessionPhase};
 pub use worker::{
     AcceptedEvent, ActionRequest, ActionResult, BundleImportAcceptRequest,
     BundleImportReviewRequest, BundleImportReviewedEvent, DraftRecoveryKind, DraftRestoredEvent,
-    DraftReviewSummary, DraftSummary, ExportRequest, ExportedEvent, LibraryAction,
-    MarkdownImportReviewedEvent, MigrationReviewSummary, NotesWorker, NotesWorkerClient,
-    NotesWorkerEvents, PendingConflictError, PendingConflictResolution, PendingConflictSummary,
-    PendingEvent, RejectedEvent, SnapshotEvent, WorkerCommand, WorkerEvent, WorkerFailure,
-    WorkerSendError, WorkerStartError, COMMAND_CAPACITY, EVENT_CAPACITY,
+    DraftReviewSummary, DraftSummary, ExportRequest, ExportedEvent, LibraryAction, LockCredential,
+    LockSecret, LockStateEvent, MarkdownImportReviewedEvent, MigrationReviewSummary, NotesWorker,
+    NotesWorkerClient, NotesWorkerEvents, PendingConflictError, PendingConflictResolution,
+    PendingConflictSummary, PendingEvent, RejectedEvent, SnapshotEvent, WorkerCommand, WorkerEvent,
+    WorkerFailure, WorkerSendError, WorkerStartError, COMMAND_CAPACITY, EVENT_CAPACITY,
 };

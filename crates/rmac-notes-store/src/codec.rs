@@ -2,12 +2,16 @@ use std::fmt;
 
 use crate::{
     AttachmentId, AttachmentKind, AttachmentRecord, FolderId, FolderRecord, LibrarySnapshot,
-    NoteId, NoteRecord, SortOrder, ValidationError, MAX_ATTACHMENTS, MAX_ATTACHMENTS_PER_NOTE,
-    MAX_FOLDERS, MAX_NOTES, MAX_TAGS_PER_NOTE,
+    LockKdfParams, LockKeyRecord, NoteId, NoteLock, NoteRecord, SealedBlob, SmartFolderId,
+    SmartFolderRecord, SortOrder, ValidationError, MAX_ATTACHMENTS, MAX_ATTACHMENTS_PER_NOTE,
+    MAX_FOLDERS, MAX_LOCK_KEYS, MAX_NOTES, MAX_SEALED_NOTE_BYTES, MAX_SMART_FOLDERS,
+    MAX_TAGS_PER_NOTE,
 };
 
 const MAGIC: &[u8; 8] = b"RMNLIB\0\0";
-pub const SCHEMA_VERSION: u16 = 2;
+/// Version 3 adds locked-note sealing (per-note sealed payloads, sealed
+/// attachment markers, password generations) and stored Smart Folders.
+pub const SCHEMA_VERSION: u16 = 3;
 pub const MAX_LIBRARY_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,12 +37,19 @@ impl std::error::Error for CodecError {}
 
 pub fn encode(snapshot: &LibrarySnapshot) -> Result<Vec<u8>, CodecError> {
     snapshot.validate().map_err(CodecError::Invalid)?;
+    // The last line of defence: a locked note's plaintext never reaches
+    // durable bytes, whatever produced the candidate.
+    snapshot.validate_at_rest().map_err(CodecError::Invalid)?;
     let mut folders = snapshot.folders.iter().collect::<Vec<_>>();
     let mut notes = snapshot.notes.iter().collect::<Vec<_>>();
     let mut attachments = snapshot.attachments.iter().collect::<Vec<_>>();
+    let mut lock_keys = snapshot.lock_keys.iter().collect::<Vec<_>>();
+    let mut smart_folders = snapshot.smart_folders.iter().collect::<Vec<_>>();
     folders.sort_by_key(|record| record.id);
     notes.sort_by_key(|record| record.id);
     attachments.sort_by_key(|record| record.id);
+    lock_keys.sort_by_key(|record| record.id);
+    smart_folders.sort_by_key(|record| record.id);
 
     let mut output = Vec::new();
     output.extend_from_slice(MAGIC);
@@ -52,9 +63,14 @@ pub fn encode(snapshot: &LibrarySnapshot) -> Result<Vec<u8>, CodecError> {
         SortOrder::Created => 1,
         SortOrder::Title => 2,
     });
+    put_u64(&mut output, snapshot.next_smart_folder_id);
+    put_u32(&mut output, snapshot.next_lock_key_id);
+    put_u32(&mut output, snapshot.current_lock_key.unwrap_or_default());
     put_count(&mut output, folders.len())?;
     put_count(&mut output, notes.len())?;
     put_count(&mut output, attachments.len())?;
+    put_count(&mut output, lock_keys.len())?;
+    put_count(&mut output, smart_folders.len())?;
 
     for folder in folders {
         put_u64(&mut output, folder.id.get());
@@ -83,6 +99,14 @@ pub fn encode(snapshot: &LibrarySnapshot) -> Result<Vec<u8>, CodecError> {
         for attachment in &note.attachments {
             put_u64(&mut output, attachment.get());
         }
+        match &note.lock {
+            None => output.push(0),
+            Some(lock) => {
+                output.push(1);
+                put_u32(&mut output, lock.key_id);
+                put_sealed(&mut output, &lock.sealed)?;
+            }
+        }
     }
     for attachment in attachments {
         put_u64(&mut output, attachment.id.get());
@@ -98,6 +122,21 @@ pub fn encode(snapshot: &LibrarySnapshot) -> Result<Vec<u8>, CodecError> {
         put_u64(&mut output, attachment.byte_len);
         output.extend_from_slice(&attachment.sha256);
         put_bool(&mut output, attachment.deleted);
+        put_u32(&mut output, attachment.sealed_key.unwrap_or_default());
+    }
+    for key in lock_keys {
+        put_u32(&mut output, key.id);
+        output.extend_from_slice(&key.salt);
+        put_u32(&mut output, key.kdf.memory_kib);
+        put_u32(&mut output, key.kdf.iterations);
+        put_u32(&mut output, key.kdf.parallelism);
+        put_sealed(&mut output, &key.verifier)?;
+        put_string(&mut output, &key.hint)?;
+    }
+    for folder in smart_folders {
+        put_u64(&mut output, folder.id.get());
+        put_string(&mut output, &folder.name)?;
+        put_string(&mut output, &folder.tag)?;
     }
     if output.len() > MAX_LIBRARY_BYTES {
         return Err(CodecError::TooLarge);
@@ -114,7 +153,7 @@ pub fn decode(bytes: &[u8]) -> Result<LibrarySnapshot, CodecError> {
         return Err(CodecError::Malformed);
     }
     let version = reader.u16()?;
-    if !matches!(version, 1 | SCHEMA_VERSION) {
+    if !matches!(version, 1 | 2 | SCHEMA_VERSION) {
         return Err(CodecError::UnsupportedVersion);
     }
     let revision = reader.u64()?;
@@ -131,9 +170,23 @@ pub fn decode(bytes: &[u8]) -> Result<LibrarySnapshot, CodecError> {
             _ => return Err(CodecError::Malformed),
         }
     };
+    let sealing = version >= 3;
+    let (next_smart_folder_id, next_lock_key_id, current_lock_key) = if sealing {
+        (reader.u64()?, reader.u32()?, nonzero(reader.u32()?))
+    } else {
+        (1, 1, None)
+    };
     let folder_count = reader.count(MAX_FOLDERS)?;
     let note_count = reader.count(MAX_NOTES)?;
     let attachment_count = reader.count(MAX_ATTACHMENTS)?;
+    let (lock_key_count, smart_folder_count) = if sealing {
+        (
+            reader.count(MAX_LOCK_KEYS)?,
+            reader.count(MAX_SMART_FOLDERS)?,
+        )
+    } else {
+        (0, 0)
+    };
 
     let mut folders = Vec::with_capacity(folder_count);
     for _ in 0..folder_count {
@@ -170,6 +223,14 @@ pub fn decode(bytes: &[u8]) -> Result<LibrarySnapshot, CodecError> {
         for _ in 0..attachment_ref_count {
             attachment_refs.push(AttachmentId::new(reader.u64()?).ok_or(CodecError::Malformed)?);
         }
+        let lock = if sealing && reader.boolean()? {
+            Some(NoteLock {
+                key_id: reader.u32()?,
+                sealed: reader.sealed(MAX_SEALED_NOTE_BYTES)?,
+            })
+        } else {
+            None
+        };
         notes.push(NoteRecord {
             id,
             revision: note_revision,
@@ -182,6 +243,7 @@ pub fn decode(bytes: &[u8]) -> Result<LibrarySnapshot, CodecError> {
             pinned,
             deleted,
             attachments: attachment_refs,
+            lock,
         });
     }
     let mut attachments = Vec::with_capacity(attachment_count);
@@ -203,6 +265,11 @@ pub fn decode(bytes: &[u8]) -> Result<LibrarySnapshot, CodecError> {
             .try_into()
             .map_err(|_| CodecError::Malformed)?;
         let deleted = reader.boolean()?;
+        let sealed_key = if sealing {
+            nonzero(reader.u32()?)
+        } else {
+            None
+        };
         attachments.push(AttachmentRecord {
             id,
             revision: attachment_revision,
@@ -212,6 +279,35 @@ pub fn decode(bytes: &[u8]) -> Result<LibrarySnapshot, CodecError> {
             byte_len,
             sha256,
             deleted,
+            sealed_key,
+        });
+    }
+    let mut lock_keys = Vec::with_capacity(lock_key_count);
+    for _ in 0..lock_key_count {
+        let id = reader.u32()?;
+        let salt = reader
+            .take(16)?
+            .try_into()
+            .map_err(|_| CodecError::Malformed)?;
+        let kdf = LockKdfParams {
+            memory_kib: reader.u32()?,
+            iterations: reader.u32()?,
+            parallelism: reader.u32()?,
+        };
+        lock_keys.push(LockKeyRecord {
+            id,
+            salt,
+            kdf,
+            verifier: reader.sealed(1024)?,
+            hint: reader.string()?,
+        });
+    }
+    let mut smart_folders = Vec::with_capacity(smart_folder_count);
+    for _ in 0..smart_folder_count {
+        smart_folders.push(SmartFolderRecord {
+            id: SmartFolderId::new(reader.u64()?).ok_or(CodecError::Malformed)?,
+            name: reader.string()?,
+            tag: reader.string()?,
         });
     }
     if !reader.is_empty() {
@@ -226,13 +322,37 @@ pub fn decode(bytes: &[u8]) -> Result<LibrarySnapshot, CodecError> {
         folders,
         notes,
         attachments,
+        next_smart_folder_id,
+        smart_folders,
+        next_lock_key_id,
+        current_lock_key,
+        lock_keys,
     };
     snapshot.validate().map_err(CodecError::Invalid)?;
+    snapshot.validate_at_rest().map_err(CodecError::Invalid)?;
     Ok(snapshot)
 }
 
 fn put_u16(output: &mut Vec<u8>, value: u16) {
     output.extend_from_slice(&value.to_le_bytes());
+}
+
+fn put_u32(output: &mut Vec<u8>, value: u32) {
+    output.extend_from_slice(&value.to_le_bytes());
+}
+
+fn nonzero(value: u32) -> Option<u32> {
+    (value != 0).then_some(value)
+}
+
+fn put_sealed(output: &mut Vec<u8>, sealed: &SealedBlob) -> Result<(), CodecError> {
+    output.extend_from_slice(&sealed.nonce);
+    put_count(output, sealed.ciphertext.len())?;
+    output.extend_from_slice(&sealed.ciphertext);
+    if output.len() > MAX_LIBRARY_BYTES {
+        return Err(CodecError::TooLarge);
+    }
+    Ok(())
 }
 
 fn put_u64(output: &mut Vec<u8>, value: u64) {
@@ -328,6 +448,18 @@ impl<'a> Reader<'a> {
             .map_err(|_| CodecError::Malformed)
     }
 
+    fn sealed(&mut self, maximum: usize) -> Result<SealedBlob, CodecError> {
+        let nonce = self
+            .take(24)?
+            .try_into()
+            .map_err(|_| CodecError::Malformed)?;
+        let length = self.count(maximum)?;
+        Ok(SealedBlob {
+            nonce,
+            ciphertext: self.take(length)?.to_vec(),
+        })
+    }
+
     fn is_empty(&self) -> bool {
         self.cursor == self.bytes.len()
     }
@@ -368,6 +500,7 @@ mod tests {
             pinned: false,
             deleted: false,
             attachments: Vec::new(),
+            lock: None,
         });
         snapshot.next_folder_id = 3;
         snapshot.next_note_id = 3;
@@ -396,14 +529,174 @@ mod tests {
     #[test]
     fn version_one_snapshot_migrates_with_edited_sort_default() {
         let snapshot = fixture();
-        let mut legacy = encode(&snapshot).unwrap();
-        legacy[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&1_u16.to_le_bytes());
-        let sort_offset = MAGIC.len() + 2 + 8 * 4;
-        legacy.remove(sort_offset);
+        let legacy = encode_legacy(&snapshot, 1);
 
         let mut expected = snapshot;
         expected.sort_order = SortOrder::Edited;
         assert_eq!(decode(&legacy).unwrap(), expected);
+    }
+
+    #[test]
+    fn version_two_plaintext_library_migrates_unlocked_and_unchanged() {
+        // Migration: existing plaintext notes stay exactly as they are; no
+        // note becomes locked and no Smart Folder or password appears.
+        let snapshot = fixture();
+        let decoded = decode(&encode_legacy(&snapshot, 2)).unwrap();
+        assert_eq!(decoded, snapshot);
+        assert!(decoded.notes.iter().all(|note| note.lock.is_none()));
+        assert!(decoded.lock_keys.is_empty() && decoded.smart_folders.is_empty());
+        assert_eq!(
+            &encode(&decoded).unwrap()[MAGIC.len()..MAGIC.len() + 2],
+            &[3, 0]
+        );
+    }
+
+    #[test]
+    fn locked_notes_and_smart_folders_round_trip_without_plaintext() {
+        let (snapshot, key) = locked_fixture();
+        let bytes = encode(&snapshot).unwrap();
+        for secret in ["Roadmap", "transaction store", "Planning", "diagram.png"] {
+            assert!(
+                !bytes
+                    .windows(secret.len())
+                    .any(|window| window == secret.as_bytes()),
+                "{secret} leaked into the durable bytes"
+            );
+        }
+        let decoded = decode(&bytes).unwrap();
+        assert_eq!(decoded, snapshot);
+        let note = &decoded.notes[0];
+        let content = crate::open_note(&key, note.id, note.lock.as_ref().unwrap()).unwrap();
+        assert_eq!(content.title, "Roadmap");
+        assert_eq!(content.tags, vec!["rmac".to_owned(), "Planning".to_owned()]);
+        assert_eq!(
+            content.attachment_name(AttachmentId::new(1).unwrap()),
+            Some("diagram.png")
+        );
+        assert_eq!(decoded.smart_folders[0].tag, "travel");
+    }
+
+    #[test]
+    fn plaintext_in_a_locked_note_is_never_encoded() {
+        let (mut snapshot, _) = locked_fixture();
+        snapshot.notes[0].body = "leak".into();
+        assert_eq!(
+            encode(&snapshot),
+            Err(CodecError::Invalid(ValidationError::PlaintextInLockedNote))
+        );
+        let (mut snapshot, _) = locked_fixture();
+        snapshot.attachments[0].display_name = "diagram.png".into();
+        assert_eq!(
+            encode(&snapshot),
+            Err(CodecError::Invalid(ValidationError::PlaintextInLockedNote))
+        );
+    }
+
+    #[test]
+    fn dangling_lock_keys_and_hostile_kdf_parameters_fail_closed() {
+        let (mut missing, _) = locked_fixture();
+        missing.lock_keys.clear();
+        missing.current_lock_key = None;
+        assert_eq!(
+            encode(&missing),
+            Err(CodecError::Invalid(ValidationError::MissingReference))
+        );
+        let (mut hostile, _) = locked_fixture();
+        hostile.lock_keys[0].kdf.memory_kib = u32::MAX;
+        assert_eq!(
+            encode(&hostile),
+            Err(CodecError::Invalid(ValidationError::InvalidLock))
+        );
+    }
+
+    fn locked_fixture() -> (LibrarySnapshot, crate::LockKey) {
+        let mut snapshot = fixture();
+        let (record, key) = crate::create_lock_key(1, "pw", "hint", crate::TEST_LOCK_KDF).unwrap();
+        snapshot.next_lock_key_id = 2;
+        snapshot.current_lock_key = Some(1);
+        snapshot.lock_keys.push(record);
+        let note = &mut snapshot.notes[0];
+        let content = crate::LockedNoteContent {
+            title: std::mem::take(&mut note.title),
+            body: std::mem::take(&mut note.body),
+            tags: std::mem::take(&mut note.tags),
+            attachment_names: vec![(
+                snapshot.attachments[0].id,
+                std::mem::replace(
+                    &mut snapshot.attachments[0].display_name,
+                    crate::SEALED_ATTACHMENT_NAME.into(),
+                ),
+            )],
+        };
+        note.lock = Some(crate::seal_note(&key, note.id, &content).unwrap());
+        snapshot.attachments[0].sealed_key = Some(1);
+        snapshot.smart_folders.push(SmartFolderRecord {
+            id: SmartFolderId::new(1).unwrap(),
+            name: "Trips".into(),
+            tag: "travel".into(),
+        });
+        snapshot.next_smart_folder_id = 2;
+        (snapshot, key)
+    }
+
+    /// The exact version 1/2 byte layout, for migration tests.
+    fn encode_legacy(snapshot: &LibrarySnapshot, version: u16) -> Vec<u8> {
+        let mut output = Vec::new();
+        output.extend_from_slice(MAGIC);
+        put_u16(&mut output, version);
+        put_u64(&mut output, snapshot.revision);
+        put_u64(&mut output, snapshot.next_note_id);
+        put_u64(&mut output, snapshot.next_folder_id);
+        put_u64(&mut output, snapshot.next_attachment_id);
+        if version >= 2 {
+            output.push(match snapshot.sort_order {
+                SortOrder::Edited => 0,
+                SortOrder::Created => 1,
+                SortOrder::Title => 2,
+            });
+        }
+        put_count(&mut output, snapshot.folders.len()).unwrap();
+        put_count(&mut output, snapshot.notes.len()).unwrap();
+        put_count(&mut output, snapshot.attachments.len()).unwrap();
+        for folder in &snapshot.folders {
+            put_u64(&mut output, folder.id.get());
+            put_u64(&mut output, folder.revision);
+            put_string(&mut output, &folder.name).unwrap();
+            put_bool(&mut output, folder.deleted);
+        }
+        for note in &snapshot.notes {
+            put_u64(&mut output, note.id.get());
+            put_u64(&mut output, note.revision);
+            put_u64(&mut output, note.created_unix_ms);
+            put_u64(&mut output, note.modified_unix_ms);
+            put_string(&mut output, &note.title).unwrap();
+            put_string(&mut output, &note.body).unwrap();
+            put_count(&mut output, note.tags.len()).unwrap();
+            for tag in &note.tags {
+                put_string(&mut output, tag).unwrap();
+            }
+            put_u64(
+                &mut output,
+                note.folder_id.map(FolderId::get).unwrap_or_default(),
+            );
+            put_bool(&mut output, note.pinned);
+            put_bool(&mut output, note.deleted);
+            put_count(&mut output, note.attachments.len()).unwrap();
+            for attachment in &note.attachments {
+                put_u64(&mut output, attachment.get());
+            }
+        }
+        for attachment in &snapshot.attachments {
+            put_u64(&mut output, attachment.id.get());
+            put_u64(&mut output, attachment.revision);
+            put_u64(&mut output, attachment.note_id.get());
+            put_string(&mut output, &attachment.display_name).unwrap();
+            output.push(0);
+            put_u64(&mut output, attachment.byte_len);
+            output.extend_from_slice(&attachment.sha256);
+            put_bool(&mut output, attachment.deleted);
+        }
+        output
     }
 
     #[test]

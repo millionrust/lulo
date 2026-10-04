@@ -4,8 +4,10 @@ use std::fmt;
 use crate::validation::{validate_name, validate_tag};
 use crate::{
     AttachmentId, AttachmentKind, AttachmentRecord, FolderId, FolderRecord, LibrarySnapshot,
-    NoteId, NoteRecord, SortOrder, ValidationError, MAX_ATTACHMENTS, MAX_ATTACHMENTS_PER_NOTE,
-    MAX_ATTACHMENT_BYTES, MAX_BODY_BYTES, MAX_TAGS_PER_NOTE, MAX_TITLE_BYTES,
+    LockKeyRecord, NoteId, NoteLock, NoteRecord, SmartFolderId, SmartFolderRecord, SortOrder,
+    ValidationError, MAX_ATTACHMENTS, MAX_ATTACHMENTS_PER_NOTE, MAX_ATTACHMENT_BYTES,
+    MAX_BODY_BYTES, MAX_LOCK_KEYS, MAX_SMART_FOLDERS, MAX_TAGS_PER_NOTE, MAX_TITLE_BYTES,
+    SEALED_ATTACHMENT_NAME,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -288,6 +290,12 @@ pub enum MutationError {
     PurgeRequiresExclusiveTransaction,
     OrphanCollectionRequiresExclusiveTransaction,
     NoChanges,
+    /// A locked note's content can only change through its sealed payload.
+    NoteLocked,
+    NoteNotLocked,
+    LockKeyInUse,
+    InvalidLockKey,
+    MissingSmartFolder,
 }
 
 impl fmt::Display for MutationError {
@@ -322,6 +330,11 @@ impl fmt::Display for MutationError {
                 "orphan collection requires a separate Notes transaction"
             }
             Self::NoChanges => "the Notes transaction contains no changes",
+            Self::NoteLocked => "the selected note is locked",
+            Self::NoteNotLocked => "the selected note is not locked",
+            Self::LockKeyInUse => "a locked note still uses that password",
+            Self::InvalidLockKey => "the locked-note password record is invalid",
+            Self::MissingSmartFolder => "the selected Smart Folder no longer exists",
         })
     }
 }
@@ -463,6 +476,7 @@ impl LibraryTransaction {
             pinned: false,
             deleted: false,
             attachments: Vec::new(),
+            lock: None,
         });
         self.changed = true;
         Ok(id)
@@ -476,6 +490,9 @@ impl LibraryTransaction {
     ) -> Result<bool, MutationError> {
         changes.validate_content()?;
         let note = self.note_mut(id, expected_revision)?;
+        if note.lock.is_some() {
+            return Err(MutationError::NoteLocked);
+        }
         if changes.modified_unix_ms < note.created_unix_ms {
             return Err(MutationError::InvalidCandidate(
                 ValidationError::InvalidTimestamp,
@@ -644,6 +661,7 @@ impl LibraryTransaction {
             byte_len: attachment.byte_len,
             sha256: attachment.sha256,
             deleted: false,
+            sealed_key: None,
         });
         self.changed = true;
         Ok(AttachmentImportPlan {
@@ -738,6 +756,9 @@ impl LibraryTransaction {
         require_revision(attachment.revision, expected_attachment_revision)?;
         if attachment.deleted {
             return Err(MutationError::AttachmentAlreadyRemoved);
+        }
+        if attachment.sealed_key.is_some() {
+            return Err(MutationError::NoteLocked);
         }
         if attachment.display_name == display_name {
             return Ok(false);
@@ -853,6 +874,248 @@ impl LibraryTransaction {
         Ok(plan)
     }
 
+    /// File ▸ Lock Note: replace a live, unlocked note's plaintext with its
+    /// sealed payload. The caller sealed exactly the note's current content.
+    pub fn lock_note(
+        &mut self,
+        id: NoteId,
+        expected_revision: u64,
+        lock: NoteLock,
+    ) -> Result<(), MutationError> {
+        let note = self.note_mut(id, expected_revision)?;
+        if note.lock.is_some() {
+            return Err(MutationError::NoteLocked);
+        }
+        note.revision = next_revision(note.revision)?;
+        note.title.clear();
+        note.body.clear();
+        note.tags.clear();
+        note.lock = Some(lock);
+        self.changed = true;
+        Ok(())
+    }
+
+    /// An edit of an open locked note: its content changes only as a new
+    /// sealed payload. The caller validated the plaintext before sealing.
+    pub fn edit_locked_note(
+        &mut self,
+        id: NoteId,
+        expected_revision: u64,
+        modified_unix_ms: u64,
+        lock: NoteLock,
+    ) -> Result<(), MutationError> {
+        let note = self.note_mut(id, expected_revision)?;
+        if note.lock.is_none() {
+            return Err(MutationError::NoteNotLocked);
+        }
+        if modified_unix_ms < note.created_unix_ms {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::InvalidTimestamp,
+            ));
+        }
+        note.revision = next_revision(note.revision)?;
+        note.modified_unix_ms = modified_unix_ms;
+        note.lock = Some(lock);
+        self.changed = true;
+        Ok(())
+    }
+
+    /// Re-seal a locked note (live or in Trash) without changing its content
+    /// or modification date: a password change or an attachment-name update.
+    pub fn reseal_note(&mut self, id: NoteId, lock: NoteLock) -> Result<(), MutationError> {
+        let note = self
+            .candidate
+            .notes
+            .iter_mut()
+            .find(|note| note.id == id)
+            .ok_or(MutationError::MissingNote)?;
+        if note.lock.is_none() {
+            return Err(MutationError::NoteNotLocked);
+        }
+        note.revision = next_revision(note.revision)?;
+        note.lock = Some(lock);
+        self.changed = true;
+        Ok(())
+    }
+
+    /// Remove Lock: restore a locked note's decrypted content as plaintext.
+    pub fn remove_note_lock(
+        &mut self,
+        id: NoteId,
+        expected_revision: u64,
+        title: String,
+        body: String,
+        tags: Vec<String>,
+    ) -> Result<(), MutationError> {
+        validate_note_content(&title, &body, &tags)?;
+        let note = self.note_mut(id, expected_revision)?;
+        if note.lock.is_none() {
+            return Err(MutationError::NoteNotLocked);
+        }
+        note.revision = next_revision(note.revision)?;
+        note.title = title;
+        note.body = body;
+        note.tags = tags;
+        note.lock = None;
+        self.changed = true;
+        Ok(())
+    }
+
+    /// Replace one attachment's managed bytes description after sealing,
+    /// re-sealing or unsealing. Storage proves the new bytes before this
+    /// candidate becomes authoritative (an attachment-rewrite commit).
+    pub fn rewrite_attachment(
+        &mut self,
+        attachment_id: AttachmentId,
+        byte_len: u64,
+        sha256: [u8; 32],
+        sealed_key: Option<u32>,
+        display_name: String,
+    ) -> Result<(), MutationError> {
+        validate_name(&display_name).map_err(MutationError::InvalidCandidate)?;
+        if byte_len == 0 || byte_len > MAX_ATTACHMENT_BYTES || sha256 == [0; 32] {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::InvalidAttachment,
+            ));
+        }
+        if sealed_key.is_some() && display_name != SEALED_ATTACHMENT_NAME {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::PlaintextInLockedNote,
+            ));
+        }
+        let attachment = self
+            .candidate
+            .attachments
+            .iter_mut()
+            .find(|attachment| attachment.id == attachment_id)
+            .ok_or(MutationError::MissingAttachment)?;
+        attachment.revision = next_revision(attachment.revision)?;
+        attachment.byte_len = byte_len;
+        attachment.sha256 = sha256;
+        attachment.sealed_key = sealed_key;
+        attachment.display_name = display_name;
+        self.changed = true;
+        Ok(())
+    }
+
+    /// The identity the next [`add_lock_key`](Self::add_lock_key) must use.
+    pub fn next_lock_key_id(&self) -> u32 {
+        self.candidate.next_lock_key_id
+    }
+
+    /// Store a new password generation and optionally make it current.
+    pub fn add_lock_key(
+        &mut self,
+        record: LockKeyRecord,
+        make_current: bool,
+    ) -> Result<(), MutationError> {
+        if record.id != self.candidate.next_lock_key_id
+            || self.candidate.lock_keys.len() >= MAX_LOCK_KEYS
+        {
+            return Err(MutationError::InvalidLockKey);
+        }
+        let next = record
+            .id
+            .checked_add(1)
+            .filter(|next| *next != u32::MAX)
+            .ok_or(MutationError::IdentityExhausted)?;
+        self.candidate.next_lock_key_id = next;
+        if make_current {
+            self.candidate.current_lock_key = Some(record.id);
+        }
+        self.candidate.lock_keys.push(record);
+        self.changed = true;
+        Ok(())
+    }
+
+    /// Forget a password generation no note or attachment uses any more.
+    pub fn remove_lock_key(&mut self, id: u32) -> Result<(), MutationError> {
+        if self.candidate.current_lock_key == Some(id)
+            || self
+                .candidate
+                .notes
+                .iter()
+                .any(|note| note.lock.as_ref().is_some_and(|lock| lock.key_id == id))
+            || self
+                .candidate
+                .attachments
+                .iter()
+                .any(|attachment| attachment.sealed_key == Some(id))
+        {
+            return Err(MutationError::LockKeyInUse);
+        }
+        let before = self.candidate.lock_keys.len();
+        self.candidate.lock_keys.retain(|record| record.id != id);
+        if self.candidate.lock_keys.len() == before {
+            return Err(MutationError::InvalidLockKey);
+        }
+        self.changed = true;
+        Ok(())
+    }
+
+    /// Make an existing password generation the one new locks use.
+    pub fn set_current_lock_key(&mut self, id: u32) -> Result<(), MutationError> {
+        if !self
+            .candidate
+            .lock_keys
+            .iter()
+            .any(|record| record.id == id)
+        {
+            return Err(MutationError::InvalidLockKey);
+        }
+        if self.candidate.current_lock_key != Some(id) {
+            self.candidate.current_lock_key = Some(id);
+            self.changed = true;
+        }
+        Ok(())
+    }
+
+    /// File ▸ New Smart Folder: store a tag collection with the library.
+    pub fn create_smart_folder(
+        &mut self,
+        name: String,
+        tag: String,
+    ) -> Result<SmartFolderId, MutationError> {
+        validate_name(&name).map_err(MutationError::InvalidCandidate)?;
+        validate_tag(&tag).map_err(MutationError::InvalidCandidate)?;
+        if self.candidate.smart_folders.len() >= MAX_SMART_FOLDERS {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::CollectionLimit,
+            ));
+        }
+        let identity = name.to_lowercase();
+        if self
+            .candidate
+            .smart_folders
+            .iter()
+            .any(|folder| folder.name.to_lowercase() == identity)
+        {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::DuplicateName,
+            ));
+        }
+        let id = SmartFolderId::new(self.candidate.next_smart_folder_id)
+            .ok_or(MutationError::IdentityExhausted)?;
+        self.candidate.next_smart_folder_id = next_identity(self.candidate.next_smart_folder_id)?;
+        self.candidate
+            .smart_folders
+            .push(SmartFolderRecord { id, name, tag });
+        self.changed = true;
+        Ok(id)
+    }
+
+    pub fn delete_smart_folder(&mut self, id: SmartFolderId) -> Result<(), MutationError> {
+        let before = self.candidate.smart_folders.len();
+        self.candidate
+            .smart_folders
+            .retain(|folder| folder.id != id);
+        if self.candidate.smart_folders.len() == before {
+            return Err(MutationError::MissingSmartFolder);
+        }
+        self.changed = true;
+        Ok(())
+    }
+
     pub fn set_sort_order(&mut self, sort_order: SortOrder) -> bool {
         if self.candidate.sort_order == sort_order {
             return false;
@@ -868,6 +1131,9 @@ impl LibraryTransaction {
         }
         self.candidate
             .validate()
+            .map_err(MutationError::InvalidCandidate)?;
+        self.candidate
+            .validate_at_rest()
             .map_err(MutationError::InvalidCandidate)?;
         Ok(self.candidate)
     }
@@ -1018,8 +1284,10 @@ mod tests {
                 pinned: true,
                 deleted: false,
                 attachments: Vec::new(),
+                lock: None,
             }],
             attachments: Vec::new(),
+            ..LibrarySnapshot::default()
         }
     }
 
@@ -1508,6 +1776,7 @@ mod tests {
             byte_len: 99,
             sha256: [1; 32],
             deleted: false,
+            sealed_key: None,
         });
         base.validate().unwrap();
 
@@ -1560,6 +1829,7 @@ mod tests {
                 byte_len: 10,
                 sha256: [1; 32],
                 deleted: false,
+                sealed_key: None,
             },
             AttachmentRecord {
                 id: orphan_attachment_id,
@@ -1570,6 +1840,7 @@ mod tests {
                 byte_len: 20,
                 sha256: [2; 32],
                 deleted: true,
+                sealed_key: None,
             },
         ]);
         base.validate().unwrap();

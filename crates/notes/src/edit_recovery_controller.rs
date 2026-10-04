@@ -28,6 +28,7 @@ impl NotesView {
     pub(super) fn insert_checklist(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let editable = self.is_interactive_ready()
             && !self.markdown_preview_visible
+            && !self.selected_note_closed()
             && self
                 .session
                 .selected_note()
@@ -59,6 +60,7 @@ impl NotesView {
     fn assistive_fields_editable(&self) -> bool {
         self.is_interactive_ready()
             && !self.markdown_preview_visible
+            && !self.selected_note_closed()
             && self
                 .session
                 .selected_note()
@@ -147,9 +149,11 @@ impl NotesView {
         let Some(note) = self.session.selected_note() else {
             return;
         };
-        if note.deleted {
+        // A closed locked note shows no editor; never send its empty view.
+        if note.deleted || self.session.is_note_closed(note) {
             return;
         }
+        self.last_activity = std::time::Instant::now();
         let note_id = note.id;
         let expected_revision = note.revision;
         let created_unix_ms = note.created_unix_ms;

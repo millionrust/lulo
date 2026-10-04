@@ -358,6 +358,7 @@ pub fn plan_legacy_library(mut input: LegacyLibraryInput) -> Result<MigrationPla
                 byte_len: attachment.bytes.len() as u64,
                 sha256: hash,
                 deleted: false,
+                sealed_key: None,
             });
             planned_attachments.push(PlannedAttachment {
                 attachment_id,
@@ -384,6 +385,7 @@ pub fn plan_legacy_library(mut input: LegacyLibraryInput) -> Result<MigrationPla
             pinned: pinned_note,
             deleted: false,
             attachments: attachment_ids,
+            lock: None,
         });
         note_sources.push(PlannedNoteSource {
             note_id,
@@ -421,6 +423,7 @@ pub fn plan_legacy_library(mut input: LegacyLibraryInput) -> Result<MigrationPla
         folders,
         notes,
         attachments,
+        ..LibrarySnapshot::default()
     };
     snapshot
         .validate()

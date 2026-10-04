@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use image::ImageReader;
 use rmac_notes_store::{
-    encode, AttachmentId, AttachmentImportPlan, AttachmentKind, AttachmentRecord, LibrarySnapshot,
-    NewAttachment, NoteId, MAX_NAME_BYTES,
+    encode, open_attachment, AttachmentId, AttachmentImportPlan, AttachmentKind, AttachmentRecord,
+    LibrarySnapshot, LockKey, NewAttachment, NoteId, MAX_NAME_BYTES, SEALED_ATTACHMENT_OVERHEAD,
 };
 use rmac_storage::{Backend, FileFingerprint, FileSystem};
 use sha2::{Digest as _, Sha256};
@@ -68,6 +68,8 @@ pub enum PreviewError {
     TooLarge,
     Decode,
     Io(io::ErrorKind),
+    /// The attachment belongs to a locked note that is not open.
+    Locked,
 }
 
 impl fmt::Display for PreviewError {
@@ -80,6 +82,7 @@ impl fmt::Display for PreviewError {
             Self::TooLarge => "The Notes image exceeds a preview safety limit",
             Self::Decode => "Notes could not decode the managed image",
             Self::Io(_) => "Notes could not read the managed image",
+            Self::Locked => "This image belongs to a locked note",
         })
     }
 }
@@ -498,13 +501,25 @@ pub fn load_managed_image_preview(
     attachment: &AttachmentRecord,
     target: PreviewSize,
 ) -> Result<DecodedImagePreview, PreviewError> {
-    load_managed_image_preview_with_backend(root, attachment, target, &FileSystem)
+    load_managed_image_preview_with_backend(root, attachment, target, None, &FileSystem)
+}
+
+/// [`load_managed_image_preview`] for an attachment that may be sealed: a
+/// locked note's attachment decrypts with its open key, or reports `Locked`.
+pub fn load_managed_image_preview_with_key(
+    root: &Path,
+    attachment: &AttachmentRecord,
+    target: PreviewSize,
+    key: Option<&LockKey>,
+) -> Result<DecodedImagePreview, PreviewError> {
+    load_managed_image_preview_with_backend(root, attachment, target, key, &FileSystem)
 }
 
 pub(crate) fn load_managed_image_preview_with_backend<B: Backend>(
     root: &Path,
     attachment: &AttachmentRecord,
     target: PreviewSize,
+    key: Option<&LockKey>,
     backend: &B,
 ) -> Result<DecodedImagePreview, PreviewError> {
     if !root.is_absolute()
@@ -514,9 +529,21 @@ pub(crate) fn load_managed_image_preview_with_backend<B: Backend>(
     {
         return Err(PreviewError::InvalidRequest);
     }
-    if attachment.byte_len > MAX_IMPORTED_IMAGE_BYTES as u64 {
+    let overhead = if attachment.sealed_key.is_some() {
+        SEALED_ATTACHMENT_OVERHEAD
+    } else {
+        0
+    };
+    if attachment.byte_len > MAX_IMPORTED_IMAGE_BYTES as u64 + overhead {
         return Err(PreviewError::TooLarge);
     }
+    let key = match attachment.sealed_key {
+        None => None,
+        Some(key_id) => Some(
+            key.filter(|key| key.key_id() == key_id)
+                .ok_or(PreviewError::Locked)?,
+        ),
+    };
     let maximum = usize::try_from(attachment.byte_len).map_err(|_| PreviewError::TooLarge)?;
     let path = managed_attachment_path(root, attachment.id);
     let bytes = backend
@@ -529,6 +556,12 @@ pub(crate) fn load_managed_image_preview_with_backend<B: Backend>(
     if bytes.len() as u64 != attachment.byte_len || digest(&bytes) != attachment.sha256 {
         return Err(PreviewError::Changed);
     }
+    let bytes = match key {
+        None => zeroize::Zeroizing::new(bytes),
+        Some(key) => {
+            open_attachment(key, attachment.id, &bytes).map_err(|_| PreviewError::Changed)?
+        }
+    };
     let expected_format = image_format(attachment.kind).ok_or(PreviewError::Unsupported)?;
     let guessed_format = image::guess_format(&bytes).map_err(|_| PreviewError::Decode)?;
     if guessed_format != expected_format {

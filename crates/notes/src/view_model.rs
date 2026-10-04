@@ -76,41 +76,29 @@ pub(super) struct BundleImportCompletion {
     pub(super) maintenance_pending: bool,
 }
 
-/// File ▸ Lock Note / Application ▸ Close All Locked Notes / Notes ▸
-/// Settings… ▸ Locked notes. Notes has no account password service and no
-/// Touch ID on Linux (NOTES-13), so the password lives only in this
-/// process's memory, hashed with SHA-256: it is never written to the
-/// durable library, which is why it does not survive relaunch (docs/
-/// parity.md documents this as an honest simplification, not iCloud
-/// Keychain-grade protection).
+/// File ▸ Lock Note / Remove Lock, the locked-note placeholder, and Notes ▸
+/// Settings… ▸ Change/Reset Password…. The view only collects passwords:
+/// the runtime worker stretches them with Argon2id and seals locked notes
+/// (title, body, tags, attachments) with XChaCha20-Poly1305 in the library,
+/// so the password and the lock survive relaunch (NOTES-13).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum LockDialog {
-    /// Notes ▸ Settings… ▸ Change Password…, or File ▸ Lock Note on an
-    /// unlocked note before any password has ever been set: sets the one
-    /// password that locks/unlocks every locked note in this session. The
-    /// `Option<NoteId>` is the note to lock immediately afterwards, for
-    /// the File ▸ Lock Note path; `None` for the Settings path, which has
-    /// no note of its own in view.
-    SetPassword(Option<NoteId>),
-    /// File ▸ Lock Note on an already-locked, not-yet-unlocked note: ask
-    /// for the password before showing its content.
+    /// No locked-notes password exists yet: Password, Verify and Hint, then
+    /// lock `then_lock` (File ▸ Lock Note) or just set it (Settings).
+    CreatePassword { then_lock: Option<(NoteId, u64)> },
+    /// File ▸ Lock Note while the password is closed: prove it to lock.
+    LockWithPassword { note_id: NoteId, revision: u64 },
+    /// The locked-note placeholder's View Note…: opens every note locked
+    /// with the same password for this session.
     Unlock(NoteId),
-    /// Notes ▸ Settings… ▸ Reset Password…: clears the password and
-    /// unlocks every note, after confirmation.
+    /// File ▸ Remove Lock on a closed note.
+    RemoveLock { note_id: NoteId, revision: u64 },
+    /// Notes ▸ Settings… ▸ Change Password…: old, new, verify, hint.
+    ChangePassword,
+    /// Notes ▸ Settings… ▸ Reset Password…: confirmation first…
     ConfirmReset,
-}
-
-/// A session-only Smart Folder (File ▸ New Smart Folder / New Smart Folder
-/// with Tag Selection): a saved filter by one tag, not a real `FolderRecord`
-/// (NOTES-11 — Notes has no tag browser or smart-folder storage yet). It
-/// lives only in this session for the same reason `LockDialog`'s password
-/// does: adding it to the durable library's schema is a bigger, riskier
-/// change than this pass's scope (docs/parity.md).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct SmartFolder {
-    pub(super) id: u64,
-    pub(super) name: String,
-    pub(super) tag: String,
+    /// …then the new password, which only future locks use.
+    ResetPassword,
 }
 
 /// Format ▸ Maths Results / the toolbar's maths-results button. Lulo has

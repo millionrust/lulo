@@ -12,9 +12,14 @@ impl NotesView {
             WorkerEvent::Accepted(accepted) => accepted.generation,
             _ => None,
         };
-        let refresh_search = matches!(&event, WorkerEvent::Ready(_) | WorkerEvent::Accepted(_));
+        let refresh_search = matches!(
+            &event,
+            WorkerEvent::Ready(_) | WorkerEvent::Accepted(_) | WorkerEvent::LockStateChanged(_)
+        );
+        let lock_state_changed = matches!(&event, WorkerEvent::LockStateChanged(_));
         let sync_editor = match &event {
             WorkerEvent::Ready(_) => self.latest_local_generation.is_none(),
+            WorkerEvent::LockStateChanged(_) => false,
             WorkerEvent::Accepted(accepted) => match accepted.generation {
                 Some(generation) => self
                     .latest_local_generation
@@ -33,6 +38,18 @@ impl NotesView {
         };
         let rejected_request_id = match &event {
             WorkerEvent::Rejected(rejected) => Some(rejected.request_id),
+            _ => None,
+        };
+        let lock_request = self.lock_request_id;
+        let lock_finished = lock_request.is_some_and(|request_id| match &event {
+            WorkerEvent::Accepted(accepted) => accepted.request_id == request_id,
+            WorkerEvent::LockStateChanged(changed) => changed.request_id == request_id,
+            _ => false,
+        });
+        let lock_failed = match &event {
+            WorkerEvent::Rejected(rejected) if lock_request == Some(rejected.request_id) => {
+                Some(rejected.failure)
+            }
             _ => None,
         };
         let exported = match &event {
@@ -196,6 +213,8 @@ impl NotesView {
                 )
         );
         let rejection = match &event {
+            // A password dialog shows its own failure inline.
+            WorkerEvent::Rejected(_) if lock_failed.is_some() => None,
             WorkerEvent::Rejected(rejected) => Some(worker_failure_message(rejected.failure)),
             WorkerEvent::Pending(pending) => Some(pending_message(pending.reason)),
             WorkerEvent::StartupFailed(error) => Some(error.to_string()),
@@ -203,6 +222,18 @@ impl NotesView {
         };
         self.session.apply(event);
         after_session_apply(self);
+        if lock_finished {
+            self.finish_lock_request(window, cx);
+        }
+        if let Some(failure) = lock_failed {
+            self.fail_lock_request(failure, cx);
+        }
+        self.arm_idle_lock(cx);
+        // Unlocking shows the selected note; closing must take its
+        // plaintext out of the editor fields at once.
+        let sync_editor = sync_editor
+            || lock_state_changed
+                && (self.latest_local_generation.is_none() || self.selected_note_closed());
         if let Some(reviewed) = markdown_reviewed
             .filter(|reviewed| self.note_import_request_id == Some(reviewed.request_id))
         {
@@ -287,6 +318,11 @@ impl NotesView {
         }
         if sync_editor {
             self.sync_editor(window, cx);
+        }
+        if lock_state_changed {
+            // The same revision may now decrypt (or no longer decrypt) the
+            // selected note's images.
+            self.sync_attachment_preview(true, cx);
         }
         if let Some(restored) = restored_draft {
             let decision = self

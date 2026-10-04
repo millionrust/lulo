@@ -146,9 +146,9 @@ impl NotesView {
         )
     }
 
-    /// File ▸ Lock Note: hides the title, body, tags and attachments of a
-    /// locked note this session has not unlocked, instead of rendering
-    /// them disabled-but-present — a real content gate, not a cosmetic one.
+    /// File ▸ Lock Note: a locked note whose password is closed. Its title,
+    /// body, tags and attachments are encrypted in the library and absent
+    /// from the view, so there is nothing to render but the lock.
     fn render_locked_note(&self, note_id: NoteId, cx: &mut Context<Self>) -> AnyElement {
         div()
             .size_full()
@@ -172,7 +172,13 @@ impl NotesView {
                         div()
                             .text_size(rmac_ui::text_px(15.0))
                             .font_weight(mac::SEMIBOLD)
-                            .child("This note is locked"),
+                            .child("This note is locked."),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(mac::text_secondary())
+                            .child("Enter the notes password to view it."),
                     )
                     .child(
                         Button::new("unlock-note", "View Note…").on_click(cx.listener(
@@ -187,7 +193,7 @@ impl NotesView {
         let Some(note) = self.session.selected_note() else {
             return centered_state("No Note Selected", "Choose a note or create a new one.");
         };
-        if self.locked_notes.contains(&note.id) && !self.unlocked_this_session.contains(&note.id) {
+        if self.session.is_note_closed(note) {
             return self.render_locked_note(note.id, cx);
         }
         let editable =

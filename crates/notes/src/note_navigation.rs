@@ -182,11 +182,11 @@ impl NotesView {
         }
 
         // File ▸ New Smart Folder / New Smart Folder with Tag Selection
-        // (NOT-MENU-002/003/004): a session-only saved tag filter, not a
-        // real `FolderRecord` (`view_model::SmartFolder`'s doc comment).
-        // Reuses the plain folder glyph: Notes has no dedicated tag-folder
-        // icon asset.
-        for smart_folder in &self.smart_folders {
+        // (NOT-MENU-002/003/004): a tag collection stored with the library
+        // (NOTES-11). A locked note's tags are sealed, so it never joins
+        // one. Reuses the plain folder glyph: Notes has no dedicated
+        // tag-folder icon asset.
+        for smart_folder in self.session.smart_folders() {
             let smart_folder_id = smart_folder.id;
             let tag = smart_folder.tag.to_lowercase();
             let count = snapshot.map_or(0, |snapshot| {
@@ -195,6 +195,7 @@ impl NotesView {
                     .iter()
                     .filter(|note| {
                         !note.deleted
+                            && note.lock.is_none()
                             && note
                                 .tags
                                 .iter()
@@ -203,7 +204,7 @@ impl NotesView {
                     .count()
             });
             rows = rows.child(folder_row(
-                ("smart-folder", smart_folder_id),
+                ("smart-folder", smart_folder_id.get()),
                 smart_folder.name.clone(),
                 glyphs::FOLDER,
                 self.show_note_count.then_some(count),
@@ -282,10 +283,10 @@ impl NotesView {
                 .iter()
                 .filter(|attachment| !attachment.deleted)
                 .filter_map(|attachment| {
-                    let note = snapshot
-                        .notes
-                        .iter()
-                        .find(|note| note.id == attachment.note_id && !note.deleted)?;
+                    // A locked note's attachments are never listed.
+                    let note = snapshot.notes.iter().find(|note| {
+                        note.id == attachment.note_id && !note.deleted && note.lock.is_none()
+                    })?;
                     Some((
                         attachment.id,
                         note.id,
@@ -399,16 +400,23 @@ impl NotesView {
             } else {
                 let smart_folder_tag = self
                     .smart_folder_filter
-                    .and_then(|id| self.smart_folders.iter().find(|folder| folder.id == id))
+                    .and_then(|id| {
+                        self.session
+                            .smart_folders()
+                            .into_iter()
+                            .find(|folder| folder.id == id)
+                    })
                     .map(|folder| folder.tag.to_lowercase());
                 self.session
                     .visible_notes()
                     .into_iter()
                     .filter(|note| {
                         smart_folder_tag.as_deref().is_none_or(|tag| {
-                            note.tags
-                                .iter()
-                                .any(|note_tag| note_tag.to_lowercase() == tag)
+                            note.lock.is_none()
+                                && note
+                                    .tags
+                                    .iter()
+                                    .any(|note_tag| note_tag.to_lowercase() == tag)
                         })
                     })
                     .map(|note| (note, None))
@@ -517,7 +525,14 @@ impl NotesView {
             }
             let note_id = note.id;
             let is_selected = selected == Some(note.id);
-            let title_source = if note.title.trim().is_empty() {
+            // File ▸ Lock Note: a locked note's title is encrypted, so a
+            // closed one is listed as "Locked Note"; an open one shows its
+            // title. Neither ever shows its body snippet or tags.
+            let locked = note.lock.is_some();
+            let closed = self.session.is_note_closed(note);
+            let title_source = if closed {
+                "Locked Note"
+            } else if note.title.trim().is_empty() {
                 "New Note"
             } else {
                 note.title.as_str()
@@ -558,17 +573,13 @@ impl NotesView {
                 body_fragment =
                     plain_search_fragment("No additional text", MAX_SEARCH_DETAIL_FRAGMENT_CHARS);
             }
-            // File ▸ Lock Note: the row keeps its title (as the Mac's does)
-            // but never shows the body snippet of a locked, not-yet-
-            // unlocked note.
-            let locked = self.locked_notes.contains(&note.id)
-                && !self.unlocked_this_session.contains(&note.id);
             if locked {
                 body_fragment = plain_search_fragment("Locked", MAX_SEARCH_DETAIL_FRAGMENT_CHARS);
             }
             let tags = note
                 .tags
                 .iter()
+                .filter(|_| !locked)
                 .enumerate()
                 .map(|(index, tag)| {
                     let matched = search_hit.and_then(|hit| {
@@ -682,7 +693,11 @@ impl NotesView {
                                     .font_weight(mac::BOLD)
                                     .text_color(title_colour)
                                     .when(locked, |element| {
-                                        element.child(div().flex_none().child("🔒"))
+                                        element.child(div().flex_none().child(if closed {
+                                            "🔒"
+                                        } else {
+                                            "🔓"
+                                        }))
                                     })
                                     .child(div().flex_1().min_w(px(0.0)).truncate().child(
                                         styled_search_fragment_in(

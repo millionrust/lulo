@@ -214,10 +214,13 @@ impl NotesSearchIndex {
     ) -> Result<Self, SearchError> {
         require_active(cancellation)?;
         snapshot.validate().map_err(SearchError::InvalidSnapshot)?;
+        // Locked notes are never indexed, open or not: neither their title,
+        // body and tags nor their attachments' names (as on macOS, whose
+        // search never looks inside a locked note).
         let live_note_ids = snapshot
             .notes
             .iter()
-            .filter(|note| !note.deleted)
+            .filter(|note| !note.deleted && note.lock.is_none())
             .map(|note| note.id)
             .collect::<BTreeSet<_>>();
         let mut attachments = BTreeMap::<NoteId, Vec<AttachmentText>>::new();
@@ -249,7 +252,7 @@ impl NotesSearchIndex {
         let mut entries = Vec::new();
         for (note_index, note) in snapshot.notes.iter().enumerate() {
             require_active(cancellation)?;
-            if note.deleted {
+            if note.deleted || note.lock.is_some() {
                 continue;
             }
             let normalized_title = normalize_cancellable(
@@ -819,6 +822,7 @@ mod tests {
             pinned: false,
             deleted: false,
             attachments: Vec::new(),
+            lock: None,
         }
     }
 
@@ -855,7 +859,9 @@ mod tests {
                 byte_len: 10,
                 sha256: [1; 32],
                 deleted: false,
+                sealed_key: None,
             }],
+            ..LibrarySnapshot::default()
         })
     }
 

@@ -430,6 +430,7 @@ mod tests {
                 pinned: false,
                 deleted: true,
                 attachments: vec![first_id],
+                lock: None,
             }],
             attachments: vec![
                 AttachmentRecord {
@@ -441,6 +442,7 @@ mod tests {
                     byte_len: first.len() as u64,
                     sha256: digest(&first),
                     deleted: false,
+                    sealed_key: None,
                 },
                 AttachmentRecord {
                     id: second_id,
@@ -451,8 +453,10 @@ mod tests {
                     byte_len: second.len() as u64,
                     sha256: digest(&second),
                     deleted: true,
+                    sealed_key: None,
                 },
             ],
+            ..LibrarySnapshot::default()
         };
         base.validate().unwrap();
         let mut transaction = LibraryTransaction::begin(&base).unwrap();

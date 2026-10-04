@@ -26,6 +26,10 @@ pub enum RecoveryNotice {
     FinishedInterruptedBundleImport,
     CorruptBundleImportPreserved,
     BundleImportPending,
+    RolledBackInterruptedAttachmentRewrite,
+    FinishedInterruptedAttachmentRewrite,
+    CorruptAttachmentRewritePreserved,
+    AttachmentRewritePending,
 }
 
 #[derive(Clone, Debug)]
@@ -111,6 +115,13 @@ pub enum Operation {
     RemoveBundleImportIntent,
     StageBundleAttachment,
     VerifyBundleAttachment,
+    ReadAttachmentRewriteIntent,
+    WriteAttachmentRewriteIntent,
+    VerifyAttachmentRewriteIntent,
+    RemoveAttachmentRewriteIntent,
+    StageAttachmentRewrite,
+    FinishAttachmentRewrite,
+    ReadManagedAttachment,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +139,7 @@ pub enum ErrorKind {
     UnsupportedAttachment,
     AttachmentTooLarge,
     AttachmentMismatch,
+    InvalidAttachmentRewrite,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -181,6 +193,9 @@ impl fmt::Display for StoreError {
             ErrorKind::AttachmentTooLarge => "The selected image exceeds a Notes safety limit",
             ErrorKind::AttachmentMismatch => {
                 "Notes found managed attachment bytes that changed unexpectedly"
+            }
+            ErrorKind::InvalidAttachmentRewrite => {
+                "Notes found invalid locked-attachment rewrite state"
             }
         })
     }

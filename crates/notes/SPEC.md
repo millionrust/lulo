@@ -690,3 +690,17 @@ cancellation/restart, and private-error redaction. Runtime evidence covers
 keyboard-only operation, IME/clipboard/undo, Orca/AT-SPI semantics, visual
 states at every scale/theme, launch/search/save latency, idle CPU/wakeups, and
 an eight-hour edit/search/attachment soak without memory or data growth.
+
+## Locked notes (schema v3)
+
+File ▸ Lock Note seals a note's title, body, tags and attachment names with
+XChaCha20-Poly1305 under a key derived by Argon2id from the locked-notes
+password (random salt per password, parameters stored with it); its image
+attachments are rewritten sealed through a staged, intent-backed rewrite that
+startup finishes or rolls back. Encoding refuses a locked note that still
+carries plaintext. Keys exist only in the session keyring and close on Close
+All Locked Notes, 8 minutes of inactivity, sleep, the lock screen or quit.
+Search, list snippets, Smart Folders, the attachments browser, export,
+duplicate, print and recovery drafts never use a locked note's content.
+Change Password re-encrypts; Reset Password applies to future locks only.
+Smart Folders are stored with the library.

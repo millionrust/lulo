@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use rmac_notes_storage::{
-    load_managed_image_preview, DecodedImagePreview, PreviewError, PreviewSize,
+    load_managed_image_preview_with_key, DecodedImagePreview, PreviewError, PreviewSize,
 };
 use rmac_notes_store::{AttachmentId, AttachmentRecord};
 
@@ -458,6 +458,15 @@ impl Drop for NotesPreviewWorkerEvents {
 
 impl NotesPreviewWorker {
     pub fn start(root: PathBuf) -> Result<Self, PreviewWorkerStartError> {
+        Self::start_with_keyring(root, crate::NotesKeyring::new())
+    }
+
+    /// Start with the session's shared key cache so an open locked note's
+    /// sealed images decrypt for preview (and a closed one's never do).
+    pub fn start_with_keyring(
+        root: PathBuf,
+        keyring: crate::NotesKeyring,
+    ) -> Result<Self, PreviewWorkerStartError> {
         if !root.is_absolute()
             || root
                 .components()
@@ -471,7 +480,7 @@ impl NotesPreviewWorker {
         let worker_active = active.clone();
         let thread = thread::Builder::new()
             .name("rmac-notes-preview".into())
-            .spawn(move || run_worker(root, command_receiver, event_sender, worker_active))
+            .spawn(move || run_worker(root, keyring, command_receiver, event_sender, worker_active))
             .map_err(|error| PreviewWorkerStartError::Thread(error.kind()))?;
         Ok(Self {
             commands: Some(command_sender),
@@ -587,6 +596,7 @@ fn cancel_active(active: &Mutex<Option<PreviewCancellation>>) {
 
 fn run_worker(
     root: PathBuf,
+    keyring: crate::NotesKeyring,
     commands: Receiver<PreviewWorkerCommand>,
     events: SyncSender<PreviewWorkerEvent>,
     active: Arc<Mutex<Option<PreviewCancellation>>>,
@@ -616,7 +626,17 @@ fn run_worker(
         {
             break;
         }
-        let result = load_managed_image_preview(&root, &request.attachment, request.target);
+        let key = request
+            .attachment
+            .sealed_key
+            .and_then(|key_id| keyring.get(key_id));
+        let result = load_managed_image_preview_with_key(
+            &root,
+            &request.attachment,
+            request.target,
+            key.as_deref(),
+        );
+        drop(key);
         active
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -680,6 +700,7 @@ mod tests {
             byte_len: bytes.len() as u64,
             sha256: Sha256::digest(bytes).into(),
             deleted: false,
+            sealed_key: None,
         }
     }
 

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
@@ -10,8 +10,8 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use rmac_notes_storage::{
-    inspect_notes_startup, AcceptedCommit, AcceptedLibrary, BundleImportError, CommitError,
-    DraftError, DraftRecord, DraftStore, ExportFailure, ExportFormat, ExportOutcome,
+    inspect_notes_startup, AcceptedCommit, AcceptedLibrary, AttachmentRewrite, BundleImportError,
+    CommitError, DraftError, DraftRecord, DraftStore, ExportFailure, ExportFormat, ExportOutcome,
     ImportedTextEncoding, MarkdownImportReview, MigrationReview, MigrationWarning, NotesPaths,
     NotesStartup, PendingCommit, PendingReason, PreparedBundleImport, PreparedExportDestination,
     PreparedImageAttachment, PreparedTextNote, RecoveryNotice, StartupError, StoreError,
@@ -19,10 +19,19 @@ use rmac_notes_storage::{
 };
 use rmac_notes_store::{
     AttachmentId, BundleCollisionPolicy, BundleImportReview, BundlePlanError, ExportError,
-    ExportScope, FolderId, LibrarySnapshot, MutationError, NewNote, NoteChanges, NoteId, SortOrder,
+    ExportScope, FolderId, LibrarySnapshot, LockError, LockKdfParams, MutationError, NewNote,
+    NoteChanges, NoteId, SmartFolderId, SortOrder, DEFAULT_LOCK_KDF,
+};
+use zeroize::Zeroizing;
+
+use crate::{
+    EditGeneration, EditScheduler, NotesKeyring, ScheduledEdit, SchedulerError,
+    DEFAULT_EDIT_DEBOUNCE,
 };
 
-use crate::{EditGeneration, EditScheduler, ScheduledEdit, SchedulerError, DEFAULT_EDIT_DEBOUNCE};
+mod lock_ops;
+#[cfg(test)]
+mod lock_tests;
 
 pub const COMMAND_CAPACITY: usize = 64;
 pub const EVENT_CAPACITY: usize = 16;
@@ -94,6 +103,79 @@ pub enum LibraryAction {
     EmptyTrash {
         expected_library_revision: u64,
     },
+    /// File ▸ Lock Note.
+    LockNote {
+        note_id: NoteId,
+        expected_revision: u64,
+        credential: LockCredential,
+    },
+    /// File ▸ Remove Lock: the note's content becomes plaintext again.
+    RemoveNoteLock {
+        note_id: NoteId,
+        expected_revision: u64,
+        password: Option<LockSecret>,
+    },
+    /// Notes ▸ Settings… ▸ Change Password…: re-encrypts every note and
+    /// attachment locked with the current password under the new one.
+    ChangeLockPassword {
+        old_password: LockSecret,
+        new_password: LockSecret,
+        hint: String,
+    },
+    /// Notes ▸ Settings… ▸ Reset Password…: the new password applies to
+    /// future locks; notes already locked keep their old password.
+    ResetLockPassword {
+        new_password: LockSecret,
+        hint: String,
+    },
+    /// File ▸ New Smart Folder.
+    CreateSmartFolder {
+        name: String,
+        tag: String,
+    },
+    DeleteSmartFolder {
+        smart_folder_id: SmartFolderId,
+    },
+}
+
+/// A password the person typed. Zeroized on drop and never printed.
+#[derive(Clone)]
+pub struct LockSecret(Zeroizing<String>);
+
+impl LockSecret {
+    pub fn new(password: String) -> Self {
+        Self(Zeroizing::new(password))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The typed text, for comparing a password with its verification.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub(crate) fn expose(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl fmt::Debug for LockSecret {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("LockSecret(<redacted>)")
+    }
+}
+
+/// How File ▸ Lock Note proves the locked-notes password.
+#[derive(Clone, Debug)]
+pub enum LockCredential {
+    /// The current password's key is already open in this session.
+    Open,
+    /// The current password, typed now.
+    Password(LockSecret),
+    /// No password exists yet: create it (with its hint) and lock.
+    NewPassword { password: LockSecret, hint: String },
 }
 
 impl fmt::Debug for LibraryAction {
@@ -115,6 +197,12 @@ impl fmt::Debug for LibraryAction {
             Self::RenameAttachment { .. } => "RenameAttachment([private])",
             Self::DeleteNotePermanently { .. } => "DeleteNotePermanently",
             Self::EmptyTrash { .. } => "EmptyTrash",
+            Self::LockNote { .. } => "LockNote([private])",
+            Self::RemoveNoteLock { .. } => "RemoveNoteLock([private])",
+            Self::ChangeLockPassword { .. } => "ChangeLockPassword([private])",
+            Self::ResetLockPassword { .. } => "ResetLockPassword([private])",
+            Self::CreateSmartFolder { .. } => "CreateSmartFolder([private])",
+            Self::DeleteSmartFolder { .. } => "DeleteSmartFolder",
         })
     }
 }
@@ -292,6 +380,18 @@ pub enum WorkerCommand {
         request_id: u64,
         note_id: NoteId,
     },
+    /// The locked-note placeholder's password prompt: opens every note
+    /// locked with the same password for this session.
+    UnlockNotes {
+        request_id: u64,
+        note_id: NoteId,
+        password: LockSecret,
+    },
+    /// Application ▸ Close All Locked Notes, inactivity, sleep or the
+    /// lock screen: forget every open key.
+    CloseLockedNotes {
+        request_id: u64,
+    },
     Shutdown,
 }
 
@@ -307,7 +407,9 @@ impl WorkerCommand {
             | Self::DiscardDraft { request_id, .. }
             | Self::DiscardBundleImportReview { request_id, .. }
             | Self::AcceptMarkdownImport { request_id, .. }
-            | Self::DiscardMarkdownImportReview { request_id, .. } => (*request_id, None),
+            | Self::DiscardMarkdownImportReview { request_id, .. }
+            | Self::UnlockNotes { request_id, .. }
+            | Self::CloseLockedNotes { request_id } => (*request_id, None),
             Self::ScheduleEdit(edit) => (edit.request_id(), Some(edit.generation())),
             Self::Apply(request) => (request.request_id(), None),
             Self::Export(request) => (request.request_id(), None),
@@ -398,6 +500,20 @@ impl fmt::Debug for WorkerCommand {
                 .field("request_id", request_id)
                 .field("review_request_id", review_request_id)
                 .finish(),
+            Self::UnlockNotes {
+                request_id,
+                note_id,
+                ..
+            } => formatter
+                .debug_struct("UnlockNotes")
+                .field("request_id", request_id)
+                .field("note_id", note_id)
+                .field("password", &"<redacted>")
+                .finish(),
+            Self::CloseLockedNotes { request_id } => formatter
+                .debug_struct("CloseLockedNotes")
+                .field("request_id", request_id)
+                .finish(),
             Self::RetryPending => formatter.write_str("RetryPending"),
             Self::Shutdown => formatter.write_str("Shutdown"),
         }
@@ -481,11 +597,17 @@ impl fmt::Debug for DraftRestoredEvent {
     }
 }
 
+/// An accepted library revision as the UI sees it. Locked notes whose
+/// password is open in this session carry their decrypted title, body,
+/// tags and attachment names in this in-memory view only (`open_notes`);
+/// every other locked note keeps empty fields. The view is never written:
+/// the durable encoding refuses a locked note's plaintext.
 #[derive(Clone)]
 pub struct SnapshotEvent {
     pub request_id: Option<u64>,
     pub snapshot: Arc<LibrarySnapshot>,
     pub notices: Vec<RecoveryNotice>,
+    pub open_notes: Arc<BTreeSet<NoteId>>,
 }
 
 impl fmt::Debug for SnapshotEvent {
@@ -498,16 +620,23 @@ impl fmt::Debug for SnapshotEvent {
             .field("notes", &self.snapshot.notes.len())
             .field("attachments", &self.snapshot.attachments.len())
             .field("notices", &self.notices)
+            .field("open_notes", &self.open_notes.len())
             .finish()
     }
 }
 
 impl SnapshotEvent {
-    fn from_library(library: &AcceptedLibrary, request_id: Option<u64>) -> Self {
+    fn from_library(
+        library: &AcceptedLibrary,
+        keyring: &NotesKeyring,
+        request_id: Option<u64>,
+    ) -> Self {
+        let (snapshot, open_notes) = lock_ops::open_view(library.snapshot(), keyring);
         Self {
             request_id,
-            snapshot: Arc::new(library.snapshot().clone()),
+            snapshot: Arc::new(snapshot),
             notices: library.recovery_notices().to_vec(),
+            open_notes: Arc::new(open_notes),
         }
     }
 }
@@ -518,6 +647,10 @@ pub enum ActionResult {
     CreatedNote(NoteId),
     CreatedFolder(FolderId),
     Changed,
+    LockedNote(NoteId),
+    RemovedLock(NoteId),
+    LockPasswordChanged,
+    CreatedSmartFolder(SmartFolderId),
     DeletedFolder {
         moved_notes: usize,
     },
@@ -639,6 +772,18 @@ pub enum WorkerFailure {
     BundlePlan(BundlePlanError),
     MissingBundleImportReview,
     MissingMarkdownImportReview,
+    /// A locked-note password or sealed-data failure.
+    Lock(LockError),
+    /// The locked note's password is not open in this session.
+    LockedNoteClosed,
+}
+
+/// Unlocking or closing locked notes: no library change, a new view.
+#[derive(Clone, Debug)]
+pub struct LockStateEvent {
+    pub request_id: u64,
+    pub unlocked_note: Option<NoteId>,
+    pub accepted: SnapshotEvent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -695,6 +840,7 @@ pub enum WorkerEvent {
     },
     Pending(PendingEvent),
     Rejected(RejectedEvent),
+    LockStateChanged(LockStateEvent),
     StartupFailed(StartupError),
     Stopped {
         deadline_wakeups: u64,
@@ -761,6 +907,10 @@ impl fmt::Debug for WorkerEvent {
                 .finish(),
             Self::Pending(event) => formatter.debug_tuple("Pending").field(event).finish(),
             Self::Rejected(event) => formatter.debug_tuple("Rejected").field(event).finish(),
+            Self::LockStateChanged(event) => formatter
+                .debug_tuple("LockStateChanged")
+                .field(event)
+                .finish(),
             Self::StartupFailed(error) => {
                 formatter.debug_tuple("StartupFailed").field(error).finish()
             }
@@ -933,7 +1083,28 @@ impl NotesWorker {
         paths: NotesPaths,
         debounce: Duration,
     ) -> Result<Self, WorkerStartError> {
+        Self::start_with_options(paths, debounce, NotesKeyring::new(), DEFAULT_LOCK_KDF)
+    }
+
+    /// Start with the session's shared key cache (the preview worker reads
+    /// the same one to show a locked note's images).
+    pub fn start_with_keyring(
+        paths: NotesPaths,
+        keyring: NotesKeyring,
+    ) -> Result<Self, WorkerStartError> {
+        Self::start_with_options(paths, DEFAULT_EDIT_DEBOUNCE, keyring, DEFAULT_LOCK_KDF)
+    }
+
+    /// `kdf` is the Argon2id cost for passwords created by this worker;
+    /// only tests lower it.
+    pub fn start_with_options(
+        paths: NotesPaths,
+        debounce: Duration,
+        keyring: NotesKeyring,
+        kdf: LockKdfParams,
+    ) -> Result<Self, WorkerStartError> {
         let scheduler = EditScheduler::new(debounce).map_err(WorkerStartError::Scheduler)?;
+        let lock = LockContext { keyring, kdf };
         let (command_sender, command_receiver) = mpsc::sync_channel(COMMAND_CAPACITY);
         let (event_sender, event_receiver) = mpsc::sync_channel(EVENT_CAPACITY);
         let stopped = Arc::new(StopSignal::default());
@@ -943,7 +1114,7 @@ impl NotesWorker {
                 let stopped = StopOnDrop(Arc::clone(&stopped));
                 move || {
                     let _stopped = stopped;
-                    run_worker(paths, scheduler, command_receiver, event_sender);
+                    run_worker(paths, scheduler, lock, command_receiver, event_sender);
                 }
             })
             .map_err(|error| WorkerStartError::Thread(error.kind()))?;
@@ -1052,9 +1223,16 @@ fn try_send_command(
     })
 }
 
+#[derive(Clone)]
+struct LockContext {
+    keyring: NotesKeyring,
+    kdf: LockKdfParams,
+}
+
 struct ReadyState {
     library: Box<AcceptedLibrary>,
     scheduler: EditScheduler,
+    lock: LockContext,
     drafts: DraftStore,
     recoverable_drafts: BTreeMap<NoteId, DraftRecord>,
     bundle_import_review: Option<PendingBundleImportReview>,
@@ -1079,6 +1257,7 @@ impl ReadyState {
     fn new(
         library: Box<AcceptedLibrary>,
         scheduler: EditScheduler,
+        lock: LockContext,
     ) -> (Self, Option<DraftReviewSummary>) {
         let drafts = DraftStore::for_library(library.root());
         let discovery = drafts.discover();
@@ -1096,7 +1275,11 @@ impl ReadyState {
                 .notes
                 .iter()
                 .find(|note| note.id == draft.note_id);
-            if note.is_some_and(|note| draft_matches_note(&draft, note)) {
+            // A locked note never has a recovery draft: edits of an open
+            // locked note are never drafted, and locking removes the note's
+            // draft. One left by a crash before the lock committed is
+            // plaintext at rest, so it is removed rather than offered.
+            if note.is_some_and(|note| note.lock.is_some() || draft_matches_note(&draft, note)) {
                 if drafts.remove(draft.note_id).is_err() {
                     summary.cleanup_pending = summary.cleanup_pending.saturating_add(1);
                 }
@@ -1127,6 +1310,7 @@ impl ReadyState {
             Self {
                 library,
                 scheduler,
+                lock,
                 drafts,
                 recoverable_drafts,
                 bundle_import_review: None,
@@ -1168,6 +1352,7 @@ struct PendingState {
 struct ReviewState {
     review: Box<MigrationReview>,
     scheduler: EditScheduler,
+    lock: LockContext,
 }
 
 enum Phase {
@@ -1180,12 +1365,14 @@ enum Phase {
 fn run_worker(
     paths: NotesPaths,
     scheduler: EditScheduler,
+    lock: LockContext,
     commands: Receiver<WorkerCommand>,
     events: SyncSender<WorkerEvent>,
 ) {
+    let keyring = lock.keyring.clone();
     let mut phase = match inspect_notes_startup(&paths) {
         Ok(NotesStartup::Ready(library)) => {
-            let phase = enter_ready(library, scheduler, None, &events);
+            let phase = enter_ready(library, scheduler, lock, None, &events);
             if matches!(phase, Phase::Stopped) {
                 return;
             }
@@ -1200,7 +1387,11 @@ fn run_worker(
             {
                 return;
             }
-            Phase::Review(ReviewState { review, scheduler })
+            Phase::Review(ReviewState {
+                review,
+                scheduler,
+                lock,
+            })
         }
         Err(error) => {
             let _ = events.send(WorkerEvent::StartupFailed(error));
@@ -1224,6 +1415,7 @@ fn run_worker(
         };
         phase = process_command(phase, command, elapsed_millis(origin), &events);
     }
+    keyring.close_all();
     let _ = events.send(WorkerEvent::Stopped { deadline_wakeups });
 }
 
@@ -1234,11 +1426,12 @@ fn elapsed_millis(origin: Instant) -> u64 {
 fn enter_ready(
     library: Box<AcceptedLibrary>,
     scheduler: EditScheduler,
+    lock: LockContext,
     request_id: Option<u64>,
     events: &SyncSender<WorkerEvent>,
 ) -> Phase {
-    let (ready, draft_review) = ReadyState::new(library, scheduler);
-    if !emit_ready(events, &ready.library, request_id) {
+    let (ready, draft_review) = ReadyState::new(library, scheduler, lock);
+    if !emit_ready(events, &ready, request_id) {
         return Phase::Stopped;
     }
     if let Some(summary) = draft_review {
@@ -1307,12 +1500,48 @@ fn process_command(
             }
             Phase::Stopped
         }
+        (
+            Phase::Ready(ready),
+            WorkerCommand::UnlockNotes {
+                request_id,
+                note_id,
+                password,
+            },
+        ) => lock_ops::unlock_notes(ready, request_id, note_id, &password, events),
+        (Phase::Ready(mut ready), WorkerCommand::CloseLockedNotes { request_id }) => {
+            // Commit the open note's last edit while its key is still open.
+            if let Some(edit) = ready.scheduler.flush() {
+                match commit_edit(&mut ready, edit, events) {
+                    CommitDisposition::Pending(pending, context) => {
+                        ready.lock.keyring.close_all();
+                        return if lock_ops::emit_lock_state(events, &ready, request_id, None) {
+                            Phase::Pending(PendingState {
+                                ready,
+                                pending,
+                                context,
+                            })
+                        } else {
+                            Phase::Stopped
+                        };
+                    }
+                    CommitDisposition::Stopped => return Phase::Stopped,
+                    CommitDisposition::Ready | CommitDisposition::Rejected => {}
+                }
+            }
+            ready.lock.keyring.close_all();
+            if lock_ops::emit_lock_state(events, &ready, request_id, None) {
+                Phase::Ready(ready)
+            } else {
+                Phase::Stopped
+            }
+        }
         (_, WorkerCommand::Shutdown) => Phase::Stopped,
         (Phase::Review(review), WorkerCommand::AcceptMigration { request_id }) => {
             match review.review.accept() {
                 Ok(library) => enter_ready(
                     Box::new(library),
                     review.scheduler,
+                    review.lock,
                     Some(request_id),
                     events,
                 ),
@@ -1324,7 +1553,13 @@ fn process_command(
         }
         (Phase::Review(review), WorkerCommand::StartEmpty { request_id }) => {
             let library = Box::new(review.review.start_empty());
-            enter_ready(library, review.scheduler, Some(request_id), events)
+            enter_ready(
+                library,
+                review.scheduler,
+                review.lock,
+                Some(request_id),
+                events,
+            )
         }
         (Phase::Review(review), command) => {
             if emit_rejected(events, command, WorkerFailure::WrongPhase) {
@@ -1883,7 +2118,7 @@ fn process_command(
             if let Some(edit) = ready.scheduler.flush() {
                 match commit_edit(&mut ready, edit, events) {
                     CommitDisposition::Ready => {
-                        if emit_ready(events, &ready.library, Some(request_id)) {
+                        if emit_ready(events, &ready, Some(request_id)) {
                             Phase::Ready(ready)
                         } else {
                             Phase::Stopped
@@ -1918,7 +2153,7 @@ fn process_command(
                     }
                     CommitDisposition::Stopped => Phase::Stopped,
                 }
-            } else if emit_ready(events, &ready.library, Some(request_id)) {
+            } else if emit_ready(events, &ready, Some(request_id)) {
                 Phase::Ready(ready)
             } else {
                 Phase::Stopped
@@ -2016,6 +2251,7 @@ fn process_command(
                         commit,
                         accepted: SnapshotEvent::from_library(
                             &pending.ready.library,
+                            &pending.ready.lock.keyring,
                             Some(pending.context.request_id),
                         ),
                         draft_cleanup_pending: cleanup_draft(
@@ -2049,6 +2285,14 @@ fn process_command(
         ) => resolve_pending_conflict(pending, request_id, pending_request_id, resolution, events),
         (Phase::Pending(pending), WorkerCommand::DiscardPending { request_id }) => {
             discard_pending_state(pending, request_id, events)
+        }
+        (Phase::Pending(pending), WorkerCommand::CloseLockedNotes { request_id }) => {
+            pending.ready.lock.keyring.close_all();
+            if lock_ops::emit_lock_state(events, &pending.ready, request_id, None) {
+                Phase::Pending(pending)
+            } else {
+                Phase::Stopped
+            }
         }
         (Phase::Pending(pending), command) => {
             if emit_rejected(events, command, WorkerFailure::CommitPending) {
@@ -2263,7 +2507,7 @@ fn discard_pending_state(
             return Phase::Stopped;
         }
     }
-    if emit_ready(events, &pending.ready.library, Some(request_id)) {
+    if emit_ready(events, &pending.ready, Some(request_id)) {
         Phase::Ready(pending.ready)
     } else {
         Phase::Stopped
@@ -2308,6 +2552,9 @@ fn commit_edit(
         );
     }
     let current_revision = note.revision;
+    if note.lock.is_some() {
+        return lock_ops::commit_locked_edit(ready, edit, current_revision, events);
+    }
     let mut transaction = match ready.library.begin() {
         Ok(transaction) => transaction,
         Err(error) => return reject_mutation(events, request_id, Some(generation), error),
@@ -2391,6 +2638,73 @@ fn commit_action(
                 created_unix_ms,
                 folder_id,
                 selected_path,
+                events,
+            );
+        }
+        LibraryAction::LockNote {
+            note_id,
+            expected_revision,
+            credential,
+        } => {
+            return lock_ops::lock_note(
+                ready,
+                request_id,
+                note_id,
+                expected_revision,
+                credential,
+                events,
+            );
+        }
+        LibraryAction::RemoveNoteLock {
+            note_id,
+            expected_revision,
+            password,
+        } => {
+            return lock_ops::remove_note_lock(
+                ready,
+                request_id,
+                note_id,
+                expected_revision,
+                password,
+                events,
+            );
+        }
+        LibraryAction::ChangeLockPassword {
+            old_password,
+            new_password,
+            hint,
+        } => {
+            return lock_ops::change_password(
+                ready,
+                request_id,
+                &old_password,
+                &new_password,
+                &hint,
+                events,
+            );
+        }
+        LibraryAction::ResetLockPassword { new_password, hint } => {
+            return lock_ops::reset_password(ready, request_id, &new_password, &hint, events);
+        }
+        LibraryAction::RenameAttachment {
+            attachment_id,
+            expected_attachment_revision,
+            display_name,
+        } if ready
+            .library
+            .snapshot()
+            .attachments
+            .iter()
+            .any(|attachment| {
+                attachment.id == attachment_id && attachment.sealed_key.is_some()
+            }) =>
+        {
+            return lock_ops::rename_sealed_attachment(
+                ready,
+                request_id,
+                attachment_id,
+                expected_attachment_revision,
+                display_name,
                 events,
             );
         }
@@ -2517,8 +2831,20 @@ fn commit_action(
                 purge = Some(plan);
                 result
             }),
+        LibraryAction::CreateSmartFolder { name, tag } => transaction
+            .create_smart_folder(name, tag)
+            .map(ActionResult::CreatedSmartFolder),
+        LibraryAction::DeleteSmartFolder { smart_folder_id } => transaction
+            .delete_smart_folder(smart_folder_id)
+            .map(|()| ActionResult::Changed),
         LibraryAction::AttachImage { .. } => unreachable!("attachment action handled above"),
         LibraryAction::ImportTextNote { .. } => unreachable!("text import handled above"),
+        LibraryAction::LockNote { .. }
+        | LibraryAction::RemoveNoteLock { .. }
+        | LibraryAction::ChangeLockPassword { .. }
+        | LibraryAction::ResetLockPassword { .. } => {
+            unreachable!("locked-note actions handled above")
+        }
     };
     let result = match result {
         Ok(result) => result,
@@ -2636,6 +2962,45 @@ fn commit_attachment_action(
     selected_path: PathBuf,
     events: &SyncSender<WorkerEvent>,
 ) -> CommitDisposition {
+    let locked_key = ready
+        .library
+        .snapshot()
+        .notes
+        .iter()
+        .find(|note| note.id == note_id)
+        .and_then(|note| note.lock.as_ref())
+        .map(|lock| lock.key_id);
+    if locked_key.is_some_and(|key_id| !ready.lock.keyring.contains(key_id)) {
+        return lock_ops::reject_lock(events, request_id, WorkerFailure::LockedNoteClosed);
+    }
+    let disposition = commit_plain_attachment(
+        ready,
+        request_id,
+        note_id,
+        expected_revision,
+        modified_unix_ms,
+        selected_path,
+        events,
+    );
+    // An image added to an open locked note is sealed straight away with
+    // the note's key (and its name moves into the sealed payload).
+    match (disposition, locked_key) {
+        (CommitDisposition::Ready, Some(key_id)) => {
+            lock_ops::seal_unsealed_attachments(ready, request_id, key_id, events)
+        }
+        (disposition, _) => disposition,
+    }
+}
+
+fn commit_plain_attachment(
+    ready: &mut ReadyState,
+    request_id: u64,
+    note_id: NoteId,
+    expected_revision: u64,
+    modified_unix_ms: u64,
+    selected_path: PathBuf,
+    events: &SyncSender<WorkerEvent>,
+) -> CommitDisposition {
     let prepared = match ready.library.prepare_image_attachment(&selected_path) {
         Ok(prepared) => prepared,
         Err(error) => return reject_storage(events, request_id, error),
@@ -2684,6 +3049,7 @@ enum TransactionCommit {
         plan: rmac_notes_store::AttachmentImportPlan,
         prepared: PreparedImageAttachment,
     },
+    AttachmentRewrite(Vec<AttachmentRewrite>),
 }
 
 fn commit_bundle_import(
@@ -2700,7 +3066,11 @@ fn commit_bundle_import(
                 generation: None,
                 result: context.result,
                 commit,
-                accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
+                accepted: SnapshotEvent::from_library(
+                    &ready.library,
+                    &ready.lock.keyring,
+                    Some(context.request_id),
+                ),
                 draft_cleanup_pending: false,
             };
             if events.send(WorkerEvent::Accepted(event)).is_ok() {
@@ -2717,7 +3087,11 @@ fn commit_bundle_import(
                 request_id: context.request_id,
                 generation: None,
                 reason: pending.reason,
-                accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
+                accepted: SnapshotEvent::from_library(
+                    &ready.library,
+                    &ready.lock.keyring,
+                    Some(context.request_id),
+                ),
                 draft_error: None,
                 conflict: None,
             };
@@ -2746,6 +3120,9 @@ fn commit_transaction(
         TransactionCommit::AttachmentImport { plan, prepared } => ready
             .library
             .commit_attachment_import(transaction, plan, prepared),
+        TransactionCommit::AttachmentRewrite(rewrites) => ready
+            .library
+            .commit_attachment_rewrite(transaction, rewrites),
     };
     match outcome {
         Ok(commit) => {
@@ -2754,7 +3131,11 @@ fn commit_transaction(
                 generation: context.generation,
                 result: context.result,
                 commit,
-                accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
+                accepted: SnapshotEvent::from_library(
+                    &ready.library,
+                    &ready.lock.keyring,
+                    Some(context.request_id),
+                ),
                 draft_cleanup_pending: cleanup_draft(ready, context.draft),
             };
             if events.send(WorkerEvent::Accepted(event)).is_ok() {
@@ -2771,7 +3152,11 @@ fn commit_transaction(
                 request_id: context.request_id,
                 generation: context.generation,
                 reason: pending.reason,
-                accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
+                accepted: SnapshotEvent::from_library(
+                    &ready.library,
+                    &ready.lock.keyring,
+                    Some(context.request_id),
+                ),
                 draft_error: context.draft.and_then(|draft| draft.error),
                 conflict: None,
             };
@@ -2844,12 +3229,14 @@ fn reject_text_import(
 
 fn emit_ready(
     events: &SyncSender<WorkerEvent>,
-    library: &AcceptedLibrary,
+    ready: &ReadyState,
     request_id: Option<u64>,
 ) -> bool {
     events
         .send(WorkerEvent::Ready(SnapshotEvent::from_library(
-            library, request_id,
+            &ready.library,
+            &ready.lock.keyring,
+            request_id,
         )))
         .is_ok()
 }
@@ -2862,6 +3249,7 @@ fn emit_pending(events: &SyncSender<WorkerEvent>, pending: &PendingState) -> boo
             reason: pending.pending.reason,
             accepted: SnapshotEvent::from_library(
                 &pending.ready.library,
+                &pending.ready.lock.keyring,
                 Some(pending.context.request_id),
             ),
             draft_error: pending.context.draft.and_then(|draft| draft.error),

@@ -292,6 +292,7 @@ mod tests {
                 pinned: false,
                 deleted: false,
                 attachments: Vec::new(),
+                lock: None,
             }],
             attachments: vec![AttachmentRecord {
                 id: attachment_id,
@@ -302,7 +303,9 @@ mod tests {
                 byte_len: 13,
                 sha256: [8; 32],
                 deleted: true,
+                sealed_key: None,
             }],
+            ..LibrarySnapshot::default()
         };
         let mut transaction = rmac_notes_store::LibraryTransaction::begin(&base).unwrap();
         let plan = transaction

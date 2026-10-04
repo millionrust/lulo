@@ -32,7 +32,7 @@ impl NotesView {
         if self.print_busy || self.closing || !self.is_interactive_ready() {
             return;
         }
-        if self.session.selected_note().is_none() {
+        if self.session.selected_note().is_none() || self.selected_note_closed() {
             self.message = Some("Select a note to print.".into());
             cx.notify();
             return;

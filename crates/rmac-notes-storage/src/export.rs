@@ -406,6 +406,7 @@ mod tests {
                 pinned: true,
                 deleted: false,
                 attachments: vec![attachment_id],
+                lock: None,
             }],
             attachments: vec![AttachmentRecord {
                 id: attachment_id,
@@ -416,7 +417,9 @@ mod tests {
                 byte_len: bytes.len() as u64,
                 sha256: Sha256::digest(&bytes).into(),
                 deleted: false,
+                sealed_key: None,
             }],
+            ..LibrarySnapshot::default()
         };
         (snapshot, BTreeMap::from([(attachment_id, bytes)]))
     }

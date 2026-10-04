@@ -9,6 +9,9 @@ pub(super) struct NotesInputs {
     pub(super) note_find: Entity<InputState>,
     pub(super) note_replace: Entity<InputState>,
     pub(super) lock_password: Entity<InputState>,
+    pub(super) lock_verify: Entity<InputState>,
+    pub(super) lock_hint: Entity<InputState>,
+    pub(super) lock_old_password: Entity<InputState>,
     pub(super) smart_folder_name: Entity<InputState>,
     pub(super) attachment_rename: Entity<InputState>,
     pub(super) focus: FocusHandle,
@@ -156,6 +159,17 @@ impl NotesView {
                 .placeholder("Password")
                 .masked(true)
         });
+        let lock_verify = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Verify")
+                .masked(true)
+        });
+        let lock_hint = cx.new(|cx| InputState::new(window, cx).placeholder("Hint (recommended)"));
+        let lock_old_password = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Old Password")
+                .masked(true)
+        });
         let smart_folder_name =
             cx.new(|cx| InputState::new(window, cx).placeholder("Smart Folder Name"));
         let attachment_rename =
@@ -239,6 +253,9 @@ impl NotesView {
             note_find,
             note_replace,
             lock_password,
+            lock_verify,
+            lock_hint,
+            lock_old_password,
             smart_folder_name,
             attachment_rename,
             focus,
@@ -246,6 +263,8 @@ impl NotesView {
     }
 
     pub(super) fn start_workers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        self.watch_session_lock(cx);
         let notes_paths = match resolve_notes_paths() {
             Ok(paths) => Some(paths),
             Err(error) => {
@@ -255,7 +274,7 @@ impl NotesView {
         };
 
         if let Some(paths) = notes_paths.as_ref() {
-            match NotesWorker::start(paths.clone())
+            match NotesWorker::start_with_keyring(paths.clone(), self.keyring.clone())
                 .map_err(|error| error.to_string())
                 .and_then(|worker| {
                     let (client, events) = worker.into_parts();
@@ -283,22 +302,21 @@ impl NotesView {
                 Err(message) => self.message = Some(message.into()),
             }
 
-            if let Ok((client, receiver)) =
-                NotesPreviewWorker::start(paths.data_root().to_path_buf())
-                    .map_err(|error| error.to_string())
-                    .and_then(|worker| {
-                        let (client, events) = worker.into_parts();
-                        worker_bridge::bridge_preview_events(
-                            events,
-                            PREVIEW_EVENT_CAPACITY,
-                            worker_bridge::render_preview_image,
-                        )
-                        .map(|receiver| (client, receiver))
-                        .map_err(|error| {
-                            format!("Notes could not start its preview bridge: {error}")
-                        })
-                    })
-            {
+            if let Ok((client, receiver)) = NotesPreviewWorker::start_with_keyring(
+                paths.data_root().to_path_buf(),
+                self.keyring.clone(),
+            )
+            .map_err(|error| error.to_string())
+            .and_then(|worker| {
+                let (client, events) = worker.into_parts();
+                worker_bridge::bridge_preview_events(
+                    events,
+                    PREVIEW_EVENT_CAPACITY,
+                    worker_bridge::render_preview_image,
+                )
+                .map(|receiver| (client, receiver))
+                .map_err(|error| format!("Notes could not start its preview bridge: {error}"))
+            }) {
                 self.preview_worker = Some(client);
                 cx.spawn_in(window, async move |this, cx| {
                     while let Ok(event) = receiver.recv().await {

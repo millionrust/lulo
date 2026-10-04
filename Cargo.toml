@@ -14,7 +14,12 @@ authors = ["rmac"]
 # Developed on macOS (Metal) today; Linux (Vulkan) is the deployment target.
 
 [workspace.dependencies]
-ashpd = { version = "0.12.3", default-features = false, features = ["async-std"] }
+# Notes' locked-note encryption (Argon2id key derivation, XChaCha20-Poly1305
+# sealing); RustCrypto, MIT OR Apache-2.0.
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "zeroize"] }
+getrandom = "0.4"
+ashpd ={ version = "0.12.3", default-features = false, features = ["async-std"] }
 async-channel = "2"
 async-io = "2"
 async-process = "2"

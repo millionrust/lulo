@@ -16,7 +16,7 @@ use gpui::{
     Render, RenderImage, Role, ScrollHandle, ScrollWheelEvent, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
-use rmac_preview::document::{self, Kind};
+use rmac_preview::document::{self, ImageKind, Kind};
 use rmac_preview::layout::{self, Rect, Rotation, ThumbItem};
 use rmac_preview::markup::{self, Annotation, Markup, Tool};
 use rmac_preview::metrics::{self, dark, light};
@@ -33,7 +33,8 @@ use crate::{
     DeleteSelection, EnterFullScreen, ExportAs, ExportAsPdf, Find, FindNext, FindPrevious,
     FlipHorizontal, FlipVertical, Forward, GoToPage, HideSidebar, JumpToSelection,
     ManageSignatures, MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument,
-    PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs,
+    PreviousItem, PrintDocument, RectangularSelection, RedoMarkup, RevertMarkup, RotateLeft,
+    RotateRight, SaveAs,
     SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes, ShowImageBackground,
     ShowInspector, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails,
     SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
@@ -86,6 +87,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::AdjustSize",
         "preview::FlipHorizontal",
         "preview::FlipVertical",
+        "preview::RectangularSelection",
         "preview::Crop",
         "preview::AnnotateHighlight",
         "preview::AnnotateUnderline",
@@ -138,6 +140,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         rmac_ui::set_menu_enabled(action, false, cx);
     }
     rmac_ui::set_menu_checked("preview::ToggleMarkup", false, cx);
+    rmac_ui::set_menu_checked("preview::RectangularSelection", false, cx);
     rmac_ui::set_menu_checked("preview::HideSidebar", false, cx);
     rmac_ui::set_menu_checked("preview::ShowThumbnails", false, cx);
     rmac_ui::set_menu_label("preview::EnterFullScreen", "Enter Full Screen", cx);
@@ -273,6 +276,48 @@ fn ordered(anchor: TextPos, focus: TextPos) -> (TextPos, TextPos) {
     }
 }
 
+/// Pixel-space undo/redo for Tools ▸ Rotate/Flip/Adjust Size/Crop on an
+/// image, mirroring `Markup`'s own undo/redo for PDF annotations
+/// (`markup.rs`). Each undo/redo entry is an `Arc` clone of
+/// the pixels from just before that edit, so undo is an `Arc` swap, not a
+/// recomputation — exact, regardless of how lossy the edit itself was (a
+/// resample or crop can't be undone by reversing it, but it can always be
+/// undone by putting back what was there before it). `revision` lets a save
+/// in flight tell whether anything changed again before it finished, the
+/// same way `Markup::revision` does for `save_markup`.
+#[derive(Default, Clone)]
+struct ImageEdits {
+    undo: Vec<Arc<image::RgbaImage>>,
+    redo: Vec<Arc<image::RgbaImage>>,
+    dirty: bool,
+    revision: u64,
+}
+
+impl ImageEdits {
+    fn checkpoint(&mut self, previous: Arc<image::RgbaImage>) {
+        self.undo.push(previous);
+        self.redo.clear();
+        self.dirty = true;
+        self.revision += 1;
+    }
+
+    fn undo(&mut self, current: Arc<image::RgbaImage>) -> Option<Arc<image::RgbaImage>> {
+        let previous = self.undo.pop()?;
+        self.redo.push(current);
+        self.dirty = true;
+        self.revision += 1;
+        Some(previous)
+    }
+
+    fn redo(&mut self, current: Arc<image::RgbaImage>) -> Option<Arc<image::RgbaImage>> {
+        let next = self.redo.pop()?;
+        self.undo.push(current);
+        self.dirty = true;
+        self.revision += 1;
+        Some(next)
+    }
+}
+
 /// One open document.
 struct Slot {
     id: u64,
@@ -280,6 +325,13 @@ struct Slot {
     name: String,
     state: SlotState,
     rotation: Rotation,
+    /// `rotation` as of the last successful Save/Save As (or `default()`
+    /// for a just-opened document) — comparing the two is how an image
+    /// slot knows Rotate Left/Right left it with something Save hasn't
+    /// written yet, without baking the rotation into `ImageContent::pixels`
+    /// (which would invalidate `image_edits`'s undo snapshots, captured in
+    /// the unrotated frame).
+    saved_rotation: Rotation,
     zoom: Zoom,
     /// The image as shown (rotated), and whether a rebuild is running.
     display: Option<(Rotation, Arc<RenderImage>)>,
@@ -292,6 +344,15 @@ struct Slot {
     text: TextState,
     markup: Markup,
     markup_original: Option<PathBuf>,
+    /// Tools ▸ Flip Horizontal/Flip Vertical/Adjust Size…/Crop undo/redo
+    /// and dirty/saved tracking for an image document (see `ImageEdits`).
+    /// Unused for a PDF, which has no pixel buffer of its own to edit.
+    image_edits: ImageEdits,
+    /// Tools ▸ Rectangular Selection's current drag rectangle on an image,
+    /// in unrotated unit coordinates (the same frame `ImageContent::pixels`
+    /// is in) ready to multiply by `ImageContent::size` for Crop. `None`
+    /// outside a selection.
+    selection: Option<layout::UnitRect>,
     /// View ▸ Table of Contents: `None` until first requested (it is read
     /// from the PDF's `/Outlines` off the UI thread), then the flattened
     /// outline — empty when the PDF has none.
@@ -375,6 +436,7 @@ impl Slot {
             path,
             state: SlotState::Loading,
             rotation: Rotation::default(),
+            saved_rotation: Rotation::default(),
             zoom: Zoom::Fit,
             display: None,
             display_pending: false,
@@ -386,6 +448,8 @@ impl Slot {
             text: TextState::NotLoaded,
             markup: Markup::default(),
             markup_original: None,
+            image_edits: ImageEdits::default(),
+            selection: None,
             toc: None,
             toc_loading: false,
         }
@@ -409,6 +473,31 @@ impl Slot {
 
     fn kind(&self) -> Option<Kind> {
         self.loaded().map(|loaded| loaded.kind)
+    }
+
+    /// Unsaved changes: dirty PDF markup, or an image with pixel edits
+    /// and/or a rotation Save hasn't written yet. Drives the title bar's
+    /// " — Edited" suffix, File ▸ Save's dirty check and the autosave each
+    /// window-close path already does for PDF markup.
+    fn edited(&self) -> bool {
+        match self.kind() {
+            Some(Kind::Pdf) => self.markup.dirty,
+            Some(Kind::Image(_)) => self.image_edits.dirty || self.rotation != self.saved_rotation,
+            None => false,
+        }
+    }
+
+    /// The edited image's final pixels — current `ImageContent::pixels`
+    /// with the still-unsaved view `rotation` baked in — for Save, Save As
+    /// and Export As to write. `None` outside a loaded image.
+    fn final_image_pixels(&self) -> Option<(ImageKind, Arc<image::RgbaImage>)> {
+        let Kind::Image(kind) = self.kind()? else {
+            return None;
+        };
+        let Content::Image(image) = &self.loaded()?.content else {
+            return None;
+        };
+        Some((kind, Arc::new(render::rotate(&image.pixels, self.rotation))))
     }
 
     fn content_kind(&self) -> ContentKind {
@@ -600,20 +689,19 @@ pub(crate) struct PreviewView {
     /// paints something sensible via the theme default.
     window_background: Option<u32>,
     /// Tools ▸ Adjust Size… (PRV-MENU-054): a width/height sheet, modelled
-    /// on Go to Page…. Images only; a crop/resize edits
-    /// `ImageContent::pixels` in place like Rotate (PREV-04), visible at
-    /// once but not yet written back to the source file by Save.
+    /// on Go to Page…. Images only; a resize edits `ImageContent::pixels`
+    /// in place like Rotate, visible at once and written back to the
+    /// source file by Save (`Slot::edited`/`save_markup`).
     adjust_size_open: bool,
     adjust_size_width: Entity<InputState>,
     adjust_size_height: Entity<InputState>,
-    /// Tools ▸ Crop (⌘K, PRV-MENU-068): a centred width/height crop (the
-    /// Mac's own Crop is an interactive drag handle on the image itself;
-    /// Preview has no selection-rectangle tool yet (PRV-MENU-055..058 are
-    /// out of this change's scope), so this asks for the kept size instead
-    /// and crops that much out of the middle).
-    crop_open: bool,
-    crop_width: Entity<InputState>,
-    crop_height: Entity<InputState>,
+    /// Tools ▸ Rectangular Selection (PRV-MENU-055): the drag-to-select
+    /// tool Tools ▸ Crop (⌘K, PRV-MENU-068) crops to (`crop_to_selection`).
+    /// `selection_drag` holds the drag's anchor point, in the same
+    /// unrotated unit frame as `Slot::selection`, while a drag is in
+    /// progress.
+    selection_tool_active: bool,
+    selection_drag: Option<(f32, f32)>,
     /// Tools ▸ Annotate ▸ Signature ▸ Manage Signatures… (PRV-MENU-065): a
     /// sheet listing the reusable signatures captured so far, each
     /// removable.
@@ -667,6 +755,22 @@ impl PreviewView {
             })
             .collect()
     }
+
+    /// Edited images, each with its final (rotation baked in) pixels
+    /// ready for `render::save_image` — the image counterpart of
+    /// `pending_markup`, for the same App ▸ Quit and Keep Windows / Close
+    /// All autosave paths in `main.rs`.
+    pub(crate) fn pending_image_saves(&self) -> Vec<(PathBuf, ImageKind, Arc<image::RgbaImage>)> {
+        self.slots
+            .iter()
+            .filter(|slot| slot.edited() && matches!(slot.kind(), Some(Kind::Image(_))))
+            .filter_map(|slot| {
+                let (kind, pixels) = slot.final_image_pixels()?;
+                Some((slot.path.clone(), kind, pixels))
+            })
+            .collect()
+    }
+
     fn document_top(&self) -> f32 {
         self.toolbar_height()
             + if self.toolbar_shown && self.markup_shown {
@@ -1109,74 +1213,114 @@ impl PreviewView {
         cx.notify();
     }
 
+    /// File ▸ Save (⌘S): writes dirty PDF markup, or an edited image's
+    /// current pixels (with its still-unsaved view rotation baked in) to
+    /// the source file, off the UI thread, atomically (temp file then
+    /// rename — `markup::write_pdf`'s own rename for a PDF,
+    /// `render::save_image`'s for an image).
     fn save_markup(&mut self, cx: &mut Context<Self>) {
         if self.markup_save_busy {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        if slot.kind() != Some(Kind::Pdf) || !slot.markup.dirty {
+        if !slot.edited() {
             return;
         }
-        let source = slot.path.clone();
-        let original = slot.markup_original.clone().unwrap_or_else(|| {
-            source.with_extension(format!("lulo-original-{}.pdf", std::process::id()))
-        });
-        let first_save = slot.markup_original.is_none();
-        let items = slot.markup.items.clone();
-        let revision = slot.markup.revision;
-        let id = slot.id;
-        self.markup_save_busy = true;
-        cx.spawn(async move |this, cx| {
-            let result = blocking::unblock(move || -> Result<PathBuf, String> {
-                if first_save {
-                    std::fs::copy(&source, &original).map_err(|e| e.to_string())?;
-                }
-                let temporary =
-                    source.with_extension(format!("lulo-saving-{}.pdf", std::process::id()));
-                if let Err(error) = markup::write_pdf(&original, &temporary, &items) {
-                    let _ = std::fs::remove_file(&temporary);
-                    return Err(error);
-                }
-                std::fs::rename(&temporary, &source).map_err(|e| e.to_string())?;
-                Ok(original)
-            })
-            .await;
-            let _ = this.update(cx, |this, cx| {
-                this.markup_save_busy = false;
-                if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
-                    match result {
-                        Ok(original) => {
-                            slot.markup_original = Some(original);
-                            if slot.markup.revision == revision {
-                                slot.markup.dirty = false;
+        match slot.kind() {
+            Some(Kind::Pdf) => {
+                let source = slot.path.clone();
+                let original = slot.markup_original.clone().unwrap_or_else(|| {
+                    source.with_extension(format!("lulo-original-{}.pdf", std::process::id()))
+                });
+                let first_save = slot.markup_original.is_none();
+                let items = slot.markup.items.clone();
+                let revision = slot.markup.revision;
+                let id = slot.id;
+                self.markup_save_busy = true;
+                cx.spawn(async move |this, cx| {
+                    let result = blocking::unblock(move || -> Result<PathBuf, String> {
+                        if first_save {
+                            std::fs::copy(&source, &original).map_err(|e| e.to_string())?;
+                        }
+                        let temporary = source
+                            .with_extension(format!("lulo-saving-{}.pdf", std::process::id()));
+                        if let Err(error) = markup::write_pdf(&original, &temporary, &items) {
+                            let _ = std::fs::remove_file(&temporary);
+                            return Err(error);
+                        }
+                        std::fs::rename(&temporary, &source).map_err(|e| e.to_string())?;
+                        Ok(original)
+                    })
+                    .await;
+                    let _ = this.update(cx, |this, cx| {
+                        this.markup_save_busy = false;
+                        if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                            match result {
+                                Ok(original) => {
+                                    slot.markup_original = Some(original);
+                                    if slot.markup.revision == revision {
+                                        slot.markup.dirty = false;
+                                    }
+                                }
+                                Err(error) => {
+                                    eprintln!("rmac-preview: markup save failed: {error}");
+                                }
                             }
                         }
-                        Err(error) => eprintln!("rmac-preview: markup save failed: {error}"),
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+            Some(Kind::Image(kind)) => {
+                let Some((_, pixels)) = slot.final_image_pixels() else {
+                    return;
+                };
+                let source = slot.path.clone();
+                let id = slot.id;
+                let revision = slot.image_edits.revision;
+                let rotation = slot.rotation;
+                self.markup_save_busy = true;
+                cx.spawn(async move |this, cx| {
+                    let result =
+                        blocking::unblock(move || render::save_image(&pixels, kind, &source))
+                            .await;
+                    let _ = this.update(cx, |this, cx| {
+                        this.markup_save_busy = false;
+                        if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                            match result {
+                                Ok(()) => {
+                                    if slot.image_edits.revision == revision {
+                                        slot.image_edits.dirty = false;
+                                    }
+                                    if slot.rotation == rotation {
+                                        slot.saved_rotation = rotation;
+                                    }
+                                }
+                                Err(error) => {
+                                    eprintln!("rmac-preview: image save failed: {error}");
+                                }
+                            }
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+            None => {}
+        }
     }
 
+    /// File ▸ Close Window (⌘W): autosaves any dirty PDF markup or edited
+    /// image in this window first — the same no-prompt convention Preview
+    /// already uses for markup, rather than a save sheet.
     fn close_with_markup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.markup_save_busy {
             return;
         }
-        let jobs: Vec<_> = self
-            .slots
-            .iter()
-            .filter(|slot| slot.kind() == Some(Kind::Pdf) && slot.markup.dirty)
-            .map(|slot| {
-                (
-                    slot.path.clone(),
-                    slot.markup_original.clone(),
-                    slot.markup.items.clone(),
-                )
-            })
-            .collect();
-        if jobs.is_empty() {
+        let jobs = self.pending_markup();
+        let image_jobs = self.pending_image_saves();
+        if jobs.is_empty() && image_jobs.is_empty() {
             window.remove_window();
             return;
         }
@@ -1189,6 +1333,9 @@ impl PreviewView {
                         source.with_extension(format!("lulo-closing-{}.pdf", std::process::id()));
                     markup::write_pdf(&base, &temporary, &items)?;
                     std::fs::rename(&temporary, &source).map_err(|e| e.to_string())?;
+                }
+                for (source, kind, pixels) in image_jobs {
+                    render::save_image(&pixels, kind, &source)?;
                 }
                 Ok(())
             })
@@ -1234,47 +1381,78 @@ impl PreviewView {
     }
 
     /// Close the sidebar's selected document while keeping the other open
-    /// documents in this window. PDF annotation writes stay off the UI thread.
+    /// documents in this window. PDF annotation and image writes stay off
+    /// the UI thread.
     fn close_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.markup_save_busy || self.slots.len() < 2 {
             return;
         }
         let Some(slot) = self.slot() else { return };
         let id = slot.id;
-        if slot.kind() != Some(Kind::Pdf) || !slot.markup.dirty {
+        if !slot.edited() {
             self.remove_document(id, window, cx);
             return;
         }
-        let source = slot.path.clone();
-        let original = slot.markup_original.clone();
-        let items = slot.markup.items.clone();
-        self.markup_save_busy = true;
-        cx.spawn_in(window, async move |this, cx| {
-            let result = blocking::unblock(move || -> Result<(), String> {
-                let base = original.unwrap_or_else(|| source.clone());
-                let temporary =
-                    source.with_extension(format!("lulo-closing-{}.pdf", std::process::id()));
-                markup::write_pdf(&base, &temporary, &items)?;
-                std::fs::rename(&temporary, &source).map_err(|error| error.to_string())
-            })
-            .await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.markup_save_busy = false;
-                match result {
-                    Ok(()) => this.remove_document(id, window, cx),
-                    Err(error) => {
-                        eprintln!("rmac-preview: save on close selected failed: {error}");
-                        cx.notify();
-                    }
-                }
-            });
-        })
-        .detach();
+        match slot.kind() {
+            Some(Kind::Pdf) => {
+                let source = slot.path.clone();
+                let original = slot.markup_original.clone();
+                let items = slot.markup.items.clone();
+                self.markup_save_busy = true;
+                cx.spawn_in(window, async move |this, cx| {
+                    let result = blocking::unblock(move || -> Result<(), String> {
+                        let base = original.unwrap_or_else(|| source.clone());
+                        let temporary = source
+                            .with_extension(format!("lulo-closing-{}.pdf", std::process::id()));
+                        markup::write_pdf(&base, &temporary, &items)?;
+                        std::fs::rename(&temporary, &source).map_err(|error| error.to_string())
+                    })
+                    .await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        this.markup_save_busy = false;
+                        match result {
+                            Ok(()) => this.remove_document(id, window, cx),
+                            Err(error) => {
+                                eprintln!("rmac-preview: save on close selected failed: {error}");
+                                cx.notify();
+                            }
+                        }
+                    });
+                })
+                .detach();
+            }
+            Some(Kind::Image(kind)) => {
+                let Some((_, pixels)) = slot.final_image_pixels() else {
+                    self.remove_document(id, window, cx);
+                    return;
+                };
+                let source = slot.path.clone();
+                self.markup_save_busy = true;
+                cx.spawn_in(window, async move |this, cx| {
+                    let result =
+                        blocking::unblock(move || render::save_image(&pixels, kind, &source))
+                            .await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        this.markup_save_busy = false;
+                        match result {
+                            Ok(()) => this.remove_document(id, window, cx),
+                            Err(error) => {
+                                eprintln!("rmac-preview: image save on close selected failed: {error}");
+                                cx.notify();
+                            }
+                        }
+                    });
+                })
+                .detach();
+            }
+            None => self.remove_document(id, window, cx),
+        }
     }
 
-    /// Edit ▸ Move to Bin (⌘⌫). Save any in-flight PDF annotations before
-    /// moving the current file, then remove only that document from this
-    /// window. The filesystem work runs on the blocking pool.
+    /// Edit ▸ Move to Bin (⌘⌫). Save any in-flight PDF annotations or image
+    /// edits before moving the current file, so the trashed copy keeps
+    /// them, then remove only that document from this window. The
+    /// filesystem work runs on the blocking pool.
     fn move_to_bin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.markup_save_busy {
             return;
@@ -1284,6 +1462,7 @@ impl PreviewView {
         let source = slot.path.clone();
         let pending_markup = (slot.kind() == Some(Kind::Pdf) && slot.markup.dirty)
             .then(|| (slot.markup_original.clone(), slot.markup.items.clone()));
+        let pending_image = slot.edited().then(|| slot.final_image_pixels()).flatten();
         self.markup_save_busy = true;
         cx.spawn_in(window, async move |this, cx| {
             let result = blocking::unblock(move || -> Result<(), String> {
@@ -1293,6 +1472,9 @@ impl PreviewView {
                         source.with_extension(format!("lulo-trashing-{}.pdf", std::process::id()));
                     markup::write_pdf(&base, &temporary, &items)?;
                     std::fs::rename(&temporary, &source).map_err(|error| error.to_string())?;
+                }
+                if let Some((kind, pixels)) = pending_image {
+                    render::save_image(&pixels, kind, &source)?;
                 }
                 // trash::Error's Display carries the full path; keep it out of the journal.
                 trash::delete(&source)
@@ -1394,20 +1576,10 @@ impl PreviewView {
         .detach();
         let adjust_size_width = cx.new(|cx| InputState::new(window, cx).placeholder("Width"));
         let adjust_size_height = cx.new(|cx| InputState::new(window, cx).placeholder("Height"));
-        let crop_width = cx.new(|cx| InputState::new(window, cx).placeholder("Width"));
-        let crop_height = cx.new(|cx| InputState::new(window, cx).placeholder("Height"));
         for input in [&adjust_size_width, &adjust_size_height] {
             cx.subscribe(input, |this, _, event: &InputEvent, cx| {
                 if let InputEvent::PressEnter { .. } = event {
                     this.submit_adjust_size(cx);
-                }
-            })
-            .detach();
-        }
-        for input in [&crop_width, &crop_height] {
-            cx.subscribe(input, |this, _, event: &InputEvent, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.submit_crop(cx);
                 }
             })
             .detach();
@@ -1516,9 +1688,8 @@ impl PreviewView {
             adjust_size_open: false,
             adjust_size_width,
             adjust_size_height,
-            crop_open: false,
-            crop_width,
-            crop_height,
+            selection_tool_active: false,
+            selection_drag: None,
             manage_signatures_open: false,
             export_as_busy: false,
         };
@@ -2143,12 +2314,12 @@ impl PreviewView {
     // ---- Tools ▸ Adjust Size… / Crop / Flip (PRV-MENU-054/068/066/067) -----
 
     /// Applies a pixel-space edit to the open image in place: replaces
-    /// `ImageContent::pixels`/`size`, rebuilds its thumbnail, and drops the
+    /// `ImageContent::pixels`/`size`, rebuilds its thumbnail, drops the
     /// slot's cached display bitmap so it re-renders from the edited
-    /// pixels. Images only, like Rotate (PDFs have no equivalent pixel
-    /// buffer to edit). The edit is visible at once but, like Rotate
-    /// (PREV-04), is not yet written back to the source file by Save —
-    /// Save/Save As still send the original bytes.
+    /// pixels, and checkpoints `image_edits` (Edit ▸ Undo/Redo, and the
+    /// title bar's " — Edited"). Images only, like Rotate (PDFs have no
+    /// equivalent pixel buffer to edit). The edit is visible at once; File
+    /// ▸ Save writes it to the source file (`save_markup`).
     fn edit_image(
         &mut self,
         edit: impl FnOnce(&image::RgbaImage) -> image::RgbaImage,
@@ -2163,10 +2334,61 @@ impl PreviewView {
         let Content::Image(image) = &mut loaded.content else {
             return;
         };
+        let previous = image.pixels.clone();
         let edited = edit(&image.pixels);
         image.size = edited.dimensions();
         image.thumbnail = render::image_thumbnail(&edited);
         image.pixels = Arc::new(edited);
+        slot.image_edits.checkpoint(previous);
+        if let Some((_, old)) = slot.display.take() {
+            self.garbage.push(old);
+        }
+        cx.notify();
+    }
+
+    /// Edit ▸ Undo/Redo (⌘Z/⇧⌘Z) for an edited image: swaps
+    /// `ImageContent::pixels` for the `ImageEdits` undo/redo entry, no
+    /// recomputation (see `ImageEdits`'s doc comment).
+    fn undo_image_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(slot) = self.slots.get_mut(self.selected) else {
+            return;
+        };
+        let Some(previous) = slot.image_edits.undo.last().cloned() else {
+            return;
+        };
+        let Some(loaded) = slot.loaded_mut() else {
+            return;
+        };
+        let Content::Image(image) = &mut loaded.content else {
+            return;
+        };
+        let current = std::mem::replace(&mut image.pixels, previous);
+        image.size = image.pixels.dimensions();
+        image.thumbnail = render::image_thumbnail(&image.pixels);
+        slot.image_edits.undo(current);
+        if let Some((_, old)) = slot.display.take() {
+            self.garbage.push(old);
+        }
+        cx.notify();
+    }
+
+    fn redo_image_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(slot) = self.slots.get_mut(self.selected) else {
+            return;
+        };
+        let Some(next) = slot.image_edits.redo.last().cloned() else {
+            return;
+        };
+        let Some(loaded) = slot.loaded_mut() else {
+            return;
+        };
+        let Content::Image(image) = &mut loaded.content else {
+            return;
+        };
+        let current = std::mem::replace(&mut image.pixels, next);
+        image.size = image.pixels.dimensions();
+        image.thumbnail = render::image_thumbnail(&image.pixels);
+        slot.image_edits.redo(current);
         if let Some((_, old)) = slot.display.take() {
             self.garbage.push(old);
         }
@@ -2231,47 +2453,153 @@ impl PreviewView {
         cx.notify();
     }
 
-    fn open_crop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((width, height)) = self.image_pixel_size() else {
-            return;
-        };
-        self.crop_open = true;
-        self.crop_width.update(cx, |state, cx| {
-            state.set_value(width.to_string(), window, cx);
-        });
-        self.crop_height.update(cx, |state, cx| {
-            state.set_value(height.to_string(), window, cx);
-            state.focus(window, cx);
-        });
-        cx.notify();
-    }
+    // ---- Tools ▸ Rectangular Selection / Crop (⌘K, PRV-MENU-055/068) -------
+    //
+    // The Mac's own Crop is driven by a drag-rectangle selection rather than
+    // a typed width/height (the previous `crop_open` sheet, a centred
+    // kept-size crop): Tools ▸ Rectangular Selection is a checkable tool
+    // that turns the image into a drag target; dragging on it sets
+    // `Slot::selection`, and Tools ▸ Crop (⌘K) crops to whatever that
+    // selection currently is. Automatic Selection and Text Selection, the
+    // Mac's other two tools in this group, need an object-aware cutout and
+    // on-image OCR respectively — real algorithms this change doesn't
+    // implement, so they stay out of the menu rather than appear as items
+    // that would do nothing.
 
-    fn close_crop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.crop_open = false;
-        window.focus(&self.page_focus, cx);
-        cx.notify();
-    }
-
-    /// Crops to the requested width/height, centred in the current image
-    /// (PRV-MENU-068's note on `crop_open` explains why this is a kept-
-    /// size crop rather than the Mac's drag-rectangle one).
-    fn submit_crop(&mut self, cx: &mut Context<Self>) {
-        let width = self.crop_width.read(cx).value().trim().parse::<u32>();
-        let height = self.crop_height.read(cx).value().trim().parse::<u32>();
-        if let (Ok(width), Ok(height)) = (width, height) {
-            if width > 0 && height > 0 {
-                self.edit_image(
-                    |pixels| {
-                        let (current_width, current_height) = pixels.dimensions();
-                        let x = current_width.saturating_sub(width) / 2;
-                        let y = current_height.saturating_sub(height) / 2;
-                        render::crop(pixels, x, y, width, height)
-                    },
-                    cx,
-                );
+    /// Tools ▸ Rectangular Selection: toggles the drag-to-select tool.
+    /// Turning it off drops any selection in progress, like the Mac
+    /// deselecting when a different tool takes over.
+    fn toggle_selection_tool(&mut self, cx: &mut Context<Self>) {
+        self.selection_tool_active = !self.selection_tool_active;
+        if !self.selection_tool_active {
+            self.selection_drag = None;
+            if let Some(slot) = self.slot_mut() {
+                slot.selection = None;
             }
         }
-        self.crop_open = false;
+        cx.notify();
+    }
+
+    /// A window-space point as an unrotated unit position inside the open
+    /// image's own pixel buffer (the frame `ImageContent::pixels` and
+    /// `render::crop` are in) — the image counterpart of
+    /// `screen_to_page_point`, which only resolves PDF pages. `None`
+    /// outside a loaded image.
+    fn screen_to_image_point(&self, position: gpui::Point<gpui::Pixels>) -> Option<(f32, f32)> {
+        let slot = self.slot()?;
+        if !matches!(slot.kind(), Some(Kind::Image(_))) {
+            return None;
+        }
+        let size = *slot.page_sizes().first()?;
+        let scale = slot.zoom.resolve(slot.fit_scale(self.viewport));
+        let shown = (size.0 * scale, size.1 * scale);
+        if shown.0 <= 0.0 || shown.1 <= 0.0 {
+            return None;
+        }
+        let origin = layout::centred_origin(shown, self.viewport);
+        let left = metrics::document_left(self.sidebar);
+        let scroll_x = -f32::from(self.scroll.offset().x);
+        let scroll_y = -f32::from(self.scroll.offset().y);
+        let doc_x = f32::from(position.x) - left + scroll_x;
+        let doc_y = f32::from(position.y) - self.document_top() + scroll_y;
+        let unit = (
+            ((doc_x - origin.0) / shown.0).clamp(0.0, 1.0),
+            ((doc_y - origin.1) / shown.1).clamp(0.0, 1.0),
+        );
+        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
+            x0: unit.0,
+            y0: unit.1,
+            x1: unit.0,
+            y1: unit.1,
+        });
+        Some((raw.x0, raw.y0))
+    }
+
+    fn selection_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.selection_tool_active || event.button != MouseButton::Left {
+            return;
+        }
+        let Some(point) = self.screen_to_image_point(event.position) else {
+            return;
+        };
+        window.focus(&self.page_focus, cx);
+        self.selection_drag = Some(point);
+        if let Some(slot) = self.slot_mut() {
+            slot.selection = Some(layout::UnitRect {
+                x0: point.0,
+                y0: point.1,
+                x1: point.0,
+                y1: point.1,
+            });
+        }
+        cx.notify();
+    }
+
+    fn selection_mouse_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some(start) = self.selection_drag else {
+            return;
+        };
+        let Some(point) = self.screen_to_image_point(event.position) else {
+            return;
+        };
+        if let Some(slot) = self.slot_mut() {
+            slot.selection = Some(markup::normal(layout::UnitRect {
+                x0: start.0,
+                y0: start.1,
+                x1: point.0,
+                y1: point.1,
+            }));
+        }
+        cx.notify();
+    }
+
+    fn selection_mouse_up(&mut self, cx: &mut Context<Self>) {
+        if self.selection_drag.take().is_none() {
+            return;
+        }
+        // A click rather than a drag leaves a selection too small to crop
+        // to; drop it so Crop stays disabled instead of cropping to
+        // nothing.
+        if let Some(slot) = self.slot_mut() {
+            let negligible = slot
+                .selection
+                .is_some_and(|rect| rect.x1 - rect.x0 < 0.004 || rect.y1 - rect.y0 < 0.004);
+            if negligible {
+                slot.selection = None;
+            }
+        }
+        cx.notify();
+    }
+
+    /// Tools ▸ Crop (⌘K): crops the open image to its current Rectangular
+    /// Selection. Disabled (see the menu-enabled pass in `render`) without
+    /// one.
+    fn crop_to_selection(&mut self, cx: &mut Context<Self>) {
+        let Some(selection) = self.slot().and_then(|slot| slot.selection) else {
+            return;
+        };
+        let Some((image_width, image_height)) = self.image_pixel_size() else {
+            return;
+        };
+        let (image_width, image_height) = (image_width as f32, image_height as f32);
+        let x = (selection.x0 * image_width).round().max(0.0) as u32;
+        let y = (selection.y0 * image_height).round().max(0.0) as u32;
+        let width = ((selection.x1 - selection.x0) * image_width)
+            .round()
+            .max(1.0) as u32;
+        let height = ((selection.y1 - selection.y0) * image_height)
+            .round()
+            .max(1.0) as u32;
+        self.edit_image(|pixels| render::crop(pixels, x, y, width, height), cx);
+        if let Some(slot) = self.slot_mut() {
+            slot.selection = None;
+        }
+        self.selection_tool_active = false;
         cx.notify();
     }
 
@@ -2382,20 +2710,22 @@ impl PreviewView {
 
     // ---- File ▸ Export As… (PRV-MENU-013) ----------------------------------
 
-    /// Re-encodes the open image to a format chosen from its own file
-    /// extension (png/jpg/jpeg/bmp/gif/tiff/webp) and writes it to a
-    /// picked path — unlike Save As (which copies bytes unchanged), this
-    /// is a real format conversion. PDFs export through Export as PDF…
-    /// instead (that one already sends PDF bytes verbatim).
+    /// Re-encodes the open image — its current edited pixels, with its
+    /// still-unsaved view rotation baked in (`Slot::final_image_pixels`) —
+    /// to a format chosen from its own file extension
+    /// (png/jpg/jpeg/bmp/gif/tiff/webp) and writes it to a picked path —
+    /// unlike Save As (which also writes the edited pixels, but keeps the
+    /// original format), this is a real format conversion. PDFs export
+    /// through Export as PDF… instead (that one already sends PDF bytes
+    /// verbatim).
     fn export_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.export_as_busy {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        let Some(Content::Image(image)) = slot.loaded().map(|loaded| &loaded.content) else {
+        let Some((_, pixels)) = slot.final_image_pixels() else {
             return;
         };
-        let pixels = image.pixels.clone();
         let directory = slot
             .path
             .parent()
@@ -2676,7 +3006,9 @@ impl PreviewView {
 
     /// File ▸ Save As… writes a new document and makes it the active path.
     /// A PDF with markup keeps a clean backing copy so later saves do not
-    /// append the same annotations twice.
+    /// append the same annotations twice. An edited image writes its
+    /// current pixels (rotation baked in, like Save) rather than copying
+    /// the original bytes, so Save As carries the edits over.
     fn save_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.save_as_busy || self.markup_save_busy {
             return;
@@ -2697,6 +3029,9 @@ impl PreviewView {
                     slot.markup.items.clone(),
                 )
             });
+        let image_save = marked_pdf.is_none().then(|| slot.final_image_pixels()).flatten();
+        let image_revision = slot.image_edits.revision;
+        let image_rotation = slot.rotation;
         let directory = source.parent().unwrap_or(Path::new(".")).to_path_buf();
         let suggested_name = source
             .file_name()
@@ -2729,6 +3064,9 @@ impl PreviewView {
                             return Err(error.to_string());
                         }
                         Some(backup)
+                    } else if let Some((kind, pixels)) = image_save {
+                        render::write_image(&pixels, kind, &temporary)?;
+                        None
                     } else {
                         std::fs::copy(&source, &temporary).map_err(|error| error.to_string())?;
                         None
@@ -2753,6 +3091,12 @@ impl PreviewView {
                             slot.markup_original = backup;
                             if slot.markup.revision == revision {
                                 slot.markup.dirty = false;
+                            }
+                            if slot.image_edits.revision == image_revision {
+                                slot.image_edits.dirty = false;
+                            }
+                            if slot.rotation == image_rotation {
+                                slot.saved_rotation = image_rotation;
                             }
                             record_recent_document(destination, cx);
                         }
@@ -3491,20 +3835,13 @@ impl PreviewView {
             cx.stop_propagation();
             return;
         }
-        if self.customise_toolbar_open
-            || self.adjust_size_open
-            || self.crop_open
-            || self.manage_signatures_open
-        {
+        if self.customise_toolbar_open || self.adjust_size_open || self.manage_signatures_open {
             if event.keystroke.key == "escape" {
                 if self.customise_toolbar_open {
                     self.close_customise_toolbar(window, cx);
                 }
                 if self.adjust_size_open {
                     self.close_adjust_size(window, cx);
-                }
-                if self.crop_open {
-                    self.close_crop(window, cx);
                 }
                 if self.manage_signatures_open {
                     self.close_manage_signatures(window, cx);
@@ -3519,6 +3856,11 @@ impl PreviewView {
             return;
         }
         match event.keystroke.key.as_str() {
+            "escape" if self.slot().is_some_and(|slot| slot.selection.is_some()) => {
+                if let Some(slot) = self.slot_mut() {
+                    slot.selection = None;
+                }
+            }
             "left" | "up" if !is_pdf => self.step_item(-1, cx),
             "right" | "down" if !is_pdf => self.step_item(1, cx),
             "backspace" | "delete" if self.markup_selected.is_some() => self.delete_markup(cx),
@@ -3712,6 +4054,20 @@ impl PreviewView {
                     })),
             );
 
+        // Bug fix (image edits not written by Save): the title bar now
+        // shows " — Edited" for a dirty PDF or an image with unsaved
+        // Rotate/Flip/Adjust Size/Crop edits, the same dimmer-suffix
+        // convention `rmac_ui::controls::DocumentTitleMenu` already uses
+        // for Text Editor.
+        let edited = self.slot().is_some_and(Slot::edited);
+        let edited_suffix = || {
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(rgb(palette.subtitle))
+                .child("\u{a0}\u{2014} Edited")
+        };
         let title_block = div()
             .absolute()
             .left(px(title_left))
@@ -3722,11 +4078,19 @@ impl PreviewView {
             .map(|block| match subtitle {
                 None => block.flex().items_center().child(
                     div()
+                        .flex()
+                        .items_center()
+                        .min_w_0()
                         .w_full()
-                        .truncate()
-                        .text_size(px(metrics::TITLE_SINGLE_SIZE))
-                        .font_weight(FontWeight::BOLD)
-                        .child(SharedString::from(title)),
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .text_size(px(metrics::TITLE_SINGLE_SIZE))
+                                .font_weight(FontWeight::BOLD)
+                                .child(SharedString::from(title)),
+                        )
+                        .when(edited, |row| row.child(edited_suffix())),
                 ),
                 Some(subtitle) => block
                     .child(
@@ -3736,10 +4100,17 @@ impl PreviewView {
                             .w_full()
                             .h(px(metrics::TITLE_LINE))
                             .line_height(px(metrics::TITLE_LINE))
-                            .truncate()
-                            .text_size(px(metrics::TITLE_SIZE))
-                            .font_weight(FontWeight::BOLD)
-                            .child(SharedString::from(title)),
+                            .flex()
+                            .items_center()
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(metrics::TITLE_SIZE))
+                                    .font_weight(FontWeight::BOLD)
+                                    .child(SharedString::from(title)),
+                            )
+                            .when(edited, |row| row.child(edited_suffix())),
                     )
                     .child(
                         div()
@@ -4593,6 +4964,27 @@ impl PreviewView {
                                         .h(px(shown.1)),
                                 )
                             })
+                            .when_some(slot.selection, |content, selection| {
+                                // `selection` is unrotated (the frame Crop
+                                // crops in); rotate it back to the
+                                // currently displayed frame to draw it.
+                                let shown_rect = slot.rotation.apply_unit_rect(selection);
+                                let rect_x = origin.0 + shown_rect.x0 * shown.0;
+                                let rect_y = origin.1 + shown_rect.y0 * shown.1;
+                                let rect_w = (shown_rect.x1 - shown_rect.x0) * shown.0;
+                                let rect_h = (shown_rect.y1 - shown_rect.y0) * shown.1;
+                                content.child(
+                                    div()
+                                        .absolute()
+                                        .left(px(rect_x))
+                                        .top(px(rect_y))
+                                        .w(px(rect_w.max(0.0)))
+                                        .h(px(rect_h.max(0.0)))
+                                        .border_1()
+                                        .border_color(rgb(palette.selection))
+                                        .bg(rgba((palette.selection << 8) | 0x33)),
+                                )
+                            })
                             .into_any_element()
                     }
                     Content::Pdf(_) if self.page_mode == PageMode::Contact => {
@@ -4693,6 +5085,30 @@ impl PreviewView {
                         cx.listener(|this, _: &MouseUpEvent, _, cx| {
                             this.markup_mouse_up(cx);
                             this.text_mouse_up(cx);
+                        }),
+                    )
+            })
+            .when(!is_pdf, |document| {
+                document
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            this.selection_mouse_down(event, window, cx);
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                        this.selection_mouse_move(event, cx);
+                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                            this.selection_mouse_up(cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                            this.selection_mouse_up(cx);
                         }),
                     )
             })
@@ -4954,10 +5370,10 @@ impl PreviewView {
             .into_any_element()
     }
 
-    /// Shared card for Tools ▸ Adjust Size… and Tools ▸ Crop (PRV-MENU-054,
-    /// 068): a width/height field pair, modelled on Go to Page's card.
-    /// `Escape` cancels (`on_key_down`); `Enter` in either field submits
-    /// (wired when the two `InputState`s are created in `new`).
+    /// Card for Tools ▸ Adjust Size… (PRV-MENU-054): a width/height field
+    /// pair, modelled on Go to Page's card. `Escape` cancels
+    /// (`on_key_down`); `Enter` in either field submits (wired when the two
+    /// `InputState`s are created in `new`).
     fn render_size_sheet(
         &self,
         palette: Palette,
@@ -5877,7 +6293,17 @@ impl Render for PreviewView {
             rmac_ui::set_menu_enabled("preview::ShowImageBackground", is_image, cx);
             rmac_ui::set_menu_enabled("preview::FlipHorizontal", is_image, cx);
             rmac_ui::set_menu_enabled("preview::FlipVertical", is_image, cx);
-            rmac_ui::set_menu_enabled("preview::Crop", is_image, cx);
+            rmac_ui::set_menu_enabled("preview::RectangularSelection", is_image, cx);
+            rmac_ui::set_menu_checked(
+                "preview::RectangularSelection",
+                is_image && self.selection_tool_active,
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
+                "preview::Crop",
+                self.slot().is_some_and(|slot| slot.selection.is_some()),
+                cx,
+            );
             rmac_ui::set_menu_enabled("preview::AdjustSize", is_image, cx);
             rmac_ui::set_menu_enabled("preview::ExportAs", is_image && !self.export_as_busy, cx);
             rmac_ui::set_menu_enabled("preview::UseDarkAppearanceForPdf", pdf, cx);
@@ -6147,7 +6573,10 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &FlipHorizontal, _, cx| this.flip_horizontal(cx)))
             .on_action(cx.listener(|this, _: &FlipVertical, _, cx| this.flip_vertical(cx)))
-            .on_action(cx.listener(|this, _: &Crop, window, cx| this.open_crop(window, cx)))
+            .on_action(cx.listener(|this, _: &Crop, _, cx| this.crop_to_selection(cx)))
+            .on_action(cx.listener(|this, _: &RectangularSelection, _, cx| {
+                this.toggle_selection_tool(cx);
+            }))
             .on_action(cx.listener(|this, _: &AdjustSize, window, cx| {
                 this.open_adjust_size(window, cx);
             }))
@@ -6189,15 +6618,27 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &SaveMarkup, _, cx| this.save_markup(cx)))
             .on_action(cx.listener(|this, _: &RevertMarkup, _, cx| this.revert_markup(cx)))
             .on_action(cx.listener(|this, _: &UndoMarkup, _, cx| {
-                if let Some(slot) = this.slot_mut() {
-                    slot.markup.undo();
-                    cx.notify();
+                match this.slot().and_then(Slot::kind) {
+                    Some(Kind::Pdf) => {
+                        if let Some(slot) = this.slot_mut() {
+                            slot.markup.undo();
+                        }
+                        cx.notify();
+                    }
+                    Some(Kind::Image(_)) => this.undo_image_edit(cx),
+                    None => {}
                 }
             }))
             .on_action(cx.listener(|this, _: &RedoMarkup, _, cx| {
-                if let Some(slot) = this.slot_mut() {
-                    slot.markup.redo();
-                    cx.notify();
+                match this.slot().and_then(Slot::kind) {
+                    Some(Kind::Pdf) => {
+                        if let Some(slot) = this.slot_mut() {
+                            slot.markup.redo();
+                        }
+                        cx.notify();
+                    }
+                    Some(Kind::Image(_)) => this.redo_image_edit(cx),
+                    None => {}
                 }
             }))
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
@@ -6236,16 +6677,6 @@ impl Render for PreviewView {
                     "Adjust Size",
                     &self.adjust_size_width,
                     &self.adjust_size_height,
-                ))
-            })
-            .when(self.crop_open, |root| {
-                root.child(self.render_size_sheet(
-                    palette,
-                    width,
-                    height,
-                    "Crop (kept size, centred)",
-                    &self.crop_width,
-                    &self.crop_height,
                 ))
             })
             .when(self.manage_signatures_open, |root| {
@@ -6303,5 +6734,57 @@ mod tests {
             document_window_title("guide.pdf", Some("Page 1 of 3")),
             "guide.pdf"
         );
+    }
+
+    use super::ImageEdits;
+    use std::sync::Arc;
+
+    fn pixels(fill: u8) -> Arc<image::RgbaImage> {
+        Arc::new(image::RgbaImage::from_pixel(
+            1,
+            1,
+            image::Rgba([fill, fill, fill, 255]),
+        ))
+    }
+
+    /// `ImageEdits` mirrors `Markup`'s own checkpoint/undo/redo/dirty
+    /// bookkeeping (see its doc comment); this is the same contract
+    /// `markup.rs`'s own undo/redo tests check for annotations, here for
+    /// pixel edits (Tools ▸ Rotate/Flip/Adjust Size/Crop).
+    #[test]
+    fn image_edits_checkpoint_then_undo_and_redo_swap_exact_pixels() {
+        let mut edits = ImageEdits::default();
+        assert!(!edits.dirty);
+
+        let original = pixels(0);
+        let after_flip = pixels(1);
+        edits.checkpoint(original.clone());
+        assert!(edits.dirty);
+        assert_eq!(edits.revision, 1);
+
+        // Undo swaps back to the pre-edit pixels, exactly (an `Arc` swap,
+        // not a recomputed inverse) — see the struct's doc comment.
+        let restored = edits.undo(after_flip.clone()).unwrap();
+        assert!(Arc::ptr_eq(&restored, &original));
+        assert_eq!(edits.revision, 2);
+        assert!(edits.undo.is_empty());
+
+        // Redo swaps forward again to the same `Arc` that was undone.
+        let redone = edits.redo(original.clone()).unwrap();
+        assert!(Arc::ptr_eq(&redone, &after_flip));
+        assert_eq!(edits.revision, 3);
+
+        // A second edit after an undo clears the redo stack, like Markup's.
+        edits.checkpoint(redone);
+        assert!(edits.redo.is_empty());
+    }
+
+    #[test]
+    fn image_edits_undo_and_redo_are_none_when_their_stack_is_empty() {
+        let mut edits = ImageEdits::default();
+        assert!(edits.undo(pixels(0)).is_none());
+        assert!(edits.redo(pixels(0)).is_none());
+        assert!(!edits.dirty);
+        assert_eq!(edits.revision, 0);
     }
 }

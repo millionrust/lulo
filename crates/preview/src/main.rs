@@ -75,6 +75,7 @@ gpui::actions!(
         RotateRight,
         FlipHorizontal,
         FlipVertical,
+        RectangularSelection,
         Crop,
         AnnotateHighlight,
         AnnotateUnderline,
@@ -486,19 +487,21 @@ fn save_bookmarks(document: &std::path::Path, pages: &[usize]) -> std::io::Resul
 /// window, then quit after the write finishes. The state lives in XDG state
 /// so the next launch can reopen the same window groups once.
 fn quit_and_keep_windows(cx: &mut App) {
-    let (windows, jobs) = OPEN_VIEWS.with(|views| {
+    let (windows, jobs, image_jobs) = OPEN_VIEWS.with(|views| {
         let open = views.borrow();
         let mut windows = Vec::new();
         let mut jobs = Vec::new();
+        let mut image_jobs = Vec::new();
         for view in open.iter().filter_map(WeakEntity::upgrade) {
             let view = view.read(cx);
             let paths = view.open_paths();
             if !paths.is_empty() {
                 windows.push(paths);
                 jobs.extend(view.pending_markup());
+                image_jobs.extend(view.pending_image_saves());
             }
         }
-        (windows, jobs)
+        (windows, jobs, image_jobs)
     });
     cx.spawn(async move |cx| {
         let result = blocking::unblock(move || -> std::io::Result<()> {
@@ -508,6 +511,9 @@ fn quit_and_keep_windows(cx: &mut App) {
                     source.with_extension(format!("lulo-quitting-{}.pdf", std::process::id()));
                 markup::write_pdf(&base, &temporary, &items).map_err(std::io::Error::other)?;
                 std::fs::rename(&temporary, &source)?;
+            }
+            for (source, kind, pixels) in image_jobs {
+                render::save_image(&pixels, kind, &source).map_err(std::io::Error::other)?;
             }
             let path = saved_windows_path();
             if let Some(parent) = path.parent() {
@@ -533,13 +539,18 @@ fn quit_and_keep_windows(cx: &mut App) {
 /// the command was invoked.
 fn close_all(cx: &mut App) {
     let windows = cx.windows();
-    let jobs = OPEN_VIEWS.with(|views| {
-        views
-            .borrow()
+    let (jobs, image_jobs) = OPEN_VIEWS.with(|views| {
+        let open = views.borrow();
+        let views: Vec<_> = open.iter().filter_map(WeakEntity::upgrade).collect();
+        let jobs = views
             .iter()
-            .filter_map(WeakEntity::upgrade)
             .flat_map(|view| view.read(cx).pending_markup())
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        let image_jobs = views
+            .iter()
+            .flat_map(|view| view.read(cx).pending_image_saves())
+            .collect::<Vec<_>>();
+        (jobs, image_jobs)
     });
     cx.spawn(async move |cx| {
         let result = blocking::unblock(move || -> std::io::Result<()> {
@@ -549,6 +560,9 @@ fn close_all(cx: &mut App) {
                     source.with_extension(format!("lulo-closing-{}.pdf", std::process::id()));
                 markup::write_pdf(&base, &temporary, &items).map_err(std::io::Error::other)?;
                 std::fs::rename(temporary, source)?;
+            }
+            for (source, kind, pixels) in image_jobs {
+                render::save_image(&pixels, kind, &source).map_err(std::io::Error::other)?;
             }
             Ok(())
         })

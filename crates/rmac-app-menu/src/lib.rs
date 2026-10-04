@@ -2000,6 +2000,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Show Inspector", "preview::ShowInspector", "⌘I"),
             item!("Adjust Size…", "preview::AdjustSize", "", separator),
+            item!(
+                "Rectangular Selection",
+                "preview::RectangularSelection",
+                "",
+                separator
+            ),
             submenu!(
                 "Annotate",
                 "preview::AnnotateMenu",

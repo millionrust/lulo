@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_285 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_284 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Finder
 
@@ -77,7 +77,7 @@ _285 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/invento
 |---|---|---|---|---|---|---|
 | PRV-MENU-008 | missing menu item (has a shortcut) | Invert Selection | Edit ▸ Invert Selection | ⇧⌘I |  | missing from Lulo's menu bar |
 | PRV-MENU-001 | missing menu item (has a shortcut) | Duplicate | File ▸ Duplicate | ⇧⌘S |  | missing from Lulo's menu bar |
-| PRV-MENU-031 | missing menu item (has a shortcut) | Remove Background | Tools ▸ Remove Background | ⇧⌘K |  | missing from Lulo's menu bar |
+| PRV-MENU-030 | missing menu item (has a shortcut) | Remove Background | Tools ▸ Remove Background | ⇧⌘K |  | missing from Lulo's menu bar |
 | PRV-MENU-026 | missing menu item (has a shortcut) | Show Magnifier | Tools ▸ Show Magnifier | ` |  | missing from Lulo's menu bar |
 | PRV-MENU-009 | missing menu item | Insert | Edit ▸ Insert |  |  | missing from Lulo's menu bar |
 | PRV-MENU-011 | missing menu item | Blank Page | Edit ▸ Insert ▸ Blank Page |  |  | missing from Lulo's menu bar |
@@ -88,12 +88,11 @@ _285 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/invento
 | PRV-MENU-007 | missing menu item | Import from Scanner… | File ▸ Import from Scanner… |  |  | missing from Lulo's menu bar |
 | PRV-MENU-003 | missing menu item | Move To… | File ▸ Move To… |  |  | missing from Lulo's menu bar |
 | PRV-MENU-002 | missing menu item | Rename… | File ▸ Rename… |  |  | missing from Lulo's menu bar |
-| PRV-MENU-032 | missing menu item | Assign Profile… | Tools ▸ Assign Profile… |  |  | missing from Lulo's menu bar |
+| PRV-MENU-031 | missing menu item | Assign Profile… | Tools ▸ Assign Profile… |  |  | missing from Lulo's menu bar |
 | PRV-MENU-027 | missing menu item | Automatic Selection | Tools ▸ Automatic Selection |  |  | missing from Lulo's menu bar |
-| PRV-MENU-028 | missing menu item | Rectangular Selection | Tools ▸ Rectangular Selection |  |  | missing from Lulo's menu bar |
-| PRV-MENU-030 | missing menu item | Redact | Tools ▸ Redact |  |  | missing from Lulo's menu bar |
-| PRV-MENU-033 | missing menu item | Show Location Info | Tools ▸ Show Location Info |  |  | missing from Lulo's menu bar |
-| PRV-MENU-029 | missing menu item | Text Selection | Tools ▸ Text Selection |  |  | missing from Lulo's menu bar |
+| PRV-MENU-029 | missing menu item | Redact | Tools ▸ Redact |  |  | missing from Lulo's menu bar |
+| PRV-MENU-032 | missing menu item | Show Location Info | Tools ▸ Show Location Info |  |  | missing from Lulo's menu bar |
+| PRV-MENU-028 | missing menu item | Text Selection | Tools ▸ Text Selection |  |  | missing from Lulo's menu bar |
 | PRV-MENU-012 | missing menu item | Soft Proof with Profile | View ▸ Soft Proof with Profile |  |  | missing from Lulo's menu bar |
 | PRV-MENU-014 | missing menu item | ACES CG Linear (Academy Color Encoding System AP1) | View ▸ Soft Proof with Profile ▸ ACES CG Linear (Academy Color Encoding System AP1) |  |  | missing from Lulo's menu bar |
 | PRV-MENU-015 | missing menu item | Adobe RGB (1998) | View ▸ Soft Proof with Profile ▸ Adobe RGB (1998) |  |  | missing from Lulo's menu bar |
@@ -108,9 +107,9 @@ _285 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/invento
 | PRV-MENU-022 | missing menu item | Rec. ITU-R BT.709-5 | View ▸ Soft Proof with Profile ▸ Rec. ITU-R BT.709-5 |  |  | missing from Lulo's menu bar |
 | PRV-MENU-024 | missing menu item | SMPTE RP 431-2-2007 DCI (P3) | View ▸ Soft Proof with Profile ▸ SMPTE RP 431-2-2007 DCI (P3) |  |  | missing from Lulo's menu bar |
 | PRV-MENU-025 | missing menu item | sRGB IEC61966-2.1 | View ▸ Soft Proof with Profile ▸ sRGB IEC61966-2.1 |  |  | missing from Lulo's menu bar |
-| PRV-MENU-034 | Lulo-only (not on the Mac) | Add Signature | Tools ▸ Annotate ▸ Signature ▸ Add Signature |  |  | present in Lulo but not found on the Mac |
-| PRV-MENU-035 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
-| PRV-MENU-036 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
+| PRV-MENU-033 | Lulo-only (not on the Mac) | Add Signature | Tools ▸ Annotate ▸ Signature ▸ Add Signature |  |  | present in Lulo but not found on the Mac |
+| PRV-MENU-034 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
+| PRV-MENU-035 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
 
 ## System Monitor
 

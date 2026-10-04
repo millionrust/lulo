@@ -646,6 +646,13 @@
           "children": []
         },
         {
+          "label": "Rectangular Selection",
+          "action": "preview::RectangularSelection",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Annotate",
           "action": "preview::AnnotateMenu",
           "shortcut": "",

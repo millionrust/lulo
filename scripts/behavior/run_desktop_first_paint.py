@@ -18,6 +18,12 @@ runs niri nested in it with the shipped packaging/rmac-session/shell.kdl and
 starts `wallpaper` (or `rmac-wallpaper`) from --bin-dir with a private HOME
 whose ~/Desktop holds a folder, a text file and large PNG screenshots.
 
+The login case comes first: the owner's desktop (a folder and four
+full-screen screenshots) with nothing else open. Its later rounds drop the
+frames after the desktop's first one (RMAC_GPUI_TEST_UNPRESENTED_DRAWS), as
+the reference laptop's niri does through Mesa's suboptimal swapchain, and the
+folder icon must still paint without input.
+
 Each round launches the desktop, waits with no input at all and captures the
 output, then clicks empty desktop (the only input, into this run's Sway) and
 captures again. The icons must already be there before the click. A second
@@ -56,6 +62,23 @@ OUTPUT_W, OUTPUT_H = 1280, 800
 SCREENSHOT_SIZES = ((2560, 1600), (1920, 1080), (1440, 900), (1280, 800), (960, 600), (640, 400))
 
 
+# The owner's desktop when the bug was reported: one folder and four
+# full-screen screenshots, with the icon positions their desktop.json held.
+OWNER_FOLDER = "hi"
+OWNER_SCREENSHOTS = (
+    "Screenshot 2026-09-30 at 8.26.03\u202fPM.png",
+    "Screenshot 2026-09-30 at 8.30.53\u202fPM.png",
+    "Screenshot 2026-09-30 at 8.32.43\u202fPM.png",
+    "Screenshot 2026-09-30 at 8.34.15\u202fPM.png",
+)
+OWNER_POSITIONS = {
+    OWNER_FOLDER: (34.0, 41.0),
+    OWNER_SCREENSHOTS[0]: (28.734375, 152.00781),
+    OWNER_SCREENSHOTS[1]: (34.0, 265.0),
+    OWNER_SCREENSHOTS[2]: (34.0, 377.0),
+    OWNER_SCREENSHOTS[3]: (34.0, 489.0),
+}
+
 MAGENTA = (255, 0, 255)
 PICTURES = 4
 # A picture preview fits the 64-point icon slot (a 64 px square at scale 1;
@@ -76,6 +99,28 @@ def write_solid_png(path: Path, width: int, height: int, rgb: tuple[int, int, in
     path.write_bytes(b"\x89PNG\r\n\x1a\n"
                      + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
                      + chunk(b"IDAT", body) + chunk(b"IEND", b""))
+
+
+def write_screenshot_png(path: Path, width: int, height: int) -> None:
+    """A full-screen screenshot stand-in: incompressible, so it decodes as
+    slowly as a real one, but with no blue, so its preview never counts as
+    folder-blue pixels."""
+    noise = os.urandom(width * height * 2)
+    rows = []
+    for y in range(height):
+        start = y * width * 2
+        chunk = noise[start:start + width * 2]
+        pixels = bytearray(width * 3)
+        pixels[0::3] = chunk[0::2]
+        pixels[1::3] = chunk[1::2]
+        rows.append(b"\x00" + bytes(pixels))
+
+    def chunk_of(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    path.write_bytes(b"\x89PNG\r\n\x1a\n"
+                     + chunk_of(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+                     + chunk_of(b"IDAT", zlib.compress(b"".join(rows), 1)) + chunk_of(b"IEND", b""))
 
 
 def magenta_pixels(pixels: bytes) -> int:
@@ -153,7 +198,12 @@ class Run:
                              f"output HEADLESS-1 mode {OUTPUT_W}x{OUTPUT_H}@120Hz position 0 0\n")
         self.spawn(["sway", "--unsupported-gpu", "--config", str(sway_conf)], "sway",
                    {"WLR_BACKENDS": "headless", "WLR_HEADLESS_OUTPUTS": "1",
-                    "WLR_LIBINPUT_NO_DEVICES": "1", "WLR_RENDERER": "pixman"})
+                    "WLR_LIBINPUT_NO_DEVICES": "1",
+                    # --gpu: the parent renders on the GPU too, so niri gets
+                    # hardware EGL and offers dmabuf feedback with a main
+                    # device, as the reference laptop's niri does.
+                    **({"WLR_RENDERER": "gles2", "WLR_RENDER_DRM_DEVICE": "/dev/dri/renderD128"}
+                       if self.args.gpu else {"WLR_RENDERER": "pixman"})})
         self.sway_display = self.wait_for(lambda: next(
             (p.name for p in self.runtime.glob("wayland-*") if not p.name.endswith(".lock")), None))
         if not self.sway_display:
@@ -165,7 +215,8 @@ class Run:
                           + FOCUS_HOLDER_RULE)
         before = {p.name for p in self.runtime.glob("wayland-*")}
         self.spawn([self.args.niri, "-c", str(config)], "niri",
-                   {"WAYLAND_DISPLAY": self.sway_display, "LIBGL_ALWAYS_SOFTWARE": "1"})
+                   {"WAYLAND_DISPLAY": self.sway_display,
+                    **({} if self.args.gpu else {"LIBGL_ALWAYS_SOFTWARE": "1"})})
         socket = self.wait_for(lambda: next(iter(self.runtime.glob("niri.*.sock")), None))
         display = self.wait_for(lambda: next(
             (p.name for p in self.runtime.glob("wayland-*")
@@ -175,8 +226,13 @@ class Run:
         self.env.update({"WAYLAND_DISPLAY": display, "NIRI_SOCKET": str(socket)})
         outputs = self.wait_for(lambda: self.niri_outputs()) or {}
         self.output = next(iter(outputs), "winit")
+        subprocess.run(["busctl", "--user", "set-property", "org.a11y.Bus", "/org/a11y/bus",
+                        "org.a11y.Status", "IsEnabled", "b", "true"],
+                       env=self.env, check=False, capture_output=True, timeout=10)
         self.keys = wlinput.Wayland({**self.env, "WAYLAND_DISPLAY": self.sway_display,
                                      "RMAC_BEHAVIOR_NESTED": "1"})
+
+    def start_focus_holder(self) -> None:
         # In a real session an app window holds keyboard focus and the
         # desktop is inactive; GPUI paces an inactive window's next-frame
         # callbacks at 30 fps, which is where the idle frame loop once lost
@@ -208,6 +264,11 @@ class Run:
                                 capture_output=True, text=True, timeout=10)
         return json.loads(result.stdout) if result.returncode == 0 and result.stdout.strip() else None
 
+    def vulkan_env(self) -> dict[str, str]:
+        # --gpu leaves GPUI on the machine's own Vulkan driver (the laptop's
+        # Intel iGPU); otherwise lavapipe, as on CI.
+        return {} if self.args.gpu else {"VK_ICD_FILENAMES": LAVAPIPE}
+
     def binary(self) -> Path:
         for name in ("wallpaper", "rmac-wallpaper"):
             candidate = Path(self.args.bin_dir) / name
@@ -217,16 +278,20 @@ class Run:
 
     # -- the desktop -----------------------------------------------------------
 
-    def launch_desktop(self) -> None:
-        self.focus_terminal()
-        self.desktop = self.spawn([str(self.binary())], "wallpaper", {
+    def launch_desktop(self, focus_terminal: bool = True, extra: dict[str, str] | None = None) -> None:
+        if focus_terminal:
+            self.focus_terminal()
+        self.desktop = self.spawn([str(self.binary())], "wallpaper", {**self.desktop_env(), **(extra or {})})
+
+    def desktop_env(self) -> dict[str, str]:
+        return {
             "HOME": str(self.home),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
             "XDG_DATA_HOME": str(self.home / ".local/share"),
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CACHE_HOME": str(self.home / ".cache"),
-            "VK_ICD_FILENAMES": LAVAPIPE,
-        })
+            **self.vulkan_env(),
+        }
 
     def stop_desktop(self) -> None:
         if self.desktop is not None and self.desktop.poll() is None:
@@ -269,6 +334,31 @@ class Run:
         self.check(f"{label}: icons paint without input",
                    blue_idle >= blue_clicked * 0.9, detail)
 
+    def settle_desktop(self, wait: Optional[float] = None) -> None:
+        """Wait --settle (or `wait`) seconds, then until the desktop process has used no
+        CPU for a while: every picture and icon has finished loading (on a
+        busy CI runner the folder artwork alone can take five seconds), so
+        a capture taken now shows what the desktop will show with no input."""
+        time.sleep(self.args.settle if wait is None else wait)
+        if self.desktop is None:
+            return
+
+        def cpu_ticks() -> int:
+            fields = Path(f"/proc/{self.desktop.pid}/stat").read_text().rsplit(")", 1)[1].split()
+            return int(fields[11]) + int(fields[12])  # utime + stime
+
+        deadline = time.monotonic() + 30.0
+        try:
+            history = [cpu_ticks()]
+            while time.monotonic() < deadline:
+                time.sleep(0.5)
+                history.append(cpu_ticks())
+                # Quiet for 1.5 s: at most 2 ticks (20 ms) of CPU.
+                if len(history) >= 4 and history[-1] - history[-4] <= 2:
+                    return
+        except (OSError, IndexError, ValueError):
+            return
+
     def check_idle_wakeups(self, label: str, pid: Optional[int]) -> None:
         """No polling: an idle, inactive surface's main thread sleeps."""
         if pid is None:
@@ -296,6 +386,70 @@ class Run:
         for index, (width, height) in enumerate(SCREENSHOT_SIZES):
             run_lulo.write_noise_png(self.desktop_dir / f"Screenshot {index}.png", width, height)
 
+    def reset_owner_desktop(self) -> None:
+        """The owner's desktop: the folder "hi" and four screenshots, copied
+        from --fixture-dir when given (read only), else generated at the
+        laptop's 1920x1080, with their saved icon positions."""
+        import json
+
+        for entry in self.desktop_dir.iterdir():
+            shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+        (self.desktop_dir / OWNER_FOLDER).mkdir()
+        source = Path(self.args.fixture_dir) if self.args.fixture_dir else None
+        for name in OWNER_SCREENSHOTS:
+            if source is not None and (source / name).is_file():
+                shutil.copyfile(source / name, self.desktop_dir / name)
+            else:
+                write_screenshot_png(self.desktop_dir / name, 1920, 1080)
+        settings = self.home / ".config/rmac/desktop.json"
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({
+            "arrangement": "none",
+            "use_stacks": False,
+            "view": {"icon_size": 64.0, "grid_spacing": 54.0, "text_size": 12.0},
+            "positions": {name: {"from_right": right, "top": top}
+                          for name, (right, top) in OWNER_POSITIONS.items()},
+            "widgets": [],
+            "next_widget_id": 0,
+        }, indent=2))
+
+    def run_login(self, attempt: int) -> None:
+        """Login: the owner's desktop and nothing else open, so no window
+        holds keyboard focus. The folder must paint with no input.
+
+        Every round after the first also drops the frames right after the
+        desktop's first one, as the reference laptop does: niri sends a
+        surface its scan-out dmabuf feedback once it has composited it, Mesa
+        then reports the swapchain suboptimal and the next frame is drawn but
+        never presented. That frame is the one that adds the folder icon,
+        which finishes loading just after the first frame; unless the
+        backend redraws a frame it could not present, the icon stays blank
+        until a click."""
+        self.reset_owner_desktop()
+        companions = [self.spawn([binary], Path(binary).name, self.desktop_env())
+                      for binary in filter(None, (self.args.companions or "").split(","))]
+        dropped = self.args.unpresented_draws if attempt > 0 else 0
+        self.launch_desktop(focus_terminal=False,
+                            extra={"RMAC_GPUI_TEST_UNPRESENTED_DRAWS": str(dropped)} if dropped else None)
+        self.settle_desktop()
+        if self.desktop is None or self.desktop.poll() is not None:
+            self.check("desktop starts", False, (self.out / "wallpaper.log").read_text()[-400:])
+            return
+        idle = self.capture(f"login-{attempt}")
+        self.click_empty_desktop()
+        time.sleep(1.5)
+        label = f"login {attempt}" + (f" ({dropped} unpresented frames)" if dropped else "")
+        self.compare(label, idle, self.capture(f"login-clicked-{attempt}"))
+        if dropped and attempt == self.args.login_rounds - 1:
+            # Redrawing a dropped frame must not leave the loop running.
+            self.check_idle_wakeups("desktop after unpresented frames", self.desktop.pid)
+        settings = self.home / ".config/rmac/desktop.json"
+        self.stop_desktop()
+        for companion in companions:
+            companion.terminate()
+            companion.wait(8)
+        settings.unlink(missing_ok=True)
+
     def run_probe(self) -> None:
         """Deterministic part: the img-paint probe's swatches load a fixed
         delay after the frame that requested them, on a surface that never
@@ -303,7 +457,7 @@ class Run:
         delays = [int(delay) for delay in self.args.probe_delays.split(",")]
         probe = subprocess.Popen(
             [self.args.probe, "--delays", self.args.probe_delays],
-            env={**self.env, "VK_ICD_FILENAMES": LAVAPIPE}, stdin=subprocess.PIPE,
+            env={**self.env, **self.vulkan_env()}, stdin=subprocess.PIPE,
             stdout=open(self.out / "img-paint.log", "w"), stderr=subprocess.STDOUT, close_fds=True,
         )
         self.children.append(probe)
@@ -334,12 +488,17 @@ class Run:
     def run(self) -> int:
         try:
             self.start()
+            for attempt in range(self.args.login_rounds):
+                self.run_login(attempt)
+            if self.args.login_only:
+                return self.finish()
+            self.start_focus_holder()
             if self.args.probe:
                 self.run_probe()
             for attempt in range(self.args.rounds):
                 self.reset_desktop_folder(with_folder=True)
                 self.launch_desktop()
-                time.sleep(self.args.settle)
+                self.settle_desktop()
                 if self.desktop is None or self.desktop.poll() is not None:
                     self.check("desktop starts", False, (self.out / "wallpaper.log").read_text()[-400:])
                     break
@@ -356,7 +515,7 @@ class Run:
                 self.focus_terminal()
                 time.sleep(1.0)
                 (self.desktop_dir / "Projects").mkdir()
-                time.sleep(3.0)
+                self.settle_desktop(3.0)
                 idle = self.capture(f"new-folder-{attempt}")
                 self.click_empty_desktop()
                 time.sleep(1.5)
@@ -419,6 +578,11 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
             env.pop(key, None)  # set per process instead: niri, Sway and GPUI differ
         services = work / "dbus-services"
         services.mkdir()
+        # The AT-SPI bus, as in a Lulo session: every GPUI window's AccessKit
+        # adapter is active there (org.a11y.Status.IsEnabled is true).
+        a11y_service = Path("/usr/share/dbus-1/services/org.a11y.Bus.service")
+        if a11y_service.exists():
+            shutil.copy(a11y_service, services / a11y_service.name)
         config = work / "session.conf"
         config.write_text(
             "<!DOCTYPE busconfig PUBLIC \"-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN\"\n"
@@ -455,6 +619,16 @@ def main() -> int:
     parser.add_argument("--scale", type=float, default=2.0, help="niri output scale (the laptop uses 2)")
     parser.add_argument("--settle", type=float, default=5.0, help="idle seconds before each capture")
     parser.add_argument("--capture-dir", help="also save each capture as PNG here")
+    parser.add_argument("--login-rounds", type=int, default=3,
+                        help="rounds of the login case: the owner's desktop, nothing else open")
+    parser.add_argument("--unpresented-draws", type=int, default=20,
+                        help="frames after the first that login rounds after the first draw without presenting")
+    parser.add_argument("--login-only", action="store_true", help="run only the login case")
+    parser.add_argument("--companions", help="comma-separated shell binaries started with the desktop "
+                        "in the login case (the menu bar, the Dock)")
+    parser.add_argument("--fixture-dir", help="copy the owner's screenshots from here (read only)")
+    parser.add_argument("--gpu", action="store_true",
+                        help="use the machine's GPU for niri and GPUI instead of llvmpipe/lavapipe")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

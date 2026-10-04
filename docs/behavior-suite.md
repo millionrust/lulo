@@ -225,6 +225,21 @@ like the Dock and the menu bar) shows swatches whose assets load 0–120 ms
 after the frame that requested them. Both idle main threads must stay asleep
 (at most 10 context switches in 10 s).
 
+It starts with the login case: the owner's desktop (the folder `hi` and four
+full-screen screenshots at their saved positions) with nothing else open, at
+`--scale` (the reference laptop's niri picks 1.25 for its 14-inch 1080p
+panel). Rounds after the first also drop the 20 frames after the desktop's
+first one (`RMAC_GPUI_TEST_UNPRESENTED_DRAWS`). On the laptop, niri's
+scan-out dmabuf feedback makes Mesa's swapchain suboptimal and that frame is
+never presented, so the folder icon must still appear without input.
+`--fixture-dir` copies the real screenshots read-only, `--companions` starts
+the menu bar and Dock alongside, and `--gpu` renders on the machine's GPU
+instead of llvmpipe/lavapipe. Captures wait until the desktop process has
+been idle for 1.5 s, not just for `--settle`. On a busy CI runner the folder
+artwork takes about 5 s to rasterise, so the earlier fixed 5 s wait captured
+the desktop before its icons loaded. Those startup checks only passed
+because the CI gradient wallpaper's own blue pixels counted as folder blue.
+
 ```sh
 python3 scripts/behavior/run_desktop_first_paint.py --bin-dir shell/target/iterate \
   --probe shell/target/iterate/img-paint --capture-dir /tmp/lulo-desktop-paint

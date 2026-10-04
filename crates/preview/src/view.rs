@@ -352,12 +352,39 @@ impl Slot {
 
 impl Drop for Slot {
     fn drop(&mut self) {
-        if let Some(path) = self.markup_original.take() {
+        let clipboard_copy = clipboard_cache_folder(&self.path).map(Path::to_path_buf);
+        let markup_original = self.markup_original.take();
+        if clipboard_copy.is_some() || markup_original.is_some() {
             std::thread::spawn(move || {
-                let _ = std::fs::remove_file(path);
+                if let Some(path) = markup_original {
+                    let _ = std::fs::remove_file(path);
+                }
+                // A New from Clipboard image lives only in Preview's cache;
+                // closing it must not leave a copy of the clipboard on disk.
+                if let Some(folder) = clipboard_copy {
+                    let _ = std::fs::remove_dir_all(folder);
+                }
             });
         }
     }
+}
+
+/// The private `rmac-preview/clipboard/<pid>-<n>` folder holding a New from
+/// Clipboard document, when `path` is one.
+pub(crate) fn clipboard_cache_folder(path: &Path) -> Option<&Path> {
+    let folder = path.parent()?;
+    let name = folder.file_name()?.to_str()?;
+    let clipboard = folder.parent()?;
+    let valid_name = name.split_once('-').is_some_and(|(pid, id)| {
+        !pid.is_empty()
+            && !id.is_empty()
+            && pid.bytes().all(|byte| byte.is_ascii_digit())
+            && id.bytes().all(|byte| byte.is_ascii_digit())
+    });
+    (valid_name
+        && clipboard.file_name()? == "clipboard"
+        && clipboard.parent()?.file_name()? == "rmac-preview")
+        .then_some(folder)
 }
 
 #[derive(Default)]
@@ -1094,7 +1121,9 @@ impl PreviewView {
                     markup::write_pdf(&base, &temporary, &items)?;
                     std::fs::rename(&temporary, &source).map_err(|error| error.to_string())?;
                 }
-                trash::delete(&source).map_err(|error| error.to_string())
+                // trash::Error's Display carries the full path; keep it out of the journal.
+                trash::delete(&source)
+                    .map_err(|_| "the document could not be moved to the Bin".to_owned())
             })
             .await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -4508,6 +4537,27 @@ impl Render for PreviewView {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn only_a_new_from_clipboard_copy_is_removed_on_close() {
+        use super::clipboard_cache_folder;
+        use std::path::Path;
+
+        let cache = Path::new("/home/user/.cache/rmac-preview/clipboard/4242-7/Untitled.png");
+        assert_eq!(
+            clipboard_cache_folder(cache),
+            Some(Path::new("/home/user/.cache/rmac-preview/clipboard/4242-7"))
+        );
+        for kept in [
+            "/home/user/Pictures/Untitled.png",
+            "/home/user/.cache/rmac-preview/clipboard/Untitled.png",
+            "/home/user/.cache/other/clipboard/4242-7/Untitled.png",
+            "/home/user/.cache/rmac-preview/clipboard/x-7/Untitled.png",
+            "/home/user/.cache/rmac-preview/clipboard/4242-/Untitled.png",
+        ] {
+            assert_eq!(clipboard_cache_folder(Path::new(kept)), None, "{kept}");
+        }
+    }
     use super::document_window_title;
 
     #[test]

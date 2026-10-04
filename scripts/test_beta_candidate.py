@@ -49,8 +49,44 @@ class BetaCandidateTests(unittest.TestCase):
         for journey in document["journeys"]:
             journey.update({"attempts": 20, "passed": 18, "status": "pass"})
         for station in document["stations"]:
-            station["status"] = "pass"
+            if station["status"] == "pending":
+                station["status"] = "pass"
         return contract, version, revision, document
+
+    def test_amd_and_nvidia_desktops_are_waived_but_never_pass_anything_else(self):
+        contract, version, revision, document = self.passing_document()
+        self.assertEqual(
+            [station["status"] for station in document["stations"]],
+            ["pass", "waived", "waived"],
+        )
+        document["cohort"]["station_participants"] = {
+            "amd64-amd-desktop": 0,
+            "amd64-intel-laptop": 20,
+            "amd64-nvidia-desktop": 0,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "evidence.json"
+            def check(doc):
+                path.write_text(json.dumps(doc), encoding="utf-8")
+                with patch.object(verify, "_verify_checkout"):
+                    verify.verify_evidence(contract, path, version=version, revision=revision)
+            check(document)
+            laptop = json.loads(json.dumps(document))
+            laptop["stations"][0] = {
+                "id": "amd64-intel-laptop",
+                "status": "waived",
+                "waiver": verify.STATION_WAIVER,
+            }
+            with self.assertRaisesRegex(verify.BetaError, "every station"):
+                check(laptop)
+            wrong = json.loads(json.dumps(document))
+            wrong["stations"][2]["waiver"] = "someone-else"
+            with self.assertRaisesRegex(verify.BetaError, "every station"):
+                check(wrong)
+            check_pending = json.loads(json.dumps(document))
+            check_pending["checks"][0]["status"] = "waived"
+            with self.assertRaisesRegex(verify.BetaError, "promotion check"):
+                check(check_pending)
 
     def test_contract_has_three_stations_and_four_zero_defect_classes(self):
         contract = verify.load_contract()

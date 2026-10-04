@@ -1,6 +1,25 @@
 use crate::system::{
-    bounded_shares, parse_smb_conf_shares, parse_ufw_conf_enabled, requested_state_reached,
+    bounded_shares, combined_remote_state, parse_smb_conf_shares, parse_ufw_conf_enabled,
+    requested_state_reached,
 };
+
+#[test]
+fn a_listening_ssh_socket_means_remote_login_is_on() {
+    // Ubuntu socket-activates sshd: ssh.service idles while ssh.socket holds
+    // port 22 open, which must never read as Remote Login off.
+    assert_eq!(combined_remote_state("inactive", Some("active")), "active");
+    assert!(!requested_state_reached(
+        Some(&combined_remote_state("inactive", Some("active"))),
+        false,
+        false
+    ));
+    assert_eq!(
+        combined_remote_state("inactive", Some("inactive")),
+        "inactive"
+    );
+    assert_eq!(combined_remote_state("active", None), "active");
+    assert_eq!(combined_remote_state("failed", None), "failed");
+}
 use crate::watch::{firewall_path_relevant, owner_change_reappeared, samba_path_relevant};
 
 #[test]
@@ -67,4 +86,29 @@ fn watcher_filters_firewall_files_and_systemd_idle_exit() {
     )));
     assert!(!owner_change_reappeared("org.freedesktop.systemd1", ""));
     assert!(owner_change_reappeared("org.freedesktop.systemd1", ":1.42"));
+}
+
+#[test]
+fn every_systemd_mutation_may_ask_polkit_interactively() {
+    // F-1: without ALLOW_INTERACTIVE_AUTHORIZATION, systemd refuses Sharing
+    // toggles under the default auth_admin_keep policy instead of prompting.
+    // Plain `.call(` is left only for read-only queries.
+    let source = include_str!("system.rs");
+    let mut plain_calls = 0;
+    for (index, _) in source.match_indices(".call") {
+        let rest = &source[index + ".call".len()..];
+        if rest.starts_with("_with_flags") {
+            continue;
+        }
+        plain_calls += 1;
+        let method = rest
+            .split('"')
+            .nth(1)
+            .expect("a D-Bus call names its method");
+        assert!(
+            ["ListUnitFiles", "LoadUnit"].contains(&method),
+            "{method} is called without interactive authorization"
+        );
+    }
+    assert!(plain_calls > 0);
 }

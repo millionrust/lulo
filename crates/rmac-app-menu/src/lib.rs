@@ -2466,13 +2466,39 @@ impl std::fmt::Display for Error {
             Self::NotPublished => {
                 formatter.write_str("the application is not running or has not published its menu")
             }
-            Self::Bus(detail) => write!(formatter, "application menu D-Bus call failed: {detail}"),
+            Self::Bus(detail) => write!(
+                formatter,
+                "application menu D-Bus call failed: {}",
+                log_safe(detail)
+            ),
             Self::Protocol => formatter.write_str("application menu data is invalid"),
         }
     }
 }
 
 impl std::error::Error for Error {}
+
+/// Peer-supplied D-Bus error text reaches the journal through this Display:
+/// control characters cannot forge extra journal lines or terminal escapes,
+/// and the text is bounded.
+fn log_safe(detail: &str) -> String {
+    const LIMIT: usize = 240;
+    let mut safe: String = detail
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .take(LIMIT)
+        .collect();
+    if detail.chars().count() > LIMIT {
+        safe.push('…');
+    }
+    safe
+}
 
 pub fn activation_channel() -> (
     async_channel::Sender<String>,
@@ -2500,6 +2526,18 @@ pub fn validation_channel() -> (
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn peer_supplied_bus_error_text_cannot_forge_journal_lines() {
+        let error = Error::Bus(format!(
+            "x\nrmac-files: forged\u{1b}[31m{}",
+            "a".repeat(400)
+        ));
+        let shown = error.to_string();
+        assert!(!shown.chars().any(char::is_control));
+        assert!(shown.chars().count() < 300);
+        assert!(shown.ends_with('…'));
+    }
 
     /// Every command a spec table names, submenu rows included.
     fn spec_actions(specs: &[MenuSpec]) -> Vec<&'static str> {

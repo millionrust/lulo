@@ -141,6 +141,11 @@ def load_contract(path: Path = CONTRACT_PATH) -> dict[str, object]:
 
 
 def _load_os_release(path: Path = Path("/etc/os-release")) -> dict[str, str]:
+    # Ubuntu ships /etc/os-release as a symlink to ../usr/lib/os-release.
+    # os-release(5) names /usr/lib/os-release as the fallback, so read that
+    # regular file directly rather than following an arbitrary link.
+    if path.is_symlink():
+        path = path.parent.parent / "usr/lib/os-release"
     try:
         lines = _regular_bytes(path, 64 * 1024).decode("utf-8").splitlines()
     except UnicodeDecodeError as error:
@@ -384,18 +389,24 @@ def _require_unpacked(expected: str, tools: dict[str, str]) -> None:
             raise LifecycleError("interrupted rollback state was not proven")
 
 
-def _require_removed(tools: dict[str, str]) -> None:
+def _require_removed(tools: dict[str, str], *, keep_config: bool = False) -> None:
+    """Require the packages gone; after a plain remove, dpkg rightly keeps
+    `config-files` (conffiles such as /etc/pam.d/rmac-lock) until purge."""
+    remaining = {"installed", "unpacked"} if keep_config else {
+        "installed",
+        "unpacked",
+        "config-files",
+    }
     for package in PACKAGE_NAMES:
         result = _run(
             ["dpkg-query", "-W", "-f=${db:Status-Status}", package],
             tools=tools,
             accepted=(0, 1),
         )
-        if result.returncode == 0 and result.stdout.decode("utf-8", "replace").strip() in {
-            "installed",
-            "unpacked",
-            "config-files",
-        }:
+        if (
+            result.returncode == 0
+            and result.stdout.decode("utf-8", "replace").strip() in remaining
+        ):
             raise LifecycleError("native package remained after purge")
 
 
@@ -426,7 +437,7 @@ def _gnome_recovery_exists() -> bool:
     return False
 
 
-def _require_payload_removed() -> None:
+def _require_payload_removed(*, keep_config: bool = False) -> None:
     apps = _load_script("rmac_lifecycle_removed_apps", "verify-application-package.py")
     session = _load_script(
         "rmac_lifecycle_removed_session", "verify-session-package.py"
@@ -444,6 +455,9 @@ def _require_payload_removed() -> None:
             for binary in specification.binaries
         }
     )
+    if keep_config:
+        # A plain remove keeps conffiles (everything under /etc) until purge.
+        claimed = {relative for relative in claimed if Path(relative).parts[:1] != ("etc",)}
     if any((Path("/") / relative).exists() for relative in claimed):
         raise LifecycleError("package-owned immutable payload remained after removal")
 
@@ -569,8 +583,8 @@ def run_lifecycle(
     _record(reports, "recover-rollback", baseline_set[0], fingerprints)
 
     mutation(["apt-get", "remove", "--yes", *reversed(PACKAGE_NAMES)])
-    _require_removed(tools)
-    _require_payload_removed()
+    _require_removed(tools, keep_config=True)
+    _require_payload_removed(keep_config=True)
     _record(reports, "remove", None, fingerprints)
 
     mutation(["apt-get", "purge", "--yes", *reversed(PACKAGE_NAMES)])

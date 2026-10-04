@@ -218,14 +218,19 @@ pub(crate) mod linux_wayland {
 
     fn packaged_icon(app_id: &str) -> Option<PathBuf> {
         let file = format!("{}.svg", app_id.trim_end_matches(".desktop"));
-        [
-            PathBuf::from("/usr/share/icons/hicolor/scalable/apps").join(&file),
+        let installed = PathBuf::from("/usr/share/icons/hicolor/scalable/apps").join(&file);
+        // The source-tree fallback exists only in debug builds, so a release
+        // binary never embeds or probes the build checkout's path (SR-15).
+        #[cfg(debug_assertions)]
+        let candidates = [
+            installed,
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../../packaging/rmac-apps/icons")
                 .join(&file),
-        ]
-        .into_iter()
-        .find(|path| path.is_file())
+        ];
+        #[cfg(not(debug_assertions))]
+        let candidates = [installed];
+        candidates.into_iter().find(|path| path.is_file())
     }
 
     struct SwitcherView {

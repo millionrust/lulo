@@ -321,12 +321,14 @@ mod linux_wayland {
 
     fn glyph_path(file: &str) -> PathBuf {
         let installed = PathBuf::from("/usr/share/rmac/osd").join(file);
-        if installed.is_file() {
-            return installed;
+        // The source-tree fallback exists only in debug builds (SR-15).
+        #[cfg(debug_assertions)]
+        if !installed.is_file() {
+            return PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets/osd")
+                .join(file);
         }
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../assets/osd")
-            .join(file)
+        installed
     }
 
     fn row_glyphs(presentation: &Presentation) -> RowGlyphs {

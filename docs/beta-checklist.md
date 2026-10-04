@@ -44,9 +44,13 @@ CI/candidate-package builds for recent `dev` commits.
    binaries.
 4. **The Orca accessibility audit (journey 9).** An automated run is in
    progress; the owner still needs to do the final listen.
-5. **Security-review native-station evidence (24 of 80 checks).** Needs
-   three stations: the reference laptop, a disposable install, and an
-   NVIDIA desktop that doesn't exist yet.
+5. **Security-review native-station evidence (9 of 80 checks left).** The
+   disposable-install station runs on GitHub Actions. The AMD and NVIDIA
+   desktop stations are waived for Beta 1, because the owner has neither
+   machine. The reference laptop's checks (lock screen, TTY recovery,
+   suspend, Sharing toggle, mount removal, notifications while locked) need
+   the owner; the read-only steps are in the review's "Reference-laptop
+   checks".
 6. **NVIDIA testing: dropped from Beta 1** (owner decision 2026-10-04: no NVIDIA machine is available; shipped as a known limitation in docs/known-limitations.md). Needs NVIDIA hardware, which the project doesn't
    have yet.
 7. **A real GitHub Actions release-workflow run on the actual tag.** There
@@ -569,20 +573,27 @@ pass's explanation of the same gates and remain directionally accurate:
    [2026-09-29 release-binary run](perf/idle-cpu-2026-09-29.md), but the
    installed package is older. Input latency, frame pacing, soak memory and
    NVIDIA remain open.
-4. **Security review: Fail (source review done, gate not met).**
+4. **Security review: Fail (source review and disposable station done,
+   gate not met).**
    [docs/security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md)
-   and its canonical summary `docs/security-review-0.9.0-beta.1.json` cover
-   all 80 checks of `scripts/security-review.json`. 26 findings are fixed
-   (9 during the review, 17 after it, including every High and Medium). 3
-   remain open, all Low, each accepted for Beta with a risk statement and a
-   mitigation (SR-15 build paths in locally built binaries, SR-18 release
-   build inputs pinned by tag, SR-29 automatic updates not simulated for
-   removals). A fresh pass on 2026-09-25 over the new root-run and
-   privileged code (system-sleep hook, power-key inhibitor, rmac-process,
-   the update flow, the shared D-Bus connection) found SR-28 (fixed) and
-   SR-29. 56 checks pass on source review; 24 need native station
-   evidence. None of the Beta stations has been run, so
-   `verify-security-review.py` fails closed, as it should.
+   and its format 2 summary cover all 80 checks.
+   - **Disposable station:** it runs on GitHub Actions on request
+     (`.github/workflows/security-station.yml`, a fresh `ubuntu-26.04` VM).
+     Against a candidate built from the fix branch, it passed 11 of 12
+     checks: install/purge exactness, maintainer scripts, permissions, the
+     full package lifecycle and rollback, relay hardening, polkit denial,
+     untrusted files never executing, native PackageKit (SR-29) and journal
+     redaction. The 12th check found SR-39 (Ptyxis drops a `$(…)`
+     argument).
+   - **Fixes:** SR-15, SR-29 to SR-38, and functional issues F-1 (Sharing
+     polkit prompts) and F-2 (AppStream categories).
+   - **Counts:** 71 checks pass and 9 are pending: 7 on the reference laptop,
+     1 needing the owner's asset licence record, and 1 blocked on SR-39.
+   - **Open findings:** two Low, SR-18 and SR-39.
+   - **Stations:** the AMD and NVIDIA desktops are waived
+     (`owner-2026-10-04-beta1-without-amd-nvidia-desktops`). The reference
+     laptop station has not run, so `verify-security-review.py` still fails
+     closed.
 5. **Product journeys remain incomplete.** Journey 5's nested Save-panel
    scenario passes and the chooser service is deployed, but the live portal
    flow has not been retested; journey 6's process-stop path is live-confirmed

@@ -3,7 +3,7 @@
 mod view;
 
 use std::borrow::Cow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui::{
     App, AppContext as _, AssetSource, KeyBinding, QuitMode, Result, SharedString, WeakEntity,
@@ -297,6 +297,7 @@ fn open_clipboard_image(bytes: Vec<u8>, extension: &'static str, cx: &mut App) {
         .join(format!("{}-{id}/Untitled.{extension}", std::process::id()));
     cx.spawn(async move |cx| {
         let result = blocking::unblock(move || -> std::io::Result<PathBuf> {
+            sweep_orphaned_clipboard_copies(path.parent().and_then(Path::parent));
             std::fs::create_dir_all(path.parent().expect("clipboard path has a parent"))?;
             std::fs::write(&path, bytes)?;
             Ok(path)
@@ -308,6 +309,31 @@ fn open_clipboard_image(bytes: Vec<u8>, extension: &'static str, cx: &mut App) {
         }
     })
     .detach();
+}
+
+/// Remove clipboard copies left by Preview processes that have exited (for
+/// example after a crash), so clipboard images never pile up in the cache.
+fn sweep_orphaned_clipboard_copies(clipboard: Option<&Path>) {
+    // Liveness comes from /proc, which only Linux has.
+    let Some(clipboard) = clipboard.filter(|_| cfg!(target_os = "linux")) else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(clipboard) else {
+        return;
+    };
+    let own = std::process::id().to_string();
+    for entry in entries.take(4096).flatten() {
+        let name = entry.file_name();
+        let Some((pid, _)) = name.to_str().and_then(|name| name.split_once('-')) else {
+            continue;
+        };
+        if pid.is_empty() || !pid.bytes().all(|byte| byte.is_ascii_digit()) || pid == own {
+            continue;
+        }
+        if !Path::new("/proc").join(pid).exists() {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 fn new_from_clipboard(cx: &mut App) {

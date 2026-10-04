@@ -37,6 +37,14 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   has been tested**; treat NVIDIA/proprietary-driver systems as unverified.
   The owner decided on 2026-10-04 to ship Beta 1 without an NVIDIA test,
   because no NVIDIA machine is available; NVIDIA results are a later-Beta item.
+- **Beta 1 is tested on one hardware class only.** The H8 Beta tier names
+  three stations. The owner has neither an AMD desktop nor an NVIDIA desktop,
+  so both are waived for Beta 1 (decision of 2026-10-04). The security-review
+  and Beta-candidate verifiers carry the waiver as
+  `owner-2026-10-04-beta1-without-amd-nvidia-desktops` and print it. The
+  waiver removes only those two station runs and cohort quotas: every check
+  must still pass, and the Intel reference laptop and the disposable-install
+  station must still run. Treat AMD desktop and NVIDIA systems as untested.
 
 ## Accessibility limits
 
@@ -119,31 +127,31 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 
 ## Known issues: security findings accepted for Beta
 
-Three Low findings from the
-[security review](security-review-0.9.0-beta.1.md) stay open for Beta, each
-with a mitigation. They still count against the security gate.
+Two Low findings from the
+[security review](security-review-0.9.0-beta.1.md) are open. Each has a
+mitigation, and both still count against the security gate. SR-18 is
+accepted for Beta; SR-39 is proposed for acceptance.
 
-- **SR-15, build paths in binaries.** A package built on your own machine
-  may name your home directory in its panic messages. Source builds now remap
-  the checkout and Cargo home paths, and native package verification now scans
-  inventoried executables for home-directory paths. A fresh package build has
-  not yet passed that check. Don't share locally built packages until their
-  binaries are checked.
 - **SR-18, release build inputs.** Release containers, the rustup installer,
   and the `cargo-cyclonedx` source archive now have content pins in source.
   Rust toolchain artifacts are still selected by version, and the changed
   workflow has not had a native release run. Actions are pinned by commit,
   Rust dependencies are locked and checked by cargo-deny, and every package
   carries a provenance attestation that `install.sh --from-release` verifies.
-- **SR-29, automatic updates can remove a package.** The daily automatic
-  updater in the installed `8ba31b82` build schedules Lulo OS and security
-  updates for the next restart without first checking whether they remove
-  anything. The newer source also re-simulates previously scheduled plans and
-  cancels still-matching unsafe or unverifiable offline triggers, but has not
-  been installed or tested with native PackageKit.
-  Only signed, trusted packages are used. To review every update yourself, turn off
-  the Automatic Updates switches in System Settings > General > Software
-  Update and use Update Now, which shows any removal before it proceeds.
+- **SR-39, terminal apps can lose an argument.** When an app's desktop entry
+  asks to run in a terminal, Lulo OS hands its exact arguments to the
+  default terminal, Ptyxis. Ptyxis drops an argument written as `$(…)`. It
+  never runs it, but the app starts with that argument missing. No app that
+  Lulo OS ships is affected.
+- **Automatic updates on older installs (SR-29, fixed).** Builds before the
+  fix, such as `8ba31b82`, schedule automatic updates without first checking
+  whether they remove a package. Current packages simulate first and never
+  schedule a removal; this was tested against the real PackageKit. On an older
+  install, turn off Automatic Updates and use Update Now until you update.
+- **Builds from before the SR-15 and SR-38 fixes.** Older packages embed
+  the builder's checkout path in four shell binaries (SR-15). They also keep
+  showing banners while the screen is locked, so with the screen reader on,
+  a notification's text may be read aloud (SR-38). Current packages fix both.
 
 `install.sh --from-release` now needs `gh` (and `gh auth login`) to verify
 who built the packages. Without it the install stops; `--allow-unattested`

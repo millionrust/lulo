@@ -1,6 +1,9 @@
 use rmac_sharing::{Error, ErrorKind, Service, Snapshot};
 
-use crate::system::{restore_service, system_set_service, system_snapshot, wait_for_state};
+use crate::system::{
+    disable_remote_login_socket, restore_service, system_set_service, system_snapshot,
+    wait_for_state,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ManagedService {
@@ -26,22 +29,30 @@ impl Service for SystemService {
         {
             return Ok(current);
         }
-        if let Err(error) = system_set_service(unit, enabled, "SSH") {
+        // Turning Remote Login off must also close a socket-activated port 22.
+        let socket = if enabled {
+            None
+        } else {
+            disable_remote_login_socket()?
+        };
+        let restore = || {
             let _ = restore_service(
                 unit,
                 current.remote_login.active,
                 current.remote_login.enabled_at_boot,
             );
+            if let Some((was_active, was_enabled)) = socket {
+                let _ = restore_service("ssh.socket", was_active, was_enabled);
+            }
+        };
+        if let Err(error) = system_set_service(unit, enabled, "SSH") {
+            restore();
             return Err(error);
         }
         match wait_for_state(ManagedService::RemoteLogin, enabled) {
             Ok(snapshot) => Ok(snapshot),
             Err(error) => {
-                let _ = restore_service(
-                    unit,
-                    current.remote_login.active,
-                    current.remote_login.enabled_at_boot,
-                );
+                restore();
                 Err(error)
             }
         }

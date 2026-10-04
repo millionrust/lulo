@@ -1,16 +1,15 @@
 {
-  "contract_sha256": "6ff60a856add0fecfd97f7c8784d09076dc070f50560642ea0ff1e34b3145e89",
+  "contract_sha256": "2f189f04c8a7baf173086504d97bc2034df44523158d81218e9ce7d6c8664400",
   "environment": {
     "desktop": "rmac-niri",
     "ubuntu": "26.04"
   },
-  "format": 1,
+  "format": 2,
   "hardware_manifest_sha256": "ab5a80a837594775e442c9a7d966ae0abf27e2e14ae4f2807303a30669f20b40",
   "journey_manifest_sha256": "6c3867951d1bdaf5742eb53c4a89e9409dc56510227bdf5acee2d57eb6acf264",
   "open_findings": [
-    "SR-15 low packages: build-host paths embedded in shipped binaries (accepted for Beta: release binaries are built on GitHub runners, whose paths name no person)",
-    "SR-18 low packages: release hardening (unpinned rustup/container/cargo-install inputs); manifest mode check and publisher keyring source fixed (accepted for Beta: SHA-pinned actions, Cargo.lock, cargo-deny and attested outputs)",
-    "SR-29 low updates: the daily automatic update schedules an offline update without simulating it, so an update that needs a removal is not stopped for confirmation (accepted for Beta: only trusted, signed packages; Settings' Update Now simulates)"
+    "SR-18 low packages: release toolchain artifacts version-selected and no native release-workflow run yet (accepted for Beta: content-pinned containers, rustup and cargo-cyclonedx, SHA-pinned actions, Cargo.lock, cargo-deny, attested outputs)",
+    "SR-39 low desktop-entry-execution: the default x-terminal-emulator (Ptyxis) drops a $(...) argument from -e PROGRAM ARGS; nothing is executed (proposed accept for Beta; no shipped entry affected)"
   ],
   "results": [
     {
@@ -66,7 +65,7 @@
     {
       "check": "interactive-authorization-only-from-user-action",
       "domain": "dbus-polkit",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "mutation-requires-authoritative-readback",
@@ -161,7 +160,7 @@
     {
       "check": "untrusted-content-never-executed",
       "domain": "file-operations",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "compositor-exclusive-lock-proven",
@@ -216,12 +215,12 @@
     {
       "check": "diagnostics-redacted",
       "domain": "notifications",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "focus-suppression-authoritative",
       "domain": "notifications",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "history-and-payload-bounded",
@@ -286,12 +285,12 @@
     {
       "check": "artifact-contains-no-build-host-data",
       "domain": "packages",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "dependency-and-advisory-policy-passes",
       "domain": "packages",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "license-inventory-complete",
@@ -306,7 +305,7 @@
     {
       "check": "rollback-and-uninstall-tested",
       "domain": "packages",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "signature-and-origin-claims-bounded",
@@ -376,45 +375,84 @@
     {
       "check": "bus-peers-and-session-identities-redacted",
       "domain": "logs-diagnostics",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "control-characters-normalized",
       "domain": "logs-diagnostics",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "debug-implementations-redact-private-fields",
       "domain": "logs-diagnostics",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "evidence-uses-synthetic-data",
       "domain": "logs-diagnostics",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "failure-text-and-output-bounded",
       "domain": "logs-diagnostics",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "log-growth-and-retention-bounded",
       "domain": "logs-diagnostics",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "no-private-paths-or-content",
       "domain": "logs-diagnostics",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "no-secrets-credentials-or-tokens",
       "domain": "logs-diagnostics",
-      "status": "pending"
+      "status": "pass"
     }
   ],
-  "revision": "af238a44b37071358e58ec720340ad50af863dd1",
+  "revision": "6f9616a52884ba913b75fd0b201c483bf1a368ac",
+  "source_sha256": {
+    "crates/finder/SPEC.md": "6df7bd83231c0be08746fef8c356fe53f151162f17fcd5a68fe38ec8dc8cc6bf",
+    "crates/notes/SPEC.md": "9c9aab3391de602bcde6162db06576f577d74d2ae4c63f729a525868ffc7f4fa",
+    "crates/rmac-apps/src/lib.rs": "230fd21e5c1e9e85dd7b405b068838bd0fbd2a5403a071dee2f9b866bfa6d2d8",
+    "crates/rmac-launcher-providers/src/lib.rs": "10fe3d93d26d5ad7cc6c24aa670d37ed7a16075ed484b8ab2b680c4f4794a355",
+    "crates/rmac-notes-runtime/src/search.rs": "bbadb41a57cb08169dadcf7945f2c5f3b5bb7585603cd91579932e2d8b97b6f7",
+    "crates/rmac-notifications/src/lib.rs": "6e22a6718274ed73a87afebb08d14c95d92d868539053df35152e0a468483ec6",
+    "crates/rmac-portal/src/lib.rs": "d33e0e113fc8c0ba22b2a04f506819a59184a0bba26b2637a0d7b037a08f622b",
+    "crates/text-editor/SPEC.md": "ccc7da8d5c2f21b39f8b134f2b56404fcff7ef5c6d276bb1ed578e2062abd087",
+    "docs/about.md": "2b32f420d1d29bbdcb92155ba3219ecb7d61eb8ff18a2846643d7da9084aba8c",
+    "docs/application-launch.md": "1aec0ff1e4da276cdc89f1a1fa4849eea7bdb4e195303974aabf744d51e68abb",
+    "docs/chaos-soak.md": "a0922e4256bd3bc18ef2a1707322ab3018a54618e15c353aa406610a6ff8e22a",
+    "docs/decisions/0004-secure-lock-boundary.md": "314f0be2ba03d3482193452bf7badb9c74b8d8264d640c655f540af39334aa49",
+    "docs/decisions/0005-rmac-lock-provider-state-machine.md": "940d0a75fbcc69e49e361d104b7e0979ea151d20dcd42a6af623a48dda8361fa",
+    "docs/dependency-policy.md": "71232fae3bcd173eb5ee1475016a56d9c088a4037085b353eb25e1432145dbef",
+    "docs/flatpak-packaging.md": "7ca126b9b18f6d30d36445900cf8a47f3f7836a5210dd51353bbfc7f377159e0",
+    "docs/keyring-packaging.md": "360815f8286e6ed7bd5dfbe266dbc5fc6a816f826b4c1f9038560e88a469a9b6",
+    "docs/launcher.md": "31f0838e150287f1571656740dc2665cc11a3dc420a6532abdfb31b19cd8d12e",
+    "docs/native-packaging.md": "81d53bc8c4be366fae5aa9a44ac87003da41dd2d23a649e64c1075f26594606e",
+    "docs/network.md": "81758237cf2e046270740937880cc1c414e83abf915fdd831f72ca1ced02c5e5",
+    "docs/notifications.md": "8ecd0b96d379f4dbbec90976c837f29884ea067fc562a8659a4d9cdcb371ddb9",
+    "docs/privacy-security.md": "ae88981361c847fa882dfb7ade916a3e2b0055fddc287cd1149ebfef4dbe2e09",
+    "docs/rmac-pam-wrapper-audit.md": "1fb5bb457155a206b355be12661db9eb9505b700fc11b42addb9d21ceac16902",
+    "docs/secure-lock.md": "2fcf872650ff62cfb71c1f2f3e980c40234093c334b9d84c943671b21324fba3",
+    "docs/software-update.md": "641dfbd263a2c407483394ef22a39f9fccc48862c7996aad5553635a3b9cc535",
+    "docs/system-settings-audit.md": "c0c4ba5bd62df276dc706266dcc05ebf61949963aa0c91a985096abee12567ff",
+    "docs/update-trust.md": "f90cec6e158de28c546e2b87fb88ed542f92f9018f1302c0af8d573ec8a0c271",
+    "packaging/apt/keyring-package.json": "818b949d4b05c0b899d453ccc31da7399902dd225a27a5d9c1e8bb791f9b58db",
+    "packaging/apt/publisher.json": "ec022a38c0e99e593b9f4c73d497f6d650ebb557693e069786b6e4b578d01d23",
+    "packaging/apt/update-trust.json": "da43d683d8e73066bfb683cdfe1c6b7c6b62595821e633ff402997907462c5bb",
+    "packaging/flatpak/decisions.json": "3565476fc6c641fd7f5e9ca53518c1f365d4866df0a03f23a23a596275039692",
+    "scripts/linux/build-keyring-packages.py": "b25af9ac2a9b3a0844e05f9bb5ee8ac6e3e35372992614bf8cf4d30f42c77968",
+    "scripts/linux/keyring_package_contract.py": "b1202f598b8cbd848f9b403147d16ce3e6d2f9c56185e1054f861ca3df5294d1",
+    "scripts/linux/publish-apt-snapshot.py": "8360e3e4cf6dafac8564fbc96824d349e0d7266ce14e86018a9fc8b2a3d22241",
+    "scripts/linux/verify-flatpak-package.py": "a0de2e40dafb0ed01cb1756ca4b3b2ce3ec999443852c2951009a90c8bfb77d6",
+    "scripts/linux/verify-keyring-packages.py": "df9413aeb3dab43f7581667731056661fe9e72a28f67a183bff9418ae1193aba",
+    "scripts/linux/verify-native-packages.py": "0d883e2eb2bda257b7555c4db379190e7101b9c23d6f8cfae1c3f471aae0dd2b",
+    "scripts/linux/verify-update-trust.py": "328958f2e931c018d0a9d85ce69472f8d80e62b8519e9bc2e589b8ff4cb1f297"
+  },
   "stations": [
     {
       "id": "amd64-intel-laptop",
@@ -422,10 +460,16 @@
     },
     {
       "id": "amd64-amd-desktop",
-      "status": "pending"
+      "status": "waived",
+      "waiver": "owner-2026-10-04-beta1-without-amd-nvidia-desktops"
     },
     {
       "id": "amd64-nvidia-desktop",
+      "status": "waived",
+      "waiver": "owner-2026-10-04-beta1-without-amd-nvidia-desktops"
+    },
+    {
+      "id": "disposable-install",
       "status": "pending"
     }
   ],

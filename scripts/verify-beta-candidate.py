@@ -22,6 +22,26 @@ STATION_MINIMUMS = {
     "amd64-intel-laptop": 8,
     "amd64-nvidia-desktop": 4,
 }
+# Owner-recorded station waivers for this tier. The owner has neither an AMD
+# nor an NVIDIA desktop, so Beta 1 ships without either H8 desktop station
+# (decision of 2026-10-04, docs/known-limitations.md). A waived station is
+# written as {"id", "status": "waived", "waiver": <id>} and needs no cohort
+# participants. A waiver never passes a check, a journey, a defect class or
+# another station.
+STATION_WAIVER = "owner-2026-10-04-beta1-without-amd-nvidia-desktops"
+WAIVED_STATIONS = ("amd64-amd-desktop", "amd64-nvidia-desktop")
+
+
+def _template_station(station: str) -> dict[str, str]:
+    if station in WAIVED_STATIONS:
+        return {"id": station, "status": "waived", "waiver": STATION_WAIVER}
+    return {"id": station, "status": "pending"}
+
+
+def effective_minimum(station: str) -> int:
+    return 0 if station in WAIVED_STATIONS else STATION_MINIMUMS[station]
+
+
 DEFECT_CLASSES = (
     "critical-accessibility",
     "data-loss",
@@ -225,7 +245,7 @@ def evidence_template(
             name: _sha256(REPO_ROOT / relative)
             for name, relative in SOURCES.items()
         },
-        "stations": [{"id": station, "status": "pending"} for station in stations],
+        "stations": [_template_station(station) for station in stations],
         "version": version,
     }
 
@@ -261,10 +281,17 @@ def verify_evidence(
     ]:
         raise BetaError("Beta safety defect floor is not zero")
     stations, journey_names = _source_inventory()
-    if document.get("stations") != [
-        {"id": station, "status": "pass"} for station in stations
-    ]:
+    recorded = document.get("stations")
+    if not isinstance(recorded, list) or len(recorded) != len(stations):
         raise BetaError("Beta evidence does not prove every station")
+    for entry, station in zip(recorded, stations):
+        accepted = [{"id": station, "status": "pass"}]
+        if station in WAIVED_STATIONS:
+            accepted.append(
+                {"id": station, "status": "waived", "waiver": STATION_WAIVER}
+            )
+        if entry not in accepted:
+            raise BetaError("Beta evidence does not prove every station")
 
     cohort = document.get("cohort")
     if not isinstance(cohort, dict) or set(cohort) != {
@@ -295,8 +322,8 @@ def verify_evidence(
         or set(station_participants) != set(STATION_MINIMUMS)
         or any(type(value) is not int for value in station_participants.values())
         or any(
-            station_participants[station] < minimum
-            for station, minimum in STATION_MINIMUMS.items()
+            station_participants[station] < effective_minimum(station)
+            for station in STATION_MINIMUMS
         )
         or sum(station_participants.values()) != cohort["participants"]
     ):
@@ -364,6 +391,8 @@ def main() -> int:
         f"({len(CHECKS)} promotion checks; "
         f"{'candidate evidence verified' if arguments.evidence is not None else 'candidate evidence not supplied'})"
     )
+    for station in WAIVED_STATIONS:
+        print(f"station {station} is waived for Beta: {STATION_WAIVER}")
     return 0
 
 

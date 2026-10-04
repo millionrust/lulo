@@ -19,6 +19,13 @@ pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
         &files,
         &["ssh.service", "sshd.service"],
     )?;
+    let remote_socket = service_state(&connection, &manager, &files, &[SSH_SOCKET])?;
+    let socket_active = remote_socket
+        .as_ref()
+        .map(|socket| socket.active_state.clone());
+    let socket_enabled = remote_socket
+        .as_ref()
+        .is_some_and(|socket| unit_enabled(&socket.unit_file_state));
     let file_service = service_state(&connection, &manager, &files, &["smbd.service"])?;
     let (remote_firewall, remote_firewall_detail) = firewall_state(FirewallService::Ssh);
     let (file_firewall, file_firewall_detail) = firewall_state(FirewallService::Samba);
@@ -51,9 +58,13 @@ pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
             .map(|service| RemoteLogin {
                 available: true,
                 unit: Some(service.unit),
-                active: service.active_state == "active",
-                service_state: Some(service.active_state),
-                enabled_at_boot: unit_enabled(&service.unit_file_state),
+                active: service.active_state == "active"
+                    || socket_active.as_deref() == Some("active"),
+                service_state: Some(combined_remote_state(
+                    &service.active_state,
+                    socket_active.as_deref(),
+                )),
+                enabled_at_boot: unit_enabled(&service.unit_file_state) || socket_enabled,
                 unit_file_state: Some(service.unit_file_state),
                 firewall: remote_firewall,
                 firewall_detail: remote_firewall_detail.clone(),
@@ -65,6 +76,51 @@ pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
             }),
         file_sharing,
     })
+}
+
+/// Ubuntu's openssh-server is socket-activated: `ssh.socket` listens on port
+/// 22 and starts `ssh.service` on demand, so `ssh.service` alone can read
+/// "inactive" while the port is open. Remote Login is on whenever either unit
+/// is active or enabled, and turning it off stops and disables both.
+#[cfg(target_os = "linux")]
+pub(crate) const SSH_SOCKET: &str = "ssh.socket";
+
+/// The Remote Login state shown and waited for: a listening socket counts as
+/// active even while the service itself is idle.
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn combined_remote_state(service_state: &str, socket_state: Option<&str>) -> String {
+    if socket_state == Some("active") {
+        "active".to_owned()
+    } else {
+        service_state.to_owned()
+    }
+}
+
+/// Stop and disable `ssh.socket` when it exists. Returns its previous
+/// (active, enabled at boot) state so a failed change can restore it.
+#[cfg(target_os = "linux")]
+pub(crate) fn disable_remote_login_socket() -> Result<Option<(bool, bool)>, Error> {
+    let connection = system_connection()?;
+    let manager = manager_proxy(&connection)?;
+    let files = manager
+        .call::<_, _, Vec<(String, String)>>("ListUnitFiles", &())
+        .map_err(|error| Error::new(ErrorKind::Protocol, error.to_string()))?;
+    let Some(socket) = service_state(&connection, &manager, &files, &[SSH_SOCKET])? else {
+        return Ok(None);
+    };
+    let previous = (
+        socket.active_state == "active",
+        unit_enabled(&socket.unit_file_state),
+    );
+    if previous == (false, false) {
+        return Ok(Some(previous));
+    }
+    system_set_service(SSH_SOCKET, false, "SSH").map(|()| Some(previous))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn disable_remote_login_socket() -> Result<Option<(bool, bool)>, Error> {
+    Ok(None)
 }
 
 #[cfg(target_os = "linux")]
@@ -128,47 +184,73 @@ pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
     ))
 }
 
+/// Send a systemd1 mutation that polkit may authorize interactively. Every
+/// caller is a Sharing toggle the user just clicked, so polkit may show its
+/// password dialog; without the flag systemd refuses with
+/// InteractiveAuthorizationRequired under the default `auth_admin_keep`.
+#[cfg(target_os = "linux")]
+fn interactive<B, R>(
+    manager: &zbus::blocking::Proxy<'_>,
+    method: &'static str,
+    body: &B,
+) -> zbus::Result<R>
+where
+    B: zbus::export::serde::Serialize + zbus::zvariant::DynamicType,
+    R: for<'d> zbus::zvariant::DynamicDeserialize<'d>,
+{
+    manager
+        .call_with_flags(
+            method,
+            zbus::proxy::MethodFlags::AllowInteractiveAuth.into(),
+            body,
+        )?
+        .ok_or(zbus::Error::InvalidReply)
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) fn system_set_service(unit: &str, enabled: bool, label: &str) -> Result<(), Error> {
     let connection = system_connection()?;
     let manager = manager_proxy(&connection)?;
     let files = vec![unit];
     if enabled {
-        let (install, _changes): (bool, Vec<(String, String, String)>) = manager
-            .call("EnableUnitFiles", &(files, false, false))
-            .map_err(mutation_error)?;
+        let (install, _changes): (bool, Vec<(String, String, String)>) =
+            interactive(&manager, "EnableUnitFiles", &(files, false, false))
+                .map_err(mutation_error)?;
         if !install {
             return Err(Error::new(
                 ErrorKind::Mutation,
                 format!("the {label} service has no persistent install information"),
             ));
         }
-        manager
-            .call::<_, _, ()>("Reload", &())
-            .map_err(mutation_error)?;
-        if let Err(error) =
-            manager.call::<_, _, zbus::zvariant::OwnedObjectPath>("StartUnit", &(unit, "replace"))
-        {
-            let _ = manager.call::<_, _, Vec<(String, String, String)>>(
+        interactive::<_, ()>(&manager, "Reload", &()).map_err(mutation_error)?;
+        if let Err(error) = interactive::<_, zbus::zvariant::OwnedObjectPath>(
+            &manager,
+            "StartUnit",
+            &(unit, "replace"),
+        ) {
+            let _ = interactive::<_, Vec<(String, String, String)>>(
+                &manager,
                 "DisableUnitFiles",
                 &(vec![unit], false),
             );
             return Err(mutation_error(error));
         }
     } else {
-        manager
-            .call::<_, _, zbus::zvariant::OwnedObjectPath>("StopUnit", &(unit, "replace"))
+        interactive::<_, zbus::zvariant::OwnedObjectPath>(&manager, "StopUnit", &(unit, "replace"))
             .map_err(mutation_error)?;
-        if let Err(error) =
-            manager.call::<_, _, Vec<(String, String, String)>>("DisableUnitFiles", &(files, false))
-        {
-            let _ = manager
-                .call::<_, _, zbus::zvariant::OwnedObjectPath>("StartUnit", &(unit, "replace"));
+        if let Err(error) = interactive::<_, Vec<(String, String, String)>>(
+            &manager,
+            "DisableUnitFiles",
+            &(files, false),
+        ) {
+            let _ = interactive::<_, zbus::zvariant::OwnedObjectPath>(
+                &manager,
+                "StartUnit",
+                &(unit, "replace"),
+            );
             return Err(mutation_error(error));
         }
-        manager
-            .call::<_, _, ()>("Reload", &())
-            .map_err(mutation_error)?;
+        interactive::<_, ()>(&manager, "Reload", &()).map_err(mutation_error)?;
     }
     Ok(())
 }
@@ -182,20 +264,17 @@ pub(crate) fn restore_service(
     let connection = system_connection()?;
     let manager = manager_proxy(&connection)?;
     if was_enabled_at_boot {
-        let _: (bool, Vec<(String, String, String)>) = manager
-            .call("EnableUnitFiles", &(vec![unit], false, false))
-            .map_err(mutation_error)?;
+        let _: (bool, Vec<(String, String, String)>) =
+            interactive(&manager, "EnableUnitFiles", &(vec![unit], false, false))
+                .map_err(mutation_error)?;
     } else {
-        let _: Vec<(String, String, String)> = manager
-            .call("DisableUnitFiles", &(vec![unit], false))
-            .map_err(mutation_error)?;
+        let _: Vec<(String, String, String)> =
+            interactive(&manager, "DisableUnitFiles", &(vec![unit], false))
+                .map_err(mutation_error)?;
     }
-    manager
-        .call::<_, _, ()>("Reload", &())
-        .map_err(mutation_error)?;
+    interactive::<_, ()>(&manager, "Reload", &()).map_err(mutation_error)?;
     let method = if was_active { "StartUnit" } else { "StopUnit" };
-    manager
-        .call::<_, _, zbus::zvariant::OwnedObjectPath>(method, &(unit, "replace"))
+    interactive::<_, zbus::zvariant::OwnedObjectPath>(&manager, method, &(unit, "replace"))
         .map(|_| ())
         .map_err(mutation_error)
 }
@@ -263,6 +342,19 @@ fn managed_service_state(service: ManagedService) -> Result<(Option<String>, boo
     let Some(state) = service_state(&connection, &manager, &files, candidates)? else {
         return Ok((None, false));
     };
+    if service == ManagedService::RemoteLogin {
+        let socket = service_state(&connection, &manager, &files, &[SSH_SOCKET])?;
+        let socket_enabled = socket
+            .as_ref()
+            .is_some_and(|socket| unit_enabled(&socket.unit_file_state));
+        return Ok((
+            Some(combined_remote_state(
+                &state.active_state,
+                socket.as_ref().map(|socket| socket.active_state.as_str()),
+            )),
+            unit_enabled(&state.unit_file_state) || socket_enabled,
+        ));
+    }
     Ok((
         Some(state.active_state),
         unit_enabled(&state.unit_file_state),

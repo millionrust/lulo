@@ -1403,8 +1403,8 @@ mod linux_wayland {
             self.close_stack_popover(cx);
             cx.background_executor()
                 .spawn(async move {
-                    if let Err(error) = rmac_app_launch::open_item(path.clone()).await {
-                        eprintln!("could not open {path:?}: {error}");
+                    if let Err(error) = rmac_app_launch::open_item(path).await {
+                        eprintln!("rmac-dock: could not open a Stack item: {error}");
                     }
                 })
                 .detach();
@@ -4946,14 +4946,17 @@ mod linux_wayland {
             .or_else(|| {
                 std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
             });
-        data_home
+        let installed = data_home
             .into_iter()
             .chain([PathBuf::from("/usr/share")])
-            .map(|data| data.join("icons/hicolor/scalable/apps").join(file))
-            .chain([PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../packaging/rmac-apps/icons")
-                .join(file)])
-            .find(|path| path.is_file())
+            .map(|data| data.join("icons/hicolor/scalable/apps").join(file));
+        // The source-tree fallback exists only in debug builds (SR-15).
+        #[cfg(debug_assertions)]
+        let installed = installed.chain([PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../packaging/rmac-apps/icons")
+            .join(file)]);
+        let mut candidates = installed;
+        candidates.find(|path| path.is_file())
     }
 
     fn trash_icon_path(full: bool) -> Option<PathBuf> {
@@ -4966,14 +4969,18 @@ mod linux_wayland {
 
     /// The Dock's own artwork: installed copy first, then the source tree.
     fn dock_asset_path(file: &str) -> Option<PathBuf> {
-        [
-            PathBuf::from("/usr/share/rmac/dock/icons").join(file),
+        let installed = PathBuf::from("/usr/share/rmac/dock/icons").join(file);
+        // The source-tree fallback exists only in debug builds (SR-15).
+        #[cfg(debug_assertions)]
+        let candidates = [
+            installed,
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../../crates/rmac-dock/assets/icons")
                 .join(file),
-        ]
-        .into_iter()
-        .find(|path| path.is_file())
+        ];
+        #[cfg(not(debug_assertions))]
+        let candidates = [installed];
+        candidates.into_iter().find(|path| path.is_file())
     }
 
     fn item_color(app_id: &str, enabled: bool) -> u32 {

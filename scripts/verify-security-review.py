@@ -200,6 +200,23 @@ DOMAINS = (
 REVIEW_SOURCES = tuple(
     sorted({source for _, _, sources in DOMAINS for source in sources})
 )
+# Every tier also needs the disposable-install station: a fresh, throwaway
+# Ubuntu 26.04 machine where the destructive native checks run (package
+# install/upgrade/rollback/purge, maintainer scripts, polkit, PackageKit
+# offline updates, journald). .github/workflows/security-station.yml runs it
+# on a GitHub-hosted runner; it adds to the H8 hardware stations and never
+# replaces one.
+DISPOSABLE_STATION = "disposable-install"
+# Owner-recorded station waivers, by (tier, station). The owner has neither an
+# AMD nor an NVIDIA desktop, so Beta 1 ships without both (2026-10-04). A waived station is
+# written into the evidence as {"id", "status": "waived", "waiver": <id>} with
+# this exact decision id. A waiver only removes that station's run from the
+# gate: every check must still pass, and every other station must still run.
+BETA1_DESKTOP_WAIVER = "owner-2026-10-04-beta1-without-amd-nvidia-desktops"
+STATION_WAIVERS = {
+    ("beta", "amd64-amd-desktop"): BETA1_DESKTOP_WAIVER,
+    ("beta", "amd64-nvidia-desktop"): BETA1_DESKTOP_WAIVER,
+}
 
 
 class SecurityError(RuntimeError):
@@ -347,6 +364,25 @@ def expected_results(
     ]
 
 
+def required_stations(tier: str) -> list[str]:
+    """The tier's H8 hardware stations followed by the disposable install."""
+    tiers, _ = _source_inventory()
+    if tier not in tiers:
+        raise SecurityError("unknown security release tier")
+    return [*tiers[tier], DISPOSABLE_STATION]
+
+
+def station_waiver(tier: str, station: str) -> str | None:
+    return STATION_WAIVERS.get((tier, station))
+
+
+def _template_station(tier: str, station: str) -> dict[str, str]:
+    waiver = station_waiver(tier, station)
+    if waiver is not None:
+        return {"id": station, "status": "waived", "waiver": waiver}
+    return {"id": station, "status": "pending"}
+
+
 def evidence_template(
     contract: dict[str, object], tier: str, revision: str
 ) -> dict[str, object]:
@@ -367,7 +403,7 @@ def evidence_template(
             for relative in REVIEW_SOURCES
         },
         "stations": [
-            {"id": station, "status": "pending"} for station in tiers[tier]
+            _template_station(tier, station) for station in required_stations(tier)
         ],
         "tier": tier,
     }
@@ -412,12 +448,20 @@ def verify_evidence(
             raise SecurityError(f"security evidence {field} differs")
     if document.get("results") != expected_results(contract):
         raise SecurityError("security evidence does not prove every exact check")
-    tiers, _ = _source_inventory()
-    expected_stations = [
-        {"id": station, "status": "pass"} for station in tiers[tier]
-    ]
-    if document.get("stations") != expected_stations:
+    stations = document.get("stations")
+    required = required_stations(tier)
+    if not isinstance(stations, list) or [
+        station.get("id") if isinstance(station, dict) else None
+        for station in stations
+    ] != required:
         raise SecurityError("security evidence does not prove every required station")
+    for station in stations:
+        waiver = station_waiver(tier, station["id"])
+        accepted = [{"id": station["id"], "status": "pass"}]
+        if waiver is not None:
+            accepted.append({"id": station["id"], "status": "waived", "waiver": waiver})
+        if station not in accepted:
+            raise SecurityError("security evidence does not prove every required station")
 
 
 def main() -> int:
@@ -460,6 +504,11 @@ def main() -> int:
         "rmac security review contract inventory verified "
         f"({len(expected_results(contract))} checks; {evidence_status})"
     )
+    if arguments.tier is not None:
+        for station in required_stations(arguments.tier):
+            waiver = station_waiver(arguments.tier, station)
+            if waiver is not None:
+                print(f"station {station} is waived for {arguments.tier}: {waiver}")
     return 0
 
 

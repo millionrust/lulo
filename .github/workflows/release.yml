@@ -63,6 +63,16 @@ jobs:
           arguments: --locked
           command-arguments: --hide-inclusion-graph
 
+      # The shell workspace builds the session's own binaries (Dock, menu
+      # bar, …) that rmac-session ships, so it passes the same gate.
+      - name: Check shell-workspace advisories, licenses, bans, and sources
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          log-level: error
+          command: check
+          arguments: --locked --manifest-path shell/Cargo.toml
+          command-arguments: --config shell/deny.toml --hide-inclusion-graph
+
       - name: Record that the license/advisory gate passed
         id: mark
         run: echo "passed=true" >> "$GITHUB_OUTPUT"

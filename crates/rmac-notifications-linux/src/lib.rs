@@ -7,6 +7,7 @@ pub mod center_surface;
 mod decode;
 pub mod icon;
 pub mod icon_worker;
+pub mod lock_state;
 pub mod media;
 mod model;
 pub mod origin;

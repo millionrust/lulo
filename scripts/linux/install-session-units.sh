@@ -71,7 +71,8 @@ esac
     -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator --bin rmac-idle-locker \
     -p rmac-lock-provider-linux --features rmac-lock-provider-linux/provider --bin rmac-lock-provider \
     -p rmac-keyboard --bin rmac-mac-keyboard \
-    -p rmac-setup-assistant --bin rmac-setup-assistant)
+    -p rmac-setup-assistant --bin rmac-setup-assistant \
+    -p rmac-polkit-agent --bin rmac-polkit-agent)
 
 install -d -m 0755 "${unit_dir}"
 install -d -m 0755 "${libexec_dir}"
@@ -94,6 +95,7 @@ install -m 0755 "${target_dir}/release/rmac-idle-locker" "${libexec_dir}/rmac-id
 install -m 0755 "${target_dir}/release/rmac-lock-provider" "${libexec_dir}/rmac-lock-provider"
 install -m 0755 "${target_dir}/release/rmac-mac-keyboard" "${libexec_dir}/rmac-mac-keyboard"
 install -m 0755 "${target_dir}/release/rmac-setup-assistant" "${libexec_dir}/rmac-setup-assistant"
+install -m 0755 "${target_dir}/release/rmac-polkit-agent" "${libexec_dir}/rmac-polkit-agent"
 install -m 0755 "${script_dir}/start-rmac-session.sh" "${bin_dir}/rmac-session-start"
 install -d -m 0755 "${config_home}/rmac"
 if [ ! -e "${config_home}/rmac/swaylock.conf" ]; then

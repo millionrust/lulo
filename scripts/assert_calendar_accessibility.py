@@ -110,6 +110,16 @@ assert len(selected) == 1, f"{len(selected)} view tabs selected"
 if DUMP:
     support.dump(app(), DUMP)
 
+# Week view (the default) shows the fixture's current week, so check its
+# event blocks before Month/Next Period below navigate away from it.
+event_buttons = [
+    node
+    for node in support.descendants(app())
+    if support.role(node) == "button" and (support.name(node) or "").startswith("Stand-up")
+]
+assert event_buttons, "no named Stand-up event button in the week grid"
+assert "click" in support.actions(event_buttons[0]), "the event button has no click action"
+
 heading = support.wait_for(
     lambda: next(
         (node for node in support.descendants(app()) if support.role(node) == "status bar"),
@@ -161,14 +171,6 @@ support.wait_for(
     ),
     "the Invitations dialog to close",
 )
-
-event_buttons = [
-    node
-    for node in support.descendants(app())
-    if support.role(node) == "button" and (support.name(node) or "").startswith("Stand-up")
-]
-assert event_buttons, "no named Stand-up event button in the week grid"
-assert "click" in support.actions(event_buttons[0]), "the event button has no click action"
 
 print(
     "AT-SPI Calendar: "

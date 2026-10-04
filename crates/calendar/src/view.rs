@@ -15,8 +15,8 @@ use rmac_calendar::{
 };
 use rmac_calendar_store::{TimeValue, Zone};
 use rmac_ui::{
-    dialog, dialog_button, mac, ContextMenu, ContextMenuState, DialogButtonKind, InputEvent,
-    InputState, StyledExt as _, TextField,
+    dialog, dialog_button, mac, AccessibleTextInput as _, ContextMenu, ContextMenuState,
+    DialogButtonKind, InputEvent, InputState, StyledExt as _, TextField,
 };
 
 use crate::{
@@ -2287,7 +2287,18 @@ impl CalendarView {
             .right(px(9.0))
             .top(px(8.0))
             .w(px(260.0))
-            .child(rmac_ui::SearchField::new(&self.search_input).small());
+            .child(
+                // ACC-32: bare `SearchField` publishes no accessible name
+                // (confirmed live: Orca read it as "(unnamed), entry").
+                // The same fix as Terminal's and Notes' Find fields: a
+                // named wrapper folds the field's own text node into it.
+                div()
+                    .id("calendar-search-field")
+                    .role(Role::SearchInput)
+                    .aria_label("Search")
+                    .accessible_text_input(&self.search_input, cx)
+                    .child(rmac_ui::SearchField::new(&self.search_input).small()),
+            );
         let mut popover = div()
             .id("calendar-search-results")
             .absolute()

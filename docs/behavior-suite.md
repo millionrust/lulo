@@ -161,6 +161,17 @@ CONDSTORE, SPECIAL-USE, UID MOVE/EXPUNGE, message literals and IDLE. A JSON
 live-account mail scenarios remain pending until MAIL-4 connects the app to
 the runtime.
 
+MAIL-6's compose window (reply/reply-all/forward quoting, To/Cc/Bcc address
+completion, attachments, local Drafts autosave, send via the Outbox) is
+covered by unit tests in `crates/mail/src/compose.rs`,
+`crates/rmac-mail-mime/src/lib.rs` (attachment content-type guessing) and
+`crates/rmac-mail-storage/src/tests.rs` (`allocate_local_uid`,
+`clear_attachments`, reusing a draft's UID across autosaves, and discarding
+it with `remove_server_uid`). `docs/behavior-pending/mail/attach-file.json`
+and `compose-draft-autosave.json` stay pending: the behaviour harness has no
+FACTS entry yet for compose attachments or the local Drafts mailbox, and a
+Mac recording is still needed.
+
 ## Terminal profiles
 
 `docs/behavior-pending/terminal/profile-settings.json` describes the Settings

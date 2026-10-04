@@ -1407,5 +1407,59 @@ class SessionDesktopFilterTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(skip_script.stat().st_mode), 0o755)
 
 
+class CalendarAgentUnitTests(unittest.TestCase):
+    """CAL-7 / ADR 0022 §6-§7: the reminders agent is gated by the marker
+    Calendar creates, so a machine with no calendars never starts it, and it
+    is only a session Wants=, never a hard Requires=."""
+
+    root = Path(__file__).resolve().parents[1]
+
+    def unit_text(self) -> str:
+        return (
+            self.root / "crates/rmac-session/units/rmac-calendar-agent.service"
+        ).read_text(encoding="utf-8")
+
+    def test_unit_is_gated_by_the_marker_and_restarts_on_its_own_exit(self):
+        text = self.unit_text()
+        self.assertIn(
+            "ConditionPathExists=%h/.local/state/lulo/calendar/agent-enabled",
+            text,
+        )
+        self.assertIn(
+            "ExecStart=%h/.local/libexec/rmac/rmac-calendar-agent", text
+        )
+        self.assertIn("Restart=always", text)
+        self.assertIn("Type=simple", text)
+
+    def test_session_target_wants_the_agent_without_requiring_it(self):
+        target = (
+            self.root / "crates/rmac-session/units/rmac-session.target"
+        ).read_text(encoding="utf-8")
+        wants = next(
+            line for line in target.splitlines() if line.startswith("Wants=")
+        )
+        self.assertIn("rmac-calendar-agent.service", wants.split())
+        requires = next(
+            line for line in target.splitlines() if line.startswith("Requires=")
+        )
+        self.assertNotIn("rmac-calendar-agent.service", requires.split())
+
+    def test_unit_and_executable_are_packaged_and_verified(self):
+        files = stage_package.package_files()
+        self.assertIn(
+            "usr/lib/systemd/user/rmac-calendar-agent.service", files
+        )
+        self.assertIn(
+            Path("usr/lib/systemd/user/rmac-calendar-agent.service"),
+            verify_package.EXPECTED_PATHS,
+        )
+        self.assertIn(
+            "rmac-calendar-agent", verify_package.REQUIRED_RMAC_EXECUTABLES
+        )
+        self.assertIn(
+            "rmac-calendar-agent.service", verify_package.EXPECTED_SYSTEMD_UNITS
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

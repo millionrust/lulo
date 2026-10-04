@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::editing::AlertOffset;
 use crate::{Calendar, CalendarColor};
 
 const SETTINGS_FILE: &str = "lulo/calendar.json";
@@ -211,6 +212,7 @@ pub struct GeneralSettings {
     pub time_zone_support: bool,
     /// An IANA zone name (`chrono_tz::Tz`); empty means "follow the system".
     pub time_zone: String,
+    pub default_alerts: DefaultAlerts,
 }
 
 impl Default for GeneralSettings {
@@ -222,6 +224,7 @@ impl Default for GeneralSettings {
             day_ends_hour: 20,
             time_zone_support: false,
             time_zone: String::new(),
+            default_alerts: DefaultAlerts::default(),
         }
     }
 }
@@ -239,6 +242,18 @@ impl GeneralSettings {
         self.default_calendar = bounded_name(&self.default_calendar);
         self
     }
+}
+
+/// Calendar ▸ Settings ▸ Alerts' Default Alerts (CAL-7, ADR 0022 §6): the
+/// alert new events get when the person does not pick one explicitly, as
+/// the Mac applies at event creation rather than at alert time. Birthdays
+/// has no row yet -- Lulo has no Birthdays calendar (`docs/parity.md`),
+/// so a default for it would do nothing.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct DefaultAlerts {
+    pub events: AlertOffset,
+    pub all_day_events: AlertOffset,
 }
 
 fn config_root() -> Option<PathBuf> {

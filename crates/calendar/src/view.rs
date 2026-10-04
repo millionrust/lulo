@@ -491,6 +491,17 @@ impl CalendarView {
         cx.new(|cx| InputState::new(window, cx).default_value(value))
     }
 
+    /// The Alert field's options: an all-day event offers "N days/weeks
+    /// before" (fired at 9 AM), a timed event offers minute/hour offsets
+    /// (CAL-5's inspector and CAL-7's Default Alerts share this list).
+    fn alert_offsets(all_day: bool) -> &'static [editing::AlertOffset] {
+        if all_day {
+            editing::ALL_DAY_ALERT_OFFSETS
+        } else {
+            editing::EVENT_ALERT_OFFSETS
+        }
+    }
+
     fn open_editor(
         &mut self,
         event: rmac_calendar::Event,
@@ -529,21 +540,13 @@ impl CalendarView {
             Some(rule) if rule.starts_with("FREQ=MONTHLY") => 3,
             _ => 0,
         };
-        let alert = if draft
-            .other_properties
+        let alert_offsets = Self::alert_offsets(event.all_day);
+        let alert_offset =
+            editing::AlertOffset::from_properties(&draft.other_properties, event.all_day);
+        let alert = alert_offsets
             .iter()
-            .any(|line| line == "TRIGGER:-PT15M")
-        {
-            1
-        } else if draft
-            .other_properties
-            .iter()
-            .any(|line| line == "TRIGGER:-PT30M")
-        {
-            2
-        } else {
-            0
-        };
+            .position(|option| *option == alert_offset)
+            .unwrap_or(0);
         self.selected = Some(event.id.clone());
         self.editor = Some(Editor {
             original: (!fresh).then_some(event.clone()),
@@ -589,7 +592,12 @@ impl CalendarView {
         let Some((start, end)) = editing::at_day(date, hour) else {
             return;
         };
-        let draft = editing::new_event(start, end, false);
+        let mut draft = editing::new_event(start, end, false);
+        self.settings
+            .general
+            .default_alerts
+            .events
+            .apply(&mut draft, false);
         let event = rmac_calendar::Event {
             id: draft.uid.clone(),
             title: draft.summary.clone(),
@@ -624,7 +632,12 @@ impl CalendarView {
         else {
             return;
         };
-        let draft = editing::new_event(start, end, true);
+        let mut draft = editing::new_event(start, end, true);
+        self.settings
+            .general
+            .default_alerts
+            .all_day_events
+            .apply(&mut draft, true);
         let event = rmac_calendar::Event {
             id: draft.uid.clone(),
             title: draft.summary.clone(),
@@ -702,14 +715,11 @@ impl CalendarView {
         editing::set_property(&mut after, "LOCATION", &location);
         editing::set_property(&mut after, "DESCRIPTION", &notes);
         editing::set_property(&mut after, "URL", &url);
-        after.other_properties.retain(|line| {
-            !line.starts_with("ATTENDEE:")
-                && !matches!(
-                    line.as_str(),
-                    "BEGIN:VALARM" | "END:VALARM" | "ACTION:DISPLAY"
-                )
-                && !line.starts_with("TRIGGER:")
-        });
+        // The Alert field's own offset (just below) owns VALARM/TRIGGER;
+        // this only drops the invitee lines the fields below rebuild.
+        after
+            .other_properties
+            .retain(|line| !line.starts_with("ATTENDEE:"));
         for address in invitees
             .split(',')
             .map(str::trim)
@@ -721,18 +731,11 @@ impl CalendarView {
                     .push(format!("ATTENDEE:mailto:{address}"));
             }
         }
-        if let Some(minutes) = [0, 15, 30]
+        Self::alert_offsets(editor.all_day)
             .get(editor.alert)
             .copied()
-            .filter(|minutes| *minutes > 0)
-        {
-            after.other_properties.extend([
-                "BEGIN:VALARM".into(),
-                format!("TRIGGER:-PT{minutes}M"),
-                "ACTION:DISPLAY".into(),
-                "END:VALARM".into(),
-            ]);
-        }
+            .unwrap_or(editing::AlertOffset::None)
+            .apply(&mut after, editor.all_day);
         let Some(source) = self
             .snapshot
             .calendars
@@ -2338,6 +2341,10 @@ impl CalendarView {
                 |this, cx| {
                     if let Some(editor) = this.editor.as_mut() {
                         editor.all_day = !editor.all_day;
+                        // The two Alert lists mean different things at the
+                        // same index (CAL-7): switching All Day resets the
+                        // selection instead of silently reinterpreting it.
+                        editor.alert = 0;
                     }
                     cx.notify();
                 },
@@ -2368,10 +2375,8 @@ impl CalendarView {
         card = card.child(labelled_field("Repeat", repeat_row));
 
         let mut alert_row = div().flex().flex_wrap().gap(px(6.0));
-        for (index, label) in ["None", "15 min before", "30 min before"]
-            .into_iter()
-            .enumerate()
-        {
+        for (index, offset) in Self::alert_offsets(editor.all_day).iter().enumerate() {
+            let label = offset.label();
             alert_row = alert_row.child(self.control(
                 format!("calendar-editor-alert-{index}"),
                 label,

@@ -124,6 +124,7 @@ SESSION_BINARIES = (
     "rmac-idle-locker",
     "rmac-mac-keyboard",
     "rmac-setup-assistant",
+    "rmac-calendar-agent",
 )
 
 # The seven shell surfaces are built from the separately locked Linux GPUI

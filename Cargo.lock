@@ -5989,12 +5989,30 @@ dependencies = [
  "chrono-tz",
  "gpui",
  "rmac-accounts",
+ "rmac-calendar-agent",
  "rmac-calendar-eds",
  "rmac-calendar-store",
  "rmac-storage",
  "rmac-ui",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rmac-calendar-agent"
+version = "0.9.0-beta.1"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "rmac-calendar-eds",
+ "rmac-calendar-runtime",
+ "rmac-calendar-store",
+ "rmac-dbus",
+ "rmac-storage",
+ "rustix 1.1.4",
+ "serde",
+ "serde_json",
+ "zbus",
 ]
 
 [[package]]

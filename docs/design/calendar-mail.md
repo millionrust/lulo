@@ -55,8 +55,11 @@ certificate trust, Lulo's own OAuth client registrations.
 - Invitations: events with attendees show organiser and attendee status; Accept / Maybe /
   Decline in the inspector and the inbox popover. Google and iCloud servers send the replies
   (CalDAV scheduling); for other servers the reply is sent by Mail as iMIP (MAIL-8).
-- Reminders: alerts fire as Lulo notifications through `calendar-agent` even when Calendar is
-  closed; Snooze and Close; clicking opens the event. Default alerts per account in Settings.
+- Reminders: alerts fire as Lulo notifications through `rmac-calendar-agent` even when Calendar
+  is closed; Snooze and Close, and a default action that opens the event (**built**, CAL-7).
+  Default Alerts for Events and All-day Events live in Settings ▸ Alerts (**built**, global, not
+  per account, matching the Mac's one Alerts pane); Birthdays has no row since Lulo has no
+  Birthdays calendar yet.
 - Search: finds events by title, location, notes and people across visible calendars; results
   list under the toolbar, Return jumps to the event.
 - Settings (⌘,): General (default calendar, start of week, day starts/ends, show N days,
@@ -156,7 +159,7 @@ tokens only, no polling, no UI-thread I/O, HTML mock first for any new surface.
 | CAL-4 | Day, Month, Year views, keyboard navigation, scrolling | M | `calendar` | `calendar/month-keyboard-navigation`; idle CPU sample |
 | CAL-5 | Create/edit/move/resize/delete, inspector popover, repeat-edit choices, undo | L | `calendar` | `calendar/new-event`, `calendar/edit-event-inspector`, `calendar/delete-event-undo` |
 | CAL-6 | Calendars management, subscriptions, import/export, search, Settings window | M | `calendar` | `calendar/hide-calendar`, `calendar/search-events` |
-| CAL-7 | Reminders agent + notification actions + default alerts | M | `calendar-agent` | timerfd unit tests with a fake clock; laptop alert-on-time check; 0 wakeups check (ADR 0022 §6) |
+| CAL-7 | Reminders agent + notification actions + default alerts — **built** (`rmac-calendar-agent`; `docs/parity.md` APP-01) | M | `rmac-calendar-agent` | 16 unit tests (`alarms`/`state`/`engine`) with a fake clock (plain `DateTime<Utc>` values); laptop alert-on-time and 0-wakeups checks still open |
 | CAL-8 | Invitations (inbox popover, accept/decline), menu-bar clock & desktop widget integration, Orca pass | M | `calendar`, `rmac-desktop-widgets`, top bar | `calendar/invitation-accept` (fixture CalDAV server) |
 | CAL-9 | Microsoft calendars: verify `evolution-ews` Microsoft 365 backend with GOA `ms_graph`; if unusable, Graph calendar adapter behind the same runtime trait | M | `rmac-calendar-eds` or `rmac-calendar-graph` | laptop check with the owner's test account |
 

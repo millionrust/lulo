@@ -1,0 +1,23 @@
+[Unit]
+Description=rmac Calendar reminders agent
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+OnFailure=rmac-component-failure@%N.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+# Calendar creates this marker the first time it sees a calendar (ADR 0022
+# §6/§7); until then this unit never starts, so a machine with no calendars
+# never runs it.
+ConditionPathExists=%h/.local/state/lulo/calendar/agent-enabled
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-calendar-agent
+
+[Service]
+Type=simple
+ExecStart=%h/.local/libexec/rmac/rmac-calendar-agent
+# An EDS source add/remove/enable/disable makes the agent exit 0 on purpose
+# to pick up the new source list on restart (ADR 0022 §6 "re-armed on EDS
+# signals"); a real failure also restarts.
+Restart=always
+RestartSec=1s
+NoNewPrivileges=yes
+PrivateTmp=yes

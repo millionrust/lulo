@@ -11,9 +11,133 @@ use rmac_calendar_store::expand;
 #[cfg(any(target_os = "linux", test))]
 use rmac_calendar_store::Calendar as IcalCalendar;
 use rmac_calendar_store::{Event as IcalEvent, TimeValue, Zone};
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_UID: AtomicU64 = AtomicU64::new(1);
+
+/// An alert offset, shown both in the event inspector's Alert field (CAL-5)
+/// and in Calendar ▸ Settings ▸ Alerts' Default Alerts (CAL-7, ADR 0022
+/// §6). Timed events use [`EVENT_ALERT_OFFSETS`]; all-day events use
+/// [`ALL_DAY_ALERT_OFFSETS`] instead, since the Mac fires those at 9 AM on
+/// the given day rather than a fixed offset before local midnight.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+pub enum AlertOffset {
+    #[default]
+    None,
+    AtTime,
+    Minutes5,
+    Minutes15,
+    Minutes30,
+    Hours1,
+    Hours2,
+    Days1,
+    Days2,
+    Weeks1,
+}
+
+pub const EVENT_ALERT_OFFSETS: &[AlertOffset] = &[
+    AlertOffset::None,
+    AlertOffset::AtTime,
+    AlertOffset::Minutes5,
+    AlertOffset::Minutes15,
+    AlertOffset::Minutes30,
+    AlertOffset::Hours1,
+    AlertOffset::Hours2,
+    AlertOffset::Days1,
+    AlertOffset::Days2,
+];
+
+pub const ALL_DAY_ALERT_OFFSETS: &[AlertOffset] = &[
+    AlertOffset::None,
+    AlertOffset::Days1,
+    AlertOffset::Days2,
+    AlertOffset::Weeks1,
+];
+
+impl AlertOffset {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "None",
+            Self::AtTime => "At time of event",
+            Self::Minutes5 => "5 minutes before",
+            Self::Minutes15 => "15 minutes before",
+            Self::Minutes30 => "30 minutes before",
+            Self::Hours1 => "1 hour before",
+            Self::Hours2 => "2 hours before",
+            Self::Days1 => "1 day before",
+            Self::Days2 => "2 days before",
+            Self::Weeks1 => "1 week before",
+        }
+    }
+
+    /// The exact VALARM `TRIGGER` line this offset writes, or `None` for
+    /// "no alert". All-day alerts fire at 9 AM: N days before midnight is
+    /// "(24*N - 9) hours before DTSTART" (verify the exact Mac time on the
+    /// laptop; ADR 0022 §6 flags the same uncertainty for Snooze).
+    pub fn trigger_line(self, all_day: bool) -> Option<&'static str> {
+        if all_day {
+            match self {
+                Self::Days1 => Some("TRIGGER:-PT15H"),
+                Self::Days2 => Some("TRIGGER:-PT39H"),
+                Self::Weeks1 => Some("TRIGGER:-PT159H"),
+                _ => None,
+            }
+        } else {
+            match self {
+                Self::AtTime => Some("TRIGGER:PT0S"),
+                Self::Minutes5 => Some("TRIGGER:-PT5M"),
+                Self::Minutes15 => Some("TRIGGER:-PT15M"),
+                Self::Minutes30 => Some("TRIGGER:-PT30M"),
+                Self::Hours1 => Some("TRIGGER:-PT1H"),
+                Self::Hours2 => Some("TRIGGER:-PT2H"),
+                Self::Days1 => Some("TRIGGER:-PT24H"),
+                Self::Days2 => Some("TRIGGER:-PT48H"),
+                _ => None,
+            }
+        }
+    }
+
+    /// Reads back whichever offset applies from an event's stored VALARM
+    /// lines. A hand-edited or multi-alarm `.ics`'s data is left alone; the
+    /// dropdown just shows no selection (`None`) for whatever it does not
+    /// recognise.
+    pub fn from_properties(other_properties: &[String], all_day: bool) -> Self {
+        let options = if all_day {
+            ALL_DAY_ALERT_OFFSETS
+        } else {
+            EVENT_ALERT_OFFSETS
+        };
+        options
+            .iter()
+            .copied()
+            .find(|option| {
+                option
+                    .trigger_line(all_day)
+                    .is_some_and(|line| other_properties.iter().any(|property| property == line))
+            })
+            .unwrap_or(Self::None)
+    }
+
+    /// Replaces an event's alert with this offset (or removes it for
+    /// `None`), leaving every other property untouched.
+    pub fn apply(self, event: &mut IcalEvent, all_day: bool) {
+        event.other_properties.retain(|line| {
+            !matches!(
+                line.as_str(),
+                "BEGIN:VALARM" | "END:VALARM" | "ACTION:DISPLAY"
+            ) && !line.starts_with("TRIGGER:")
+        });
+        if let Some(line) = self.trigger_line(all_day) {
+            event.other_properties.extend([
+                "BEGIN:VALARM".to_owned(),
+                line.to_owned(),
+                "ACTION:DISPLAY".to_owned(),
+                "END:VALARM".to_owned(),
+            ]);
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum Mutation {
@@ -315,6 +439,14 @@ pub fn load() -> Result<WeekSnapshot, String> {
     }
     snapshot.slots =
         snapshot.slots_for(today - Duration::days(today.weekday().num_days_from_monday() as i64));
+    // ADR 0022 §6/§7: the agent only ever starts once Calendar has seen at
+    // least one calendar through EDS. Best-effort and idempotent -- a
+    // failure here just means the unit starts on the next normal session
+    // start instead (it is also in rmac-session.target's Wants=, gated by
+    // the same marker file).
+    if !snapshot.calendars.is_empty() {
+        let _ = rmac_calendar_agent::ensure_enabled();
+    }
     Ok(snapshot)
 }
 
@@ -514,5 +646,65 @@ mod tests {
         );
         let parsed = IcalCalendar::parse(&wrapped).unwrap();
         assert_eq!(parsed.events[0], event);
+    }
+
+    /// The option list for either event type, for tests that exercise both
+    /// without duplicating the loop body.
+    fn alert_offsets_for_test(all_day: bool) -> &'static [AlertOffset] {
+        if all_day {
+            ALL_DAY_ALERT_OFFSETS
+        } else {
+            EVENT_ALERT_OFFSETS
+        }
+    }
+
+    #[test]
+    fn alert_offset_apply_and_read_back_round_trip_for_every_option() {
+        let (start, end) = at_day(NaiveDate::from_ymd_opt(2026, 10, 3).unwrap(), 10).unwrap();
+        for all_day in [false, true] {
+            for offset in alert_offsets_for_test(all_day) {
+                let mut event = new_event(start, end, all_day);
+                offset.apply(&mut event, all_day);
+                assert_eq!(
+                    AlertOffset::from_properties(&event.other_properties, all_day),
+                    *offset,
+                    "{offset:?} all_day={all_day}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn alert_offset_apply_replaces_any_previous_alert() {
+        let (start, end) = at_day(NaiveDate::from_ymd_opt(2026, 10, 3).unwrap(), 10).unwrap();
+        let mut event = new_event(start, end, false);
+        AlertOffset::Minutes15.apply(&mut event, false);
+        AlertOffset::Hours1.apply(&mut event, false);
+        assert_eq!(
+            AlertOffset::from_properties(&event.other_properties, false),
+            AlertOffset::Hours1
+        );
+        assert_eq!(
+            event
+                .other_properties
+                .iter()
+                .filter(|line| line.starts_with("TRIGGER:"))
+                .count(),
+            1
+        );
+        AlertOffset::None.apply(&mut event, false);
+        assert!(!event
+            .other_properties
+            .iter()
+            .any(|line| line.starts_with("TRIGGER:")));
+    }
+
+    #[test]
+    fn every_offset_label_is_distinct_within_its_own_list() {
+        for options in [EVENT_ALERT_OFFSETS, ALL_DAY_ALERT_OFFSETS] {
+            let labels: std::collections::BTreeSet<_> =
+                options.iter().map(|option| option.label()).collect();
+            assert_eq!(labels.len(), options.len());
+        }
     }
 }

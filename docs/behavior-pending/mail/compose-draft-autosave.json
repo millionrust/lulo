@@ -1,0 +1,15 @@
+{
+  "title": "Mail: an edited compose window autosaves to Drafts and closing without sending keeps it",
+  "app": "mail",
+  "launch": {},
+  "pending": "Pending: needs a FACTS entry that can see the local Drafts mailbox/row count from the behaviour harness (none exists yet; `rmac-mail-storage`'s `allocate_local_uid`/`put_message`/`clear_attachments` are covered by its own unit tests in the meantime), the fixture app wired to read real storage snapshots instead of the static fixture (MAIL-4/MAIL-9), and a Mac recording of the Mac's own autosave timing against a local 'On My Mac' mailbox only. Never send mail and never confirm a deletion on the Mac.",
+  "steps": [
+    { "wait": 3 },
+    { "key": "cmd-n", "settle": 1 },
+    { "type": "Draft subject" },
+    { "wait": 3 },
+    { "observe": "autosaved", "facts": ["mailboxes"] },
+    { "key": "cmd-w", "settle": 1 },
+    { "observe": "kept", "facts": ["mailboxes"] }
+  ]
+}

@@ -1202,13 +1202,15 @@ const MAIL_MENUS: &[MenuSpec] = &[
         label: "File",
         items: &[
             item!("New Message", "mail::NewMessage", "⌘N"),
+            item!("Attach File…", "mail::AttachFile", "⇧⌘A"),
             item!("Close Window", "mail::CloseWindow", "⌘W", separator),
         ],
     },
     MenuSpec {
         label: "Message",
         items: &[
-            item!("Reply", "mail::Reply", "⌘R"),
+            item!("Send", "mail::SendMessage", "⇧⌘D"),
+            item!("Reply", "mail::Reply", "⌘R", separator),
             item!("Reply All", "mail::ReplyAll", "⇧⌘R"),
             item!("Forward", "mail::Forward", "⇧⌘F", separator),
             item!("Mark as Read or Unread", "mail::ToggleRead", "⇧⌘U"),

@@ -7,13 +7,14 @@ use gpui::{
     Window,
 };
 use rmac_editor::InputState;
-use rmac_mail::{MailState, Mailbox, Message, OrganizeAction, SearchScope};
+use rmac_mail::{compose::ComposeKind, MailState, Mailbox, Message, OrganizeAction, SearchScope};
 use rmac_mail_mime::{BlockKind, RichText};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, TextField};
 
 use crate::{
-    Archive, CloseWindow, Copy, Delete, Flag, Junk, Move, NextMessage, PreviousMessage, Search,
-    ToggleRead, ToggleThreads, ToggleUnreadFilter, Undo,
+    compose_window, delivery::ComposeAccount, Archive, CloseWindow, Copy, Delete, Flag, Forward,
+    Junk, Move, NewMessage, NextMessage, PreviousMessage, Reply, ReplyAll, Search, ToggleRead,
+    ToggleThreads, ToggleUnreadFilter, Undo,
 };
 
 const SIDEBAR: f32 = 220.0;
@@ -34,6 +35,7 @@ pub struct MailView {
     search_open: bool,
     destination_menu: bool,
     copy_destination: bool,
+    accounts: Vec<ComposeAccount>,
 }
 
 #[derive(Clone)]
@@ -51,7 +53,12 @@ struct Row {
 }
 
 impl MailView {
-    pub fn new(state: MailState, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        state: MailState,
+        accounts: Vec<ComposeAccount>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search Mail"));
         cx.subscribe(&search_input, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
@@ -68,6 +75,7 @@ impl MailView {
             search_open: false,
             destination_menu: false,
             copy_destination: false,
+            accounts,
         }
     }
 
@@ -100,6 +108,12 @@ impl MailView {
             self.sync_menu(cx);
             cx.notify();
         }
+    }
+
+    /// Address completion candidates for a freshly opened compose window:
+    /// every distinct sender this mailbox has seen (`compose::known_recipients`).
+    fn compose_candidates(&self) -> Vec<rmac_mail::compose::Recipient> {
+        rmac_mail::compose::known_recipients(&self.state.messages)
     }
 
     fn control(
@@ -171,8 +185,16 @@ impl MailView {
             "mail-compose",
             "▣",
             "Compose",
-            ControlMode::Disabled,
-            |_, _| {},
+            ControlMode::Enabled,
+            |this, cx| {
+                compose_window::open(
+                    ComposeKind::New,
+                    None,
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                );
+            },
             cx,
         ));
         for (id, glyph, label, action) in [
@@ -764,6 +786,42 @@ impl Render for MailView {
             .bg(mac::window())
             .track_focus(&self.focus)
             .key_context("Mail")
+            .on_action(cx.listener(|this, _: &NewMessage, _, cx| {
+                compose_window::open(
+                    ComposeKind::New,
+                    None,
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &Reply, _, cx| {
+                compose_window::open(
+                    ComposeKind::Reply,
+                    this.state.selected_message().cloned(),
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &ReplyAll, _, cx| {
+                compose_window::open(
+                    ComposeKind::ReplyAll,
+                    this.state.selected_message().cloned(),
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &Forward, _, cx| {
+                compose_window::open(
+                    ComposeKind::Forward,
+                    this.state.selected_message().cloned(),
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                )
+            }))
             .on_action(cx.listener(|this, _: &ToggleThreads, _, cx| {
                 this.state.threads = !this.state.threads;
                 this.sync_menu(cx);

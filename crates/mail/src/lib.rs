@@ -4,6 +4,8 @@
 use rmac_mail_mime::{sanitize_html, RichText};
 use rmac_mail_storage::SearchQuery;
 
+pub mod compose;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mailbox {
     AllInboxes,
@@ -70,10 +72,13 @@ pub struct Message {
     pub id: String,
     pub mailbox: Mailbox,
     pub sender: &'static str,
+    pub sender_address: &'static str,
     pub initials: &'static str,
     pub date: &'static str,
     pub to: &'static str,
     pub cc: &'static str,
+    pub to_addresses: &'static str,
+    pub cc_addresses: &'static str,
     pub subject: &'static str,
     pub preview: &'static str,
     pub unread: bool,
@@ -251,7 +256,7 @@ impl MailState {
             } else {
                 RichText::from_plain(preview)
             };
-            Message { id: id.to_owned(), mailbox, sender, initials, date, to: "Jacob Samas", cc: if id == "anna" { "Sam Ortiz" } else { "" }, subject, preview, unread, flagged, attachment: if id == "anna" { Some(("Menu.pdf", "212 KB")) } else if id == "grandma" { Some(("Photos.zip", "2.4 MB")) } else { None }, thread_id, body, junk_origin: None }
+            Message { id: id.to_owned(), mailbox, sender, sender_address: if id == "anna" { "anna@example.test" } else if id == "sam" { "sam@example.test" } else { "sender@example.test" }, initials, date, to: "Jacob Samas", cc: if id == "anna" { "Sam Ortiz" } else { "" }, to_addresses: "jacob@example.test", cc_addresses: if id == "anna" { "sam@example.test" } else { "" }, subject, preview, unread, flagged, attachment: if id == "anna" { Some(("Menu.pdf", "212 KB")) } else if id == "grandma" { Some(("Photos.zip", "2.4 MB")) } else { None }, thread_id, body, junk_origin: None }
         }).collect();
         Self {
             messages,

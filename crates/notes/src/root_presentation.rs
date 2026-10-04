@@ -86,6 +86,11 @@ impl NotesView {
         let export_dialog = self.render_export_dialog(cx);
         let markdown_import_dialog = self.render_markdown_import_dialog(cx);
         let bundle_import_dialog = self.render_bundle_import_dialog(cx);
+        let lock_dialog = self.render_lock_dialog(cx);
+        let smart_folder_dialog = self.render_smart_folder_dialog(cx);
+        let attachment_rename_dialog = self.render_attachment_rename_dialog(cx);
+        let notes_help_dialog = self.render_notes_help_dialog(cx);
+        let customise_toolbar_dialog = self.render_customise_toolbar_dialog(cx);
 
         div()
             .key_context("Notes")
@@ -395,6 +400,89 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 this.request_close(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ToggleUnderline, window, cx| {
+                this.toggle_underline(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleHighlight, window, cx| {
+                this.toggle_highlight(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FontBigger, _, cx| {
+                this.note_zoom = (this.note_zoom + 1).min(12);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &FontSmaller, _, cx| {
+                this.note_zoom = (this.note_zoom - 1).max(-5);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &CopyStyle, _, cx| this.copy_style(cx)))
+            .on_action(cx.listener(|this, _: &PasteStyle, window, cx| this.paste_style(window, cx)))
+            .on_action(cx.listener(|this, _: &ToggleSuperscript, window, cx| {
+                this.toggle_superscript(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSubscript, window, cx| {
+                this.toggle_subscript(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &BaselineUseDefault, window, cx| {
+                this.baseline_use_default(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &RemoveStyle, window, cx| this.remove_style(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &AlignLeft, window, cx| {
+                this.set_text_alignment(rmac_notes_storage::TextAlign::Left, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &AlignCentre, window, cx| {
+                this.set_text_alignment(rmac_notes_storage::TextAlign::Center, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &AlignRight, window, cx| {
+                this.set_text_alignment(rmac_notes_storage::TextAlign::Right, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MathsResultsOff, _, cx| {
+                this.set_maths_results_mode(MathsResultsMode::Off, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MathsResultsSuggest, _, cx| {
+                this.set_maths_results_mode(MathsResultsMode::SuggestResults, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MathsResultsInsert, _, cx| {
+                this.set_maths_results_mode(MathsResultsMode::InsertResults, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &ToggleShowHighlights, _, cx| {
+                    this.toggle_show_highlights(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &CustomiseToolbar, _, cx| this.toggle_customise_toolbar(cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleLockNote, window, cx| {
+                    this.toggle_lock_note(window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &CloseAllLockedNotes, _, cx| this.close_all_locked_notes(cx)),
+            )
+            .on_action(cx.listener(|this, _: &CreateSmartFolder, window, cx| {
+                this.begin_create_smart_folder(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &CreateSmartFolderFromSelection, window, cx| {
+                    this.begin_create_smart_folder_from_selection(window, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &PasteAndRetainStyle, window, cx| {
+                this.paste_plain_text(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &AttachFile, _, cx| this.choose_file_attachment(cx)))
+            .on_action(cx.listener(|this, _: &RenameAttachment, window, cx| {
+                this.begin_rename_attachment(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &ShowSmartFoldersHelp, _, cx| {
+                    this.show_smart_folders_help(cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &ShowTagsHelp, _, cx| this.show_tags_help(cx)))
             .size_full()
             .bg(mac::window())
             .text_color(mac::text())
@@ -409,6 +497,15 @@ impl NotesView {
                 element.child(dialog)
             })
             .when_some(bundle_import_dialog, |element, dialog| {
+                element.child(dialog)
+            })
+            .when_some(lock_dialog, |element, dialog| element.child(dialog))
+            .when_some(smart_folder_dialog, |element, dialog| element.child(dialog))
+            .when_some(attachment_rename_dialog, |element, dialog| {
+                element.child(dialog)
+            })
+            .when_some(notes_help_dialog, |element, dialog| element.child(dialog))
+            .when_some(customise_toolbar_dialog, |element, dialog| {
                 element.child(dialog)
             })
             .into_any_element()

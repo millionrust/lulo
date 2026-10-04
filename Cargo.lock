@@ -6640,6 +6640,7 @@ dependencies = [
  "rmac-print-linux",
  "rmac-storage",
  "rmac-ui",
+ "sha2 0.10.9",
 ]
 
 [[package]]

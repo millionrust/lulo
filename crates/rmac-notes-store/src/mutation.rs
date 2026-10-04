@@ -720,6 +720,34 @@ impl LibraryTransaction {
         Ok(())
     }
 
+    /// Rename one exact live attachment (Edit ▸ Rename Attachment…),
+    /// mirroring `rename_folder`'s validate/compare/bump shape.
+    pub fn rename_attachment(
+        &mut self,
+        attachment_id: AttachmentId,
+        expected_attachment_revision: u64,
+        display_name: String,
+    ) -> Result<bool, MutationError> {
+        validate_name(&display_name).map_err(MutationError::InvalidCandidate)?;
+        let attachment = self
+            .candidate
+            .attachments
+            .iter_mut()
+            .find(|attachment| attachment.id == attachment_id)
+            .ok_or(MutationError::MissingAttachment)?;
+        require_revision(attachment.revision, expected_attachment_revision)?;
+        if attachment.deleted {
+            return Err(MutationError::AttachmentAlreadyRemoved);
+        }
+        if attachment.display_name == display_name {
+            return Ok(false);
+        }
+        attachment.revision = next_revision(attachment.revision)?;
+        attachment.display_name = display_name;
+        self.changed = true;
+        Ok(true)
+    }
+
     /// Remove one exact orphan tombstone from metadata.
     ///
     /// The returned plan authorizes storage to collect the matching managed
@@ -1147,6 +1175,53 @@ mod tests {
         assert_eq!(candidate.attachments[0].display_name, "private-roadmap.png");
         assert!(!candidate.attachments[0].deleted);
         plan.validate_candidate(&base, &candidate).unwrap();
+    }
+
+    #[test]
+    fn rename_attachment_bumps_revision_and_rejects_stale_deleted_and_invalid_names() {
+        let base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+        let mut import = LibraryTransaction::begin(&base).unwrap();
+        let plan = import
+            .add_attachment(note_id, 3, 25, new_attachment())
+            .unwrap();
+        let with_attachment = import.finish().unwrap();
+        let attachment_id = plan.attachment_id;
+
+        let mut rename = LibraryTransaction::begin(&with_attachment).unwrap();
+        assert!(rename
+            .rename_attachment(attachment_id, 1, "roadmap-renamed.png".into())
+            .unwrap());
+        let renamed = rename.finish().unwrap();
+        assert_eq!(renamed.attachments[0].display_name, "roadmap-renamed.png");
+        assert_eq!(renamed.attachments[0].revision, 2);
+
+        // Renaming to the exact same name is a no-op (no revision bump).
+        let mut same_name = LibraryTransaction::begin(&renamed).unwrap();
+        assert!(!same_name
+            .rename_attachment(attachment_id, 2, "roadmap-renamed.png".into())
+            .unwrap());
+        assert_eq!(same_name.finish().unwrap_err(), MutationError::NoChanges);
+
+        let mut stale = LibraryTransaction::begin(&renamed).unwrap();
+        assert_eq!(
+            stale.rename_attachment(attachment_id, 1, "stale.png".into()),
+            Err(MutationError::RevisionConflict)
+        );
+
+        let mut missing = LibraryTransaction::begin(&renamed).unwrap();
+        assert_eq!(
+            missing.rename_attachment(AttachmentId::new(99).unwrap(), 1, "ghost.png".into()),
+            Err(MutationError::MissingAttachment)
+        );
+
+        let mut invalid = LibraryTransaction::begin(&renamed).unwrap();
+        assert_eq!(
+            invalid.rename_attachment(attachment_id, 2, "../escape.png".into()),
+            Err(MutationError::InvalidCandidate(
+                ValidationError::InvalidName
+            ))
+        );
     }
 
     #[test]

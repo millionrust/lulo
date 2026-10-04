@@ -71,7 +71,9 @@ use input_support::{
     display_title, now_unix_ms, parse_tags, safe_export_stem, take_counter, unique_folder_name,
 };
 use markdown_presentation::render_markdown_document;
-use note_format_controller::{ChecklistBulkAction, ListMarker, ParagraphStyle, TextTransform};
+use note_format_controller::{
+    ChecklistBulkAction, CopiedStyle, ListMarker, ParagraphStyle, TextTransform,
+};
 use notes_style::*;
 use presentation::{
     attachment_match_row, centered_state, date_label, date_section, folder_row,
@@ -180,7 +182,34 @@ actions!(
         AddPhoto,
         PrintNote,
         ExportNotePdf,
-        ExportNoteMarkdown
+        ExportNoteMarkdown,
+        ToggleUnderline,
+        ToggleHighlight,
+        FontBigger,
+        FontSmaller,
+        CopyStyle,
+        PasteStyle,
+        ToggleSuperscript,
+        ToggleSubscript,
+        BaselineUseDefault,
+        RemoveStyle,
+        AlignLeft,
+        AlignCentre,
+        AlignRight,
+        MathsResultsOff,
+        MathsResultsSuggest,
+        MathsResultsInsert,
+        CreateSmartFolder,
+        CreateSmartFolderFromSelection,
+        ToggleLockNote,
+        CloseAllLockedNotes,
+        ToggleShowHighlights,
+        CustomiseToolbar,
+        AttachFile,
+        RenameAttachment,
+        PasteAndRetainStyle,
+        ShowSmartFoldersHelp,
+        ShowTagsHelp
     ]
 );
 
@@ -269,13 +298,71 @@ struct NotesView {
     recent_notes: Vec<NoteId>,
     recent_position: Option<usize>,
     last_editor_note: Option<NoteId>,
+    /// Format ▸ Font ▸ Copy Style/Paste Style.
+    copied_style: Option<CopiedStyle>,
+    /// Format ▸ Maths Results / the toolbar's maths-results button.
+    maths_results_mode: MathsResultsMode,
+    /// View ▸ Show Highlights: whether Format ▸ Font ▸ Highlight spans draw
+    /// their yellow background. The `==marker==` stays in the body either
+    /// way; this only hides the visual effect.
+    show_highlights: bool,
+    /// Notes ▸ Settings… ▸ Use dark backgrounds for note content: the
+    /// baseline every note's own Format ▸ Show Note with Light Background
+    /// choice (`light_background_notes`) flips from. `false` (dark) matches
+    /// Lulo's behaviour before this setting existed.
+    light_background_default: bool,
+    /// File ▸ Lock Note / Notes ▸ Settings… ▸ Locked notes. See
+    /// `view_model::LockDialog`'s doc comment for why this is session-only.
+    notes_password_hash: Option<[u8; 32]>,
+    locked_notes: BTreeSet<NoteId>,
+    /// Locked notes unlocked (password accepted) earlier in this session;
+    /// Application ▸ Close All Locked Notes clears it.
+    unlocked_this_session: BTreeSet<NoteId>,
+    lock_dialog: Option<LockDialog>,
+    lock_password_input: Entity<InputState>,
+    /// File ▸ New Smart Folder / New Smart Folder with Tag Selection. See
+    /// `view_model::SmartFolder`'s doc comment for why this is session-only.
+    smart_folders: Vec<SmartFolder>,
+    next_smart_folder_id: u64,
+    /// The selected Smart Folder's id, if any; narrows the note list by its
+    /// tag on top of the ordinary folder selection.
+    smart_folder_filter: Option<u64>,
+    /// `Some(prefill)` while the "name this Smart Folder" dialog is open.
+    smart_folder_dialog: Option<String>,
+    smart_folder_name_input: Entity<InputState>,
+    /// View ▸ Customise Toolbar…
+    hidden_toolbar_items: BTreeSet<ToolbarItem>,
+    customise_toolbar_open: bool,
+    /// Edit ▸ Attach File…: `(note id, chip filename) -> chosen path`. The
+    /// chip text itself (`📎 filename`) is a plain line in the note's
+    /// Markdown body, so it is durable; only the clickable "open this path"
+    /// behaviour is session-only (see docs/parity.md).
+    attachment_chip_paths:
+        std::collections::BTreeMap<NoteId, std::collections::BTreeMap<String, std::path::PathBuf>>,
+    /// Notes ▸ Settings… ▸ New notes start with:
+    new_note_body_style: NewNoteBodyStyle,
+    /// Notes ▸ Settings… ▸ Automatically sort ticked items.
+    auto_sort_ticked_items: bool,
+    /// Help ▸ Using Smart Folders/Using Tags: `Some(body text)` while the
+    /// local help alert is open (NOT-MENU-065/066).
+    notes_help: Option<&'static str>,
+    /// Edit ▸ Rename Attachment…: `Some((id, expected revision))` while the
+    /// rename dialog is open for that attachment.
+    attachment_rename: Option<(AttachmentId, u64)>,
+    attachment_rename_input: Entity<InputState>,
 }
 
 impl NotesView {
+    /// Format ▸ Show Note with Light Background flips this note's own
+    /// membership in `light_background_notes` regardless of the global
+    /// default, so the set always means "notes that differ from the
+    /// current Notes ▸ Settings… ▸ Use dark backgrounds for note content
+    /// baseline" rather than "notes forced light": changing the global
+    /// default elsewhere never needs to rewrite this set.
     fn note_has_light_background(&self) -> bool {
-        self.session
-            .selected_note()
-            .is_some_and(|note| self.light_background_notes.contains(&note.id))
+        self.session.selected_note().is_some_and(|note| {
+            self.light_background_default ^ self.light_background_notes.contains(&note.id)
+        })
     }
 
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -353,6 +440,28 @@ impl NotesView {
             recent_notes: Vec::new(),
             recent_position: None,
             last_editor_note: None,
+            copied_style: None,
+            maths_results_mode: MathsResultsMode::default(),
+            show_highlights: true,
+            light_background_default: false,
+            notes_password_hash: None,
+            locked_notes: BTreeSet::new(),
+            unlocked_this_session: BTreeSet::new(),
+            lock_dialog: None,
+            lock_password_input: inputs.lock_password,
+            smart_folders: Vec::new(),
+            next_smart_folder_id: 1,
+            smart_folder_filter: None,
+            smart_folder_dialog: None,
+            smart_folder_name_input: inputs.smart_folder_name,
+            hidden_toolbar_items: BTreeSet::new(),
+            customise_toolbar_open: false,
+            attachment_chip_paths: std::collections::BTreeMap::new(),
+            new_note_body_style: NewNoteBodyStyle::default(),
+            auto_sort_ticked_items: false,
+            notes_help: None,
+            attachment_rename: None,
+            attachment_rename_input: inputs.attachment_rename,
         };
 
         view.start_workers(window, cx);

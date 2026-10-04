@@ -1,18 +1,22 @@
 //! Notes ▸ Settings: controls backed by the library's sort order and the
-//! editor's current text scale.
+//! editor's current text scale, plus the session-only preferences
+//! documented on `NotesView`'s own fields (`light_background_default`,
+//! `new_note_body_style`, `auto_sort_ticked_items`) and the locked-notes
+//! password (`view_model::LockDialog`).
 
 use gpui::{
     div, px, App, AppContext as _, Context, Entity, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Window,
-    WindowHandle,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render,
+    StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
 use rmac_notes_store::SortOrder;
-use rmac_ui::{Button, Checkbox, Root, StyledExt as _};
+use rmac_ui::{Button, Checkbox, Root, Slider, SliderEvent, SliderState, StyledExt as _};
 
+use crate::view_model::NewNoteBodyStyle;
 use crate::{NotesView, ShowSettings};
 
-const WIDTH: f32 = 456.0;
-const HEIGHT: f32 = 310.0;
+const WIDTH: f32 = 480.0;
+const HEIGHT: f32 = 600.0;
 
 thread_local! {
     static OPEN: std::cell::Cell<Option<WindowHandle<Root>>> = const { std::cell::Cell::new(None) };
@@ -53,6 +57,7 @@ pub(crate) fn close(cx: &mut App) {
 struct SettingsView {
     focus: FocusHandle,
     main: Entity<NotesView>,
+    text_size_slider: Entity<SliderState>,
 }
 
 impl SettingsView {
@@ -61,7 +66,25 @@ impl SettingsView {
         cx.observe(&main, |_, _, cx| cx.notify()).detach();
         let focus = cx.focus_handle();
         rmac_ui::register_menu_target(window, &focus, cx);
-        Self { focus, main }
+        let initial_zoom = main.read(cx).note_zoom;
+        let text_size_slider = cx.new(|_| {
+            SliderState::new()
+                .min(-5.0)
+                .max(12.0)
+                .step(1.0)
+                .default_value(f32::from(initial_zoom))
+        });
+        cx.subscribe(&text_size_slider, |this, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(value) = event {
+                this.set_zoom(value.start().round() as i8, cx);
+            }
+        })
+        .detach();
+        Self {
+            focus,
+            main,
+            text_size_slider,
+        }
     }
 
     fn set_sort(&mut self, order: SortOrder, cx: &mut Context<Self>) {
@@ -69,9 +92,24 @@ impl SettingsView {
         cx.notify();
     }
 
-    fn change_zoom(&mut self, delta: i8, cx: &mut Context<Self>) {
-        self.main.update(cx, |notes, cx| {
+    fn change_zoom(&mut self, delta: i8, window: &mut Window, cx: &mut Context<Self>) {
+        let zoom = self.main.update(cx, |notes, cx| {
             notes.note_zoom = (notes.note_zoom + delta).clamp(-5, 12);
+            cx.notify();
+            notes.note_zoom
+        });
+        self.text_size_slider.update(cx, |slider, cx| {
+            slider.set_value(f32::from(zoom), window, cx);
+        });
+        cx.notify();
+    }
+
+    /// From the slider's own drag, which already carries the clamped value;
+    /// unlike `change_zoom` this never needs to push a value back into the
+    /// slider itself.
+    fn set_zoom(&mut self, zoom: i8, cx: &mut Context<Self>) {
+        self.main.update(cx, |notes, cx| {
+            notes.note_zoom = zoom.clamp(-5, 12);
             cx.notify();
         });
         cx.notify();
@@ -80,6 +118,62 @@ impl SettingsView {
     fn set_group_by_date(&mut self, value: bool, cx: &mut Context<Self>) {
         self.main.update(cx, |notes, cx| {
             notes.group_notes_by_date = value;
+            cx.notify();
+        });
+        cx.notify();
+    }
+
+    /// Notes ▸ Settings… ▸ Automatically sort ticked items.
+    fn set_auto_sort_ticked_items(&mut self, value: bool, cx: &mut Context<Self>) {
+        self.main.update(cx, |notes, cx| {
+            notes.auto_sort_ticked_items = value;
+            cx.notify();
+        });
+        cx.notify();
+    }
+
+    /// Notes ▸ Settings… ▸ Use dark backgrounds for note content: checked
+    /// means dark, so `light_background_default` (true = light) is the
+    /// checkbox's own inverse.
+    fn set_dark_backgrounds(&mut self, checked: bool, cx: &mut Context<Self>) {
+        self.main.update(cx, |notes, cx| {
+            notes.light_background_default = !checked;
+            cx.notify();
+        });
+        cx.notify();
+    }
+
+    fn set_new_note_body_style(&mut self, style: NewNoteBodyStyle, cx: &mut Context<Self>) {
+        self.main.update(cx, |notes, cx| {
+            notes.new_note_body_style = style;
+            cx.notify();
+        });
+        cx.notify();
+    }
+
+    fn begin_change_password(&mut self, cx: &mut Context<Self>) {
+        self.main
+            .update(cx, |notes, cx| notes.begin_change_password(cx));
+        cx.notify();
+    }
+
+    fn begin_reset_password(&mut self, cx: &mut Context<Self>) {
+        self.main
+            .update(cx, |notes, cx| notes.begin_reset_password(cx));
+        cx.notify();
+    }
+
+    /// Notes ▸ Settings… ▸ Locked notes ▸ Help: real guidance, local to
+    /// Notes rather than an online help article Lulo has no site to host
+    /// (same choice as Help ▸ Using Smart Folders/Using Tags).
+    fn show_locked_notes_help(&mut self, cx: &mut Context<Self>) {
+        self.main.update(cx, |notes, cx| {
+            notes.notes_help = Some(
+                "Lock a note from File ▸ Lock Note. The one password you set here locks and \
+                 unlocks every locked note for this session; Notes has no Touch ID or account \
+                 password service on Linux, so it is never saved and is forgotten when Notes \
+                 closes.",
+            );
             cx.notify();
         });
         cx.notify();
@@ -96,6 +190,9 @@ impl Render for SettingsView {
             .unwrap_or(SortOrder::Edited);
         let zoom = notes.note_zoom;
         let group_by_date = notes.group_notes_by_date;
+        let auto_sort_ticked_items = notes.auto_sort_ticked_items;
+        let dark_backgrounds = !notes.light_background_default;
+        let new_note_body_style = notes.new_note_body_style;
         div()
             .track_focus(&self.focus)
             .key_context("Notes")
@@ -118,6 +215,10 @@ impl Render for SettingsView {
             ))
             .child(
                 div()
+                    .id("notes-settings-scroll")
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
                     .v_flex()
                     .gap_4()
                     .px_4()
@@ -143,31 +244,161 @@ impl Render for SettingsView {
                         ),
                     )
                     .child(
-                        div().v_flex().gap_2().child("Text size:").child(
+                        div().v_flex().gap_2().child("New notes start with:").child(
+                            div().flex().gap_2().children(
+                                [
+                                    NewNoteBodyStyle::Title,
+                                    NewNoteBodyStyle::Heading,
+                                    NewNoteBodyStyle::Body,
+                                ]
+                                .into_iter()
+                                .map(|style| {
+                                    Button::new(
+                                        format!("settings-new-note-{}", style.label()),
+                                        style.label(),
+                                    )
+                                    .small()
+                                    .selected(new_note_body_style == style)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.set_new_note_body_style(style, cx);
+                                    }))
+                                }),
+                            ),
+                        ),
+                    )
+                    .child(
+                        div().v_flex().gap_2().child("Default text size:").child(
                             div()
                                 .flex()
                                 .items_center()
                                 .gap_2()
                                 .child(Button::new("notes-settings-smaller", "−").small().on_click(
-                                    cx.listener(|this, _, _, cx| this.change_zoom(-1, cx)),
+                                    cx.listener(|this, _, window, cx| this.change_zoom(-1, window, cx)),
+                                ))
+                                .child(
+                                    div()
+                                        .w(px(220.0))
+                                        .child(Slider::new(&self.text_size_slider)),
+                                )
+                                .child(Button::new("notes-settings-larger", "+").small().on_click(
+                                    cx.listener(|this, _, window, cx| this.change_zoom(1, window, cx)),
                                 ))
                                 .child(
                                     div()
                                         .w(px(40.0))
                                         .child(format!("{}%", 100 + zoom as i32 * 10)),
-                                )
-                                .child(Button::new("notes-settings-larger", "+").small().on_click(
-                                    cx.listener(|this, _, _, cx| this.change_zoom(1, cx)),
-                                )),
+                                ),
                         ),
                     )
                     .child(
-                        Checkbox::new("notes-settings-group-by-date")
-                            .label("Group notes by date")
-                            .checked(group_by_date)
+                        div()
+                            .v_flex()
+                            .gap_1()
+                            .child(
+                                Checkbox::new("notes-settings-group-by-date")
+                                    .label("Group notes by date")
+                                    .checked(group_by_date)
+                                    .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                        this.set_group_by_date(*value, cx);
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .text_size(rmac_ui::text_px(11.0))
+                                    .text_color(rmac_ui::mac::text_secondary())
+                                    .child("When sorted by Date Edited or Date Created, group notes by date."),
+                            ),
+                    )
+                    .child(
+                        div().v_flex().gap_1().child(
+                            Checkbox::new("settings-auto-sort-ticked")
+                                .label("Automatically sort ticked items")
+                                .checked(auto_sort_ticked_items)
+                                .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                    this.set_auto_sort_ticked_items(*value, cx);
+                                })),
+                        )
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(rmac_ui::mac::text_secondary())
+                                .child("Automatically move checklist items to the bottom of the list as they are ticked off."),
+                        ),
+                    )
+                    .child(
+                        Checkbox::new("settings-dark-backgrounds")
+                            .label("Use dark backgrounds for note content")
+                            .checked(dark_backgrounds)
                             .on_change(cx.listener(|this, value: &bool, _, cx| {
-                                this.set_group_by_date(*value, cx);
+                                this.set_dark_backgrounds(*value, cx);
                             })),
+                    )
+                    .child(
+                        div()
+                            .v_flex()
+                            .gap_2()
+                            .p_3()
+                            .rounded(px(rmac_ui::mac::radius_control()))
+                            .bg(rmac_ui::mac::control_fill())
+                            .child("Default account:")
+                            .child(
+                                // Lulo has exactly one notes account (no
+                                // iCloud, no Exchange), so the Mac's
+                                // account-choosing popup is shown with its
+                                // one real value rather than faked choices.
+                                Button::new("settings-default-account", "On This PC")
+                                    .small()
+                                    .disabled(true),
+                            )
+                            .child("Locked notes:")
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_2()
+                                    .child(
+                                        Button::new("settings-change-password", "Change Password…")
+                                            .small()
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.begin_change_password(cx);
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("settings-reset-password", "Reset Password…")
+                                            .small()
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.begin_reset_password(cx);
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("settings-locked-notes-help", "Help")
+                                            .small()
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.show_locked_notes_help(cx);
+                                            })),
+                                    ),
+                            )
+                            .child(
+                                // Lulo has no Apple ID/Keychain password to
+                                // offer as the alternative, so this is the
+                                // one real, always-selected choice rather
+                                // than a faked picker (docs/parity.md).
+                                Button::new("settings-use-custom-password", "Use Custom Password")
+                                    .small()
+                                    .selected(true)
+                                    .disabled(true),
+                            )
+                            .child(
+                                Checkbox::new("settings-enable-on-my-mac")
+                                    .label("Enable the On My Mac account")
+                                    .checked(true)
+                                    .disabled(true),
+                            )
+                            .child(
+                                div()
+                                    .text_size(rmac_ui::text_px(11.0))
+                                    .text_color(rmac_ui::mac::text_secondary())
+                                    .child("Notes in On My Mac are stored on this computer. Disabling this account doesn’t affect your other notes."),
+                            ),
                     ),
             )
     }

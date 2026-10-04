@@ -23,6 +23,7 @@ rmac-portal.workspace = true
 rmac-print.workspace = true
 rmac-storage.workspace = true
 chrono.workspace = true
+sha2.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 raw-window-handle.workspace = true

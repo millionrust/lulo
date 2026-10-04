@@ -146,10 +146,50 @@ impl NotesView {
         )
     }
 
+    /// File ▸ Lock Note: hides the title, body, tags and attachments of a
+    /// locked note this session has not unlocked, instead of rendering
+    /// them disabled-but-present — a real content gate, not a cosmetic one.
+    fn render_locked_note(&self, note_id: NoteId, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(mac::window())
+            .child(
+                div()
+                    .w(px(320.0))
+                    .v_flex()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(32.0))
+                            .text_color(mac::text_secondary())
+                            .child("🔒"),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(15.0))
+                            .font_weight(mac::SEMIBOLD)
+                            .child("This note is locked"),
+                    )
+                    .child(
+                        Button::new("unlock-note", "View Note…").on_click(cx.listener(
+                            move |this, _, window, cx| this.request_unlock(note_id, window, cx),
+                        )),
+                    ),
+            )
+            .into_any_element()
+    }
+
     pub(super) fn render_editor(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(note) = self.session.selected_note() else {
             return centered_state("No Note Selected", "Choose a note or create a new one.");
         };
+        if self.locked_notes.contains(&note.id) && !self.unlocked_this_session.contains(&note.id) {
+            return self.render_locked_note(note.id, cx);
+        }
         let editable =
             self.is_interactive_ready() && !note.deleted && !self.markdown_preview_visible;
         let light_background = self.note_has_light_background();
@@ -347,7 +387,17 @@ impl NotesView {
                 )
                 .into_any_element(),
             MarkdownPreviewState::Ready { document, .. } => {
-                render_markdown_document(document, self.note_has_light_background(), cx)
+                let chips = self
+                    .session
+                    .selected_note()
+                    .and_then(|note| self.attachment_chip_paths.get(&note.id));
+                render_markdown_document(
+                    document,
+                    self.note_has_light_background(),
+                    self.show_highlights,
+                    chips,
+                    cx,
+                )
             }
         }
     }

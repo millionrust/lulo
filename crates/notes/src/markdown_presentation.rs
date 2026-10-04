@@ -1,11 +1,13 @@
 //! Read-only Markdown preview projection for Notes.
 
 use gpui::{
-    div, font, prelude::FluentBuilder as _, px, AnyElement, Context, InteractiveElement as _,
-    IntoElement, ParentElement, Role, StatefulInteractiveElement as _, StrikethroughStyle, Styled,
-    StyledText, TextRun, Toggled,
+    div, font, prelude::FluentBuilder as _, px, AnyElement, Context, FontFeatures,
+    InteractiveElement as _, IntoElement, ParentElement, Role, StatefulInteractiveElement as _,
+    StrikethroughStyle, Styled, StyledText, TextRun, Toggled, UnderlineStyle,
 };
-use rmac_notes_storage::{MarkdownPreviewBlock, MarkdownPreviewBlockKind, MarkdownPreviewDocument};
+use rmac_notes_storage::{
+    MarkdownPreviewBlock, MarkdownPreviewBlockKind, MarkdownPreviewDocument, TextAlign,
+};
 use rmac_ui::{mac, StyledExt as _};
 
 use super::{centered_state, NotesView};
@@ -13,6 +15,8 @@ use super::{centered_state, NotesView};
 pub(super) fn render_markdown_document(
     document: &MarkdownPreviewDocument,
     light_background: bool,
+    show_highlights: bool,
+    chips: Option<&std::collections::BTreeMap<String, std::path::PathBuf>>,
     cx: &mut Context<NotesView>,
 ) -> AnyElement {
     if document.blocks().is_empty() {
@@ -44,18 +48,40 @@ pub(super) fn render_markdown_document(
                     ),
             )
         })
-        .children(
-            document
-                .blocks()
-                .iter()
-                .map(|block| render_markdown_block(block, light_background, cx)),
-        )
+        .children(document.blocks().iter().map(|block| {
+            render_markdown_block(block, light_background, show_highlights, chips, cx)
+        }))
         .into_any_element()
+}
+
+/// Format ▸ Text ▸ Align Left/Centre/Align Right (NOT-MENU-042/043/045): a
+/// paragraph or heading's own horizontal position, via flex `justify_*`
+/// rather than a hard-coded margin. Left needs no wrapper (it is the
+/// layout's own default), which also keeps the common case's element tree
+/// no deeper than before this feature existed.
+fn aligned(content: impl IntoElement, align: TextAlign) -> AnyElement {
+    match align {
+        TextAlign::Left => content.into_any_element(),
+        TextAlign::Center => div()
+            .w_full()
+            .flex()
+            .justify_center()
+            .child(content)
+            .into_any_element(),
+        TextAlign::Right => div()
+            .w_full()
+            .flex()
+            .justify_end()
+            .child(content)
+            .into_any_element(),
+    }
 }
 
 fn render_markdown_block(
     block: &MarkdownPreviewBlock,
     light_background: bool,
+    show_highlights: bool,
+    chips: Option<&std::collections::BTreeMap<String, std::path::PathBuf>>,
     cx: &mut Context<NotesView>,
 ) -> AnyElement {
     let light = rmac_ui::theme::ThemeTokens::light_default().colors;
@@ -66,6 +92,39 @@ fn render_markdown_block(
             .my_2()
             .bg(mac::separator())
             .into_any_element();
+    }
+    // Edit ▸ Attach File… (NOT-MENU-007): a `📎 filename` chip line with a
+    // path this session still remembers renders as a clickable row instead
+    // of plain text.
+    if let MarkdownPreviewBlockKind::Paragraph(_) = block.kind() {
+        if let Some(name) = block.text().strip_prefix("📎 ") {
+            if let Some(path) = chips.and_then(|chips| chips.get(name)) {
+                let path = path.clone();
+                return div()
+                    .id(gpui::SharedString::from(format!(
+                        "notes-attachment-chip-{name}"
+                    )))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .py_1()
+                    .rounded(px(rmac_ui::mac::radius_control()))
+                    .bg(mac::control_fill())
+                    .cursor_pointer()
+                    .child("📎")
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(mac::notes_accent())
+                            .child(name.to_string()),
+                    )
+                    .on_click(cx.listener(move |_, _, _, cx| {
+                        NotesView::open_attachment_chip_path(path.clone(), cx);
+                    }))
+                    .into_any_element();
+            }
+        }
     }
     let mut text_runs = Vec::with_capacity(block.runs().len());
     for run in block.runs() {
@@ -80,6 +139,11 @@ fn render_markdown_block(
         }
         if style.italic {
             text_font = text_font.italic();
+        }
+        if style.superscript {
+            text_font.features = FontFeatures(std::sync::Arc::new(vec![("sups".into(), 1)]));
+        } else if style.subscript {
+            text_font.features = FontFeatures(std::sync::Arc::new(vec![("subs".into(), 1)]));
         }
         let range = run.range();
         text_runs.push(TextRun {
@@ -98,14 +162,26 @@ fn render_markdown_block(
             } else {
                 mac::text()
             },
-            background_color: style.code.then(|| {
-                if light_background {
-                    light.control_fill.hsla()
-                } else {
-                    mac::control_fill()
-                }
+            // Format ▸ Font ▸ Highlight (NOT-MENU-030): the Mac's default
+            // highlight colour is the same yellow as Notes' own accent, so
+            // the existing `notes_accent` design token is reused here
+            // rather than a new hard-coded colour.
+            background_color: if style.highlight && show_highlights {
+                Some(mac::notes_accent().opacity(0.35))
+            } else {
+                style.code.then(|| {
+                    if light_background {
+                        light.control_fill.hsla()
+                    } else {
+                        mac::control_fill()
+                    }
+                })
+            },
+            underline: style.underline.then(|| UnderlineStyle {
+                thickness: px(1.0),
+                color: None,
+                wavy: false,
             }),
-            underline: None,
             strikethrough: style.strikethrough.then(|| StrikethroughStyle {
                 thickness: px(1.0),
                 color: None,
@@ -118,22 +194,25 @@ fn render_markdown_block(
         .line_height(rmac_ui::text_px(24.0))
         .child(styled);
     match block.kind() {
-        MarkdownPreviewBlockKind::Paragraph => content.into_any_element(),
-        MarkdownPreviewBlockKind::Heading(depth) => content
-            .text_size(rmac_ui::text_px(match depth {
-                1 => 28.0,
-                2 => 23.0,
-                3 => 20.0,
-                _ => 17.0,
-            }))
-            .line_height(rmac_ui::text_px(match depth {
-                1 => 34.0,
-                2 => 29.0,
-                3 => 26.0,
-                _ => 23.0,
-            }))
-            .font_weight(mac::BOLD)
-            .into_any_element(),
+        MarkdownPreviewBlockKind::Paragraph(align) => aligned(content, align).into_any_element(),
+        MarkdownPreviewBlockKind::Heading(depth, align) => aligned(
+            content
+                .text_size(rmac_ui::text_px(match depth {
+                    1 => 28.0,
+                    2 => 23.0,
+                    3 => 20.0,
+                    _ => 17.0,
+                }))
+                .line_height(rmac_ui::text_px(match depth {
+                    1 => 34.0,
+                    2 => 29.0,
+                    3 => 26.0,
+                    _ => 23.0,
+                }))
+                .font_weight(mac::BOLD),
+            align,
+        )
+        .into_any_element(),
         MarkdownPreviewBlockKind::BlockQuote => div()
             .pl_3()
             .border_l_2()

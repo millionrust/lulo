@@ -1,6 +1,7 @@
 //! Notes confirmation, import, export, and move dialog projection.
 
 use super::*;
+use rmac_ui::Checkbox;
 
 impl NotesView {
     pub(super) fn render_purge_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -825,5 +826,313 @@ impl NotesView {
                 )
             }
         }
+    }
+
+    /// File ▸ Lock Note / Notes ▸ Settings… ▸ Change/Reset Password…. See
+    /// `view_model::LockDialog`'s doc comment for why the password is
+    /// session-only.
+    pub(super) fn render_lock_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
+
+        let dialog = self.lock_dialog?;
+        match dialog {
+            LockDialog::SetPassword(_) => {
+                let card = div()
+                    .w(px(360.0))
+                    .p(px(20.0))
+                    .v_flex()
+                    .gap_3()
+                    .rounded(px(rmac_ui::mac::radius_card()))
+                    .bg(mac::window())
+                    .border_1()
+                    .border_color(mac::separator())
+                    .shadow_xl()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(15.0))
+                            .font_weight(mac::BOLD)
+                            .child("Set the Locked Notes Password"),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(mac::text_secondary())
+                            .child(
+                                "This one password locks and unlocks every locked note for this \
+                                 session. Notes has no Touch ID or account password service on \
+                                 Linux, so it is not saved anywhere and is forgotten when Notes \
+                                 closes.",
+                            ),
+                    )
+                    .child(TextField::new(&self.lock_password_input).cleanable(true))
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap_2()
+                            .child(
+                                rmac_ui::dialog_button("cancel-lock-dialog", "Cancel", Normal)
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.cancel_lock_dialog(cx)),
+                                    ),
+                            )
+                            .child(
+                                rmac_ui::dialog_button(
+                                    "confirm-lock-dialog",
+                                    "Set Password",
+                                    Primary,
+                                )
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.confirm_lock_dialog(cx)),
+                                ),
+                            ),
+                    );
+                Some(
+                    rmac_ui::dialog("lock-password-dialog", card)
+                        .restore_focus_to(self.focus.clone())
+                        .into_any_element(),
+                )
+            }
+            LockDialog::Unlock(note_id) => {
+                let title = self
+                    .session
+                    .snapshot()
+                    .and_then(|snapshot| snapshot.notes.iter().find(|note| note.id == note_id))
+                    .map_or_else(
+                        || "this note".to_string(),
+                        |note| display_title(&note.title).to_string(),
+                    );
+                let card = div()
+                    .w(px(340.0))
+                    .p(px(20.0))
+                    .v_flex()
+                    .gap_3()
+                    .rounded(px(rmac_ui::mac::radius_card()))
+                    .bg(mac::window())
+                    .border_1()
+                    .border_color(mac::separator())
+                    .shadow_xl()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(15.0))
+                            .font_weight(mac::BOLD)
+                            .child(format!("Enter the password to view “{title}”")),
+                    )
+                    .child(TextField::new(&self.lock_password_input).cleanable(true))
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap_2()
+                            .child(
+                                rmac_ui::dialog_button("cancel-lock-dialog", "Cancel", Normal)
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.cancel_lock_dialog(cx)),
+                                    ),
+                            )
+                            .child(
+                                rmac_ui::dialog_button("confirm-lock-dialog", "Unlock", Primary)
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.confirm_lock_dialog(cx)),
+                                    ),
+                            ),
+                    );
+                Some(
+                    rmac_ui::dialog("lock-unlock-dialog", card)
+                        .restore_focus_to(self.focus.clone())
+                        .into_any_element(),
+                )
+            }
+            LockDialog::ConfirmReset => Some(
+                rmac_ui::alert(
+                    "Reset the locked notes password?",
+                    "Every locked note unlocks immediately, and the password is forgotten. You \
+                     will need to lock notes again with a new password.",
+                    vec![
+                        rmac_ui::dialog_button("cancel-lock-dialog", "Cancel", Normal)
+                            .on_click(cx.listener(|this, _, _, cx| this.cancel_lock_dialog(cx)))
+                            .into_any_element(),
+                        rmac_ui::dialog_button(
+                            "confirm-lock-dialog",
+                            "Reset Password",
+                            Destructive,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.confirm_lock_dialog(cx)))
+                        .into_any_element(),
+                    ],
+                )
+                .into_any_element(),
+            ),
+        }
+    }
+
+    /// File ▸ New Smart Folder / New Smart Folder with Tag Selection. See
+    /// `view_model::SmartFolder`'s doc comment for why this is session-only.
+    pub(super) fn render_smart_folder_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::{Normal, Primary};
+
+        self.smart_folder_dialog.as_ref()?;
+        let card = div()
+            .w(px(340.0))
+            .p(px(20.0))
+            .v_flex()
+            .gap_3()
+            .rounded(px(rmac_ui::mac::radius_card()))
+            .bg(mac::window())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(15.0))
+                    .font_weight(mac::BOLD)
+                    .child("New Smart Folder"),
+            )
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child("Collects every note tagged with this name."),
+            )
+            .child(TextField::new(&self.smart_folder_name_input).cleanable(true))
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button("cancel-smart-folder", "Cancel", Normal).on_click(
+                            cx.listener(|this, _, _, cx| this.cancel_smart_folder_dialog(cx)),
+                        ),
+                    )
+                    .child(
+                        rmac_ui::dialog_button("commit-smart-folder", "Create", Primary)
+                            .on_click(cx.listener(|this, _, _, cx| this.commit_smart_folder(cx))),
+                    ),
+            );
+        Some(
+            rmac_ui::dialog("smart-folder-dialog", card)
+                .restore_focus_to(self.focus.clone())
+                .into_any_element(),
+        )
+    }
+
+    /// Edit ▸ Rename Attachment…
+    pub(super) fn render_attachment_rename_dialog(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::{Normal, Primary};
+
+        self.attachment_rename?;
+        let card = div()
+            .w(px(340.0))
+            .p(px(20.0))
+            .v_flex()
+            .gap_3()
+            .rounded(px(rmac_ui::mac::radius_card()))
+            .bg(mac::window())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(15.0))
+                    .font_weight(mac::BOLD)
+                    .child("Rename Attachment"),
+            )
+            .child(TextField::new(&self.attachment_rename_input).cleanable(true))
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button("cancel-attachment-rename", "Cancel", Normal)
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.cancel_attachment_rename(cx)),
+                            ),
+                    )
+                    .child(
+                        rmac_ui::dialog_button("commit-attachment-rename", "Rename", Primary)
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.commit_attachment_rename(cx)),
+                            ),
+                    ),
+            );
+        Some(
+            rmac_ui::dialog("attachment-rename-dialog", card)
+                .restore_focus_to(self.focus.clone())
+                .into_any_element(),
+        )
+    }
+
+    /// Help ▸ Using Smart Folders / Using Tags.
+    pub(super) fn render_notes_help_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::Primary;
+
+        let body = self.notes_help?;
+        Some(
+            rmac_ui::alert(
+                "Notes Help",
+                body,
+                vec![rmac_ui::dialog_button("dismiss-notes-help", "OK", Primary)
+                    .on_click(cx.listener(|this, _, _, cx| this.dismiss_notes_help(cx)))
+                    .into_any_element()],
+            )
+            .into_any_element(),
+        )
+    }
+
+    /// View ▸ Customise Toolbar…: a simple show/hide checklist for the
+    /// toolbar's optional buttons; Format, Search and Compose, like the
+    /// Mac's own undraggable items, are never offered.
+    pub(super) fn render_customise_toolbar_dialog(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::Primary;
+
+        if !self.customise_toolbar_open {
+            return None;
+        }
+        let rows = ToolbarItem::ALL.into_iter().map(|item| {
+            let hidden = self.hidden_toolbar_items.contains(&item);
+            Checkbox::new(("customise-toolbar", item as u8 as u64))
+                .label(item.label())
+                .checked(!hidden)
+                .on_change(cx.listener(move |this, _: &bool, _, cx| {
+                    this.toggle_hidden_toolbar_item(item, cx);
+                }))
+                .into_any_element()
+        });
+        let card = div()
+            .w(px(300.0))
+            .p(px(20.0))
+            .v_flex()
+            .gap_3()
+            .rounded(px(rmac_ui::mac::radius_card()))
+            .bg(mac::window())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(15.0))
+                    .font_weight(mac::BOLD)
+                    .child("Customise Toolbar"),
+            )
+            .child(div().v_flex().gap_2().children(rows))
+            .child(
+                div().flex().justify_end().child(
+                    rmac_ui::dialog_button("close-customise-toolbar", "Done", Primary)
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_customise_toolbar(cx))),
+                ),
+            );
+        Some(
+            rmac_ui::dialog("customise-toolbar-dialog", card)
+                .restore_focus_to(self.focus.clone())
+                .into_any_element(),
+        )
     }
 }

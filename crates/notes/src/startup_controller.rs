@@ -8,6 +8,9 @@ pub(super) struct NotesInputs {
     pub(super) body: Entity<InputState>,
     pub(super) note_find: Entity<InputState>,
     pub(super) note_replace: Entity<InputState>,
+    pub(super) lock_password: Entity<InputState>,
+    pub(super) smart_folder_name: Entity<InputState>,
+    pub(super) attachment_rename: Entity<InputState>,
     pub(super) focus: FocusHandle,
 }
 
@@ -108,6 +111,30 @@ impl NotesView {
             KeyBinding::new("shift-cmd-.", ZoomIn, Some("Notes")),
             KeyBinding::new("shift-cmd-,", ZoomOut, Some("Notes")),
             KeyBinding::new("shift-cmd-0", ZoomReset, Some("Notes")),
+            KeyBinding::new("cmd-u", ToggleUnderline, Some("Notes")),
+            KeyBinding::new("shift-cmd-e", ToggleHighlight, Some("Notes")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_IN.keystroke,
+                FontBigger,
+                Some("Notes"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_IN_ALTERNATE.keystroke,
+                FontBigger,
+                Some("Notes"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_OUT.keystroke,
+                FontSmaller,
+                Some("Notes"),
+            ),
+            KeyBinding::new("alt-cmd-c", CopyStyle, Some("Notes")),
+            KeyBinding::new("alt-cmd-v", PasteStyle, Some("Notes")),
+            KeyBinding::new("cmd-{", AlignLeft, Some("Notes")),
+            KeyBinding::new("cmd-|", AlignCentre, Some("Notes")),
+            KeyBinding::new("cmd-}", AlignRight, Some("Notes")),
+            KeyBinding::new("ctrl-cmd-i", ToggleShowHighlights, Some("Notes")),
+            KeyBinding::new("shift-cmd-a", AttachFile, Some("Notes")),
             // ⌘W closes the window through the same review as the red
             // button (pending changes, open choosers, running imports).
             KeyBinding::new(
@@ -124,6 +151,15 @@ impl NotesView {
         let body = rmac_editor::multiline("Note", window, cx);
         let note_find = cx.new(|cx| InputState::new(window, cx).placeholder("Find in Note"));
         let note_replace = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
+        let lock_password = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Password")
+                .masked(true)
+        });
+        let smart_folder_name =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Smart Folder Name"));
+        let attachment_rename =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Attachment Name"));
         cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 this.schedule_current_edit(cx);
@@ -188,6 +224,9 @@ impl NotesView {
             body,
             note_find,
             note_replace,
+            lock_password,
+            smart_folder_name,
+            attachment_rename,
             focus,
         }
     }

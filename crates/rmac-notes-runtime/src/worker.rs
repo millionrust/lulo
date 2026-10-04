@@ -82,6 +82,11 @@ pub enum LibraryAction {
         attachment_id: AttachmentId,
         expected_attachment_revision: u64,
     },
+    RenameAttachment {
+        attachment_id: AttachmentId,
+        expected_attachment_revision: u64,
+        display_name: String,
+    },
     DeleteNotePermanently {
         note_id: NoteId,
         expected_revision: u64,
@@ -107,6 +112,7 @@ impl fmt::Debug for LibraryAction {
             Self::ImportTextNote { .. } => "ImportTextNote([private source])",
             Self::RemoveAttachmentReference { .. } => "RemoveAttachmentReference",
             Self::CollectOrphanedAttachment { .. } => "CollectOrphanedAttachment",
+            Self::RenameAttachment { .. } => "RenameAttachment([private])",
             Self::DeleteNotePermanently { .. } => "DeleteNotePermanently",
             Self::EmptyTrash { .. } => "EmptyTrash",
         })
@@ -2464,6 +2470,13 @@ fn commit_action(
                 note_id,
                 attachment_id,
             }),
+        LibraryAction::RenameAttachment {
+            attachment_id,
+            expected_attachment_revision,
+            display_name,
+        } => transaction
+            .rename_attachment(attachment_id, expected_attachment_revision, display_name)
+            .map(|_| ActionResult::Changed),
         LibraryAction::CollectOrphanedAttachment {
             attachment_id,
             expected_attachment_revision,

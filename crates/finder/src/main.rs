@@ -158,12 +158,14 @@ impl StartupDestination {
     /// A folder opens as itself; any other existing item is revealed.
     fn for_item(item: &str, current_dir: Option<&Path>) -> Result<Self, String> {
         let path = item_path(item, current_dir)
-            .ok_or_else(|| format!("rmac-files cannot open “{item}”: not a local path"))?;
+            .ok_or_else(|| "rmac-files cannot open an item: not a local path".to_owned())?;
         match std::fs::metadata(&path) {
             Ok(metadata) if metadata.is_dir() => Ok(Self::Directory(path)),
             Ok(_) if path.parent().is_some() => Ok(Self::Reveal(path)),
-            Ok(_) => Err(format!("rmac-files cannot open “{item}”")),
-            Err(error) => Err(format!("rmac-files cannot open “{item}”: {error}")),
+            // The item names a private path and may hold control characters;
+            // it never reaches stderr (and so the journal).
+            Ok(_) => Err("rmac-files cannot open an item".to_owned()),
+            Err(error) => Err(format!("rmac-files cannot open an item: {}", error.kind())),
         }
     }
 

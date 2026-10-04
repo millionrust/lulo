@@ -1403,8 +1403,8 @@ mod linux_wayland {
             self.close_stack_popover(cx);
             cx.background_executor()
                 .spawn(async move {
-                    if let Err(error) = rmac_app_launch::open_item(path.clone()).await {
-                        eprintln!("could not open {path:?}: {error}");
+                    if let Err(error) = rmac_app_launch::open_item(path).await {
+                        eprintln!("rmac-dock: could not open a Stack item: {error}");
                     }
                 })
                 .detach();

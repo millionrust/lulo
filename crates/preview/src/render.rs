@@ -216,10 +216,10 @@ fn run(tool: &str, args: Vec<std::ffi::OsString>) -> Result<Vec<u8>, String> {
         let detail = detail.lines().next().unwrap_or("").trim();
         return Err(if detail.contains("Incorrect password") {
             "This PDF is password-protected. Preview can’t unlock PDFs yet.".to_owned()
-        } else if detail.is_empty() {
-            format!("{tool} failed ({})", output.status)
         } else {
-            detail.to_owned()
+            // Poppler's own message names the absolute file path and can carry
+            // bytes from the document; only the exit status leaves Preview.
+            format!("{tool} failed ({})", output.status)
         });
     }
     Ok(output.stdout)

@@ -571,3 +571,35 @@ fn parking_store_round_trips_through_disk() {
 
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn parking_store_save_leaves_no_temporary_sibling() {
+    let dir = std::env::temp_dir().join(format!(
+        "rmac-parking-dir-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("parking.json");
+
+    let mut store = ParkingStore::new();
+    store.record(WindowId(1), WorkspaceId(2));
+    store.save(&path).unwrap();
+    // A second write proves replacement (not append) through the same
+    // temp-sibling + fsync + rename path `rmac-storage` provides.
+    store.record(WindowId(5), WorkspaceId(6));
+    store.save(&path).unwrap();
+
+    let entries: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name())
+        .collect();
+    assert_eq!(entries, vec![std::ffi::OsString::from("parking.json")]);
+    assert_eq!(ParkingStore::load(&path), store);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

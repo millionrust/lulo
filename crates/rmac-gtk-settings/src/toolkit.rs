@@ -391,23 +391,14 @@ fn read_own_file(path: &Path) -> Result<Option<String>, Error> {
     }
 }
 
-fn write_atomic(path: &Path, contents: &str) -> Result<(), Error> {
+pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), Error> {
     let parent = path
         .parent()
         .ok_or_else(|| Error::new("write GTK settings", "the path has no parent directory"))?;
     fs::create_dir_all(parent)
         .map_err(|_| Error::new("write GTK settings", "the directory cannot be created"))?;
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| Error::new("write GTK settings", "the file name is not UTF-8"))?;
-    let temporary = parent.join(format!(".{name}.rmac-{}", std::process::id()));
-    fs::write(&temporary, contents)
-        .and_then(|()| fs::rename(&temporary, path))
-        .map_err(|_| {
-            let _ = fs::remove_file(&temporary);
-            Error::new("write GTK settings", "the file cannot be replaced")
-        })
+    rmac_storage::atomic_write(path, contents.as_bytes())
+        .map_err(|_| Error::new("write GTK settings", "the file cannot be replaced"))
 }
 
 fn config_home() -> Option<PathBuf> {

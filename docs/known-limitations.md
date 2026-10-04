@@ -16,13 +16,25 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   `EditableText` interface at all, so Spotlight, Terminal, Notes, and Files'
   search/rename fields cannot be **typed into** by assistive technology or a
   keyboard-injector script (real keyboard/pointer typing is unaffected). See
-  "Accessibility limits" below. A formal, owner-run Orca audit at 200% text
-  scaling (journey 9) has still not happened — only the owner can enable Orca.
-- The signed APT repository, clean native install, upgrade, rollback, and
-  uninstall evidence are not complete; this Beta ships `.deb` files you
+  "Accessibility limits" below. The automated Orca audit
+  (`scripts/a11y/orca_audit.py`) now covers 13 app and shell journeys,
+  including Calendar and Mail (parity row `ACC-32`); eleven findings remain
+  open (see `docs/accessibility-audit.md`). A formal, owner-run Orca audit at
+  200% text scaling (journey 9) has still not happened — only the owner can
+  enable Orca.
+- The signed APT repository is not ready; this Beta ships `.deb` files you
   install and later remove by hand (see "How to go back" in the release
   notes). Signed, automatic in-place updates over APT are not part of this
-  release.
+  release. Clean native install, upgrade, rollback, and uninstall evidence
+  does now exist: the disposable-install GitHub Actions station
+  (`.github/workflows/security-station.yml`, a fresh Ubuntu 26.04 VM) ran
+  the full package lifecycle — baseline install, upgrade, an interrupted
+  rollback and its recovery, remove, purge, reinstall, and a final purge —
+  with user data and the GNOME recovery session intact throughout (see
+  [security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md),
+  "package-lifecycle"). What's still missing is the owner's reference-laptop
+  run of the same lifecycle on real hardware and a real GitHub Actions
+  Release-tag run, not source or disposable-VM evidence.
 - Two owner-reported desktop/Dock bugs reproduce live but not in the nested
   test compositor, so they remain open and unverified-fixed: desktop icons
   can stay hidden until a click after login (parity row DESK-12), and the
@@ -30,10 +42,16 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   after a delete while its service keeps running (DOCK-27). Both are narrowed
   to "live session only" — if you hit either, a relaunch of the affected
   surface (or `niri msg action` as documented in Troubleshooting) recovers it.
-- Critical visual references, all Orca observations, performance traces,
-  chaos/soak runs, and the security review still need native candidate
-  evidence. No hardware station is yet certified for Alpha, Beta, or 1.0, and
-  this Beta has only been exercised on Intel graphics — **no NVIDIA hardware
+- Critical visual references and all Orca observations still need native
+  candidate evidence; no hardware station is yet certified for Alpha, Beta,
+  or 1.0. The 8-hour memory soak has run against release binaries on the
+  reference laptop and passed, with one tracked note: Files' private
+  footprint grew past its 16 MiB/8h growth budget before leveling off,
+  traced to two unbounded in-memory caches and fixed (bounded LRU caches,
+  parity row `MEM-03`), with the fix not yet re-run through the same 8-hour
+  soak to confirm the new ceiling in practice (see
+  [perf/reference-laptop-2026-10-04-memory-soak.md](perf/reference-laptop-2026-10-04-memory-soak.md)).
+  This Beta has only been exercised on Intel graphics — **no NVIDIA hardware
   has been tested**; treat NVIDIA/proprietary-driver systems as unverified.
   The owner decided on 2026-10-04 to ship Beta 1 without an NVIDIA test,
   because no NVIDIA machine is available; NVIDIA results are a later-Beta item.

@@ -1258,6 +1258,34 @@ class LuloRun:
         x, y = empty_viewport_point(box, self.window_origin())
         self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button="right")
 
+    # Facts backed by AccessKit's AT-SPI publish, which lags the GPUI frame
+    # that triggered it by a tick or two. A scenario's fixed post-step
+    # settle covers that most of the time, but under CI load (several
+    # scenario shards and suites sharing the runner) the publish can lag
+    # past it, so a single sample occasionally reads stale state: an alert
+    # that has not appeared yet, or focus that has not moved. Poll these
+    # until the AT-SPI tree stops changing instead of trusting one sample.
+    STABLE_FACTS = {"dialog", "focus"}
+
+    @staticmethod
+    def _await_stable(getter, attempts: int = 8, interval: float = 0.15) -> Any:
+        """Wait for `getter()` to return the same value twice in a row.
+
+        This is a wait-for-condition, not a longer sleep: a fact that is
+        genuinely wrong (the product never shows the dialog, or focus never
+        moves) still converges on that steady, wrong value and the test
+        still fails — it just no longer fails because the sample landed a
+        frame too early.
+        """
+        previous = getter()
+        for _ in range(attempts):
+            time.sleep(interval)
+            current = getter()
+            if current == previous:
+                return current
+            previous = current
+        return previous
+
     def run_steps(self, limit: Optional[int] = None) -> dict[str, Any]:
         observations: dict[str, Any] = {}
         for index, step in enumerate(self.scenario["steps"]):
@@ -1358,7 +1386,10 @@ class LuloRun:
             elif "observe" in step:
                 facts = {}
                 for fact in step["facts"]:
-                    facts[fact] = getattr(self, f"fact_{fact}")()
+                    getter = getattr(self, f"fact_{fact}")
+                    facts[fact] = (
+                        self._await_stable(getter) if fact in self.STABLE_FACTS else getter()
+                    )
                 observations[step["observe"]] = sc.finish_observation(self.scenario, step["observe"], facts)
                 continue
             time.sleep(float(step.get("settle", self.settle)))

@@ -65,6 +65,20 @@ class Run:
                                              stdout=open(self.logs / f"{name}.log", "w"),
                                              stderr=subprocess.STDOUT, close_fds=True))
 
+    def spawn_optional(self, argv: list[str], name: str,
+                       extra: dict[str, str] | None = None) -> subprocess.Popen | None:
+        """Start a shell session piece that need not be in every bin dir.
+
+        `monkey.py`'s `_launch_shell_extras` already skips a missing shell
+        binary instead of crashing (its bin dirs often hold only the one app
+        under test); this mirrors that here, since `start()` always tries to
+        bring up the Dock and Mission Control to match the shipped session.
+        """
+        if not Path(argv[0]).exists():
+            print(f"{name} binary not found at {argv[0]}, skipping", flush=True)
+            return None
+        return self.spawn(argv, name, extra)
+
     def _track(self, process: subprocess.Popen) -> subprocess.Popen:
         self.children.append(process)
         return process
@@ -222,12 +236,13 @@ class Run:
         for folder in ("files", "info"):
             (trash_home / folder).mkdir(parents=True, exist_ok=True)
         (Path(self.env["HOME"]) / "Desktop" / "preexisting-frame-test.txt").write_text("first map\n")
-        self.spawn([str(bins / "dock")], "dock", {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
+        self.spawn_optional([str(bins / "dock")], "dock",
+                            {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
         if self.args.frame_only:
-            self.spawn([str(bins / "wallpaper")], "wallpaper",
-                       {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
-        self.spawn([str(bins / "mission-control"), "--service"], "mission-control",
-                   {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
+            self.spawn_optional([str(bins / "wallpaper")], "wallpaper",
+                                {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
+        self.spawn_optional([str(bins / "mission-control"), "--service"], "mission-control",
+                            {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
         time.sleep(3)
         if self.args.frame_only:
             def settled_output():

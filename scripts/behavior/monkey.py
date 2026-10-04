@@ -869,9 +869,10 @@ class Monkey:
         before = self.sample()
         if before is None:
             return None
+        is_shell = getattr(self, "app", None) == "shell"
         trace_threads = getattr(self, "app", None) not in (None, "shell")
         before_threads = self.thread_cpu() if trace_threads else {}
-        before_processes = self.shell_process_samples() if self.app == "shell" else {}
+        before_processes = self.shell_process_samples() if is_shell else {}
         time.sleep(idle_seconds)
         after = self.sample()
         if after is None:
@@ -879,7 +880,7 @@ class Monkey:
         after_threads = self.thread_cpu() if trace_threads else {}
         percent = (after["cpu_seconds"] - before["cpu_seconds"]) / idle_seconds * 100
         self.log(f"idle CPU {percent:.1f}% over {idle_seconds:.0f}s")
-        if self.app == "shell":
+        if is_shell:
             after_processes = self.shell_process_samples()
             process_usage = sorted(
                 ((round((after_processes[name]["cpu_seconds"] - sample["cpu_seconds"])

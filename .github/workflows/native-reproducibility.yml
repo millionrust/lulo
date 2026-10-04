@@ -1,0 +1,81 @@
+# Manually-run check for scripts/linux/check-native-reproducibility.sh: it
+# builds the amd64 native package inputs once, then packages them twice from
+# the same `--source-date-epoch` and byte-compares the result. `release.yml`
+# already runs this same script on every tagged release (build-amd64 and
+# build-arm64 jobs), but only on a real `v*` tag push. This workflow exists
+# so the check can be exercised on demand, without waiting for the first
+# real release tag, per docs/beta-checklist.md's packaging section.
+name: Native package reproducibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproducibility-amd64:
+    name: Two independent, byte-identical amd64 package builds
+    runs-on: ubuntu-26.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            clang dpkg-dev libfontconfig1-dev libfreetype-dev libpam0g-dev libssl-dev \
+            libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev pkg-config
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal
+
+      - name: Restore Cargo build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/release
+            shell/target/release
+          key: native-repro-amd64-release-${{ hashFiles('Cargo.lock', 'shell/Cargo.lock', 'rust-toolchain.toml', 'shell/rust-toolchain.toml') }}
+          restore-keys: native-repro-amd64-release-
+
+      - name: Report free disk before the two-build check
+        run: df -h /
+
+      - name: Build native package input binaries
+        env:
+          CARGO_BUILD_JOBS: "2"
+        run: |
+          set -euo pipefail
+          test "$(dpkg --print-architecture)" = amd64
+          mkdir -p "$PWD/target"
+          bash scripts/linux/build-native-inputs.sh \
+            --output "$PWD/target/native-package-inputs"
+
+      - name: Build and verify two independent, byte-identical package assemblies
+        run: |
+          set -euo pipefail
+          epoch="$(git log -1 --format=%ct)"
+          bash scripts/linux/check-native-reproducibility.sh \
+            --binary-dir "$PWD/target/native-package-inputs" \
+            --output "$PWD/target/native-amd64-reproducibility" \
+            --architecture amd64 \
+            --source-date-epoch "$epoch"
+          cat "$PWD/target/native-amd64-reproducibility/reproducibility.tsv"
+
+      - name: Upload reproducibility summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-amd64-reproducibility
+          path: target/native-amd64-reproducibility/reproducibility.tsv
+          if-no-files-found: warn
+          retention-days: 30

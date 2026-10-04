@@ -43,6 +43,7 @@ behaviour (hardware stays unavailable) rather than failing the whole run.
 
 from __future__ import annotations
 
+import json
 import os
 import pwd
 import subprocess
@@ -227,33 +228,6 @@ def start(work: Path) -> Optional["FakeHardware"]:
         # type=2 (BATTERY), state=2 (DISCHARGING), 80%, ~2h to empty,
         # warning_level=1 (NONE) -- see dbusmock/templates/upower.py.
         up_mock.SetupDisplayDevice(2, 2, 80.0, 80.0, 100.0, -8.0, 7200, 0, True, "battery-full-symbolic", 1)
-
-        templates = Path(__file__).resolve().parents[2] / "tests" / "dbusmock"
-        uid = os.getuid()
-        try:
-            account = pwd.getpwuid(uid)
-            name, real_name = account.pw_name, (account.pw_gecos.split(",")[0] or account.pw_name)
-        except KeyError:
-            name, real_name = "lulo", "Lulo User"
-        people = {"users": [
-            {"uid": uid, "name": name, "real_name": real_name, "admin": True},
-            {"uid": uid + 7000, "name": "amy", "real_name": "Amy Brown", "admin": False},
-        ]}
-        accounts_log = open(logs_dir / "fake-accountsservice.log", "w")
-        logs.append(accounts_log)
-        accounts = SpawnedMock.spawn_with_template(
-            str(templates / "accounts_service.py"), people, BusType.SYSTEM,
-            stdout=accounts_log, stderr=accounts_log,
-        )
-        processes.append(accounts.process)
-
-        printers_log = open(logs_dir / "fake-cups-pk-helper.log", "w")
-        logs.append(printers_log)
-        printers = SpawnedMock.spawn_with_template(
-            str(templates / "cups_pk_helper.py"), {}, BusType.SYSTEM,
-            stdout=printers_log, stderr=printers_log,
-        )
-        processes.append(printers.process)
     except Exception as error:  # dbusmock/dbus-python plumbing failure: degrade, never crash the run
         print(f"fake_hardware: failed to start mocks ({error}); hardware stays unavailable", file=sys.stderr)
         for process in processes:
@@ -272,6 +246,41 @@ def start(work: Path) -> Optional["FakeHardware"]:
         except Exception:
             pass
         return None
+
+    # Accounts and printers ride on the same private bus but must never take
+    # the hardware mocks above down with them: a failure here only leaves
+    # Users & Groups and Printers & Scanners unavailable.
+    templates = Path(__file__).resolve().parents[2] / "tests" / "dbusmock"
+    try:
+        uid = os.getuid()
+        try:
+            account = pwd.getpwuid(uid)
+            name, real_name = account.pw_name, (account.pw_gecos.split(",")[0] or account.pw_name)
+        except KeyError:
+            name, real_name = "lulo", "Lulo User"
+        # Passed as one JSON string: dbus-python cannot marshal a list of
+        # mixed-type dicts into the a{sv} AddTemplate takes.
+        people = json.dumps([
+            {"uid": uid, "name": name, "real_name": real_name, "admin": True},
+            {"uid": uid + 7000, "name": "amy", "real_name": "Amy Brown", "admin": False},
+        ])
+        accounts_log = open(logs_dir / "fake-accountsservice.log", "w")
+        logs.append(accounts_log)
+        accounts = SpawnedMock.spawn_with_template(
+            str(templates / "accounts_service.py"), {"users_json": people}, BusType.SYSTEM,
+            stdout=accounts_log, stderr=accounts_log,
+        )
+        processes.append(accounts.process)
+
+        printers_log = open(logs_dir / "fake-cups-pk-helper.log", "w")
+        logs.append(printers_log)
+        printers = SpawnedMock.spawn_with_template(
+            str(templates / "cups_pk_helper.py"), {}, BusType.SYSTEM,
+            stdout=printers_log, stderr=printers_log,
+        )
+        processes.append(printers.process)
+    except Exception as error:  # accounts/printers stay unavailable; never fail the run
+        print(f"fake_hardware: accounts/printer mocks unavailable ({error})", file=sys.stderr)
 
     sys_root = work / "fake-sys"
     _fake_sysfs(sys_root)

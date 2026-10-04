@@ -51,14 +51,6 @@ impl UsersState {
         self.current()
             .is_some_and(|user| user.account_type == AccountType::Administrator)
     }
-
-    pub(super) fn sheet_open(&self) -> bool {
-        self.info.is_some()
-            || self.new_user.is_some()
-            || self.password.is_some()
-            || self.picture.is_some()
-            || self.delete.is_some()
-    }
 }
 
 /// The ⓘ sheet of one user.

@@ -9,12 +9,15 @@ raise org.freedesktop.Accounts.Error.PermissionDenied, as AccountsService
 does when polkit says no).
 
 Parameters (JSON): {"users": [{"uid": 1000, "name": "jacob",
-"real_name": "Jacob Samas", "admin": true}, ...]}.
+"real_name": "Jacob Samas", "admin": true}, ...]}, or the same list as a
+JSON string in "users_json" (what AddTemplate over D-Bus can carry).
 
 The mock never stores a plain-text password: SetPassword keeps only the
 crypted hash it was given, in the mock-only MockPasswordHash property, so
 tests can assert that what crossed the bus was a hash.
 """
+
+import json
 
 import dbus
 
@@ -191,7 +194,10 @@ def load(mock, parameters):
             signature="sv",
         ),
     )
-    for user in parameters.get("users", DEFAULT_USERS):
+    users = parameters.get("users")
+    if users is None and parameters.get("users_json"):
+        users = json.loads(str(parameters["users_json"]))
+    for user in users or DEFAULT_USERS:
         add_user(mock, int(user["uid"]), user["name"], user.get("real_name", ""), bool(user.get("admin", False)))
 
 

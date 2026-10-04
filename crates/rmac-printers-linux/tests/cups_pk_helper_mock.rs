@@ -47,7 +47,7 @@ fn adds_an_ipp_everywhere_queue_enabled_and_accepting() {
     assert_eq!(model, "everywhere");
     assert_eq!(info, "Lulo Laser");
     assert_eq!(location, "Study");
-    assert!(enabled && accepting);
+    assert!(*enabled && *accepting);
     // A name CUPS would reject never reaches the helper.
     assert_eq!(
         admin.add_printer("Lulo Laser", &devices[0], ""),

@@ -47,6 +47,7 @@ pub(in crate::controller) fn sheet_value_row(title: &'static str, value: AnyElem
 }
 
 /// The sheet card. `header` sits above the form (an avatar, a note).
+#[allow(clippy::too_many_arguments)]
 pub(in crate::controller) fn form_sheet(
     id: &'static str,
     title: impl Into<SharedString>,

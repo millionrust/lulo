@@ -5643,6 +5643,7 @@ dependencies = [
 name = "rmac-compositor"
 version = "0.9.0-beta.1"
 dependencies = [
+ "rmac-storage",
  "serde",
  "serde_json",
 ]
@@ -5740,6 +5741,7 @@ dependencies = [
  "rmac-places",
  "rmac-places-system",
  "rmac-shell-settings",
+ "rmac-storage",
  "rmac-theme",
 ]
 
@@ -6289,6 +6291,7 @@ dependencies = [
  "rmac-shell-layer",
  "rmac-shell-ui",
  "rmac-sound",
+ "rmac-storage",
  "uuid",
 ]
 

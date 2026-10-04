@@ -6161,6 +6161,7 @@ dependencies = [
  "futures-util",
  "rmac-clipboard",
  "rmac-process",
+ "rmac-storage",
  "serde",
  "serde_json",
  "zbus",
@@ -6201,6 +6202,7 @@ dependencies = [
 name = "rmac-compositor"
 version = "0.9.0-beta.1"
 dependencies = [
+ "rmac-storage",
  "serde",
  "serde_json",
 ]
@@ -6299,6 +6301,7 @@ dependencies = [
  "rmac-places",
  "rmac-places-system",
  "rmac-shell-settings",
+ "rmac-storage",
  "rmac-theme",
  "serde_json",
 ]
@@ -6453,6 +6456,7 @@ dependencies = [
  "async-channel",
  "rmac-appearance",
  "rmac-process",
+ "rmac-storage",
  "rmac-theme",
 ]
 

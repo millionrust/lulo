@@ -575,6 +575,10 @@ mod tests {
         assert!(!state.selected_message().unwrap().flagged);
         assert!(state.apply(OrganizeAction::Junk));
         assert_eq!(state.messages[0].mailbox, Mailbox::GoogleJunk);
+        // Junking a message that was visible moves selection to the next
+        // visible one (it leaves the current mailbox view), so re-select it
+        // before toggling it back, the same way a real click would.
+        state.select("anna");
         assert!(state.apply(OrganizeAction::Junk));
         assert_eq!(state.messages[0].mailbox, Mailbox::GoogleInbox);
         assert!(state.apply(OrganizeAction::Delete));

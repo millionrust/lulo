@@ -296,9 +296,11 @@ impl TerminalView {
         let sheet = self.pending_remote_connection.as_ref()?;
         let panel = Self::sheet_panel("terminal-new-remote-connection", "New Remote Connection")
             .key_context("TerminalRemote")
-            .on_action(cx.listener(|this, _: &CancelNewRemoteConnection, window, cx| {
-                this.cancel_new_remote_connection(window, cx);
-            }))
+            .on_action(
+                cx.listener(|this, _: &CancelNewRemoteConnection, window, cx| {
+                    this.cancel_new_remote_connection(window, cx);
+                }),
+            )
             .w(px(360.0))
             .child(
                 div()
@@ -414,7 +416,9 @@ impl TerminalView {
             return None;
         }
         let session = &self.tabs[self.active];
-        let title = session.tab_title().unwrap_or_else(|| "Terminal".to_string());
+        let title = session
+            .tab_title()
+            .unwrap_or_else(|| "Terminal".to_string());
         let process = session.foreground_job_name().unwrap_or_else(|| "—".into());
         let shell_state = if session.accepts_input() {
             "Running"
@@ -439,11 +443,7 @@ impl TerminalView {
                 .border_color(rmac_ui::mac::separator())
                 .shadow_lg()
                 .text_size(rmac_ui::text_px(12.0))
-                .child(
-                    div()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child("Inspector"),
-                )
+                .child(div().font_weight(FontWeight::SEMIBOLD).child("Inspector"))
                 .child(
                     div()
                         .text_color(rmac_ui::mac::text_secondary())

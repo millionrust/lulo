@@ -98,7 +98,11 @@ impl TerminalView {
             return;
         }
         let ui = &mut self.tabs[self.active].ui;
-        ui.split_offset = if ui.split_offset.is_some() { None } else { Some(0) };
+        ui.split_offset = if ui.split_offset.is_some() {
+            None
+        } else {
+            Some(0)
+        };
         cx.notify();
     }
 

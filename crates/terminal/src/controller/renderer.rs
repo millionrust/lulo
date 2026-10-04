@@ -204,7 +204,9 @@ impl Render for TerminalView {
         let edit_title_sheet = self
             .render_edit_title(cx)
             .map(|sheet| sheet.into_any_element());
-        let inspector = self.render_inspector().map(|panel| panel.into_any_element());
+        let inspector = self
+            .render_inspector()
+            .map(|panel| panel.into_any_element());
         let ime_preedit = (!searching && !self.modal_open())
             .then(|| self.render_ime_preedit())
             .flatten();
@@ -264,15 +266,15 @@ impl Render for TerminalView {
             .on_action(cx.listener(|this, _: &ClearToPreviousBookmark, _, cx| {
                 this.clear_to_previous_mark(true, cx)
             }))
-            .on_action(cx.listener(|this, _: &NewCommand, window, cx| {
-                this.open_new_command(window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &NewCommand, window, cx| this.open_new_command(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &NewRemoteConnection, window, cx| {
                 this.open_new_remote_connection(window, cx)
             }))
-            .on_action(cx.listener(|this, _: &EditTitle, window, cx| {
-                this.open_edit_title(window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &EditTitle, window, cx| this.open_edit_title(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &ShowInspector, _, cx| this.toggle_inspector(cx)))
             .on_action(cx.listener(|this, _: &SplitPane, _, cx| this.toggle_split_pane(cx)))
             .on_action(cx.listener(|this, _: &CloseSplitPane, _, cx| this.close_split_pane(cx)))

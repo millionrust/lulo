@@ -141,6 +141,11 @@ def load_contract(path: Path = CONTRACT_PATH) -> dict[str, object]:
 
 
 def _load_os_release(path: Path = Path("/etc/os-release")) -> dict[str, str]:
+    # Ubuntu ships /etc/os-release as a symlink to ../usr/lib/os-release.
+    # os-release(5) names /usr/lib/os-release as the fallback, so read that
+    # regular file directly rather than following an arbitrary link.
+    if path.is_symlink():
+        path = path.parent.parent / "usr/lib/os-release"
     try:
         lines = _regular_bytes(path, 64 * 1024).decode("utf-8").splitlines()
     except UnicodeDecodeError as error:

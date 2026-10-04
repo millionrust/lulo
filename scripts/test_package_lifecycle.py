@@ -66,6 +66,23 @@ class PackageLifecycleTests(unittest.TestCase):
                 tools={},
             )
 
+    def test_os_release_symlink_reads_the_usr_lib_file_ubuntu_ships(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "etc").mkdir()
+            (root / "usr/lib").mkdir(parents=True)
+            (root / "usr/lib/os-release").write_text(
+                'ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8"
+            )
+            (root / "etc/os-release").symlink_to("../usr/lib/os-release")
+            fields = lifecycle._load_os_release(root / "etc/os-release")
+            self.assertEqual(fields["ID"], "ubuntu")
+            self.assertEqual(fields["VERSION_ID"], "26.04")
+            (root / "usr/lib/os-release").unlink()
+            (root / "usr/lib/os-release").symlink_to("/elsewhere")
+            with self.assertRaises(lifecycle.LifecycleError):
+                lifecycle._load_os_release(root / "etc/os-release")
+
     def test_package_set_rejects_wrong_order_and_unsafe_archive_names(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

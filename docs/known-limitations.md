@@ -37,6 +37,14 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   has been tested**; treat NVIDIA/proprietary-driver systems as unverified.
   The owner decided on 2026-10-04 to ship Beta 1 without an NVIDIA test,
   because no NVIDIA machine is available; NVIDIA results are a later-Beta item.
+- **Beta 1 is tested on one hardware class only.** The H8 Beta tier names
+  three stations. The owner has neither an AMD desktop nor an NVIDIA desktop,
+  so both are waived for Beta 1 (decision of 2026-10-04). The security-review
+  and Beta-candidate verifiers carry the waiver as
+  `owner-2026-10-04-beta1-without-amd-nvidia-desktops` and print it. The
+  waiver removes only those two station runs and cohort quotas: every check
+  must still pass, and the Intel reference laptop and the disposable-install
+  station must still run. Treat AMD desktop and NVIDIA systems as untested.
 
 ## Accessibility limits
 
@@ -119,16 +127,10 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 
 ## Known issues: security findings accepted for Beta
 
-Three Low findings from the
-[security review](security-review-0.9.0-beta.1.md) are open. Each has a
-mitigation, and all three still count against the security gate. SR-15 and
-SR-18 are accepted for Beta. SR-38 is waiting for the owner's decision.
+One Low finding from the
+[security review](security-review-0.9.0-beta.1.md) is open and accepted for
+Beta with a mitigation. It still counts against the security gate.
 
-- **SR-15, build paths in binaries.** A package built on your own machine
-  may name your home directory. The CI-built candidate passed the package
-  scan with no personal path, but four shell binaries (Dock, App Switcher,
-  Mission Control, OSD) still embed the builder's checkout path through
-  development asset fallbacks. Don't share locally built packages.
 - **SR-18, release build inputs.** Release containers, the rustup installer,
   and the `cargo-cyclonedx` source archive now have content pins in source.
   Rust toolchain artifacts are still selected by version, and the changed
@@ -140,10 +142,10 @@ SR-18 are accepted for Beta. SR-38 is waiting for the owner's decision.
   whether they remove a package. Current packages simulate first and never
   schedule a removal; this was tested against the real PackageKit. On an older
   install, turn off Automatic Updates and use Update Now until you update.
-- **SR-38, notifications while locked.** Banners are not suppressed while
-  the screen is locked. The lock screen hides them, but with the screen
-  reader on, an incoming notification's text may be read aloud. Turn the
-  screen reader off before leaving a locked machine.
+- **Builds from before the SR-15 and SR-38 fixes.** Older packages embed
+  the builder's checkout path in four shell binaries (SR-15). They also keep
+  showing banners while the screen is locked, so with the screen reader on,
+  a notification's text may be read aloud (SR-38). Current packages fix both.
 
 `install.sh --from-release` now needs `gh` (and `gh auth login`) to verify
 who built the packages. Without it the install stops; `--allow-unattested`

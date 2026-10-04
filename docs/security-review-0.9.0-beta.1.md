@@ -13,10 +13,10 @@ High is open. What still blocks the gate:
 - 3 findings are open (see "Open findings"). None is above Low.
 - 11 checks still need a station run, most of them on the
   reference laptop (see "Reference-laptop checks").
-- The reference laptop (`amd64-intel-laptop`) and `amd64-amd-desktop`
-  stations have not run. `amd64-nvidia-desktop` is waived for Beta 1 by the
-  owner's 2026-10-04 decision, recorded in the verifier as
-  `owner-2026-10-04-beta1-without-nvidia`.
+- The reference laptop (`amd64-intel-laptop`) station has not run.
+  `amd64-amd-desktop` and `amd64-nvidia-desktop` are waived for Beta 1 (the
+  owner has neither machine; decision of 2026-10-04), recorded in both
+  verifiers as `owner-2026-10-04-beta1-without-amd-nvidia-desktops`.
 
 The verifier therefore fails, as it should:
 
@@ -71,8 +71,8 @@ Of the 80 checks, 69 are `pass` and 11 are `pending` (the JSON is canonical).
 | Station | Status | Evidence |
 |---|---|---|
 | `amd64-intel-laptop` (reference laptop) | pending | needs the owner; read-only steps in "Reference-laptop checks" |
-| `amd64-amd-desktop` | pending | still required by the H8 Beta tier; no run yet, and no AMD desktop station has been named |
-| `amd64-nvidia-desktop` | waived | owner decision 2026-10-04: Beta 1 ships without NVIDIA testing because no NVIDIA machine is available ([known-limitations.md](known-limitations.md)). Verifier waiver id `owner-2026-10-04-beta1-without-nvidia`, beta tier only. It never passes a check or another station |
+| `amd64-amd-desktop` | waived | owner decision 2026-10-04 (coordinator, under the owner's standing direction): the owner has no AMD desktop either. Waiver id `owner-2026-10-04-beta1-without-amd-nvidia-desktops`, beta tier only, also applied in `verify-beta-candidate.py` |
+| `amd64-nvidia-desktop` | waived | owner decision 2026-10-04: Beta 1 ships without NVIDIA testing because no NVIDIA machine is available ([known-limitations.md](known-limitations.md)). Same waiver id `owner-2026-10-04-beta1-without-amd-nvidia-desktops`. A waiver never passes a check or another station |
 | `disposable-install` | pending (ran; 9 of 12 station checks pass, 3 still need work) | `.github/workflows/security-station.yml`, run [37175024540](https://github.com/millionrust/lulo/actions/runs/37175024540) |
 
 ### Disposable install (GitHub Actions `ubuntu-26.04`)
@@ -173,6 +173,8 @@ Found and fixed in the 2026-10-04 pass (branch `op/security-stations`):
 | SR-35 | Low | logs-diagnostics | Preview's New from Clipboard copies (`$XDG_CACHE_HOME/rmac-preview/clipboard`) were never deleted, so copied screenshots piled up on disk. Closing the window now removes the copy, and copies left by exited processes are swept. Test: `only_a_new_from_clipboard_copy_is_removed_on_close`. | `bb293d67` |
 | SR-36 | Low | logs-diagnostics | A real home Wi-Fi name appeared in a test fixture, `docs/parity.md` and two design-lab mocks. It is replaced with "Example Wi-Fi". | `31bf78db` |
 | SR-37 | Low | packages | `release.yml` ran cargo-deny on the root workspace only, but `rmac-session` also ships the shell workspace's binaries. The release dependency gate now checks both. | `88529418` |
+| SR-15 | Low | packages | The Dock, App Switcher, Mission Control and OSD compiled `env!("CARGO_MANIFEST_DIR")` source-tree asset fallbacks into release binaries, so every release binary embedded and probed the builder's checkout path. Those fallbacks are now debug-only. The package scanner's regex had a lookbehind that missed a path packed directly after other text; it is gone. Test: `test_build_host_path_scan_rejects_home_locations_across_chunks` (packed case). | `6c571827` |
+| SR-38 | Low | notifications | The banner daemon ignored lock state, so a banner's assertive live region (and its sound) could reach a screen reader while the screen was locked. The daemon now follows logind's `LockedHint` and holds new events while locked (bounded at 256, oldest dropped), presenting them on unlock as macOS does. Center history still records each notification on arrival. Tests: `locked_events_wait_and_unlock_releases_them_in_order`, `held_events_are_bounded_dropping_the_oldest`. | `8b97ae50` |
 
 SR-29 (Low, updates) is closed. Its source fix ships in the tested
 candidate `2f3ea7a4`, and the disposable station proved it natively against
@@ -205,9 +207,7 @@ Partly fixed; the rest stays open below:
 
 | ID | Severity | Boundary | Evidence | Exploit scenario | Recommended fix |
 |---|---|---|---|---|---|
-| SR-15 | Low | packages | The 2026-10-04 station scanned the CI-built candidate `2f3ea7a4`. `verify-native-packages.py` passes and no personal home path appears. But `rmac-app-switcher`, `rmac-dock`, `rmac-mission-control` and `rmac-osd` embed the builder's checkout path (`/home/runner/work/lulo/lulo/shell/bins/…`) through `env!("CARGO_MANIFEST_DIR")` development-asset fallbacks, which `--remap-path-prefix` does not rewrite. The verifier's regex misses them because the path follows other text with no separator. | A local or reference-PC build embeds `/home/<user>/…` in those four binaries, and the release binaries probe a builder path for SVG assets at run time. | Put the source-tree fallbacks (app-switcher `packaged_icon`, Dock `packaged_icon`/`dock_asset_path`, mission-control `packaged_icon`, OSD `glyph_path`) behind `#[cfg(debug_assertions)]`, and drop the regex lookbehind in `verify-native-packages.py`. |
 | SR-18 | Low (source fix pending native run) | packages | Release containers pin the reviewed Ubuntu 26.04 index digest. The rustup installer and `cargo-cyclonedx` source archive have checked SHA-256 pins in `release.yml`; focused workflow tests pass. Rust 1.95.0 toolchain artifacts remain version-selected, and no native release workflow has run with these changes. | Supply-chain drift or a broken release job. | Run the release workflow on native builders and review the resulting artifacts and provenance before closing this finding. |
-| SR-38 | Low | notifications | Found 2026-10-04. The banner daemon (`crates/notification-center-app/src/daemon/host.rs:585-615`) ignores lock state. Banners are still created while the session is locked, and their title and body sit in an `assertive` live region; post sounds still play. | With Orca on and the screen locked, an incoming notification's content may be spoken to anyone nearby. The exclusive lock surface keeps it off the screen. | Subscribe to the lock state (`org.rmac.LockScreen1` or logind `LockedHint`) and suppress banners, live announcements and sounds while locked, keeping Center history. |
 
 A read-only PackageKitGlib probe on the reference PC on 2026-09-28 found
 `offline_get_action() == 3` (`UNSET`), so no offline update was scheduled at
@@ -226,9 +226,7 @@ Beta with this risk and mitigation; each has a Known issues note in
 
 | ID | Severity | Decision | Risk | Mitigation until fixed |
 |---|---|---|---|---|
-| SR-15 | Low | Accept for Beta | A binary built on a person's machine may name that machine's home directory in panic locations; nothing else leaks. | Current native-build source remaps checkout and Cargo-home paths, and package verification scans inventoried ELF binaries. A fresh build still needs to pass that verification. Do not distribute locally built artifacts without checking them. |
 | SR-18 | Low | Accept for Beta | A release build can still fail or drift in untested toolchain artifact selection; the new content-pinned workflow has not had a native run. | Release containers, rustup installer, and `cargo-cyclonedx` archive are content-pinned in source. Actions are pinned by commit SHA (SR-16), builds use `Cargo.lock` with `--locked`, `cargo-deny` gates advisories and licences (SR-05), outputs carry a workflow-bound provenance attestation that `install.sh` now requires (SR-17), and the APT publisher re-verifies every input (SR-12). |
-| SR-38 | Low | Not yet decided: the owner decides (proposed: fix before Beta, because it exposes notification content while locked) | With a screen reader on, a locked session may speak an incoming notification's title and body. | Keep the screen reader off while away from a locked machine. Notification previews are already hidden by default, but that setting does not reach the banner daemon yet. |
 
 **Informational, no severity:**
 
@@ -418,20 +416,17 @@ apart from the action it names. Keep raw logs and screenshots out of Git.
 | dbus-polkit / mutation-requires-authoritative-readback | With `openssh-server` installed, run `systemctl is-enabled ssh.socket ssh.service; ss -ltn 'sport = :22'`. Toggle System Settings > General > Sharing > Remote Login on and off, and run the same commands after each toggle. Also toggle Date & Time > Set automatically. | The pane always matches systemd and the listening socket (SR-30). Today the Sharing calls carry no interactive-authorization flag, so they are likely to fail as "denied" (functional issue F-1 below). |
 | packages / license-inventory-complete | The owner confirms the provenance of the non-Rust assets that the packages ship (`packaging/rmac-session/wallpapers`, `assets/sounds`, `assets/cursors`, `assets/icons`, `assets/brand`, the greeter artwork) and records it in a `packaging/rmac-session/LICENSES.md`, as `packaging/rmac-apps/LICENSES.md` already does for the apps. | Every shipped non-ELF file falls under a recorded licence. |
 
-**Functional issues (not security findings).**
-F-2: Ubuntu 26.04's `appstreamcli validate --no-net` rejects at least one
-installed rmac metainfo file, so `verify-application-package.py
---installed-host`, and with it the package lifecycle, cannot pass on a clean
-install. Run the validator on `packaging/rmac-apps/metainfo/*.xml` on
-Ubuntu 26.04 and fix what it reports.
-
-F-1: the Sharing systemd1 calls (`crates/rmac-sharing-linux/src/system.rs`
-`system_set_service`, `restore_service`) send no
-`ALLOW_INTERACTIVE_AUTHORIZATION` flag. With systemd's default
-`auth_admin_keep`, polkit cannot prompt, so turning Remote Login or File
-Sharing on or off is likely to always fail as "denied or cancelled". Every
-call comes from a toggle, so the fix is to send these calls with
-`MethodFlags::AllowInteractiveAuth`.
+**Functional issues found and fixed (not security findings).**
+- F-1 (`4432cac0`): Sharing's systemd1 calls sent no
+  `ALLOW_INTERACTIVE_AUTHORIZATION`, so under `auth_admin_keep` every Remote
+  Login or File Sharing toggle failed as "denied". Every mutation now allows
+  interactive authorization (guard test
+  `every_systemd_mutation_may_ask_polkit_interactively`).
+- F-2 (`7fa43f90`): AppStream 1.1.2 (Ubuntu 26.04) requires `<categories>` in
+  metainfo; all fifteen files lacked them, so `appstreamcli validate` and the
+  installed-package gate failed. Each file now carries its desktop entry's
+  categories (validated with appstreamcli 1.1.2 on Ubuntu 26.04), and the
+  package verifier requires them.
 
 ## What blocks Beta
 

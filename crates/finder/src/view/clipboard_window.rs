@@ -9,8 +9,8 @@ use gpui::{
     IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
     Styled as _, Window,
 };
-use gpui_component::StyledExt as _;
 use rmac_ui::Root;
+use rmac_ui::StyledExt as _;
 use std::path::PathBuf;
 
 const WIDTH: f32 = 360.0;

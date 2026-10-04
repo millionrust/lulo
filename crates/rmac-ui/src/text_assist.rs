@@ -199,10 +199,10 @@ pub fn on_text_changed(
     if !settings.text_replacement && !settings.check_spelling_while_typing {
         return;
     }
-    let Some(boundary_at) = cursor.checked_sub(1).filter(|&index| {
-        text.get(index..cursor)
-            .is_some_and(|slice| is_word_boundary(slice))
-    }) else {
+    let Some(boundary_at) = cursor
+        .checked_sub(1)
+        .filter(|&index| text.get(index..cursor).is_some_and(is_word_boundary))
+    else {
         return;
     };
     if settings.text_replacement {
@@ -246,7 +246,7 @@ fn word_before(text: &str, end: usize) -> Option<Range<usize>> {
             break;
         }
     }
-    (start < end).then(|| start..end)
+    (start < end).then_some(start..end)
 }
 
 /// A small, real seed of text replacements applied while typing (System

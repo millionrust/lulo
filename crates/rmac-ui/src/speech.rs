@@ -13,7 +13,7 @@
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 
-use gpui::{App, Entity, EntityInputHandler as _};
+use gpui::{App, Entity};
 
 use crate::InputState;
 
@@ -64,7 +64,7 @@ pub fn speak(text: String, stop_action: &'static str, cx: &mut App) {
     crate::set_menu_enabled(stop_action, true, cx);
     cx.spawn(async move |cx| {
         blocking::unblock(move || speak_blocking(&text)).await;
-        let _ = cx.update(|cx| crate::set_menu_enabled(stop_action, false, cx));
+        cx.update(|cx| crate::set_menu_enabled(stop_action, false, cx));
     })
     .detach();
 }

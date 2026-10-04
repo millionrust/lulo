@@ -16,5 +16,10 @@ path = "src/main.rs"
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
+# Maths Notes' multi-line input (CALC-06).
+rmac-editor.workspace = true
+# Convert mode (CALC-06) reuses Spotlight's unit-conversion tables rather
+# than a second copy of them.
+rmac-launcher-providers.workspace = true
 rmac-ui.workspace = true
 rust-embed.workspace = true

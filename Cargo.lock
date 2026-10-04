@@ -5977,6 +5977,8 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-editor",
+ "rmac-launcher-providers",
  "rmac-ui",
  "rust-embed",
 ]

@@ -843,6 +843,20 @@ class Monkey:
                 continue
         return result
 
+    def shell_process_samples(self) -> dict[str, dict[str, Any]]:
+        """One `cpu_seconds` sample per shell piece, for `--app shell`.
+
+        `sample()`'s own shell branch sums every piece into one number,
+        which hides which piece is actually over budget (SET-0x: the
+        combined figure stayed inside budget while top-bar alone did not).
+        """
+        return {
+            name: tree
+            for name, process in self.shell_processes().items()
+            if process.poll() is None
+            and (tree := run_memory_soak.sample_tree(process.pid, self.hertz)) is not None
+        }
+
     def check_idle_cpu(self, idle_seconds: float = 5.0,
                        threshold_percent: float = 50.0) -> Optional[Finding]:
         """Must be called with no actions in flight: samples CPU for
@@ -855,8 +869,10 @@ class Monkey:
         before = self.sample()
         if before is None:
             return None
+        is_shell = getattr(self, "app", None) == "shell"
         trace_threads = getattr(self, "app", None) not in (None, "shell")
         before_threads = self.thread_cpu() if trace_threads else {}
+        before_processes = self.shell_process_samples() if is_shell else {}
         time.sleep(idle_seconds)
         after = self.sample()
         if after is None:
@@ -864,6 +880,15 @@ class Monkey:
         after_threads = self.thread_cpu() if trace_threads else {}
         percent = (after["cpu_seconds"] - before["cpu_seconds"]) / idle_seconds * 100
         self.log(f"idle CPU {percent:.1f}% over {idle_seconds:.0f}s")
+        if is_shell:
+            after_processes = self.shell_process_samples()
+            process_usage = sorted(
+                ((round((after_processes[name]["cpu_seconds"] - sample["cpu_seconds"])
+                        / idle_seconds * 100, 3), name)
+                 for name, sample in before_processes.items() if name in after_processes),
+                reverse=True,
+            )
+            self.log(f"idle CPU by process: {process_usage}")
         thread_usage = sorted(
             ((round((cpu - before_threads[tid][1]) / idle_seconds * 100, 2), name)
              for tid, (name, cpu) in after_threads.items() if tid in before_threads),

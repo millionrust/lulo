@@ -98,10 +98,10 @@ pub(crate) enum PropertyChange {
     Shown,
 }
 
-/// A Wi-Fi signal-strength change re-reads the network at most this often.
-/// NetworkManager republishes access-point strength every few seconds, and
-/// the bar's signal bars only need to follow it loosely. Not measured on
-/// the Mac.
+/// How often `watch.rs`'s `network_tick` timer re-reads the network: the
+/// bar's signal bars only need to follow Wi-Fi strength loosely, and this
+/// is also the interval at which an access-point roam that keeps the same
+/// device state is noticed. Not measured on the Mac.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) const SIGNAL_STRENGTH_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -131,11 +131,4 @@ pub(crate) fn property_change(
         }
         _ => PropertyChange::Shown,
     }
-}
-
-/// Whether a signal-strength change should re-read the network, given how
-/// long ago the network was last re-read (`None`: never).
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) fn signal_strength_refresh_due(since_network_read: Option<std::time::Duration>) -> bool {
-    since_network_read.is_none_or(|elapsed| elapsed >= SIGNAL_STRENGTH_REFRESH)
 }

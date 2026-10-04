@@ -1424,6 +1424,35 @@ impl RichTextEditor {
         }
     }
 
+    /// ⇧←/⇧→/⇧↑/⇧↓: gpui-component binds these in the "Input" context to
+    /// actions it keeps private, so they reach the editor unhandled as key
+    /// presses (GPUI delivers a key to listeners when no binding's action
+    /// was handled).
+    fn on_key_down(
+        &mut self,
+        event: &gpui::KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let modifiers = &event.keystroke.modifiers;
+        if !modifiers.shift
+            || modifiers.control
+            || modifiers.alt
+            || modifiers.platform
+            || modifiers.function
+        {
+            return;
+        }
+        match event.keystroke.key.as_str() {
+            "left" => self.select_left(cx),
+            "right" => self.select_right(cx),
+            "up" => self.select_up(window, cx),
+            "down" => self.select_down(window, cx),
+            _ => return,
+        }
+        cx.stop_propagation();
+    }
+
     fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
         self.dragging = None;
     }
@@ -1652,6 +1681,7 @@ impl Render for RichTextEditor {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
+            .on_key_down(cx.listener(Self::on_key_down))
             // Painted inside this (focused) node, so the shift-arrow
             // listeners it registers by name are on the dispatch path.
             .child(RichTextElement {
@@ -1742,30 +1772,6 @@ impl gpui::Element for RichTextElement {
             ElementInputHandler::new(bounds, self.editor.clone()),
             cx,
         );
-        // ⇧-arrow selection: gpui-component binds these keys in the "Input"
-        // context to actions it keeps private, so answer them by name.
-        for (name, direction) in [
-            (input::SELECT_LEFT, 0_u8),
-            (input::SELECT_RIGHT, 1),
-            (input::SELECT_UP, 2),
-            (input::SELECT_DOWN, 3),
-        ] {
-            let Ok(action) = cx.build_action(name, None) else {
-                continue;
-            };
-            let editor = self.editor.clone();
-            window.on_action(action.as_any().type_id(), move |_, phase, window, cx| {
-                if phase != gpui::DispatchPhase::Bubble {
-                    return;
-                }
-                editor.update(cx, |editor, cx| match direction {
-                    0 => editor.select_left(cx),
-                    1 => editor.select_right(cx),
-                    2 => editor.select_up(window, cx),
-                    _ => editor.select_down(window, cx),
-                });
-            });
-        }
         let selection_color = if focused {
             selection_color
         } else {

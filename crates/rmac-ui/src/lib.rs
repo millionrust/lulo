@@ -96,14 +96,6 @@ pub mod input_actions {
 
     /// The key context those bindings live in.
     pub const KEY_CONTEXT: &str = "Input";
-
-    /// gpui-component binds ⇧←/⇧→/⇧↑/⇧↓ in that context to actions it does
-    /// not export; an editor answers them by these names
-    /// (`App::build_action`) instead.
-    pub const SELECT_LEFT: &str = "ui::SelectLeft";
-    pub const SELECT_RIGHT: &str = "ui::SelectRight";
-    pub const SELECT_UP: &str = "ui::SelectUp";
-    pub const SELECT_DOWN: &str = "ui::SelectDown";
 }
 pub use text_transform::{transform_selection, TextTransformation};
 pub use window::*;

@@ -165,7 +165,8 @@ fi
     -p rmac-media --bin rmac-media \
     -p rmac-keyboard --bin rmac-mac-keyboard \
     -p rmac-setup-assistant --bin rmac-setup-assistant \
-    -p rmac-calendar-agent --bin rmac-calendar-agent
+    -p rmac-calendar-agent --bin rmac-calendar-agent \
+    -p rmac-polkit-agent --bin rmac-polkit-agent
 )
 (
   cd "$lab_dir"

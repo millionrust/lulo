@@ -1,0 +1,28 @@
+[package]
+name = "rmac-polkit-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rmac-polkit-agent"
+path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+async-io.workspace = true
+futures-lite.workspace = true
+zbus.workspace = true
+zeroize.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui.workspace = true
+rmac-ui.workspace = true

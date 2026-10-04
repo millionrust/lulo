@@ -2,7 +2,7 @@
 
 This is the I6 security and privacy review
 ([security-release-review.md](security-release-review.md)) for the
-0.9.0-beta.1 early-access release, run against the 80 checks in
+0.9.0-beta.1 early-access release, run against the 83 checks in
 `scripts/security-review.json`. The canonical summary sits beside this file
 as [security-review-0.9.0-beta.1.json](security-review-0.9.0-beta.1.json).
 
@@ -63,7 +63,7 @@ python3 scripts/verify-security-review.py \
   list is the tier's H8 stations plus `disposable-install`; a waived station
   carries the owner decision's id.
 
-Of the 80 checks, 71 are `pass` and 9 are `pending` (the JSON is canonical).
+Of the 83 checks, 71 are `pass` and 12 are `pending` (the JSON is canonical). The three `authentication-agent-*` checks were added with `rmac-polkit-agent` (SWU-07) and wait for a native run.
 
 ## Station evidence
 
@@ -285,11 +285,14 @@ Legend:
 ### dbus-polkit
 | Check | Verdict | Evidence |
 |---|---|---|
+| authentication-agent-accepts-only-polkitd | pending (native) | `rmac-polkit-agent` (SWU-07) takes polkitd's unique name from the reply to its own `RegisterAuthenticationAgentWithOptions`, refreshes it (and registers again) on `NameOwnerChanged`, and refuses `BeginAuthentication`/`CancelAuthentication` from any other sender with `NotAuthorized` (`crates/rmac-polkit-agent/src/dbus.rs`; mock-tested in `tests/authority_mock.rs`). Never verifies a password: polkit's own `polkit-agent-helper-1` does, over `/run/polkit/agent-helper.socket` or the setuid helper, and reports to polkitd itself (`src/helper.rs`). A native run against polkit 127 is owed |
+| authentication-agent-one-dialog-queued-and-cancellable | pending (native) | One dialog at a time; later requests wait in arrival order and a queued request can be cancelled before it shows; `CancelAuthentication` closes the open dialog and cancels the helper; an unattended dialog gives up after 5 minutes; three wrong passwords end the request (`src/request.rs`; mock-tested). The dialog draws polkit's message as plain bounded text (controls and bidi overrides stripped) and only a plain theme icon name, never a path (`src/text.rs`) |
+| authentication-agent-password-zeroized-and-unlogged | pending (native) | The password lives in a fixed-capacity buffer zeroized on every edit, on submit and on drop, with a redacted `Debug`; it is written once to the helper and never formatted or logged, nor is any PAM message (`src/secret.rs`, `src/helper.rs`). The process makes itself non-dumpable (`PR_SET_DUMPABLE`) and the unit sets `LimitCORE=0`. Residual: GPUI's key event carries each typed character as a short-lived `String` that is not zeroized |
 | broadcasts-contain-no-secrets | pass | the Center, Clipboard and LockScreen `Changed` signals carry counts or policy only; Clipboard history skips password-manager offers (`crates/rmac-clipboard-linux/src/service.rs:254-259`) |
 | bounded-call-time-and-output | pass | nmcli and helper output is bounded (`crates/rmac-network/src/vpn_import.rs:343-356`, `crates/rmac-privacy-linux/src/security.rs:33-80`); service and agent connections set a 5-second `method_timeout` (SR-25 fixed) |
 | denial-and-cancel-distinct | pass | pkexec 126 is "cancelled", 127 is "not authorised" (`rmac_keyboard::command_failure`); SR-26 fixed |
 | interactive-authorization-only-from-user-action | pass | 2026-10-04 trace: before the Users & Groups and Printers & Scanners panes, rmac never set the message flag; those panes now set `ALLOW_INTERACTIVE_AUTHORIZATION` on AccountsService and cups-pk-helper calls, and every such call comes from a click (OK, Create User, Delete User, Add, Remove Printer, Pause/Resume, Cancel Job, the Automatically log in as pop-up, opening Add Printer). Reads (`ListCachedUsers`, `GetAll`, CUPS IPP) never set it. Every `interactive=true` argument (hostnamed, timedated, localed, `SetX11Keyboard`) and the only `pkexec` come from a Save, Apply, switch or confirmation. The PackageKit interactive install has no caller, and the automatic path uses `interactive=false`. The one background call, NetworkManager `RequestScan`, is `allow_active`/`allow_inactive: yes` on the reference laptop (policy file read 2026-10-04), so it cannot prompt. Station: `polkit-policy` |
-| mutation-requires-authoritative-readback | pending (native) | hostname, time, locale, Bluetooth, Wi-Fi, VPN and updates re-read the authority. Sharing waits for systemd and re-snapshots. SR-30 (`ssh.socket`) and F-1 (interactive authorization) are fixed. A Remote Login toggle on a real session is still owed (Reference-laptop checks) |
+| mutation-requires-authoritative-readback | pending (native) | hostname, time, locale, Bluetooth, Wi-Fi, VPN and updates re-read the authority. Sharing waits for systemd and re-snapshots. SR-30 (`ssh.socket`) and F-1 (interactive authorization, and since SWU-07 an agent to answer it) are fixed. A Remote Login toggle on a real session is still owed (Reference-laptop checks) |
 | no-credential-collection | pass | admin credentials only through polkit agents; the keyboard helper takes enumerated flags only (`crates/rmac-keyboard/src/helper.rs:24-48`); Wi-Fi secrets are zeroized with redacted Debug (`crates/rmac-network/src/model.rs:191-260`) |
 | system-bus-callers-treated-untrusted | pass | the NetworkManager secret agent and BlueZ pairing agent accept calls only from the service's unique name, resolved at registration; SR-22 fixed |
 | unique-owner-revalidated | pass | the portal backends compare the caller with the owner of `org.freedesktop.portal.Desktop` (`crates/rmac-file-chooser/src/dbus.rs:245-266`); the safe-mode notice accepts answers only from the server that answered `Notify` (SR-23 fixed) |
@@ -423,7 +426,7 @@ apart from the action it names. Keep raw logs and screenshots out of Git.
 | lock-boundary / tty-recovery-proven | Follow [secure-lock-recovery.md](secure-lock-recovery.md) from Ctrl+Alt+F3 with the provider deliberately stopped. | Every runbook command works as written. The disposable station already proved the units, PAM service and swaylock it names are installed as documented (`lock-units`). |
 | notifications / lock-screen-content-redacted | Lock, with Orca off and then on. From a TTY in the same session, post `notify-send -u critical 'Synthetic title' 'Synthetic body'`. | Nothing but the lock surface is visible, nothing is spoken and no sound plays. After unlock, the held banner appears (SR-38 fix). |
 | file-operations / mount-disappearance-recovers | Make a 64 MiB image with `truncate -s 64M /tmp/sr.img; mkfs.vfat /tmp/sr.img`, then run `udisksctl loop-setup -f /tmp/sr.img` and `udisksctl mount -b /dev/loopN`. In Files, start a large copy into the volume and a cross-volume move out of it, then run `udisksctl unmount -f -b /dev/loopN` mid-transfer. Browse inside the mount while it disappears. | The source hashes are unchanged, the error says the source was kept, no hidden staging is left after a remount, and a tab inside the mount returns to Home with the disconnect notice. |
-| dbus-polkit / mutation-requires-authoritative-readback | With `openssh-server` installed, run `systemctl is-enabled ssh.socket ssh.service; ss -ltn 'sport = :22'`. Toggle System Settings > General > Sharing > Remote Login on and off, and run the same commands after each toggle. Also toggle Date & Time > Set automatically. | The pane always matches systemd and the listening socket (SR-30). F-1 is fixed, so polkit should prompt for the password. |
+| dbus-polkit / mutation-requires-authoritative-readback | With `openssh-server` installed, run `systemctl is-enabled ssh.socket ssh.service; ss -ltn 'sport = :22'`. Toggle System Settings > General > Sharing > Remote Login on and off, and run the same commands after each toggle. Also toggle Date & Time > Set automatically. | The pane always matches systemd and the listening socket (SR-30). F-1 is fixed and `rmac-polkit-agent` runs, so each toggle shows Lulo's password dialog ("System Settings wants to make changes."); Cancel leaves the switch as it was. |
 | packages / license-inventory-complete | The owner confirms the provenance of the non-Rust assets that the packages ship (`packaging/rmac-session/wallpapers`, `assets/sounds`, `assets/cursors`, `assets/icons`, `assets/brand`, the greeter artwork) and records it in a `packaging/rmac-session/LICENSES.md`, as `packaging/rmac-apps/LICENSES.md` already does for the apps. | Every shipped non-ELF file falls under a recorded licence. |
 
 **Functional issues found and fixed (not security findings).**
@@ -431,7 +434,10 @@ apart from the action it names. Keep raw logs and screenshots out of Git.
   `ALLOW_INTERACTIVE_AUTHORIZATION`, so under `auth_admin_keep` every Remote
   Login or File Sharing toggle failed as "denied". Every mutation now allows
   interactive authorization (guard test
-  `every_systemd_mutation_may_ask_polkit_interactively`).
+  `every_systemd_mutation_may_ask_polkit_interactively`). That alone was not
+  enough: Lulo ran no polkit authentication agent, so polkit still had nobody
+  to ask. `rmac-polkit-agent` (SWU-07) now answers, with the Mac's password
+  dialog.
 - F-2 (`7fa43f90`): AppStream 1.1.2 (Ubuntu 26.04) requires `<categories>` in
   metainfo; all fifteen files lacked them, so `appstreamcli validate` and the
   installed-package gate failed. Each file now carries its desktop entry's
@@ -441,7 +447,7 @@ apart from the action it names. Keep raw logs and screenshots out of Git.
 ## What blocks Beta
 
 - **Security gate: Fail.** The gate itself is never waived. It passes only
-  when `open_findings` is empty, all 80 checks are `pass`, and every Beta
+  when `open_findings` is empty, all 83 checks are `pass`, and every Beta
   station has run. The one exception is a station with a recorded owner
   waiver: NVIDIA, for Beta 1.
 - **Nothing Critical or High is open.** SR-10 is fixed, but a development

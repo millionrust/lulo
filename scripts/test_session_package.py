@@ -1407,6 +1407,64 @@ class SessionDesktopFilterTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(skip_script.stat().st_mode), 0o755)
 
 
+class PolkitAgentUnitTests(unittest.TestCase):
+    """SWU-07: Lulo's polkit authentication agent runs for every session, is
+    a Wants= (a crash never stops the desktop), can reach the setuid helper
+    when polkit has no helper socket, and never dumps core."""
+
+    root = Path(__file__).resolve().parents[1]
+
+    def unit_text(self) -> str:
+        return (
+            self.root / "crates/rmac-session/units/rmac-polkit-agent.service"
+        ).read_text(encoding="utf-8")
+
+    def directives(self) -> dict[str, str]:
+        values: dict[str, str] = {}
+        for line in self.unit_text().splitlines():
+            if "=" in line and not line.startswith("#"):
+                key, value = line.split("=", 1)
+                values[key] = value
+        return values
+
+    def test_unit_starts_the_agent_and_is_part_of_the_session(self):
+        unit = self.directives()
+        self.assertEqual(
+            unit["ExecStart"], "%h/.local/libexec/rmac/rmac-polkit-agent"
+        )
+        self.assertEqual(unit["PartOf"], "rmac-session.target")
+        self.assertEqual(unit["Restart"], "on-failure")
+        self.assertEqual(unit["LimitCORE"], "0")
+        self.assertEqual(unit["OnFailure"], "rmac-component-failure@%N.service")
+        # The setuid helper fallback needs privileges to be gainable.
+        self.assertNotIn("NoNewPrivileges", unit)
+        self.assertNotIn("/bin/sh", self.unit_text())
+
+    def test_session_target_wants_the_agent_without_requiring_it(self):
+        target = (
+            self.root / "crates/rmac-session/units/rmac-session.target"
+        ).read_text(encoding="utf-8")
+        lines = target.splitlines()
+        wants = next(line for line in lines if line.startswith("Wants="))
+        requires = next(line for line in lines if line.startswith("Requires="))
+        self.assertIn("rmac-polkit-agent.service", wants.split())
+        self.assertNotIn("rmac-polkit-agent.service", requires)
+
+    def test_unit_and_executable_are_packaged_and_verified(self):
+        files = stage_package.package_files()
+        self.assertIn("usr/lib/systemd/user/rmac-polkit-agent.service", files)
+        self.assertIn(
+            Path("usr/lib/systemd/user/rmac-polkit-agent.service"),
+            verify_package.EXPECTED_PATHS,
+        )
+        self.assertIn(
+            "rmac-polkit-agent", verify_package.REQUIRED_RMAC_EXECUTABLES
+        )
+        self.assertIn(
+            "rmac-polkit-agent.service", verify_package.EXPECTED_SYSTEMD_UNITS
+        )
+
+
 class CalendarAgentUnitTests(unittest.TestCase):
     """CAL-7 / ADR 0022 §6-§7: the reminders agent is gated by the marker
     Calendar creates, so a machine with no calendars never starts it, and it

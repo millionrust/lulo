@@ -36,6 +36,9 @@ DOMAINS = (
     (
         "dbus-polkit",
         (
+            "authentication-agent-accepts-only-polkitd",
+            "authentication-agent-one-dialog-queued-and-cancellable",
+            "authentication-agent-password-zeroized-and-unlogged",
             "broadcasts-contain-no-secrets",
             "bounded-call-time-and-output",
             "denial-and-cancel-distinct",

@@ -36,8 +36,10 @@ permission-denied, restart-required, and failed states remain distinct.
 
 Battery and power, Storage, Date & Time, Language & Region, Login Items,
 Sharing, Users, About, Software Update, Accessibility, and Privacy & Security
-each retain their own service boundary. Privileged actions use the system
-polkit agent; Lulo OS does not ask for or store an administrator password.
+each retain their own service boundary. Privileged actions go through polkit;
+Lulo's polkit agent (`rmac-polkit-agent`) shows the password dialog and hands
+the password to polkit's own helper. Lulo OS never checks or stores an
+administrator password itself.
 
 ## Saving changes
 

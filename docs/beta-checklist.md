@@ -44,7 +44,7 @@ CI/candidate-package builds for recent `dev` commits.
    binaries.
 4. **The Orca accessibility audit (journey 9).** An automated run is in
    progress; the owner still needs to do the final listen.
-5. **Security-review native-station evidence (9 of 80 checks left).** The
+5. **Security-review native-station evidence (12 of 83 checks left; three are the new polkit agent's, SWU-07).** The
    disposable-install station runs on GitHub Actions. The AMD and NVIDIA
    desktop stations are waived for Beta 1, because the owner has neither
    machine. The reference laptop's checks (lock screen, TTY recovery,
@@ -180,11 +180,9 @@ for those.
 14. **FILES-38 (P1, S)** — File ▸ Delete Immediately… (⌥⌘⌫) dialog is
     partial. Plan: small follow-up, finish matching the Mac's exact dialog
     text/sizing.
-15. **SWU-07 (P1, M)** — No polkit authentication agent, so any
-    administrator action (installing a `.deb` by double-click, `pkexec`,
-    printer admin) has no password-sheet UI at all. Plan: medium; likely to
-    surprise a first-hour user who tries to install something from Files —
-    worth a known-limitations callout even before it's fixed.
+15. **SWU-07 (P1, M)** — Fixed in source: `rmac-polkit-agent` shows the
+    Mac's password dialog for every `auth_admin` action. Still owed: a
+    native run against polkit 127 on the reference laptop.
 
 ### Candidate-build history (2026-09-24–29, superseded by the above)
 
@@ -576,7 +574,7 @@ pass's explanation of the same gates and remain directionally accurate:
 4. **Security review: Fail (source review and disposable station done,
    gate not met).**
    [docs/security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md)
-   and its format 2 summary cover all 80 checks.
+   and its format 2 summary cover all 83 checks.
    - **Disposable station:** it runs on GitHub Actions on request
      (`.github/workflows/security-station.yml`, a fresh `ubuntu-26.04` VM).
      Against a candidate built from the fix branch, it passed 11 of 12

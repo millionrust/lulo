@@ -48,6 +48,21 @@
       "status": "pass"
     },
     {
+      "check": "authentication-agent-accepts-only-polkitd",
+      "domain": "dbus-polkit",
+      "status": "pending"
+    },
+    {
+      "check": "authentication-agent-one-dialog-queued-and-cancellable",
+      "domain": "dbus-polkit",
+      "status": "pending"
+    },
+    {
+      "check": "authentication-agent-password-zeroized-and-unlogged",
+      "domain": "dbus-polkit",
+      "status": "pending"
+    },
+    {
       "check": "broadcasts-contain-no-secrets",
       "domain": "dbus-polkit",
       "status": "pass"

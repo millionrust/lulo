@@ -56,6 +56,21 @@ impl MailView {
         rmac_ui::set_menu_checked("mail::ToggleUnreadFilter", self.state.unread_only, cx);
     }
 
+    /// File ▸ New Message… (⌘N) and the toolbar's Compose button. Opens
+    /// MAIL-8's compose seam with an empty draft and the fixture account's
+    /// signature already inserted; `cx.defer` matches Notes' ShowSettings
+    /// handler, which opens its secondary window outside the current
+    /// render/action dispatch rather than from inside it.
+    fn open_new_message(&self, cx: &mut Context<Self>) {
+        cx.defer(|cx| {
+            crate::compose_view::show(
+                rmac_mail_mime::Draft::default(),
+                crate::FIXTURE_ACCOUNT_ADDRESS,
+                cx,
+            );
+        });
+    }
+
     fn control(
         &self,
         id: &'static str,
@@ -120,9 +135,16 @@ impl MailView {
             },
             cx,
         ));
-        bar = bar.child(div().w(px(LIST - 66.0)));
+        bar = bar.child(self.control(
+            "mail-compose",
+            "▣",
+            "Compose",
+            ControlMode::Enabled,
+            |this, cx| this.open_new_message(cx),
+            cx,
+        ));
+        bar = bar.child(div().w(px(LIST - 96.0)));
         for (id, glyph, label) in [
-            ("mail-compose", "▣", "Compose"),
             ("mail-archive", "▤", "Archive"),
             ("mail-trash", "⌫", "Delete"),
             ("mail-junk", "⊗", "Junk"),
@@ -440,7 +462,7 @@ impl MailView {
         content.into_any_element()
     }
 
-    fn viewer(&self) -> AnyElement {
+    fn viewer(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(message) = self.state.selected_message() else {
             return div()
                 .flex_1()
@@ -478,24 +500,68 @@ impl MailView {
             );
         }
         body = body.child(self.rich_body(&message.body));
-        if let Some((name, size)) = message.attachment {
-            body = body.child(
-                div()
-                    .w(px(170.0))
-                    .h(px(46.0))
-                    .rounded(px(mac::radius_card()))
-                    .bg(mac::control_fill())
-                    .px(px(10.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .text_size(px(12.0))
-                    .text_color(mac::text())
-                    .child("▤")
-                    .child(format!("{name} · {size}")),
-            );
+        if let Some(attachment) = message.attachment {
+            body = body.child(self.attachment_chip(attachment, cx));
         }
         body.into_any_element()
+    }
+
+    /// An attachment chip. A `.ics` invite (MAIL-8) is also a button that
+    /// stages the attachment and hands it to Calendar through the OpenURI
+    /// portal, which routes to Calendar because `text/calendar` is
+    /// registered to `org.rmac.Calendar.desktop` (`packaging/rmac-apps`).
+    fn attachment_chip(
+        &self,
+        attachment: rmac_mail::MessageAttachment,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let is_calendar_invite = rmac_mail::ics::has_ics_extension(attachment.filename);
+        let mut chip = div()
+            .id("mail-attachment")
+            .w(px(170.0))
+            .h(px(46.0))
+            .rounded(px(mac::radius_card()))
+            .bg(mac::control_fill())
+            .px(px(10.0))
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .text_size(px(12.0))
+            .text_color(mac::text())
+            .child(if is_calendar_invite { "▦" } else { "▤" })
+            .child(format!(
+                "{} · {}",
+                attachment.filename, attachment.size_label
+            ));
+        if is_calendar_invite {
+            chip = chip
+                .role(Role::Button)
+                .aria_label(format!("Add {} to Calendar", attachment.filename))
+                .cursor_pointer()
+                .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                    let filename = attachment.filename;
+                    let bytes = attachment.bytes;
+                    cx.spawn(async move |_, _cx| {
+                        let staged = rmac_mail::ics::stage_for_handoff(filename, bytes);
+                        match staged {
+                            Ok(path) => {
+                                if let Err(error) = rmac_portal::open_item(&path).await {
+                                    eprintln!(
+                                        "rmac-mail: could not hand {filename} to Calendar: {error}"
+                                    );
+                                }
+                            }
+                            Err(error) => {
+                                eprintln!(
+                                    "rmac-mail: could not stage {filename} for Calendar: {error}"
+                                );
+                            }
+                        }
+                    })
+                    .detach();
+                }));
+        }
+        chip.into_any_element()
     }
 
     fn header(&self, message: &Message) -> AnyElement {
@@ -601,6 +667,12 @@ impl Render for MailView {
             .on_action(
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
             )
+            .on_action(cx.listener(|this, _: &crate::NewMessage, _, cx| {
+                this.open_new_message(cx);
+            }))
+            .on_action(cx.listener(|_, _: &crate::ShowSettings, _, cx| {
+                cx.defer(|cx| crate::settings_view::show(cx));
+            }))
             .child(self.toolbar(cx))
             .child(
                 div()
@@ -611,7 +683,7 @@ impl Render for MailView {
                     .bottom_0()
                     .flex()
                     .child(self.list(cx))
-                    .child(self.viewer()),
+                    .child(self.viewer(cx)),
             )
             .child(self.sidebar(cx))
     }

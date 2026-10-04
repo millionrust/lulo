@@ -1,3 +1,5 @@
+mod compose_view;
+mod settings_view;
 mod view;
 
 use gpui::{App, AppContext as _, KeyBinding};
@@ -23,14 +25,25 @@ gpui::actions!(
         Forward,
         Flag,
         Move,
-        Search
+        Search,
+        ShowSettings
     ]
 );
+
+/// The sole mailbox address the fixture (MAIL-5..MAIL-8) knows about.
+/// MAIL-4's account runtime replaces this with the account actually chosen
+/// for the message being composed.
+const FIXTURE_ACCOUNT_ADDRESS: &str = "jacob@example.com";
 
 fn main() {
     // Parse the small fixture before starting the UI. MAIL-4 will deliver snapshots
     // from its workers; neither parsing nor mailbox I/O belongs in render().
     let fixture = MailState::fixture();
+    // `Exec=/usr/bin/rmac-mail %u` (packaging/rmac-apps) hands a `mailto:`
+    // URI here as the one argument when the session's mailto handler runs.
+    let mailto_draft = std::env::args()
+        .nth(1)
+        .and_then(|argument| rmac_mail::mailto::parse(&argument));
     rmac_ui::application()
         .with_assets(rmac_ui::shared_assets())
         .run(move |cx: &mut App| {
@@ -41,10 +54,11 @@ fn main() {
                 KeyBinding::new("up", PreviousMessage, Some("Mail")),
                 KeyBinding::new("cmd-w", CloseWindow, Some("Mail")),
                 KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Mail")),
+                KeyBinding::new("cmd-n", NewMessage, Some("Mail")),
+                KeyBinding::new("cmd-,", ShowSettings, Some("Mail")),
             ]);
             rmac_ui::install_app_menu(MAIL, cx);
             for action in [
-                "mail::NewMessage",
                 "mail::Archive",
                 "mail::Delete",
                 "mail::Junk",
@@ -72,6 +86,9 @@ fn main() {
             if let Err(error) = opened {
                 eprintln!("rmac-mail: could not open a window: {error}");
                 cx.quit();
+            }
+            if let Some(draft) = mailto_draft.clone() {
+                compose_view::show(draft, FIXTURE_ACCOUNT_ADDRESS, cx);
             }
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {

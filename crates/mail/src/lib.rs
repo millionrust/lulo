@@ -1,5 +1,9 @@
 //! Read-only Mail snapshot and selection model. MAIL-4 will supply snapshots.
 
+pub mod ics;
+pub mod mailto;
+pub mod settings;
+
 use rmac_mail_mime::{sanitize_html, RichText};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,6 +67,16 @@ impl Mailbox {
     }
 }
 
+/// An attachment on a fixture `Message`. `bytes` is real content (not just a
+/// display label) so `ics::stage_for_handoff` has something true to write
+/// when the viewer hands a calendar invite to Calendar (MAIL-8).
+#[derive(Clone, Copy, Debug)]
+pub struct MessageAttachment {
+    pub filename: &'static str,
+    pub size_label: &'static str,
+    pub bytes: &'static [u8],
+}
+
 #[derive(Clone, Debug)]
 pub struct Message {
     pub id: &'static str,
@@ -76,10 +90,25 @@ pub struct Message {
     pub preview: &'static str,
     pub unread: bool,
     pub flagged: bool,
-    pub attachment: Option<(&'static str, &'static str)>,
+    pub attachment: Option<MessageAttachment>,
     pub thread_id: &'static str,
     pub body: RichText,
 }
+
+/// A small, valid iCalendar invite (RFC 5545) for the "Calendar sync spec"
+/// fixture thread, so Mail's attachment chip has a real `.ics` to hand to
+/// Calendar instead of only a display label.
+const SAMPLE_ICS: &[u8] = b"BEGIN:VCALENDAR\r\n\
+VERSION:2.0\r\n\
+PRODID:-//Lulo OS//Mail//EN\r\n\
+BEGIN:VEVENT\r\n\
+UID:standup-2026-10-05@lulo.local\r\n\
+DTSTAMP:20261004T090000Z\r\n\
+DTSTART:20261005T090000Z\r\n\
+DTEND:20261005T091500Z\r\n\
+SUMMARY:Calendar sync standup\r\n\
+END:VEVENT\r\n\
+END:VCALENDAR\r\n";
 
 pub struct MailState {
     pub messages: Vec<Message>,
@@ -219,7 +248,13 @@ impl MailState {
             } else {
                 RichText::from_plain(preview)
             };
-            Message { id, mailbox, sender, initials, date, to: "Jacob Samas", cc: if id == "anna" { "Sam Ortiz" } else { "" }, subject, preview, unread, flagged, attachment: if id == "anna" { Some(("Menu.pdf", "212 KB")) } else if id == "grandma" { Some(("Photos.zip", "2.4 MB")) } else { None }, thread_id, body }
+            let attachment = match id {
+                "anna" => Some(MessageAttachment { filename: "Menu.pdf", size_label: "212 KB", bytes: b"" }),
+                "grandma" => Some(MessageAttachment { filename: "Photos.zip", size_label: "2.4 MB", bytes: b"" }),
+                "sam" => Some(MessageAttachment { filename: "standup.ics", size_label: "1 KB", bytes: SAMPLE_ICS }),
+                _ => None,
+            };
+            Message { id, mailbox, sender, initials, date, to: "Jacob Samas", cc: if id == "anna" { "Sam Ortiz" } else { "" }, subject, preview, unread, flagged, attachment, thread_id, body }
         }).collect();
         Self {
             messages,

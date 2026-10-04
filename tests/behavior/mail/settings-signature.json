@@ -1,0 +1,12 @@
+{
+  "title": "Mail: Settings ▸ Signatures adds a signature",
+  "app": "mail",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"key": "cmd-,", "settle": 0.6},
+    {"observe": "settings", "facts": ["windows"]},
+    {"select": "Signatures", "settle": 0.4},
+    {"observe": "signatures", "facts": ["windows", "selection"]}
+  ]
+}

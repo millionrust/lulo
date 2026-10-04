@@ -1195,6 +1195,10 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
 
 const MAIL_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!("Settings…", "mail::ShowSettings", "⌘,")],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             item!("New Message", "mail::NewMessage", "⌘N"),

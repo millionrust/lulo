@@ -84,6 +84,39 @@ class ApplicationPackageTests(unittest.TestCase):
             self.assertNotIn("DBusActivatable", desktop)
             self.assertNotIn("StartupNotify", desktop)
 
+    def test_mail_and_calendar_register_mailto_and_ics_handlers(self):
+        """MAIL-8: `mailto:` opens Mail, `.ics` attachments hand off to
+        Calendar through the desktop portal, which resolves the handler
+        from `text/calendar=org.rmac.Calendar.desktop` below."""
+        import configparser
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.stage(Path(temporary))
+            verify_package.verify_tree(root)
+
+            mail_desktop = (
+                root / "usr/share/applications/org.rmac.Mail.desktop"
+            ).read_text(encoding="utf-8")
+            self.assertIn("Exec=/usr/bin/rmac-mail %u\n", mail_desktop)
+            self.assertIn("MimeType=x-scheme-handler/mailto;\n", mail_desktop)
+
+            calendar_desktop = (
+                root / "usr/share/applications/org.rmac.Calendar.desktop"
+            ).read_text(encoding="utf-8")
+            self.assertIn("Exec=/usr/bin/rmac-calendar %u\n", calendar_desktop)
+            self.assertIn("MimeType=text/calendar;\n", calendar_desktop)
+
+            parser = configparser.ConfigParser(interpolation=None, strict=True)
+            parser.optionxform = str
+            parser.read_string(
+                (root / verify_package.MIMEAPPS).read_text(encoding="utf-8")
+            )
+            defaults = dict(parser["Default Applications"])
+            self.assertEqual(
+                defaults["x-scheme-handler/mailto"], "org.rmac.Mail.desktop"
+            )
+            self.assertEqual(defaults["text/calendar"], "org.rmac.Calendar.desktop")
+
     def test_rmac_defaults_open_images_pdfs_and_text_in_rmac_apps(self):
         import configparser
 

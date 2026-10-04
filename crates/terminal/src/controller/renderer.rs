@@ -56,6 +56,8 @@ impl Render for TerminalView {
             );
             rmac_ui::set_menu_enabled("terminal::CopyPlainText", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::CopyWithoutBackgroundColour", has_selection, cx);
+            rmac_ui::set_menu_enabled("terminal::ExportSelectedTextAs", has_selection, cx);
+            rmac_ui::set_menu_enabled("terminal::PrintSelection", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::OpenManPageForSelection", has_man_topic, cx);
             rmac_ui::set_menu_enabled(
                 "terminal::SearchManPageIndexForSelection",
@@ -113,6 +115,14 @@ impl Render for TerminalView {
                 self.tabs[self.active].ui.search_open,
                 cx,
             );
+            // Shell ▸ New Window/Tab with Same Command: only a session that
+            // is itself execing a specific program (`-e`, or a same-command
+            // relaunch) has a command to repeat. A plain interactive shell
+            // leaves both disabled, as the Mac does when there's nothing to
+            // name.
+            let has_exec_origin = self.tabs[self.active].exec_origin().is_some();
+            rmac_ui::set_menu_enabled("terminal::NewWindowWithSameCommand", has_exec_origin, cx);
+            rmac_ui::set_menu_enabled("terminal::NewTabWithSameCommand", has_exec_origin, cx);
         }
         let layout = responsive_layout::terminal_layout(f32::from(
             rmac_ui::window_content_size(window).width,

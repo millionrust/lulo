@@ -89,6 +89,21 @@ impl Selection {
     }
 }
 
+/// Shell ▸ Export Text As…/Print…: every cell currently in the buffer
+/// (scrollback and screen), exactly as `Selection::text` would copy it if a
+/// selection spanned the whole thing.
+pub(super) fn buffer_text<T>(term: &Term<T>, rows: usize, cols: usize) -> String {
+    let history = term
+        .grid()
+        .total_lines()
+        .saturating_sub(term.grid().screen_lines()) as i32;
+    let whole = Selection {
+        anchor: (-history, 0),
+        head: (rows.saturating_sub(1) as i32, cols.saturating_sub(1)),
+    };
+    whole.text(term, rows, cols)
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct SessionUiState {
     pub(super) selection: Option<Selection>,

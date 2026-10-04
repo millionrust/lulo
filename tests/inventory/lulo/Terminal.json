@@ -73,6 +73,13 @@
               "children": []
             },
             {
+              "label": "New Window with Same Command",
+              "action": "terminal::NewWindowWithSameCommand",
+              "shortcut": "⌃⌘N",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Basic",
               "action": "terminal::WindowBasic",
               "shortcut": "",
@@ -168,6 +175,13 @@
               "label": "New Tab with Profile – Basic",
               "action": "terminal::TabBasicDefault",
               "shortcut": "⌘T",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "New Tab with Same Command",
+              "action": "terminal::NewTabWithSameCommand",
+              "shortcut": "⌃⌘T",
               "separator_before": false,
               "children": []
             },
@@ -272,6 +286,34 @@
           "children": []
         },
         {
+          "label": "Use Settings as Default",
+          "action": "terminal::UseSettingsAsDefault",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Export Settings…",
+          "action": "terminal::ExportSettings",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Export Text As…",
+          "action": "terminal::ExportTextAs",
+          "shortcut": "⌘S",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Export Selected Text As…",
+          "action": "terminal::ExportSelectedTextAs",
+          "shortcut": "⇧⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Reset",
           "action": "terminal::ResetTerminal",
           "shortcut": "⌥⌘R",
@@ -282,6 +324,20 @@
           "label": "Hard Reset",
           "action": "terminal::HardResetTerminal",
           "shortcut": "⌃⌥⌘R",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Print Selection…",
+          "action": "terminal::PrintSelection",
+          "shortcut": "⌥⌘P",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Print…",
+          "action": "terminal::Print",
+          "shortcut": "⌘P",
           "separator_before": false,
           "children": []
         }

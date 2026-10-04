@@ -104,6 +104,29 @@ fn shell_program(configured: Option<String>) -> String {
         .unwrap_or_else(|| "/bin/sh".to_string())
 }
 
+/// What a session runs: the user's interactive shell, or (Shell ▸ New
+/// Window/Tab with Same Command, `-e PROGRAM ARGS…`) one program execed
+/// directly. Kept on `Session` so a later tab or window can repeat exactly
+/// what this one is running, the way those two Mac Shell menu items do.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) enum InitialProgram {
+    #[default]
+    Shell,
+    Exec {
+        program: String,
+        args: Vec<String>,
+    },
+}
+
+impl From<crate::cli::ExecCommand> for InitialProgram {
+    fn from(command: crate::cli::ExecCommand) -> Self {
+        Self::Exec {
+            program: command.program,
+            args: command.args,
+        }
+    }
+}
+
 /// Bash does not report its current directory by default. Emit one bounded
 /// OSC 7 report at each prompt without starting a process or watching /proc.
 /// User prompt commands still run after the directory report.
@@ -580,6 +603,7 @@ pub(super) struct Session {
     shell_pid: Option<u32>,
     killer: Option<Box<dyn ChildKiller + Send + Sync>>,
     lifecycle: Arc<Mutex<SessionLifecycle>>,
+    origin: InitialProgram,
 }
 
 impl Session {
@@ -589,6 +613,7 @@ impl Session {
         scrollback_lines: usize,
         starting_directory: Option<PathBuf>,
         redraw: RedrawSender,
+        program: InitialProgram,
     ) -> Result<Self, SessionStartError> {
         let size = TermSize { cols, lines: rows };
         let pty = native_pty_system();
@@ -621,14 +646,28 @@ impl Session {
         let job_state = SessionJobState::default();
         let job_source = ForegroundJobSource::from_master(&*pair.master);
         let workers = ReservedSessionWorkers::reserve()?;
-        let shell = shell_program(std::env::var("SHELL").ok());
-        let prompt_command =
-            bash_directory_prompt_command(&shell, std::env::var("PROMPT_COMMAND").ok());
-        let mut command = CommandBuilder::new(shell);
+        let mut command = match &program {
+            InitialProgram::Shell => {
+                let shell = shell_program(std::env::var("SHELL").ok());
+                let prompt_command =
+                    bash_directory_prompt_command(&shell, std::env::var("PROMPT_COMMAND").ok());
+                let mut command = CommandBuilder::new(shell);
+                if let Some(prompt_command) = prompt_command {
+                    command.env("PROMPT_COMMAND", prompt_command);
+                }
+                command
+            }
+            // `-e PROGRAM ARGS…`, or Shell ▸ New Window/Tab with Same
+            // Command repeating one: execed directly, argv untouched —
+            // never through a shell, so nothing here re-splits or
+            // re-expands ARGS.
+            InitialProgram::Exec { program, args } => {
+                let mut command = CommandBuilder::new(program);
+                command.args(args);
+                command
+            }
+        };
         command.env("TERM", "xterm-256color");
-        if let Some(prompt_command) = prompt_command {
-            command.env("PROMPT_COMMAND", prompt_command);
-        }
         if let Some(directory) = starting_directory {
             command.cwd(directory);
         }
@@ -682,6 +721,7 @@ impl Session {
             shell_pid,
             killer: Some(killer),
             lifecycle,
+            origin: program,
         })
     }
 
@@ -721,6 +761,20 @@ impl Session {
             shell_pid: None,
             killer: None,
             lifecycle: Arc::new(Mutex::new(SessionLifecycle::StartFailed(error))),
+            origin: InitialProgram::default(),
+        }
+    }
+
+    /// Shell ▸ New Window/Tab with Same Command: `Some` only for a session
+    /// that was itself execed directly (`-e`, or a same-command relaunch of
+    /// one), never for an ordinary interactive shell.
+    pub(super) fn exec_origin(&self) -> Option<crate::cli::ExecCommand> {
+        match &self.origin {
+            InitialProgram::Shell => None,
+            InitialProgram::Exec { program, args } => Some(crate::cli::ExecCommand {
+                program: program.clone(),
+                args: args.clone(),
+            }),
         }
     }
 
@@ -1405,6 +1459,7 @@ mod tests {
             shell_pid: None,
             killer: None,
             lifecycle: Arc::new(Mutex::new(SessionLifecycle::Running)),
+            origin: InitialProgram::default(),
         };
 
         assert!(session.accepts_input());

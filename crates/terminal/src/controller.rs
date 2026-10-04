@@ -12,11 +12,14 @@ mod lifecycle;
 mod pointer;
 mod renderer;
 mod responsive_layout;
+mod shell_commands;
 mod tab_lifecycle;
 mod view_state;
 
 #[cfg(test)]
 mod tests;
+
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use crate::emulator::{
     grid_dimensions, scrollback_limit_for_tab_count, terminal_config, MIN_COLS, MIN_ROWS,
@@ -39,7 +42,9 @@ use crate::paste::{PendingPaste, MAX_BYTES as MAX_PASTE_BYTES};
 use crate::profiles::{self, active, load as load_profile, save as save_profile, PROFILES};
 #[cfg(test)]
 use crate::session::EventProxy;
-use crate::session::{PasteError, RedrawSender, Session, SessionControlError, SessionWriteError};
+use crate::session::{
+    InitialProgram, PasteError, RedrawSender, Session, SessionControlError, SessionWriteError,
+};
 use crate::settings::{self, CursorStyle};
 use crate::shell_integration::{CommandRangeKind, PromptDirection};
 #[cfg(test)]
@@ -122,6 +127,12 @@ gpui::actions!(
         HideFindBar,
         UseSelectionForFind,
         JumpToSelection,
+        UseSettingsAsDefault,
+        ExportSettings,
+        ExportTextAs,
+        ExportSelectedTextAs,
+        Print,
+        PrintSelection,
         ScrollToTop,
         ScrollToBottom,
         PageUp,
@@ -146,6 +157,8 @@ gpui::actions!(
         CloseAll,
         NextTab,
         PrevTab,
+        NewWindowWithSameCommand,
+        NewTabWithSameCommand,
         CycleProfile,
         ShowTabBar,
         AllowMouseReporting,
@@ -253,6 +266,15 @@ fn profile_named(name: &str) -> usize {
 /// that opened it is using.
 fn open_window_with_profile(name: &str, cx: &mut gpui::App) {
     rmac_ui::open_another_window(vec![format!("--profile={}", profile_named(name))], cx);
+}
+
+/// Shell ▸ New Window with Same Command: a fresh window execing exactly
+/// what `exec` names, reusing the same `-e PROGRAM ARGS…` argument
+/// convention `main.rs` parses for a launch from the command line.
+fn open_window_with_same_command(exec: crate::cli::ExecCommand, cx: &mut gpui::App) {
+    let mut arguments = vec!["-e".to_string(), exec.program];
+    arguments.extend(exec.args);
+    rmac_ui::open_another_window(arguments, cx);
 }
 
 fn terminal_content_top(show_tab_bar: bool) -> f32 {
@@ -376,4 +398,9 @@ pub(super) struct TerminalView {
     menu_at: Option<rmac_ui::ContextMenuState>,
     /// Last published AT-SPI text projection of the visible grid, and when.
     a11y_cache: Option<TerminalAccessibilityCache>,
+    /// A unique id for this window, used only as Shell ▸ Print…'s
+    /// `PrintDocument::window_generation`.
+    window_generation: u64,
 }
+
+static NEXT_WINDOW_GENERATION: AtomicU64 = AtomicU64::new(1);

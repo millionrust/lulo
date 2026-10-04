@@ -725,6 +725,11 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                         "terminal::WindowBasicDefault",
                         "⌘N"
                     ),
+                    item!(
+                        "New Window with Same Command",
+                        "terminal::NewWindowWithSameCommand",
+                        "⌃⌘N"
+                    ),
                     item!("Basic", "terminal::WindowBasic", ""),
                     item!("Clear Dark", "terminal::WindowClearDark", ""),
                     item!("Clear Light", "terminal::WindowClearLight", ""),
@@ -748,6 +753,11 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                         "terminal::TabBasicDefault",
                         "⌘T"
                     ),
+                    item!(
+                        "New Tab with Same Command",
+                        "terminal::NewTabWithSameCommand",
+                        "⌃⌘T"
+                    ),
                     item!("Basic", "terminal::TabBasic", ""),
                     item!("Clear Dark", "terminal::TabClearDark", ""),
                     item!("Clear Light", "terminal::TabClearLight", ""),
@@ -764,8 +774,28 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             ),
             item!("Close Window", "terminal::CloseTab", "⌘W", separator),
             item!("Close All", "terminal::CloseAll", "⌥⌘W"),
+            item!(
+                "Use Settings as Default",
+                "terminal::UseSettingsAsDefault",
+                "",
+                separator
+            ),
+            item!("Export Settings…", "terminal::ExportSettings", ""),
+            item!("Export Text As…", "terminal::ExportTextAs", "⌘S", separator),
+            item!(
+                "Export Selected Text As…",
+                "terminal::ExportSelectedTextAs",
+                "⇧⌘S"
+            ),
             item!("Reset", "terminal::ResetTerminal", "⌥⌘R", separator),
             item!("Hard Reset", "terminal::HardResetTerminal", "⌃⌥⌘R"),
+            item!(
+                "Print Selection…",
+                "terminal::PrintSelection",
+                "⌥⌘P",
+                separator
+            ),
+            item!("Print…", "terminal::Print", "⌘P"),
         ],
     },
     MenuSpec {

@@ -216,6 +216,13 @@ impl TerminalView {
         let term = self.tabs[self.active].term.lock().ok()?;
         Some(selection.text(&term, self.rows, self.cols))
     }
+
+    /// Shell ▸ Export Text As…/Print…: the active tab's whole buffer
+    /// (scrollback and screen) as plain text.
+    pub(super) fn buffer_text(&self) -> Option<String> {
+        let term = self.tabs[self.active].term.lock().ok()?;
+        Some(crate::ui_state::buffer_text(&term, self.rows, self.cols))
+    }
 }
 
 #[cfg(test)]

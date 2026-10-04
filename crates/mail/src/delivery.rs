@@ -5,10 +5,14 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rmac_accounts::provider::{Provider, SocketSecurity};
+#[cfg(target_os = "linux")]
 use rmac_accounts_linux::{goa::GoaBus, GoaApi};
 use rmac_mail_mime::{build, guess_content_type, Draft};
+#[cfg(target_os = "linux")]
 use rmac_mail_runtime::account_id;
-use rmac_mail_smtp::{drain_outbox, Authentication, Config, Secret, Security};
+#[cfg(target_os = "linux")]
+use rmac_mail_smtp::Secret;
+use rmac_mail_smtp::{drain_outbox, Authentication, Config, Security};
 use rmac_mail_storage::{MailStorage, NewMessage, FLAG_DRAFT};
 use uuid::Uuid;
 
@@ -21,6 +25,8 @@ pub struct ComposeAccount {
 }
 
 /// Startup discovery runs before GPUI. No credential is retained in the UI.
+/// GOA is a Linux session service; other platforms have no accounts yet.
+#[cfg(target_os = "linux")]
 pub fn accounts() -> Vec<ComposeAccount> {
     GoaBus::session()
         .and_then(|goa| goa.accounts())
@@ -34,6 +40,11 @@ pub fn accounts() -> Vec<ComposeAccount> {
             provider: account.provider,
         })
         .collect()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn accounts() -> Vec<ComposeAccount> {
+    Vec::new()
 }
 
 fn data_root() -> Option<PathBuf> {
@@ -173,6 +184,32 @@ pub fn discard_draft(account: &ComposeAccount, location: DraftLocation) {
     let _ = storage.remove_server_uid(location.mailbox_id, location.uid);
 }
 
+/// The credential SMTP submission needs, fetched from GOA at send time so
+/// nothing is retained in the UI. GOA is Linux-only; other platforms have
+/// no SMTP credential source yet, so a send always queues to the Outbox.
+#[cfg(target_os = "linux")]
+fn smtp_authentication(account: &ComposeAccount) -> Option<Authentication> {
+    let goa = GoaBus::session().ok()?;
+    if account.provider == "google" {
+        let token = goa.access_token(&account.path).ok()?;
+        Some(Authentication::Xoauth2 {
+            user: account.address.clone(),
+            token: Secret::new(token.expose().to_owned()),
+        })
+    } else {
+        let password = goa.password(&account.path, "smtp-password").ok()?;
+        Some(Authentication::Plain {
+            user: account.address.clone(),
+            password: Secret::new(password.expose().to_owned()),
+        })
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn smtp_authentication(_account: &ComposeAccount) -> Option<Authentication> {
+    None
+}
+
 pub fn deliver(
     account: &ComposeAccount,
     mut draft: Draft,
@@ -217,26 +254,8 @@ pub fn deliver(
     let Some(server) = provider.info().servers else {
         return DeliveryResult::Queued;
     };
-    let goa = match GoaBus::session() {
-        Ok(goa) => goa,
-        Err(_) => return DeliveryResult::Queued,
-    };
-    let auth = if account.provider == "google" {
-        match goa.access_token(&account.path) {
-            Ok(token) => Authentication::Xoauth2 {
-                user: account.address.clone(),
-                token: Secret::new(token.expose().to_owned()),
-            },
-            Err(_) => return DeliveryResult::Queued,
-        }
-    } else {
-        match goa.password(&account.path, "smtp-password") {
-            Ok(password) => Authentication::Plain {
-                user: account.address.clone(),
-                password: Secret::new(password.expose().to_owned()),
-            },
-            Err(_) => return DeliveryResult::Queued,
-        }
+    let Some(auth) = smtp_authentication(account) else {
+        return DeliveryResult::Queued;
     };
     let config = Config {
         host: server.smtp_host.into(),

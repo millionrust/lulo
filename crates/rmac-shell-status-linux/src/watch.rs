@@ -9,7 +9,7 @@ use crate::{Error, Event, Sources};
 #[cfg(target_os = "linux")]
 pub async fn watch(sender: Sender<Event>) -> Result<(), Error> {
     let dbus = reconnecting_system_bus(sender.clone());
-    let audio = reconnecting_audio(sender.clone());
+    let audio = watch_audio(sender.clone());
     futures_util::try_join!(dbus, audio)?;
     Ok(())
 }
@@ -27,21 +27,6 @@ pub async fn watch(sender: Sender<Event>) -> Result<(), Error> {
 
 #[cfg(target_os = "linux")]
 const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
-
-/// `reconnecting_audio`'s cap: once PipeWire has been unavailable for a
-/// while, a failed `pw-dump` spawn-connect-exit cycle every second is a
-/// real, avoidable cost (a private test session with no PipeWire socket at
-/// all hits this constantly; a real machine would too for as long as
-/// PipeWire is down after a crash or before login finishes). Back off
-/// 1s, 2s, 4s... up to this ceiling instead of retrying at a fixed pace.
-#[cfg(target_os = "linux")]
-const AUDIO_RECONNECT_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
-
-/// An attempt that stayed up at least this long really did connect (and
-/// later lost PipeWire, rather than never reaching it); reset the backoff
-/// so losing a working connection still reconnects quickly.
-#[cfg(target_os = "linux")]
-const AUDIO_CONNECTED_RESET_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[cfg(target_os = "linux")]
 // `pw-dump --monitor` prints the full PipeWire graph once, then a fresh JSON
@@ -73,34 +58,47 @@ async fn reconnecting_system_bus(sender: Sender<Event>) -> Result<(), Error> {
     }
 }
 
+/// Delegate to `rmac-audio`'s own PipeWire watcher instead of keeping a
+/// second, duplicate `pw-dump --monitor` runner here. That implementation
+/// already does what a from-scratch reconnect loop here would otherwise
+/// need to grow: it parks on the PipeWire socket's directory via `notify`
+/// (inotify) instead of retrying a doomed connection every second when the
+/// socket does not exist yet -- a private test session's XDG_RUNTIME_DIR
+/// has no PipeWire socket at all, and a real machine briefly has none
+/// either after a crash or before login finishes.
 #[cfg(target_os = "linux")]
-async fn reconnecting_audio(sender: Sender<Event>) -> Result<(), Error> {
-    let mut previous_error = None;
-    let mut delay = RECONNECT_DELAY;
-    loop {
-        let attempt_started = std::time::Instant::now();
-        match watch_audio_once(&sender, &mut previous_error).await {
-            Ok(()) => return Ok(()),
-            Err(_) if sender.is_closed() => return Ok(()),
-            Err(error) => {
-                if let Err(report_error) =
-                    report_once(&sender, Sources::audio(), &error, &mut previous_error).await
-                {
-                    return if sender.is_closed() {
-                        Ok(())
-                    } else {
-                        Err(report_error)
-                    };
+async fn watch_audio(sender: Sender<Event>) -> Result<(), Error> {
+    let (events_tx, events_rx) = async_channel::bounded(8);
+    let watcher = async {
+        rmac_audio::watch(events_tx)
+            .await
+            .map_err(|error| Error::new("watch PipeWire changes", error.to_string()))
+    };
+    let forward = async {
+        while let Ok(event) = events_rx.recv().await {
+            let outcome = match event {
+                rmac_audio::WatchEvent::Changed => {
+                    send(&sender, Event::Refresh(Sources::audio())).await
                 }
-                async_io::Timer::after(delay).await;
-                delay = if attempt_started.elapsed() >= AUDIO_CONNECTED_RESET_THRESHOLD {
-                    RECONNECT_DELAY
-                } else {
-                    (delay * 2).min(AUDIO_RECONNECT_MAX_DELAY)
-                };
+                rmac_audio::WatchEvent::Unavailable => {
+                    send(
+                        &sender,
+                        Event::Unavailable {
+                            sources: Sources::audio(),
+                            detail: "PipeWire is unavailable".into(),
+                        },
+                    )
+                    .await
+                }
+            };
+            if outcome.is_err() {
+                return Ok(());
             }
         }
-    }
+        Ok(())
+    };
+    futures_util::try_join!(watcher, forward)?;
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -374,132 +372,6 @@ fn property_change(message: &zbus::Message) -> crate::model::PropertyChange {
     };
     let changed = changed.keys().copied().collect::<Vec<_>>();
     crate::model::property_change(interface, &changed, &invalidated)
-}
-
-/// Builds the `async_process::Command` that runs `program args...`
-/// (`pw-dump --monitor --no-colors` in production; a test passes a
-/// different program/args so it never depends on PipeWire being
-/// installed), bound to this process (see [`rmac_process::bind_to_parent`])
-/// with its stdio piped/nulled and `kill_on_drop` set.
-///
-/// Same fix as `rmac-audio`'s identical watcher (`rmac-audio/src/linux.rs`'s
-/// `build_monitor_command`, see its doc comment for the full story):
-/// `Command::from(std::process::Command)` resets `async_process`'s own
-/// stdin/stdout/stderr tracking, so a plain `.spawn()` would otherwise
-/// silently replace the piped stdout with `Stdio::inherit()`,
-/// `child.stdout` would always be `None`, and the freshly spawned `pw-dump`
-/// would be SIGKILLed by `kill_on_drop` a moment after every spawn -- a
-/// permanent one-second reconnect loop. Re-asserting the same stdio through
-/// `async_process::Command`'s own builder sets the tracking flags so
-/// `spawn()` leaves them alone -- `tests::command_pipes_stdout_through_async_process`
-/// regression-tests this.
-#[cfg(target_os = "linux")]
-pub(crate) fn build_monitor_command(program: &str, args: &[&str]) -> async_process::Command {
-    use std::process::Stdio;
-
-    let mut monitor = std::process::Command::new(program);
-    monitor
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    // `kill_on_drop` covers a watcher that stops; binding covers a process
-    // that exits without dropping it, so the monitor never outlives it.
-    rmac_process::bind_to_parent(&mut monitor);
-    let mut command = async_process::Command::from(monitor);
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    command
-}
-
-#[cfg(target_os = "linux")]
-async fn watch_audio_once(
-    sender: &Sender<Event>,
-    previous_error: &mut Option<Error>,
-) -> Result<(), Error> {
-    use futures_lite::io::AsyncReadExt as _;
-
-    // `pw-dump --monitor` is the machine-readable PipeWire graph monitor: it
-    // prints the full graph once, then a fresh JSON array of changed objects
-    // on every subsequent state change. Any array that changes more than
-    // PipeWire's client list is a "something changed, re-read the
-    // authoritative state" trigger, matching `rmac-audio`'s own watcher.
-    let mut command = build_monitor_command("pw-dump", &["--monitor", "--no-colors"]);
-    let mut child = command
-        .spawn()
-        .map_err(|error| Error::new("start the PipeWire monitor", error.to_string()))?;
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| Error::new("start the PipeWire monitor", "stdout was not captured"))?;
-    let mut buffer = [0_u8; 8192];
-    // Re-reading the audio state runs one-shot PipeWire clients, which this
-    // monitor reports; reacting to those would re-read forever.
-    let mut changes = rmac_audio::MonitorChanges::default();
-    let mut audio_changed = |bytes: &[u8]| {
-        changes
-            .feed(bytes)
-            .map_err(|error| Error::new("read PipeWire changes", error))
-    };
-
-    // The process is listening before the authoritative audio snapshot is read.
-    send(sender, Event::Refresh(Sources::audio())).await?;
-    *previous_error = None;
-    loop {
-        let read = {
-            let next = futures_util::FutureExt::fuse(stdout.read(&mut buffer));
-            let closed = futures_util::FutureExt::fuse(sender.closed());
-            futures_util::pin_mut!(next, closed);
-            futures_util::select! {
-                read = next => read,
-                _ = closed => return Ok(()),
-            }
-        }
-        .map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
-        if read == 0 {
-            return child_status_error(child).await;
-        }
-        if !audio_changed(&buffer[..read])? {
-            continue;
-        }
-
-        loop {
-            let read = {
-                let next = futures_util::FutureExt::fuse(stdout.read(&mut buffer));
-                let quiet = futures_util::FutureExt::fuse(async_io::Timer::after(QUIET_PERIOD));
-                let closed = futures_util::FutureExt::fuse(sender.closed());
-                futures_util::pin_mut!(next, quiet, closed);
-                futures_util::select! {
-                    read = next => read,
-                    _ = quiet => break,
-                    _ = closed => return Ok(()),
-                }
-            };
-            let read =
-                read.map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
-            if read == 0 {
-                return child_status_error(child).await;
-            }
-            // Already refreshing; this only keeps the monitor's framing.
-            audio_changed(&buffer[..read])?;
-        }
-        send(sender, Event::Refresh(Sources::audio())).await?;
-    }
-}
-
-#[cfg(target_os = "linux")]
-async fn child_status_error(mut child: async_process::Child) -> Result<(), Error> {
-    let status = child
-        .status()
-        .await
-        .map_err(|error| Error::new("wait for the PipeWire monitor", error.to_string()))?;
-    Err(Error::new(
-        "watch PipeWire changes",
-        format!("pw-dump --monitor exited with {status}"),
-    ))
 }
 
 #[cfg(target_os = "linux")]

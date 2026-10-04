@@ -8,12 +8,9 @@ publish = false
 
 [dependencies]
 async-channel.workspace = true
-rmac-process.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 async-io.workspace = true
-async-process.workspace = true
-futures-lite.workspace = true
 futures-util.workspace = true
 rmac-audio.workspace = true
 zbus.workspace = true

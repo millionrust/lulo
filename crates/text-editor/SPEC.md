@@ -95,8 +95,8 @@ plain text over a rich-text file.
   fails the modal operation safely and the next attempt reconnects afresh. Text
   Editor exposes Print and Command-P only for the supported Linux plain-text
   view, blocks document mutation and close while the modal transaction is
-  active, and never flattens a rich document while implying its formatting
-  was preserved (rich printing and PDF export say so and stop).
+  active. A rich document prints and exports with its formatting through
+  `rmac_print::render_rich_pdf`; it is never flattened to plain text.
 - This exact D-Bus path is necessary because ashpd 0.12.3 can export the GPUI
   raw Wayland handle, but its high-level print methods omit the portal
   version-3 `supported_output_file_formats` option. Calling those convenience

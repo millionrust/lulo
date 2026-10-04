@@ -31,8 +31,7 @@
     }
   ],
   "tolerance": {
-    "saved.saved_documents.entries": "present",
     "saved.saved_documents.contents": "present"
   },
-  "note": "TextEdit's default document format is Rich Text (.rtf); Lulo's Text Editor is plain text by design (.txt). The check requires that something was saved and the window closed; the format difference is a product choice, recorded in docs/parity.md."
+  "note": "New documents are rich text, as on the Mac (TE-23), so the saved name must match the Mac's SheetCheck.rtf exactly; the RTF bytes differ between writers (Lulo's has no tab-stop ruler), so contents only need to be present."
 }

@@ -4,11 +4,34 @@
   "launch": {},
   "lulo_only": true,
   "steps": [
-    {"type": "Hello"},
-    {"key": "cmd-s", "settle": 1.5},
-    {"type": "FocusAfterSave"},
-    {"key": "return", "settle": 1.5},
-    {"type": " world"},
-    {"observe": "saved", "facts": ["saved_documents", "focus"]}
-  ]
+    {
+      "menu_action": "text_editor::ToggleRichText",
+      "settle": 1.0
+    },
+    {
+      "type": "Hello"
+    },
+    {
+      "key": "cmd-s",
+      "settle": 1.5
+    },
+    {
+      "type": "FocusAfterSave"
+    },
+    {
+      "key": "return",
+      "settle": 1.5
+    },
+    {
+      "type": " world"
+    },
+    {
+      "observe": "saved",
+      "facts": [
+        "saved_documents",
+        "focus"
+      ]
+    }
+  ],
+  "note": "New documents are rich text, as on the Mac (TE-23); this plain-text contract starts with Format ▸ Make Plain Text, which converts an empty document at once."
 }

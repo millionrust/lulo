@@ -25,7 +25,7 @@ use crate::{
     OpenSpacing, PasteRuler, PasteStyle, PreventEditing, PrintFile, QuitAndKeepWindows,
     RenameDocument, RevertToLastSaved, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine,
     SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr,
-    SetLineEndingCrLf, SetLineEndingLf, ShowColours, ShowLists, ShowRuler, ShowSettings,
+    SetLineEndingCrLf, SetLineEndingLf, ShowColours, ShowFonts, ShowLists, ShowRuler, ShowSettings,
     ShowSpellingAndGrammar, ShowSubstitutions, StartSpeaking, StopSpeaking, ToggleBold,
     ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
     ToggleCorrectSpellingAutomatically, ToggleDarkBackground, ToggleDataDetectors, ToggleFind,
@@ -424,6 +424,7 @@ impl Render for EditorView {
                 this.set_highlight(super::format_text::Highlight::Blue, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowLists, _, cx| this.open_lists(cx)))
+            .on_action(cx.listener(|this, _: &ShowFonts, window, cx| this.show_fonts(window, cx)))
             .on_action(cx.listener(|this, _: &AlignLeft, _, cx| {
                 this.set_alignment(rich::Alignment::Left, cx)
             }))
@@ -722,6 +723,13 @@ impl Render for EditorView {
                 d.child(
                     rmac_ui::dialog("text-editor-colours", self.render_colours_panel(cx))
                         .aria_label("Colours")
+                        .attached(),
+                )
+            })
+            .when(self.fonts_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-fonts", self.render_fonts_panel(cx))
+                        .aria_label("Fonts")
                         .attached(),
                 )
             })

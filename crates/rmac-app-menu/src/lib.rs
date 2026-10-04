@@ -664,6 +664,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 "Font",
                 "text_editor::FontMenu",
                 [
+                    item!("Show Fonts", "text_editor::ShowFonts", "⌘T"),
                     item!("Bold", "text_editor::ToggleBold", "⌘B"),
                     item!("Italic", "text_editor::ToggleItalic", "⌘I"),
                     item!("Underline", "text_editor::ToggleUnderline", "⌘U"),

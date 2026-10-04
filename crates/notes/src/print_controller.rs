@@ -64,6 +64,7 @@ impl NotesView {
                 current_document_generation: self.print_generation.clone(),
                 title,
                 text,
+                rich: None,
             };
             // Printing keeps the window open until the portal answers
             // (`continue_close` waits for it), as the portal requires.

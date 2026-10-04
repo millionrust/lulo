@@ -6,12 +6,15 @@
 //! [`EntityInputHandler`], and lays out only the paragraphs on screen. A
 //! paragraph's layout is cached by its content version, so an edit relays
 //! out just the paragraphs it changed, and nothing runs while it is idle:
-//! the caret does not blink and nothing polls.
+//! the caret blinks only for a couple of seconds after the last keystroke
+//! or click (then stays lit, as the Terminal's parked cursor does) and
+//! nothing polls.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui::{
     point, px, size, App, Bounds, ClipboardItem, Context, CursorStyle, ElementId,
@@ -35,6 +38,11 @@ const MAX_UNDO: usize = 256;
 const MEASURE_ALL_BYTES: usize = 64 * 1024;
 /// Extra height laid out above and below the viewport.
 const OVERDRAW: f32 = 200.0;
+/// The insertion point's on and off phases.
+const BLINK_PHASE: Duration = Duration::from_millis(530);
+/// The caret stops blinking (and stays lit) this long after the last input,
+/// so a focused but idle editor schedules no work at all.
+const BLINK_IDLE: Duration = Duration::from_secs(2);
 
 /// What the editor tells its owner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,7 +119,8 @@ pub struct RichTextEditor {
     padding_x: Pixels,
     page_width: Option<Pixels>,
 
-    scroll_top: Pixels,
+    /// Shared with the overlay scroll bar.
+    scroll: rmac_ui::ScrollPosition,
     params: Option<LayoutParams>,
     layouts: HashMap<(u64, u32), Rc<ParagraphLayout>>,
     heights: HashMap<u64, Pixels>,
@@ -121,6 +130,12 @@ pub struct RichTextEditor {
     reveal: bool,
     goal_x: Option<Pixels>,
     dragging: Option<(Granularity, Range<usize>)>,
+    /// Caret blink: whether the caret shows this phase, which blink task is
+    /// current, and when the caret last moved.
+    caret_visible: bool,
+    blink_epoch: u64,
+    last_activity: Instant,
+    _focus_subscriptions: Vec<gpui::Subscription>,
 }
 
 impl EventEmitter<RichTextEvent> for RichTextEditor {}
@@ -132,10 +147,15 @@ impl Focusable for RichTextEditor {
 }
 
 impl RichTextEditor {
-    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let default_style = CharStyle::default();
+        let focus = cx.focus_handle();
+        let focus_subscriptions = vec![
+            cx.on_focus(&focus, window, |this, _window, cx| this.restart_blink(cx)),
+            cx.on_blur(&focus, window, |this, _window, cx| this.stop_blink(cx)),
+        ];
         Self {
-            focus: cx.focus_handle(),
+            focus,
             document: Document::empty(&default_style),
             selection: 0..0,
             reversed: false,
@@ -155,7 +175,7 @@ impl RichTextEditor {
             mono_family: SharedString::from(rmac_ui::MONO_FONT),
             padding_x: px(10.0),
             page_width: None,
-            scroll_top: px(0.0),
+            scroll: rmac_ui::ScrollPosition::default(),
             params: None,
             layouts: HashMap::new(),
             heights: HashMap::new(),
@@ -165,7 +185,51 @@ impl RichTextEditor {
             reveal: false,
             goal_x: None,
             dragging: None,
+            caret_visible: true,
+            blink_epoch: 0,
+            last_activity: Instant::now(),
+            _focus_subscriptions: focus_subscriptions,
         }
+    }
+
+    /// Show the caret and blink it until the editor has been idle for
+    /// [`BLINK_IDLE`]. One timer task at a time; a newer start or a blur
+    /// ends the older one.
+    fn restart_blink(&mut self, cx: &mut Context<Self>) {
+        self.caret_visible = true;
+        self.last_activity = Instant::now();
+        self.blink_epoch = self.blink_epoch.wrapping_add(1);
+        let epoch = self.blink_epoch;
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(BLINK_PHASE).await;
+            let keep_going = this
+                .update(cx, |this, cx| {
+                    if this.blink_epoch != epoch {
+                        return false;
+                    }
+                    if this.last_activity.elapsed() >= BLINK_IDLE {
+                        if !this.caret_visible {
+                            this.caret_visible = true;
+                            cx.notify();
+                        }
+                        return false;
+                    }
+                    this.caret_visible = !this.caret_visible;
+                    cx.notify();
+                    true
+                })
+                .unwrap_or(false);
+            if !keep_going {
+                break;
+            }
+        })
+        .detach();
+    }
+
+    fn stop_blink(&mut self, cx: &mut Context<Self>) {
+        self.blink_epoch = self.blink_epoch.wrapping_add(1);
+        self.caret_visible = true;
+        cx.notify();
     }
 
     // ---- Owner API -------------------------------------------------------
@@ -181,7 +245,7 @@ impl RichTextEditor {
         self.undo.clear();
         self.redo.clear();
         self.last_edit = None;
-        self.scroll_top = px(0.0);
+        self.scroll.set_top(px(0.0));
         self.revision += 1;
         self.goal_x = None;
         cx.notify();
@@ -362,6 +426,17 @@ impl RichTextEditor {
         self.change_char_style(cx, move |style| style.size = clamp_size(style.size + delta));
     }
 
+    /// The Fonts panel's family; `None` is the document's default face.
+    pub fn set_family(&mut self, family: Option<std::sync::Arc<str>>, cx: &mut Context<Self>) {
+        self.change_char_style(cx, move |style| style.family = family.clone());
+    }
+
+    /// The Fonts panel's size, in points.
+    pub fn set_size(&mut self, size: f32, cx: &mut Context<Self>) {
+        let size = clamp_size(size);
+        self.change_char_style(cx, move |style| style.size = size);
+    }
+
     /// The Colours panel's text colour; `None` is automatic.
     pub fn set_text_color(&mut self, color: Option<Rgb>, cx: &mut Context<Self>) {
         self.change_char_style(cx, move |style| style.color = color);
@@ -440,6 +515,7 @@ impl RichTextEditor {
     }
 
     fn finish_edit(&mut self, cx: &mut Context<Self>) {
+        self.restart_blink(cx);
         self.revision += 1;
         self.reveal = true;
         self.goal_x = None;
@@ -522,6 +598,7 @@ impl RichTextEditor {
         }
         self.marked = None;
         self.reveal = true;
+        self.restart_blink(cx);
         cx.notify();
     }
 
@@ -626,11 +703,12 @@ impl RichTextEditor {
         let (caret_index, caret_local) = self.document.locate(self.head());
 
         let mut placed = Vec::new();
+        let mut content_height = px(0.0);
         for _pass in 0..3 {
             placed.clear();
             let mut y = px(0.0);
             let mut caret_span = None;
-            let scroll_top = self.scroll_top;
+            let scroll_top = self.scroll.top();
             for index in 0..count {
                 let version = self.document.paragraph(index).version();
                 let mut height = match self.heights.get(&version) {
@@ -663,7 +741,7 @@ impl RichTextEditor {
                 y += height;
             }
             let max_scroll = (y - view_height).max(px(0.0));
-            let mut target = self.scroll_top.clamp(px(0.0), max_scroll);
+            let mut target = self.scroll.top().clamp(px(0.0), max_scroll);
             if let Some((top, line_height)) = caret_span {
                 if top < target {
                     target = top;
@@ -671,12 +749,15 @@ impl RichTextEditor {
                     target = (top + line_height - view_height).min(max_scroll);
                 }
             }
-            if target == self.scroll_top {
+            content_height = y;
+            if target == self.scroll.top() {
                 break;
             }
-            self.scroll_top = target;
+            self.scroll.set_top(target);
         }
         self.reveal = false;
+        self.scroll
+            .set_content_size(size(bounds.size.width, content_height.max(view_height)));
 
         // Keep only what is on screen; heights stay for scrolling.
         let keep: HashSet<(u64, u32)> = placed
@@ -739,7 +820,11 @@ impl RichTextEditor {
                     }
                 }
             }
-            if range.is_empty() && focused && self.editable && placed_paragraph.index == caret_index
+            if range.is_empty()
+                && focused
+                && self.editable
+                && self.caret_visible
+                && placed_paragraph.index == caret_index
             {
                 let (x, top, height) = layout.caret(caret_local);
                 caret = Some(Bounds::new(
@@ -1311,9 +1396,9 @@ impl RichTextEditor {
         }
         // Dragging past the top or bottom scrolls, a step per move.
         if event.position.y < self.viewport.top() {
-            self.scroll_top = (self.scroll_top - px(16.0)).max(px(0.0));
+            self.scroll.set_top(self.scroll.top() - px(16.0));
         } else if event.position.y > self.viewport.bottom() {
-            self.scroll_top += px(16.0);
+            self.scroll.set_top(self.scroll.top() + px(16.0));
         }
         let offset = self.offset_at(event.position);
         let target = match granularity {
@@ -1346,7 +1431,7 @@ impl RichTextEditor {
     fn on_scroll(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
         let delta = event.delta.pixel_delta(px(16.0 * self.zoom));
         if delta.y != px(0.0) {
-            self.scroll_top = (self.scroll_top - delta.y).max(px(0.0));
+            self.scroll.set_top(self.scroll.top() - delta.y);
             cx.stop_propagation();
             cx.notify();
         }
@@ -1567,9 +1652,12 @@ impl Render for RichTextEditor {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
-            .child(RichTextElement {
-                editor: cx.entity(),
-            })
+            .child(rmac_ui::overlay_scrollbar(
+                gpui::div().size_full().child(RichTextElement {
+                    editor: cx.entity(),
+                }),
+                &self.scroll,
+            ))
     }
 }
 

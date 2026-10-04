@@ -3,20 +3,72 @@
   "app": "text-editor",
   "lulo_only": true,
   "steps": [
-    {"type": "A"},
-    {"menu_action": "text_editor::InsertLineBreak"},
-    {"observe": "line", "facts": ["focus"]},
-    {"type": "B"},
-    {"menu_action": "text_editor::InsertParagraphBreak"},
-    {"observe": "paragraph", "facts": ["focus"]},
-    {"type": "C"},
-    {"menu_action": "text_editor::InsertPageBreak"},
-    {"observe": "page", "facts": ["focus"]},
-    {"type": "D"},
-    {"observe": "inserted", "facts": ["focus"]},
-    {"key": "cmd-s", "settle": 1.5},
-    {"type": "BreakCheck"},
-    {"key": "return", "settle": 1.5},
-    {"observe": "saved", "facts": ["saved_documents"]}
-  ]
+    {
+      "menu_action": "text_editor::ToggleRichText",
+      "settle": 1.0
+    },
+    {
+      "type": "A"
+    },
+    {
+      "menu_action": "text_editor::InsertLineBreak"
+    },
+    {
+      "observe": "line",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "type": "B"
+    },
+    {
+      "menu_action": "text_editor::InsertParagraphBreak"
+    },
+    {
+      "observe": "paragraph",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "type": "C"
+    },
+    {
+      "menu_action": "text_editor::InsertPageBreak"
+    },
+    {
+      "observe": "page",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "type": "D"
+    },
+    {
+      "observe": "inserted",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-s",
+      "settle": 1.5
+    },
+    {
+      "type": "BreakCheck"
+    },
+    {
+      "key": "return",
+      "settle": 1.5
+    },
+    {
+      "observe": "saved",
+      "facts": [
+        "saved_documents"
+      ]
+    }
+  ],
+  "note": "New documents are rich text, as on the Mac (TE-23); this plain-text contract starts with Format ▸ Make Plain Text, which converts an empty document at once."
 }

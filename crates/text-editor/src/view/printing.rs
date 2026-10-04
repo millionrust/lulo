@@ -13,15 +13,6 @@ impl EditorView {
         ) {
             return;
         }
-        if self.rich_text {
-            self.alert = Some(ActiveAlert::Error {
-                title: "Could not print the document.",
-                message: "Printing rich text with its formatting is not supported yet. Make Plain Text (or Duplicate it first) to print the text without implying the formatting is preserved."
-                    .into(),
-            });
-            cx.notify();
-            return;
-        }
         #[cfg(target_os = "linux")]
         {
             let raw_window = raw_window_handle::HasWindowHandle::window_handle(window)
@@ -49,6 +40,9 @@ impl EditorView {
                 current_document_generation: self.current_document_generation.clone(),
                 title: self.filename().to_string(),
                 text: self.document_text(cx),
+                rich: self
+                    .rich_text
+                    .then(|| document_io::print_lines(self.rich.read(cx).document())),
             };
             self.print_busy = true;
             self.status_notice = None;
@@ -103,15 +97,6 @@ impl EditorView {
         ) {
             return;
         }
-        if self.rich_text {
-            self.alert = Some(ActiveAlert::Error {
-                title: "Could not export the document as PDF.",
-                message: "Exporting rich text with its formatting as PDF is not supported yet. Make Plain Text (or Duplicate it first) to export the text without implying the formatting is preserved."
-                    .into(),
-            });
-            cx.notify();
-            return;
-        }
 
         let directory = self
             .path
@@ -122,6 +107,9 @@ impl EditorView {
             .unwrap_or_else(|| PathBuf::from("."));
         let suggested_name = pdf_export_filename(self.path.as_deref());
         let text = self.document_text(cx);
+        let rich_lines = self
+            .rich_text
+            .then(|| document_io::print_lines(self.rich.read(cx).document()));
         let layout = self.page_layout();
 
         self.print_busy = true;
@@ -145,7 +133,12 @@ impl EditorView {
             };
             let result = cx
                 .background_executor()
-                .spawn(async move { render_pdf_export(&path, &text, layout) })
+                .spawn(async move {
+                    match rich_lines {
+                        Some(lines) => document_io::render_rich_pdf_export(&path, &lines, layout),
+                        None => render_pdf_export(&path, &text, layout),
+                    }
+                })
                 .await;
             let _ = this.update_in(cx, |this, _, cx| {
                 this.print_busy = false;

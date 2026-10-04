@@ -17,7 +17,7 @@ use gpui_component::{
     input::Input as ComponentInput,
     menu::{DropdownMenu as _, PopupMenu},
     popover::Popover,
-    scroll::ScrollableElement as _,
+    scroll::{ScrollableElement as _, ScrollbarHandle},
     slider::Slider as ComponentSlider,
     table::DataTable as ComponentTable,
     tooltip::Tooltip as ComponentTooltip,
@@ -1731,6 +1731,50 @@ pub struct TextField {
     tab_index: isize,
     error: Option<SharedString>,
     style: StyleRefinement,
+}
+
+/// A vertical scroll position owned by a custom-painted view (one that does
+/// its own virtualised layout) and shared with the overlay scroll bar, which
+/// shows it and moves it when dragged.
+#[derive(Clone, Default)]
+pub struct ScrollPosition(Rc<std::cell::Cell<(gpui::Pixels, gpui::Size<gpui::Pixels>)>>);
+
+impl ScrollPosition {
+    /// How far the content is scrolled down.
+    pub fn top(&self) -> gpui::Pixels {
+        self.0.get().0
+    }
+
+    pub fn set_top(&self, top: gpui::Pixels) {
+        let (_, content) = self.0.get();
+        self.0.set((top.max(px(0.0)), content));
+    }
+
+    /// The full content size, for the thumb's length.
+    pub fn set_content_size(&self, content: gpui::Size<gpui::Pixels>) {
+        let (top, _) = self.0.get();
+        self.0.set((top, content));
+    }
+}
+
+impl ScrollbarHandle for ScrollPosition {
+    fn offset(&self) -> gpui::Point<gpui::Pixels> {
+        gpui::point(px(0.0), -self.top())
+    }
+
+    fn set_offset(&self, offset: gpui::Point<gpui::Pixels>) {
+        self.set_top(-offset.y);
+    }
+
+    fn content_size(&self) -> gpui::Size<gpui::Pixels> {
+        self.0.get().1
+    }
+}
+
+/// Overlay the shared vertical scroll bar for a [`ScrollPosition`] on
+/// `container`, the view's own (relatively positioned) scroll area.
+pub fn overlay_scrollbar(container: gpui::Div, position: &ScrollPosition) -> gpui::Div {
+    container.relative().vertical_scrollbar(position)
 }
 
 /// Overlay the shared vertical scroll bar for the [`gpui::UniformList`]

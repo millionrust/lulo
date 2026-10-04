@@ -378,4 +378,79 @@ impl EditorView {
             )
             .into_any_element()
     }
+
+    /// Format ▸ Font ▸ Show Fonts (⌘T): the installed families (click one to
+    /// set the selection's family) and a size field (Return applies it).
+    pub(super) fn render_fonts_panel(&self, cx: &mut Context<Self>) -> AnyElement {
+        let current = self.rich.read(cx).style_at_selection().family;
+        let mut list = div()
+            .id("font-families")
+            .role(Role::List)
+            .aria_label("Family")
+            .h(px(220.0))
+            .overflow_y_scroll()
+            .border_1()
+            .border_color(mac::separator())
+            .rounded(px(mac::radius_control()));
+        match &self.font_families {
+            None => {
+                list = list.child(
+                    div()
+                        .px_2()
+                        .py_1()
+                        .text_color(mac::text_secondary())
+                        .child("Loading fonts…"),
+                );
+            }
+            Some(families) => {
+                for (index, family) in families.iter().enumerate() {
+                    let selected = current.as_deref() == Some(family.as_ref());
+                    let family = family.clone();
+                    list = list.child(
+                        div()
+                            .id(("font-family", index))
+                            .role(Role::RadioButton)
+                            .aria_label(family.clone())
+                            .aria_selected(selected)
+                            .h(px(22.0))
+                            .px_2()
+                            .flex()
+                            .items_center()
+                            .bg(if selected {
+                                mac::text_selection()
+                            } else {
+                                gpui::transparent_black()
+                            })
+                            .hover(|row| row.bg(mac::hover()))
+                            .font_family(family.clone())
+                            .child(family.clone())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.set_font_family(family.clone(), cx)
+                            })),
+                    );
+                }
+            }
+        }
+        sheet_card("fonts-sheet", 320.0, 360.0)
+            .child(sheet_title("Fonts"))
+            .child(list)
+            .child(
+                div().flex().items_center().gap_2().child("Size").child(
+                    div()
+                        .id("font-size")
+                        .role(Role::TextInput)
+                        .aria_label("Size")
+                        .accessible_text_input(&self.font_size_input, cx)
+                        .w(px(80.0))
+                        .child(TextField::new(&self.font_size_input)),
+                ),
+            )
+            .child(
+                div().mt_auto().flex().justify_end().child(
+                    rmac_ui::dialog_button("fonts-done", "Done", DialogButtonKind::Primary)
+                        .on_click(cx.listener(|this, _, window, cx| this.close_fonts(window, cx))),
+                ),
+            )
+            .into_any_element()
+    }
 }

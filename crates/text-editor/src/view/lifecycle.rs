@@ -26,6 +26,16 @@ impl EditorView {
         let save_name_input = cx.new(|cx| InputState::new(window, cx).default_value("Untitled"));
         let save_goto_input = cx.new(|cx| InputState::new(window, cx).placeholder("Go to Folder"));
         let rename_input = cx.new(|cx| InputState::new(window, cx).placeholder("Name"));
+        let font_size_input = cx.new(|cx| InputState::new(window, cx).placeholder("Size"));
+        let sub_font_size = cx.subscribe_in(
+            &font_size_input,
+            window,
+            |this, _input, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    this.apply_font_size(window, cx);
+                }
+            },
+        );
 
         // TextEdit-style untitled numbering: only a window that opens with
         // no path (never one about to load a file) claims a number, freed
@@ -192,6 +202,7 @@ impl EditorView {
             KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, Some(CTX)),
             KeyBinding::new("alt-cmd-w", CloseAll, Some(CTX)),
             KeyBinding::new("shift-cmd-t", ToggleRichText, Some(CTX)),
+            KeyBinding::new("cmd-t", crate::ShowFonts, Some(CTX)),
             KeyBinding::new("cmd-b", crate::ToggleBold, Some(CTX)),
             KeyBinding::new("cmd-i", crate::ToggleItalic, Some(CTX)),
             KeyBinding::new("cmd-u", crate::ToggleUnderline, Some(CTX)),
@@ -412,6 +423,9 @@ impl EditorView {
             show_ruler: settings.show_ruler_default,
             colours_open: false,
             lists_open: false,
+            fonts_open: false,
+            font_families: None,
+            font_size_input,
             dark_background: false,
             rename_open: false,
             rename_input,
@@ -448,6 +462,7 @@ impl EditorView {
             _subscriptions: vec![
                 sub_main,
                 sub_rich,
+                sub_font_size,
                 sub_find,
                 sub_select_line,
                 sub_save_goto,

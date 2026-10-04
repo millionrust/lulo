@@ -79,3 +79,74 @@ fn stream_lengths_and_xref_offsets_point_to_valid_boundaries() {
     assert_eq!(&pdf[xref_offset..xref_offset + 4], b"xref");
     assert!(text.contains("1 0 obj\n<< /Type /Catalog"));
 }
+
+fn span(text: &str) -> RichSpan {
+    RichSpan {
+        text: text.to_owned(),
+        family: None,
+        size_pt: 12.0,
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        color: (0, 0, 0),
+        highlight: None,
+    }
+}
+
+#[test]
+fn rich_text_renders_a_colour_pdf_with_its_formatting() {
+    let lines = vec![
+        RichLine {
+            spans: vec![
+                span("Plain "),
+                RichSpan {
+                    bold: true,
+                    underline: true,
+                    color: (200, 20, 20),
+                    highlight: Some((255, 240, 120)),
+                    size_pt: 18.0,
+                    ..span("bold red")
+                },
+            ],
+            align: RichAlign::Center,
+            line_spacing: 1.5,
+        },
+        RichLine {
+            spans: vec![RichSpan {
+                italic: true,
+                strikethrough: true,
+                ..span("italic")
+            }],
+            align: RichAlign::Right,
+            line_spacing: 1.0,
+        },
+    ];
+    let pdf = render_rich_pdf(&lines, PageLayout::default()).unwrap();
+    assert!(pdf.starts_with(b"%PDF-1.7"));
+    assert!(pdf
+        .windows(b"/Count 1".len())
+        .any(|part| part == b"/Count 1"));
+    assert!(pdf
+        .windows(b"/DeviceRGB".len())
+        .any(|part| part == b"/DeviceRGB"));
+    assert!(pdf.ends_with(b"%%EOF\n"));
+}
+
+#[test]
+fn long_rich_text_paginates_and_blank_rich_text_prints_one_page() {
+    let lines = (0..160)
+        .map(|index| RichLine {
+            spans: vec![span(&format!("Line {index}"))],
+            ..RichLine::default()
+        })
+        .collect::<Vec<_>>();
+    let pdf = render_rich_pdf(&lines, PageLayout::default()).unwrap();
+    assert!(!pdf
+        .windows(b"/Count 1 ".len())
+        .any(|part| part == b"/Count 1 "));
+    let blank = render_rich_pdf(&[RichLine::default()], PageLayout::default()).unwrap();
+    assert!(blank
+        .windows(b"/Count 1".len())
+        .any(|part| part == b"/Count 1"));
+}

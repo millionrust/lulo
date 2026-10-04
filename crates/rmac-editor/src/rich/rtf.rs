@@ -554,11 +554,7 @@ impl<'a> Parser<'a> {
     fn word(&mut self, word: &str, param: Option<i32>) {
         let on = param != Some(0);
         match word {
-            "par" => {
-                if self.destination == Destination::Text {
-                    self.finish_paragraph();
-                }
-            }
+            "par" if self.destination == Destination::Text => self.finish_paragraph(),
             "line" => self.emit("\u{2028}"),
             "page" => self.emit("\u{000C}"),
             "tab" => self.emit("\t"),
@@ -642,11 +638,7 @@ impl<'a> Parser<'a> {
             }
             // A backslash before a line break is a paragraph mark (TextEdit
             // ends every paragraph this way).
-            b'\n' | b'\r' => {
-                if self.destination == Destination::Text {
-                    self.finish_paragraph();
-                }
-            }
+            b'\n' | b'\r' if self.destination == Destination::Text => self.finish_paragraph(),
             b'~' => self.emit("\u{00A0}"),
             b'_' => self.emit("\u{2011}"),
             b'\\' => self.emit("\\"),

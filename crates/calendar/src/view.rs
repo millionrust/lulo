@@ -8,10 +8,9 @@ use gpui::{
 use rmac_calendar::{
     current_date,
     editing::{self, Mutation},
-    events_on_day, fixture_week, is_weekend, month_grid_start, search_events, store,
-    subscription_default_name, unique_calendar_name, validate_calendar_name,
-    validate_subscription_url, Calendar, CalendarColor, Navigator, SearchResult, View,
-    WeekSnapshot,
+    events_on_day, is_weekend, month_grid_start, search_events, store, subscription_default_name,
+    unique_calendar_name, validate_calendar_name, validate_subscription_url, Calendar,
+    CalendarColor, Navigator, SearchResult, View, WeekSnapshot,
 };
 use rmac_calendar_store::{TimeValue, Zone};
 use rmac_ui::{
@@ -178,11 +177,11 @@ impl CalendarView {
                 self.error = None;
             }
             Err(error) => {
-                // No EDS (or it failed before the first load): fall back to
-                // the fixture so the calendar list and its prefs still work.
+                // No EDS (or it failed before the first load): show an
+                // empty calendar with the error banner. Never show sample
+                // events to a real user.
                 if self.base_calendars.is_empty() {
-                    let week_start = self.nav.week_start();
-                    self.set_snapshot(fixture_week(week_start));
+                    self.set_snapshot(WeekSnapshot::empty());
                 }
                 self.error = Some(error);
             }
@@ -2189,8 +2188,8 @@ impl CalendarView {
                     .unwrap_or_default();
                 return Some(
                     rmac_ui::alert_cancel_default(
-                        format!("Delete “{name}”?"),
-                        "Its events will also be deleted. This can't be undone.",
+                        format!("Remove “{name}” from Calendar?"),
+                        "It disappears from this list. Its events stay in the account it belongs to.",
                         vec![
                             rmac_ui::dialog_button(
                                 "calendar-delete-cancel",
@@ -2201,7 +2200,7 @@ impl CalendarView {
                             .into_any_element(),
                             rmac_ui::dialog_button(
                                 "calendar-delete-confirm",
-                                "Delete",
+                                "Remove",
                                 DialogButtonKind::Destructive,
                             )
                             .on_click(cx.listener(|this, _, _, cx| this.confirm_delete(cx)))

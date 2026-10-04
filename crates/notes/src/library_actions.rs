@@ -119,12 +119,18 @@ impl NotesView {
                 // fall back to it for an empty title) until the first
                 // keystroke supplies real text.
                 title: String::new(),
-                // Notes ▸ Settings… ▸ New notes start with: (NOT-SETTINGS-010).
-                // Notes keeps the title in its own field rather than the
-                // Mac's single first line (NOTES-01), so this pre-seeds the
-                // body's paragraph-style marker instead; `Body` leaves it
-                // empty, matching Lulo's previous (NOTES-16) behaviour.
-                body: self.new_note_body_style.marker().to_string(),
+                // Always empty, regardless of Notes ▸ Settings… ▸ New notes
+                // start with (NOT-SETTINGS-010): pre-seeding the body with
+                // that style's Markdown marker here broke the NOTES-16
+                // empty-body invariant every other note-creation path and
+                // several behaviour scenarios (convert-to-text,
+                // find-replace, return-in-title) depend on — in particular
+                // `continue_title_into_body` always inserts the title's
+                // typed tail at byte 0 once the body is non-empty, so the
+                // marker ended up stuck mid-word instead of styling a line.
+                // `new_note_body_style` is kept and shown in Settings for
+                // when a non-destructive way to apply it exists.
+                body: String::new(),
                 tags: Vec::new(),
                 folder_id,
             }),

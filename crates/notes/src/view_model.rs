@@ -125,10 +125,12 @@ pub(super) enum MathsResultsMode {
     InsertResults,
 }
 
-/// Notes ▸ Settings… ▸ New notes start with:. Notes keeps the title in its
-/// own field rather than the Mac's single-document first line (NOTES-01),
-/// so this instead pre-seeds the new note's body with the matching
-/// Markdown paragraph-style marker and places the caret after it.
+/// Notes ▸ Settings… ▸ New notes start with:. Stored and shown in Settings;
+/// not yet wired to an effect. Notes keeps the title in its own field
+/// rather than the Mac's single-document first line (NOTES-01), and
+/// pre-seeding the body with a Markdown marker to stand in for that broke
+/// the NOTES-16 empty-body invariant `continue_title_into_body` and
+/// several behaviour scenarios depend on — see `create_note`'s comment.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum NewNoteBodyStyle {
     #[default]
@@ -143,14 +145,6 @@ impl NewNoteBodyStyle {
             Self::Title => "Title",
             Self::Heading => "Heading",
             Self::Body => "Body",
-        }
-    }
-
-    pub(super) fn marker(self) -> &'static str {
-        match self {
-            Self::Title => "# ",
-            Self::Heading => "## ",
-            Self::Body => "",
         }
     }
 }

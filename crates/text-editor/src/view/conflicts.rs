@@ -37,6 +37,7 @@ impl EditorView {
                 this.file_busy = false;
                 match loaded {
                     Ok(LoadedFile::Plain(document)) => {
+                        let body_focused = this.body_focused(window, cx);
                         this.rich_text = false;
                         this.install_document_text(
                             document.text,
@@ -48,6 +49,9 @@ impl EditorView {
                         this.text_format = document.format;
                         this.reset_document_watch();
                         this.mark_clean(cx);
+                        if body_focused {
+                            this.focus_body(window, cx);
+                        }
                     }
                     Ok(LoadedFile::RichText {
                         document,

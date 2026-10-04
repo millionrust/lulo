@@ -1773,7 +1773,10 @@ impl ScrollbarHandle for ScrollPosition {
 
 /// Overlay the shared vertical scroll bar for a [`ScrollPosition`] on
 /// `container`, the view's own (relatively positioned) scroll area.
-pub fn overlay_scrollbar(container: gpui::Div, position: &ScrollPosition) -> gpui::Div {
+pub fn overlay_scrollbar(
+    container: Stateful<gpui::Div>,
+    position: &ScrollPosition,
+) -> Stateful<gpui::Div> {
     container.relative().vertical_scrollbar(position)
 }
 

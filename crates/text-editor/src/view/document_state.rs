@@ -159,6 +159,12 @@ impl EditorView {
                 .is_some_and(|path| !is_rich_text_path(path))
     }
 
+    /// Whether either body (plain field or rich editor) has keyboard focus.
+    pub(super) fn body_focused(&self, window: &Window, cx: &App) -> bool {
+        gpui::Focusable::focus_handle(self.rich.read(cx), cx).is_focused(window)
+            || gpui::Focusable::focus_handle(self.input.read(cx), cx).is_focused(window)
+    }
+
     /// Move keyboard focus to the document body (the rich-text editor in
     /// rich mode).
     pub(super) fn focus_body(&self, window: &mut Window, cx: &mut Context<Self>) {

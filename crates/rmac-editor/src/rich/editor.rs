@@ -1605,7 +1605,7 @@ impl rmac_ui::EditableText for RichTextEditor {
 
 impl Render for RichTextEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        gpui::div()
+        let root = gpui::div()
             .id("rich-text-editor")
             .role(Role::MultilineTextInput)
             .key_context(input::KEY_CONTEXT)
@@ -1652,12 +1652,12 @@ impl Render for RichTextEditor {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
-            .child(rmac_ui::overlay_scrollbar(
-                gpui::div().size_full().child(RichTextElement {
-                    editor: cx.entity(),
-                }),
-                &self.scroll,
-            ))
+            // Painted inside this (focused) node, so the shift-arrow
+            // listeners it registers by name are on the dispatch path.
+            .child(RichTextElement {
+                editor: cx.entity(),
+            });
+        rmac_ui::overlay_scrollbar(root, &self.scroll)
     }
 }
 

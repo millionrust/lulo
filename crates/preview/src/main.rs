@@ -16,6 +16,7 @@ use rmac_preview::document::{self, Kind};
 use rmac_preview::markup;
 use rmac_preview::metrics;
 use rmac_preview::render;
+use rmac_preview::versions;
 use rmac_ui::app_id::PREVIEW;
 
 use crate::view::PreviewView;
@@ -493,12 +494,11 @@ fn quit_and_keep_windows(cx: &mut App) {
         let mut jobs = Vec::new();
         let mut image_jobs = Vec::new();
         for view in open.iter().filter_map(WeakEntity::upgrade) {
-            let view = view.read(cx);
-            let paths = view.open_paths();
+            let paths = view.read(cx).open_paths();
             if !paths.is_empty() {
                 windows.push(paths);
-                jobs.extend(view.pending_markup());
-                image_jobs.extend(view.pending_image_saves());
+                jobs.extend(view.read(cx).pending_markup());
+                image_jobs.extend(view.update(cx, |view, _cx| view.pending_image_saves()));
             }
         }
         (windows, jobs, image_jobs)
@@ -512,7 +512,14 @@ fn quit_and_keep_windows(cx: &mut App) {
                 markup::write_pdf(&base, &temporary, &items).map_err(std::io::Error::other)?;
                 std::fs::rename(&temporary, &source)?;
             }
-            for (source, kind, pixels) in image_jobs {
+            for (source, kind, pixels, needs_version) in image_jobs {
+                if needs_version {
+                    if let Err(error) = versions::record(&source) {
+                        eprintln!(
+                            "rmac-preview: could not record a version before quitting: {error}"
+                        );
+                    }
+                }
                 render::save_image(&pixels, kind, &source).map_err(std::io::Error::other)?;
             }
             let path = saved_windows_path();
@@ -548,7 +555,7 @@ fn close_all(cx: &mut App) {
             .collect::<Vec<_>>();
         let image_jobs = views
             .iter()
-            .flat_map(|view| view.read(cx).pending_image_saves())
+            .flat_map(|view| view.update(cx, |view, _cx| view.pending_image_saves()))
             .collect::<Vec<_>>();
         (jobs, image_jobs)
     });
@@ -561,7 +568,14 @@ fn close_all(cx: &mut App) {
                 markup::write_pdf(&base, &temporary, &items).map_err(std::io::Error::other)?;
                 std::fs::rename(temporary, source)?;
             }
-            for (source, kind, pixels) in image_jobs {
+            for (source, kind, pixels, needs_version) in image_jobs {
+                if needs_version {
+                    if let Err(error) = versions::record(&source) {
+                        eprintln!(
+                            "rmac-preview: could not record a version before closing: {error}"
+                        );
+                    }
+                }
                 render::save_image(&pixels, kind, &source).map_err(std::io::Error::other)?;
             }
             Ok(())

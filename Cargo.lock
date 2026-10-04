@@ -5987,8 +5987,12 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "gpui",
+ "rmac-accounts",
  "rmac-calendar-store",
+ "rmac-storage",
  "rmac-ui",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

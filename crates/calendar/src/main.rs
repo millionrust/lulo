@@ -1,4 +1,6 @@
-//! Calendar shell and read-only Week view (CAL-3).
+//! Calendar shell, read-only Week/Day/Month/Year views (CAL-3/CAL-4), and
+//! calendar-list management, ICS subscriptions, search and Settings (CAL-6).
+mod settings_window;
 mod view;
 
 use gpui::{App, AppContext as _, KeyBinding};
@@ -23,6 +25,12 @@ gpui::actions!(
         NewEvent,
         ShowInvitations,
         Search,
+        NewCalendar,
+        NewCalendarSubscription,
+        RenameCalendar,
+        DeleteCalendar,
+        ShowSettings,
+        DismissSheet,
         CloseWindow,
     ]
 );
@@ -45,16 +53,16 @@ fn main() {
                 KeyBinding::new("up", SelectPreviousWeek, Some("Calendar")),
                 KeyBinding::new("down", SelectNextWeek, Some("Calendar")),
                 KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Calendar")),
+                KeyBinding::new("cmd-f", Search, Some("Calendar")),
+                KeyBinding::new("cmd-,", ShowSettings, Some("Calendar")),
+                KeyBinding::new("escape", DismissSheet, Some("Calendar")),
                 KeyBinding::new("cmd-w", CloseWindow, Some("Calendar")),
                 KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Calendar")),
             ]);
             rmac_ui::install_app_menu(CALENDAR, cx);
-            // Event creation, invitations, and search arrive in CAL-5/6/8.
-            for action in [
-                "calendar::NewEvent",
-                "calendar::ShowInvitations",
-                "calendar::Search",
-            ] {
+            // Event creation and invitations arrive in CAL-5/CAL-8; calendar
+            // management, subscriptions, search and Settings are CAL-6.
+            for action in ["calendar::NewEvent", "calendar::ShowInvitations"] {
                 rmac_ui::set_menu_enabled(action, false, cx);
             }
             let mut options = rmac_ui::window_options_for_app(CALENDAR, 1100.0, 720.0, cx);
@@ -63,7 +71,7 @@ fn main() {
                 rmac_ui::prepare_surface_window(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(CALENDAR, window, cx);
-                    CalendarView::new(cx)
+                    CalendarView::new(window, cx)
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);

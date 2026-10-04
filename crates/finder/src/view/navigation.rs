@@ -9,6 +9,12 @@ impl FinderView {
         cx.notify();
     }
 
+    /// View ▸ Show All Tabs, ⇧⌘\.
+    pub(super) fn toggle_show_all_tabs(&mut self, cx: &mut Context<Self>) {
+        self.show_all_tabs = !self.show_all_tabs;
+        cx.notify();
+    }
+
     pub(super) fn selected_folder(&self) -> Option<PathBuf> {
         if self.trash_view || self.applications_view {
             return None;
@@ -206,6 +212,21 @@ impl FinderView {
         }
     }
 
+    /// Go ▸ Library. macOS's `~/Library` holds per-app support files,
+    /// caches and preferences; Linux splits that across the XDG base
+    /// directories, so this opens `$XDG_DATA_HOME` (default `~/.local/
+    /// share`) — the closest single analogue, and where Lulo's own apps
+    /// keep their "Application Support"-equivalent files.
+    pub(super) fn go_library(&mut self, cx: &mut Context<Self>) {
+        let library = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| self.home.join(".local/share"));
+        if library.is_dir() {
+            self.navigate(library, cx);
+        }
+    }
+
     pub(super) fn navigate(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if !path.is_dir() || (path == self.cwd && !self.trash_view && !self.applications_view) {
             return;
@@ -215,10 +236,49 @@ impl FinderView {
         self.browse_view = self.current_options().browse_in_view.then_some(self.view);
         self.back.push(self.cwd.clone());
         self.fwd.clear();
+        self.record_recent_folder(path.clone());
         self.cwd = path;
         self.cwd_identity = None;
         self.persist_finder_state();
         self.reload(cx);
+    }
+
+    /// Go ▸ Recent Folders: remember a freshly-navigated-to folder,
+    /// most-recent first, capped and de-duplicated. Only `navigate()` calls
+    /// this — plain Back/Forward browsing (`go_back`/`go_forward`) revisits
+    /// folders already on the list rather than adding new "recent" ones, the
+    /// same distinction the Mac draws.
+    fn record_recent_folder(&mut self, path: PathBuf) {
+        self.recent_folders.retain(|existing| existing != &path);
+        self.recent_folders.insert(0, path);
+        self.recent_folders.truncate(RECENT_FOLDERS_CAP);
+    }
+
+    /// Go ▸ Recent Folders: opens the dynamic list as a standalone popup
+    /// (see `MenuPurpose::RecentFolders`).
+    pub(super) fn show_recent_folders_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.menu_purpose = MenuPurpose::RecentFolders;
+        self.menu_at = Some(rmac_ui::ContextMenuState::open(
+            gpui::point(px(16.0), px(44.0)),
+            &self.focus,
+            window,
+            cx,
+        ));
+        cx.notify();
+    }
+
+    /// Go ▸ Recent Folders ▸ Clear Menu.
+    pub(super) fn clear_recent_folders(&mut self, cx: &mut Context<Self>) {
+        self.recent_folders.clear();
+        self.menu_at = None;
+        cx.notify();
+    }
+
+    /// One row of the Go ▸ Recent Folders popup.
+    pub(super) fn open_recent_folder(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(path) = self.recent_folders.get(index).cloned() {
+            self.navigate(path, cx);
+        }
     }
 
     pub(super) fn go_back(&mut self, cx: &mut Context<Self>) {

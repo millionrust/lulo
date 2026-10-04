@@ -208,6 +208,35 @@
               "shortcut": "",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Energy Impact",
+              "action": "activity_monitor::ToggleEnergyColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Dock Icon",
+          "action": "activity_monitor::DockIconMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Show Application Icon",
+              "action": "activity_monitor::SetDockIconApplication",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Show CPU Usage",
+              "action": "activity_monitor::SetDockIconCpuUsage",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
         },
@@ -300,6 +329,13 @@
           "label": "Inspect Process",
           "action": "activity_monitor::InspectProcess",
           "shortcut": "⌘I",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Deltas for Process",
+          "action": "activity_monitor::ShowDeltasForProcess",
+          "shortcut": "⌥⌘J",
           "separator_before": false,
           "children": []
         },

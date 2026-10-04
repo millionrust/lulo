@@ -1,6 +1,37 @@
 use super::*;
 
 impl FinderView {
+    /// Whether exactly one non-folder file is selected, so File ▸ Open With
+    /// / Always Open With (and their context-menu equivalents) make sense.
+    pub(super) fn can_open_with(&self) -> bool {
+        !self.trash_view
+            && !self.applications_view
+            && self.selection_count() == 1
+            && self.selected_entry().is_some_and(|entry| !entry.is_dir)
+    }
+
+    /// File ▸ Open With / Always Open With, opened from the menu bar (no
+    /// mouse position is available, unlike the context-menu version), as a
+    /// standalone popup anchored under the toolbar.
+    pub(super) fn show_open_with_menu(
+        &mut self,
+        always_default: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.can_open_with() {
+            return;
+        }
+        self.menu_purpose = MenuPurpose::OpenWith(always_default);
+        self.menu_at = Some(rmac_ui::ContextMenuState::open(
+            gpui::point(px(16.0), px(44.0)),
+            &self.focus,
+            window,
+            cx,
+        ));
+        cx.notify();
+    }
+
     pub(super) fn load_open_with_menu(&mut self, cx: &mut Context<Self>) {
         self.open_with_menu = None;
         let Some(path) = self

@@ -303,6 +303,13 @@ impl FinderView {
                         }
                         this.root_entries = entries;
                         this.child_entries = children;
+                        // A full directory reload replaces every cached child
+                        // listing, so the LRU order only needs to track the
+                        // listing that survived (MEM-03's bounded_cache).
+                        this.child_entries_order.clear();
+                        for folder in this.child_entries.keys() {
+                            this.child_entries_order.push_back(folder.clone());
+                        }
                         this.rebuild_list_entries();
                         this.start_size_scan(cx);
                         let entry_paths = this
@@ -314,6 +321,8 @@ impl FinderView {
                             entry_paths.contains(source)
                                 && rmac_thumbnails::is_current(source, thumbnail)
                         });
+                        this.thumbs_order
+                            .retain(|source| this.thumbs.contains_key(source));
                         if let Some(free) = free {
                             this.free_bytes = free;
                         }

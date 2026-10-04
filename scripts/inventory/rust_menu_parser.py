@@ -50,7 +50,19 @@ class Menu:
 def _strip_literal(text: str) -> str:
     text = text.strip()
     if text.startswith('"') and text.endswith('"'):
-        return text[1:-1]
+        inner = text[1:-1]
+        # Un-escape the handful of Rust string escapes a menu label,
+        # action name or shortcut glyph could plausibly use (e.g. the
+        # literal "\\" a Finder ▸ View ▸ Show All Tabs shortcut (⇧⌘\)
+        # needs in valid Rust source) — a naive quote-strip would instead
+        # compare the raw two-character "\\\\" against the Mac's single
+        # backslash and report a false shortcut mismatch.
+        return (
+            inner.replace('\\"', '"')
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\\\", "\\")
+        )
     return text
 
 

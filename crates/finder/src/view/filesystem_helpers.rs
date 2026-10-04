@@ -77,6 +77,15 @@ pub(super) fn entry_for(path: &Path) -> Option<Entry> {
         human_size(size_bytes)
     };
     let kind = kind_of(path, is_dir);
+    let created_time = md
+        .as_ref()
+        .and_then(|m| m.created().ok())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let last_opened_time = md
+        .as_ref()
+        .and_then(|m| m.accessed().ok())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let tag = super::item_operations::file_tag_label(path);
     Some(Entry {
         name: name.into(),
         path: path.to_path_buf(),
@@ -123,6 +132,9 @@ pub(super) fn entry_for(path: &Path) -> Option<Entry> {
         kind: kind.into(),
         size_bytes,
         mtime,
+        created_time,
+        last_opened_time,
+        tag,
         search_detail: None,
         application: None,
     })
@@ -150,6 +162,9 @@ pub(super) fn entry_for_application(application: rmac_apps::Application) -> Entr
         kind: "Application".into(),
         size_bytes: metadata.map_or(0, |metadata| metadata.len()),
         mtime,
+        created_time: SystemTime::UNIX_EPOCH,
+        last_opened_time: SystemTime::UNIX_EPOCH,
+        tag: None,
         search_detail: application.generic_name.map(Into::into),
         application: Some(ApplicationEntry {
             launch: application.launch,
@@ -316,6 +331,15 @@ fn sort_entries_with(v: &mut [Entry], key: SortKey, asc: bool, folders_on_top: b
             SortKey::Date => a.mtime.cmp(&b.mtime),
             SortKey::Size => a.size_bytes.cmp(&b.size_bytes),
             SortKey::Kind => a.kind.to_lowercase().cmp(&b.kind.to_lowercase()),
+            SortKey::LastOpened => a.last_opened_time.cmp(&b.last_opened_time),
+            SortKey::Added | SortKey::Created => a.created_time.cmp(&b.created_time),
+            // Untagged items always sort after every tagged one.
+            SortKey::Tags => match (&a.tag, &b.tag) {
+                (Some(left), Some(right)) => left.to_lowercase().cmp(&right.to_lowercase()),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            },
         };
         if asc {
             o

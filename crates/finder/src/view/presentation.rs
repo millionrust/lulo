@@ -33,10 +33,7 @@ impl Render for FinderView {
         let menu_purpose = self.menu_purpose;
         let sort_key = self.sort_key;
         let compress_label = self.compress_menu_label();
-        let can_open_with = !self.trash_view
-            && !self.applications_view
-            && self.selection_count() == 1
-            && self.selected_entry().is_some_and(|entry| !entry.is_dir);
+        let can_open_with = self.can_open_with();
         let can_paste = self.can_paste();
         let undo_label = self
             .undo_available
@@ -555,6 +552,18 @@ impl Render for FinderView {
                         self.file_words,
                     ),
                     MenuPurpose::Sort => Self::build_sort_menu(state.position(), sort_key),
+                    MenuPurpose::OpenWith(always_default) => Self::build_open_with_menu(
+                        state.position(),
+                        always_default,
+                        self.open_with_menu
+                            .as_ref()
+                            .and_then(|(path, association)| {
+                                (self.selected_paths().first() == Some(path)).then_some(association)
+                            }),
+                    ),
+                    MenuPurpose::RecentFolders => {
+                        Self::build_recent_folders_menu(state.position(), &self.recent_folders)
+                    }
                     MenuPurpose::Sidebar => Self::build_sidebar_menu(
                         state.position(),
                         self.sidebar_context_is_favourite,
@@ -648,6 +657,33 @@ impl FinderView {
         ] {
             rmac_ui::set_menu_enabled(action, has_selection, cx);
         }
+        for action in ["finder::ShowOpenWithMenu", "finder::ShowAlwaysOpenWithMenu"] {
+            rmac_ui::set_menu_enabled(action, self.can_open_with(), cx);
+        }
+        // Clean Up only makes sense for Icon view's auto-flowed grid.
+        let icon_view = self.view == ViewMode::Icon;
+        for action in [
+            "finder::CleanUp",
+            "finder::CleanUpByName",
+            "finder::CleanUpByKind",
+            "finder::CleanUpByCreated",
+            "finder::CleanUpByDate",
+            "finder::CleanUpBySize",
+            "finder::CleanUpByTags",
+        ] {
+            rmac_ui::set_menu_enabled(action, icon_view, cx);
+        }
+        rmac_ui::set_menu_enabled(
+            "finder::CleanUpSelection",
+            icon_view && self.selected.len() > 1,
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "finder::ShowAllTabs",
+            self.tabs.len() > 1 || self.show_all_tabs,
+            cx,
+        );
+        rmac_ui::set_menu_checked("finder::ShowAllTabs", self.show_all_tabs, cx);
         let has_folder = self.selected_folder().is_some();
         for action in [
             "finder::OpenSelectionInNewTab",
@@ -722,6 +758,10 @@ impl FinderView {
             ("finder::SortByDate", state.sort_date),
             ("finder::SortBySize", state.sort_size),
             ("finder::SortByKind", state.sort_kind),
+            ("finder::SortByLastOpened", state.sort_last_opened),
+            ("finder::SortByAdded", state.sort_added),
+            ("finder::SortByTags", state.sort_tags),
+            ("finder::SortByCreated", state.sort_created),
         ] {
             rmac_ui::set_menu_checked(action, checked, cx);
         }
@@ -782,6 +822,10 @@ struct FinderMenuState {
     sort_date: bool,
     sort_size: bool,
     sort_kind: bool,
+    sort_last_opened: bool,
+    sort_added: bool,
+    sort_tags: bool,
+    sort_created: bool,
 }
 
 impl FinderMenuState {
@@ -812,6 +856,10 @@ impl FinderMenuState {
             sort_date: !relevance_order && sort_key == SortKey::Date,
             sort_size: !relevance_order && sort_key == SortKey::Size,
             sort_kind: !relevance_order && sort_key == SortKey::Kind,
+            sort_last_opened: !relevance_order && sort_key == SortKey::LastOpened,
+            sort_added: !relevance_order && sort_key == SortKey::Added,
+            sort_tags: !relevance_order && sort_key == SortKey::Tags,
+            sort_created: !relevance_order && sort_key == SortKey::Created,
         }
     }
 }
@@ -860,6 +908,29 @@ mod app_menu_tests {
             ),
             (false, false, false, false)
         );
+    }
+
+    #[test]
+    fn live_menu_state_checks_the_newer_sort_keys_too() {
+        let state = FinderMenuState::new(1, true, false, SortKey::Tags, false);
+        assert_eq!(
+            (
+                state.sort_last_opened,
+                state.sort_added,
+                state.sort_tags,
+                state.sort_created
+            ),
+            (false, false, true, false)
+        );
+
+        let state = FinderMenuState::new(1, true, false, SortKey::LastOpened, false);
+        assert!(state.sort_last_opened);
+        assert!(!state.sort_added && !state.sort_tags && !state.sort_created);
+
+        // Relevance order (an active search) overrides every sort checkmark,
+        // including the newer keys.
+        let state = FinderMenuState::new(1, true, false, SortKey::Added, true);
+        assert!(!state.sort_added);
     }
 
     #[test]

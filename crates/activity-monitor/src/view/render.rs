@@ -14,10 +14,11 @@ use crate::{
     process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, EnterFullScreen,
     FilterProcesses, FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess,
     JumpToSelection, Minimize, QuitProcess, RefreshEveryFiveSeconds, RefreshEverySecond,
-    RefreshEveryTwoSeconds, ShowActiveProcesses, ShowAllProcesses, ShowInactiveProcesses,
-    ShowMainWindow, ShowMyProcesses, ShowOtherUsersProcesses, ShowSelectedProcesses,
-    ShowSystemProcesses, ToggleCpuColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn,
-    ToggleUserColumn, UseSelectionForFind,
+    RefreshEveryTwoSeconds, SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses,
+    ShowAllProcesses, ShowDeltasForProcess, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
+    ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleCpuColumn,
+    ToggleEnergyColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
+    UseSelectionForFind,
 };
 
 use super::MonitorView;
@@ -85,6 +86,18 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ToggleMemoryColumn, _, cx| {
                 this.toggle_column(ColKey::Mem, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleEnergyColumn, _, cx| {
+                this.toggle_column(ColKey::Energy, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowDeltasForProcess, _, cx| {
+                this.toggle_show_deltas(cx);
+            }))
+            .on_action(cx.listener(|this, _: &SetDockIconApplication, _, cx| {
+                this.set_dock_icon_mode(crate::dock_icon::DockIconMode::Application, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SetDockIconCpuUsage, _, cx| {
+                this.set_dock_icon_mode(crate::dock_icon::DockIconMode::CpuUsage, cx);
             }))
             .on_action(cx.listener(|this, _: &RefreshEverySecond, _, cx| {
                 this.set_refresh_seconds(1, cx);

@@ -7,7 +7,10 @@
 
 mod accessibility;
 mod archive_controller;
+mod bounded_cache;
 mod chrome_presentation;
+mod clean_up_controller;
+mod clipboard_window;
 mod conflict_controller;
 mod content_presentation;
 mod dialog_presentation;
@@ -169,6 +172,25 @@ actions!(
         SortByDate,
         SortBySize,
         SortByKind,
+        SortByLastOpened,
+        SortByAdded,
+        SortByTags,
+        SortByCreated,
+        CleanUp,
+        CleanUpSelection,
+        CleanUpByName,
+        CleanUpByKind,
+        CleanUpByCreated,
+        CleanUpByDate,
+        CleanUpBySize,
+        CleanUpByTags,
+        ShowClipboard,
+        GoLibrary,
+        ShowAllTabs,
+        ShowOpenWithMenu,
+        ShowAlwaysOpenWithMenu,
+        ShowRecentFolders,
+        ClearRecentFolders,
         NewTab,
         CloseTab,
         CloseAll,
@@ -235,6 +257,13 @@ struct GoToTitlePathAction {
     path: PathBuf,
 }
 
+/// One row of the Go ▸ Recent Folders popup (see `MenuPurpose::RecentFolders`).
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = finder, no_json)]
+struct OpenRecentFolderAction {
+    index: usize,
+}
+
 /// The little pill shown under the cursor while dragging.
 struct DragPreview {
     count: usize,
@@ -257,6 +286,14 @@ struct Entry {
     kind: SharedString,
     size_bytes: u64,
     mtime: SystemTime,
+    /// Birth time, used for both "Date Created" and "Date Added" sorting:
+    /// Linux has no separate "added to this folder" timestamp like macOS, so
+    /// Added and Created sort identically here, matching the `added`/
+    /// `created` display strings above (already the same value).
+    created_time: SystemTime,
+    last_opened_time: SystemTime,
+    /// The single Finder-style colour tag on this item, if any (FILES-05).
+    tag: Option<SharedString>,
     search_detail: Option<SharedString>,
     /// Installed applications are a Finder destination, not ordinary launcher
     /// files. Keep the trusted catalog launch contract with the projected row
@@ -303,6 +340,14 @@ enum SortKey {
     Date,
     Size,
     Kind,
+    /// Date Last Opened — from `accessed()`; approximate, since Linux does
+    /// not distinguish "opened by an app" from any other read of the file.
+    LastOpened,
+    /// Date Added — see `Entry::created_time`'s doc comment: Linux has no
+    /// per-folder "added" timestamp, so this sorts identically to Created.
+    Added,
+    Created,
+    Tags,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -311,6 +356,11 @@ enum MenuPurpose {
     Sort,
     Sidebar,
     TitlePath,
+    /// File ▸ Open With / Always Open With, opened from the menu bar rather
+    /// than a right click: `true` means "Always" (sets the default handler).
+    OpenWith(bool),
+    /// Go ▸ Recent Folders.
+    RecentFolders,
 }
 
 /// One browser tab — its own directory and navigation history.
@@ -321,6 +371,10 @@ struct Tab {
     back: Vec<PathBuf>,
     fwd: Vec<PathBuf>,
 }
+
+/// Go ▸ Recent Folders keeps this many entries, matching the Mac's own
+/// default list length.
+const RECENT_FOLDERS_CAP: usize = 10;
 
 struct FinderView {
     cwd: PathBuf,
@@ -335,11 +389,19 @@ struct FinderView {
     directory_generation: u64,
     directory_load_pending: bool,
     thumbs: std::collections::HashMap<PathBuf, PathBuf>,
+    /// Least-recently-used order for `thumbs`, so a long session cannot grow
+    /// it without bound (see `bounded_cache` and parity row MEM-03).
+    thumbs_order: std::collections::VecDeque<PathBuf>,
     entries: Vec<Entry>,
     /// Direct children of cwd; entries includes descendants only in list view.
     root_entries: Vec<Entry>,
     expanded: BTreeSet<PathBuf>,
     child_entries: HashMap<PathBuf, Vec<Entry>>,
+    /// Least-recently-used order for `child_entries`, so collapsing a folder
+    /// (which does not remove its cached listing, to keep re-expanding fast)
+    /// cannot grow the cache without bound (see `bounded_cache` and parity
+    /// row MEM-03).
+    child_entries_order: std::collections::VecDeque<PathBuf>,
     list_depths: Vec<usize>,
     list_scroll: gpui::ScrollHandle,
     watched_children: BTreeSet<PathBuf>,
@@ -363,6 +425,10 @@ struct FinderView {
     show_hidden: bool,
     view: ViewMode,
     sidebar_visible: bool,
+    /// View ▸ Show All Tabs: wraps the tab strip onto as many rows as it
+    /// needs so every open tab is visible at once, instead of the normal
+    /// single scrollable row.
+    show_all_tabs: bool,
     toolbar_visible: bool,
     preview_visible: bool,
     sidebar_width: f32,
@@ -389,6 +455,9 @@ struct FinderView {
     size_scan_cancel: Option<Arc<AtomicBool>>,
     back: Vec<PathBuf>,
     fwd: Vec<PathBuf>,
+    /// Go ▸ Recent Folders: most-recently-visited first, capped at
+    /// `RECENT_FOLDERS_CAP`. Session-only (not persisted across launches).
+    recent_folders: Vec<PathBuf>,
     file_words: rmac_locale::FileVocabulary,
     sections: Vec<Section>,
     /// User-added Favourites, over and above the built-in ones — the same

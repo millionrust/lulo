@@ -850,6 +850,12 @@ const FILES_MENUS: &[MenuSpec] = &[
                 "finder::OpenSelectionInNewWindowAndClose",
                 "⌥⌘O"
             ),
+            // The Mac shows these as submenus with a live handler list;
+            // the menu bar here only carries a fixed item tree, so each
+            // opens the same dynamic popup the right-click menu already
+            // uses, with its own live handler list and "Other…" entry.
+            item!("Open With", "finder::ShowOpenWithMenu", ""),
+            item!("Always Open With", "finder::ShowAlwaysOpenWithMenu", ""),
             item!("Close Window", "finder::CloseTab", "⌘W"),
             item!("Close All", "finder::CloseAll", "⌥⌘W"),
             item!("Get Info", "finder::GetInfo", "⌘I", separator),
@@ -884,6 +890,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Move Item Here", "finder::MoveItemHere", "⌥⌘V"),
             item!("Select All", "finder::SelectAll", "⌘A"),
             item!("Deselect All", "finder::DeselectAll", "⌥⌘A"),
+            item!("Show Clipboard", "finder::ShowClipboard", ""),
         ],
     },
     MenuSpec {
@@ -900,13 +907,32 @@ const FILES_MENUS: &[MenuSpec] = &[
                 [
                     item!("Name", "finder::SortByName", "⌃⌥⌘1"),
                     item!("Kind", "finder::SortByKind", "⌃⌥⌘2"),
+                    item!("Date Last Opened", "finder::SortByLastOpened", "⌃⌥⌘3"),
+                    item!("Date Added", "finder::SortByAdded", "⌃⌥⌘4"),
                     item!("Date Modified", "finder::SortByDate", "⌃⌥⌘5"),
                     item!("Size", "finder::SortBySize", "⌃⌥⌘6"),
+                    item!("Tags", "finder::SortByTags", "⌃⌥⌘7"),
+                    item!("Date Created", "finder::SortByCreated", ""),
                 ],
                 separator
             ),
+            item!("Clean Up", "finder::CleanUp", ""),
+            submenu!(
+                "Clean Up By",
+                "finder::CleanUpByMenu",
+                [
+                    item!("Name", "finder::CleanUpByName", "⌥⌘1"),
+                    item!("Kind", "finder::CleanUpByKind", "⌥⌘2"),
+                    item!("Date Created", "finder::CleanUpByCreated", ""),
+                    item!("Date Modified", "finder::CleanUpByDate", "⌥⌘5"),
+                    item!("Size", "finder::CleanUpBySize", "⌥⌘6"),
+                    item!("Tags", "finder::CleanUpByTags", "⌥⌘7"),
+                ]
+            ),
+            item!("Clean Up Selection", "finder::CleanUpSelection", ""),
             item!("Show View Options", "finder::ShowViewOptions", "⌘J"),
             item!("Show Preview", "finder::TogglePreview", "⇧⌘P"),
+            item!("Show All Tabs", "finder::ShowAllTabs", "⇧⌘\\"),
             item!("Show Tab Bar", "finder::ToggleTabBar", "⇧⌘T"),
             item!("Hide Toolbar", "finder::ToggleToolbar", "⌥⌘T"),
             item!("Enter Full Screen", "finder::EnterFullScreen", "F"),
@@ -934,8 +960,14 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Computer", "finder::GoComputer", "⇧⌘C"),
             item!("Applications", "finder::GoApplications", "⇧⌘A"),
             item!("Utilities", "finder::GoUtilities", "⇧⌘U"),
+            item!("Library", "finder::GoLibrary", ""),
             item!("Shared", "finder::GoShared", "⇧⌘S"),
             item!("Trash", "finder::GoTrash", ""),
+            // The Mac shows this as a submenu with the live recent-folders
+            // list and a "Clear Menu" entry; the menu bar here only carries
+            // a fixed item tree, so this opens the same dynamic popup
+            // (which has its own Clear Menu) instead.
+            item!("Recent Folders", "finder::ShowRecentFolders", ""),
             item!("Go to Folder…", "finder::GoToFolder", "⇧⌘G", separator),
         ],
     },
@@ -1012,6 +1044,23 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                     item!("% CPU", "activity_monitor::ToggleCpuColumn", ""),
                     item!("# Threads", "activity_monitor::ToggleThreadsColumn", ""),
                     item!("Real Memory", "activity_monitor::ToggleMemoryColumn", ""),
+                    item!("Energy Impact", "activity_monitor::ToggleEnergyColumn", ""),
+                ]
+            ),
+            submenu!(
+                "Dock Icon",
+                "activity_monitor::DockIconMenu",
+                [
+                    item!(
+                        "Show Application Icon",
+                        "activity_monitor::SetDockIconApplication",
+                        ""
+                    ),
+                    item!(
+                        "Show CPU Usage",
+                        "activity_monitor::SetDockIconCpuUsage",
+                        ""
+                    ),
                 ]
             ),
             submenu!(
@@ -1070,6 +1119,11 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("Inspect Process", "activity_monitor::InspectProcess", "⌘I"),
+            item!(
+                "Show Deltas for Process",
+                "activity_monitor::ShowDeltasForProcess",
+                "⌥⌘J"
+            ),
             item!("Quit Process", "activity_monitor::QuitProcess", "⌥⌘Q"),
             item!(
                 "Clear CPU History",

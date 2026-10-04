@@ -179,7 +179,12 @@ impl MailView {
             ("mail-trash", "⌫", "Move to Bin", OrganizeAction::Delete),
             ("mail-junk", "⊗", "Junk or Not Junk", OrganizeAction::Junk),
         ] {
-            let mode = if self.state.selected_message().is_some() {
+            // Archive has no destination on iCloud (special_mailbox returns
+            // None), so grey it out there instead of a silent no-op click.
+            let available = self.state.selected_message().is_some_and(|message| {
+                action != OrganizeAction::Archive || message.mailbox.account() != "iCloud"
+            });
+            let mode = if available {
                 ControlMode::Enabled
             } else {
                 ControlMode::Disabled

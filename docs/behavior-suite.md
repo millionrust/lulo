@@ -152,8 +152,20 @@ sign in, or confirm a deletion on the owner's Mac. The Lulo side runs against
 in-tree fixture IMAP/SMTP/CalDAV servers and a fake goa-daemon on a private bus.
 
 MAIL-5 has two Lulo-only fixture scenarios in `tests/behavior/mail/` for
-marking a message read and toggling conversation grouping. Mac recordings
-against a local mailbox remain pending until the Mac can be measured.
+marking a message read and toggling conversation grouping. MAIL-7 adds four
+more: flagging (`mail/flag-message`), Junk (`mail/move-to-junk`), delete with
+undo (`mail/delete-and-undo`), and the toolbar/⌘F search field filtering the
+list (`mail/search-mailbox`). All six compare against `mail_messages`
+(conversation/unread/flagged counts over the fixture's ten messages), driven
+by the app's own keybindings rather than `menu_action` where one exists.
+Mac recordings against a local mailbox remain pending until the Mac can be
+measured; `docs/behavior-pending/mail/` keeps the speculative,
+Mac-recording-shaped versions of these same scenarios (written before the
+app existed) until then. Search against a real account — local index first,
+then IMAP `SEARCH` on the server — remains open behind MAIL-2/MAIL-4; this
+milestone's search is the fixture-backed list filter in `rmac-mail::MailState`,
+proven against FTS5 token parsing and escaping by
+`rmac-mail-storage`'s own unit tests.
 
 MAIL-2's protocol behaviour is exercised by the local TLS IMAP fixture in
 `crates/rmac-mail-imap/src/tests.rs`: it checks authentication, QRESYNC,

@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "mail/search-mailbox",
+  "observations": {
+    "before": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "filtered": {"mail_messages": {"count": 1, "unread": 1, "flagged": 0}}
+  }
+}

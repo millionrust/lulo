@@ -1,0 +1,15 @@
+{
+  "title": "Mail: Delete moves a message to the Bin and ⌘Z brings it back",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "before", "facts": ["mail_messages"]},
+    {"key": "down", "settle": 1},
+    {"observe": "selected", "facts": ["mail_messages"]},
+    {"key": "backspace", "settle": 1},
+    {"observe": "deleted", "facts": ["mail_messages"]},
+    {"key": "cmd-z", "settle": 1},
+    {"observe": "restored", "facts": ["mail_messages"]}
+  ]
+}

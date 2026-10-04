@@ -1,0 +1,15 @@
+{
+  "title": "Mail: ⌘⇧L flags and unflags the selected message",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "before", "facts": ["mail_messages"]},
+    {"key": "down", "settle": 1},
+    {"observe": "selected", "facts": ["mail_messages"]},
+    {"key": "cmd-shift-l", "settle": 0.5},
+    {"observe": "flagged", "facts": ["mail_messages"]},
+    {"key": "cmd-shift-l", "settle": 0.5},
+    {"observe": "unflagged", "facts": ["mail_messages"]}
+  ]
+}

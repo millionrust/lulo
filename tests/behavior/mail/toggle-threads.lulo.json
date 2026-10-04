@@ -2,7 +2,7 @@
   "format": 1,
   "scenario": "mail/toggle-threads",
   "observations": {
-    "threaded": {"mail_messages": {"count": 8, "unread": 3}},
-    "flat": {"mail_messages": {"count": 10, "unread": 3}}
+    "threaded": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "flat": {"mail_messages": {"count": 10, "unread": 3, "flagged": 2}}
   }
 }

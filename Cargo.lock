@@ -6505,7 +6505,9 @@ name = "rmac-mail"
 version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
+ "rmac-editor",
  "rmac-mail-mime",
+ "rmac-mail-storage",
  "rmac-ui",
 ]
 

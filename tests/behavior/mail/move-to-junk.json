@@ -1,0 +1,13 @@
+{
+  "title": "Mail: ⌘⇧J moves the selected message to Junk",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "before", "facts": ["mail_messages"]},
+    {"key": "down", "settle": 1},
+    {"observe": "selected", "facts": ["mail_messages"]},
+    {"key": "cmd-shift-j", "settle": 1},
+    {"observe": "junked", "facts": ["mail_messages"]}
+  ]
+}

@@ -8,7 +8,9 @@ use chrono::Datelike;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 #[cfg(target_os = "linux")]
 use rmac_calendar_store::expand;
-use rmac_calendar_store::{Calendar as IcalCalendar, Event as IcalEvent, TimeValue, Zone};
+#[cfg(any(target_os = "linux", test))]
+use rmac_calendar_store::Calendar as IcalCalendar;
+use rmac_calendar_store::{Event as IcalEvent, TimeValue, Zone};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_UID: AtomicU64 = AtomicU64::new(1);
@@ -377,19 +379,30 @@ mod tests {
     /// starting state and redo x3 replays it forward again.
     #[test]
     fn undo_redo_stack_round_trips_through_a_fake_calendar() {
+        // Mirrors `CalendarView::submit`'s three-way distinction: undoing moves a
+        // change onto redo, redoing moves it back onto undo without disturbing the
+        // rest of either stack, and only a genuinely new edit clears redo.
+        #[derive(Clone, Copy)]
+        enum Direction {
+            Do,
+            Undo,
+            Redo,
+        }
         fn submit(
             store: &mut FakeCalendar,
             undo: &mut Vec<Mutation>,
             redo: &mut Vec<Mutation>,
             change: Mutation,
-            undoing: bool,
+            direction: Direction,
         ) {
             store.apply(&change).unwrap();
-            if undoing {
-                redo.push(change.inverse());
-            } else {
-                undo.push(change.inverse());
-                redo.clear();
+            match direction {
+                Direction::Undo => redo.push(change.inverse()),
+                Direction::Redo => undo.push(change.inverse()),
+                Direction::Do => {
+                    undo.push(change.inverse());
+                    redo.clear();
+                }
             }
         }
 
@@ -409,7 +422,7 @@ mod tests {
                 source: source.clone(),
                 event: created.clone(),
             },
-            false,
+            Direction::Do,
         );
         assert_eq!(store.events.len(), 1);
 
@@ -425,7 +438,7 @@ mod tests {
                 after: renamed.clone(),
                 scope: "all",
             },
-            false,
+            Direction::Do,
         );
         assert_eq!(store.events[0].summary, "Renamed");
 
@@ -438,21 +451,21 @@ mod tests {
                 event: renamed.clone(),
                 scope: "all",
             },
-            false,
+            Direction::Do,
         );
         assert!(store.events.is_empty());
         assert_eq!(undo.len(), 3);
 
         // Undo the delete, the rename, then the create: back to empty.
         while let Some(change) = undo.pop() {
-            submit(&mut store, &mut undo, &mut redo, change, true);
+            submit(&mut store, &mut undo, &mut redo, change, Direction::Undo);
         }
         assert!(store.events.is_empty());
         assert_eq!(redo.len(), 3);
 
         // Redo everything: ends up renamed-and-deleted again.
         while let Some(change) = redo.pop() {
-            submit(&mut store, &mut undo, &mut redo, change, false);
+            submit(&mut store, &mut undo, &mut redo, change, Direction::Redo);
         }
         assert!(store.events.is_empty());
         assert_eq!(undo.len(), 3);

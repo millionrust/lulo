@@ -25,6 +25,16 @@ const GUTTER: f32 = 52.0;
 const HOUR: f32 = 48.0;
 const START_HOUR: f32 = 8.0;
 
+/// Which stack a submitted [`Mutation`] belongs to. A fresh edit (`Do`) starts a new
+/// branch of history and clears any pending redos; undoing moves one step onto redo;
+/// redoing moves one step back onto undo without disturbing the rest of either stack.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Direction {
+    Do,
+    Undo,
+    Redo,
+}
+
 struct Editor {
     original: Option<rmac_calendar::Event>,
     draft: rmac_calendar_store::Event,
@@ -416,10 +426,10 @@ impl CalendarView {
             }
         };
         self.editor = None;
-        self.submit(change, false, cx);
+        self.submit(change, Direction::Do, cx);
     }
 
-    fn submit(&mut self, change: Mutation, undoing: bool, cx: &mut Context<Self>) {
+    fn submit(&mut self, change: Mutation, direction: Direction, cx: &mut Context<Self>) {
         if self.busy {
             return;
         }
@@ -434,11 +444,17 @@ impl CalendarView {
             .await;
             let _ = this.update(cx, |this: &mut CalendarView, cx| match result {
                 Ok(snapshot) => {
-                    if undoing {
-                        this.redo.push(change.inverse());
-                    } else {
-                        this.undo.push(change.inverse());
-                        this.redo.clear();
+                    // Undo moves this change onto the redo stack; redo moves it back onto
+                    // undo without touching the rest of the redo stack still queued behind
+                    // it. Only a genuinely new edit (Direction::Do) clears redo: it is a
+                    // fresh branch of history, not a continuation of the one being replayed.
+                    match direction {
+                        Direction::Undo => this.redo.push(change.inverse()),
+                        Direction::Redo => this.undo.push(change.inverse()),
+                        Direction::Do => {
+                            this.undo.push(change.inverse());
+                            this.redo.clear();
+                        }
                     }
                     this.accept_load(Ok(snapshot), cx);
                 }
@@ -498,20 +514,20 @@ impl CalendarView {
                 event: ical,
                 scope,
             },
-            false,
+            Direction::Do,
             cx,
         );
     }
 
     fn undo(&mut self, cx: &mut Context<Self>) {
         if let Some(change) = self.undo.pop() {
-            self.submit(change, true, cx);
+            self.submit(change, Direction::Undo, cx);
         }
     }
 
     fn redo(&mut self, cx: &mut Context<Self>) {
         if let Some(change) = self.redo.pop() {
-            self.submit(change, false, cx);
+            self.submit(change, Direction::Redo, cx);
         }
     }
 

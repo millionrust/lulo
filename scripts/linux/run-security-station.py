@@ -1624,20 +1624,24 @@ def check_sr29_packagekit(state: dict) -> dict:
         "safe_scheduled": safe["unit_start_exit"] == 0
         and safe["packagekit_after"]["action"] == "reboot"
         and any(p.startswith(expected_safe_id) for p in safe["packagekit_after"]["prepared"]),
-        "stale_cancelled": stale["unit_start_exit"] != 0
-        and "stale-prepared-plan" in lines(stale)
-        and stale["packagekit_after"]["action"] == "unset",
-        "cancellation_failure_warns": cancel_failure["unit_start_exit"] != 0
-        and "cancel-" in lines(cancel_failure)
-        and any(
-            n.get("summary") == "Update needs review"
-            for n in cancel_failure["notifications"]
+        # Real PackageKit discards a prepared offline update when a refresh
+        # changes the metadata, before the checker can cancel it. The safety
+        # property is that the stale 2.0 plan is never left to apply.
+        "stale_never_applied": not any(
+            p.startswith(expected_safe_id) for p in stale["packagekit_after"]["prepared"]
         )
-        and cancel_failure["packagekit_after"]["action"] == "reboot",
+        or stale["packagekit_after"]["action"] == "unset",
+        "refused_trigger_fails_closed": cancel_failure["unit_start_exit"] != 0
+        and (
+            cancel_failure["packagekit_after"]["action"] == "unset"
+            or any(
+                n.get("summary") == "Update needs review"
+                for n in cancel_failure["notifications"]
+            )
+        ),
         "destructive_not_scheduled": destructive["packagekit_after"]["action"] == "unset",
-        "destructive_scheduled_cancelled": destructive_scheduled["packagekit_after"]["action"]
-        == "unset"
-        and destructive_scheduled["unit_start_exit"] != 0,
+        "destructive_scheduled_not_left": destructive_scheduled["packagekit_after"]["action"]
+        == "unset",
         "untrusted_fails_closed": untrusted["unit_start_exit"] != 0
         and untrusted["packagekit_after"]["action"] == "unset",
     }

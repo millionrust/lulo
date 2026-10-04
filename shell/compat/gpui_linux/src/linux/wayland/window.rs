@@ -4,7 +4,10 @@ use std::{
     ptr::NonNull,
     rc::{Rc, Weak},
     sync::Arc,
+    time::{Duration, Instant},
 };
+
+use calloop::timer::{TimeoutAction, Timer};
 
 use collections::{FxHashMap, HashMap};
 use futures::channel::oneshot::Receiver;
@@ -136,6 +139,10 @@ pub struct WaylandWindowState {
     drew_frame: bool,
     idle_streak: u32,
     idle_generation: u64,
+    /// rmac: when `frame` last ran, and whether a retry for a frame GPUI may
+    /// have throttled is armed (see `may_have_throttled`).
+    last_frame_at: Option<Instant>,
+    throttle_retry_armed: bool,
     in_progress_window_controls: Option<WindowControls>,
     window_controls: WindowControls,
     client_inset: Option<Pixels>,
@@ -606,6 +613,8 @@ impl WaylandWindowState {
             drew_frame: false,
             idle_streak: 0,
             idle_generation: 0,
+            last_frame_at: None,
+            throttle_retry_armed: false,
             client,
             appearance,
             handle,
@@ -790,6 +799,28 @@ fn frame_loop_parked(idle_streak: u32, frame_requested: bool) -> bool {
     idle_streak >= 2 && !frame_requested
 }
 
+/// GPUI runs an inactive window's frame only if 33.333 ms passed since the
+/// last frame it ran, whenever next-frame callbacks are queued; a sooner
+/// frame returns without running them or drawing. Those callbacks are how a
+/// finished `img()` load repaints its view, so a window that parked right
+/// after such a frame kept them until the next input event.
+const INACTIVE_FRAME_INTERVAL: Duration = Duration::from_micros(33_334);
+/// The retry for a frame GPUI may have skipped: longer than the interval,
+/// so GPUI always runs it.
+const THROTTLE_RETRY_DELAY: Duration = Duration::from_millis(35);
+const _: () = assert!(THROTTLE_RETRY_DELAY.as_micros() > INACTIVE_FRAME_INTERVAL.as_micros());
+
+/// rmac: whether GPUI may have skipped this frame, leaving next-frame
+/// callbacks queued: it drew nothing, the window is inactive, and it came
+/// within GPUI's inactive frame interval of the previous frame. GPUI stamps
+/// only frames it runs, so one at least the interval after the previous
+/// frame was never skipped. The retry runs `THROTTLE_RETRY_DELAY` after the
+/// frame that armed it, so it is never skipped either and does not re-arm
+/// itself; an idle window takes one extra wake-up at most.
+fn may_have_throttled(drew: bool, active: bool, since_previous: Option<Duration>) -> bool {
+    !drew && !active && since_previous.is_some_and(|gap| gap < INACTIVE_FRAME_INTERVAL)
+}
+
 impl WaylandWindowStatePtr {
     pub fn handle(&self) -> AnyWindowHandle {
         self.state.borrow().handle
@@ -872,7 +903,12 @@ impl WaylandWindowStatePtr {
     }
 
     pub fn frame(&self) {
+        let started = Instant::now();
         let mut state = self.state.borrow_mut();
+        let since_previous = state
+            .last_frame_at
+            .replace(started)
+            .map(|previous| started.duration_since(previous));
         // While frames are drawing, ask for the next vblank before this frame
         // commits so animations run at the display rate. Once a frame draws
         // nothing, stop asking; an idle window must not wake itself and the
@@ -915,6 +951,28 @@ impl WaylandWindowStatePtr {
         // check at the next vblank, or the loop is now parked until
         // `check_parked` sees the event loop wake for something else.
         state.idle_streak = state.idle_streak.saturating_add(1);
+        if may_have_throttled(false, state.active, since_previous) && !state.throttle_retry_armed {
+            // GPUI may have kept queued next-frame callbacks (a finished image
+            // load) and nothing else is due to wake this window: wake once
+            // after the interval, one timer, no polling. The timer only wakes
+            // the loop; the client's after-dispatch `check_parked` runs the
+            // frame once everything else that wake-up dispatched has run (a
+            // pending frame callback re-checks on its own instead).
+            state.throttle_retry_armed = true;
+            let client = state.client.get_client();
+            drop(state);
+            let window = self.downgrade();
+            let loop_handle = client.borrow().loop_handle.clone();
+            let _ = loop_handle.insert_source(
+                Timer::from_duration(THROTTLE_RETRY_DELAY),
+                move |_, _, _| {
+                    if let Some(window) = window.upgrade() {
+                        window.state.borrow_mut().throttle_retry_armed = false;
+                    }
+                    TimeoutAction::Drop
+                },
+            );
+        }
     }
 
     /// rmac: whether this window's frame loop is parked (see `frame`).
@@ -2190,8 +2248,12 @@ fn geometry_inside_frame(size: Size<Pixels>, inset: Pixels, tiling: Tiling) -> B
 
 #[cfg(test)]
 mod rmac_frame_loop_tests {
-    use super::{a11y_origin_inset, frame_loop_parked, geometry_inside_frame};
+    use super::{
+        INACTIVE_FRAME_INTERVAL, THROTTLE_RETRY_DELAY, a11y_origin_inset, frame_loop_parked,
+        geometry_inside_frame, may_have_throttled,
+    };
     use gpui::{Tiling, px, size};
+    use std::time::Duration;
 
     #[test]
     fn mapped_and_resized_window_geometry_excludes_client_frame() {
@@ -2237,5 +2299,43 @@ mod rmac_frame_loop_tests {
     #[test]
     fn a_pending_frame_callback_keeps_the_loop_awake() {
         assert!(!frame_loop_parked(5, true));
+    }
+
+    #[test]
+    fn an_inactive_frame_soon_after_the_last_may_have_been_throttled() {
+        let soon = Some(Duration::from_millis(8));
+        assert!(may_have_throttled(false, false, soon));
+        assert!(may_have_throttled(
+            false,
+            false,
+            Some(Duration::from_millis(33))
+        ));
+    }
+
+    #[test]
+    fn frames_gpui_never_throttles_need_no_retry() {
+        let soon = Some(Duration::from_millis(8));
+        // It drew, so GPUI ran it.
+        assert!(!may_have_throttled(true, false, soon));
+        // GPUI throttles only inactive windows.
+        assert!(!may_have_throttled(false, true, soon));
+        // The first frame, and one a full interval after the previous,
+        // always run; so the retry (THROTTLE_RETRY_DELAY later) never re-arms.
+        assert!(!may_have_throttled(false, false, None));
+        assert!(!may_have_throttled(
+            false,
+            false,
+            Some(INACTIVE_FRAME_INTERVAL)
+        ));
+        assert!(!may_have_throttled(
+            false,
+            false,
+            Some(THROTTLE_RETRY_DELAY)
+        ));
+        assert!(!may_have_throttled(
+            false,
+            false,
+            Some(Duration::from_millis(500))
+        ));
     }
 }

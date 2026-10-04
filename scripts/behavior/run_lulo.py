@@ -1620,6 +1620,59 @@ def check_files_tag_swatches(nested: Nested, bins: list[Path], settle: float) ->
         run.stop()
 
 
+def read_ppm(path: Path) -> tuple[int, int, bytes]:
+    """Parse a binary (P6, 8-bit) PPM such as `grim -t ppm` writes."""
+    data = path.read_bytes()
+    fields: list[bytes] = []
+    pos = 0
+    while len(fields) < 4:
+        while data[pos:pos + 1].isspace():
+            pos += 1
+        if data[pos:pos + 1] == b"#":
+            pos = data.index(b"\n", pos) + 1
+            continue
+        end = pos
+        while not data[end:end + 1].isspace():
+            end += 1
+        fields.append(data[pos:end])
+        pos = end
+    if fields[0] != b"P6" or fields[3] != b"255":
+        raise StepFailed(f"{path} is not an 8-bit binary PPM")
+    width, height = int(fields[1]), int(fields[2])
+    pixels = data[pos + 1:pos + 1 + width * height * 3]
+    if len(pixels) != width * height * 3:
+        raise StepFailed(f"{path} is truncated")
+    return width, height, pixels
+
+
+def folder_blue_pixels(pixels: bytes) -> int:
+    """Pixels in the bundled folder icon's blue body (#4FA8EE…#A6DBFC)."""
+    return sum(
+        1
+        for index in range(0, len(pixels), 3)
+        if pixels[index + 2] >= 200
+        and pixels[index + 2] - pixels[index] >= 60
+        and 120 <= pixels[index + 1] <= 225
+    )
+
+
+def write_noise_png(path: Path, width: int, height: int) -> None:
+    """A large, slow-to-decode RGB PNG, like a full-screen screenshot."""
+    row = width * 3
+    noise = os.urandom(row * height)
+    raw = b"".join(b"\x00" + noise[y * row:(y + 1) * row] for y in range(height))
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 1))
+        + chunk(b"IEND", b"")
+    )
+
+
 def check_storage_deep_link(nested: Nested, bins: list[Path], settle: float) -> None:
     """A second `--pane storage` launch (the deep-link/relaunch path a system
     launcher or `--pane storage` capture uses, dispatched through SET-57's

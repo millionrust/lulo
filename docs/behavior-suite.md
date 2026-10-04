@@ -197,6 +197,23 @@ selects Clear Dark and checks that the choice was saved:
 python3 scripts/behavior/run_lulo.py --bin-dir ~/rmac-wt/target/iterate --check-terminal-profiles
 ```
 
+## Desktop icons paint without input
+
+`scripts/behavior/run_desktop_first_paint.py` (runtime suite `desktop-paint`)
+runs the desktop in nested niri at scale 2 while a small floating terminal
+holds keyboard focus, as an app does in a real session. With no input before
+each capture it checks the folder and document icons at startup, the first
+folder added while the desktop sits idle, and four picture previews added one
+by one; then the shell's `img-paint` probe (a never-focused layer surface,
+like the Dock and the menu bar) shows swatches whose assets load 0–120 ms
+after the frame that requested them. Both idle main threads must stay asleep
+(at most 10 context switches in 10 s).
+
+```sh
+python3 scripts/behavior/run_desktop_first_paint.py --bin-dir shell/target/iterate \
+  --probe shell/target/iterate/img-paint --capture-dir /tmp/lulo-desktop-paint
+```
+
 ## Spotlight latency
 
 `scripts/behavior/run_cold_surfaces.py` is the private nested-niri Spotlight

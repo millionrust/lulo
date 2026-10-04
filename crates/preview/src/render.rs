@@ -5,6 +5,7 @@
 use std::fs::File;
 use std::io::{BufWriter, Read as _, Write as _};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -308,13 +309,38 @@ pub fn write_image(pixels: &RgbaImage, kind: ImageKind, path: &Path) -> Result<(
     writer.flush().map_err(|error| error.to_string())
 }
 
+/// A same-directory temp path for `destination` that can never collide
+/// with a *different* document's own temp file, including one that only
+/// differs from `destination` in its real extension: `Path::with_extension`
+/// replaces whatever follows `destination`'s own last `.`, so `photo.png`
+/// and `photo.jpg` reduce to the exact same "stem.lulo-saving-<pid>.tmp"
+/// name, and two saves racing on it is exactly how one of them loses its
+/// temp file out from under it (`std::fs::rename` then fails with "No
+/// such file or directory"). Keeps `destination`'s whole file name intact
+/// instead, dot-prefixed, with this process's id and a per-call counter —
+/// the same scheme `rmac_storage::atomic_write` uses for private state,
+/// kept local here since `write_image` streams an encoder into the file
+/// rather than writing an already-built byte buffer.
+pub fn unique_temp_path(destination: &Path) -> PathBuf {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("file");
+    destination.with_file_name(format!(
+        ".{name}.lulo-saving-{}-{sequence}.tmp",
+        std::process::id()
+    ))
+}
+
 /// File ▸ Save (⌘S) for an edited image: `write_image` into a sibling temp
-/// file, then rename over `destination` — the same temp-file-then-rename
-/// atomicity `save_markup` already uses for PDF annotations, so a save that
-/// is interrupted (power loss, a full disk) never leaves `destination`
-/// half-written.
+/// file (`unique_temp_path`), then rename over `destination` — the same
+/// temp-file-then-rename atomicity `save_markup` already uses for PDF
+/// annotations, so a save that is interrupted (power loss, a full disk)
+/// never leaves `destination` half-written.
 pub fn save_image(pixels: &RgbaImage, kind: ImageKind, destination: &Path) -> Result<(), String> {
-    let temporary = destination.with_extension(format!("lulo-saving-{}.tmp", std::process::id()));
+    let temporary = unique_temp_path(destination);
     match write_image(pixels, kind, &temporary) {
         Ok(()) => std::fs::rename(&temporary, destination).map_err(|error| error.to_string()),
         Err(error) => {
@@ -646,9 +672,39 @@ mod edit_tests {
     /// its temp file behind.
     #[test]
     fn save_image_cleans_up_its_temp_file_on_failure() {
-        let path = PathBuf::from("/nonexistent-rmac-preview-dir/roundtrip.png");
+        let dir = temp_path("cleanup-on-failure-dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // `write_image` succeeds (the temp file is written in full), but
+        // the final rename fails because the destination is itself an
+        // existing directory — the case that must not leave the written
+        // temp file behind.
+        let path = dir.join("destination-is-a-directory");
+        std::fs::create_dir_all(&path).unwrap();
         assert!(save_image(&swatch(), ImageKind::Png, &path).is_err());
-        let temporary = path.with_extension(format!("lulo-saving-{}.tmp", std::process::id()));
-        assert!(!temporary.exists());
+        let leftover: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path() != path)
+            .collect();
+        assert!(leftover.is_empty(), "{leftover:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The bug `unique_temp_path` fixes: two documents whose names differ
+    /// only in their real extension must never reduce to the same temp
+    /// name (`Path::with_extension` alone would do exactly that, since it
+    /// replaces whatever follows the destination's own last `.`).
+    #[test]
+    fn unique_temp_path_never_collides_across_different_real_extensions_sharing_a_stem() {
+        let png = PathBuf::from("/tmp/photo.png");
+        let jpg = PathBuf::from("/tmp/photo.jpg");
+        assert_ne!(unique_temp_path(&png), unique_temp_path(&jpg));
+    }
+
+    #[test]
+    fn unique_temp_path_never_collides_across_repeated_calls_for_the_same_destination() {
+        let path = PathBuf::from("/tmp/photo.png");
+        assert_ne!(unique_temp_path(&path), unique_temp_path(&path));
     }
 }

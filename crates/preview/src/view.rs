@@ -21,6 +21,7 @@ use rmac_preview::layout::{self, Rect, Rotation, ThumbItem};
 use rmac_preview::markup::{self, Annotation, Markup, Tool};
 use rmac_preview::metrics::{self, dark, light};
 use rmac_preview::poppler::{self, Match, TextPage};
+use rmac_preview::versions;
 use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
@@ -352,6 +353,16 @@ struct Slot {
     /// is in) ready to multiply by `ImageContent::size` for Crop. `None`
     /// outside a selection.
     selection: Option<layout::UnitRect>,
+    /// Whether a version of this image has already been recorded this
+    /// session (`versions::record`) — set the first time an overwrite
+    /// happens, so later saves/autosaves in the same session don't pile
+    /// up redundant "Last Opened" copies. Unused for a PDF.
+    version_recorded: bool,
+    /// Whether File ▸ Revert To ▸ Last Opened has something to restore
+    /// for this image — cached rather than checked from `render` (that
+    /// would be disk I/O on the UI thread): set from `start_load`'s
+    /// off-thread check, and whenever `version_recorded` is first set.
+    has_version: bool,
     /// View ▸ Table of Contents: `None` until first requested (it is read
     /// from the PDF's `/Outlines` off the UI thread), then the flattened
     /// outline — empty when the PDF has none.
@@ -449,6 +460,8 @@ impl Slot {
             markup_original: None,
             image_edits: ImageEdits::default(),
             selection: None,
+            version_recorded: false,
+            has_version: false,
             toc: None,
             toc_loading: false,
         }
@@ -758,14 +771,24 @@ impl PreviewView {
     /// Edited images, each with its final (rotation baked in) pixels
     /// ready for `render::save_image` — the image counterpart of
     /// `pending_markup`, for the same App ▸ Quit and Keep Windows / Close
-    /// All autosave paths in `main.rs`.
-    pub(crate) fn pending_image_saves(&self) -> Vec<(PathBuf, ImageKind, Arc<image::RgbaImage>)> {
+    /// All autosave paths in `main.rs`, which close the document right
+    /// after, so there is no later point to refresh `Slot::has_version`
+    /// from a confirmed result (unlike `save_markup`, which does). The
+    /// fourth element is whether the caller must call `versions::record`
+    /// before overwriting the file; this call marks `version_recorded` so
+    /// collecting the list is itself the one place that decides it, even
+    /// though the actual recording happens later, off the UI thread.
+    pub(crate) fn pending_image_saves(
+        &mut self,
+    ) -> Vec<(PathBuf, ImageKind, Arc<image::RgbaImage>, bool)> {
         self.slots
-            .iter()
+            .iter_mut()
             .filter(|slot| slot.edited() && matches!(slot.kind(), Some(Kind::Image(_))))
             .filter_map(|slot| {
                 let (kind, pixels) = slot.final_image_pixels()?;
-                Some((slot.path.clone(), kind, pixels))
+                let needs_version = !slot.version_recorded;
+                slot.version_recorded = true;
+                Some((slot.path.clone(), kind, pixels, needs_version))
             })
             .collect()
     }
@@ -1279,10 +1302,29 @@ impl PreviewView {
                 let id = slot.id;
                 let revision = slot.image_edits.revision;
                 let rotation = slot.rotation;
+                let needs_version = !slot.version_recorded;
                 self.markup_save_busy = true;
+                if let Some(slot) = self.slot_mut() {
+                    slot.version_recorded = true;
+                }
                 cx.spawn(async move |this, cx| {
-                    let result =
-                        blocking::unblock(move || render::save_image(&pixels, kind, &source)).await;
+                    let (result, recorded) = blocking::unblock(move || {
+                        // Best-effort: a failed backup must never block the
+                        // actual save, or an accidental crop would cost the
+                        // user both the backup *and* their edit.
+                        let recorded = needs_version
+                            && match versions::record(&source) {
+                                Ok(()) => true,
+                                Err(error) => {
+                                    eprintln!(
+                                        "rmac-preview: could not record a version before saving: {error}"
+                                    );
+                                    false
+                                }
+                            };
+                        (render::save_image(&pixels, kind, &source), recorded)
+                    })
+                    .await;
                     let _ = this.update(cx, |this, cx| {
                         this.markup_save_busy = false;
                         if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
@@ -1293,6 +1335,9 @@ impl PreviewView {
                                     }
                                     if slot.rotation == rotation {
                                         slot.saved_rotation = rotation;
+                                    }
+                                    if recorded {
+                                        slot.has_version = true;
                                     }
                                 }
                                 Err(error) => {
@@ -1332,7 +1377,14 @@ impl PreviewView {
                     markup::write_pdf(&base, &temporary, &items)?;
                     std::fs::rename(&temporary, &source).map_err(|e| e.to_string())?;
                 }
-                for (source, kind, pixels) in image_jobs {
+                for (source, kind, pixels, needs_version) in image_jobs {
+                    if needs_version {
+                        if let Err(error) = versions::record(&source) {
+                            eprintln!(
+                                "rmac-preview: could not record a version before closing: {error}"
+                            );
+                        }
+                    }
                     render::save_image(&pixels, kind, &source)?;
                 }
                 Ok(())
@@ -1425,10 +1477,23 @@ impl PreviewView {
                     return;
                 };
                 let source = slot.path.clone();
+                let needs_version = !slot.version_recorded;
                 self.markup_save_busy = true;
+                if let Some(slot) = self.slot_mut() {
+                    slot.version_recorded = true;
+                }
                 cx.spawn_in(window, async move |this, cx| {
-                    let result =
-                        blocking::unblock(move || render::save_image(&pixels, kind, &source)).await;
+                    let result = blocking::unblock(move || -> Result<(), String> {
+                        if needs_version {
+                            if let Err(error) = versions::record(&source) {
+                                eprintln!(
+                                    "rmac-preview: could not record a version before closing: {error}"
+                                );
+                            }
+                        }
+                        render::save_image(&pixels, kind, &source)
+                    })
+                    .await;
                     let _ = this.update_in(cx, |this, window, cx| {
                         this.markup_save_busy = false;
                         match result {
@@ -1493,11 +1558,18 @@ impl PreviewView {
         .detach();
     }
 
+    /// File ▸ Revert To ▸ Revert to Original / Last Opened (PDF/image).
+    /// PDFs keep their existing "back to before any markup this session"
+    /// behaviour below; an image dispatches to `revert_image_to_last_opened`.
     fn revert_markup(&mut self, cx: &mut Context<Self>) {
         if self.markup_save_busy {
             return;
         }
         let Some(slot) = self.slot() else { return };
+        if matches!(slot.kind(), Some(Kind::Image(_))) {
+            self.revert_image_to_last_opened(cx);
+            return;
+        }
         let original = slot.markup_original.clone();
         let source = slot.path.clone();
         let id = slot.id;
@@ -1536,6 +1608,62 @@ impl PreviewView {
             cx.notify();
         }
     }
+
+    /// File ▸ Revert To ▸ Last Opened for an edited image: overwrites the
+    /// file with its most recently recorded version (`versions.rs`) and
+    /// reloads it, discarding any unsaved edits and dropping the old
+    /// pixel/thumbnail/page caches into `garbage`. Does nothing without a
+    /// recorded version (the menu item is disabled then — see `render`'s
+    /// menu-enabled pass, `Slot::has_version`).
+    fn revert_image_to_last_opened(&mut self, cx: &mut Context<Self>) {
+        let Some(slot) = self.slot() else { return };
+        if !matches!(slot.kind(), Some(Kind::Image(_))) {
+            return;
+        }
+        let source = slot.path.clone();
+        let id = slot.id;
+        self.markup_save_busy = true;
+        cx.spawn(async move |this, cx| {
+            let result = blocking::unblock(move || versions::restore_latest(&source)).await;
+            let _ = this.update(cx, |this, cx| {
+                this.markup_save_busy = false;
+                match result {
+                    Ok(loaded) => {
+                        if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                            let old_display = slot.display.take();
+                            let old_pages: Vec<_> =
+                                slot.pages.drain().map(|(_, bitmap)| bitmap.image).collect();
+                            let old_thumbs: Vec<_> = slot
+                                .thumbs
+                                .drain()
+                                .map(|(_, (_, image))| image)
+                                .collect();
+                            slot.state = SlotState::Ready(loaded);
+                            slot.rotation = Rotation::default();
+                            slot.saved_rotation = Rotation::default();
+                            slot.image_edits = ImageEdits::default();
+                            slot.selection = None;
+                            slot.pending.clear();
+                            if let Some((_, image)) = old_display {
+                                this.garbage.push(image);
+                            }
+                            this.garbage.extend(old_pages);
+                            this.garbage.extend(old_thumbs);
+                        }
+                        this.markup_selected = None;
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "rmac-preview: could not revert to the last opened version: {error}"
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(crate) fn new(paths: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search_input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -1752,9 +1880,15 @@ impl PreviewView {
         };
         let (id, path) = (slot.id, slot.path.clone());
         cx.spawn(async move |this, cx| {
-            let (result, bookmarks) = cx
+            let (result, bookmarks, has_version) = cx
                 .background_executor()
-                .spawn(async move { (render::load(&path), crate::load_bookmarks(&path)) })
+                .spawn(async move {
+                    (
+                        render::load(&path),
+                        crate::load_bookmarks(&path),
+                        versions::has_version(&path),
+                    )
+                })
                 .await;
             let _ = this.update(cx, |view, cx| {
                 let slots_len = view.slots.len();
@@ -1767,6 +1901,7 @@ impl PreviewView {
                     Err(error) => SlotState::Failed(error.into()),
                 };
                 slot.bookmarks = bookmarks;
+                slot.has_version = has_version;
                 // A PDF with several pages opens with its thumbnails, like
                 // Preview; a single image or one-page PDF does not.
                 let pages = slot.loaded().map(Loaded::page_count).unwrap_or(0);
@@ -6190,12 +6325,17 @@ impl Render for PreviewView {
                 cx,
             );
             let loaded = self.slot().is_some_and(|slot| slot.loaded().is_some());
+            let revert_is_image = self
+                .slot()
+                .is_some_and(|slot| matches!(slot.kind(), Some(Kind::Image(_))));
             rmac_ui::set_menu_label(
                 "preview::RevertMarkup",
-                if loaded {
-                    "Revert to Original"
-                } else {
+                if !loaded {
                     "No Document"
+                } else if revert_is_image {
+                    "Last Opened"
+                } else {
+                    "Revert to Original"
                 },
                 cx,
             );
@@ -6248,8 +6388,11 @@ impl Render for PreviewView {
             }
             rmac_ui::set_menu_enabled(
                 "preview::RevertMarkup",
-                self.slot()
-                    .is_some_and(|slot| slot.markup.dirty || slot.markup_original.is_some()),
+                self.slot().is_some_and(|slot| match slot.kind() {
+                    Some(Kind::Pdf) => slot.markup.dirty || slot.markup_original.is_some(),
+                    Some(Kind::Image(_)) => slot.has_version,
+                    None => false,
+                }),
                 cx,
             );
             for action in [

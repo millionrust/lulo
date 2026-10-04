@@ -9,6 +9,13 @@ name: Native package reproducibility
 
 on:
   workflow_dispatch:
+  # A workflow_dispatch trigger can only be invoked through the GitHub API
+  # once the workflow file exists on the default branch, so this run-once
+  # `push` trigger is what actually exercises the check before that first
+  # merge. Drop this `push:` block once `dev` has run it at least once and
+  # `workflow_dispatch` alone is reachable from the Actions UI/API.
+  push:
+    branches: [agent/checklist]
 
 permissions:
   contents: read

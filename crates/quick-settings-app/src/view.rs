@@ -597,9 +597,9 @@ impl QuickSettingsView {
         .detach();
     }
 
-    pub(crate) fn end_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn end_drag(&mut self, cx: &mut Context<Self>) {
         if let Some(kind) = self.dragging.take() {
-            self.sync_slider_bulge(kind, window);
+            self.sync_slider_bulge(kind, cx);
             cx.notify();
         }
     }
@@ -632,15 +632,18 @@ impl QuickSettingsView {
     }
 
     /// Updates a slider's bulge target from its current hover/drag state
-    /// and requests the frame(s) needed to finish the transition. Once the
-    /// bulge settles, no further frames are requested, so idle CPU returns
-    /// to ~0.
-    pub(crate) fn sync_slider_bulge(&mut self, kind: SliderKind, window: &mut Window) {
+    /// and schedules a render to start the transition. This runs from
+    /// pointer and accessibility event handlers, outside render, where
+    /// `Window::request_animation_frame` panics (it needs the view being
+    /// rendered). The render itself keeps requesting frames while
+    /// `sliders_are_animating`, so idle CPU returns to ~0 once the bulge
+    /// settles.
+    pub(crate) fn sync_slider_bulge(&mut self, kind: SliderKind, cx: &mut Context<Self>) {
         let now = self.now_ms();
         let active = self.is_slider_active(kind);
         self.slider_bulges.get_mut(kind).set_active(active, now);
         if self.slider_bulges.get(kind).is_animating(now) {
-            window.request_animation_frame();
+            cx.notify();
         }
     }
 
@@ -649,7 +652,6 @@ impl QuickSettingsView {
         &mut self,
         kind: SliderKind,
         hovered: bool,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.hovered_slider = if hovered {
@@ -659,7 +661,7 @@ impl QuickSettingsView {
         } else {
             self.hovered_slider
         };
-        self.sync_slider_bulge(kind, window);
+        self.sync_slider_bulge(kind, cx);
         cx.notify();
     }
 

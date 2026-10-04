@@ -182,7 +182,14 @@ pub(crate) fn scan(sys: &Path, udev: &Path, fprintd_supported: bool) -> Capabili
 
 #[cfg(target_os = "linux")]
 pub(crate) fn current() -> Capabilities {
-    let mut result = scan(Path::new("/sys"), Path::new("/run/udev/data"), false);
+    // The nested behaviour-test session (scripts/behavior/fake_hardware.py)
+    // has no real backlight/battery/bluetooth/net sysfs classes to detect,
+    // so it points this at a scratch tree shaped like /sys instead. Unset
+    // in every real session, so production always scans the real /sys.
+    let sys = std::env::var_os("LULO_FAKE_SYS_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| Path::new("/sys").to_path_buf());
+    let mut result = scan(&sys, Path::new("/run/udev/data"), false);
     if !result.has_fingerprint {
         return result;
     }

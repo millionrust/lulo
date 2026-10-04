@@ -282,6 +282,7 @@ impl FinderView {
             show_status_bar: true,
             show_tab_bar: false,
             toolbar_visible: true,
+            preview_visible: false,
             icon_scroll: gpui::ScrollHandle::new(),
             marquee: None,
             type_select: TypeSelect::default(),

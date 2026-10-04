@@ -42,6 +42,7 @@ from typing import Any, Optional
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import fake_hardware  # noqa: E402
 import scenario as sc  # noqa: E402
 import wlinput  # noqa: E402
 
@@ -214,11 +215,15 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
     journey_lock = open("/tmp/lulo-journey.lock", "w")
     fcntl.flock(journey_lock, fcntl.LOCK_EX)
     work = Path(tempfile.mkdtemp(prefix="lulo-behavior-"))
+    hardware: Optional[fake_hardware.FakeHardware] = None
     try:
         binary_directories = [Path(p) for p in args.bin_dir + args.shell_bin_dir]
         chooser = find_file_chooser_binary(binary_directories)
         env = isolated_environment(work)
         refuse_live_session(env)
+        hardware = fake_hardware.start(work) if getattr(args, "fake_hardware", True) else None
+        if hardware is not None:
+            env.update(hardware.env)
         # A session bus that can activate only the AT-SPI bus launcher: the
         # installed rmac services (focus, notifications) and portals stay
         # out of the run, so nothing it starts holds a system-bus connection.
@@ -275,6 +280,8 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         if reap(work / "runtime"):
             time.sleep(1.0)
             reap(work / "runtime")
+        if hardware is not None:
+            hardware.stop()
         if not args.keep:
             remove_tree(work)
         else:
@@ -1980,6 +1987,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--capture-dir", help="save scenario capture steps with grim into this directory")
     parser.add_argument("--settle", type=float, default=0.8)
     parser.add_argument("--keep", action="store_true", help="keep the temporary directory and logs")
+    parser.add_argument(
+        "--no-fake-hardware", dest="fake_hardware", action="store_false", default=True,
+        help="skip the private NetworkManager/BlueZ/UPower mocks (docs/behavior-suite.md); "
+             "hardware stays unavailable, as before this flag existed",
+    )
     parser.add_argument("--explore", action="store_true", help="print each scenario app's accessible tree instead")
     parser.add_argument("--explore-steps", type=int, default=0, help="with --explore: play this many steps first")
     parser.add_argument("--check-context-submenus", action="store_true", help=argparse.SUPPRESS)

@@ -18,6 +18,9 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct ComposeAccount {
+    /// GOA's object path, used only to fetch credentials at send time. Read
+    /// only on Linux; other platforms have no GOA to ask.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub path: String,
     pub id: Uuid,
     pub address: String,

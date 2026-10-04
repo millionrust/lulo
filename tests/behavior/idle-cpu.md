@@ -14,7 +14,8 @@ shell over one simultaneous 60-second window. Save the raw JSON.
 | Clock | World Clock has minute-resolution hands and labels and schedules only the next minute change. Static tabs wait on the saved-state watcher; an inactive window has no redraw timer. A running stopwatch or countdown uses its displayed precision. |
 | System Monitor | Process and graph samples occur at the five-second interval only while its window is active. |
 | Files | Folder and mount changes arrive through inotify and kernel mount notifications; there is no directory scan timer. |
-| Settings | The Search field starts keyboard-focused, then the cursor parks without keeping the whole window busy. Measure with that initial focus intact. |
+| Settings | The Search field starts keyboard-focused, then the cursor parks without keeping the whole window busy. Measure with that initial focus intact. With no Focus or Notification Center service on the session bus, their watchers wait for the bus name instead of reconnecting every second, and a repeated stream error does not repaint. |
+| Terminal | With Blink cursor on, the focused cursor blinks for two seconds after the last keystroke, then parks visibly; the next keystroke restarts it. An inactive window never blinks. |
 | Weather | The empty first-run window leaves Search unfocused and has no refresh or minute timer. Saved cities refresh automatically no more often than hourly, and their displayed local times change at minute boundaries. |
 | Shell | Sample top bar, Dock, wallpaper, notification center, and all other running shell units together. |
 
@@ -58,4 +59,17 @@ for app in files text-editor; do
     --replay /tmp/lulo-focused-search-replay.json --check-idle-cpu \
     --idle-seconds 60 --max-idle-cpu 0.3
 done
+```
+
+Full-session idle gate (runtime CI `idle-cpu`, BUG-01/BUG-02). The memory
+soak runner starts the ten apps and three shell pieces untouched in its
+private nested session, whose bus has no Focus, Notification Center or
+PipeWire service, and fails when any process averages more than the limit
+after the first minute:
+
+```sh
+python3 scripts/behavior/run_memory_soak.py --bin-dir ~/lulo-monkey-bins \
+  --output-dir /tmp/lulo-idle-soak --duration-hours 0.07 \
+  --sample-interval-seconds 60 --activity-interval-seconds 0 \
+  --idle-settle-seconds 60 --max-idle-cpu-percent 3
 ```

@@ -4,12 +4,22 @@
 
 **Still no-go, but close.** `dev` is at `fcafa5e4`. CI and the GitHub-built
 candidate packages are green for recent `dev` commits, and a GitHub-built
-install works on the reference laptop (`0.9.0~beta.1-38`). Against
-`fcafa5e4`'s tree: the full nested behaviour suite passes **160/160**,
-power-dialog checks pass **51/51**, window-move checks pass **19/19**, and
-menu-dismiss checks pass **17/18** — the one failure is a known, already-
-tracked gap (`MENU-15`, Partial: a Dock click still doesn't close an open
-menu; fix in progress, see item 1 below). `BUG-01` (System Settings burning
+install works on the reference laptop (`0.9.0~beta.1-38`). **Update
+2026-10-05:** against the current `integ` tree, a real GitHub Actions
+`runtime.yml` run ([37228687552](https://github.com/millionrust/lulo/actions/runs/37228687552))
+passed **200/200** recorded behaviour scenarios and **15/15** runtime
+checks — menu-dismiss, power-dialogs, window-move, idle-cpu, desktop-paint,
+and the ten per-app journeys (`01-files` through `10-spotlight`) all green,
+superseding the per-suite counts below. The former `MENU-15` Dock-click
+dismissal gap (previously the one tracked failure in this count) is
+**Fixed** (`6655f1b2`/`9747adda`, 61/61 across three consecutive laptop
+runs, confirmed again by this session's green `menu-dismiss` check) — see
+"What's still open, in order" item 1. The rest of this section's narrative
+(dated 2026-10-03, against `fcafa5e4`) is otherwise kept for the record:
+the full nested behaviour suite passed **160/160**, power-dialog checks
+passed **51/51**, window-move checks passed **19/19**, and menu-dismiss
+checks passed **17/18** at that time — the one failure then was `MENU-15`,
+since fixed as above. `BUG-01` (System Settings burning
 41–48% of a core with Search focused) is fixed: two fresh samples measured
 0.1–0.2%, below the 0.3% target. `docs/inventory-gaps.md` is down to 672
 menu-item gaps across System Settings, Files, Terminal, Text Editor and the
@@ -32,11 +42,13 @@ CI/candidate-package builds for recent `dev` commits.
 
 **What's still open, in order:**
 
-1. **Dock-click menu dismissal (`MENU-15`).** Three live reruns on
-   2026-10-03 (`run_menu_dismiss.py`) still show a Dock click not closing an
-   open menu (3/3 failures); every other dismissal path (wallpaper click,
-   another window, Escape, title-switch, Control Centre) passes. Fix in
-   progress.
+1. **Done: Dock-click menu dismissal (`MENU-15`).** Fixed `6655f1b2`
+   (runner timing `9747adda`): Dock menus now capture outside presses on the
+   Dock surface and Escape through a temporary keyboard surface. 61/61
+   checks passed in each of three consecutive laptop runs
+   (`docs/parity.md`), and this session's GitHub Actions `menu-dismiss`
+   check passed again against current `integ`
+   ([run 37228687552](https://github.com/millionrust/lulo/actions/runs/37228687552)).
 2. **Owner re-check of `DESK-12`/`DOCK-27` on the new install.** Neither
    reproduces in the nested test compositor, so only a live recheck on the
    currently installed build can confirm or re-open them.
@@ -81,12 +93,12 @@ option).
 
 The numbered list above **is** the current path to Beta 1 — every closeable
 piece of agent work (full behaviour suite, idle-CPU fix, autostart-service
-fix, accessibility-tree fixes, inventory-gap cleanup, green CI) landed this
-pass or earlier ones. What's left is either hardware-bound (NVIDIA), time-
-bound (the 8-hour soak, the release-workflow's first real run), or owner-
-only (the Orca final listen, the security-station runs, the wording
-sign-off) — plus the one still-open code fix, `MENU-15`'s Dock-click
-dismissal.
+fix, accessibility-tree fixes, inventory-gap cleanup, green CI,
+`MENU-15`'s Dock-click dismissal fix) landed this pass or earlier ones.
+The 8-hour soak has also since run and passed (with one tracked note,
+`MEM-03`). What's left is either hardware-bound (NVIDIA), time-bound (the
+release-workflow's first real run), or owner-only (the Orca final listen,
+the security-station reference-laptop checks, the wording sign-off).
 
 **Deferred past this Beta (owner-only, not blocking):**
 
@@ -424,7 +436,7 @@ rules at all.
 | Real install/remove/upgrade on a clean Ubuntu 26.04 VM or the reference laptop | **Pass (disposable VM); Not yet run (reference laptop)** | `run-package-lifecycle.py` ran all eight steps — baseline install, upgrade, an interrupted rollback and recovery, remove, purge, reinstall, final purge — on a fresh GitHub Actions `ubuntu-26.04` VM (`.github/workflows/security-station.yml`, [run 37182936329](https://github.com/millionrust/lulo/actions/runs/37182936329)); user data in a synthetic home and the GNOME recovery session survived every step (`docs/security-review-0.9.0-beta.1.md`, "package-lifecycle"). The reference-laptop repeat of the same lifecycle on real hardware has not run |
 | GDM session-selection, crash-loop safe mode, TTY repair, recovery, GNOME-fallback journey (H4/H6) | **Not yet run** | `docs/session-journey-evidence.md` is a runbook; no evidence file from an actual run is committed |
 | Real GitHub Actions release run (untested runner plumbing) | **Not yet run** | `docs/release-process.md` "Known gaps": the non-root-build-user-in-a-container pattern and container disk space have never been exercised against a real GitHub Actions run — expect to debug the first tag push |
-| Reproducible build (two independent byte-identical package assemblies) | **Pending this session's CI run** | `release.yml` already runs `check-native-reproducibility.sh` on `build-amd64`/`build-arm64`, but only on a real `v*` tag push, which hasn't happened yet. This pass added `.github/workflows/native-reproducibility.yml` (`workflow_dispatch`) so the same check can run on demand before the first tag, and triggered it once this session — see "Required test run" below for the result |
+| Reproducible build (two independent byte-identical package assemblies) | **Pass** | `release.yml` already runs `check-native-reproducibility.sh` on `build-amd64`/`build-arm64`, but only on a real `v*` tag push, which hasn't happened yet. This pass added `.github/workflows/native-reproducibility.yml` (`workflow_dispatch`) so the same check can run on demand, and ran it once on a GitHub-hosted `ubuntu-26.04` runner ([run 37228687432](https://github.com/millionrust/lulo/actions/runs/37228687432)): `df -h /` showed 91 GiB free (well over the script's 25 GiB/15 GiB floors), one `release`-profile build of the native inputs fed two independent `build-native-packages.py` assemblies from the same `--source-date-epoch`, and all 4 output files (`SHA256SUMS`, `native-packages.json`, `rmac-apps_0.9.0~beta.1-38_amd64.deb`, `rmac-session_0.9.0~beta.1-38_amd64.deb`) byte-matched (`reproducibility.tsv`: `overall pass`). arm64 is unverified (no arm64 runner is configured yet, same gap `release.yml` already documents) |
 | Signed APT repository install/upgrade/rollback | **Not applicable to this Beta by design** | Explicitly deferred to after Beta per the owner's scope decision; `apt-repository`/`keyring` jobs stay off until the signing-key and source-package decisions in `docs/release-process.md` are made |
 
 **Update, 2026-10-01:** `build-native-inputs.sh`, `build-native-packages.py`,
@@ -509,6 +521,16 @@ packages are green for recent `dev` commits (see the go/no-go section at
 the top of this document). What's still outstanding is a real release run
 on the actual tag, not a CI dry run — see "What's still open, in order",
 item 7.
+
+**Update, 2026-10-05:** a fresh `runtime.yml` run against this branch's
+tip (built on current `integ`) passed its full matrix — build, all 8
+scenario shards (**200/200** recorded behaviour scenarios), and all 15
+runtime checks (menu-dismiss, power-dialogs, window-move, idle-cpu,
+desktop-paint, `01-files` through `10-spotlight`) —
+([run 37228687552](https://github.com/millionrust/lulo/actions/runs/37228687552)).
+The separate `CI` workflow (dependency policy, Linux checks, the current
+GPUI Linux runtime gate, release contracts, macOS checks) was also green
+([run 37228687553](https://github.com/millionrust/lulo/actions/runs/37228687553)).
 
 ## 9. Versioning and release engineering (this pass)
 

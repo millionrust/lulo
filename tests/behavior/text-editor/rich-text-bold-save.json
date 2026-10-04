@@ -1,0 +1,17 @@
+{
+  "title": "Make Rich Text, type, ⌘B on a selected word, and ⌘S saves RTF with that word bold",
+  "app": "text-editor",
+  "lulo_only": true,
+  "steps": [
+    {"menu_action": "text_editor::ToggleRichText", "settle": 1.0},
+    {"type": "Hello world"},
+    {"key": "alt-shift-left"},
+    {"key": "cmd-b", "settle": 0.8},
+    {"observe": "bold", "facts": ["focus"]},
+    {"key": "cmd-s", "settle": 1.5},
+    {"type": "BoldCheck"},
+    {"key": "return", "settle": 1.5},
+    {"observe": "saved", "facts": ["saved_documents"]}
+  ],
+  "note": "TE-03: the rich-text editor applies Format ▸ Font ▸ Bold (⌘B) to the selection and a new rich document saves as TextEdit-compatible RTF; the expected file is the exact bytes rmac_editor::rich::rtf::write produces."
+}

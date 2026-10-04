@@ -21,8 +21,15 @@ plain text over a rich-text file.
    succeeded.
 5. Find and replace by keyboard, navigate every result, cancel with Escape, and
    preserve selection/focus through empty, no-match, and replacement states.
-6. Open RTF as a bounded read-only preview. Continue as a new plain-text
-   document only after an explicit action; never overwrite the source RTF.
+6. Open RTF with its formatting and edit it as rich text: Format ▸ Font
+   (Bold ⌘B, Italic ⌘I, Underline ⌘U, Highlight, Bigger/Smaller, Show
+   Colours, Copy/Paste Style), Format ▸ Text (alignment including Justify,
+   ruler, spacing) and Format ▸ List…. Save writes TextEdit-compatible RTF
+   back to the `.rtf` with the same revision checks as plain text. Make
+   Rich Text turns a plain document rich; a plain file made rich saves under
+   a new `.rtf` name and never over its plain source. Make Plain Text asks
+   first and continues an `.rtf` as an untitled plain document, so RTF is
+   never overwritten with plain text.
 7. Create independent document windows with Command-N or open multiple selected
    documents at once. A clean empty untitled window may adopt the first
    selection; every other document gets its own window. Each window owns its
@@ -63,8 +70,8 @@ plain text over a rich-text file.
   merging that source with the desktop XBEL authority.
 - The filesystem remains authoritative. File monitors are refresh hints only;
   an exact fresh preflight is required before overwriting an opened document.
-- A dedicated view-render boundary owns the toolbar, find/replace bar, RTF
-  preview, format/status controls, recovery/external-change banners, alerts,
+- A dedicated view-render boundary owns the toolbar, find/replace bar, rich
+  body and ruler, format/status controls, recovery/external-change banners, alerts,
   editable surface projection, and semantic action wiring. It invokes
   controller intents without owning document bytes, recovery, portal,
   conflict, print, watcher, or generation policy.
@@ -88,8 +95,8 @@ plain text over a rich-text file.
   fails the modal operation safely and the next attempt reconnects afresh. Text
   Editor exposes Print and Command-P only for the supported Linux plain-text
   view, blocks document mutation and close while the modal transaction is
-  active, and never flattens the formatted RTF preview while implying its
-  formatting was preserved.
+  active, and never flattens a rich document while implying its formatting
+  was preserved (rich printing and PDF export say so and stop).
 - This exact D-Bus path is necessary because ashpd 0.12.3 can export the GPUI
   raw Wayland handle, but its high-level print methods omit the portal
   version-3 `supported_output_file_formats` option. Calling those convenience
@@ -130,7 +137,11 @@ for subsequent changes. It must never describe this as a transactional lock.
 - A clean save may preserve the exact original bytes. A dirty save encodes from
   the typed format, writes atomically, reads back the complete file, and adopts
   a new baseline only when bytes match exactly.
-- RTF parsing is a bounded, inert preview path. Embedded commands, objects,
+- `rmac-editor`'s `rich` module owns the attributed-text model (paragraphs
+  of styled runs with paragraph styles), the RTF reader/writer, and the
+  `RichTextEditor` view: caret, selection, IME, undo, styled copy/paste and
+  per-paragraph layout cached by content version, with no idle work.
+- RTF parsing is a bounded, inert, pure-Rust path. Embedded commands, objects,
   links, and attachments are not executed.
 - File paths, raw bytes, document text, recovery text, and filesystem details
   are private. User-facing errors describe the operation and safe resolution

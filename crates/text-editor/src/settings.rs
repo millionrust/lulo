@@ -9,6 +9,30 @@ use std::{
 
 use crate::document::TextEncoding;
 
+/// Format ▸ Font ▸ Show Fonts has no counterpart here (TE-03/TE-14): Lulo's
+/// rich-text "font" is still a whole-document choice, so a new rich-text
+/// window's default font is one of these two known-installed families
+/// (`rmac_ui::UI_FONT`/`MONO_FONT`), not an arbitrary system font.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum RichTextFont {
+    #[default]
+    Inter,
+    JetBrainsMono,
+}
+
+impl RichTextFont {
+    pub(crate) fn family(self) -> &'static str {
+        match self {
+            Self::Inter => rmac_ui::UI_FONT,
+            Self::JetBrainsMono => rmac_ui::MONO_FONT,
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        self.family()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Settings {
     pub(crate) width_chars: u16,
@@ -16,6 +40,15 @@ pub(crate) struct Settings {
     pub(crate) font_size: u8,
     pub(crate) wrap_to_page: bool,
     pub(crate) default_encoding: TextEncoding,
+    /// Settings ▸ New Document ▸ Format: the default a new document opens
+    /// in, `Make Rich Text`'s own default (TXT-SETTINGS-013).
+    pub(crate) rich_text_default: bool,
+    /// Settings ▸ New Document ▸ Font ▸ Rich text font (TXT-SETTINGS-002/010/014).
+    pub(crate) rich_text_font: RichTextFont,
+    pub(crate) rich_text_font_size: u8,
+    /// Settings ▸ New Document ▸ Options ▸ Show ruler (TXT-SETTINGS-015):
+    /// whether a new rich-text window starts with its ruler shown.
+    pub(crate) show_ruler_default: bool,
 }
 
 impl Default for Settings {
@@ -26,6 +59,10 @@ impl Default for Settings {
             font_size: 11,
             wrap_to_page: false,
             default_encoding: TextEncoding::Utf8,
+            rich_text_default: false,
+            rich_text_font: RichTextFont::default(),
+            rich_text_font_size: 12,
+            show_ruler_default: true,
         }
     }
 }
@@ -69,6 +106,19 @@ fn parse(contents: &str) -> Settings {
                     _ => TextEncoding::Utf8,
                 };
             }
+            "rich_text_default" => settings.rich_text_default = value == "true",
+            "rich_text_font" => {
+                settings.rich_text_font = match value {
+                    "jetbrains-mono" => RichTextFont::JetBrainsMono,
+                    _ => RichTextFont::Inter,
+                };
+            }
+            "rich_text_font_size" => {
+                if let Ok(size) = value.parse::<u8>() {
+                    settings.rich_text_font_size = size.clamp(8, 32);
+                }
+            }
+            "show_ruler_default" => settings.show_ruler_default = value == "true",
             _ => {}
         }
     }
@@ -82,12 +132,19 @@ fn serialize(settings: Settings) -> String {
         TextEncoding::Utf16Le => "utf16-le",
         TextEncoding::Utf16Be => "utf16-be",
     };
+    let rich_text_font = match settings.rich_text_font {
+        RichTextFont::Inter => "inter",
+        RichTextFont::JetBrainsMono => "jetbrains-mono",
+    };
     format!(
-        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\n",
+        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\nrich_text_default={}\nrich_text_font={rich_text_font}\nrich_text_font_size={}\nshow_ruler_default={}\n",
         settings.width_chars,
         settings.height_lines,
         settings.font_size,
         settings.wrap_to_page,
+        settings.rich_text_default,
+        settings.rich_text_font_size,
+        settings.show_ruler_default,
     )
 }
 
@@ -173,11 +230,17 @@ mod tests {
             font_size: 14,
             wrap_to_page: true,
             default_encoding: TextEncoding::Utf16Le,
+            rich_text_default: true,
+            rich_text_font: RichTextFont::JetBrainsMono,
+            rich_text_font_size: 18,
+            show_ruler_default: false,
         };
         assert_eq!(parse(&serialize(settings)), settings);
-        let bounded = parse("width_chars=999\nheight_lines=1\nfont_size=255\n");
+        let bounded =
+            parse("width_chars=999\nheight_lines=1\nfont_size=255\nrich_text_font_size=255\n");
         assert_eq!(bounded.width_chars, 240);
         assert_eq!(bounded.height_lines, 10);
         assert_eq!(bounded.font_size, 32);
+        assert_eq!(bounded.rich_text_font_size, 32);
     }
 }

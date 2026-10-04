@@ -18,6 +18,7 @@ impl EditorView {
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
         let save_name_input = cx.new(|cx| InputState::new(window, cx).default_value("Untitled"));
         let save_goto_input = cx.new(|cx| InputState::new(window, cx).placeholder("Go to Folder"));
+        let rename_input = cx.new(|cx| InputState::new(window, cx).placeholder("Name"));
 
         // TextEdit-style untitled numbering: only a window that opens with
         // no path (never one about to load a file) claims a number, freed
@@ -96,6 +97,15 @@ impl EditorView {
                 }
             },
         );
+        let sub_rename = cx.subscribe_in(
+            &rename_input,
+            window,
+            |this, _input, ev: &InputEvent, window, cx| {
+                if matches!(ev, InputEvent::PressEnter { .. }) {
+                    this.commit_rename(window, cx);
+                }
+            },
+        );
 
         cx.bind_keys([
             KeyBinding::new("cmd-shift-g", SaveGoToFolder, Some("Input")),
@@ -152,6 +162,15 @@ impl EditorView {
             KeyBinding::new("cmd-shift-w", ToggleWrapToPage, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, Some(CTX)),
             KeyBinding::new("alt-cmd-w", CloseAll, Some(CTX)),
+            KeyBinding::new("shift-cmd-t", ToggleRichText, Some(CTX)),
+            KeyBinding::new("shift-cmd-[", AlignLeft, Some(CTX)),
+            KeyBinding::new("shift-cmd-\\", AlignCentre, Some(CTX)),
+            KeyBinding::new("shift-cmd-]", AlignRight, Some(CTX)),
+            KeyBinding::new("cmd-r", ShowRuler, Some(CTX)),
+            KeyBinding::new("ctrl-cmd-c", CopyRuler, Some(CTX)),
+            KeyBinding::new("ctrl-cmd-v", PasteRuler, Some(CTX)),
+            KeyBinding::new("shift-cmd-p", OpenPageSetup, Some(CTX)),
+            KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, Some(CTX)),
         ]);
         #[cfg(target_os = "linux")]
         cx.bind_keys([KeyBinding::new(
@@ -331,12 +350,40 @@ impl EditorView {
             matches: Vec::new(),
             current: 0,
             // TextEdit's plain-text default: Menlo 11 (JetBrains Mono here).
-            mono: true,
-            font_size: f32::from(settings.font_size),
+            // A document that opens in rich-text mode (Settings ▸ New
+            // Document ▸ Format, or a previous Make Rich Text) uses the
+            // Rich text font setting instead (TXT-SETTINGS-002/010/014).
+            mono: if settings.rich_text_default {
+                matches!(
+                    settings.rich_text_font,
+                    crate::settings::RichTextFont::JetBrainsMono
+                )
+            } else {
+                true
+            },
+            font_size: if settings.rich_text_default {
+                f32::from(settings.rich_text_font_size)
+            } else {
+                f32::from(settings.font_size)
+            },
             wrap_to_page: settings.wrap_to_page,
             prevent_editing: false,
             page_width_chars: settings.width_chars,
+            rich_text: settings.rich_text_default,
+            ruler: Ruler::default(),
+            show_ruler: settings.show_ruler_default,
+            dark_background: false,
             rtf_runs: None,
+            rename_open: false,
+            rename_input,
+            rename_busy: false,
+            rename_error: None,
+            move_busy: false,
+            page_setup_open: false,
+            page_setup_letter: false,
+            page_setup_landscape: false,
+            page_setup_before: None,
+            spacing_open: false,
             focus: cx.focus_handle(),
             native_window_title: "Text Editor".into(),
             recovery_directory,
@@ -359,7 +406,13 @@ impl EditorView {
             document_watcher,
             pending_startup_path: initial_path,
             pending_open_picker: open_picker_on_ready,
-            _subscriptions: vec![sub_main, sub_find, sub_select_line, sub_save_goto],
+            _subscriptions: vec![
+                sub_main,
+                sub_find,
+                sub_select_line,
+                sub_save_goto,
+                sub_rename,
+            ],
         };
         rmac_ui::set_menu_checked(
             "text_editor::ToggleCheckSpellingWhileTyping",

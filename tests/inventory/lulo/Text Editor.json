@@ -53,6 +53,13 @@
           "shortcut": "⌘Q",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "action": "text_editor::QuitAndKeepWindows",
+          "shortcut": "⌥⌘Q",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -124,6 +131,35 @@
           "children": []
         },
         {
+          "label": "Rename…",
+          "action": "text_editor::RenameDocument",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Move To…",
+          "action": "text_editor::MoveToFolder",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Revert To",
+          "action": "text_editor::RevertToMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Last Saved",
+              "action": "text_editor::RevertToLastSaved",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Export as PDF…",
           "action": "text_editor::ExportPdf",
           "shortcut": "",
@@ -131,10 +167,17 @@
           "children": []
         },
         {
+          "label": "Page Setup…",
+          "action": "text_editor::OpenPageSetup",
+          "shortcut": "⇧⌘P",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Print…",
           "action": "text_editor::PrintFile",
           "shortcut": "⌘P",
-          "separator_before": true,
+          "separator_before": false,
           "children": []
         }
       ]
@@ -463,6 +506,70 @@
           ]
         },
         {
+          "label": "Text",
+          "action": "text_editor::TextFormatMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Align Left",
+              "action": "text_editor::AlignLeft",
+              "shortcut": "⌘{",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Centre",
+              "action": "text_editor::AlignCentre",
+              "shortcut": "⌘|",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Align Right",
+              "action": "text_editor::AlignRight",
+              "shortcut": "⌘}",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Show Ruler",
+              "action": "text_editor::ShowRuler",
+              "shortcut": "⌘R",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Copy Ruler",
+              "action": "text_editor::CopyRuler",
+              "shortcut": "⌃⌘C",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Paste Ruler",
+              "action": "text_editor::PasteRuler",
+              "shortcut": "⌃⌘V",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Spacing…",
+              "action": "text_editor::OpenSpacing",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Make Rich Text",
+          "action": "text_editor::ToggleRichText",
+          "shortcut": "⇧⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Wrap to Page",
           "action": "text_editor::ToggleWrapToPage",
           "shortcut": "⇧⌘W",
@@ -500,6 +607,13 @@
           "action": "text_editor::ZoomOut",
           "shortcut": "⇧⌘,",
           "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Use Dark Background for Windows",
+          "action": "text_editor::ToggleDarkBackground",
+          "shortcut": "",
+          "separator_before": true,
           "children": []
         },
         {
@@ -545,14 +659,14 @@
         {
           "label": "Fill",
           "action": "window::fill",
-          "shortcut": "⌃⇧⌘F",
+          "shortcut": "⌃F",
           "separator_before": false,
           "children": []
         },
         {
           "label": "Centre",
           "action": "window::centre",
-          "shortcut": "⌃⌘C",
+          "shortcut": "⌃C",
           "separator_before": false,
           "children": []
         },
@@ -808,7 +922,15 @@
       },
       {
         "kind": "control",
+        "label": "Change…"
+      },
+      {
+        "kind": "control",
         "label": "Wrap to page"
+      },
+      {
+        "kind": "control",
+        "label": "Show ruler"
       },
       {
         "kind": "control",
@@ -832,11 +954,15 @@
       },
       {
         "kind": "control",
-        "label": "✓  Plain text"
+        "label": "Rich text"
       },
       {
         "kind": "control",
         "label": "Plain text font:"
+      },
+      {
+        "kind": "control",
+        "label": "Rich text font:"
       },
       {
         "kind": "control",

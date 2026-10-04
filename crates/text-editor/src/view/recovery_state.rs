@@ -44,6 +44,53 @@ fn platform_recovery_path() -> Result<PathBuf, storage::Failure> {
     )
 }
 
+/// Application ▸ Quit and Keep Windows (TXT-MENU-001) records the
+/// path-backed windows this process had open here, one per line, next to
+/// the ordinary recovery file. A plain Quit never writes this file, so a
+/// later launch only force-reopens them when the person explicitly asked.
+fn kept_session_path() -> Result<PathBuf, storage::Failure> {
+    platform_recovery_path().map(|path| path.with_file_name("kept-session.txt"))
+}
+
+/// Write `paths` as the kept session, replacing any earlier one. An empty
+/// list still clears a stale file rather than leaving it to reopen windows
+/// that are no longer meaningful.
+pub(super) fn save_kept_session(paths: &[PathBuf]) -> Result<(), storage::Failure> {
+    let path = kept_session_path()?;
+    if paths.is_empty() {
+        let _ = std::fs::remove_file(&path);
+        return Ok(());
+    }
+    let mut contents = String::new();
+    for candidate in paths {
+        contents.push_str(&candidate.to_string_lossy());
+        contents.push('\n');
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    rmac_storage::atomic_write_private(&path, contents.as_bytes())
+        .map_err(|error| storage::Failure::from_io(storage::Operation::SaveRecovery, &path, error))
+}
+
+/// Read back and delete the kept session a previous "Quit and Keep
+/// Windows" wrote, if any.
+pub(super) fn take_kept_session() -> Vec<PathBuf> {
+    let Ok(path) = kept_session_path() else {
+        return Vec::new();
+    };
+    let Ok(contents) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let _ = std::fs::remove_file(&path);
+    contents
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
 pub(super) fn recovery_path_for_platform(
     macos: bool,
     xdg_state_home: Option<PathBuf>,

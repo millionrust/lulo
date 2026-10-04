@@ -18,6 +18,21 @@ pub(super) fn document_window_count() -> usize {
     })
 }
 
+/// Every path-backed document window open in this process right now, for
+/// Application ▸ Quit and Keep Windows (TXT-MENU-001). An Untitled window
+/// has no path to reopen here — its unsaved text, if any, already comes
+/// back through the recovery store on the next launch.
+pub(super) fn open_document_paths(cx: &App) -> Vec<PathBuf> {
+    OPEN_DOCUMENTS.with(|documents| {
+        documents
+            .borrow()
+            .iter()
+            .filter_map(|view| view.upgrade())
+            .filter_map(|view| view.read(cx).path.clone())
+            .collect()
+    })
+}
+
 fn track_document(view: &Entity<EditorView>) {
     OPEN_DOCUMENTS.with(|documents| {
         let mut documents = documents.borrow_mut();
@@ -200,13 +215,29 @@ fn open_requested_windows(request: StartupRequest, cx: &mut App) {
 
 pub(crate) fn run() {
     crate::settings::initialize();
-    let request = match parse_startup_request(std::env::args_os().skip(1)) {
+    let mut request = match parse_startup_request(std::env::args_os().skip(1)) {
         Ok(request) => request,
         Err(message) => {
             eprintln!("{message}");
             std::process::exit(2);
         }
     };
+    // Application ▸ Quit and Keep Windows (TXT-MENU-001): reopen whatever
+    // this process had open last time, on top of whatever this launch's
+    // own arguments ask for. A bare launch that only exists to restore a
+    // kept session should not also open a blank Untitled window.
+    let kept = recovery_state::take_kept_session();
+    if !kept.is_empty() && request.paths.is_empty() {
+        request.open_untitled = false;
+    }
+    for path in kept {
+        if request.paths.len() >= MAX_STARTUP_DOCUMENTS {
+            break;
+        }
+        if !request.paths.contains(&path) {
+            request.paths.push(path);
+        }
+    }
     // One process per app, as on the Mac: a Text Editor that is already
     // running opens these documents as new windows under its own menus.
     if hand_off_windows(&request).is_some_and(|windows| {

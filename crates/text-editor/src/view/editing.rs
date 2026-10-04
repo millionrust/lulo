@@ -247,6 +247,18 @@ impl EditorView {
             self.alert_cancel(window, cx);
             return;
         }
+        if self.rename_open {
+            self.cancel_rename(window, cx);
+            return;
+        }
+        if self.page_setup_open {
+            self.cancel_page_setup(window, cx);
+            return;
+        }
+        if self.spacing_open {
+            self.close_spacing(window, cx);
+            return;
+        }
         self.find_open = false;
         self.select_line_open = false;
         self.replace_mode = false;
@@ -488,6 +500,63 @@ impl EditorView {
         ] {
             rmac_ui::set_menu_enabled(action, can_insert, cx);
         }
+
+        // File ▸ Rename…/Move To…/Revert To ▸ Last Saved (TXT-MENU-002/003/004):
+        // only a saved, path-backed document has a name, location or saved
+        // revision to act on.
+        let has_path = self.path.is_some();
+        rmac_ui::set_menu_enabled("text_editor::RenameDocument", has_path, cx);
+        rmac_ui::set_menu_enabled("text_editor::MoveToFolder", has_path, cx);
+        rmac_ui::set_menu_enabled(
+            "text_editor::RevertToLastSaved",
+            has_path && self.dirty && self.rtf_runs.is_none(),
+            cx,
+        );
+
+        // Format ▸ Make Rich Text / Make Plain Text (TXT-MENU-075) and the
+        // Format ▸ Text submenu it gates (TXT-MENU-060..074).
+        rmac_ui::set_menu_label(
+            "text_editor::ToggleRichText",
+            if self.rich_text {
+                "Make Plain Text"
+            } else {
+                "Make Rich Text"
+            },
+            cx,
+        );
+        let text_format_enabled = self.rich_text && can_insert;
+        for action in [
+            "text_editor::AlignLeft",
+            "text_editor::AlignCentre",
+            "text_editor::AlignRight",
+            "text_editor::ShowRuler",
+            "text_editor::CopyRuler",
+            "text_editor::PasteRuler",
+            "text_editor::OpenSpacing",
+        ] {
+            rmac_ui::set_menu_enabled(action, text_format_enabled, cx);
+        }
+        rmac_ui::set_menu_checked(
+            "text_editor::AlignLeft",
+            self.ruler.alignment == gpui::TextAlign::Left,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "text_editor::AlignCentre",
+            self.ruler.alignment == gpui::TextAlign::Center,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "text_editor::AlignRight",
+            self.ruler.alignment == gpui::TextAlign::Right,
+            cx,
+        );
+        rmac_ui::set_menu_checked("text_editor::ShowRuler", self.show_ruler, cx);
+        rmac_ui::set_menu_checked(
+            "text_editor::ToggleDarkBackground",
+            self.dark_background,
+            cx,
+        );
     }
 
     pub(super) fn toggle_mono(&mut self, cx: &mut Context<Self>) {

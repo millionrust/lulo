@@ -161,12 +161,15 @@ impl std::fmt::Display for ExportPdfFailure {
 /// This reuses the print pipeline's own renderer (`rmac_print::render_pdf`,
 /// the same one `crates/rmac-print-linux` calls after the print portal
 /// negotiates page settings) rather than a second implementation. Export as
-/// PDF has no portal dialog to negotiate a page size with, so it uses
-/// `PageLayout::default()` — the same A4 layout the portal path itself falls
-/// back to when a page description omits one.
-pub(super) fn render_pdf_export(path: &Path, text: &str) -> Result<(), ExportPdfFailure> {
-    let pdf = rmac_print::render_pdf(text, rmac_print::PageLayout::default())
-        .map_err(ExportPdfFailure::Render)?;
+/// PDF has no portal dialog to negotiate a page size with, so it uses this
+/// document's own File ▸ Page Setup… choice (TXT-MENU-006), defaulting to
+/// the same A4 layout the portal path itself falls back to.
+pub(super) fn render_pdf_export(
+    path: &Path,
+    text: &str,
+    layout: rmac_print::PageLayout,
+) -> Result<(), ExportPdfFailure> {
+    let pdf = rmac_print::render_pdf(text, layout).map_err(ExportPdfFailure::Render)?;
     storage::write(
         &storage::RealStorage,
         storage::Operation::ExportPdf,

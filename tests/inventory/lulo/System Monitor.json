@@ -396,14 +396,14 @@
         {
           "label": "Fill",
           "action": "window::fill",
-          "shortcut": "⌃⇧⌘F",
+          "shortcut": "⌃F",
           "separator_before": false,
           "children": []
         },
         {
           "label": "Centre",
           "action": "window::centre",
-          "shortcut": "⌃⌘C",
+          "shortcut": "⌃C",
           "separator_before": false,
           "children": []
         },

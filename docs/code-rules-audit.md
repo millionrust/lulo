@@ -66,27 +66,36 @@ directory, and cleans up the temp file on any failure. 26 crates already
 route through it (`finder`, `rmac-notes-storage`, `clock`,
 `rmac-window-state`, `rmac-shell-settings`, `rmac-desktop`, `weather`, etc).
 
-Persistence paths that bypass it (found by grepping `fs::write`/
+Persistence paths that bypassed it (found by grepping `fs::write`/
 `File::create` for non-test call sites and cross-referencing which crates
-depend on `rmac-storage`):
+depend on `rmac-storage`), **all fixed `6aeb8bb4`**:
 
-| Crate / file | What it persists | fsync? | Versioned serde? | Notes |
-| --- | --- | --- | --- | --- |
-| `shell/bins/rmac-screenshot/src/model.rs:576` (`Settings::save`) | Screenshot tool preferences (destination, timer, thumbnail, pointer, last selection) | No — `fs::write` + `fs::rename`, no `sync_all` | No — hand-rolled `key=value` text, no version tag | Low-severity settings; on power loss the rename can still land a torn/previous file. Not fixed: routing it through `rmac_storage::atomic_write` needs a new `rmac-storage` dependency on a Linux-only bin this session can't compile-check (no cargo, cross-compile only happens on the Linux laptop per the brief) |
-| `crates/rmac-compositor/src/parking.rs:159-165` (`ParkingSet::save`) | Minimized-window "parking" positions, `$XDG_RUNTIME_DIR/rmac/parking.json` | No | serde_json, no `version` field | Comment in the same file says this is explicitly "a convenience cache, never a source of truth" — self-documented low priority, not fixed |
-| `crates/rmac-gtk-settings/src/toolkit.rs:370-386` (`write_atomic`) | GTK2/3/4 settings.ini stub files it manages | No | N/A (plain text stub) | Reimplements the same temp+rename pattern `rmac-storage` already provides, without fsync; not fixed for the same cross-compile-verification reason as above |
-| `crates/rmac-dock-runtime/src/consumer.rs:104-111` (`save_recents`) | Dock recent-apps list, `$XDG_STATE_HOME/rmac/dock-recents` | No | Custom line-based encode/decode, no version | Low-severity (recents list rebuilds from usage); not fixed |
-| `crates/rmac-clipboard-linux/src/store.rs` (`write_private`, ~line 155) | Clipboard payloads and history index, `$XDG_RUNTIME_DIR/rmac/clipboard` | **Yes** — this one already does `write_all` + `sync_all` + `rename`, with `0600` mode | serde_json for the index, no `version` field | Functionally equivalent to `rmac_storage::atomic_write_private` but duplicated by hand rather than reusing the crate; not switched over in this pass (would add a new cross-crate dependency this session can't verify) |
+| Crate / file | What it persists | Before | After |
+| --- | --- | --- | --- |
+| `shell/bins/rmac-screenshot/src/model.rs` (`Settings::save`) | Screenshot tool preferences (destination, timer, thumbnail, pointer, last selection) | `fs::write` + `fs::rename`, no `sync_all` | `rmac_storage::atomic_write` |
+| `crates/rmac-compositor/src/parking.rs` (`ParkingSet::save`) | Minimized-window "parking" positions, `$XDG_RUNTIME_DIR/rmac/parking.json` | `fs::write` + `fs::rename`, no `sync_all` | `rmac_storage::atomic_write` |
+| `crates/rmac-gtk-settings/src/toolkit.rs` (`write_atomic`) | GTK2/3/4 settings.ini stub files it manages | `fs::write` + `fs::rename`, no `sync_all` | `rmac_storage::atomic_write` |
+| `crates/rmac-dock-runtime/src/consumer.rs` (`save_recents`) | Dock recent-apps list, `$XDG_STATE_HOME/rmac/dock-recents` | `fs::write` + `fs::rename`, no `sync_all` | `rmac_storage::atomic_write` |
+| `crates/rmac-clipboard-linux/src/store.rs` (`write_private`) | Clipboard payloads and history index, `$XDG_RUNTIME_DIR/rmac/clipboard` | already `write_all` + `sync_all` + `rename` with `0600`, hand-rolled | `rmac_storage::atomic_write_private` (same contract, no longer duplicated) |
 
-None of the above lose data outright — the worst case is a torn write on power
-loss for settings/caches that are either explicitly documented as
-non-authoritative or are low-value preferences. All are reported here rather
-than switched to `rmac-storage`, because every one requires adding
-`rmac-storage.workspace = true` to a crate that currently doesn't depend on
-it, and this session cannot run `cargo check` on Linux-only code (per
-`AGENTS.md` / the shared agent brief — this machine builds nothing that
-needs the Linux laptop toolchain). This is flagged as the next actionable
-follow-up for whichever agent next has laptop build access.
+None of these ever lost data outright — the worst case was a torn write on
+power loss for settings/caches that are either explicitly documented as
+non-authoritative or are low-value preferences, and none carry a serde
+`version` field (all are plain settings/line-based caches, not the versioned
+documents this rule's other half already covers for `rmac-notes-storage`,
+`finder`'s trash/undo journals, etc. — see below). Each now goes through
+`rmac-storage`'s shared `atomic_write`/`atomic_write_private` (same-directory
+temp file, `fsync`, atomic rename, parent-directory sync), with a new
+round-trip + no-stray-temp-file test per writer
+(`shell/bins/rmac-screenshot/src/model.rs`'s
+`settings_save_is_an_atomic_rename_with_no_stray_temp_file`,
+`crates/rmac-compositor/src/tests.rs`'s
+`parking_store_save_leaves_no_temporary_sibling`,
+`crates/rmac-gtk-settings/src/tests.rs`'s
+`write_atomic_replaces_in_place_with_no_stray_temp_file`,
+`crates/rmac-dock-runtime/src/consumer.rs`'s `persistence_tests` module); the
+clipboard store's existing `directory_and_files_are_private` test already
+re-confirms the 0600 contract is unchanged.
 
 No crate found writing genuinely high-value user content (documents, notes
 bodies, keychains) outside `rmac-storage`; `rmac-notes-storage`,

@@ -40,17 +40,29 @@ CI/candidate-package builds for recent `dev` commits.
 2. **Owner re-check of `DESK-12`/`DOCK-27` on the new install.** Neither
    reproduces in the nested test compositor, so only a live recheck on the
    currently installed build can confirm or re-open them.
-3. **An 8-hour soak against the installed package**, not just source
-   binaries.
-4. **The Orca accessibility audit (journey 9).** An automated run is in
-   progress; the owner still needs to do the final listen.
+3. **Done: the 8-hour soak.** The [2026-10-04 run](perf/reference-laptop-2026-10-04-memory-soak.md)
+   used release binaries (not yet an installed `.deb` package) and passed,
+   with one flagged note — Files' private footprint grew past its 16 MiB/8h
+   budget before leveling off — root-caused to two unbounded caches and
+   fixed (bounded LRU caches, `MEM-03`), not yet re-run through a fresh
+   8-hour soak to confirm the new ceiling. A soak specifically against the
+   *installed* package (rather than the same binaries pre-packaging) has
+   still not separately run.
+4. **The Orca accessibility audit (journey 9).** The automated run now
+   covers 13 app and shell journeys including Calendar and Mail (`ACC-32`);
+   eleven findings remain open. The owner still needs to do the final
+   listen at 200% text scaling.
 5. **Security-review native-station evidence (12 of 83 checks left; three are the new polkit agent's, SWU-07).** The
-   disposable-install station runs on GitHub Actions. The AMD and NVIDIA
-   desktop stations are waived for Beta 1, because the owner has neither
-   machine. The reference laptop's checks (lock screen, TTY recovery,
-   suspend, Sharing toggle, mount removal, notifications while locked) need
-   the owner; the read-only steps are in the review's "Reference-laptop
-   checks".
+   disposable-install station already ran on GitHub Actions and passed 11 of
+   12 of its own checks — including the full package lifecycle (install,
+   upgrade, an interrupted rollback and recovery, remove, purge, reinstall)
+   with user data and the GNOME recovery session intact — blocked from
+   counting as a full pass only by SR-39 (Ptyxis drops a `$(…)` argument,
+   accepted as a Low finding for Beta). The AMD and NVIDIA desktop stations
+   are waived for Beta 1, because the owner has neither machine. The
+   reference laptop's checks (lock screen, TTY recovery, suspend, Sharing
+   toggle, mount removal, notifications while locked) need the owner; the
+   read-only steps are in the review's "Reference-laptop checks".
 6. **NVIDIA testing: dropped from Beta 1** (owner decision 2026-10-04: no NVIDIA machine is available; shipped as a known limitation in docs/known-limitations.md). Needs NVIDIA hardware, which the project doesn't
    have yet.
 7. **A real GitHub Actions release-workflow run on the actual tag.** There
@@ -368,7 +380,7 @@ mistake recurring.
 | No clipping at 200% | **Not yet run** (S) | `docs/accessibility-audit.md`: static read-through only, no rendered check at 200%. This pass separately confirmed (nested compositor only) that a compositor output scale of 2 doesn't collapse the AT-SPI tree — a Files window still exposed all 27 nodes with named items — but that isn't a visual-clipping check |
 | Usable high-contrast colours | **Pass** (token level) | Theme contrast-ratio tests pass; no shared component hardcodes a raw color |
 | Reduced motion from the Settings portal | **Pass** (plumbing) / **Not yet run** (exercised) | Portal → theme wiring is tested end to end, but no shared component currently animates anything, so the gate has nothing live to violate yet |
-| Verify every release journey with Orca | **Fail** (automated) | 2026-10-03: `scripts/a11y/orca_audit.py` runs the real Orca in the private nested session over 13 app and shell journeys (results: `docs/accessibility-audit.md`, "Automated Orca run"; ACC-12–27). Five defects fixed, eleven open; the owner's ~10-step "Owner final listen" on the live desktop remains. Journeys 1–6 now have real, live or nested AT-SPI-tree evidence (see §1); 7 has live backend checks but no Settings-UI run; 8's Control-F2 gap is confirmed; 9 is Owner/manual |
+| Verify every release journey with Orca | **Fail** (automated) | 2026-10-03: `scripts/a11y/orca_audit.py` runs the real Orca in the private nested session over 13 app and shell journeys (results: `docs/accessibility-audit.md`, "Automated Orca run"; ACC-12–27). Five defects fixed, eleven open; the owner's ~10-step "Owner final listen" on the live desktop remains. **Update:** the automated audit now also covers Calendar and Mail (`ACC-32`, fixed `e81ac9aa`) — five more live defects found and fixed (live-region announcements, a mis-rolled search field, a mis-rolled sidebar toggle, unnamed grid/month items, and focus left nowhere after closing a sheet). Journeys 1–6 now have real, live or nested AT-SPI-tree evidence (see §1); 7 has live backend checks but no Settings-UI run; 8's Control-F2 gap is confirmed; 9 is Owner/manual |
 | Formal I3 accessibility-release audit (442 observations) | **Not yet run** | `docs/accessibility-release-audit.md` / `scripts/verify-accessibility-audit.py`; no evidence file committed |
 
 **This is the release-blocking category.** `todo.md` states accessibility
@@ -390,7 +402,7 @@ audit.
 | Rule | Status | Evidence |
 |---|---|---|
 | No destructive-operation error dropped with `let _ = ...` | **Pass** (fixed) | `docs/code-rules-audit.md`: 5 real violations found and fixed (window/Finder/media-player state saves now log; clipboard payload delete and an unconfirmed permanent-delete path now refuse instead of silently dropping/deleting) |
-| Persisted data: versioned serde, temp-sibling + fsync + atomic rename via `rmac-storage` | **Fail** (partial) | Same doc: 5 low-severity settings/cache writers (`rmac-screenshot`, `rmac-compositor` parking cache, `rmac-gtk-settings` stub writer, `rmac-dock-runtime` recents, `rmac-clipboard-linux`) still hand-roll their own write path instead of `rmac-storage`; none touch high-value user content, but none are fixed yet (needs a Linux `cargo check` this session didn't have) |
+| Persisted data: versioned serde, temp-sibling + fsync + atomic rename via `rmac-storage` | **Fixed** `6aeb8bb4` | The 5 low-severity settings/cache writers `docs/code-rules-audit.md` named (`rmac-screenshot`'s `Settings::save`, `rmac-compositor`'s `ParkingSet::save`, `rmac-gtk-settings`'s `write_atomic`, `rmac-dock-runtime`'s `save_recents`, and `rmac-clipboard-linux`'s `write_private`) now call `rmac_storage::atomic_write`/`atomic_write_private` (same-directory temp file, `fsync`, atomic rename, parent-directory sync) instead of hand-rolled `fs::write` + `fs::rename`. New round-trip and no-stray-temp-file tests cover each writer (`rmac-screenshot::model::tests::settings_save_is_an_atomic_rename_with_no_stray_temp_file`, `rmac-compositor::tests::parking_store_save_leaves_no_temporary_sibling`, `rmac-gtk-settings::tests::toolkit::write_atomic_replaces_in_place_with_no_stray_temp_file`, `rmac-dock-runtime::consumer::persistence_tests::*`); clipboard's existing `directory_and_files_are_private` test already re-confirms the 0600 private-write contract unchanged. None of these writers carry a serde `version` field (all are low-severity caches/settings, not the versioned-serde documents the rule's first half covers) — that half of the rule was already `Pass` elsewhere and is unaffected. |
 | User-visible failures: typed errors with a recovery action | **Pass** | No violations found in the crates audited |
 | Logs never include secrets or document contents | **Pass** | No violations found |
 | Domain crates never import GPUI/Wayland/D-Bus/platform FFI | **Pass** (with 2 naming nits) | `rmac-app-menu`/`rmac-osd` carry `zbus` without a `-linux`/`-system` suffix — functionally fine, a naming-convention note only |
@@ -409,10 +421,10 @@ rules at all.
 |---|---|---|
 | Native package contract tests | **Pass** | `python3 -m pytest scripts/test_native_packages.py scripts/test_session_package.py scripts/test_application_package.py scripts/test_keyring_packages.py` all pass in this session |
 | Release workflow structural checks | **Pass** | `python3 -m pytest scripts/test_release_workflows.py` passes; `release.yml` now tags pre-release builds correctly (this pass) and needs no APT-signing secrets to build/attach `.deb`s, `SHA256SUMS`, the SBOM, and provenance |
-| Real install/remove/upgrade on a clean Ubuntu 26.04 VM or the reference laptop | **Not yet run** | Needs an actual `apt install ./rmac-apps_*.deb ./rmac-session_*.deb`, a second install as an upgrade, and `apt purge`, on a real machine — this session had no cargo and no laptop UI access for a packaging run |
+| Real install/remove/upgrade on a clean Ubuntu 26.04 VM or the reference laptop | **Pass (disposable VM); Not yet run (reference laptop)** | `run-package-lifecycle.py` ran all eight steps — baseline install, upgrade, an interrupted rollback and recovery, remove, purge, reinstall, final purge — on a fresh GitHub Actions `ubuntu-26.04` VM (`.github/workflows/security-station.yml`, [run 37182936329](https://github.com/millionrust/lulo/actions/runs/37182936329)); user data in a synthetic home and the GNOME recovery session survived every step (`docs/security-review-0.9.0-beta.1.md`, "package-lifecycle"). The reference-laptop repeat of the same lifecycle on real hardware has not run |
 | GDM session-selection, crash-loop safe mode, TTY repair, recovery, GNOME-fallback journey (H4/H6) | **Not yet run** | `docs/session-journey-evidence.md` is a runbook; no evidence file from an actual run is committed |
 | Real GitHub Actions release run (untested runner plumbing) | **Not yet run** | `docs/release-process.md` "Known gaps": the non-root-build-user-in-a-container pattern and container disk space have never been exercised against a real GitHub Actions run — expect to debug the first tag push |
-| Reproducible build (two independent byte-identical package assemblies) | **Not yet run** (this session) | Contract exists and is unit-tested (`check-native-reproducibility.sh`); not executed here (no cargo) |
+| Reproducible build (two independent byte-identical package assemblies) | **Pending this session's CI run** | `release.yml` already runs `check-native-reproducibility.sh` on `build-amd64`/`build-arm64`, but only on a real `v*` tag push, which hasn't happened yet. This pass added `.github/workflows/native-reproducibility.yml` (`workflow_dispatch`) so the same check can run on demand before the first tag, and triggered it once this session — see "Required test run" below for the result |
 | Signed APT repository install/upgrade/rollback | **Not applicable to this Beta by design** | Explicitly deferred to after Beta per the owner's scope decision; `apt-repository`/`keyring` jobs stay off until the signing-key and source-package decisions in `docs/release-process.md` are made |
 
 **Update, 2026-10-01:** `build-native-inputs.sh`, `build-native-packages.py`,

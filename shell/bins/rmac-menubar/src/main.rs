@@ -1097,12 +1097,16 @@ mod linux_wayland {
             }
         }
 
-        fn sync_volume_bulge(&mut self, window: &mut Window) {
+        /// Runs from pointer handlers, outside render, where
+        /// `Window::request_animation_frame` panics (it needs the view being
+        /// rendered). Notifying schedules a render, and the render keeps
+        /// requesting frames while the bulge is still easing.
+        fn sync_volume_bulge(&mut self, cx: &mut Context<Self>) {
             let now = self.volume_bulge_epoch.elapsed().as_millis() as u64;
             self.volume_bulge
                 .set_active(self.volume_hovered || self.status_dragging_volume, now);
             if self.volume_bulge.is_animating(now) {
-                window.request_animation_frame();
+                cx.notify();
             }
         }
 
@@ -2627,10 +2631,10 @@ mod linux_wayland {
                         .cursor_pointer()
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                                 cx.stop_propagation();
                                 this.status_dragging_volume = true;
-                                this.sync_volume_bulge(window);
+                                this.sync_volume_bulge(cx);
                                 let value = this.volume_at(event.position.x.into());
                                 this.commit_output_volume(value, cx);
                             }),
@@ -2643,10 +2647,10 @@ mod linux_wayland {
                         }))
                         .on_mouse_up(
                             MouseButton::Left,
-                            cx.listener(move |this, event: &MouseUpEvent, window, cx| {
+                            cx.listener(move |this, event: &MouseUpEvent, _, cx| {
                                 if this.status_dragging_volume {
                                     this.status_dragging_volume = false;
-                                    this.sync_volume_bulge(window);
+                                    this.sync_volume_bulge(cx);
                                     let value = this.volume_at(event.position.x.into());
                                     this.commit_output_volume(value, cx);
                                 }
@@ -2654,10 +2658,10 @@ mod linux_wayland {
                         )
                         .on_mouse_up_out(
                             MouseButton::Left,
-                            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+                            cx.listener(move |this, _: &MouseUpEvent, _, cx| {
                                 if this.status_dragging_volume {
                                     this.status_dragging_volume = false;
-                                    this.sync_volume_bulge(window);
+                                    this.sync_volume_bulge(cx);
                                     let value = this
                                         .sound_menu
                                         .as_ref()
@@ -2666,9 +2670,9 @@ mod linux_wayland {
                                 }
                             }),
                         )
-                        .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
+                        .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                             this.volume_hovered = *hovered;
-                            this.sync_volume_bulge(window);
+                            this.sync_volume_bulge(cx);
                             cx.notify();
                         }))
                         .child(

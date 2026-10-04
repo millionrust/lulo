@@ -333,9 +333,9 @@ impl QuickSettingsView {
                     .when(enabled, |hit| {
                         hit.on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            cx.listener(|this, event: &MouseDownEvent, _, cx| {
                                 this.dragging = Some(SliderKind::DetailVolume);
-                                this.sync_slider_bulge(SliderKind::DetailVolume, window);
+                                this.sync_slider_bulge(SliderKind::DetailVolume, cx);
                                 let value = super::slider_value(
                                     SliderKind::DetailVolume,
                                     f32::from(event.position.x),
@@ -344,13 +344,8 @@ impl QuickSettingsView {
                             }),
                         )
                         .on_hover(cx.listener(
-                            |this, hovered: &bool, window, cx| {
-                                this.set_slider_hovered(
-                                    SliderKind::DetailVolume,
-                                    *hovered,
-                                    window,
-                                    cx,
-                                );
+                            |this, hovered: &bool, _, cx| {
+                                this.set_slider_hovered(SliderKind::DetailVolume, *hovered, cx);
                             },
                         ))
                     })

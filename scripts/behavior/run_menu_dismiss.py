@@ -57,6 +57,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 
+import fake_hardware  # noqa: E402
 import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
 
@@ -547,6 +548,82 @@ class Run:
                 self.dispatch(shortcut)
                 self.wait_for(lambda: self.popover_gone(namespace), 5)
 
+    def fake_hardware_shows_real_data(self) -> None:
+        """With fake_hardware.py's NetworkManager/BlueZ/UPower mocks
+        running (docs/behavior-suite.md), the top bar and Control Centre
+        should show that laptop's actual state instead of "unavailable":
+        a battery indicator, three Wi-Fi networks with Casa Lulo
+        connected, and a paired Bluetooth headset. Every step also checks
+        the status-bar/quick-settings processes are still alive, since
+        this is the realistic hardware state the real Control Centre
+        crash (2026-10-03) needed and no empty-hardware nested run ever
+        exercised."""
+
+        self.close_everything()
+        battery = self.wait_for(lambda: self.find_node(
+            ("push button", "button", "label"), lambda name: name.startswith("Battery 80%")), 10)
+        self.check("Top bar: battery indicator shows the fake 80%, discharging battery",
+                   battery is not None)
+
+        self.dispatch("quick-settings")
+        opened = self.wait_for(lambda: self.has_layer("rmac-quick-settings"), 10)
+        self.check("Control Centre: opens with fake hardware running", opened)
+        if not opened:
+            return
+
+        def open_detail(label: str) -> bool:
+            button = self.wait_for(lambda: self.find_node(
+                ("push button", "button"), lambda name: name == f"{label} details"), 10)
+            if button is None:
+                return False
+            try:
+                button.queryAction().doAction(0)
+            except Exception:  # noqa: BLE001
+                return False
+            return True
+
+        wifi_opened = open_detail("Wi-Fi")
+        self.check("Control Centre: Wi-Fi details opens without crashing",
+                   wifi_opened and self.quick_settings.poll() is None)
+        if wifi_opened:
+            network = self.wait_for(lambda: self.find_node(
+                ("push button", "button", "menu item", "list item", "label"),
+                lambda name: "Casa Lulo" in name), 10)
+            self.check("Control Centre: Wi-Fi list shows the fake connected network",
+                       network is not None)
+            self.keys.key("escape")
+            self.wait_for(lambda: not self.has_layer("rmac-quick-settings")
+                          or self.find_node(("push button", "button"),
+                                            lambda name: name == "Wi-Fi details") is not None, 5)
+
+        if not self.has_layer("rmac-quick-settings"):
+            self.dispatch("quick-settings")
+            self.wait_for(lambda: self.has_layer("rmac-quick-settings"), 10)
+        bluetooth_opened = open_detail("Bluetooth")
+        self.check("Control Centre: Bluetooth details opens without crashing",
+                   bluetooth_opened and self.quick_settings.poll() is None)
+        if bluetooth_opened:
+            device = self.wait_for(lambda: self.find_node(
+                ("push button", "button", "menu item", "list item", "label"),
+                lambda name: "Lulo Headphones" in name), 10)
+            self.check("Control Centre: Bluetooth list shows the fake paired device",
+                       device is not None)
+            self.keys.key("escape")
+
+        wifi_toggle = self.wait_for(lambda: self.find_node(
+            ("push button", "button", "switch", "toggle button"), lambda name: name == "Wi-Fi"), 5)
+        toggled = False
+        if wifi_toggle is not None:
+            try:
+                wifi_toggle.queryAction().doAction(0)
+                time.sleep(0.3)
+                wifi_toggle.queryAction().doAction(0)
+                toggled = self.quick_settings.poll() is None
+            except Exception:  # noqa: BLE001
+                toggled = False
+        self.check("Control Centre: the Wi-Fi toggle switches without crashing", toggled)
+        self.close_everything()
+
     def control_centre_detail_escape(self) -> None:
         """Esc inside a Control Centre list (Sound's outputs) backs out to
         the grid, and a second Esc closes Control Centre, as on the Mac.
@@ -613,7 +690,9 @@ class Run:
             self.check(f"clock/date popover: opens for {method}", opened)
             if not opened:
                 continue
-            time.sleep(0.5)
+            # Layer listing can precede the catcher's first input-region
+            # commit, especially while Notification Center paints its panel.
+            time.sleep(1.0)
             if method == "Escape":
                 self.keys.key("escape")
             else:
@@ -783,6 +862,8 @@ class Run:
                 self.control_center_and_app_menu_close_on_wallpaper_click()
             elif self.args.only == "control-centre-list":
                 self.control_centre_detail_escape()
+            elif self.args.only == "fake-hardware":
+                self.fake_hardware_shows_real_data()
             else:
                 namespaces = {
                     "quick-settings": "rmac-quick-settings",
@@ -807,6 +888,7 @@ class Run:
                                     ("app-drawer", "rmac-app-drawer")):
             self.layer_popover_dismissal(shortcut, namespace)
         self.control_centre_detail_escape()
+        self.fake_hardware_shows_real_data()
         self.clock_popover_dismissal()
         self.control_center_and_app_menu_close_on_wallpaper_click()
         # Log Out ends this run's own nested niri for real; nothing after
@@ -837,10 +919,13 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         if subprocess.run(["which", tool], capture_output=True).returncode != 0:
             raise SystemExit(f"{tool} is required")
     work = Path(tempfile.mkdtemp(prefix="lulo-menu-dismiss-"))
+    hardware = fake_hardware.start(work) if getattr(args, "fake_hardware", True) else None
     try:
         env = run_lulo.isolated_environment(work)
         run_lulo.refuse_live_session(env)
         run_lulo.install_shortcut_dispatcher(env, Path(args.bin_dir))
+        if hardware is not None:
+            env.update(hardware.env)
         for key in ("WLR_BACKENDS", "WLR_HEADLESS_OUTPUTS", "WLR_LIBINPUT_NO_DEVICES", "WLR_RENDERER",
                     "LIBGL_ALWAYS_SOFTWARE", "VK_ICD_FILENAMES"):
             env.pop(key, None)
@@ -873,6 +958,8 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         if run_lulo.reap(work / "runtime"):
             time.sleep(1.0)
             run_lulo.reap(work / "runtime")
+        if hardware is not None:
+            hardware.stop()
         if args.keep:
             print(f"kept {work}", file=sys.stderr)
         else:
@@ -885,9 +972,13 @@ def main() -> int:
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, wallpaper, "
                                           "rmac-quick-settings and rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument(
+        "--no-fake-hardware", dest="fake_hardware", action="store_false", default=True,
+        help="skip the private NetworkManager/BlueZ/UPower mocks (docs/behavior-suite.md)",
+    )
     parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
                                            "launcher", "app-drawer", "notification-center",
-                                           "combined", "control-centre-list"))
+                                           "combined", "control-centre-list", "fake-hardware"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

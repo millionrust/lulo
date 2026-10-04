@@ -175,9 +175,18 @@ pub(super) fn set_brightness_percentage(percentage: u8) -> Result<u8, Error> {
     Ok(apply_brightness(&backlight.name, target)?.percentage())
 }
 
+/// `/sys/class/backlight`, or the nested behaviour-test session's fake
+/// sysfs tree (scripts/behavior/fake_hardware.py) when it set
+/// `LULO_FAKE_SYS_ROOT`. Unset in every real session.
+fn backlight_class_root() -> PathBuf {
+    std::env::var_os("LULO_FAKE_SYS_ROOT")
+        .map(|root| Path::new(&root).join("class/backlight"))
+        .unwrap_or_else(|| PathBuf::from("/sys/class/backlight"))
+}
+
 fn preferred_backlight() -> Result<Backlight, Error> {
     let directory =
-        fs::read_dir("/sys/class/backlight").map_err(|_| Error::new(Operation::ReadBrightness))?;
+        fs::read_dir(backlight_class_root()).map_err(|_| Error::new(Operation::ReadBrightness))?;
     let mut devices = Vec::new();
     for entry in directory.take(MAX_BACKLIGHTS + 1) {
         let entry = entry.map_err(|_| Error::new(Operation::ReadBrightness))?;
@@ -203,7 +212,7 @@ fn read_backlight(name: &str) -> Result<Backlight, Error> {
     if !valid_device_name(name) {
         return Err(Error::new(Operation::ReadBrightness));
     }
-    let base = Path::new("/sys/class/backlight").join(name);
+    let base = backlight_class_root().join(name);
     let current = read_u32(&base.join("brightness"))?;
     let maximum = read_u32(&base.join("max_brightness"))?;
     if maximum == 0 || current > maximum {

@@ -16,7 +16,7 @@ impl FinderView {
     /// Column-view preview (design-lab/finder.html): the preview fills the
     /// top of the column, then the name, "kind – size" and an Information
     /// table, all left-aligned 10 in from the column edge.
-    fn render_column_preview(&self, entry: &Entry) -> gpui::AnyElement {
+    pub(super) fn render_column_preview(&self, entry: &Entry) -> gpui::AnyElement {
         let visual = entry
             .application
             .as_ref()

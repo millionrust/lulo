@@ -2197,6 +2197,10 @@ impl CalendarView {
                 .child(
                     div()
                         .id(format!("calendar-year-month-{}", month_index + 1))
+                        // ACC-32: this heading opens the month in Month
+                        // view but had no role or name of its own.
+                        .role(Role::Button)
+                        .aria_label(first.format("%B %Y").to_string())
                         .text_size(px(15.0))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(if month_index + 1 == self.nav.selected.month() {

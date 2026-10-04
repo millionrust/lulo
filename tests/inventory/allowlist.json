@@ -915,6 +915,174 @@
       "label": "Touch ID & Password",
       "match": "exact",
       "reason": "Lulo has no Touch ID. The same password row lives in the Login Password pane, the name macOS 26 gives this pane on a Mac without Touch ID (SET-05)."
+    },
+    {
+      "app": "System Settings",
+      "label": "Login Password",
+      "match": "exact",
+      "reason": "Lulo's own name for this pane, the name macOS 26 itself gives Touch ID & Password on a Mac without Touch ID; the reference Mac has Touch ID so its capture shows the other name instead, which is separately allowlisted above (SET-05 in docs/parity.md)."
+    },
+    {
+      "app": "System Settings",
+      "label": "Mouse",
+      "match": "exact",
+      "reason": "Sidebar panes for input hardware only appear when that hardware is actually present (LINUX-HW-01 in docs/parity.md); the reference Mac capture's own mouse state differs from the reference PC's, so the two sidebars list different hardware-gated rows."
+    },
+    {
+      "app": "System Settings",
+      "label": "Touchscreen",
+      "match": "exact",
+      "reason": "Sidebar panes for input hardware only appear when that hardware is actually present (LINUX-HW-01/LINUX-HW-02 in docs/parity.md); the reference PC has a touchscreen the reference Mac capture does not."
+    },
+    {
+      "app": "System Settings",
+      "label": "VPN",
+      "match": "exact",
+      "reason": "Lulo always shows a VPN sidebar row backed by NetworkManager; the Mac only shows VPN once a VPN profile is configured, and the reference Mac capture had none configured at capture time."
+    },
+    {
+      "app": "Finder",
+      "label": "Finder Help",
+      "match": "exact",
+      "reason": "Lulo's standard \"<App> Help\" entry (every app menu gets one, see help_menu() in shell/bins/rmac-menubar) opens Files' real help content (shell/assets/help/files.md). This specific Mac capture shows Finder's Help menu redirected to the Apple-only \"Mac User Guide\"/\"Tips for Your Mac\" items instead (allowlisted above), which Lulo has no content to back."
+    },
+    {
+      "app": "Finder",
+      "label": "Files Help",
+      "match": "exact",
+      "reason": "Files' own Help menu item opens an in-app contextual help panel (crates/finder/src/view/list_presentation.rs's ShowHelp, help_open), a second, deliberate entry point to the same help content distinct from the generic \"Finder Help ⌘?\" window; not present on the Mac, which has neither (see the Finder Help entry above)."
+    },
+    {
+      "app": "Preview",
+      "label": "Soft Proof with Profile",
+      "match": "exact",
+      "reason": "Soft-proofing needs real ICC colour-profile data and a colour-managed render path; Lulo's image/PDF pipeline has no ICC profile support at all (same class of gap as Weather's maps — a data source Lulo lacks, not a small addition)."
+    },
+    {
+      "app": "Preview",
+      "label": "None",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row (\"use no profile\"); see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "ACES CG Linear (Academy Color Encoding System AP1)",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "Adobe RGB (1998)",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "Display P3",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "Generic CMYK Profile",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "Generic Grey Gamma 2.2 Profile",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "Generic Grey Profile",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "Generic RGB Profile",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "Rec. ITU-R BT.2020-1",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "Rec. ITU-R BT.709-5",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "ROMM RGB: ISO 22028-2:2013",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "SMPTE RP 431-2-2007 DCI (P3)",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "sRGB IEC61966-2.1",
+      "match": "exact",
+      "reason": "A Soft Proof with Profile submenu row; see the Soft Proof with Profile entry above."
+    },
+    {
+      "app": "Preview",
+      "label": "Assign Profile…",
+      "match": "exact",
+      "reason": "Assigning an ICC colour profile needs the same colour-management support Soft Proof with Profile lacks."
+    },
+    {
+      "app": "Preview",
+      "label": "Show Location Info",
+      "match": "exact",
+      "reason": "Shows a photo's embedded GPS EXIF coordinates on a map; Lulo has no map-tile data source (same class of gap as Weather's maps)."
+    },
+    {
+      "app": "Preview",
+      "label": "Add Signature",
+      "match": "exact",
+      "reason": "Signature capture is implemented (Tools ▸ Annotate ▸ Signature, PREV-16 in docs/parity.md); Lulo's menu names the row \"Add Signature\" where the Mac's own submenu is built from the user's saved signatures and an \"Click Here to Begin\" affordance, so the exact label never matches."
+    },
+    {
+      "app": "Text Editor",
+      "label": "None",
+      "match": "exact",
+      "reason": "Lulo's Format ▸ Font ▸ Highlight submenu adds a \"None\" row to clear highlighting (TE-14 in docs/parity.md); the Mac's own Highlight submenu has no such row."
+    },
+    {
+      "app": "Text Editor",
+      "label": "Last Saved",
+      "match": "exact",
+      "reason": "File ▸ Revert To ▸ Last Saved is implemented (TE-05 in docs/parity.md). The Mac inventory was captured with no edited document open, so AppKit showed Revert To's disabled empty-submenu placeholder (\"No Document\", already allowlisted) instead of its real children."
+    },
+    {
+      "app": "Terminal",
+      "label": "Secure Keyboard Entry",
+      "match": "exact",
+      "reason": "Secure Keyboard Entry is a Mac secure-input API with no Linux equivalent (TERM-15 in docs/parity.md)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Show Previous Tab",
+      "match": "exact",
+      "reason": "Lulo binds ⇧⌘[ to switch tabs as a deliberate usability addition; the Mac leaves this command unbound by default."
+    },
+    {
+      "app": "Terminal",
+      "label": "Show Next Tab",
+      "match": "exact",
+      "reason": "Lulo binds ⇧⌘] to switch tabs as a deliberate usability addition; the Mac leaves this command unbound by default."
     }
   ]
 }

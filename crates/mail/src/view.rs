@@ -938,6 +938,7 @@ impl MailView {
                         .gap(px(8.0))
                         .child(
                             div()
+                                .id("mail-body-failed-message")
                                 .role(Role::Status)
                                 .aria_label(error.clone())
                                 .text_size(px(13.0))

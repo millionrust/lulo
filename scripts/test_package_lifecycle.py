@@ -83,6 +83,20 @@ class PackageLifecycleTests(unittest.TestCase):
             with self.assertRaises(lifecycle.LifecycleError):
                 lifecycle._load_os_release(root / "etc/os-release")
 
+    def test_remove_keeps_config_files_but_purge_must_not(self):
+        def query(status):
+            return lifecycle.subprocess.CompletedProcess(
+                ["dpkg-query"], 0, status.encode(), b""
+            )
+        tools = {"dpkg-query": "/usr/bin/dpkg-query"}
+        with mock.patch.object(lifecycle, "_run", return_value=query("config-files")):
+            lifecycle._require_removed(tools, keep_config=True)
+            with self.assertRaises(lifecycle.LifecycleError):
+                lifecycle._require_removed(tools)
+        with mock.patch.object(lifecycle, "_run", return_value=query("installed")):
+            with self.assertRaises(lifecycle.LifecycleError):
+                lifecycle._require_removed(tools, keep_config=True)
+
     def test_package_set_rejects_wrong_order_and_unsafe_archive_names(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

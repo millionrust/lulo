@@ -1175,6 +1175,9 @@ def check_terminal_wrapper(state: dict) -> dict:
             # No portal backend can answer on a headless runner; without this
             # GTK waits on the Settings portal before mapping the window.
             "GDK_DEBUG": "no-portals",
+            # No gvfs daemon either: each lookup otherwise waits 25 s.
+            "GIO_USE_VFS": "local",
+            "GVFS_DISABLE_FUSE": "1",
             "GTK_A11Y": "none",
             "LIBGL_ALWAYS_SOFTWARE": "1",
             "XDG_CURRENT_DESKTOP": "rmac:niri",
@@ -1190,7 +1193,7 @@ def check_terminal_wrapper(state: dict) -> dict:
         "for i in $(seq 1 50); do [ -S \"$XDG_RUNTIME_DIR/wayland-1\" ] && break; sleep 0.2; done\n"
         "export WAYLAND_DISPLAY=wayland-1\n"
         f"{quoted} >/dev/null 2>\"$HOME/terminal-stderr.txt\" & term=$!\n"
-        "for i in $(seq 1 450); do [ -s \"$HOME/argv-probe.json\" ] && break; sleep 0.2; done\n"
+        "for i in $(seq 1 900); do [ -s \"$HOME/argv-probe.json\" ] && break; sleep 0.2; done\n"
         "kill $term $sway 2>/dev/null; wait 2>/dev/null; exit 0\n"
     )
     # Ptyxis starts each command in a systemd scope, so the user needs a
@@ -1206,7 +1209,7 @@ def check_terminal_wrapper(state: dict) -> dict:
         user=account.pw_name,
         env=environment,
         check=False,
-        timeout=180,
+        timeout=260,
         cwd=home,
         output_file=state["work"] / "terminal-wrapper.log",
     )
@@ -1216,8 +1219,14 @@ def check_terminal_wrapper(state: dict) -> dict:
         received = json.loads((home / "argv-probe.json").read_text(encoding="utf-8"))
     stderr_path = home / "terminal-stderr.txt"
     markers = sorted(path.name for path in home.glob("MARKER-term-*"))
+    help_text = text(sh([alternative, "--help-all"], check=False, timeout=30))
     observations = {
         "x_terminal_emulator": alternative,
+        "terminal_execute_options": [
+            line.strip()
+            for line in help_text.splitlines()
+            if re.search(r"(^|\s)-(e|x)\b|--execute|--\s", line)
+        ][:10],
         "terminal_package": text(
             sh(["dpkg-query", "-S", alternative], check=False)
         ).strip(),

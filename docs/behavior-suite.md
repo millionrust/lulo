@@ -30,6 +30,22 @@ access for an agent to install it — `start()` logs a warning and returns
 `None`, so every caller falls back to today's behaviour instead of failing
 the run.
 
+The same bus also carries the repository's own templates in
+`tests/dbusmock/`: AccountsService (`accounts_service.py`: the account
+running the session, under its real UID, as an administrator, plus one
+standard user) and cups-pk-helper (`cups_pk_helper.py`: driverless printers
+to discover, every change recorded). `fake_cupsd.py` serves one idle printer
+and one waiting job on a scratch socket that `CUPS_SERVER` points the apps
+at. The Lulo-only scenarios `settings/users-new-user-sheet`,
+`settings/login-password-change-sheet` and `settings/printers-add-sheet`
+depend on them, so they need python3-dbusmock (CI); on a machine without it
+they fail at the disabled Add User…/Change… button rather than pass on empty
+data. The Rust integration tests in `crates/rmac-users-linux/tests` and
+`crates/rmac-printers-linux/tests` start the same templates on their own
+private bus (`tests/dbusmock/private_bus.rs`); CI's Linux jobs install
+python3-dbusmock and set `RMAC_REQUIRE_DBUSMOCK=1`, so a missing mock fails
+there instead of skipping.
+
 ## Interaction probes
 
 `scripts/interaction/` is a sibling suite to `scripts/inventory` (which

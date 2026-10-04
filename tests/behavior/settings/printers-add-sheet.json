@@ -1,0 +1,13 @@
+{
+  "title": "Printers & Scanners Add Printer sheet opens and Escape cancels without adding a printer",
+  "app": "settings",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"select": "Printers & Scanners", "settle": 1.0},
+    {"select": "Add Printer, Scanner or Fax…", "settle": 0.5},
+    {"observe": "sheet", "facts": ["dialog"]},
+    {"key": "escape", "settle": 0.5},
+    {"observe": "cancelled", "facts": ["dialog"]}
+  ]
+}

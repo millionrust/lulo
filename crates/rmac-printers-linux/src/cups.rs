@@ -118,9 +118,10 @@ impl Cups {
         if !response.is_success() {
             return Ok(None);
         }
-        Ok(response
+        let name = response
             .groups_tagged(0x04)
-            .find_map(|group| group.text("printer-name").map(str::to_owned)))
+            .find_map(|group| group.text("printer-name").map(str::to_owned));
+        Ok(name)
     }
 
     /// The unfinished jobs of one printer, oldest first.

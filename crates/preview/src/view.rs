@@ -34,10 +34,9 @@ use crate::{
     FlipHorizontal, FlipVertical, Forward, GoToPage, HideSidebar, JumpToSelection,
     ManageSignatures, MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument,
     PreviousItem, PrintDocument, RectangularSelection, RedoMarkup, RevertMarkup, RotateLeft,
-    RotateRight, SaveAs,
-    SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes, ShowImageBackground,
-    ShowInspector, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails,
-    SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
+    RotateRight, SaveAs, SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes,
+    ShowImageBackground, ShowInspector, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents,
+    ShowThumbnails, SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
     TakeScreenshotSelection, TakeScreenshotWindow, ToggleCheckGrammarWithSpelling,
     ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleMarkup,
     ToggleToolbar, TwoPages, UndoMarkup, UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn,
@@ -1283,8 +1282,7 @@ impl PreviewView {
                 self.markup_save_busy = true;
                 cx.spawn(async move |this, cx| {
                     let result =
-                        blocking::unblock(move || render::save_image(&pixels, kind, &source))
-                            .await;
+                        blocking::unblock(move || render::save_image(&pixels, kind, &source)).await;
                     let _ = this.update(cx, |this, cx| {
                         this.markup_save_busy = false;
                         if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
@@ -1430,14 +1428,15 @@ impl PreviewView {
                 self.markup_save_busy = true;
                 cx.spawn_in(window, async move |this, cx| {
                     let result =
-                        blocking::unblock(move || render::save_image(&pixels, kind, &source))
-                            .await;
+                        blocking::unblock(move || render::save_image(&pixels, kind, &source)).await;
                     let _ = this.update_in(cx, |this, window, cx| {
                         this.markup_save_busy = false;
                         match result {
                             Ok(()) => this.remove_document(id, window, cx),
                             Err(error) => {
-                                eprintln!("rmac-preview: image save on close selected failed: {error}");
+                                eprintln!(
+                                    "rmac-preview: image save on close selected failed: {error}"
+                                );
                                 cx.notify();
                             }
                         }
@@ -3029,7 +3028,10 @@ impl PreviewView {
                     slot.markup.items.clone(),
                 )
             });
-        let image_save = marked_pdf.is_none().then(|| slot.final_image_pixels()).flatten();
+        let image_save = marked_pdf
+            .is_none()
+            .then(|| slot.final_image_pixels())
+            .flatten();
         let image_revision = slot.image_edits.revision;
         let image_rotation = slot.rotation;
         let directory = source.parent().unwrap_or(Path::new(".")).to_path_buf();

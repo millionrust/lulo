@@ -314,8 +314,7 @@ pub fn write_image(pixels: &RgbaImage, kind: ImageKind, path: &Path) -> Result<(
 /// is interrupted (power loss, a full disk) never leaves `destination`
 /// half-written.
 pub fn save_image(pixels: &RgbaImage, kind: ImageKind, destination: &Path) -> Result<(), String> {
-    let temporary =
-        destination.with_extension(format!("lulo-saving-{}.tmp", std::process::id()));
+    let temporary = destination.with_extension(format!("lulo-saving-{}.tmp", std::process::id()));
     match write_image(pixels, kind, &temporary) {
         Ok(()) => std::fs::rename(&temporary, destination).map_err(|error| error.to_string()),
         Err(error) => {
@@ -579,15 +578,26 @@ mod edit_tests {
         assert_eq!(clamped.dimensions(), (2, 2));
     }
 
+    /// A unique path per test: the process id makes it unique across test
+    /// *binaries*, but within one binary `cargo test`'s default thread
+    /// pool runs every `#[test]` fn concurrently, and `save_image` itself
+    /// derives its intermediate temp file from `destination`'s own stem
+    /// (`Path::with_extension`, which drops whatever extension `name` ends
+    /// in) — so `name` must give each caller a distinct *stem*, not just a
+    /// distinct extension, or two tests racing on that shared temp file is
+    /// exactly the bug this suite is here to catch, not a flake to retry.
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("rmac-preview-save-test-{name}-{}", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "rmac-preview-save-test-{}-{name}",
+            std::process::id()
+        ))
     }
 
     /// File ▸ Save for a PNG: lossless, so reloading gives back the exact
     /// edited pixels (bytes identical, not just visually close).
     #[test]
     fn save_image_round_trips_png_losslessly() {
-        let path = temp_path("roundtrip.png");
+        let path = temp_path("roundtrip-png.png");
         let edited = rotate(&swatch(), Rotation::from_degrees(90));
         save_image(&edited, ImageKind::Png, &path).unwrap();
         let reloaded = load_image(&path).unwrap();
@@ -600,8 +610,10 @@ mod edit_tests {
     /// encoders too.
     #[test]
     fn save_image_round_trips_tiff_and_bmp_losslessly() {
-        for (kind, name) in [(ImageKind::Tiff, "roundtrip.tiff"), (ImageKind::Bmp, "roundtrip.bmp")]
-        {
+        for (kind, name) in [
+            (ImageKind::Tiff, "roundtrip-tiff.tiff"),
+            (ImageKind::Bmp, "roundtrip-bmp.bmp"),
+        ] {
             let path = temp_path(name);
             let edited = crop(&swatch(), 0, 0, 2, 1);
             save_image(&edited, kind, &path).unwrap();
@@ -617,16 +629,16 @@ mod edit_tests {
     /// few levels of JPEG's own lossy compression.
     #[test]
     fn save_image_writes_jpeg_at_high_quality() {
-        let path = temp_path("roundtrip.jpg");
+        let path = temp_path("roundtrip-jpg.jpg");
+        // BGRA (this module's convention): blue 200, green/red 40.
         let solid = RgbaImage::from_pixel(4, 4, image::Rgba([200, 40, 40, 255]));
         save_image(&solid, ImageKind::Jpeg, &path).unwrap();
         let reloaded = load_image(&path).unwrap();
         assert_eq!(reloaded.pixels.dimensions(), (4, 4));
         let pixel = reloaded.pixels.get_pixel(0, 0).0;
-        // BGRA: blue/green close to 40, red close to 200.
-        assert!((i32::from(pixel[2]) - 200).abs() < 10, "{pixel:?}");
+        assert!((i32::from(pixel[0]) - 200).abs() < 10, "{pixel:?}");
         assert!((i32::from(pixel[1]) - 40).abs() < 10, "{pixel:?}");
-        assert!((i32::from(pixel[0]) - 40).abs() < 10, "{pixel:?}");
+        assert!((i32::from(pixel[2]) - 40).abs() < 10, "{pixel:?}");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -636,8 +648,7 @@ mod edit_tests {
     fn save_image_cleans_up_its_temp_file_on_failure() {
         let path = PathBuf::from("/nonexistent-rmac-preview-dir/roundtrip.png");
         assert!(save_image(&swatch(), ImageKind::Png, &path).is_err());
-        let temporary =
-            path.with_extension(format!("lulo-saving-{}.tmp", std::process::id()));
+        let temporary = path.with_extension(format!("lulo-saving-{}.tmp", std::process::id()));
         assert!(!temporary.exists());
     }
 }

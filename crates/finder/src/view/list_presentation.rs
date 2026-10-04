@@ -54,6 +54,12 @@ impl FinderView {
         content_width: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let content_width =
+            if self.preview_visible && matches!(self.view, ViewMode::List | ViewMode::Icon) {
+                (content_width - COLUMN_WIDTH).max(240.0)
+            } else {
+                content_width
+            };
         // Recursive content matches may not contain the query in their names.
         // Local filtering remains active until Return starts a ranked search.
         let q = if self.search_summary.is_some() {
@@ -729,6 +735,40 @@ impl FinderView {
             }
         };
 
+        let content =
+            if self.preview_visible && matches!(self.view, ViewMode::List | ViewMode::Icon) {
+                let preview = self
+                    .selected_entry()
+                    .map(|entry| self.render_column_preview(entry))
+                    .unwrap_or_else(|| {
+                        div()
+                            .min_w(px(COLUMN_WIDTH))
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(secondary_text())
+                            .child("Select an item to preview")
+                            .into_any_element()
+                    });
+                div()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .flex()
+                    .child(content)
+                    .child(
+                        div()
+                            .w(px(COLUMN_WIDTH))
+                            .h_full()
+                            .flex_none()
+                            .border_l_1()
+                            .border_color(dark_rule())
+                            .child(preview),
+                    )
+                    .into_any_element()
+            } else {
+                content
+            };
         div()
             .id("finder-content")
             .role(Role::ListBox)
@@ -743,6 +783,10 @@ impl FinderView {
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
+            .on_action(cx.listener(|this, _: &TogglePreview, _, cx| {
+                this.preview_visible = !this.preview_visible;
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &Eject, _, cx| this.eject_selected_volume(cx)))
             .on_action(cx.listener(|this, _: &MoveToTrash, _, cx| this.move_to_trash(cx)))
             .on_action(cx.listener(|this, _: &RestoreItems, _, cx| this.restore_selected(cx)))

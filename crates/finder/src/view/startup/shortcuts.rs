@@ -70,6 +70,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("ctrl-alt-cmd-5", SortByDate, Some("Finder")),
         KeyBinding::new("ctrl-alt-cmd-6", SortBySize, Some("Finder")),
         KeyBinding::new("cmd-j", ShowViewOptions, Some("Finder")),
+        KeyBinding::new("cmd-shift-p", TogglePreview, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::OPEN_SELECTION.keystroke,
             OpenItems,

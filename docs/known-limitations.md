@@ -34,8 +34,9 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   chaos/soak runs, and the security review still need native candidate
   evidence. No hardware station is yet certified for Alpha, Beta, or 1.0, and
   this Beta has only been exercised on Intel graphics — **no NVIDIA hardware
-  has been tested**; treat NVIDIA/proprietary-driver systems as unverified
-  until a Beta 2 NVIDIA station result is published.
+  has been tested**; treat NVIDIA/proprietary-driver systems as unverified.
+  The owner decided on 2026-10-04 to ship Beta 1 without an NVIDIA test,
+  because no NVIDIA machine is available; NVIDIA results are a later-Beta item.
 
 ## Accessibility limits
 

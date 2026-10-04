@@ -62,6 +62,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 
+import fake_hardware  # noqa: E402
 import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
 
@@ -860,10 +861,13 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         if subprocess.run(["which", tool], capture_output=True).returncode != 0:
             raise SystemExit(f"{tool} is required")
     work = Path(tempfile.mkdtemp(prefix="lulo-power-dialogs-"))
+    hardware = fake_hardware.start(work) if getattr(args, "fake_hardware", True) else None
     try:
         env = run_lulo.isolated_environment(work)
         run_lulo.refuse_live_session(env)
         run_lulo.install_shortcut_dispatcher(env, Path(args.bin_dir))
+        if hardware is not None:
+            env.update(hardware.env)
         for key in ("WLR_BACKENDS", "WLR_HEADLESS_OUTPUTS", "WLR_LIBINPUT_NO_DEVICES", "WLR_RENDERER",
                     "LIBGL_ALWAYS_SOFTWARE", "VK_ICD_FILENAMES"):
             env.pop(key, None)
@@ -905,6 +909,8 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         if run_lulo.reap(work / "runtime"):
             time.sleep(1.0)
             run_lulo.reap(work / "runtime")
+        if hardware is not None:
+            hardware.stop()
         if args.keep:
             print(f"kept {work}", file=sys.stderr)
         else:
@@ -916,6 +922,10 @@ def main() -> int:
     parser.add_argument("--niri", default="/usr/bin/niri")
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument(
+        "--no-fake-hardware", dest="fake_hardware", action="store_false", default=True,
+        help="skip the private NetworkManager/BlueZ/UPower mocks (docs/behavior-suite.md)",
+    )
     parser.add_argument("--pointer-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--menu-fallback-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(

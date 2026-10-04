@@ -1,0 +1,15 @@
+{
+  "title": "Show Preview toggles beside a selected file in list and icon views",
+  "app": "files",
+  "setup": {"files": {"preview-item.txt": "A file for the preview pane.\n"}},
+  "launch": {"reveal": "preview-item.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-shift-p"},
+    {"observe": "list_preview", "facts": ["selection", "windows"]},
+    {"key": "cmd-1"},
+    {"observe": "icon_preview", "facts": ["selection", "windows"]},
+    {"key": "cmd-shift-p"},
+    {"observe": "preview_hidden", "facts": ["selection", "windows"]}
+  ]
+}

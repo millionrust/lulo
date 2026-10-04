@@ -563,6 +563,9 @@ def run_control_centre_surface(shell: ShellSession, item: dict[str, Any]) -> dic
             time.sleep(0.5)
             hovered = capture_full(shell.env, shell.nested.work / f"hover-on-{label}.png")
             out[f"hover:{label}"] = {"changed": region_changed(rest, hovered, region)}
+            assert_alive(shell, shell.quick_settings_process, "quick-settings", f"hovering {label}")
+        open_popover()
+        exercise_control_centre_sliders(shell, current_frames)
         open_popover()
         from assert_control_centre_accessibility import SCENARIO, assert_detail
         trigger = shell._wait_for(
@@ -607,6 +610,74 @@ def run_control_centre_surface(shell: ShellSession, item: dict[str, Any]) -> dic
     finally:
         close_safety_net()
     return out
+
+
+def assert_alive(shell: ShellSession, process: subprocess.Popen, label: str, context: str) -> None:
+    """Fail loudly when a shell surface panicked or died, quoting the
+    panic. A panic is written before the abort, and the abort itself can
+    take seconds while the host's crash handler writes the core, so the
+    log is the earliest reliable signal."""
+
+    log = shell.logs / f"{label}.log"
+    deadline = time.monotonic() + 1.0
+    while True:
+        text = log.read_text(errors="replace") if log.exists() else ""
+        panicked = "panicked at" in text
+        if panicked or process.poll() is not None:
+            tail = text[max(0, text.find("panicked at") - 200):] if panicked else text[-1500:]
+            raise StepFailed(f"{label} panicked or exited while {context}:\n{tail[-1500:]}")
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(0.1)
+
+
+def panel_sweep_points(left: float, top: float, width: float, height: float,
+                       x_step: float = 24.0, y_step: float = 6.0) -> list[tuple[float, float]]:
+    """A boustrophedon pointer path over the whole panel, fine enough in y
+    to cross every slider's 24 pt hit rect at least twice."""
+
+    def spaced(start: float, span: float, step: float) -> list[float]:
+        count = max(1, -int(-span // step))
+        return [start + span * index / count for index in range(count + 1)]
+
+    points: list[tuple[float, float]] = []
+    xs = spaced(left, width, x_step)
+    for row, y in enumerate(spaced(top, height, y_step)):
+        points.extend((x, y) for x in (xs if row % 2 == 0 else reversed(xs)))
+    return points
+
+
+def exercise_control_centre_sliders(shell: ShellSession, current_frames) -> None:
+    """Regression for the 2026-10-03 Control Centre abort: hovering an
+    enabled slider asked GPUI for an animation frame from a pointer
+    handler, outside render, which panics in Window::current_view.
+
+    Moves the pointer (motion only, no buttons, so no value changes on the
+    host's real backlight) across the whole open panel, then drives every
+    enabled slider's AT-SPI Value interface with its own current value, and
+    fails if Control Centre exited. The panel sits at the measured 316 pt
+    width, 28 pt top and 2 pt right margins (surface.rs/layout.rs)."""
+
+    process = shell.quick_settings_process
+    for x, y in panel_sweep_points(OUTPUT_W - 316 - 2, 28, 316, 380):
+        shell.move(x, y)
+        if process.poll() is not None:
+            break
+    shell.move(OUTPUT_W // 2, OUTPUT_H // 2)
+    assert_alive(shell, process, "quick-settings", "the pointer swept the open panel")
+    import atspi_assert_support as support
+
+    sliders = []
+    for frame in current_frames():
+        sliders.extend(node for node in descendants(frame, limit=4000) if role(node) == "slider")
+    for slider in sliders:
+        if "focusable" not in support.states(slider):
+            continue
+        value = slider.queryValue()
+        value.currentValue = value.currentValue
+        assert_alive(shell, process, "quick-settings", f"setting {name(slider)!r} through AT-SPI")
+    print(f"Control Centre survived a panel pointer sweep and {len(sliders)} AT-SPI slider values",
+          flush=True)
 
 
 def capture_full(env: dict[str, str], destination: Path):

@@ -47,7 +47,7 @@ CI/candidate-package builds for recent `dev` commits.
 5. **Security-review native-station evidence (24 of 80 checks).** Needs
    three stations: the reference laptop, a disposable install, and an
    NVIDIA desktop that doesn't exist yet.
-6. **NVIDIA testing.** Needs NVIDIA hardware, which the project doesn't
+6. **NVIDIA testing: dropped from Beta 1** (owner decision 2026-10-04: no NVIDIA machine is available; shipped as a known limitation in docs/known-limitations.md). Needs NVIDIA hardware, which the project doesn't
    have yet.
 7. **A real GitHub Actions release-workflow run on the actual tag.** There
    is no release-candidate tag — `v0.9.0-beta.1` itself is the first run of

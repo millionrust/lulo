@@ -162,7 +162,11 @@ APP_JOURNEYS: list[dict[str, Any]] = [
         # sessions only), the only way Calendar ever shows sample events.
         "id": "calendar", "title": "Calendar", "app": "calendar",
         "extras": [
-            ("cmd-right", None, "next period: the heading should announce the new range"),
+            # Month view's heading is just the month name, which NextPeriod
+            # always changes (Week view's heading is the month containing
+            # the selected day, which a week step does not reliably cross).
+            ("cmd-3", None, "Month view"),
+            ("cmd-right", None, "next period: the heading should announce the new month"),
             ("cmd-left", None, "previous period"), ("cmd-t", None, "go to today"),
             ("cmd-f", None, "Search field"), ("escape", None, "leave search"),
             ("cmd-n", None, "New Event sheet"), ("escape", None, "cancel the sheet"),

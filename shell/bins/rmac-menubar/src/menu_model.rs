@@ -2502,7 +2502,7 @@ mod tests {
         // Mac (2026-09-29 live capture, this laptop's reference screen): with
         // exactly one reachable saved network the header reads "Known
         // Network" singular, not "Known Networks".
-        let wifi = snapshot(vec![network("Samas Wifi", 90, true, true, psk())]);
+        let wifi = snapshot(vec![network("Example Wi-Fi", 90, true, true, psk())]);
         let rows = wifi_menu_rows(WifiMenuInput {
             wifi: Some(&wifi),
             device: None,
@@ -2517,7 +2517,7 @@ mod tests {
                 "title:Wi-Fi",
                 "---",
                 "head:Known Network",
-                "badge:Samas Wifi",
+                "badge:Example Wi-Fi",
                 "end",
                 "---",
                 "more:Other Networks",

@@ -8218,6 +8218,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/spellbook/spellbook-0.4.2.crate",
+        "sha256": "0d204abcbdf8e88729306a8d0ca01a79d8a49969fe1f84696909d6dbc4321c1a",
+        "dest": "cargo/vendor/spellbook-0.4.2"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"0d204abcbdf8e88729306a8d0ca01a79d8a49969fe1f84696909d6dbc4321c1a\", \"files\": {}}",
+        "dest": "cargo/vendor/spellbook-0.4.2",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/spin/spin-0.9.9.crate",
         "sha256": "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e",
         "dest": "cargo/vendor/spin-0.9.9"

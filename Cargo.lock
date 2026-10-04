@@ -5842,6 +5842,7 @@ dependencies = [
  "rmac-storage",
  "rmac-ui",
  "sysinfo 0.33.1",
+ "zbus",
 ]
 
 [[package]]
@@ -6076,6 +6077,7 @@ dependencies = [
  "image",
  "notify",
  "rmac-sound",
+ "rmac-spelling",
  "rmac-storage",
  "rmac-ui",
  "rust-embed",
@@ -6656,6 +6658,7 @@ dependencies = [
  "rmac-portal",
  "rmac-print",
  "rmac-print-linux",
+ "rmac-spelling",
  "rmac-storage",
  "rmac-ui",
 ]
@@ -6866,6 +6869,7 @@ dependencies = [
  "rmac-portal",
  "rmac-print-linux",
  "rmac-recent-documents",
+ "rmac-spelling",
  "rmac-ui",
  "rust-embed",
  "serde_json",
@@ -7197,6 +7201,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-spelling"
+version = "0.9.0-beta.1"
+dependencies = [
+ "rmac-ui",
+ "spellbook",
+]
+
+[[package]]
 name = "rmac-storage"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -7324,6 +7336,7 @@ dependencies = [
  "rmac-print-linux",
  "rmac-recent-documents",
  "rmac-sound",
+ "rmac-spelling",
  "rmac-storage",
  "rmac-ui",
 ]
@@ -8358,6 +8371,16 @@ checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "spellbook"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d204abcbdf8e88729306a8d0ca01a79d8a49969fe1f84696909d6dbc4321c1a"
+dependencies = [
+ "foldhash 0.2.0",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]

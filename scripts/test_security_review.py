@@ -147,6 +147,88 @@ class SecurityReviewTests(unittest.TestCase):
                         contract, path, tier="alpha", revision=revision
                     )
 
+    def _passing_beta_evidence(self, contract, revision):
+        document = verify.evidence_template(contract, "beta", revision)
+        document["results"] = verify.expected_results(contract)
+        for station in document["stations"]:
+            if station["status"] == "pending":
+                station["status"] = "pass"
+        return document
+
+    def _verify_document(self, contract, document, revision, tier="beta"):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "evidence.json"
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with patch.object(verify, "_verify_checkout"):
+                verify.verify_evidence(contract, path, tier=tier, revision=revision)
+
+    def test_beta_needs_the_disposable_install_and_records_the_nvidia_waiver(self):
+        contract = verify.load_contract()
+        revision = "e" * 40
+        document = self._passing_beta_evidence(contract, revision)
+        self.assertEqual(
+            [station["id"] for station in document["stations"]],
+            [
+                "amd64-intel-laptop",
+                "amd64-amd-desktop",
+                "amd64-nvidia-desktop",
+                "disposable-install",
+            ],
+        )
+        self.assertEqual(
+            document["stations"][2],
+            {
+                "id": "amd64-nvidia-desktop",
+                "status": "waived",
+                "waiver": "owner-2026-10-04-beta1-without-nvidia",
+            },
+        )
+        self._verify_document(contract, document, revision)
+        # A real NVIDIA run is still accepted in place of the waiver.
+        document["stations"][2] = {"id": "amd64-nvidia-desktop", "status": "pass"}
+        self._verify_document(contract, document, revision)
+
+    def test_a_waiver_never_passes_checks_or_other_stations(self):
+        contract = verify.load_contract()
+        revision = "e" * 40
+        pending_check = self._passing_beta_evidence(contract, revision)
+        pending_check["results"][0]["status"] = "pending"
+        with self.assertRaisesRegex(verify.SecurityError, "every exact check"):
+            self._verify_document(contract, pending_check, revision)
+        for index, station in ((0, "amd64-intel-laptop"), (3, "disposable-install")):
+            document = self._passing_beta_evidence(contract, revision)
+            document["stations"][index] = {
+                "id": station,
+                "status": "waived",
+                "waiver": "owner-2026-10-04-beta1-without-nvidia",
+            }
+            with self.assertRaisesRegex(verify.SecurityError, "required station"):
+                self._verify_document(contract, document, revision)
+        wrong = self._passing_beta_evidence(contract, revision)
+        wrong["stations"][2]["waiver"] = "someone-else"
+        with self.assertRaisesRegex(verify.SecurityError, "required station"):
+            self._verify_document(contract, wrong, revision)
+        missing = self._passing_beta_evidence(contract, revision)
+        del missing["stations"][3]
+        with self.assertRaisesRegex(verify.SecurityError, "required station"):
+            self._verify_document(contract, missing, revision)
+
+    def test_nvidia_is_not_waived_outside_beta(self):
+        contract = verify.load_contract()
+        revision = "e" * 40
+        document = verify.evidence_template(contract, "one-dot-zero", revision)
+        self.assertNotIn("waived", {station["status"] for station in document["stations"]})
+        document["results"] = verify.expected_results(contract)
+        for station in document["stations"]:
+            station["status"] = "pass"
+        document["stations"][3] = {
+            "id": "amd64-nvidia-desktop",
+            "status": "waived",
+            "waiver": "owner-2026-10-04-beta1-without-nvidia",
+        }
+        with self.assertRaisesRegex(verify.SecurityError, "required station"):
+            self._verify_document(contract, document, revision, tier="one-dot-zero")
+
     def test_evidence_revision_requires_matching_clean_checkout(self):
         revision = "d" * 40
         def completed(code: int, output: bytes) -> subprocess.CompletedProcess[bytes]:

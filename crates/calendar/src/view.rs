@@ -1,16 +1,19 @@
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
 use gpui::{
     div, px, AnyElement, ClickEvent, Context, Entity, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement as _, Render, Role, ScrollDelta, ScrollWheelEvent, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, ScrollDelta,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_calendar::{
-    current_date, editing::{self, Mutation}, events_on_day, is_weekend, month_grid_start,
-    CalendarColor, Navigator, View, WeekSnapshot,
+    current_date,
+    editing::{self, Mutation},
+    events_on_day, is_weekend, month_grid_start, CalendarColor, Navigator, View, WeekSnapshot,
 };
 use rmac_calendar_store::{TimeValue, Zone};
-use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState, TextField};
+use rmac_ui::{
+    dialog, dialog_button, mac, AccessibleTextInput as _, DialogButtonKind, InputEvent, InputState,
+    TextField,
+};
 
 use crate::{
     CloseWindow, DeleteEvent, DismissInspector, GoToday, NewEvent, NextPeriod, PreviousPeriod,
@@ -42,15 +45,6 @@ struct Editor {
     confirm_delete: bool,
 }
 
-struct Drag {
-    id: String,
-    x: f32,
-    y: f32,
-    resize: bool,
-    moved: bool,
-    day_width: f32,
-}
-
 pub struct CalendarView {
     pub focus: FocusHandle,
     nav: Navigator,
@@ -60,7 +54,6 @@ pub struct CalendarView {
     snapshot: WeekSnapshot,
     selected: Option<String>,
     editor: Option<Editor>,
-    drag: Option<Drag>,
     undo: Vec<Mutation>,
     redo: Vec<Mutation>,
     busy: bool,
@@ -78,7 +71,6 @@ impl CalendarView {
             snapshot: WeekSnapshot::empty(),
             selected: None,
             editor: None,
-            drag: None,
             undo: Vec::new(),
             redo: Vec::new(),
             busy: false,
@@ -86,17 +78,39 @@ impl CalendarView {
         };
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = blocking::unblock(editing::load).await;
-            let _ = this.update(cx, |this: &mut CalendarView, cx| this.accept_load(result, cx));
-        }).detach();
+            let _ = this.update(cx, |this: &mut CalendarView, cx| {
+                this.accept_load(result, cx)
+            });
+        })
+        .detach();
         view
     }
 
     fn accept_load(&mut self, result: Result<WeekSnapshot, String>, cx: &mut Context<Self>) {
         match result {
             Ok(snapshot) => {
-                let prior: Vec<_> = self.snapshot.calendars.iter().zip(&self.visible)
-                    .filter_map(|(calendar, visible)| calendar.source_uid.as_ref().map(|uid| (uid.clone(), *visible))).collect();
-                self.visible = snapshot.calendars.iter().map(|calendar| prior.iter().find(|(uid, _)| calendar.source_uid.as_ref() == Some(uid)).map_or(calendar.visible, |(_, visible)| *visible)).collect();
+                let prior: Vec<_> = self
+                    .snapshot
+                    .calendars
+                    .iter()
+                    .zip(&self.visible)
+                    .filter_map(|(calendar, visible)| {
+                        calendar
+                            .source_uid
+                            .as_ref()
+                            .map(|uid| (uid.clone(), *visible))
+                    })
+                    .collect();
+                self.visible = snapshot
+                    .calendars
+                    .iter()
+                    .map(|calendar| {
+                        prior
+                            .iter()
+                            .find(|(uid, _)| calendar.source_uid.as_ref() == Some(uid))
+                            .map_or(calendar.visible, |(_, visible)| *visible)
+                    })
+                    .collect();
                 self.snapshot = snapshot;
                 self.error = None;
             }
@@ -110,31 +124,76 @@ impl CalendarView {
         cx.new(|cx| InputState::new(window, cx).default_value(value))
     }
 
-    fn open_editor(&mut self, event: rmac_calendar::Event, fresh: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(draft) = event.ical.clone() else { return; };
+    fn open_editor(
+        &mut self,
+        event: rmac_calendar::Event,
+        fresh: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(draft) = event.ical.clone() else {
+            return;
+        };
         let title = Self::field(window, cx, event.title.clone());
         cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::PressEnter { .. }) { this.save_editor(cx); }
-        }).detach();
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                this.save_editor(cx);
+            }
+        })
+        .detach();
         let location = Self::field(window, cx, event.location.clone());
         let start = Self::field(window, cx, event.start.format("%Y-%m-%d %H:%M").to_string());
         let end = Self::field(window, cx, event.end.format("%Y-%m-%d %H:%M").to_string());
         let notes = Self::field(window, cx, editing::property(&draft, "DESCRIPTION"));
         let url = Self::field(window, cx, editing::property(&draft, "URL"));
-        let invitees = Self::field(window, cx, draft.other_properties.iter().filter_map(|line| line.strip_prefix("ATTENDEE:mailto:")).collect::<Vec<_>>().join(", "));
+        let invitees = Self::field(
+            window,
+            cx,
+            draft
+                .other_properties
+                .iter()
+                .filter_map(|line| line.strip_prefix("ATTENDEE:mailto:"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
         let repeat = match draft.rrules.first().map(String::as_str) {
             Some(rule) if rule.starts_with("FREQ=DAILY") => 1,
             Some(rule) if rule.starts_with("FREQ=WEEKLY") => 2,
             Some(rule) if rule.starts_with("FREQ=MONTHLY") => 3,
             _ => 0,
         };
-        let alert = if draft.other_properties.iter().any(|line| line == "TRIGGER:-PT15M") { 1 }
-            else if draft.other_properties.iter().any(|line| line == "TRIGGER:-PT30M") { 2 } else { 0 };
+        let alert = if draft
+            .other_properties
+            .iter()
+            .any(|line| line == "TRIGGER:-PT15M")
+        {
+            1
+        } else if draft
+            .other_properties
+            .iter()
+            .any(|line| line == "TRIGGER:-PT30M")
+        {
+            2
+        } else {
+            0
+        };
         self.selected = Some(event.id.clone());
         self.editor = Some(Editor {
-            original: (!fresh).then_some(event.clone()), draft,
-            calendar: event.calendar, title: title.clone(), location, start, end, notes, url, invitees,
-            all_day: event.all_day, repeat, alert, scope: 2, confirm_delete: false,
+            original: (!fresh).then_some(event.clone()),
+            draft,
+            calendar: event.calendar,
+            title: title.clone(),
+            location,
+            start,
+            end,
+            notes,
+            url,
+            invitees,
+            all_day: event.all_day,
+            repeat,
+            alert,
+            scope: 2,
+            confirm_delete: false,
         });
         let focus = title.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
@@ -142,31 +201,105 @@ impl CalendarView {
     }
 
     fn new_event(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(calendar) = self.snapshot.calendars.iter().position(|calendar| calendar.writable) else {
+        let now = Utc::now();
+        let hour = (now.hour() + 1).clamp(8, 19);
+        self.create_event_at(self.nav.selected, hour, window, cx);
+    }
+
+    /// Double-clicking an empty time slot (Day/Week grid) creates a one-hour event there.
+    fn create_event_at(
+        &mut self,
+        date: NaiveDate,
+        hour: u32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(calendar) = self
+            .snapshot
+            .calendars
+            .iter()
+            .position(|calendar| calendar.writable)
+        else {
             self.error = Some("No writable calendar is available".into());
             cx.notify();
             return;
         };
-        let now = Utc::now();
-        let date = self.nav.selected;
-        let hour = (now.hour() + 1).clamp(8, 19);
-        let Some((start, end)) = editing::at_day(date, hour) else { return; };
+        let Some((start, end)) = editing::at_day(date, hour) else {
+            return;
+        };
         let draft = editing::new_event(start, end, false);
         let event = rmac_calendar::Event {
-            id: draft.uid.clone(), title: draft.summary.clone(), location: String::new(), calendar,
-            start, end, all_day: false, ical: Some(draft),
+            id: draft.uid.clone(),
+            title: draft.summary.clone(),
+            location: String::new(),
+            calendar,
+            start,
+            end,
+            all_day: false,
+            ical: Some(draft),
+        };
+        self.open_editor(event, true, window, cx);
+    }
+
+    /// Double-clicking an all-day strip cell or a Month view day creates an all-day event.
+    fn create_all_day_event(
+        &mut self,
+        date: NaiveDate,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(calendar) = self
+            .snapshot
+            .calendars
+            .iter()
+            .position(|calendar| calendar.writable)
+        else {
+            self.error = Some("No writable calendar is available".into());
+            cx.notify();
+            return;
+        };
+        let Some(start) = date.and_hms_opt(0, 0, 0).map(|naive| naive.and_utc()) else {
+            return;
+        };
+        let Some(end) = (date + Duration::days(1))
+            .and_hms_opt(0, 0, 0)
+            .map(|naive| naive.and_utc())
+        else {
+            return;
+        };
+        let draft = editing::new_event(start, end, true);
+        let event = rmac_calendar::Event {
+            id: draft.uid.clone(),
+            title: draft.summary.clone(),
+            location: String::new(),
+            calendar,
+            start,
+            end,
+            all_day: true,
+            ical: Some(draft),
         };
         self.open_editor(event, true, window, cx);
     }
 
     fn inspect_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(event) = self.selected.as_ref().and_then(|id| self.snapshot.events.iter().find(|event| &event.id == id)).cloned() else { return; };
+        let Some(event) = self
+            .selected
+            .as_ref()
+            .and_then(|id| self.snapshot.events.iter().find(|event| &event.id == id))
+            .cloned()
+        else {
+            return;
+        };
         self.open_editor(event, false, window, cx);
     }
 
     fn save_editor(&mut self, cx: &mut Context<Self>) {
-        let Some(editor) = self.editor.as_ref() else { return; };
-        if self.busy { return; }
+        let Some(editor) = self.editor.as_ref() else {
+            return;
+        };
+        if self.busy {
+            return;
+        }
         let title = editor.title.read(cx).value().to_string();
         let location = editor.location.read(cx).value().to_string();
         let start = editor.start.read(cx).value().to_string();
@@ -176,78 +309,212 @@ impl CalendarView {
         let invitees = editor.invitees.read(cx).value().to_string();
         let parse = |text: &str| NaiveDateTime::parse_from_str(text.trim(), "%Y-%m-%d %H:%M");
         let (Ok(start), Ok(end)) = (parse(&start), parse(&end)) else {
-            self.error = Some("Enter dates as YYYY-MM-DD HH:MM".into()); cx.notify(); return;
+            self.error = Some("Enter dates as YYYY-MM-DD HH:MM".into());
+            cx.notify();
+            return;
         };
         if end <= start || title.trim().is_empty() {
-            self.error = Some("Give the event a title and an end after its start".into()); cx.notify(); return;
+            self.error = Some("Give the event a title and an end after its start".into());
+            cx.notify();
+            return;
         }
         let mut after = editor.draft.clone();
         after.summary = title.trim().to_owned();
-        after.start = TimeValue { local: start, zone: if editor.all_day { Zone::Date } else { Zone::Utc } };
-        after.end = TimeValue { local: end, zone: if editor.all_day { Zone::Date } else { Zone::Utc } };
-        after.rrules = match editor.repeat { 1 => vec!["FREQ=DAILY".into()], 2 => vec!["FREQ=WEEKLY".into()], 3 => vec!["FREQ=MONTHLY".into()], _ => Vec::new() };
+        after.start = TimeValue {
+            local: start,
+            zone: if editor.all_day {
+                Zone::Date
+            } else {
+                Zone::Utc
+            },
+        };
+        after.end = TimeValue {
+            local: end,
+            zone: if editor.all_day {
+                Zone::Date
+            } else {
+                Zone::Utc
+            },
+        };
+        after.rrules = match editor.repeat {
+            1 => vec!["FREQ=DAILY".into()],
+            2 => vec!["FREQ=WEEKLY".into()],
+            3 => vec!["FREQ=MONTHLY".into()],
+            _ => Vec::new(),
+        };
         editing::set_property(&mut after, "LOCATION", &location);
         editing::set_property(&mut after, "DESCRIPTION", &notes);
         editing::set_property(&mut after, "URL", &url);
-        after.other_properties.retain(|line| !line.starts_with("ATTENDEE:") && !matches!(line.as_str(), "BEGIN:VALARM" | "END:VALARM" | "ACTION:DISPLAY") && !line.starts_with("TRIGGER:"));
-        for address in invitees.split(',').map(str::trim).filter(|address| !address.is_empty()) {
-            if address.contains('@') && !address.contains(['\n', '\r']) { after.other_properties.push(format!("ATTENDEE:mailto:{address}")); }
+        after.other_properties.retain(|line| {
+            !line.starts_with("ATTENDEE:")
+                && !matches!(
+                    line.as_str(),
+                    "BEGIN:VALARM" | "END:VALARM" | "ACTION:DISPLAY"
+                )
+                && !line.starts_with("TRIGGER:")
+        });
+        for address in invitees
+            .split(',')
+            .map(str::trim)
+            .filter(|address| !address.is_empty())
+        {
+            if address.contains('@') && !address.contains(['\n', '\r']) {
+                after
+                    .other_properties
+                    .push(format!("ATTENDEE:mailto:{address}"));
+            }
         }
-        if let Some(minutes) = [0, 15, 30].get(editor.alert).copied().filter(|minutes| *minutes > 0) {
-            after.other_properties.extend(["BEGIN:VALARM".into(), format!("TRIGGER:-PT{minutes}M"), "ACTION:DISPLAY".into(), "END:VALARM".into()]);
+        if let Some(minutes) = [0, 15, 30]
+            .get(editor.alert)
+            .copied()
+            .filter(|minutes| *minutes > 0)
+        {
+            after.other_properties.extend([
+                "BEGIN:VALARM".into(),
+                format!("TRIGGER:-PT{minutes}M"),
+                "ACTION:DISPLAY".into(),
+                "END:VALARM".into(),
+            ]);
         }
-        let Some(source) = self.snapshot.calendars.get(editor.calendar).and_then(|calendar| calendar.source_uid.clone()) else { return; };
+        let Some(source) = self
+            .snapshot
+            .calendars
+            .get(editor.calendar)
+            .and_then(|calendar| calendar.source_uid.clone())
+        else {
+            return;
+        };
         let change = if let Some(original) = &editor.original {
-            let Some(before) = original.ical.clone() else { return; };
-            let Some(old_source) = self.snapshot.calendars.get(original.calendar).and_then(|calendar| calendar.source_uid.clone()) else { return; };
-            if old_source != source { Mutation::MoveSource { from: old_source, to: source, before, after } }
-            else { Mutation::Modify { source, before, after, scope: ["this", "this-and-future", "all"][editor.scope] } }
-        } else { Mutation::Create { source, event: after } };
+            let Some(before) = original.ical.clone() else {
+                return;
+            };
+            let Some(old_source) = self
+                .snapshot
+                .calendars
+                .get(original.calendar)
+                .and_then(|calendar| calendar.source_uid.clone())
+            else {
+                return;
+            };
+            if old_source != source {
+                Mutation::MoveSource {
+                    from: old_source,
+                    to: source,
+                    before,
+                    after,
+                }
+            } else {
+                Mutation::Modify {
+                    source,
+                    before,
+                    after,
+                    scope: ["this", "this-and-future", "all"][editor.scope],
+                }
+            }
+        } else {
+            Mutation::Create {
+                source,
+                event: after,
+            }
+        };
         self.editor = None;
         self.submit(change, false, cx);
     }
 
     fn submit(&mut self, change: Mutation, undoing: bool, cx: &mut Context<Self>) {
-        if self.busy { return; }
+        if self.busy {
+            return;
+        }
         self.busy = true;
         self.error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = blocking::unblock({ let change = change.clone(); move || editing::apply(&change).and_then(|_| editing::load()) }).await;
-            let _ = this.update(cx, |this: &mut CalendarView, cx| {
-                match result {
-                    Ok(snapshot) => {
-                        if undoing { this.redo.push(change.inverse()); }
-                        else { this.undo.push(change.inverse()); this.redo.clear(); }
-                        this.accept_load(Ok(snapshot), cx);
+            let result = blocking::unblock({
+                let change = change.clone();
+                move || editing::apply(&change).and_then(|_| editing::load())
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut CalendarView, cx| match result {
+                Ok(snapshot) => {
+                    if undoing {
+                        this.redo.push(change.inverse());
+                    } else {
+                        this.undo.push(change.inverse());
+                        this.redo.clear();
                     }
-                    Err(error) => { this.busy = false; this.error = Some(error); cx.notify(); }
+                    this.accept_load(Ok(snapshot), cx);
+                }
+                Err(error) => {
+                    this.busy = false;
+                    this.error = Some(error);
+                    cx.notify();
                 }
             });
-        }).detach();
+        })
+        .detach();
     }
 
     fn delete_selected(&mut self, cx: &mut Context<Self>) {
-        if self.busy { return; }
-        let Some(event) = self.selected.as_ref().and_then(|id| self.snapshot.events.iter().find(|event| &event.id == id)).cloned() else { return; };
-        let Some(ical) = event.ical else { return; };
-        let Some(source) = self.snapshot.calendars.get(event.calendar).and_then(|calendar| calendar.source_uid.clone()) else { return; };
-        if !ical.rrules.is_empty() && self.editor.as_ref().is_some_and(|editor| !editor.confirm_delete) {
-            if let Some(editor) = &mut self.editor { editor.confirm_delete = true; }
-            cx.notify(); return;
+        if self.busy {
+            return;
         }
-        let scope = self.editor.as_ref().map_or("all", |editor| ["this", "this-and-future", "all"][editor.scope]);
+        let Some(event) = self
+            .selected
+            .as_ref()
+            .and_then(|id| self.snapshot.events.iter().find(|event| &event.id == id))
+            .cloned()
+        else {
+            return;
+        };
+        let Some(ical) = event.ical else {
+            return;
+        };
+        let Some(source) = self
+            .snapshot
+            .calendars
+            .get(event.calendar)
+            .and_then(|calendar| calendar.source_uid.clone())
+        else {
+            return;
+        };
+        if !ical.rrules.is_empty()
+            && self
+                .editor
+                .as_ref()
+                .is_some_and(|editor| !editor.confirm_delete)
+        {
+            if let Some(editor) = &mut self.editor {
+                editor.confirm_delete = true;
+            }
+            cx.notify();
+            return;
+        }
+        let scope = self.editor.as_ref().map_or("all", |editor| {
+            ["this", "this-and-future", "all"][editor.scope]
+        });
         self.editor = None;
         self.selected = None;
-        self.submit(Mutation::Delete { source, event: ical, scope }, false, cx);
+        self.submit(
+            Mutation::Delete {
+                source,
+                event: ical,
+                scope,
+            },
+            false,
+            cx,
+        );
     }
 
     fn undo(&mut self, cx: &mut Context<Self>) {
-        if let Some(change) = self.undo.pop() { self.submit(change, true, cx); }
+        if let Some(change) = self.undo.pop() {
+            self.submit(change, true, cx);
+        }
     }
 
     fn redo(&mut self, cx: &mut Context<Self>) {
-        if let Some(change) = self.redo.pop() { self.submit(change, false, cx); }
+        if let Some(change) = self.redo.pop() {
+            self.submit(change, false, cx);
+        }
     }
 
     fn show(&mut self, view: View, cx: &mut Context<Self>) {
@@ -280,6 +547,10 @@ impl CalendarView {
             rmac_ui::set_menu_checked(action, self.nav.view == view, cx);
         }
         rmac_ui::set_menu_checked("calendar::ToggleSidebar", self.sidebar_visible, cx);
+        rmac_ui::set_menu_enabled("calendar::UndoEvent", !self.undo.is_empty(), cx);
+        rmac_ui::set_menu_enabled("calendar::RedoEvent", !self.redo.is_empty(), cx);
+        rmac_ui::set_menu_enabled("calendar::ShowInspector", self.selected.is_some(), cx);
+        rmac_ui::set_menu_enabled("calendar::DeleteEvent", self.selected.is_some(), cx);
     }
 
     fn color(color: CalendarColor) -> gpui::Hsla {
@@ -351,7 +622,25 @@ impl CalendarView {
             cx,
         ));
         bar = bar.child(self.control("calendar-inbox", "▢", "Invitations", false, |_, _| {}, cx));
-        bar = bar.child(self.control("calendar-new", "+", "New Event", false, |_, _| {}, cx));
+        bar = bar.child(
+            div()
+                .id("calendar-new")
+                .role(Role::Button)
+                .aria_label("New Event")
+                .h(px(28.0))
+                .px(px(10.0))
+                .rounded(px(mac::radius_pill()))
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(mac::material_clear())
+                .text_color(mac::text())
+                .text_size(px(12.0))
+                .child("+")
+                .on_click(
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.new_event(window, cx)),
+                ),
+        );
         bar = bar.child(div().flex_1());
         let mut tabs = div()
             .id("calendar-view-tabs")
@@ -490,7 +779,7 @@ impl CalendarView {
                         .text_size(px(11.0))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(mac::text_secondary())
-                    .child(account.clone()),
+                        .child(account.clone()),
                 );
             }
             let color = Self::color(calendar.color);
@@ -613,6 +902,9 @@ impl CalendarView {
         height: f32,
         first: NaiveDate,
         days: usize,
+        origin_x: f32,
+        origin_y: f32,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let day_width = ((width - GUTTER) / days as f32).max(1.0);
         let grid_top = 60.0;
@@ -632,7 +924,28 @@ impl CalendarView {
                 format!("Day of {first}")
             } else {
                 format!("Week of {first}")
-            });
+            })
+            .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
+                if e.click_count() >= 2 {
+                    let position = e.position();
+                    let local_x = f32::from(position.x) - origin_x;
+                    let local_y = f32::from(position.y) - origin_y;
+                    if local_y < grid_top || local_x < GUTTER {
+                        return;
+                    }
+                    let day_index = ((local_x - GUTTER) / day_width)
+                        .floor()
+                        .clamp(0.0, (days as f32 - 1.0).max(0.0))
+                        as i64;
+                    let day = first + Duration::days(day_index);
+                    let hour_frac = START_HOUR + (local_y - grid_top) / HOUR;
+                    let hour = (hour_frac.round() as i64).clamp(0, 23) as u32;
+                    this.create_event_at(day, hour, window, cx);
+                } else {
+                    this.selected = None;
+                    cx.notify();
+                }
+            }));
         for index in 0..days {
             let day = first + Duration::days(index as i64);
             let x = GUTTER + index as f32 * day_width;
@@ -708,12 +1021,15 @@ impl CalendarView {
         for event in snapshot.events.iter().filter(|event| event.all_day) {
             let day = event.start.date_naive();
             let offset = (day - first).num_days();
-            if (0..days as i64).contains(&offset) && self.visible.get(event.calendar) == Some(&true) {
+            if (0..days as i64).contains(&offset) && self.visible.get(event.calendar) == Some(&true)
+            {
                 let days = (event.end.date_naive() - day)
                     .num_days()
                     .clamp(1, days as i64 - offset);
+                let event_id = event.id.clone();
                 week = week.child(
                     div()
+                        .id(format!("calendar-allday-event-{}", event.id))
                         .absolute()
                         .left(px(GUTTER + offset as f32 * day_width + 2.0))
                         .top(px(37.0))
@@ -726,7 +1042,15 @@ impl CalendarView {
                         .text_color(mac::white())
                         .text_size(px(11.0))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .child(event.title.clone()),
+                        .child(event.title.clone())
+                        .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
+                            this.selected = Some(event_id.clone());
+                            if e.click_count() >= 2 {
+                                this.inspect_selected(window, cx);
+                            }
+                            cx.notify();
+                            cx.stop_propagation();
+                        })),
                 );
             }
         }
@@ -772,8 +1096,10 @@ impl CalendarView {
             let y = grid_top + (slot.start_second as f32 / 3600.0 - START_HOUR) * HOUR;
             let h = ((slot.end_second - slot.start_second) as f32 / 3600.0 * HOUR - 2.0).max(18.0);
             let color = Self::color(snapshot.calendars[event.calendar].color);
+            let event_id = event.id.clone();
             week = week.child(
                 div()
+                    .id(format!("calendar-event-{}", event.id))
                     .absolute()
                     .left(px(x))
                     .top(px(y))
@@ -790,7 +1116,11 @@ impl CalendarView {
                     .flex_col()
                     .text_size(px(11.0))
                     .text_color(mac::text())
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(event.title.clone()))
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(event.title.clone()),
+                    )
                     .child(div().text_color(mac::text_secondary()).child(format!(
                         "{}{}",
                         event.start.format("%-H:%M"),
@@ -799,7 +1129,15 @@ impl CalendarView {
                         } else {
                             format!(" · {}", event.location)
                         }
-                    ))),
+                    )))
+                    .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
+                        this.selected = Some(event_id.clone());
+                        if e.click_count() >= 2 {
+                            this.inspect_selected(window, cx);
+                        }
+                        cx.notify();
+                        cx.stop_propagation();
+                    })),
             );
         }
         let today = current_date();
@@ -846,7 +1184,15 @@ impl CalendarView {
         week.into_any_element()
     }
 
-    fn day(&self, snapshot: &WeekSnapshot, width: f32, height: f32) -> AnyElement {
+    fn day(
+        &self,
+        snapshot: &WeekSnapshot,
+        width: f32,
+        height: f32,
+        origin_x: f32,
+        origin_y: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let grid_width = (width - 300.0).max(200.0);
         let mut detail = div()
             .id("calendar-day-detail")
@@ -878,8 +1224,10 @@ impl CalendarView {
         }
         for event in events {
             let color = Self::color(snapshot.calendars[event.calendar].color);
+            let event_id = event.id.clone();
             detail = detail.child(
                 div()
+                    .id(format!("calendar-day-detail-{}", event.id))
                     .border_l_3()
                     .border_color(color)
                     .pl(px(9.0))
@@ -889,7 +1237,11 @@ impl CalendarView {
                     .flex()
                     .flex_col()
                     .text_size(px(12.0))
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(event.title.clone()))
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(event.title.clone()),
+                    )
                     .child(
                         div()
                             .text_color(mac::text_secondary())
@@ -903,7 +1255,14 @@ impl CalendarView {
                                     snapshot.calendars[event.calendar].name
                                 )
                             }),
-                    ),
+                    )
+                    .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
+                        this.selected = Some(event_id.clone());
+                        if e.click_count() >= 2 {
+                            this.inspect_selected(window, cx);
+                        }
+                        cx.notify();
+                    })),
             );
         }
         div()
@@ -917,7 +1276,16 @@ impl CalendarView {
                     .top_0()
                     .bottom_0()
                     .w(px(grid_width))
-                    .child(self.time_grid(snapshot, grid_width, height, self.nav.selected, 1)),
+                    .child(self.time_grid(
+                        snapshot,
+                        grid_width,
+                        height,
+                        self.nav.selected,
+                        1,
+                        origin_x,
+                        origin_y,
+                        cx,
+                    )),
             )
             .child(detail)
             .into_any_element()
@@ -989,9 +1357,13 @@ impl CalendarView {
                     day.format("%A %-d %B"),
                     events.len()
                 ))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.nav.selected = day;
-                    cx.notify();
+                .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
+                    if e.click_count() >= 2 {
+                        this.create_all_day_event(day, window, cx);
+                    } else {
+                        this.nav.selected = day;
+                        cx.notify();
+                    }
                 }))
                 .child(
                     div()
@@ -1028,7 +1400,9 @@ impl CalendarView {
                 );
             for (line, event) in events.iter().take(3).enumerate() {
                 let color = Self::color(snapshot.calendars[event.calendar].color);
+                let event_id = event.id.clone();
                 let mut item = div()
+                    .id(format!("calendar-month-event-{}", event.id))
                     .absolute()
                     .left(px(6.0))
                     .right(px(6.0))
@@ -1049,7 +1423,17 @@ impl CalendarView {
                 } else {
                     item = item.child(div().size(px(6.0)).rounded_full().bg(color));
                 }
-                cell = cell.child(item.child(event.title.clone()));
+                let item = item.child(event.title.clone()).on_click(cx.listener(
+                    move |this, e: &ClickEvent, window, cx| {
+                        this.selected = Some(event_id.clone());
+                        if e.click_count() >= 2 {
+                            this.inspect_selected(window, cx);
+                        }
+                        cx.notify();
+                        cx.stop_propagation();
+                    },
+                ));
+                cell = cell.child(item);
             }
             if events.len() > 3 {
                 cell = cell.child(
@@ -1166,6 +1550,209 @@ impl CalendarView {
         }
         panel.into_any_element()
     }
+
+    /// The event inspector: a modal sheet (consistent with Clock's alarm editor and the
+    /// shared `rmac_ui::dialog` sheets elsewhere) rather than a Mac-style arrow-pointing
+    /// popover (verify on Mac; CAL-5 ships the simplified form first).
+    fn inspector(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let editor = self.editor.as_ref()?;
+        let is_new = editor.original.is_none();
+        let recurring = !editor.draft.rrules.is_empty();
+
+        let mut card = div()
+            .id("calendar-inspector")
+            .w(px(420.0))
+            .max_h(px(620.0))
+            .overflow_y_scroll()
+            .p(px(20.0))
+            .flex()
+            .flex_col()
+            .gap(px(14.0))
+            .rounded(px(mac::radius_large_surface()))
+            .bg(mac::sheet())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(px(15.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(mac::text())
+                    .child(if is_new { "New Event" } else { "Edit Event" }),
+            )
+            .child(labelled_field("Title", TextField::new(&editor.title)))
+            .child(labelled_field("Location", TextField::new(&editor.location)))
+            .child(self.control(
+                "calendar-editor-allday",
+                "All Day",
+                "All Day",
+                editor.all_day,
+                |this, cx| {
+                    if let Some(editor) = this.editor.as_mut() {
+                        editor.all_day = !editor.all_day;
+                    }
+                    cx.notify();
+                },
+                cx,
+            ))
+            .child(labelled_field("Starts", TextField::new(&editor.start)))
+            .child(labelled_field("Ends", TextField::new(&editor.end)));
+
+        let mut repeat_row = div().flex().flex_wrap().gap(px(6.0));
+        for (index, label) in ["None", "Daily", "Weekly", "Monthly"]
+            .into_iter()
+            .enumerate()
+        {
+            repeat_row = repeat_row.child(self.control(
+                format!("calendar-editor-repeat-{index}"),
+                label,
+                label,
+                editor.repeat == index,
+                move |this, cx| {
+                    if let Some(editor) = this.editor.as_mut() {
+                        editor.repeat = index;
+                    }
+                    cx.notify();
+                },
+                cx,
+            ));
+        }
+        card = card.child(labelled_field("Repeat", repeat_row));
+
+        let mut alert_row = div().flex().flex_wrap().gap(px(6.0));
+        for (index, label) in ["None", "15 min before", "30 min before"]
+            .into_iter()
+            .enumerate()
+        {
+            alert_row = alert_row.child(self.control(
+                format!("calendar-editor-alert-{index}"),
+                label,
+                label,
+                editor.alert == index,
+                move |this, cx| {
+                    if let Some(editor) = this.editor.as_mut() {
+                        editor.alert = index;
+                    }
+                    cx.notify();
+                },
+                cx,
+            ));
+        }
+        card = card.child(labelled_field("Alert", alert_row));
+
+        let writable: Vec<(usize, String)> = self
+            .snapshot
+            .calendars
+            .iter()
+            .enumerate()
+            .filter(|(_, calendar)| calendar.writable)
+            .map(|(index, calendar)| (index, calendar.name.clone()))
+            .collect();
+        if writable.len() > 1 {
+            let mut calendar_row = div().flex().flex_wrap().gap(px(6.0));
+            for (index, name) in writable {
+                let active = editor.calendar == index;
+                calendar_row = calendar_row.child(
+                    div()
+                        .id(format!("calendar-editor-calendar-{index}"))
+                        .role(Role::Button)
+                        .aria_label(name.clone())
+                        .h(px(26.0))
+                        .px(px(10.0))
+                        .rounded(px(mac::radius_pill()))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(if active {
+                            mac::control_fill()
+                        } else {
+                            mac::material_clear()
+                        })
+                        .text_color(mac::text())
+                        .text_size(px(12.0))
+                        .child(name)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            if let Some(editor) = this.editor.as_mut() {
+                                editor.calendar = index;
+                            }
+                            cx.notify();
+                        })),
+                );
+            }
+            card = card.child(labelled_field("Calendar", calendar_row));
+        }
+
+        card = card
+            .child(labelled_field("Invitees", TextField::new(&editor.invitees)))
+            .child(labelled_field("Notes", TextField::new(&editor.notes)))
+            .child(labelled_field("URL", TextField::new(&editor.url)));
+
+        if !is_new && recurring {
+            let mut scope_row = div().flex().flex_wrap().gap(px(6.0));
+            for (index, label) in ["This Event", "This & Future", "All Events"]
+                .into_iter()
+                .enumerate()
+            {
+                scope_row = scope_row.child(self.control(
+                    format!("calendar-editor-scope-{index}"),
+                    label,
+                    label,
+                    editor.scope == index,
+                    move |this, cx| {
+                        if let Some(editor) = this.editor.as_mut() {
+                            editor.scope = index;
+                        }
+                        cx.notify();
+                    },
+                    cx,
+                ));
+            }
+            card = card.child(labelled_field("Apply to", scope_row));
+        }
+
+        let delete_label = if recurring { "Delete…" } else { "Delete" };
+        let mut buttons = div().flex().items_center().gap(px(8.0));
+        if !is_new {
+            buttons = buttons.child(
+                dialog_button(
+                    "calendar-editor-delete",
+                    delete_label,
+                    DialogButtonKind::Destructive,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.delete_selected(cx))),
+            );
+        }
+        buttons = buttons
+            .child(div().flex_1())
+            .child(
+                dialog_button("calendar-editor-cancel", "Cancel", DialogButtonKind::Normal)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.editor = None;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                dialog_button("calendar-editor-save", "Save", DialogButtonKind::Primary)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.save_editor(cx))),
+            );
+        card = card.child(buttons);
+
+        Some(dialog("calendar-inspector-dialog", card).into_any_element())
+    }
+}
+
+fn labelled_field(label: &'static str, control: impl IntoElement) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.0))
+        .child(
+            div()
+                .text_size(px(11.0))
+                .text_color(mac::text_secondary())
+                .child(label),
+        )
+        .child(control)
 }
 
 impl Render for CalendarView {
@@ -1179,9 +1766,10 @@ impl Render for CalendarView {
         };
         let content_width = (f32::from(size.width) - side).max(1.0);
         let content_height = (f32::from(size.height) - TOOLBAR - 44.0).max(1.0);
-        let today = current_date();
-        let snapshot =
-            fixture_week(today - Duration::days(today.weekday().num_days_from_monday() as i64));
+        let origin_x = side;
+        let origin_y = TOOLBAR + 44.0;
+        let week_start = self.nav.week_start();
+        let snapshot = self.snapshot.clone();
         let body = div()
             .absolute()
             .left(px(side))
@@ -1192,78 +1780,123 @@ impl Render for CalendarView {
             .flex_col()
             .child(self.heading(cx))
             .child(div().flex_1().relative().child(match self.nav.view {
-                View::Day => self.day(&snapshot, content_width, content_height),
+                View::Day => self.day(
+                    &snapshot,
+                    content_width,
+                    content_height,
+                    origin_x,
+                    origin_y,
+                    cx,
+                ),
                 View::Week => self.time_grid(
                     &snapshot,
                     content_width,
                     content_height,
-                    self.nav.week_start(),
+                    week_start,
                     7,
+                    origin_x,
+                    origin_y,
+                    cx,
                 ),
                 View::Month => self.month(&snapshot, content_width, content_height, cx),
                 View::Year => self.year(&snapshot, content_width, content_height, cx),
             }));
-        let mut root = div()
-            .size_full()
-            .relative()
-            .bg(mac::window())
-            .track_focus(&self.focus)
-            .key_context("Calendar")
-            .on_action(cx.listener(|this, _: &ShowDay, _, cx| this.show(View::Day, cx)))
-            .on_action(cx.listener(|this, _: &ShowWeek, _, cx| this.show(View::Week, cx)))
-            .on_action(cx.listener(|this, _: &ShowMonth, _, cx| this.show(View::Month, cx)))
-            .on_action(cx.listener(|this, _: &ShowYear, _, cx| this.show(View::Year, cx)))
-            .on_action(cx.listener(|this, _: &GoToday, _, cx| {
-                this.nav.today(current_date());
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &PreviousPeriod, _, cx| {
-                this.nav.step(-1);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &NextPeriod, _, cx| {
-                this.nav.step(1);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &SelectPreviousDay, _, cx| {
-                if this.nav.view == View::Month {
-                    this.nav.move_day(-1);
+        let mut root =
+            div()
+                .size_full()
+                .relative()
+                .bg(mac::window())
+                .track_focus(&self.focus)
+                .key_context("Calendar")
+                .on_action(cx.listener(|this, _: &ShowDay, _, cx| this.show(View::Day, cx)))
+                .on_action(cx.listener(|this, _: &ShowWeek, _, cx| this.show(View::Week, cx)))
+                .on_action(cx.listener(|this, _: &ShowMonth, _, cx| this.show(View::Month, cx)))
+                .on_action(cx.listener(|this, _: &ShowYear, _, cx| this.show(View::Year, cx)))
+                .on_action(cx.listener(|this, _: &GoToday, _, cx| {
+                    this.nav.today(current_date());
                     cx.notify();
-                }
-            }))
-            .on_action(cx.listener(|this, _: &SelectNextDay, _, cx| {
-                if this.nav.view == View::Month {
-                    this.nav.move_day(1);
+                }))
+                .on_action(cx.listener(|this, _: &PreviousPeriod, _, cx| {
+                    this.nav.step(-1);
                     cx.notify();
-                }
-            }))
-            .on_action(cx.listener(|this, _: &SelectPreviousWeek, _, cx| {
-                if this.nav.view == View::Month {
-                    this.nav.move_day(-7);
+                }))
+                .on_action(cx.listener(|this, _: &NextPeriod, _, cx| {
+                    this.nav.step(1);
                     cx.notify();
-                }
-            }))
-            .on_action(cx.listener(|this, _: &SelectNextWeek, _, cx| {
-                if this.nav.view == View::Month {
-                    this.nav.move_day(7);
+                }))
+                .on_action(cx.listener(|this, _: &SelectPreviousDay, _, cx| {
+                    if this.nav.view == View::Month {
+                        this.nav.move_day(-1);
+                        cx.notify();
+                    }
+                }))
+                .on_action(cx.listener(|this, _: &SelectNextDay, _, cx| {
+                    if this.nav.view == View::Month {
+                        this.nav.move_day(1);
+                        cx.notify();
+                    }
+                }))
+                .on_action(cx.listener(|this, _: &SelectPreviousWeek, _, cx| {
+                    if this.nav.view == View::Month {
+                        this.nav.move_day(-7);
+                        cx.notify();
+                    }
+                }))
+                .on_action(cx.listener(|this, _: &SelectNextWeek, _, cx| {
+                    if this.nav.view == View::Month {
+                        this.nav.move_day(7);
+                        cx.notify();
+                    }
+                }))
+                .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
+                    this.scroll_period(event, cx)
+                }))
+                .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
+                    this.sidebar_visible = !this.sidebar_visible;
+                    this.sync_menu(cx);
                     cx.notify();
-                }
-            }))
-            .on_scroll_wheel(
-                cx.listener(|this, event: &ScrollWheelEvent, _, cx| this.scroll_period(event, cx)),
-            )
-            .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
-                this.sidebar_visible = !this.sidebar_visible;
-                this.sync_menu(cx);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
-            .on_action(
-                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
-            );
+                }))
+                .on_action(cx.listener(|this, _: &NewEvent, window, cx| this.new_event(window, cx)))
+                .on_action(cx.listener(|this, _: &SaveEvent, _, cx| this.save_editor(cx)))
+                .on_action(cx.listener(|this, _: &DeleteEvent, _, cx| this.delete_selected(cx)))
+                .on_action(cx.listener(|this, _: &UndoEvent, _, cx| this.undo(cx)))
+                .on_action(cx.listener(|this, _: &RedoEvent, _, cx| this.redo(cx)))
+                .on_action(cx.listener(|this, _: &ShowInspector, window, cx| {
+                    this.inspect_selected(window, cx)
+                }))
+                .on_action(cx.listener(|this, _: &DismissInspector, _, cx| {
+                    this.editor = None;
+                    cx.notify();
+                }))
+                .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
+                .on_action(
+                    cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+                );
         root = root.child(self.toolbar(cx)).child(body);
         if self.sidebar_visible {
             root = root.child(self.sidebar(&snapshot, cx));
+        }
+        if let Some(error) = self.error.clone() {
+            root = root.child(
+                div()
+                    .id("calendar-error")
+                    .absolute()
+                    .left(px(side + 16.0))
+                    .top(px(TOOLBAR + 8.0))
+                    .right(px(16.0))
+                    .px(px(12.0))
+                    .py(px(8.0))
+                    .rounded(px(mac::radius_control()))
+                    .bg(mac::system_red().opacity(0.15))
+                    .border_1()
+                    .border_color(mac::system_red())
+                    .text_size(px(12.0))
+                    .text_color(mac::text())
+                    .child(error),
+            );
+        }
+        if let Some(inspector) = self.inspector(cx) {
+            root = root.child(inspector);
         }
         root
     }

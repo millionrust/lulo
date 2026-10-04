@@ -63,10 +63,7 @@ fn main() {
             ]);
             rmac_ui::install_app_menu(CALENDAR, cx);
             // Invitations and search arrive in CAL-6/8.
-            for action in [
-                "calendar::ShowInvitations",
-                "calendar::Search",
-            ] {
+            for action in ["calendar::ShowInvitations", "calendar::Search"] {
                 rmac_ui::set_menu_enabled(action, false, cx);
             }
             let mut options = rmac_ui::window_options_for_app(CALENDAR, 1100.0, 720.0, cx);

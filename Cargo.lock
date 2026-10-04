@@ -5984,9 +5984,11 @@ dependencies = [
 name = "rmac-calendar"
 version = "0.9.0-beta.1"
 dependencies = [
+ "blocking",
  "chrono",
  "chrono-tz",
  "gpui",
+ "rmac-calendar-eds",
  "rmac-calendar-store",
  "rmac-ui",
 ]

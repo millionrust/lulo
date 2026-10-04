@@ -68,13 +68,24 @@ pub struct WeekSnapshot {
 
 impl WeekSnapshot {
     pub fn empty() -> Self {
-        Self { calendars: Vec::new(), events: Vec::new(), slots: Vec::new() }
+        Self {
+            calendars: Vec::new(),
+            events: Vec::new(),
+            slots: Vec::new(),
+        }
     }
 
     pub fn slots_for(&self, first: NaiveDate) -> Vec<LayoutSlot> {
-        let events: Vec<_> = self.events.iter().filter(|event| !event.all_day).map(|event| LayoutEvent {
-            id: event.id.clone(), start: event.start, end: event.end,
-        }).collect();
+        let events: Vec<_> = self
+            .events
+            .iter()
+            .filter(|event| !event.all_day)
+            .map(|event| LayoutEvent {
+                id: event.id.clone(),
+                start: event.start,
+                end: event.end,
+            })
+            .collect();
         layout_week(&events, first, Tz::UTC).unwrap_or_default()
     }
 }

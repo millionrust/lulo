@@ -20,21 +20,30 @@
     "grouped": {
       "settings_controls": {
         "checked": {
-          "Group notes by date": true
+          "Group notes by date": true,
+          "Automatically sort ticked items": false,
+          "Use dark backgrounds for note content": true,
+          "Enable the On My Mac account": true
         }
       }
     },
     "ungrouped": {
       "settings_controls": {
         "checked": {
-          "Group notes by date": false
+          "Group notes by date": false,
+          "Automatically sort ticked items": false,
+          "Use dark backgrounds for note content": true,
+          "Enable the On My Mac account": true
         }
       }
     },
     "regrouped": {
       "settings_controls": {
         "checked": {
-          "Group notes by date": true
+          "Group notes by date": true,
+          "Automatically sort ticked items": false,
+          "Use dark backgrounds for note content": true,
+          "Enable the On My Mac account": true
         }
       }
     }

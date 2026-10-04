@@ -91,6 +91,7 @@ pub async fn minimize_window_in(
     if domain::window_is_parked(&snapshot, candidate) {
         return Ok(());
     }
+    let next_focus = next_focus_after_minimize(&snapshot, window);
     // The store and grim are blocking; keep them off the caller's executor.
     let (sender, receiver) = async_channel::bounded(1);
     std::thread::Builder::new()
@@ -103,7 +104,44 @@ pub async fn minimize_window_in(
     let _ = receiver.recv().await;
     execute_action(&domain::Action::MinimizeWindow { window })
         .await
-        .map_err(MinimizeError::Action)
+        .map_err(MinimizeError::Action)?;
+    // `MinimizeWindow` asks niri to leave focus on the original workspace
+    // (`focus: false`, like `RestoreWindow`'s own documented floating-layout
+    // quirk in `runtime.rs::convert_action_sequence`), but every window here
+    // floats (macOS presentation, packaging/rmac-session/shell.kdl), so
+    // there is no tiled neighbour for niri to promote on its own: nothing
+    // became focused, same symptom DOCK-29 fixed for restore. The Mac
+    // activates whichever window was frontmost before this one, so do that
+    // explicitly. Best effort: a focus-less minimize is still a minimize.
+    if let Some(next) = next_focus {
+        let _ = execute_action(&domain::Action::FocusWindow { window: next }).await;
+    }
+    Ok(())
+}
+
+/// The window that should gain keyboard focus once `minimized` is parked:
+/// the most recently focused of the other windows still showing on its
+/// workspace. `None` when none remain (minimizing the last window on a
+/// Space leaves niri to decide, as it already does today).
+fn next_focus_after_minimize(
+    snapshot: &domain::Snapshot,
+    minimized: domain::WindowId,
+) -> Option<domain::WindowId> {
+    let workspace = snapshot
+        .windows
+        .iter()
+        .find(|w| w.id == minimized)?
+        .workspace?;
+    snapshot
+        .windows
+        .iter()
+        .filter(|w| {
+            w.id != minimized
+                && w.workspace == Some(workspace)
+                && !domain::window_is_parked(snapshot, w)
+        })
+        .max_by_key(|w| w.focus_timestamp.map(|t| (t.seconds, t.nanoseconds)))
+        .map(|w| w.id)
 }
 
 /// Steps 1 and 2: remember where `window` came from and picture it. Both
@@ -342,6 +380,67 @@ mod tests {
             windows: vec![window(1, 1), window(2, 2)],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn next_focus_after_minimize_picks_the_most_recently_focused_survivor() {
+        let mut snap = snapshot();
+        let base = snap.windows[0].clone();
+        let stamp = |seconds: u64| {
+            Some(domain::Timestamp {
+                seconds,
+                nanoseconds: 0,
+            })
+        };
+        snap.windows = vec![
+            domain::Window {
+                id: domain::WindowId(1),
+                workspace: Some(domain::WorkspaceId(1)),
+                focus_timestamp: stamp(10),
+                ..base.clone()
+            },
+            domain::Window {
+                id: domain::WindowId(2),
+                workspace: Some(domain::WorkspaceId(1)),
+                focus_timestamp: stamp(30),
+                ..base.clone()
+            },
+            domain::Window {
+                id: domain::WindowId(3),
+                workspace: Some(domain::WorkspaceId(1)),
+                focus_timestamp: stamp(20),
+                ..base.clone()
+            },
+            // Already parked: never a candidate, however recent its stamp.
+            domain::Window {
+                id: domain::WindowId(4),
+                workspace: Some(domain::WorkspaceId(9)),
+                focus_timestamp: stamp(40),
+                ..base.clone()
+            },
+            // A different Space entirely: minimizing window 1 must not
+            // steal focus away from it.
+            domain::Window {
+                id: domain::WindowId(5),
+                workspace: Some(domain::WorkspaceId(2)),
+                focus_timestamp: stamp(50),
+                ..base.clone()
+            },
+        ];
+        assert_eq!(
+            next_focus_after_minimize(&snap, domain::WindowId(1)),
+            Some(domain::WindowId(2)),
+        );
+        // Minimizing the last window left on a Space leaves niri to decide.
+        let mut lonely = snap.clone();
+        lonely.windows.retain(|w| w.id == domain::WindowId(1));
+        assert_eq!(
+            next_focus_after_minimize(&lonely, domain::WindowId(1)),
+            None
+        );
+        // A window niri no longer reports (already closed) has nothing to
+        // activate either.
+        assert_eq!(next_focus_after_minimize(&snap, domain::WindowId(99)), None);
     }
 
     #[test]

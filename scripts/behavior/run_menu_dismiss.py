@@ -536,13 +536,29 @@ class Run:
             if not opened:
                 continue
             # Both layer surfaces can be listed before the catcher's first
-            # input-region commit. Let that frame present before input.
+            # input-region commit, so a dismiss input sent right away can
+            # still land before the catcher accepts it. This is worst on
+            # the very first popover of each kind opened in the whole run
+            # (this one, for "quick-settings"): a cold shader/JIT cost that
+            # "inside-band click" and "Escape" right after it, and every
+            # later shortcut's own first open, do not pay again. GitHub's
+            # shared CI runners are also markedly slower at this
+            # software-rendered first frame ("ZINK: failed to choose
+            # pdev" in this nested session's own logs) than the reference
+            # laptop, where three quick retries were enough but CI still
+            # saw this fail outright. Escape and an outside click only
+            # ever dismiss, never toggle back open, so retrying either is
+            # safe; give it generous headroom instead of guessing a
+            # single delay.
             time.sleep(0.5)
-            if method == "Escape":
-                self.keys.key("escape")
-            else:
-                self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
-            closed = self.wait_for(lambda: self.popover_gone(namespace), 10)
+
+            def dismiss_input() -> None:
+                if method == "Escape":
+                    self.keys.key("escape")
+                else:
+                    self.click_at(200, 300 if method == "inside-band click" else MENU_SURFACE_HEIGHT + 70)
+
+            closed = self.retry_until(dismiss_input, lambda: self.popover_gone(namespace), attempts=6, step=3.0)
             self.check(f"{shortcut}: closes on {method}", closed)
             if not closed:
                 self.dispatch(shortcut)

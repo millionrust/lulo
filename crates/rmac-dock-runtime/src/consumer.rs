@@ -141,7 +141,10 @@ mod persistence_tests {
         let path = dir.join("state/rmac/dock-recents");
         let _ = std::fs::remove_dir_all(&dir);
 
-        let recents = vec!["com.rmac.Files".to_string(), "com.rmac.Terminal".to_string()];
+        let recents = vec![
+            "com.rmac.Files".to_string(),
+            "com.rmac.Terminal".to_string(),
+        ];
         save_recents_to(&path, &recents).unwrap();
         assert_eq!(load_recents_from(&path), recents);
 

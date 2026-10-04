@@ -14,7 +14,10 @@ name = "rmac-calendar-agent"
 path = "src/main.rs"
 
 [dependencies]
-chrono.workspace = true
+# "serde" only derives Serialize/Deserialize for DateTime<Utc> in alerts.json
+# (crate::state); it adds no new crate since serde is already a workspace
+# dependency everywhere.
+chrono = { workspace = true, features = ["serde"] }
 chrono-tz.workspace = true
 rmac-calendar-eds.workspace = true
 rmac-calendar-runtime.workspace = true

@@ -35,6 +35,7 @@ impl SaveContent {
 }
 
 /// What an exact save wrote and read back.
+#[derive(Debug)]
 pub(super) enum SavedDocument {
     Plain(document::DecodedDocument),
     Rich { original_bytes: Vec<u8> },

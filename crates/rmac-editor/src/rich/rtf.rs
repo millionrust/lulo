@@ -422,8 +422,7 @@ impl<'a> Parser<'a> {
         }
         let consumed = text[..split_at].chars().count() as u32;
         self.pending_u_skip -= consumed.min(self.pending_u_skip);
-        let remainder = text[split_at..].to_owned();
-        self.push_text(&remainder);
+        self.push_text(&text[split_at..]);
     }
 
     fn finish_paragraph(&mut self) {
@@ -632,8 +631,8 @@ impl<'a> Parser<'a> {
                 if let Some(byte) = byte {
                     self.pos += 2;
                     let mut buffer = [0_u8; 4];
-                    let text = cp1252_to_char(byte).encode_utf8(&mut buffer).to_owned();
-                    self.emit(&text);
+                    let text = cp1252_to_char(byte).encode_utf8(&mut buffer);
+                    self.emit(text);
                 }
             }
             // A backslash before a line break is a paragraph mark (TextEdit

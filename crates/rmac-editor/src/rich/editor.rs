@@ -488,7 +488,7 @@ impl RichTextEditor {
         }
         self.begin_edit(EditKind::Other);
         self.document
-            .update_char_style(self.selection.clone(), |style| change(style));
+            .update_char_style(self.selection.clone(), &change);
         self.finish_edit(cx);
     }
 
@@ -502,8 +502,7 @@ impl RichTextEditor {
         }
         let before = self.document.clone();
         let range = self.selection.clone();
-        self.document
-            .update_paragraph_style(range, |style| change(style));
+        self.document.update_paragraph_style(range, &change);
         if self.document == before {
             return;
         }

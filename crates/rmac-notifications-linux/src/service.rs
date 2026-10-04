@@ -85,8 +85,10 @@ impl HistoryAuthority {
         };
         resolved.unwrap_or(DeliveryPolicy {
             // Fail closed for banners while Focus state is unavailable;
-            // policy-allowed history remains recoverable in the Center.
+            // policy-allowed history remains recoverable in the Center. An
+            // urgent post cannot prove the mode would let it through either.
             focus_active: true,
+            allow_urgent_through_focus: false,
             ..base
         })
     }

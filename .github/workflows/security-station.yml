@@ -1,0 +1,114 @@
+name: Security station (disposable Ubuntu 26.04)
+
+# The security review's "disposable install" station
+# (docs/security-review-0.9.0-beta.1.md, "Station evidence"). A GitHub-hosted
+# runner is a fresh VM per job with passwordless sudo that is thrown away
+# afterwards, so the destructive native checks (install/upgrade/rollback/purge,
+# maintainer scripts, PackageKit offline updates, polkit, journald) run here
+# and never on the reference laptop. The job installs the exact unsigned
+# candidate that candidate.yml built for a dev commit and records one JSON
+# result per native check as the security-station-evidence artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run:
+        description: candidate.yml run id to test (default: latest successful dev run)
+        type: string
+        default: ""
+  push:
+    branches: [agent/sec, agent/sec-*]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: security-station-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  disposable-install:
+    name: Disposable install station (ubuntu-26.04)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      EVIDENCE: ${{ github.workspace }}/station-evidence
+      STATION_WORK: ${{ github.workspace }}/station-work
+    steps:
+      - name: Check out the station scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Free runner disk for the package lifecycle floor
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache /usr/local/share/boost /usr/local/.ghcup || true
+          df -h /
+
+      - name: Download the dev candidate package set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CANDIDATE_RUN:-}" ]]; then
+            CANDIDATE_RUN=$(gh run list -R "$GITHUB_REPOSITORY" --workflow candidate.yml \
+              --branch dev --status success -L 1 --json databaseId -q '.[0].databaseId')
+          fi
+          [[ "$CANDIDATE_RUN" =~ ^[0-9]+$ ]]
+          sha=$(gh run view -R "$GITHUB_REPOSITORY" "$CANDIDATE_RUN" --json headSha -q .headSha)
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          mkdir -p "$STATION_WORK/candidate"
+          gh run download -R "$GITHUB_REPOSITORY" "$CANDIDATE_RUN" \
+            -n "lulo-candidate-$sha" -D "$STATION_WORK/candidate"
+          (cd "$STATION_WORK/candidate" && sha256sum --check SHA256SUMS)
+          printf '{"run_id": %s, "head_sha": "%s"}\n' "$CANDIDATE_RUN" "$sha" \
+            > "$STATION_WORK/candidate-source.json"
+          ls -l "$STATION_WORK/candidate"
+
+      - name: Install station prerequisites without starting services
+        run: |
+          set -euo pipefail
+          # No service may start during this install (gdm3 especially);
+          # each check starts exactly what it needs.
+          printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d >/dev/null
+          sudo chmod 0755 /usr/sbin/policy-rc.d
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+            apt-utils appstream dbus-user-session desktop-file-utils gdm3 gnome-session \
+            gir1.2-packagekitglib-1.0 gnupg keyd libcap2-bin packagekit pkexec polkitd \
+            ptyxis python3-gi sway xdg-desktop-portal xdg-utils
+          sudo rm -f /usr/sbin/policy-rc.d
+          sudo systemctl disable --now gdm3.service gdm.service 2>/dev/null || true
+          df -h /
+
+      - name: Mark this runner as the disposable station
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          printf 'rmac-package-lifecycle-v1\n' | sudo tee /run/rmac-disposable-vm >/dev/null
+          mkdir -p "$EVIDENCE"
+
+      - name: Run the native security checks
+        run: |
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,GITHUB_SHA,GITHUB_RUN_ID,GITHUB_SERVER_URL,GITHUB_REPOSITORY,ImageOS,ImageVersion \
+            python3 scripts/linux/run-security-station.py run \
+              --candidate "$STATION_WORK/candidate" \
+              --candidate-source "$STATION_WORK/candidate-source.json" \
+              --work "$STATION_WORK" \
+              --evidence "$EVIDENCE"
+
+      - name: Upload station evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: security-station-evidence
+          path: station-evidence/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Require every station check to pass
+        run: python3 scripts/linux/run-security-station.py gate --evidence "$EVIDENCE"

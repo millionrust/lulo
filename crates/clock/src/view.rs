@@ -28,10 +28,14 @@ use rmac_clock::{now_millis, schedule};
 use rmac_ui::{mac, InputEvent, InputState, SearchField, StyledExt as _, TextField, Toggle};
 
 use crate::{
-    CloseWindow, LapReset, NewItem, NoRecentTimers, ShowAlarms, ShowAnalogueStopwatch,
-    ShowDigitalStopwatch, ShowStopwatch, ShowTimers, ShowWorldClock, StartRecentTimer0,
-    StartRecentTimer1, StartRecentTimer2, StartRecentTimer3, StartRecentTimer4, StartRecentTimer5,
-    StartRecentTimer6, StartRecentTimer7, StartStop,
+    CheckDocumentNow, CloseWindow, LapReset, NewItem, NoRecentTimers, ShowAlarms,
+    ShowAnalogueStopwatch, ShowDigitalStopwatch, ShowSpellingAndGrammar, ShowStopwatch, ShowTimers,
+    ShowWorldClock, StartRecentTimer0, StartRecentTimer1, StartRecentTimer2, StartRecentTimer3,
+    StartRecentTimer4, StartRecentTimer5, StartRecentTimer6, StartRecentTimer7, StartSpeaking,
+    StartStop, StopSpeaking, ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
+    ToggleCorrectSpellingAutomatically, ToggleSmartCopyPaste, ToggleSmartDashes, ToggleSmartLinks,
+    ToggleSmartQuotes, ToggleSmartSubstitutions, ToggleTextReplacement, TransformCapitalise,
+    TransformLowercase, TransformUppercase,
 };
 
 const LAND_SVG: &str = include_str!("../assets/world-land.svg");

@@ -364,7 +364,7 @@ impl Coordinator {
                     return close(Outcome::Cancelled);
                 }
                 Input::Helper(event_generation, _) if event_generation != generation => {}
-                Input::Helper(_, HelperEvent::Prompt { echo, text }) => {
+                Input::Helper(_, HelperEvent::Prompt { echo, text: prompt }) => {
                     if let Some(secret) = early_answer.take() {
                         if let Some(session) = &session {
                             session.answer(secret);
@@ -374,7 +374,7 @@ impl Coordinator {
                         waiting_prompt = true;
                         self.show(ToUi::Prompt {
                             cookie: cookie.clone(),
-                            placeholder: text::prompt_placeholder(&text),
+                            placeholder: text::prompt_placeholder(&prompt),
                             echo,
                         });
                         self.show(ToUi::Busy {

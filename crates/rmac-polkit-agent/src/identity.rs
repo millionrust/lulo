@@ -182,7 +182,7 @@ fn group_members(gid: u32) -> Vec<u32> {
     }
     names
         .iter()
-        .filter_map(|name| user_by_name(name))
+        .filter_map(|name| user_by_name(name.as_c_str()))
         .map(|identity| identity.uid)
         .collect()
 }

@@ -100,7 +100,7 @@ impl HelperSession {
     /// End the conversation; the helper sees its input close.
     pub fn cancel(&self) {
         let _ = self.answers.send(Answer::Cancel);
-        let _ = (&self.wake).write(&[1]);
+        let _ = (&self.wake).write_all(&[1]);
     }
 }
 

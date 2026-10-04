@@ -527,16 +527,23 @@ impl MailState {
                 } else {
                     self.in_mailbox(message, &self.mailbox)
                 };
-                if !in_mailbox
-                    || self.unread_only && !message.unread
-                    || !self.search.matches_fields(
+                // `matches_fields` on an empty query is vacuously true, so
+                // skip building its (body-formatting, allocating) argument
+                // for the common case of no active search — otherwise
+                // every `visible()` call would format every message's full
+                // body, however large the mailbox (MAIL-10).
+                let search_matches = self.search.is_empty()
+                    || self.search.matches_fields(
                         &message.sender,
                         &message.to,
                         &message.subject,
                         &format!("{} {}", message.preview, message.body.plain_text()),
-                    )
+                    );
+                if !in_mailbox
+                    || self.unread_only && !message.unread
+                    || !search_matches
                     || self.threads
-                        && !seen.insert((mailbox_key(&message.mailbox), message.thread_id.clone()))
+                        && !seen.insert((mailbox_key(&message.mailbox), message.thread_id.as_str()))
                 {
                     None
                 } else {
@@ -1031,6 +1038,57 @@ mod tests {
         assert_eq!(
             persist.change,
             PersistChange::Flags(rmac_mail_storage::FLAG_SEEN)
+        );
+    }
+
+    /// MAIL-10: a 10 000-message mailbox must stay smooth. `visible()` and
+    /// `select()`/`select_next()` run on every scroll-driven render and
+    /// every arrow-key press, so each must stay linear in the message
+    /// count rather than the O(n²) a per-row `thread_count()` call would
+    /// give `crate::view::list` (fixed alongside this test — see its
+    /// `thread_counts` map). A generous 200 ms budget absorbs a slow CI
+    /// runner while still catching an accidental quadratic regression,
+    /// which would take tens of seconds at this size.
+    #[test]
+    fn ten_thousand_messages_stay_linear() {
+        let account = Uuid::new_v4();
+        let inbox = Mailbox::Real(RealMailbox {
+            account,
+            account_path: "/fixture/perf".to_owned(),
+            account_label: "perf@example.test".to_owned(),
+            mailbox_id: 1,
+            name: "INBOX".to_owned(),
+            special_use: Some(SpecialUse::Inbox),
+        });
+        let messages: Vec<Message> = (0..10_000)
+            .map(|index| {
+                let mut message = fixture_message(
+                    &format!("perf-{index}"),
+                    inbox.clone(),
+                    "Sender",
+                    "SE",
+                    "Today",
+                    "Subject",
+                    "Preview",
+                    index % 5 == 0,
+                    index % 11 == 0,
+                    &format!("perf-{index}"),
+                );
+                message.row_id = Some(index);
+                message
+            })
+            .collect();
+        let mut state = MailState::new(vec![Mailbox::AllInboxes, inbox], messages);
+        let start = std::time::Instant::now();
+        for _ in 0..20 {
+            let visible = state.visible();
+            assert_eq!(visible.len(), 10_000);
+            state.select_next(1);
+        }
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_millis(200),
+            "20 passes over 10 000 messages took {elapsed:?}, expected well under 200ms"
         );
     }
 }

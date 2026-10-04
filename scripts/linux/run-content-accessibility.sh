@@ -5,14 +5,14 @@
 # enabled (org.a11y.Status.IsEnabled). It never turns on the screen reader,
 # never injects input, and never touches the user's own app data.
 #
-# usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock]...
+# usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock|mail]...
 #   BIN_DIR holds the corresponding rmac-* binaries.
 set -euo pipefail
 
-bin_dir=${1:?usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock]...}
+bin_dir=${1:?usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock|mail]...}
 shift
 apps=("$@")
-[[ ${#apps[@]} -gt 0 ]] || apps=(terminal notes files clock)
+[[ ${#apps[@]} -gt 0 ]] || apps=(terminal notes files clock mail)
 scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
@@ -42,6 +42,7 @@ run_app() {
     notes) binary=rmac-notes; assert=assert_notes_accessibility.py ;;
     files) binary=rmac-files; assert=assert_files_accessibility.py ;;
     clock) binary=rmac-clock; assert=assert_clock_accessibility.py ;;
+    mail) binary=rmac-mail; assert=assert_mail_accessibility.py ;;
     *) echo "unknown app $app" >&2; return 2 ;;
   esac
   comm=${binary:0:15}
@@ -74,6 +75,12 @@ EOF
       printf '%%PDF-1.4\n' >"$root/folder/content-a11y/gamma.pdf"
       arguments=(--path "$root/folder/content-a11y")
       export RMAC_FILES_FOLDER="$root/folder/content-a11y"
+      ;;
+    mail)
+      # The only legitimate use of Mail's fixture data: a private nested
+      # session asserting the sidebar/list/viewer tree, never a real
+      # account (docs/design/calendar-mail.md §3).
+      env_vars+=(RMAC_MAIL_FIXTURE=1)
       ;;
   esac
 

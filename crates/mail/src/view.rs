@@ -325,16 +325,38 @@ impl MailView {
                 glyph,
                 label,
                 mode,
-                move |this, cx| this.perform(action, cx),
+                move |this, cx| this.perform(action.clone(), cx),
                 cx,
             ));
         }
-        for (id, glyph, label) in [
-            ("mail-reply", "↶", "Reply"),
-            ("mail-reply-all", "↞", "Reply All"),
-            ("mail-forward", "↷", "Forward"),
+        let has_selection = self.state.selected_message().is_some();
+        for (id, glyph, label, kind) in [
+            ("mail-reply", "↶", "Reply", ComposeKind::Reply),
+            ("mail-reply-all", "↞", "Reply All", ComposeKind::ReplyAll),
+            ("mail-forward", "↷", "Forward", ComposeKind::Forward),
         ] {
-            bar = bar.child(self.control(id, glyph, label, ControlMode::Disabled, |_, _| {}, cx));
+            let mode = if has_selection {
+                ControlMode::Enabled
+            } else {
+                ControlMode::Disabled
+            };
+            bar = bar.child(self.control(
+                id,
+                glyph,
+                label,
+                mode,
+                move |this, cx| {
+                    compose_window::open(
+                        kind,
+                        this.state.selected_message().cloned(),
+                        None,
+                        this.accounts.clone(),
+                        this.compose_candidates(),
+                        cx,
+                    );
+                },
+                cx,
+            ));
         }
         bar = bar.child(self.control(
             "mail-flag",
@@ -555,6 +577,14 @@ impl MailView {
 
     fn list(&self, cx: &mut Context<Self>) -> AnyElement {
         let visible = self.state.visible();
+        // `MailState::thread_count` scans every message; calling it once
+        // per visible row would make building the list O(n²) in a 10 000
+        // -message mailbox (MAIL-10). One pass here keeps it O(n).
+        let mut thread_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::with_capacity(self.state.messages.len());
+        for message in &self.state.messages {
+            *thread_counts.entry(message.thread_id.as_str()).or_insert(0) += 1;
+        }
         let rows: Arc<Vec<Row>> = Arc::new(
             visible
                 .iter()
@@ -569,7 +599,10 @@ impl MailView {
                         unread: message.unread,
                         flagged: message.flagged,
                         attachment: message.attachment.is_some(),
-                        thread_count: self.state.thread_count(&message.thread_id),
+                        thread_count: thread_counts
+                            .get(message.thread_id.as_str())
+                            .copied()
+                            .unwrap_or(1),
                         selected: self.state.selected.as_deref() == Some(message.id.as_str()),
                     }
                 })

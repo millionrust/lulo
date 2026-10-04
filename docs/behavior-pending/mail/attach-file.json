@@ -1,0 +1,15 @@
+{
+  "title": "Mail: ⇧⌘A attaches a file and the chip can be removed",
+  "app": "mail",
+  "launch": {},
+  "pending": "Pending: needs the Mail app's compose window reachable from the behaviour harness (MAIL-5/6), `mail` in scenario.APPS (already present), a FACTS entry describing compose attachments/address fields (none exists yet), and a Mac recording of the attachment chip and the file-chooser sheet against a local 'On My Mac' mailbox only. Never send mail and never confirm a deletion on the Mac.",
+  "steps": [
+    { "wait": 3 },
+    { "key": "cmd-n", "settle": 1 },
+    { "key": "cmd-shift-a", "settle": 1 },
+    { "fixture_choose_file": "menu.pdf" },
+    { "observe": "attached", "facts": ["windows"] },
+    { "click": "compose-attachment-remove-0", "settle": 0.5 },
+    { "observe": "removed", "facts": ["windows"] }
+  ]
+}

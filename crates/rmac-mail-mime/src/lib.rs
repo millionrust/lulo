@@ -99,6 +99,44 @@ fn normalise_content_id(id: &str) -> Option<&str> {
     .then_some(id)
 }
 
+/// A small, dependency-free extension table for attachments picked through
+/// the file chooser. It only needs to be plausible: the recipient's mail
+/// client makes its own final judgement from the file's contents.
+pub fn guess_content_type(filename: &str) -> &'static str {
+    let extension = filename
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "txt" | "text" | "log" => "text/plain",
+        "html" | "htm" => "text/html",
+        "csv" => "text/csv",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "json" => "application/json",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "tif" | "tiff" => "image/tiff",
+        "heic" => "image/heic",
+        "svg" => "image/svg+xml",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/x-m4a",
+        "wav" => "audio/wav",
+        "mp4" | "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
+        _ => "application/octet-stream",
+    }
+}
+
 fn valid_content_type(value: &str) -> bool {
     let Some((type_, subtype)) = value.split_once('/') else {
         return false;
@@ -408,6 +446,17 @@ mod tests {
                 |part| part.content_id.as_deref() == Some("photo@example.test")
                     && part.bytes == vec![137, 80, 78, 71]
             ));
+    }
+
+    #[test]
+    fn content_type_is_guessed_from_the_extension_case_insensitively() {
+        assert_eq!(guess_content_type("Menu.PDF"), "application/pdf");
+        assert_eq!(guess_content_type("photo.jpeg"), "image/jpeg");
+        assert_eq!(guess_content_type("notes"), "application/octet-stream");
+        assert_eq!(
+            guess_content_type("archive.tar.gz"),
+            "application/octet-stream"
+        );
     }
 
     #[test]

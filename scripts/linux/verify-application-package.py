@@ -75,6 +75,10 @@ PLAYER_MIME_TYPES = (
     "video/mpeg",
     "video/ogg",
 )
+# Mail is the session's `mailto:` handler (MAIL-8); Calendar is the
+# `.ics`/`text/calendar` handler a Mail attachment is handed to.
+MAIL_MIME_TYPES = ("x-scheme-handler/mailto",)
+CALENDAR_MIME_TYPES = ("text/calendar",)
 MIMEAPPS = Path("usr/share/applications/rmac-mimeapps.list")
 SUPERSEDED_APPS = Path("usr/share/rmac/superseded-apps.list")
 # Kept in sync with DEFAULT_SUPERSEDED in crates/rmac-apps/src/superseded.rs.
@@ -450,6 +454,10 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
         # The session's folder handler: folders and file:// URIs, one window
         # each, as Finder opens them.
         expected_exec += " %U"
+    elif identity in ("org.rmac.Mail", "org.rmac.Calendar"):
+        # The session's `mailto:`/`.ics` handler: one URI or file path per
+        # launch (MAIL-8).
+        expected_exec += " %u"
     required = {
         "Version": "1.5",
         "Type": "Application",
@@ -506,6 +514,16 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
             raise VerificationError("Files MIME declarations are invalid")
         if "Actions" in entry:
             raise VerificationError("Files action inventory is invalid")
+    elif identity == "org.rmac.Mail":
+        if entry.get("MimeType") != ";".join(MAIL_MIME_TYPES) + ";":
+            raise VerificationError("Mail MIME declarations are invalid")
+        if "Actions" in entry:
+            raise VerificationError("Mail action inventory is invalid")
+    elif identity == "org.rmac.Calendar":
+        if entry.get("MimeType") != ";".join(CALENDAR_MIME_TYPES) + ";":
+            raise VerificationError("Calendar MIME declarations are invalid")
+        if "Actions" in entry:
+            raise VerificationError("Calendar action inventory is invalid")
     elif any(key in entry for key in ("MimeType", "Actions")) or "%" in entry["Exec"]:
         raise VerificationError(f"desktop entry claims unsupported activation: {identity}")
 
@@ -625,6 +643,8 @@ def _verify_mimeapps(root: Path) -> None:
     expected.update({mime: "org.rmac.Preview.desktop" for mime in PREVIEW_MIME_TYPES})
     expected.update({mime: "org.rmac.TextEditor.desktop" for mime in TEXT_MIME_TYPES})
     expected["inode/directory"] = "org.rmac.Files.desktop"
+    expected.update({mime: "org.rmac.Mail.desktop" for mime in MAIL_MIME_TYPES})
+    expected.update({mime: "org.rmac.Calendar.desktop" for mime in CALENDAR_MIME_TYPES})
     if parser.sections() != ["Default Applications"] or dict(
         parser["Default Applications"]
     ) != expected:

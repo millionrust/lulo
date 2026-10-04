@@ -7,13 +7,14 @@ use gpui::{
     Window,
 };
 use rmac_editor::InputState;
-use rmac_mail::{MailState, Mailbox, Message, OrganizeAction, SearchScope};
+use rmac_mail::{compose::ComposeKind, MailState, Mailbox, Message, OrganizeAction, SearchScope};
 use rmac_mail_mime::{BlockKind, RichText};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, TextField};
 
 use crate::{
-    Archive, CloseWindow, Copy, Delete, Flag, Junk, Move, NextMessage, PreviousMessage, Search,
-    ToggleRead, ToggleThreads, ToggleUnreadFilter, Undo,
+    compose_window, delivery::ComposeAccount, Archive, CloseWindow, Copy, Delete, Flag, Forward,
+    Junk, Move, NewMessage, NextMessage, PreviousMessage, Reply, ReplyAll, Search, ToggleRead,
+    ToggleThreads, ToggleUnreadFilter, Undo,
 };
 
 const SIDEBAR: f32 = 220.0;
@@ -34,6 +35,7 @@ pub struct MailView {
     search_open: bool,
     destination_menu: bool,
     copy_destination: bool,
+    accounts: Vec<ComposeAccount>,
 }
 
 #[derive(Clone)]
@@ -51,7 +53,12 @@ struct Row {
 }
 
 impl MailView {
-    pub fn new(state: MailState, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        state: MailState,
+        accounts: Vec<ComposeAccount>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search Mail"));
         cx.subscribe(&search_input, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
@@ -68,6 +75,7 @@ impl MailView {
             search_open: false,
             destination_menu: false,
             copy_destination: false,
+            accounts,
         }
     }
 
@@ -100,6 +108,12 @@ impl MailView {
             self.sync_menu(cx);
             cx.notify();
         }
+    }
+
+    /// Address completion candidates for a freshly opened compose window:
+    /// every distinct sender this mailbox has seen (`compose::known_recipients`).
+    fn compose_candidates(&self) -> Vec<rmac_mail::compose::Recipient> {
+        rmac_mail::compose::known_recipients(&self.state.messages)
     }
 
     fn control(
@@ -171,8 +185,17 @@ impl MailView {
             "mail-compose",
             "▣",
             "Compose",
-            ControlMode::Disabled,
-            |_, _| {},
+            ControlMode::Enabled,
+            |this, cx| {
+                compose_window::open(
+                    ComposeKind::New,
+                    None,
+                    None,
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                );
+            },
             cx,
         ));
         for (id, glyph, label, action) in [
@@ -636,7 +659,7 @@ impl MailView {
         content.into_any_element()
     }
 
-    fn viewer(&self) -> AnyElement {
+    fn viewer(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(message) = self.state.selected_message() else {
             return div()
                 .flex_1()
@@ -674,24 +697,68 @@ impl MailView {
             );
         }
         body = body.child(self.rich_body(&message.body));
-        if let Some((name, size)) = message.attachment {
-            body = body.child(
-                div()
-                    .w(px(170.0))
-                    .h(px(46.0))
-                    .rounded(px(mac::radius_card()))
-                    .bg(mac::control_fill())
-                    .px(px(10.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .text_size(px(12.0))
-                    .text_color(mac::text())
-                    .child("▤")
-                    .child(format!("{name} · {size}")),
-            );
+        if let Some(attachment) = message.attachment {
+            body = body.child(self.attachment_chip(attachment, cx));
         }
         body.into_any_element()
+    }
+
+    /// An attachment chip. A `.ics` invite (MAIL-8) is also a button that
+    /// stages the attachment and hands it to Calendar through the OpenURI
+    /// portal, which routes to Calendar because `text/calendar` is
+    /// registered to `org.rmac.Calendar.desktop` (`packaging/rmac-apps`).
+    fn attachment_chip(
+        &self,
+        attachment: rmac_mail::MessageAttachment,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let is_calendar_invite = rmac_mail::ics::has_ics_extension(attachment.filename);
+        let mut chip = div()
+            .id("mail-attachment")
+            .w(px(170.0))
+            .h(px(46.0))
+            .rounded(px(mac::radius_card()))
+            .bg(mac::control_fill())
+            .px(px(10.0))
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .text_size(px(12.0))
+            .text_color(mac::text())
+            .child(if is_calendar_invite { "▦" } else { "▤" })
+            .child(format!(
+                "{} · {}",
+                attachment.filename, attachment.size_label
+            ));
+        if is_calendar_invite {
+            chip = chip
+                .role(Role::Button)
+                .aria_label(format!("Add {} to Calendar", attachment.filename))
+                .cursor_pointer()
+                .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                    let filename = attachment.filename;
+                    let bytes = attachment.bytes;
+                    cx.spawn(async move |_, _cx| {
+                        let staged = rmac_mail::ics::stage_for_handoff(filename, bytes);
+                        match staged {
+                            Ok(path) => {
+                                if let Err(error) = rmac_portal::open_item(&path).await {
+                                    eprintln!(
+                                        "rmac-mail: could not hand {filename} to Calendar: {error}"
+                                    );
+                                }
+                            }
+                            Err(error) => {
+                                eprintln!(
+                                    "rmac-mail: could not stage {filename} for Calendar: {error}"
+                                );
+                            }
+                        }
+                    })
+                    .detach();
+                }));
+        }
+        chip.into_any_element()
     }
 
     fn header(&self, message: &Message) -> AnyElement {
@@ -764,6 +831,46 @@ impl Render for MailView {
             .bg(mac::window())
             .track_focus(&self.focus)
             .key_context("Mail")
+            .on_action(cx.listener(|this, _: &NewMessage, _, cx| {
+                compose_window::open(
+                    ComposeKind::New,
+                    None,
+                    None,
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &Reply, _, cx| {
+                compose_window::open(
+                    ComposeKind::Reply,
+                    this.state.selected_message().cloned(),
+                    None,
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &ReplyAll, _, cx| {
+                compose_window::open(
+                    ComposeKind::ReplyAll,
+                    this.state.selected_message().cloned(),
+                    None,
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &Forward, _, cx| {
+                compose_window::open(
+                    ComposeKind::Forward,
+                    this.state.selected_message().cloned(),
+                    None,
+                    this.accounts.clone(),
+                    this.compose_candidates(),
+                    cx,
+                )
+            }))
             .on_action(cx.listener(|this, _: &ToggleThreads, _, cx| {
                 this.state.threads = !this.state.threads;
                 this.sync_menu(cx);
@@ -828,6 +935,9 @@ impl Render for MailView {
             .on_action(
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
             )
+            .on_action(cx.listener(|_, _: &crate::ShowSettings, _, cx| {
+                cx.defer(crate::settings_view::show);
+            }))
             .child(self.toolbar(cx))
             .child(
                 div()
@@ -838,7 +948,7 @@ impl Render for MailView {
                     .bottom_0()
                     .flex()
                     .child(self.list(cx))
-                    .child(self.viewer()),
+                    .child(self.viewer(cx)),
             )
             .child(self.sidebar(cx))
             .when(self.destination_menu, |root| {

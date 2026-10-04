@@ -6507,11 +6507,21 @@ dependencies = [
 name = "rmac-mail"
 version = "0.9.0-beta.1"
 dependencies = [
+ "async-channel",
  "gpui",
+ "rmac-accounts",
+ "rmac-accounts-linux",
  "rmac-editor",
  "rmac-mail-mime",
+ "rmac-mail-runtime",
+ "rmac-mail-smtp",
  "rmac-mail-storage",
+ "rmac-portal",
+ "rmac-storage",
  "rmac-ui",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]

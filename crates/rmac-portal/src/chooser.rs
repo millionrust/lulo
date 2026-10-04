@@ -165,6 +165,51 @@ pub async fn choose_media_files() -> Result<Vec<PathBuf>, Error> {
     }
 }
 
+/// Ask the desktop portal for one or more local files to attach to a Mail
+/// message. Mail attaches any file type, so the filter is unrestricted; the
+/// returned files are read and sized by the caller before they enter a draft.
+pub async fn choose_mail_attachments() -> Result<Vec<PathBuf>, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::file_chooser::{FileFilter, OpenFileRequest};
+        use ashpd::{desktop::ResponseError, Error as PortalError};
+
+        let request = OpenFileRequest::default()
+            .title("Attach File")
+            .accept_label("Choose")
+            .modal(true)
+            .multiple(true)
+            .filter(FileFilter::new("All Files").glob("*"))
+            .send()
+            .await
+            .map_err(choose_failure)?;
+        let response = match request.response() {
+            Ok(response) => response,
+            Err(PortalError::Response(ResponseError::Cancelled)) => return Ok(Vec::new()),
+            Err(error) => return Err(choose_failure(error)),
+        };
+        response
+            .uris()
+            .iter()
+            .map(|uri| {
+                uri.to_file_path().map_err(|()| Error {
+                    operation: Operation::Choose,
+                    path: PathBuf::new(),
+                    detail: "the portal returned a non-local attachment".into(),
+                })
+            })
+            .collect()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the attachment chooser is available in the supported Linux session".into(),
+        })
+    }
+}
+
 /// Ask the desktop portal for one local PNG, JPEG, or WebP wallpaper file.
 ///
 /// The filter is only chooser guidance. Callers must still validate the file

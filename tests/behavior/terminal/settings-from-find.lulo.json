@@ -8,7 +8,8 @@
         "checked": {
           "Use bold fonts": true,
           "Use bright colours for bold text": true,
-          "Display ANSI colours": true
+          "Display ANSI colours": true,
+          "Show window size in title": true
         }
       }
     }

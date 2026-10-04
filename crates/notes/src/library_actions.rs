@@ -119,17 +119,12 @@ impl NotesView {
                 // fall back to it for an empty title) until the first
                 // keystroke supplies real text.
                 title: String::new(),
-                // Always empty, regardless of Notes ▸ Settings… ▸ New notes
-                // start with (NOT-SETTINGS-010): pre-seeding the body with
-                // that style's Markdown marker here broke the NOTES-16
-                // empty-body invariant every other note-creation path and
-                // several behaviour scenarios (convert-to-text,
-                // find-replace, return-in-title) depend on — in particular
-                // `continue_title_into_body` always inserts the title's
-                // typed tail at byte 0 once the body is non-empty, so the
-                // marker ended up stuck mid-word instead of styling a line.
-                // `new_note_body_style` is kept and shown in Settings for
-                // when a non-destructive way to apply it exists.
+                // Empty: the Mac creates a blank note with the caret ready.
+                // Notes ▸ Settings… ▸ New notes start with (NOT-SETTINGS-010,
+                // the Mac's Title/Heading/Body picker for the first line's
+                // style) is not offered at all — see NOTES-13's row for why
+                // neither a real nor a stored-only version of that control
+                // works out in Lulo's architecture.
                 body: String::new(),
                 tags: Vec::new(),
                 folder_id,

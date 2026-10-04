@@ -1,8 +1,20 @@
 //! Notes ▸ Settings: controls backed by the library's sort order and the
 //! editor's current text scale, plus the session-only preferences
 //! documented on `NotesView`'s own fields (`light_background_default`,
-//! `new_note_body_style`, `auto_sort_ticked_items`) and the locked-notes
-//! password (`view_model::LockDialog`).
+//! `auto_sort_ticked_items`) and the locked-notes password
+//! (`view_model::LockDialog`).
+//!
+//! The Mac's "New notes start with: Title/Heading/Body" is deliberately
+//! not offered at all (see NOTES-13 in docs/parity.md): Notes keeps the
+//! title in its own field rather than the Mac's single first line, so
+//! this would have to style the *body's* first line instead — and doing
+//! that for real means visibly inserting a Markdown heading marker
+//! (`# `/`## `) the moment a brand-new note's body first receives text,
+//! which is not what a person typing a plain note expects and broke
+//! several behaviour scenarios that create a note and check its exact
+//! body text (convert-to-text, find-replace, return-in-title). A
+//! stored-but-inert version of the control was tried and rejected too:
+//! it is a dead control, which the project's own no-stub rule forbids.
 
 use gpui::{
     div, px, App, AppContext as _, Context, Entity, FocusHandle, FontWeight,
@@ -12,7 +24,6 @@ use gpui::{
 use rmac_notes_store::SortOrder;
 use rmac_ui::{Button, Checkbox, Root, Slider, SliderEvent, SliderState, StyledExt as _};
 
-use crate::view_model::NewNoteBodyStyle;
 use crate::{NotesView, ShowSettings};
 
 const WIDTH: f32 = 480.0;
@@ -143,14 +154,6 @@ impl SettingsView {
         cx.notify();
     }
 
-    fn set_new_note_body_style(&mut self, style: NewNoteBodyStyle, cx: &mut Context<Self>) {
-        self.main.update(cx, |notes, cx| {
-            notes.new_note_body_style = style;
-            cx.notify();
-        });
-        cx.notify();
-    }
-
     fn begin_change_password(&mut self, cx: &mut Context<Self>) {
         self.main
             .update(cx, |notes, cx| notes.begin_change_password(cx));
@@ -192,7 +195,6 @@ impl Render for SettingsView {
         let group_by_date = notes.group_notes_by_date;
         let auto_sort_ticked_items = notes.auto_sort_ticked_items;
         let dark_backgrounds = !notes.light_background_default;
-        let new_note_body_style = notes.new_note_body_style;
         div()
             .track_focus(&self.focus)
             .key_context("Notes")
@@ -239,29 +241,6 @@ impl Render for SettingsView {
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.set_sort(order, cx);
                                         }))
-                                }),
-                            ),
-                        ),
-                    )
-                    .child(
-                        div().v_flex().gap_2().child("New notes start with:").child(
-                            div().flex().gap_2().children(
-                                [
-                                    NewNoteBodyStyle::Title,
-                                    NewNoteBodyStyle::Heading,
-                                    NewNoteBodyStyle::Body,
-                                ]
-                                .into_iter()
-                                .map(|style| {
-                                    Button::new(
-                                        format!("settings-new-note-{}", style.label()),
-                                        style.label(),
-                                    )
-                                    .small()
-                                    .selected(new_note_body_style == style)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.set_new_note_body_style(style, cx);
-                                    }))
                                 }),
                             ),
                         ),

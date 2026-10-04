@@ -944,6 +944,7 @@ impl WaylandWindowStatePtr {
     }
 
     pub fn frame(&self) {
+        super::frame_trace::record("frame_callback");
         let started = Instant::now();
         let mut state = self.state.borrow_mut();
         let since_previous = state
@@ -1521,6 +1522,7 @@ impl WaylandWindowStatePtr {
     }
 
     pub fn handle_input(&self, input: PlatformInput) {
+        super::frame_trace::record("input");
         if self.is_blocked() {
             return;
         }
@@ -1900,6 +1902,7 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn draw(&self, scene: &Scene) {
+        super::frame_trace::record("draw_start");
         let mut state = self.borrow_mut();
 
         if state.renderer.device_lost() {
@@ -1930,6 +1933,11 @@ impl PlatformWindow for WaylandWindow {
         } else {
             state.renderer.draw(scene)
         };
+        super::frame_trace::record(if state.renderer_presented {
+            "present"
+        } else {
+            "draw_skip"
+        });
         state.presented_once |= state.renderer_presented;
         state.drew_frame = true;
 

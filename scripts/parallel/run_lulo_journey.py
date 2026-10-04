@@ -50,6 +50,16 @@ RESIDENT = (
     ("rmac-quick-settings", [], "rmac/shortcut-quick-settings.sock"),
     ("rmac-launcher", [], "rmac/shortcut-launcher.sock"),
     ("rmac-app-switcher", ["--service"], "rmac/app-switcher.sock"),
+    # Every "key" step the Mission Control service owns (⌘M, Fill, Centre,
+    # Tile, Spaces, Mission Control, Show Desktop...) spawns the one-shot
+    # `mission-control <command>` niri binds, which only IPCs to this
+    # resident `--service` instance (`shell/bins/rmac-mission-control/src/
+    # ipc.rs`) and otherwise does nothing at all -- the real session starts
+    # it the same way (`crates/rmac-session/units/rmac-mission-control.
+    # service`). Without it, 08-shell's ⌘M silently never minimised
+    # anything, so step 7 never saw the next window focused and step 9's
+    # Dock click had nothing to restore.
+    ("rmac-mission-control", ["--service"], "rmac/mission-control.sock"),
 )
 # Lulo names for controls a journey names after the Mac. Control Centre's
 # Sound module title is the volume slider on Lulo; its detail (the output

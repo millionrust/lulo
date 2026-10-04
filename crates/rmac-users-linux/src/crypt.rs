@@ -15,7 +15,7 @@ const SALT_LEN: usize = 16;
 /// 5000 rounds.
 pub fn hash_password(password: &str) -> Result<String, crate::Error> {
     let mut random = Zeroizing::new([0_u8; SALT_LEN]);
-    getrandom::fill(random.as_mut()).map_err(|_| crate::Error::Failed)?;
+    getrandom::fill(&mut random[..]).map_err(|_| crate::Error::Failed)?;
     let salt: String = random
         .iter()
         .map(|byte| ITOA64[usize::from(byte & 0x3f)] as char)

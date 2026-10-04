@@ -396,7 +396,7 @@ mod tests {
         let result = deliver(&account, draft, Some(draft_location));
         assert!(matches!(result, DeliveryResult::Queued));
 
-        let mut storage = MailStorage::open(&home.root.join("lulo/mail"), account.id).unwrap();
+        let storage = MailStorage::open(&home.root.join("lulo/mail"), account.id).unwrap();
         assert_eq!(
             storage
                 .outbox_count(rmac_mail_storage::OutboxState::Queued)

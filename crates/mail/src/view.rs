@@ -91,7 +91,10 @@ impl MailView {
 
     /// Replaces the mailbox/message list with a freshly loaded one, keeping
     /// the current selection, mailbox and search — called after a sync
-    /// snapshot or new-mail event (`main.rs`'s background event loop).
+    /// snapshot or new-mail event (`main.rs`'s background event loop, which
+    /// only exists on Linux: GOA and the sync runtime are Linux session
+    /// services).
+    #[cfg(target_os = "linux")]
     pub fn refresh_live(
         &mut self,
         mailboxes: Vec<Mailbox>,
@@ -108,6 +111,7 @@ impl MailView {
     /// pair — `rmac_mail_runtime`'s `NewMail`/`OpenMessage` events only
     /// carry the account and the storage row id, not Mail's own composite
     /// id string.
+    #[cfg(target_os = "linux")]
     pub fn message_id_for_row(&self, account: uuid::Uuid, row_id: i64) -> Option<String> {
         self.state
             .messages
@@ -121,6 +125,7 @@ impl MailView {
 
     /// Selects `id` (for example from a clicked new-mail notification),
     /// opening its mailbox first if needed.
+    #[cfg(target_os = "linux")]
     pub fn open_message(&mut self, id: &str, cx: &mut Context<Self>) {
         if let Some(message) = self.state.messages.iter().find(|message| message.id == id) {
             self.state.mailbox = message.mailbox.clone();

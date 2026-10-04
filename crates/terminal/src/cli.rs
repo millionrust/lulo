@@ -14,6 +14,69 @@ pub(crate) struct ExecCommand {
     pub(crate) args: Vec<String>,
 }
 
+/// Shell ▸ New Command… with "Run command inside a shell" unchecked: split
+/// the typed line into a program and its arguments without invoking a
+/// shell, so no `$VAR` expansion, globbing or pipeline runs — only single
+/// and double quoting (no nested escapes) to let one argument contain
+/// spaces. An unterminated quote is treated as running to the end of the
+/// string, same as a forgiving single-line form field should behave.
+pub(crate) fn split_command_words(input: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut in_word = false;
+    let mut quote: Option<char> = None;
+    for character in input.chars() {
+        match quote {
+            Some(q) if character == q => quote = None,
+            Some(_) => current.push(character),
+            None if character == '\'' || character == '"' => {
+                quote = Some(character);
+                in_word = true;
+            }
+            None if character.is_whitespace() => {
+                if in_word {
+                    words.push(std::mem::take(&mut current));
+                    in_word = false;
+                }
+            }
+            None => {
+                current.push(character);
+                in_word = true;
+            }
+        }
+    }
+    if in_word {
+        words.push(current);
+    }
+    words
+}
+
+/// Shell ▸ New Command…: build the exec-style argv for the typed command,
+/// honouring "Run command inside a shell" the way the Mac's own checkbox
+/// does — checked wraps it in `/bin/sh -c` (pipes, globs, `$VAR`s all
+/// work); unchecked runs the first word directly with [`split_command_words`].
+pub(crate) fn command_to_exec(command: &str, run_in_shell: bool) -> Option<ExecCommand> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if run_in_shell {
+        return Some(ExecCommand {
+            program: "/bin/sh".to_string(),
+            args: vec!["-c".to_string(), trimmed.to_string()],
+        });
+    }
+    let mut words = split_command_words(trimmed);
+    if words.is_empty() {
+        return None;
+    }
+    let program = words.remove(0);
+    Some(ExecCommand {
+        program,
+        args: words,
+    })
+}
+
 /// Why `-e` was present but unusable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ExecFlagError {
@@ -114,5 +177,51 @@ mod tests {
             parse_exec_flag(&args(&["--profile=1", "-e"])),
             Err(ExecFlagError::MissingProgram)
         );
+    }
+
+    #[test]
+    fn splits_plain_words_on_whitespace() {
+        assert_eq!(
+            split_command_words("top -o cpu"),
+            vec!["top".to_string(), "-o".to_string(), "cpu".to_string()]
+        );
+        assert_eq!(split_command_words("   "), Vec::<String>::new());
+    }
+
+    #[test]
+    fn quoted_words_keep_their_inner_spaces() {
+        assert_eq!(
+            split_command_words(r#"echo "hello world" 'a b'"#),
+            vec![
+                "echo".to_string(),
+                "hello world".to_string(),
+                "a b".to_string()
+            ]
+        );
+        // An unterminated quote runs to the end rather than erroring.
+        assert_eq!(
+            split_command_words(r#"echo "unterminated"#),
+            vec!["echo".to_string(), "unterminated".to_string()]
+        );
+    }
+
+    #[test]
+    fn command_to_exec_wraps_in_a_shell_only_when_asked() {
+        assert_eq!(
+            command_to_exec("ls -la ~", false),
+            Some(ExecCommand {
+                program: "ls".into(),
+                args: vec!["-la".into(), "~".into()],
+            })
+        );
+        assert_eq!(
+            command_to_exec("ls -la | grep foo", true),
+            Some(ExecCommand {
+                program: "/bin/sh".into(),
+                args: vec!["-c".into(), "ls -la | grep foo".into()],
+            })
+        );
+        assert_eq!(command_to_exec("   ", false), None);
+        assert_eq!(command_to_exec("", true), None);
     }
 }

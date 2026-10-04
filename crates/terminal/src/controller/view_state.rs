@@ -88,6 +88,50 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// View ▸ Split Pane (⌘D): a second, independently scrolled viewport
+    /// onto the SAME session's grid — the Mac's split pane shows two scroll
+    /// positions of one session, not a second shell (there is only ever
+    /// one PTY per tab here). Starts at the live prompt, like the primary
+    /// pane, until the user scrolls either one.
+    pub(super) fn toggle_split_pane(&mut self, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        let ui = &mut self.tabs[self.active].ui;
+        ui.split_offset = if ui.split_offset.is_some() {
+            None
+        } else {
+            Some(0)
+        };
+        cx.notify();
+    }
+
+    /// View ▸ Close Split Pane (⇧⌘D).
+    pub(super) fn close_split_pane(&mut self, cx: &mut Context<Self>) {
+        if self.tabs[self.active].ui.split_offset.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// Scroll wheel over the split pane's own viewport: its offset is
+    /// independent of the primary pane's `Term::grid().display_offset()`.
+    pub(super) fn scroll_split_pane(&mut self, lines: i32, cx: &mut Context<Self>) {
+        let Ok(term) = self.tabs[self.active].term.lock() else {
+            return;
+        };
+        let history = term.grid().history_size() as i32;
+        drop(term);
+        let ui = &mut self.tabs[self.active].ui;
+        let Some(offset) = ui.split_offset else {
+            return;
+        };
+        let next = (offset + lines).clamp(0, history);
+        if next != offset {
+            ui.split_offset = Some(next);
+            cx.notify();
+        }
+    }
+
     pub(super) fn toggle_option_as_meta(&mut self, cx: &mut Context<Self>) {
         let next = !self.option_as_meta;
         match profiles::save_option_as_meta(next) {
@@ -233,6 +277,22 @@ impl TerminalView {
     pub(super) fn unmark_current_line(&mut self, cx: &mut Context<Self>) {
         if !self.modal_open() && self.tabs[self.active].unmark_current_line() {
             cx.notify();
+        }
+    }
+
+    /// Edit ▸ Clear to Previous Mark (⌘L) / Clear to Previous Bookmark
+    /// (⌥⌘L).
+    pub(super) fn clear_to_previous_mark(&mut self, bookmark_only: bool, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        match self.tabs[self.active].clear_to_previous_mark(bookmark_only) {
+            Ok(true) => cx.notify(),
+            Ok(false) => {}
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+            }
         }
     }
 

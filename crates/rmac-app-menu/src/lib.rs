@@ -800,6 +800,12 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                     item!("Solid Colors", "terminal::TabSolidColors", ""),
                 ]
             ),
+            item!("New Command…", "terminal::NewCommand", "⇧⌘N"),
+            item!(
+                "New Remote Connection…",
+                "terminal::NewRemoteConnection",
+                "⇧⌘K"
+            ),
             item!("Close Window", "terminal::CloseTab", "⌘W", separator),
             item!("Close All", "terminal::CloseAll", "⌥⌘W"),
             item!(
@@ -815,6 +821,8 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 "terminal::ExportSelectedTextAs",
                 "⇧⌘S"
             ),
+            item!("Show Inspector", "terminal::ShowInspector", "⌘I", separator),
+            item!("Edit Title", "terminal::EditTitle", "⇧⌘I"),
             item!("Reset", "terminal::ResetTerminal", "⌥⌘R", separator),
             item!("Hard Reset", "terminal::HardResetTerminal", "⌃⌥⌘R"),
             item!(
@@ -900,7 +908,18 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
-            item!("Clear to Start", "terminal::Clear", "⌘K", separator),
+            item!(
+                "Clear to Previous Mark",
+                "terminal::ClearToPreviousMark",
+                "⌘L",
+                separator
+            ),
+            item!(
+                "Clear to Previous Bookmark",
+                "terminal::ClearToPreviousBookmark",
+                "⌥⌘L"
+            ),
+            item!("Clear to Start", "terminal::Clear", "⌘K"),
             submenu!(
                 "Find",
                 "terminal::FindMenu",
@@ -937,6 +956,8 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 "⌘R",
                 separator
             ),
+            item!("Split Pane", "terminal::SplitPane", "⌘D", separator),
+            item!("Close Split Pane", "terminal::CloseSplitPane", "⇧⌘D"),
             item!("Default Font Size", "terminal::ZoomReset", "⌘0", separator),
             item!("Bigger", "terminal::ZoomIn", "⌘+"),
             item!("Smaller", "terminal::ZoomOut", "⌘-"),

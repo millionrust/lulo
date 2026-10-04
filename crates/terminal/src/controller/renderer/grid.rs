@@ -197,14 +197,29 @@ impl TerminalView {
     }
 
     pub(super) fn render_rows(&self, query: &str) -> Vec<gpui::AnyElement> {
+        self.render_rows_at(query, None, true)
+    }
+
+    /// `forced_offset` renders at an explicit display offset instead of the
+    /// shared `Term::grid().display_offset()` — View ▸ Split Pane's second
+    /// viewport reads the exact same grid at its own, independent scroll
+    /// position. `allow_cursor` is false for that secondary viewport: the
+    /// live cursor only ever belongs to the one primary pane.
+    pub(super) fn render_rows_at(
+        &self,
+        query: &str,
+        forced_offset: Option<i32>,
+        allow_cursor: bool,
+    ) -> Vec<gpui::AnyElement> {
         let Ok(term) = self.tabs[self.active].term.lock() else {
             return Vec::new();
         };
         let grid = term.grid();
-        let offset = grid.display_offset() as i32;
+        let offset = forced_offset.unwrap_or(grid.display_offset() as i32);
         let cursor = grid.cursor.point;
         // Full-screen programs hide the cursor (DECTCEM) while they draw.
-        let show_cursor = offset == 0
+        let show_cursor = allow_cursor
+            && offset == 0
             && self.tabs[self.active].accepts_input()
             && term.mode().contains(TermMode::SHOW_CURSOR);
         let cursor_line = cursor.line.0;
@@ -319,6 +334,47 @@ impl TerminalView {
             );
         }
         rows
+    }
+
+    /// View ▸ Split Pane (⌘D): a second, clipped viewport under the
+    /// primary one, showing this same session's grid at its own scroll
+    /// offset. Plain content only — no selection, IME or mouse-report
+    /// routing there, unlike the primary pane, which keeps all of that
+    /// unchanged.
+    pub(super) fn render_split_pane(
+        &self,
+        query: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement> {
+        let offset = self.tabs[self.active].ui.split_offset?;
+        let rows = self.render_rows_at(query, Some(offset), false);
+        Some(
+            div()
+                .id("terminal-split-pane")
+                .role(Role::Group)
+                .aria_label("Split Pane")
+                .flex_1()
+                .min_h(px(0.0))
+                .overflow_hidden()
+                .border_t_1()
+                .border_color(rmac_ui::mac::separator())
+                .bg(hsla(active().bg))
+                .font_family(rmac_ui::MONO_FONT)
+                .text_size(px(self.font_size))
+                .pl(px(PAD_X))
+                .pr(px(PAD_X))
+                .pt(px(PAD_TOP))
+                .pb(px(PAD_BOTTOM))
+                .v_flex()
+                .children(rows)
+                .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
+                    let delta_y = match event.delta {
+                        ScrollDelta::Lines(point) => point.y,
+                        ScrollDelta::Pixels(point) => f32::from(point.y) / this.line_h,
+                    };
+                    this.scroll_split_pane(delta_y.trunc() as i32, cx);
+                })),
+        )
     }
 }
 

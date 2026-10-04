@@ -272,6 +272,20 @@
           ]
         },
         {
+          "label": "New Command…",
+          "action": "terminal::NewCommand",
+          "shortcut": "⇧⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "New Remote Connection…",
+          "action": "terminal::NewRemoteConnection",
+          "shortcut": "⇧⌘K",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Close Window",
           "action": "terminal::CloseTab",
           "shortcut": "⌘W",
@@ -310,6 +324,20 @@
           "label": "Export Selected Text As…",
           "action": "terminal::ExportSelectedTextAs",
           "shortcut": "⇧⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Inspector",
+          "action": "terminal::ShowInspector",
+          "shortcut": "⌘I",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Edit Title",
+          "action": "terminal::EditTitle",
+          "shortcut": "⇧⌘I",
           "separator_before": false,
           "children": []
         },
@@ -532,10 +560,24 @@
           ]
         },
         {
+          "label": "Clear to Previous Mark",
+          "action": "terminal::ClearToPreviousMark",
+          "shortcut": "⌘L",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Clear to Previous Bookmark",
+          "action": "terminal::ClearToPreviousBookmark",
+          "shortcut": "⌥⌘L",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Clear to Start",
           "action": "terminal::Clear",
           "shortcut": "⌘K",
-          "separator_before": true,
+          "separator_before": false,
           "children": []
         },
         {
@@ -626,6 +668,20 @@
           "action": "terminal::AllowMouseReporting",
           "shortcut": "⌘R",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Split Pane",
+          "action": "terminal::SplitPane",
+          "shortcut": "⌘D",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Close Split Pane",
+          "action": "terminal::CloseSplitPane",
+          "shortcut": "⇧⌘D",
+          "separator_before": false,
           "children": []
         },
         {

@@ -17,6 +17,16 @@
   fresh Mac Terminal Settings measurement was taken for this pass — the Mac
   reference text in docs/parity.md's TERM-03/TERM-17 rows drove the wording
   and option set, not new on-screen measurements.
+
+  TRM-SETTINGS-* pass (docs/parity.md TERM-03): added "Colour & Effects"
+  (the default profile's Text/Bold Text/Selection/Cursor swatches plus its
+  16-colour ANSI grid, view-only, real profile data, not placeholders),
+  a "Show window size in title" toggle under Window, and an "Ask before
+  closing" choice group under General. Controls needing background
+  transparency/blur, custom profile colour editing, a second text encoding
+  or per-cell blinking text are intentionally left out this pass; see
+  tests/inventory/allowlist.json's Terminal entries for why each is out of
+  scope right now rather than faked.
 -->
 <link rel="stylesheet" href="tokens.css">
 <style>
@@ -109,6 +119,17 @@
   }
   .size-row { display: flex; align-items: center; gap: 6px; margin: 0 12px 12px; font-size: 12px; color: var(--label); }
   .size-row .x { color: var(--label-3); }
+
+  .colour-effects { margin: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .colour-wells { display: flex; gap: 16px; }
+  .colour-well { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .colour-well .swatch-lg { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--separator); }
+  .colour-well .well-label { font-size: 9px; color: var(--label-3); }
+  .ansi-heading { font-size: 10px; font-weight: 600; color: var(--label-2); padding-top: 4px; }
+  .ansi-grid { display: flex; flex-direction: column; gap: 4px; }
+  .ansi-row { display: flex; align-items: center; gap: 8px; }
+  .ansi-row .row-label { width: 40px; font-size: 10px; color: var(--label-3); }
+  .ansi-row .swatch-sm { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--separator); }
 </style>
 </head>
 <body>
@@ -146,6 +167,33 @@
       <span>On</span>
     </div>
 
+    <div class="section-label">Colour &amp; Effects</div>
+    <div class="colour-effects">
+      <div class="colour-wells">
+        <div class="colour-well"><span class="swatch-lg" style="background:#d4d4d4"></span><span class="well-label">Text</span></div>
+        <div class="colour-well"><span class="swatch-lg" style="background:#e3e3e3"></span><span class="well-label">Bold Text</span></div>
+        <div class="colour-well"><span class="swatch-lg" style="background:#2f5d8c"></span><span class="well-label">Selection</span></div>
+        <div class="colour-well"><span class="swatch-lg" style="background:#d4d4d4"></span><span class="well-label">Cursor</span></div>
+      </div>
+      <div class="ansi-heading">ANSI Colours</div>
+      <div class="ansi-grid">
+        <div class="ansi-row">
+          <span class="row-label">Normal</span>
+          <span class="swatch-sm" style="background:#282c34"></span><span class="swatch-sm" style="background:#e06c75"></span>
+          <span class="swatch-sm" style="background:#98c379"></span><span class="swatch-sm" style="background:#e5c07b"></span>
+          <span class="swatch-sm" style="background:#61afef"></span><span class="swatch-sm" style="background:#c678dd"></span>
+          <span class="swatch-sm" style="background:#56b6c2"></span><span class="swatch-sm" style="background:#abb2bf"></span>
+        </div>
+        <div class="ansi-row">
+          <span class="row-label">Bright</span>
+          <span class="swatch-sm" style="background:#5c6370"></span><span class="swatch-sm" style="background:#e06c75"></span>
+          <span class="swatch-sm" style="background:#98c379"></span><span class="swatch-sm" style="background:#e5c07b"></span>
+          <span class="swatch-sm" style="background:#61afef"></span><span class="swatch-sm" style="background:#c678dd"></span>
+          <span class="swatch-sm" style="background:#56b6c2"></span><span class="swatch-sm" style="background:#ffffff"></span>
+        </div>
+      </div>
+    </div>
+
     <div class="section-label">Window</div>
     <div class="size-row">
       <span>Size</span>
@@ -155,6 +203,10 @@
       <div class="size-field">24</div>
       <div class="mini-btn">+</div>
       <span style="color:var(--label-3)">cols × rows</span>
+    </div>
+    <div class="toggle-row">
+      <span>Show window size in title</span>
+      <span>On</span>
     </div>
 
     <div class="section-label">Shell</div>
@@ -167,6 +219,12 @@
     <div class="list">
       <div class="row"><span class="name">New windows open with: Home directory</span><span class="check">✓</span></div>
       <div class="row"><span class="name">New windows open with: Same working directory</span></div>
+    </div>
+    <div class="section-label" style="padding-top:4px">Ask before closing:</div>
+    <div class="list">
+      <div class="row"><span class="name">Never</span></div>
+      <div class="row"><span class="name">Active processes</span><span class="check">✓</span></div>
+      <div class="row"><span class="name">Always</span></div>
     </div>
 
     <div class="section-label">Keyboard</div>

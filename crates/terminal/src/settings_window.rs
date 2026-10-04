@@ -23,7 +23,9 @@ use rmac_ui::{Checkbox, Root, StyledExt as _};
 
 use crate::controller::FONT_SIZE;
 use crate::profiles::{self, PROFILES};
-use crate::settings::{self, CursorStyle, NewWindowWorkingDirectory, ShellExitBehavior};
+use crate::settings::{
+    self, AskBeforeClosing, CursorStyle, NewWindowWorkingDirectory, ShellExitBehavior,
+};
 
 const WIDTH: f32 = 320.0;
 const HEIGHT: f32 = 620.0;
@@ -63,8 +65,8 @@ pub(crate) fn show(cx: &mut App) {
 struct SettingsView {
     focus: FocusHandle,
     font_size: f32,
-    /// The six non-profile, non-font values this window edits, kept in one
-    /// place so a single failed save shows one message instead of six.
+    /// The non-profile, non-font values this window edits, kept in one
+    /// place so a single failed save shows one message instead of several.
     settings: settings::Settings,
     save_error: Option<SharedString>,
 }
@@ -150,6 +152,11 @@ impl SettingsView {
         self.settings.new_window_directory = directory;
         self.save_settings(cx);
     }
+
+    fn set_ask_before_closing(&mut self, value: AskBeforeClosing, cx: &mut Context<Self>) {
+        self.settings.ask_before_closing = value;
+        self.save_settings(cx);
+    }
 }
 
 fn section_label(text: &'static str) -> impl IntoElement {
@@ -231,6 +238,97 @@ fn choice_row(
             row.child(div().text_color(rmac_ui::mac::accent()).child("✓"))
         })
         .on_click(on_click)
+}
+
+/// A small named colour swatch, used by `render_colour_effects` for the
+/// Text/Bold Text/Selection/Cursor wells and the 16-colour ANSI grid — all
+/// real values read from the active default profile, not placeholders.
+fn colour_label(label: &'static str, colour: u32) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_1()
+        .child(
+            div()
+                .w(px(18.0))
+                .h(px(18.0))
+                .rounded(px(rmac_ui::mac::radius_menu_item()))
+                .border_1()
+                .border_color(rmac_ui::mac::separator())
+                .bg(gpui::rgb(colour)),
+        )
+        .child(
+            div()
+                .text_size(px(9.0))
+                .text_color(rmac_ui::mac::text_tertiary())
+                .child(label),
+        )
+}
+
+fn ansi_row(label: &'static str, colours: &[u32]) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .w(px(40.0))
+                .text_size(px(10.0))
+                .text_color(rmac_ui::mac::text_tertiary())
+                .child(label),
+        )
+        .children(colours.iter().map(|colour| {
+            div()
+                .w(px(14.0))
+                .h(px(14.0))
+                .rounded(px(rmac_ui::mac::radius_menu_item()))
+                .border_1()
+                .border_color(rmac_ui::mac::separator())
+                .bg(gpui::rgb(*colour))
+        }))
+}
+
+/// Terminal ▸ Settings… ▸ Text's "Colour & Effects" group: the default
+/// profile's Text/Bold Text/Selection/Cursor colour wells and its 16-colour
+/// ANSI grid (Normal/Bright rows). View-only here — each profile already
+/// ships its full palette (`profiles.rs`); editing a single swatch without
+/// turning it into a user-defined profile is future work, not stubbed out.
+fn render_colour_effects(profile: &profiles::Profile, bright_bold_text: bool) -> impl IntoElement {
+    let bold_text_colour = if bright_bold_text {
+        profiles::brighten(profile.fg)
+    } else {
+        profile.fg
+    };
+    div()
+        .px_3()
+        .pb_3()
+        .v_flex()
+        .gap_2()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(colour_label("Text", profile.fg))
+                .child(colour_label("Bold Text", bold_text_colour))
+                .child(colour_label("Selection", profile.selection))
+                .child(colour_label("Cursor", profile.cursor)),
+        )
+        .child(
+            div()
+                .pt_1()
+                .text_size(px(10.0))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rmac_ui::mac::text_secondary())
+                .child("ANSI Colours"),
+        )
+        .child(
+            div()
+                .v_flex()
+                .gap_1()
+                .child(ansi_row("Normal", &profile.ansi[0..8]))
+                .child(ansi_row("Bright", &profile.ansi[8..16])),
+        )
 }
 
 impl Render for SettingsView {
@@ -377,6 +475,11 @@ impl Render for SettingsView {
                             })
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_cursor_blink(cx))),
                     )
+                    .child(section_label("Colour & Effects"))
+                    .child(render_colour_effects(
+                        profiles::resolved(default_profile),
+                        self.settings.bright_bold_text,
+                    ))
                     .child(section_label("Window"))
                     .child(
                         div()
@@ -433,6 +536,13 @@ impl Render for SettingsView {
                                     .child("cols × rows"),
                             ),
                     )
+                    .child(text_checkbox(
+                        "settings-title-window-size",
+                        "Show window size in title",
+                        self.settings.title_shows_window_size,
+                        cx,
+                        |settings, value| settings.title_shows_window_size = value,
+                    ))
                     .child(section_label("Shell"))
                     .child(
                         div().px_3().v_flex().child(
@@ -484,6 +594,37 @@ impl Render for SettingsView {
                                         },
                                     ),
                                 ),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .px_3()
+                            .pt_2()
+                            .text_size(px(11.0))
+                            .text_color(rmac_ui::mac::text_secondary())
+                            .child("Ask before closing:"),
+                    )
+                    .child(
+                        div().px_3().pb_3().v_flex().child(
+                            div()
+                                .rounded(px(rmac_ui::mac::radius_control()))
+                                .border_1()
+                                .border_color(rmac_ui::mac::separator())
+                                .overflow_hidden()
+                                .children(AskBeforeClosing::ALL.into_iter().enumerate().map(
+                                    |(index, value)| {
+                                        choice_row(
+                                            ("settings-ask-before-closing", index),
+                                            value.label(),
+                                            value == self.settings.ask_before_closing,
+                                            index == 0,
+                                            None,
+                                            cx.listener(move |this, _, _, cx| {
+                                                this.set_ask_before_closing(value, cx);
+                                            }),
+                                        )
+                                    },
+                                )),
                         ),
                     )
                     .child(section_label("Keyboard"))

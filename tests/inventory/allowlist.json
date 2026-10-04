@@ -915,6 +915,90 @@
       "label": "Touch ID & Password",
       "match": "exact",
       "reason": "Lulo has no Touch ID. The same password row lives in the Login Password pane, the name macOS 26 gives this pane on a Mac without Touch ID (SET-05)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Allow blinking text",
+      "match": "exact",
+      "reason": "alacritty_terminal 0.25.1's Term::terminal_attribute (term/mod.rs) silently discards vte::ansi::Attr::BlinkSlow/BlinkFast/CancelBlink into its catch-all arm, so Lulo's terminal grid never learns a cell is blinking. Tracking it correctly needs a wrapping Handler that wraps every one of Term's ~50 overridden methods (to avoid silently reverting any of them to the trait's no-op default) plus a focus-gated blink timer gated on at least one blinking cell being visible — a larger, dedicated change than fits this pass, not a toggle that would do nothing (TRM-SETTINGS-004)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Antialias text",
+      "match": "exact",
+      "reason": "The pinned gpui (=0.2.2) exposes no public per-window or per-text-run API to toggle text antialiasing on the Linux backend; the only antialiasing switches found (`set_should_antialias`/`set_allows_antialiasing`) are macOS-only CoreText calls. Changing it would mean patching the vendored Linux backend (ADR 0013), out of scope here (TRM-SETTINGS-005)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Background",
+      "match": "exact",
+      "reason": "Mac Terminal's Background control is a colour well plus an opacity slider that lets the desktop or windows behind Terminal show through. Lulo's profile backgrounds are opaque; real alpha-blended window transparency needs Wayland compositor/window-surface support that hasn't been verified on niri (the same dependency the brief names for background blur), so this is left out rather than faked with an in-window-only fade that wouldn't actually be transparent (TRM-SETTINGS-006)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Change…",
+      "match": "exact",
+      "reason": "This button opens the Mac font-family picker; Terminal ▸ Settings… ▸ Font already exposes the font *size* stepper (⌘+/⌘−/⌘0 and the Settings window), but choosing a different monospace font family is a separate, unscoped feature (TRM-SETTINGS-009)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Dynamic foreground colours",
+      "match": "exact",
+      "reason": "This exists to keep text legible over a custom background image or a translucent window showing variable content behind it. Lulo has neither background images nor real window transparency (see the Background/Image: rows above), so there is nothing for this toggle to actually change yet — adding it now would be a no-op fake control (TRM-SETTINGS-012)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Encodings",
+      "match": "exact",
+      "reason": "Lulo's terminal always decodes PTY output as UTF-8. The hot per-byte segmentation path in emulator.rs (advance_filtered_output) assumes UTF-8 scalar boundaries to safely split reads across the vte parser; adding a second legacy 8-bit encoding (e.g. ISO-8859-1) without risking that default path needs touching the session-reader thread, the output filter and the emulator together — a larger, dedicated change than fits this pass (TRM-SETTINGS-013)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Help",
+      "match": "exact",
+      "reason": "Opens Apple's Terminal help book via Help Viewer; Linux has no equivalent help-book viewer or content to show (TRM-SETTINGS-014)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Image:",
+      "match": "exact",
+      "reason": "Lets a profile use a custom background image instead of a solid colour. Not implemented — see the Background row above for the same transparency/compositing dependency, plus a file-picker and image-compositing feature of its own (TRM-SETTINGS-015)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Add",
+      "match": "exact",
+      "reason": "Profile-list CRUD (duplicate/create a new, user-named profile). Lulo ships the Mac's 12 fixed named profiles (TERM-12) rather than user-created ones; adding create/duplicate without a colour-well editor to go with it (see the Background/ANSI-colour rows) wouldn't let a user do anything useful with the new profile (TRM-SETTINGS-002)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Remove",
+      "match": "exact",
+      "reason": "Profile-list CRUD for user-created profiles; see \"Add\" above — Lulo has no user-created profiles to remove (TRM-SETTINGS-017)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Default",
+      "match": "exact",
+      "reason": "Sets the selected row as the application's default profile. Lulo's Settings window already does exactly this the moment a profile row is clicked (`set_default_profile`), so a separate \"Default\" button would duplicate existing behaviour rather than add a distinct action the exported-control scanner should count twice (TRM-SETTINGS-011)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Advanced",
+      "match": "exact",
+      "reason": "One of the Mac profile editor's six inner panes (Text/Window/Tab/Shell/Keyboard/Advanced). Lulo's Settings window already has Text/Window/Shell/Keyboard/General sections; tests/inventory/mac/Terminal.json's accessibility capture only ever expanded the Text pane's own controls, so there is no recorded Mac truth for what Advanced actually contains to build against (TRM-SETTINGS-003)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Tab",
+      "match": "exact",
+      "reason": "The Mac profile editor's \"Tab\" pane (tab-bar title/appearance options), not captured in tests/inventory/mac/Terminal.json beyond its own name — see \"Advanced\" above (TRM-SETTINGS-019)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Window Groups",
+      "match": "exact",
+      "reason": "Saved/restorable sets of Terminal windows (Window ▸ Save Windows as Group…). Tracked as unimplemented in docs/parity.md TERM-17/TERM-15; this is the Settings window's tab for managing those same saved groups, so it has the same dependency (TRM-SETTINGS-020)."
     }
   ]
 }

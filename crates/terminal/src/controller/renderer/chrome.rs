@@ -40,10 +40,23 @@ fn folder_proxy_icon() -> impl IntoElement {
         .child(div().w_full().h(px(12.0)).rounded(px(2.0)).bg(blue))
 }
 
+/// Terminal ▸ Settings… ▸ Window ▸ "Show window size in title": appends
+/// "— cols×rows" to the automatic title unless the setting is off, in
+/// which case the title is left exactly as the shell/OSC/job title gave it.
+fn window_title_text(title: &str, show_window_size: bool, cols: usize, rows: usize) -> String {
+    if show_window_size {
+        format!("{title} — {cols}×{rows}")
+    } else {
+        title.to_string()
+    }
+}
+
 impl TerminalView {
-    /// The title-bar row: proxy icon, then the tab title and grid size the
-    /// way Terminal titles a window ("jake — -zsh — 80×24").
+    /// The title-bar row: proxy icon, then the tab title and, unless
+    /// Terminal ▸ Settings… ▸ Window ▸ "Show window size in title" is off,
+    /// the grid size the way Terminal titles a window ("jake — -zsh — 80×24").
     pub(super) fn render_title(&self, title: String, max_width: f32) -> impl IntoElement {
+        let title = window_title_text(&title, self.title_shows_window_size, self.cols, self.rows);
         div()
             .size_full()
             .flex()
@@ -58,7 +71,7 @@ impl TerminalView {
                     .text_size(rmac_ui::text_px(13.0))
                     .font_weight(FontWeight::BOLD)
                     .text_color(rmac_ui::mac::text_secondary())
-                    .child(format!("{title} — {}×{}", self.cols, self.rows)),
+                    .child(title),
             )
     }
 
@@ -247,5 +260,23 @@ impl TerminalView {
                     })
                     .on_click(cx.listener(move |this, _, _, cx| this.set_profile(index, cx)))
             }))
+    }
+}
+
+#[cfg(test)]
+mod window_title_tests {
+    use super::window_title_text;
+
+    #[test]
+    fn appends_window_size_unless_the_setting_is_off() {
+        assert_eq!(
+            window_title_text("jake — -zsh", true, 80, 24),
+            "jake — -zsh — 80×24"
+        );
+        assert_eq!(
+            window_title_text("jake — -zsh", false, 80, 24),
+            "jake — -zsh"
+        );
+        assert_eq!(window_title_text("vim", true, 120, 40), "vim — 120×40");
     }
 }

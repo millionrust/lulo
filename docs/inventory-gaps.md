@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_255 gaps across 8 apps; 181 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_235 gaps across 8 apps; 195 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Finder
 
@@ -216,26 +216,6 @@ _255 gaps across 8 apps; 181 Mac-only items were allowlisted (see `tests/invento
 | TRM-MENU-034 | wrong/missing shortcut | Fill | Window ▸ Fill | ⌃F | ⌃⇧⌘F | shortcut differs |
 | TRM-MENU-041 | wrong/missing shortcut | Show Next Tab | Window ▸ Show Next Tab |  | ⇧⌘] | shortcut differs |
 | TRM-MENU-040 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⇧⌘[ | shortcut differs |
-| TRM-SETTINGS-001 | missing settings control | ANSI Colours | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-002 | missing settings control | Add | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-003 | missing settings control | Advanced | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-004 | missing settings control | Allow blinking text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-005 | missing settings control | Antialias text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-006 | missing settings control | Background | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-007 | missing settings control | Bold Text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-008 | missing settings control | Bright | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-009 | missing settings control | Change… | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-010 | missing settings control | Colour & Effects | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-011 | missing settings control | Default | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-012 | missing settings control | Dynamic foreground colours | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-013 | missing settings control | Encodings | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-014 | missing settings control | Help | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-015 | missing settings control | Image: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-016 | missing settings control | Normal | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-017 | missing settings control | Remove | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-018 | missing settings control | Selection | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-019 | missing settings control | Tab | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-020 | missing settings control | Window Groups | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 
 ## Text Editor
 

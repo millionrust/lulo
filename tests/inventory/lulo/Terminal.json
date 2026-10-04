@@ -1057,6 +1057,10 @@
       },
       {
         "kind": "section",
+        "label": "Colour & Effects"
+      },
+      {
+        "kind": "section",
         "label": "Window"
       },
       {
@@ -1093,11 +1097,43 @@
       },
       {
         "kind": "control",
+        "label": "Show window size in title"
+      },
+      {
+        "kind": "control",
         "label": "Blink cursor"
       },
       {
         "kind": "control",
         "label": "Use Option as Meta Key"
+      },
+      {
+        "kind": "control",
+        "label": "ANSI Colours"
+      },
+      {
+        "kind": "control",
+        "label": "Text"
+      },
+      {
+        "kind": "control",
+        "label": "Bold Text"
+      },
+      {
+        "kind": "control",
+        "label": "Selection"
+      },
+      {
+        "kind": "control",
+        "label": "Cursor"
+      },
+      {
+        "kind": "control",
+        "label": "Normal"
+      },
+      {
+        "kind": "control",
+        "label": "Bright"
       },
       {
         "kind": "tab",
@@ -1126,6 +1162,18 @@
       {
         "kind": "tab",
         "label": "Same working directory"
+      },
+      {
+        "kind": "tab",
+        "label": "Never"
+      },
+      {
+        "kind": "tab",
+        "label": "Active processes"
+      },
+      {
+        "kind": "tab",
+        "label": "Always"
       },
       {
         "kind": "profile",

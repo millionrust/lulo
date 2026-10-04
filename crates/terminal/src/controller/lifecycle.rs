@@ -301,6 +301,8 @@ impl TerminalView {
             display_ansi_colours: settings.display_ansi_colours,
             blink_visible: true,
             blink_generation: 0,
+            blink_last_input: std::time::Instant::now(),
+            blink_parked: false,
             persistence_error,
             operation_error: None,
             pending_close: None,
@@ -320,8 +322,14 @@ impl TerminalView {
     /// becomes false, so no timer ever ticks for an unfocused window or one
     /// with blink off; `blink_generation` stops an old loop from fighting a
     /// new one if focus is regained before the old one notices it lost it.
+    /// Like the shared text field's insertion point, the cursor also parks
+    /// visibly `CURSOR_PARK_AFTER` after the last keystroke: each blink
+    /// repaints the whole window, which cost about 15% of a core on a
+    /// software-rendered laptop for as long as Terminal stayed focused.
     pub(super) fn start_cursor_blink(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.blink_visible = true;
+        self.blink_parked = false;
+        self.blink_last_input = std::time::Instant::now();
         if !self.cursor_blink_enabled {
             return;
         }
@@ -339,6 +347,14 @@ impl TerminalView {
                     {
                         return false;
                     }
+                    if cursor_blink_should_park(this.blink_last_input.elapsed()) {
+                        this.blink_parked = true;
+                        if !this.blink_visible {
+                            this.blink_visible = true;
+                            cx.notify();
+                        }
+                        return false;
+                    }
                     this.blink_visible = !this.blink_visible;
                     cx.notify();
                     true
@@ -349,6 +365,14 @@ impl TerminalView {
             }
         })
         .detach();
+    }
+
+    /// A keystroke shows the cursor and restarts a parked blink loop.
+    pub(super) fn wake_cursor_blink(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.blink_last_input = std::time::Instant::now();
+        if self.blink_parked && self.window_active {
+            self.start_cursor_blink(window, cx);
+        }
     }
 
     pub(super) fn set_profile(&mut self, i: usize, cx: &mut Context<Self>) {
@@ -366,4 +390,12 @@ impl TerminalView {
     pub(super) fn modal_open(&self) -> bool {
         self.pending_close.is_some() || self.pending_paste.is_some()
     }
+}
+
+/// How long the cursor keeps blinking after the last keystroke, matching the
+/// shared text field's insertion point (`blink_cursor.rs`).
+pub(super) const CURSOR_PARK_AFTER: std::time::Duration = std::time::Duration::from_secs(2);
+
+pub(super) fn cursor_blink_should_park(since_last_input: std::time::Duration) -> bool {
+    since_last_input >= CURSOR_PARK_AFTER
 }

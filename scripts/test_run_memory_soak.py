@@ -139,3 +139,35 @@ class DescendantSetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IdleCpuGateTests(unittest.TestCase):
+    @staticmethod
+    def record(app, elapsed, cpu, pid=10, alive=True):
+        return {"app": app, "elapsed_seconds": elapsed, "cpu_seconds": cpu, "pid": pid, "alive": alive}
+
+    def test_measures_from_the_first_settled_sample(self):
+        samples = [
+            self.record("system-settings", 0.0, 8.0),
+            self.record("system-settings", 60.0, 30.0),
+            self.record("system-settings", 240.0, 96.0),
+            self.record("calculator", 0.0, 0.5),
+            self.record("calculator", 60.0, 0.6),
+            self.record("calculator", 240.0, 0.6),
+        ]
+        percentages = run_memory_soak.idle_cpu_percentages(samples, 60.0)
+        self.assertEqual(percentages, {"system-settings": 36.67, "calculator": 0.0})
+        self.assertEqual(
+            run_memory_soak.idle_cpu_failures(percentages, 3.0),
+            ["system-settings used 36.67% of one core while idle (limit 3%)"],
+        )
+
+    def test_skips_dead_restarted_and_single_sample_apps(self):
+        samples = [
+            self.record("terminal", 60.0, 1.0),
+            self.record("terminal", 240.0, 1.0, alive=False),
+            self.record("notes", 60.0, 1.0, pid=1),
+            self.record("notes", 240.0, 2.0, pid=2),
+            self.record("clock", 240.0, 1.0),
+        ]
+        self.assertEqual(run_memory_soak.idle_cpu_percentages(samples, 60.0), {})

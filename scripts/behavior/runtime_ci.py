@@ -30,7 +30,7 @@ REQUIRED = REQUIRED_APPS | {"rmac-file-chooser", "rmac-shortcut-dispatch"}
 JOURNEYS = {f"{number:02d}-{name}" for number, name in enumerate(
     ("files", "text-editor", "settings", "calculator", "preview", "notes",
      "terminal", "shell", "menu-bar", "spotlight"), 1)}
-CHECKS = {"menu-dismiss", "power-dialogs", "window-move"} | JOURNEYS
+CHECKS = {"menu-dismiss", "power-dialogs", "window-move", "idle-cpu"} | JOURNEYS
 SHARDS = 8
 
 

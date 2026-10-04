@@ -39,6 +39,13 @@ HOME -- never the owner's real files.
 
 Analyse the resulting samples.jsonl with scripts/linux/analyze-soak.py.
 
+With --max-idle-cpu-percent the run doubles as an idle-CPU gate: after the
+last sample it fails (exit 1) if any tracked process averaged more than that
+share of one core after --idle-settle-seconds. Runtime CI runs a four-minute
+soak this way with no Focus, Notification Center or PipeWire service on the
+private bus, the environment in which System Settings repainted forever and
+a focused Terminal blinked its cursor at about 15% of a core.
+
 This script never invokes cargo, never touches /tmp/lulo-cargo.lock, and
 nices itself (default 10) so it does not compete with a concurrent build.
 """
@@ -166,6 +173,35 @@ def cpu_seconds_from_ticks(ticks: int, hertz: int) -> float:
     if hertz <= 0:
         raise ValueError("hertz must be greater than zero")
     return ticks / hertz
+
+
+def idle_cpu_percentages(samples: list[dict[str, Any]], settle_seconds: float) -> dict[str, float]:
+    """Each app's average CPU, in percent of one core, from its first sample
+    at or after `settle_seconds` to its last live sample. Apps with fewer than
+    two such samples (or that died) are left out."""
+
+    window: dict[str, list[dict[str, Any]]] = {}
+    for record in samples:
+        if not record.get("alive") or "cpu_seconds" not in record:
+            continue
+        if float(record.get("elapsed_seconds", 0.0)) < settle_seconds:
+            continue
+        window.setdefault(record["app"], []).append(record)
+    result: dict[str, float] = {}
+    for app, records in window.items():
+        records.sort(key=lambda record: float(record["elapsed_seconds"]))
+        first, last = records[0], records[-1]
+        span = float(last["elapsed_seconds"]) - float(first["elapsed_seconds"])
+        if len(records) < 2 or span <= 0 or first.get("pid") != last.get("pid"):
+            continue
+        used = float(last["cpu_seconds"]) - float(first["cpu_seconds"])
+        result[app] = round(max(used, 0.0) / span * 100.0, 2)
+    return result
+
+
+def idle_cpu_failures(percentages: dict[str, float], limit_percent: float) -> list[str]:
+    return [f"{app} used {percent:.2f}% of one core while idle (limit {limit_percent:g}%)"
+            for app, percent in sorted(percentages.items()) if percent > limit_percent]
 
 
 # --------------------------------------------------------------------------
@@ -527,17 +563,34 @@ class Soak:
             sample_count += 1
             self.log(f"final sample {sample_count}: {alive} alive, {dead} dead")
 
-        (self.output_dir / "done.json").write_text(json.dumps({
+        done: dict[str, Any] = {
             "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "elapsed_seconds": round(time.monotonic() - started, 1),
             "requested_duration_hours": self.args.duration_hours,
             "sample_count": sample_count,
             "activity_rounds": self.activity_round,
             "stopped_early": self.stop_requested,
-        }, indent=2) + "\n")
+        }
+        failures: list[str] = []
+        if self.args.max_idle_cpu_percent is not None:
+            samples = [json.loads(line) for line in samples_path.read_text().splitlines() if line.strip()]
+            percentages = idle_cpu_percentages(samples, self.args.idle_settle_seconds)
+            failures = idle_cpu_failures(percentages, self.args.max_idle_cpu_percent)
+            missing = sorted(set(self.tracked) - set(percentages))
+            failures += [f"{name} has no idle CPU window (it died or was sampled once)" for name in missing]
+            done["idle_cpu_percent"] = percentages
+            done["idle_cpu_failures"] = failures
+            for name, percent in sorted(percentages.items()):
+                self.log(f"idle CPU {name}: {percent:.2f}%")
+            for failure in failures:
+                self.log(f"IDLE CPU FAIL: {failure}")
+            if not failures:
+                self.log(f"IDLE CPU PASS: every process at or below {self.args.max_idle_cpu_percent:g}%")
+        (self.output_dir / "done.json").write_text(json.dumps(done, indent=2) + "\n")
         events_path.write_text("soak finished; per-process stdout/stderr logs copied to process-logs/\n")
         self._archive_process_logs()
-        return self.finish()
+        status = self.finish()
+        return 1 if failures else status
 
     def _archive_process_logs(self) -> None:
         """Copy each process's log out of the temp work dir before it is
@@ -636,6 +689,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--activity-interval-seconds", type=float, default=1800.0,
                          help="0 disables the periodic Files/Text Editor activity")
     parser.add_argument("--nice", type=int, default=10)
+    parser.add_argument("--max-idle-cpu-percent", type=float, default=None,
+                         help="fail if any tracked process averages more than this percent of one core "
+                              "between --idle-settle-seconds and the final sample (runtime CI idle gate)")
+    parser.add_argument("--idle-settle-seconds", type=float, default=60.0,
+                         help="ignore samples before this many seconds when computing idle CPU")
     parser.add_argument("--keep", action="store_true", help="keep the temporary work dir on exit (debugging)")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

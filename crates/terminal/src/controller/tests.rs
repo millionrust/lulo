@@ -164,3 +164,16 @@ fn tab_and_shift_tab_reach_the_shell_inside_the_terminal() {
         );
     }
 }
+
+#[test]
+fn cursor_blink_parks_two_seconds_after_the_last_keystroke() {
+    use std::time::Duration;
+    assert!(!lifecycle::cursor_blink_should_park(Duration::ZERO));
+    assert!(!lifecycle::cursor_blink_should_park(Duration::from_millis(
+        1_999
+    )));
+    assert!(lifecycle::cursor_blink_should_park(Duration::from_secs(2)));
+    assert!(lifecycle::cursor_blink_should_park(Duration::from_secs(
+        3_600
+    )));
+}

@@ -18,6 +18,8 @@
 //! runtime), so this crate builds — and its cache is exercised by its own
 //! tests — on every platform rather than gating itself behind Linux.
 
+mod names;
 mod shared;
 
+pub use names::{wait_for_session_name, NameWait};
 pub use shared::{session, session_blocking, system, system_blocking};

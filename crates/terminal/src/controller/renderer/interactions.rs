@@ -44,6 +44,7 @@ impl TerminalView {
                     cx.stop_propagation();
                     return;
                 }
+                this.wake_cursor_blink(window, cx);
                 match this.on_key_down(event) {
                     Ok(false) => return,
                     Ok(true) => {}

@@ -73,8 +73,9 @@ fn decode_priority(priority: u8) -> Result<Priority, Error> {
     }
 }
 
+use crate::service::CENTER_BUS_NAME;
 #[cfg(test)]
-use crate::service::{CENTER_BUS_NAME, CENTER_PATH};
+use crate::service::CENTER_PATH;
 
 #[zbus::proxy(
     interface = "org.rmac.NotificationCenter1",
@@ -386,10 +387,22 @@ fn call_error(error: zbus::Error) -> Error {
 
 pub async fn watch(sender: Sender<Result<Indicator, String>>) -> Result<(), Error> {
     loop {
-        match watch_once(&sender).await {
+        let error = match watch_once(&sender).await {
             Ok(()) if sender.is_closed() => return Ok(()),
-            Ok(()) => publish_error(&sender, Error::Stopped).await?,
-            Err(error) => publish_error(&sender, error).await?,
+            Ok(()) => Error::Stopped,
+            Err(error) => error,
+        };
+        let service_unavailable = matches!(
+            error,
+            Error::Stopped | Error::Connect | Error::Subscribe | Error::Call
+        );
+        publish_error(&sender, error).await?;
+        if service_unavailable {
+            match wait_for_center(&sender).await {
+                None => return Ok(()),
+                Some(true) => continue,
+                Some(false) => {}
+            }
         }
         let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
             std::time::Duration::from_secs(1),
@@ -407,10 +420,22 @@ pub async fn watch_applications(
     sender: Sender<Result<Vec<ApplicationPolicy>, String>>,
 ) -> Result<(), Error> {
     loop {
-        match watch_applications_once(&sender).await {
+        let error = match watch_applications_once(&sender).await {
             Ok(()) if sender.is_closed() => return Ok(()),
-            Ok(()) => publish_applications_error(&sender, Error::Stopped).await?,
-            Err(error) => publish_applications_error(&sender, error).await?,
+            Ok(()) => Error::Stopped,
+            Err(error) => error,
+        };
+        let service_unavailable = matches!(
+            error,
+            Error::Stopped | Error::Connect | Error::Subscribe | Error::Call
+        );
+        publish_applications_error(&sender, error).await?;
+        if service_unavailable {
+            match wait_for_center(&sender).await {
+                None => return Ok(()),
+                Some(true) => continue,
+                Some(false) => {}
+            }
         }
         let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
             std::time::Duration::from_secs(1),
@@ -426,10 +451,22 @@ pub async fn watch_applications(
 
 pub async fn watch_snapshot(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error> {
     loop {
-        match watch_snapshot_once(&sender).await {
+        let error = match watch_snapshot_once(&sender).await {
             Ok(()) if sender.is_closed() => return Ok(()),
-            Ok(()) => publish_snapshot_error(&sender, Error::Stopped).await?,
-            Err(error) => publish_snapshot_error(&sender, error).await?,
+            Ok(()) => Error::Stopped,
+            Err(error) => error,
+        };
+        let service_unavailable = matches!(
+            error,
+            Error::Stopped | Error::Connect | Error::Subscribe | Error::Call
+        );
+        publish_snapshot_error(&sender, error).await?;
+        if service_unavailable {
+            match wait_for_center(&sender).await {
+                None => return Ok(()),
+                Some(true) => continue,
+                Some(false) => {}
+            }
         }
         let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
             std::time::Duration::from_secs(1),
@@ -440,6 +477,21 @@ pub async fn watch_snapshot(sender: Sender<Result<Snapshot, String>>) -> Result<
             _ = timer => {},
             _ = closed => return Ok(()),
         }
+    }
+}
+
+/// Parks a watcher whose Notification Center service is absent until the
+/// service claims its bus name, instead of reconnecting every second for the
+/// life of the process (each failure republishes an error that repainted
+/// System Settings). `Some(true)`: the service appeared, reconnect now;
+/// `Some(false)`: fall back to the bounded retry; `None`: the receiver closed.
+async fn wait_for_center<T>(sender: &Sender<T>) -> Option<bool> {
+    let appeared = futures_util::FutureExt::fuse(rmac_dbus::wait_for_session_name(CENTER_BUS_NAME));
+    let closed = futures_util::FutureExt::fuse(sender.closed());
+    futures_util::pin_mut!(appeared, closed);
+    futures_util::select! {
+        wait = appeared => Some(matches!(wait, Ok(rmac_dbus::NameWait::Appeared))),
+        _ = closed => None,
     }
 }
 

@@ -18,8 +18,9 @@ impl Settings {
             while let Ok(update) = notification_update_rx.recv().await {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
-                        this.apply_notification_stream_update(update);
-                        cx.notify();
+                        if this.apply_notification_stream_update(update) {
+                            cx.notify();
+                        }
                     })
                     .is_err()
                 {
@@ -103,8 +104,9 @@ impl Settings {
             while let Ok(update) = focus_update_rx.recv().await {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
-                        this.apply_focus_stream_update(update);
-                        cx.notify();
+                        if this.apply_focus_stream_update(update) {
+                            cx.notify();
+                        }
                     })
                     .is_err()
                 {

@@ -6095,6 +6095,7 @@ name = "rmac-dbus"
 version = "0.9.0-beta.1"
 dependencies = [
  "async-io",
+ "futures-util",
  "zbus",
 ]
 

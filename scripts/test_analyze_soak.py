@@ -149,6 +149,28 @@ class EvaluateProcessTests(unittest.TestCase):
         self.assertTrue(result["private_footprint"]["sustained_growth"])
         self.assertTrue(result["leak_suspected"])
 
+    def test_shared_mappings_over_rss_budget_do_not_flag_a_flat_footprint(self):
+        # RSS counts shared libraries and GPU driver mappings, so a process
+        # can sit above the RSS budget while its private footprint is small
+        # and flat. With footprint samples, the verdict follows the footprint.
+        records = [
+            make_record("files", t * 300, 200.0, 150.0, pss_anon_kib=60.0 * 1024, swap_pss_kib=0.0)
+            for t in range(96)
+        ]
+        result = analyze_soak.evaluate_process("files", records, rss_budget_mib=128, growth_budget_mib_8h=16)
+        self.assertTrue(result["rss"]["over_peak_budget"])
+        self.assertEqual(result["judged_on"], "private_footprint")
+        self.assertFalse(result["leak_suspected"])
+
+    def test_private_footprint_over_budget_is_flagged(self):
+        records = [
+            make_record("bloated", t * 300, 200.0, 190.0, pss_anon_kib=150.0 * 1024, swap_pss_kib=0.0)
+            for t in range(10)
+        ]
+        result = analyze_soak.evaluate_process("bloated", records, rss_budget_mib=128, growth_budget_mib_8h=16)
+        self.assertTrue(result["private_footprint"]["over_peak_budget"])
+        self.assertTrue(result["leak_suspected"])
+
     def test_private_footprint_reports_no_data_when_samples_lack_it(self):
         # Older samples (captured before VmSwap/Pss_Anon/SwapPss were
         # recorded) must not be silently treated as zero growth.

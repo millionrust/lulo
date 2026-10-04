@@ -25,7 +25,9 @@ have it (scripts/behavior/run_memory_soak.py's smaps_rollup Pss_Anon +
 SwapPss): the process's anonymous resident pages plus the anonymous pages
 the kernel has swapped out. That sum is a process's real private footprint
 -- it does not shrink just because the machine reclaimed cache -- and is
-what "leak_suspected" should really be judged on when it is available.
+what "leak_suspected" is judged on when it is available: the per-app peak
+budget and the growth budget then apply to the private footprint, and RSS/PSS
+are reported for reference only.
 Samples captured before that field existed simply report "no live samples
 with this metric" for it and fall back to RSS/PSS.
 
@@ -251,10 +253,15 @@ def evaluate_process(
         "fds_start": fd_records[0]["fds"] if fd_records else None,
         "fds_end": fd_records[-1]["fds"] if fd_records else None,
         "peak_fds": max((record["fds"] for record in fd_records), default=None),
+        # Judge on the private footprint when the samples have it. RSS and
+        # PSS also count shared libraries, GPU driver mappings and fonts,
+        # and fall when the kernel reclaims cache, so they are reported but
+        # only decide the verdict for samples that predate the footprint.
+        "judged_on": "private_footprint" if private_footprint.get("sample_count") else "rss_pss",
         "leak_suspected": (
-            rss.get("leak_suspected", False)
-            or pss.get("leak_suspected", False)
-            or private_footprint.get("leak_suspected", False)
+            private_footprint.get("leak_suspected", False)
+            if private_footprint.get("sample_count")
+            else rss.get("leak_suspected", False) or pss.get("leak_suspected", False)
         ),
     }
 

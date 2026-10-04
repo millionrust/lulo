@@ -685,6 +685,20 @@ def check_package_lifecycle(state: dict) -> dict:
         check=False,
         timeout=3600,
     )
+    diagnosis = None
+    if result.returncode != 0:
+        install_candidate(state)
+        probe = sh(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/linux/verify-application-package.py"),
+                "--root",
+                "/",
+                "--installed-host",
+            ],
+            check=False,
+        )
+        diagnosis = bounded(probe.stdout + probe.stderr, 1500)
     report_path = lifecycle_evidence / "package-lifecycle.json"
     report = (
         json.loads(report_path.read_text(encoding="utf-8"))
@@ -701,6 +715,7 @@ def check_package_lifecycle(state: dict) -> dict:
         ),
         "exit": result.returncode,
         "output": bounded(result.stdout + result.stderr, 1500),
+        "installed_application_check": diagnosis,
         "report": report,
     }
     state["last_observations"] = observations
@@ -1176,8 +1191,16 @@ def check_terminal_wrapper(state: dict) -> dict:
         "for i in $(seq 1 150); do [ -s \"$HOME/argv-probe.json\" ] && break; sleep 0.2; done\n"
         "kill $term $sway 2>/dev/null; wait 2>/dev/null; exit 0\n"
     )
+    # Ptyxis starts each command in a systemd scope, so the user needs a
+    # real user manager and its session bus, as in a login session.
+    sh(["loginctl", "enable-linger", account.pw_name], check=False)
+    for _ in range(50):
+        if Path(f"/run/user/{account.pw_uid}/bus").exists():
+            break
+        time.sleep(0.2)
+    environment["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{account.pw_uid}/bus"
     sh(
-        ["dbus-run-session", "--", "sh", "-c", script],
+        ["sh", "-c", script],
         user=account.pw_name,
         env=environment,
         check=False,
@@ -1476,6 +1499,12 @@ def check_sr29_packagekit(state: dict) -> dict:
     )
     SR29_DENY_FLAG.unlink(missing_ok=True)
     sh(["systemctl", "restart", "polkit.service"], check=False)
+    # NetworkManager arrived as a dependency but never runs on the runner, so
+    # GIO's NetworkManager monitor (and PackageKit with it) reports offline.
+    # Masking it makes GIO fall back to its netlink monitor, as on a host
+    # without NetworkManager.
+    sh(["systemctl", "mask", "--now", "NetworkManager.service"], check=False)
+    sh(["systemctl", "stop", "packagekit.service"], check=False)
 
     # Only the fixture repository is visible to PackageKit during this check,
     # so no unrelated runner update is downloaded.

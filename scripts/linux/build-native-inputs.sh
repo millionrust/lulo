@@ -164,7 +164,8 @@ fi
     -p rmac-sound --bin rmac-sound \
     -p rmac-media --bin rmac-media \
     -p rmac-keyboard --bin rmac-mac-keyboard \
-    -p rmac-setup-assistant --bin rmac-setup-assistant
+    -p rmac-setup-assistant --bin rmac-setup-assistant \
+    -p rmac-calendar-agent --bin rmac-calendar-agent
 )
 (
   cd "$lab_dir"

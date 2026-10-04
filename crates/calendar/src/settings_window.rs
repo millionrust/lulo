@@ -1,5 +1,6 @@
-//! Calendar ▸ Settings… (⌘,, CAL-6): General (default calendar, start of
-//! week, day starts/ends, time zone support) and Accounts (from
+//! Calendar ▸ Settings… (⌘,): General (default calendar, start of week,
+//! day starts/ends, time zone support, CAL-6), Alerts (Default Alerts for
+//! events and all-day events, CAL-7, ADR 0022 §6), and Accounts (from
 //! `rmac-accounts`; empty until ACC-2/ACC-3 land a live account store).
 
 use gpui::{
@@ -10,6 +11,7 @@ use gpui::{
 use rmac_ui::{mac, Button, InputEvent, InputState, Root, StyledExt as _, TextField};
 
 use rmac_accounts::model::{Service, Services};
+use rmac_calendar::editing::{AlertOffset, ALL_DAY_ALERT_OFFSETS, EVENT_ALERT_OFFSETS};
 use rmac_calendar::store::GeneralSettings;
 
 use crate::view::CalendarView;
@@ -48,6 +50,7 @@ pub(crate) fn show(main: Entity<CalendarView>, cx: &mut App) {
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Tab {
     General,
+    Alerts,
     Accounts,
 }
 
@@ -55,6 +58,7 @@ impl Tab {
     fn label(self) -> &'static str {
         match self {
             Self::General => "General",
+            Self::Alerts => "Alerts",
             Self::Accounts => "Accounts",
         }
     }
@@ -267,6 +271,68 @@ impl SettingsView {
             })
     }
 
+    /// A row of alert-offset pills for [`render_alerts`]; a plain function
+    /// (not a closure) so it can borrow `cx` fresh on each call, the same
+    /// shape as [`Self::hour_stepper`].
+    fn alert_offset_row(
+        cx: &mut Context<Self>,
+        id: &'static str,
+        options: &'static [AlertOffset],
+        general: &GeneralSettings,
+        selected: AlertOffset,
+        on_pick: fn(&mut GeneralSettings, AlertOffset),
+    ) -> impl IntoElement {
+        let mut pills = div().flex().flex_wrap().gap_2();
+        for option in options {
+            let option = *option;
+            let general = general.clone();
+            pills = pills.child(
+                Button::new(format!("{id}-{}", option.label()), option.label())
+                    .small()
+                    .selected(option == selected)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let mut next = general.clone();
+                        on_pick(&mut next, option);
+                        this.set_general(next, cx);
+                    })),
+            );
+        }
+        pills
+    }
+
+    /// Default Alerts (CAL-7, ADR 0022 §6): the alert new events get when
+    /// the person does not pick one in the inspector. Birthdays has no row
+    /// yet -- Lulo has no Birthdays calendar (`docs/parity.md`), so a
+    /// default for it would do nothing.
+    fn render_alerts(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let general = self.general(cx);
+        div()
+            .v_flex()
+            .gap_4()
+            .child(labelled_row(
+                "Events",
+                Self::alert_offset_row(
+                    cx,
+                    "calendar-settings-alert-events",
+                    EVENT_ALERT_OFFSETS,
+                    &general,
+                    general.default_alerts.events,
+                    |general, offset| general.default_alerts.events = offset,
+                ),
+            ))
+            .child(labelled_row(
+                "All-day Events",
+                Self::alert_offset_row(
+                    cx,
+                    "calendar-settings-alert-allday",
+                    ALL_DAY_ALERT_OFFSETS,
+                    &general,
+                    general.default_alerts.all_day_events,
+                    |general, offset| general.default_alerts.all_day_events = offset,
+                ),
+            ))
+    }
+
     /// "Mail, Calendars" — the services summary next to an account, as the
     /// Internet Accounts list shows it.
     fn services_summary(services: Services) -> String {
@@ -350,6 +416,7 @@ impl Render for SettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let body = match self.tab {
             Tab::General => self.render_general(cx).into_any_element(),
+            Tab::Alerts => self.render_alerts(cx).into_any_element(),
             Tab::Accounts => self.render_accounts(cx).into_any_element(),
         };
         div()
@@ -379,15 +446,24 @@ impl Render for SettingsView {
                     .py_2()
                     .border_b_1()
                     .border_color(mac::separator())
-                    .children([Tab::General, Tab::Accounts].into_iter().map(|tab| {
-                        Button::new(format!("calendar-settings-{}", tab.label()), tab.label())
-                            .small()
-                            .selected(self.tab == tab)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.tab = tab;
-                                cx.notify();
-                            }))
-                    })),
+                    .children(
+                        [Tab::General, Tab::Alerts, Tab::Accounts]
+                            .into_iter()
+                            .map(|tab| {
+                                Button::new(
+                                    format!("calendar-settings-{}", tab.label()),
+                                    tab.label(),
+                                )
+                                .small()
+                                .selected(self.tab == tab)
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        this.tab = tab;
+                                        cx.notify();
+                                    },
+                                ))
+                            }),
+                    ),
             )
             .child(div().flex_1().px_4().py_4().child(body))
     }

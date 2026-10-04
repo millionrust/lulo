@@ -282,8 +282,8 @@ class NativePackageContractTests(unittest.TestCase):
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 15)
-        self.assertEqual(len(contract.SESSION_BINARIES), 27)
-        self.assertEqual(len(contract.ALL_BINARIES), 40)
+        self.assertEqual(len(contract.SESSION_BINARIES), 28)
+        self.assertEqual(len(contract.ALL_BINARIES), 41)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),
@@ -330,6 +330,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-sound", session.binaries)
         self.assertIn("rmac-mac-keyboard", session.binaries)
         self.assertIn("rmac-setup-assistant", session.binaries)
+        self.assertIn("rmac-calendar-agent", session.binaries)
         self.assertEqual(session.maintainer_scripts, ("postinst", "postrm"))
         scripts = contract.maintainer_scripts(Path(__file__).parents[1], session)
         self.assertIn(b"\"$helper\" regenerate", scripts["postinst"])

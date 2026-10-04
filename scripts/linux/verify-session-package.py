@@ -89,10 +89,12 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-idle-locker",
     "rmac-mac-keyboard",
     "rmac-setup-assistant",
+    "rmac-calendar-agent",
 )
 EXPECTED_SYSTEMD_UNITS = (
     "rmac-app-drawer.service",
     "rmac-app-switcher.service",
+    "rmac-calendar-agent.service",
     "rmac-clipboard.service",
     "rmac-component-failure@.service",
     "rmac-dock.service",

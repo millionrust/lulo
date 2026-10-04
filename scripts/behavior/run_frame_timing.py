@@ -312,7 +312,7 @@ class Run:
             raise StepFailed("sway did not start")
 
         shell = (REPO / "packaging/rmac-session/shell.kdl").read_text(encoding="utf-8")
-        mission_control = self.bin("rmac-mission-control")
+        mission_control = self.bin("rmac-mission-control", "mission-control")
         shell = shell.replace("/usr/libexec/rmac/rmac-mission-control", str(mission_control))
         niri_config = self.logs / "niri.kdl"
         niri_config.write_text(shell)

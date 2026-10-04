@@ -6873,8 +6873,10 @@ dependencies = [
  "rmac-print-linux",
  "rmac-recent-documents",
  "rmac-spelling",
+ "rmac-storage",
  "rmac-ui",
  "rust-embed",
+ "serde",
  "serde_json",
  "trash",
 ]

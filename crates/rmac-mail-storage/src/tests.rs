@@ -153,7 +153,11 @@ fn existing_v2_cache_adds_cursor_without_losing_messages() {
     fixture
         .store
         .connection
-        .execute_batch("ALTER TABLE mailboxes DROP COLUMN highest_modseq; PRAGMA user_version=2;")
+        .execute_batch(
+            "ALTER TABLE mailboxes DROP COLUMN highest_modseq; \
+             ALTER TABLE messages DROP COLUMN cc; \
+             PRAGMA user_version=2;",
+        )
         .unwrap();
     let reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
     assert_eq!(
@@ -172,7 +176,7 @@ fn existing_v2_cache_adds_cursor_without_losing_messages() {
     assert_eq!(
         db.pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .unwrap(),
-        3
+        4
     );
 }
 
@@ -189,7 +193,7 @@ fn migration_is_idempotent_and_rejects_future_schema() {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .expect("version"),
-        3
+        4
     );
     drop(reopened);
     let db = Connection::open(path).expect("open raw");
@@ -249,7 +253,12 @@ fn existing_v1_cache_gains_outbox_without_losing_mail() {
     fixture
         .store
         .connection
-        .execute_batch("DROP TABLE outbox_recipients; DROP TABLE outbox; ALTER TABLE mailboxes DROP COLUMN highest_modseq; PRAGMA user_version=1;")
+        .execute_batch(
+            "DROP TABLE outbox_recipients; DROP TABLE outbox; \
+             ALTER TABLE mailboxes DROP COLUMN highest_modseq; \
+             ALTER TABLE messages DROP COLUMN cc; \
+             PRAGMA user_version=1;",
+        )
         .unwrap();
     let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
     assert_eq!(

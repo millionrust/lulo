@@ -1,4 +1,7 @@
-//! Calendar shell and read-only Week view (CAL-3).
+//! Calendar shell: Day/Week/Month/Year views (CAL-3/CAL-4), event editing
+//! (CAL-5), and calendar-list management, ICS subscriptions, search and
+//! Settings (CAL-6).
+mod settings_window;
 mod view;
 
 use gpui::{App, AppContext as _, KeyBinding};
@@ -29,6 +32,11 @@ gpui::actions!(
         DismissInspector,
         ShowInvitations,
         Search,
+        NewCalendar,
+        NewCalendarSubscription,
+        RenameCalendar,
+        DeleteCalendar,
+        ShowSettings,
         CloseWindow,
     ]
 );
@@ -58,12 +66,14 @@ fn main() {
                 KeyBinding::new("up", SelectPreviousWeek, Some("Calendar")),
                 KeyBinding::new("down", SelectNextWeek, Some("Calendar")),
                 KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Calendar")),
+                KeyBinding::new("cmd-f", Search, Some("Calendar")),
+                KeyBinding::new("cmd-,", ShowSettings, Some("Calendar")),
                 KeyBinding::new("cmd-w", CloseWindow, Some("Calendar")),
                 KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Calendar")),
             ]);
             rmac_ui::install_app_menu(CALENDAR, cx);
-            // Invitations and search arrive in CAL-6/8.
-            for action in ["calendar::ShowInvitations", "calendar::Search"] {
+            // Invitations arrive in CAL-8.
+            for action in ["calendar::ShowInvitations"] {
                 rmac_ui::set_menu_enabled(action, false, cx);
             }
             let mut options = rmac_ui::window_options_for_app(CALENDAR, 1100.0, 720.0, cx);
@@ -72,7 +82,7 @@ fn main() {
                 rmac_ui::prepare_surface_window(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(CALENDAR, window, cx);
-                    CalendarView::new(cx)
+                    CalendarView::new(window, cx)
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);

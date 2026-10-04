@@ -1,22 +1,29 @@
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
 use gpui::{
-    div, px, AnyElement, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable as _,
-    FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
-    ScrollDelta, ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Window,
+    div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, ClickEvent, Context, Entity,
+    FocusHandle, Focusable as _, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, ParentElement as _, Render, Role, ScrollDelta, ScrollWheelEvent,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_calendar::{
     current_date,
     editing::{self, Mutation},
-    events_on_day, is_weekend, month_grid_start, CalendarColor, Navigator, View, WeekSnapshot,
+    events_on_day, fixture_week, is_weekend, month_grid_start, search_events, store,
+    subscription_default_name, unique_calendar_name, validate_calendar_name,
+    validate_subscription_url, Calendar, CalendarColor, Navigator, SearchResult, View,
+    WeekSnapshot,
 };
 use rmac_calendar_store::{TimeValue, Zone};
-use rmac_ui::{dialog, dialog_button, mac, DialogButtonKind, InputEvent, InputState, TextField};
+use rmac_ui::{
+    dialog, dialog_button, mac, ContextMenu, ContextMenuState, DialogButtonKind, InputEvent,
+    InputState, StyledExt as _, TextField,
+};
 
 use crate::{
-    CloseWindow, DeleteEvent, DismissInspector, GoToday, NewEvent, NextPeriod, PreviousPeriod,
-    RedoEvent, SaveEvent, SelectNextDay, SelectNextWeek, SelectPreviousDay, SelectPreviousWeek,
-    ShowDay, ShowInspector, ShowMonth, ShowWeek, ShowYear, ToggleSidebar, UndoEvent,
+    CloseWindow, DeleteCalendar, DeleteEvent, DismissInspector, GoToday, NewCalendar,
+    NewCalendarSubscription, NewEvent, NextPeriod, PreviousPeriod, RedoEvent, RenameCalendar,
+    SaveEvent, Search, SelectNextDay, SelectNextWeek, SelectPreviousDay, SelectPreviousWeek,
+    ShowDay, ShowInspector, ShowMonth, ShowSettings, ShowWeek, ShowYear, ToggleSidebar, UndoEvent,
 };
 
 const SIDEBAR: f32 = 220.0;
@@ -33,6 +40,14 @@ enum Direction {
     Do,
     Undo,
     Redo,
+}
+
+/// Which CAL-6 calendar-list sheet is currently shown, if any.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Sheet {
+    RenameCalendar,
+    DeleteCalendar,
+    NewCalendarSubscription,
 }
 
 struct Editor {
@@ -57,9 +72,33 @@ pub struct CalendarView {
     pub focus: FocusHandle,
     nav: Navigator,
     sidebar_visible: bool,
-    visible: Vec<bool>,
     scroll_accumulated: f32,
+    /// What renders: the loaded snapshot whose `calendars` are
+    /// `store::overlay(&base_calendars, &settings)`. `Event::calendar`
+    /// indexes the base part; local calendars and subscriptions follow it.
     snapshot: WeekSnapshot,
+    /// The calendars exactly as EDS (or the fixture fallback) reported them.
+    base_calendars: Vec<Calendar>,
+    /// CAL-6's saved prefs (`~/.config/lulo/calendar.json`).
+    settings: store::Settings,
+    /// Settings ▸ Accounts lists these (ADR 0022 §1: GOA is the only
+    /// account store). Always empty until ACC-2/ACC-3 land.
+    accounts: Vec<rmac_accounts::model::Account>,
+    menu_at: Option<ContextMenuState>,
+    /// Set when a calendar row was right-clicked; `None` means the "+" menu
+    /// (New Calendar / New Calendar Subscription…) is open instead.
+    context_calendar: Option<usize>,
+    sheet: Option<Sheet>,
+    sheet_error: Option<SharedString>,
+    rename_input: Entity<InputState>,
+    rename_color: CalendarColor,
+    subscription_name_input: Entity<InputState>,
+    subscription_url_input: Entity<InputState>,
+    subscription_color: CalendarColor,
+    search_open: bool,
+    search_input: Entity<InputState>,
+    search_results: Vec<SearchResult>,
+    search_selected: usize,
     selected: Option<String>,
     editor: Option<Editor>,
     undo: Vec<Mutation>,
@@ -69,14 +108,44 @@ pub struct CalendarView {
 }
 
 impl CalendarView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let rename_input = cx.new(|cx| InputState::new(window, cx));
+        let subscription_name_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("e.g. Team Releases"));
+        let subscription_url_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("webcal:// or https://…"));
+        let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        cx.subscribe(
+            &search_input,
+            |this, _, event: &InputEvent, cx| match event {
+                InputEvent::Change => this.update_search(cx),
+                InputEvent::PressEnter { .. } => this.jump_to_search_result(cx),
+                _ => {}
+            },
+        )
+        .detach();
         let view = Self {
             focus: cx.focus_handle(),
             nav: Navigator::new(current_date()),
             sidebar_visible: true,
-            visible: Vec::new(),
             scroll_accumulated: 0.0,
             snapshot: WeekSnapshot::empty(),
+            base_calendars: Vec::new(),
+            settings: store::Settings::default(),
+            accounts: Vec::new(),
+            menu_at: None,
+            context_calendar: None,
+            sheet: None,
+            sheet_error: None,
+            rename_input,
+            rename_color: CalendarColor::Blue,
+            subscription_name_input,
+            subscription_url_input,
+            subscription_color: CalendarColor::Blue,
+            search_open: false,
+            search_input,
+            search_results: Vec::new(),
+            search_selected: 0,
             selected: None,
             editor: None,
             undo: Vec::new(),
@@ -85,6 +154,14 @@ impl CalendarView {
             error: None,
         };
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            // Saved prefs first, so the first EDS snapshot already renders
+            // with the user's colours and visibility.
+            let settings = blocking::unblock(|| store::load_settings().unwrap_or_default()).await;
+            let _ = this.update(cx, |this: &mut CalendarView, cx| {
+                this.settings = settings;
+                this.apply_overlay();
+                cx.notify();
+            });
             let result = blocking::unblock(editing::load).await;
             let _ = this.update(cx, |this: &mut CalendarView, cx| {
                 this.accept_load(result, cx)
@@ -97,34 +174,317 @@ impl CalendarView {
     fn accept_load(&mut self, result: Result<WeekSnapshot, String>, cx: &mut Context<Self>) {
         match result {
             Ok(snapshot) => {
-                let prior: Vec<_> = self
-                    .snapshot
-                    .calendars
-                    .iter()
-                    .zip(&self.visible)
-                    .filter_map(|(calendar, visible)| {
-                        calendar
-                            .source_uid
-                            .as_ref()
-                            .map(|uid| (uid.clone(), *visible))
-                    })
-                    .collect();
-                self.visible = snapshot
-                    .calendars
-                    .iter()
-                    .map(|calendar| {
-                        prior
-                            .iter()
-                            .find(|(uid, _)| calendar.source_uid.as_ref() == Some(uid))
-                            .map_or(calendar.visible, |(_, visible)| *visible)
-                    })
-                    .collect();
-                self.snapshot = snapshot;
+                self.set_snapshot(snapshot);
                 self.error = None;
             }
-            Err(error) => self.error = Some(error),
+            Err(error) => {
+                // No EDS (or it failed before the first load): fall back to
+                // the fixture so the calendar list and its prefs still work.
+                if self.base_calendars.is_empty() {
+                    let week_start = self.nav.week_start();
+                    self.set_snapshot(fixture_week(week_start));
+                }
+                self.error = Some(error);
+            }
         }
         self.busy = false;
+        self.update_search(cx);
+        cx.notify();
+    }
+
+    fn set_snapshot(&mut self, mut snapshot: WeekSnapshot) {
+        self.base_calendars = std::mem::take(&mut snapshot.calendars);
+        self.snapshot = snapshot;
+        self.apply_overlay();
+    }
+
+    /// Rebuilds the rendered calendar list from the base list and prefs.
+    fn apply_overlay(&mut self) {
+        self.snapshot.calendars = store::overlay(&self.base_calendars, &self.settings);
+    }
+
+    /// Applies a prefs change, re-overlays and saves off the UI thread.
+    fn update_settings(
+        &mut self,
+        change: impl FnOnce(&mut store::Settings),
+        cx: &mut Context<Self>,
+    ) {
+        change(&mut self.settings);
+        self.settings = std::mem::take(&mut self.settings).normalized();
+        self.apply_overlay();
+        let settings = self.settings.clone();
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) = store::save_settings(&settings) {
+                    eprintln!("rmac-calendar: could not save settings: {error}");
+                }
+            })
+            .detach();
+        self.update_search(cx);
+        cx.notify();
+    }
+
+    /// The flags `events_on_day`/`search_events` expect: a calendar is
+    /// shown exactly when it is ticked and not deleted.
+    fn visible_flags(&self) -> Vec<bool> {
+        self.snapshot
+            .calendars
+            .iter()
+            .map(|calendar| calendar.visible && !calendar.removed)
+            .collect()
+    }
+
+    fn is_visible(&self, calendar: usize) -> bool {
+        self.snapshot
+            .calendars
+            .get(calendar)
+            .is_some_and(|calendar| calendar.visible && !calendar.removed)
+    }
+
+    /// Where a new event goes: Settings' default calendar when it's
+    /// writable, else the first writable calendar still in the list.
+    fn default_writable_calendar(&self) -> Option<usize> {
+        let candidates = || {
+            self.snapshot
+                .calendars
+                .iter()
+                .enumerate()
+                .filter(|(_, calendar)| calendar.writable && !calendar.removed)
+        };
+        let default = &self.settings.general.default_calendar;
+        candidates()
+            .find(|(_, calendar)| !default.is_empty() && &calendar.name == default)
+            .or_else(|| candidates().next())
+            .map(|(index, _)| index)
+    }
+
+    pub(crate) fn calendar_names(&self) -> Vec<SharedString> {
+        self.snapshot
+            .calendars
+            .iter()
+            .filter(|calendar| !calendar.removed)
+            .map(|calendar| SharedString::from(calendar.name.clone()))
+            .collect()
+    }
+
+    pub(crate) fn general(&self) -> store::GeneralSettings {
+        self.settings.general.clone()
+    }
+
+    pub(crate) fn accounts(&self) -> &[rmac_accounts::model::Account] {
+        &self.accounts
+    }
+
+    pub(crate) fn set_general(&mut self, general: store::GeneralSettings, cx: &mut Context<Self>) {
+        self.update_settings(|settings| settings.general = general, cx);
+    }
+
+    fn next_color(calendars: &[Calendar]) -> CalendarColor {
+        let count = calendars
+            .iter()
+            .filter(|calendar| !calendar.removed)
+            .count();
+        CalendarColor::ALL[count % CalendarColor::ALL.len()]
+    }
+
+    fn open_add_menu(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.context_calendar = None;
+        self.menu_at = Some(ContextMenuState::open(position, &self.focus, window, cx));
+        cx.notify();
+    }
+
+    fn open_row_menu(
+        &mut self,
+        index: usize,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.context_calendar = Some(index);
+        self.menu_at = Some(ContextMenuState::open(position, &self.focus, window, cx));
+        cx.notify();
+    }
+
+    fn toggle_calendar(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(calendar) = self.snapshot.calendars.get(index) else {
+            return;
+        };
+        let (id, visible) = (calendar.id.clone(), !calendar.visible);
+        self.update_settings(
+            |settings| settings.prefs_mut(&id).visible = Some(visible),
+            cx,
+        );
+    }
+
+    fn create_new_calendar(&mut self, cx: &mut Context<Self>) {
+        let name = unique_calendar_name(&self.snapshot.calendars, "New Calendar");
+        let color = Self::next_color(&self.snapshot.calendars);
+        self.update_settings(
+            |settings| {
+                settings.add_calendar(name, "On My Mac", color, None);
+            },
+            cx,
+        );
+    }
+
+    fn start_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(calendar) = self
+            .context_calendar
+            .and_then(|index| self.snapshot.calendars.get(index))
+        else {
+            return;
+        };
+        let (name, color) = (calendar.name.clone(), calendar.color);
+        self.rename_input
+            .update(cx, |state, cx| state.set_value(name, window, cx));
+        self.rename_color = color;
+        self.sheet_error = None;
+        self.sheet = Some(Sheet::RenameCalendar);
+        cx.notify();
+    }
+
+    fn commit_rename(&mut self, cx: &mut Context<Self>) {
+        let Some(calendar) = self
+            .context_calendar
+            .and_then(|index| self.snapshot.calendars.get(index))
+        else {
+            return;
+        };
+        let id = calendar.id.clone();
+        let value = self.rename_input.read(cx).value().to_string();
+        match validate_calendar_name(&value) {
+            Ok(name) => {
+                let color = self.rename_color;
+                self.sheet = None;
+                self.sheet_error = None;
+                self.update_settings(
+                    |settings| {
+                        let prefs = settings.prefs_mut(&id);
+                        prefs.name = Some(name);
+                        prefs.color = Some(color);
+                    },
+                    cx,
+                );
+            }
+            Err(_) => {
+                self.sheet_error = Some("Give this calendar a name.".into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn start_delete(&mut self, cx: &mut Context<Self>) {
+        if self.context_calendar.is_none() {
+            return;
+        }
+        self.sheet = Some(Sheet::DeleteCalendar);
+        cx.notify();
+    }
+
+    fn confirm_delete(&mut self, cx: &mut Context<Self>) {
+        self.sheet = None;
+        let Some(id) = self
+            .context_calendar
+            .take()
+            .and_then(|index| self.snapshot.calendars.get(index))
+            .map(|calendar| calendar.id.clone())
+        else {
+            cx.notify();
+            return;
+        };
+        self.update_settings(|settings| settings.remove_calendar(&id), cx);
+    }
+
+    fn start_new_calendar_subscription(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.subscription_name_input
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.subscription_url_input
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.subscription_color = Self::next_color(&self.snapshot.calendars);
+        self.sheet_error = None;
+        self.sheet = Some(Sheet::NewCalendarSubscription);
+        cx.notify();
+    }
+
+    fn commit_subscription(&mut self, cx: &mut Context<Self>) {
+        let url = self.subscription_url_input.read(cx).value().to_string();
+        let url = match validate_subscription_url(&url) {
+            Ok(url) => url,
+            Err(_) => {
+                self.sheet_error =
+                    Some("Enter a webcal://, https:// or http:// calendar address.".into());
+                cx.notify();
+                return;
+            }
+        };
+        let typed_name = self.subscription_name_input.read(cx).value().to_string();
+        let name = validate_calendar_name(&typed_name).unwrap_or_else(|_| {
+            unique_calendar_name(&self.snapshot.calendars, &subscription_default_name(&url))
+        });
+        let color = self.subscription_color;
+        self.sheet = None;
+        self.sheet_error = None;
+        self.update_settings(
+            |settings| {
+                settings.add_calendar(name, "Subscribed", color, Some(url));
+            },
+            cx,
+        );
+    }
+
+    /// Escape: closes the inspector, then a CAL-6 sheet, then search.
+    fn dismiss(&mut self, cx: &mut Context<Self>) {
+        if self.editor.is_some() {
+            self.editor = None;
+        } else if self.sheet.is_some() {
+            self.sheet = None;
+            self.sheet_error = None;
+        } else if self.search_open {
+            self.search_open = false;
+        } else {
+            return;
+        }
+        cx.notify();
+    }
+
+    fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_open = !self.search_open;
+        if self.search_open {
+            self.search_input
+                .update(cx, |state, cx| state.focus(window, cx));
+            self.update_search(cx);
+        } else {
+            self.search_results.clear();
+        }
+        cx.notify();
+    }
+
+    /// Searches every loaded event (EDS loads two years back and three
+    /// ahead) in shown calendars.
+    fn update_search(&mut self, cx: &mut Context<Self>) {
+        if !self.search_open {
+            return;
+        }
+        let query = self.search_input.read(cx).value().to_string();
+        self.search_results = search_events(&self.snapshot, &self.visible_flags(), &query);
+        self.search_selected = 0;
+        cx.notify();
+    }
+
+    fn jump_to_search_result(&mut self, cx: &mut Context<Self>) {
+        let Some(result) = self.search_results.get(self.search_selected).cloned() else {
+            return;
+        };
+        self.nav.view = View::Day;
+        self.nav.selected = result.start.date_naive();
+        self.selected = Some(result.event_id);
+        self.search_open = false;
+        self.sync_menu(cx);
         cx.notify();
     }
 
@@ -222,12 +582,7 @@ impl CalendarView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(calendar) = self
-            .snapshot
-            .calendars
-            .iter()
-            .position(|calendar| calendar.writable)
-        else {
+        let Some(calendar) = self.default_writable_calendar() else {
             self.error = Some("No writable calendar is available".into());
             cx.notify();
             return;
@@ -256,12 +611,7 @@ impl CalendarView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(calendar) = self
-            .snapshot
-            .calendars
-            .iter()
-            .position(|calendar| calendar.writable)
-        else {
+        let Some(calendar) = self.default_writable_calendar() else {
             self.error = Some("No writable calendar is available".into());
             cx.notify();
             return;
@@ -687,8 +1037,31 @@ impl CalendarView {
         }
         bar = bar.child(tabs);
         bar = bar.child(div().flex_1());
-        bar.child(self.control("calendar-search", "⌕", "Search", false, |_, _| {}, cx))
-            .into_any_element()
+        bar.child(
+            div()
+                .id("calendar-search")
+                .role(Role::Button)
+                .aria_label("Search")
+                .aria_selected(self.search_open)
+                .h(px(28.0))
+                .px(px(10.0))
+                .rounded(px(mac::radius_pill()))
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(if self.search_open {
+                    mac::control_fill()
+                } else {
+                    mac::material_clear()
+                })
+                .text_color(mac::text())
+                .text_size(px(12.0))
+                .child("⌕")
+                .on_click(
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.toggle_search(window, cx)),
+                ),
+        )
+        .into_any_element()
     }
 
     fn mini_month(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -762,7 +1135,7 @@ impl CalendarView {
             .into_any_element()
     }
 
-    fn sidebar(&self, snapshot: &WeekSnapshot, cx: &mut Context<Self>) -> AnyElement {
+    fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let mut panel = div()
             .absolute()
             .left(px(8.0))
@@ -782,7 +1155,10 @@ impl CalendarView {
             .flex()
             .flex_col();
         let mut account = String::new();
-        for (index, calendar) in snapshot.calendars.iter().enumerate() {
+        for (index, calendar) in self.snapshot.calendars.iter().enumerate() {
+            if calendar.removed {
+                continue;
+            }
             if calendar.account != account {
                 account = calendar.account.clone();
                 list = list.child(
@@ -797,10 +1173,13 @@ impl CalendarView {
                 );
             }
             let color = Self::color(calendar.color);
-            let visible = self.visible.get(index).copied().unwrap_or(false);
+            let visible = calendar.visible;
             list = list.child(
                 div()
                     .id(format!("calendar-toggle-{index}"))
+                    .role(Role::Row)
+                    .aria_label(calendar.name.clone())
+                    .aria_selected(visible)
                     .h(px(24.0))
                     .flex()
                     .items_center()
@@ -829,15 +1208,57 @@ impl CalendarView {
                     )
                     .child(calendar.name.clone())
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.visible[index] = !this.visible[index];
-                        cx.notify();
-                    })),
+                        this.toggle_calendar(index, cx);
+                    }))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.open_row_menu(index, event.position, window, cx);
+                        }),
+                    ),
             );
         }
+        list = list.child(
+            div()
+                .id("calendar-add")
+                .role(Role::Button)
+                .aria_label("Add Calendar")
+                .h(px(24.0))
+                .mt(px(4.0))
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .pl(px(8.0))
+                .text_size(px(12.0))
+                .text_color(mac::text_secondary())
+                .child("+")
+                .child("Add Calendar")
+                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                    this.open_add_menu(event.position(), window, cx);
+                })),
+        );
         panel
             .child(list)
             .child(self.mini_month(cx))
             .into_any_element()
+    }
+
+    /// The row's right-click (Rename…/Delete…) or the "+" row's click (New
+    /// Calendar/New Calendar Subscription…), depending on `context_calendar`.
+    fn build_calendar_menu(&self, pos: gpui::Point<gpui::Pixels>) -> ContextMenu {
+        if self.context_calendar.is_some() {
+            ContextMenu::new(pos)
+                .item("Rename…", Box::new(RenameCalendar))
+                .danger_item("Delete…", Box::new(DeleteCalendar))
+        } else {
+            ContextMenu::new(pos)
+                .item("New Calendar", Box::new(NewCalendar))
+                .item(
+                    "New Calendar Subscription…",
+                    Box::new(NewCalendarSubscription),
+                )
+        }
     }
 
     fn heading(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1036,8 +1457,7 @@ impl CalendarView {
         for event in snapshot.events.iter().filter(|event| event.all_day) {
             let day = event.start.date_naive();
             let offset = (day - first).num_days();
-            if (0..days as i64).contains(&offset) && self.visible.get(event.calendar) == Some(&true)
-            {
+            if (0..days as i64).contains(&offset) && self.is_visible(event.calendar) {
                 let days = (event.end.date_naive() - day)
                     .num_days()
                     .clamp(1, days as i64 - offset);
@@ -1098,7 +1518,7 @@ impl CalendarView {
             let Some(event) = snapshot.events.iter().find(|event| event.id == slot.id) else {
                 continue;
             };
-            if self.visible.get(event.calendar) != Some(&true) {
+            if !self.is_visible(event.calendar) {
                 continue;
             }
             let day = (slot.day - first).num_days();
@@ -1228,7 +1648,7 @@ impl CalendarView {
                     .text_size(px(17.0))
                     .child(self.nav.selected.format("%A, %-d %B").to_string()),
             );
-        let events = events_on_day(snapshot, &self.visible, self.nav.selected);
+        let events = events_on_day(snapshot, &self.visible_flags(), self.nav.selected);
         if events.is_empty() {
             detail = detail.child(
                 div()
@@ -1325,6 +1745,7 @@ impl CalendarView {
         let rows = if (last - first).num_days() < 35 { 5 } else { 6 };
         let cell_width = width / 7.0;
         let cell_height = ((height - 24.0) / rows as f32).max(1.0);
+        let visible = self.visible_flags();
         let mut month = div()
             .id("calendar-month")
             .relative()
@@ -1351,7 +1772,7 @@ impl CalendarView {
         }
         for index in 0..rows * 7 {
             let day = first + Duration::days(index as i64);
-            let events = events_on_day(snapshot, &self.visible, day);
+            let events = events_on_day(snapshot, &visible, day);
             let selected = day == self.nav.selected;
             let today = day == current_date();
             let mut cell = div()
@@ -1479,6 +1900,7 @@ impl CalendarView {
         let month_height = ((height - 24.0 - gap_y * 2.0) / 3.0).max(1.0);
         let day_width = month_width / 7.0;
         let year = self.nav.selected.year();
+        let visible = self.visible_flags();
         let mut panel = div()
             .id("calendar-year")
             .relative()
@@ -1530,7 +1952,7 @@ impl CalendarView {
             let days = (next - first).num_days() as usize;
             for day_index in 0..days {
                 let date = first + Duration::days(day_index as i64);
-                let count = events_on_day(snapshot, &self.visible, date).len();
+                let count = events_on_day(snapshot, &visible, date).len();
                 let position = weekday_offset + day_index;
                 let today = date == current_date();
                 card = card.child(
@@ -1569,6 +1991,318 @@ impl CalendarView {
     /// The event inspector: a modal sheet (consistent with Clock's alarm editor and the
     /// shared `rmac_ui::dialog` sheets elsewhere) rather than a Mac-style arrow-pointing
     /// popover (verify on Mac; CAL-5 ships the simplified form first).
+    /// The toolbar search field and its results popover (CAL-6).
+    fn render_search(&self, cx: &mut Context<Self>) -> AnyElement {
+        let field = div()
+            .absolute()
+            .right(px(9.0))
+            .top(px(8.0))
+            .w(px(260.0))
+            .child(rmac_ui::SearchField::new(&self.search_input).small());
+        let mut popover = div()
+            .id("calendar-search-results")
+            .absolute()
+            .right(px(9.0))
+            .top(px(44.0))
+            .w(px(260.0))
+            .max_h(px(320.0))
+            .rounded(px(mac::radius_large_surface()))
+            .bg(mac::material_sidebar())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_lg()
+            .p(px(4.0))
+            .flex()
+            .flex_col()
+            .role(Role::ListBox)
+            .aria_label("Search results");
+        if self.search_results.is_empty() {
+            popover = popover.child(
+                div()
+                    .p(px(8.0))
+                    .text_size(px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child(if self.search_input.read(cx).value().is_empty() {
+                        "Type to search events."
+                    } else {
+                        "No matching events."
+                    }),
+            );
+        }
+        for (index, result) in self.search_results.iter().enumerate() {
+            let selected = index == self.search_selected;
+            let color = Self::color(
+                self.snapshot
+                    .calendars
+                    .get(result.calendar)
+                    .map_or(CalendarColor::Blue, |calendar| calendar.color),
+            );
+            let title = self
+                .snapshot
+                .events
+                .iter()
+                .find(|event| event.id == result.event_id)
+                .map(|event| event.title.clone())
+                .unwrap_or_default();
+            popover = popover.child(
+                div()
+                    .id(format!("calendar-search-result-{index}"))
+                    .role(Role::ListBoxOption)
+                    .aria_label(title)
+                    .aria_selected(selected)
+                    .h(px(32.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .px(px(8.0))
+                    .rounded(px(mac::radius_control()))
+                    .bg(if selected {
+                        mac::control_fill()
+                    } else {
+                        mac::material_clear()
+                    })
+                    .text_size(px(12.0))
+                    .child(div().size(px(7.0)).rounded_full().bg(color))
+                    .child(div().flex_1().text_color(mac::text()).child(title))
+                    .child(
+                        div()
+                            .text_color(mac::text_secondary())
+                            .text_size(px(11.0))
+                            .child(result.start.format("%a %-d %b").to_string()),
+                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.search_selected = index;
+                        this.jump_to_search_result(cx);
+                    })),
+            );
+        }
+        div()
+            .id("calendar-search-overlay")
+            .absolute()
+            .inset_0()
+            .child(field)
+            .child(popover)
+            .into_any_element()
+    }
+
+    fn color_swatches(
+        &self,
+        id_prefix: &'static str,
+        current: CalendarColor,
+        pick: fn(&mut Self, CalendarColor),
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let mut swatches = div().flex().gap(px(7.0));
+        for color in CalendarColor::ALL {
+            swatches = swatches.child(
+                div()
+                    .id(format!("{id_prefix}-{color:?}"))
+                    .role(Role::RadioButton)
+                    .aria_label(format!("{color:?}"))
+                    .aria_selected(current == color)
+                    .size(px(18.0))
+                    .rounded_full()
+                    .bg(Self::color(color))
+                    .when(current == color, |el| {
+                        el.border_2().border_color(mac::text())
+                    })
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        pick(this, color);
+                        cx.notify();
+                    })),
+            );
+        }
+        swatches
+    }
+
+    fn sheet_card(width: f32, title: impl Into<SharedString>) -> gpui::Div {
+        div()
+            .w(px(width))
+            .v_flex()
+            .gap_3()
+            .p_5()
+            .rounded(px(mac::radius_large_surface()))
+            .bg(mac::raised())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(px(15.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(mac::text())
+                    .child(title.into()),
+            )
+    }
+
+    fn render_sheet(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let sheet = self.sheet?;
+        let error = self.sheet_error.clone();
+        let body: AnyElement = match sheet {
+            Sheet::RenameCalendar => {
+                let mut card = Self::sheet_card(360.0, "Rename Calendar");
+                card = card
+                    .child(rmac_ui::TextField::new(&self.rename_input).w_full())
+                    .child(self.color_swatches(
+                        "calendar-rename-color",
+                        self.rename_color,
+                        |this, color| this.rename_color = color,
+                        cx,
+                    ));
+                if let Some(error) = error {
+                    card = card.child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(mac::danger())
+                            .child(error),
+                    );
+                }
+                card.child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            rmac_ui::dialog_button(
+                                "calendar-rename-cancel",
+                                "Cancel",
+                                DialogButtonKind::Normal,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| this.dismiss(cx))),
+                        )
+                        .child(
+                            rmac_ui::dialog_button(
+                                "calendar-rename-save",
+                                "Rename",
+                                DialogButtonKind::Primary,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| this.commit_rename(cx))),
+                        ),
+                )
+                .into_any_element()
+            }
+            Sheet::DeleteCalendar => {
+                let name = self
+                    .context_calendar
+                    .and_then(|index| self.snapshot.calendars.get(index))
+                    .map(|calendar| calendar.name.clone())
+                    .unwrap_or_default();
+                return Some(
+                    rmac_ui::alert_cancel_default(
+                        format!("Delete “{name}”?"),
+                        "Its events will also be deleted. This can't be undone.",
+                        vec![
+                            rmac_ui::dialog_button(
+                                "calendar-delete-cancel",
+                                "Cancel",
+                                DialogButtonKind::Normal,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| this.dismiss(cx)))
+                            .into_any_element(),
+                            rmac_ui::dialog_button(
+                                "calendar-delete-confirm",
+                                "Delete",
+                                DialogButtonKind::Destructive,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| this.confirm_delete(cx)))
+                            .into_any_element(),
+                        ],
+                    )
+                    .into_any_element(),
+                );
+            }
+            Sheet::NewCalendarSubscription => {
+                let mut card = Self::sheet_card(380.0, "New Calendar Subscription");
+                card = card
+                    .child(
+                        div()
+                            .v_flex()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(mac::text_secondary())
+                                    .child("Name"),
+                            )
+                            .child(rmac_ui::TextField::new(&self.subscription_name_input).w_full()),
+                    )
+                    .child(
+                        div()
+                            .v_flex()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(mac::text_secondary())
+                                    .child("URL"),
+                            )
+                            .child(rmac_ui::TextField::new(&self.subscription_url_input).w_full()),
+                    );
+                card = card.child(self.color_swatches(
+                    "calendar-subscription-color",
+                    self.subscription_color,
+                    |this, color| this.subscription_color = color,
+                    cx,
+                ));
+                if let Some(error) = error {
+                    card = card.child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(mac::danger())
+                            .child(error),
+                    );
+                }
+                card.child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            rmac_ui::dialog_button(
+                                "calendar-subscription-cancel",
+                                "Cancel",
+                                DialogButtonKind::Normal,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| this.dismiss(cx))),
+                        )
+                        .child(
+                            rmac_ui::dialog_button(
+                                "calendar-subscription-save",
+                                "Subscribe",
+                                DialogButtonKind::Primary,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| this.commit_subscription(cx))),
+                        ),
+                )
+                .into_any_element()
+            }
+        };
+        Some(
+            rmac_ui::dialog("calendar-sheet", body)
+                .restore_focus_to(self.focus.clone())
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            cx.stop_propagation();
+                            this.dismiss(cx);
+                        }
+                        "enter" => {
+                            cx.stop_propagation();
+                            match this.sheet {
+                                Some(Sheet::RenameCalendar) => this.commit_rename(cx),
+                                Some(Sheet::NewCalendarSubscription) => {
+                                    this.commit_subscription(cx)
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }))
+                .into_any_element(),
+        )
+    }
+
     fn inspector(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let editor = self.editor.as_ref()?;
         let is_new = editor.original.is_none();
@@ -1660,7 +2394,7 @@ impl CalendarView {
             .calendars
             .iter()
             .enumerate()
-            .filter(|(_, calendar)| calendar.writable)
+            .filter(|(_, calendar)| calendar.writable && !calendar.removed)
             .map(|(index, calendar)| (index, calendar.name.clone()))
             .collect();
         if writable.len() > 1 {
@@ -1816,80 +2550,105 @@ impl Render for CalendarView {
                 View::Month => self.month(&snapshot, content_width, content_height, cx),
                 View::Year => self.year(&snapshot, content_width, content_height, cx),
             }));
-        let mut root =
-            div()
-                .size_full()
-                .relative()
-                .bg(mac::window())
-                .track_focus(&self.focus)
-                .key_context("Calendar")
-                .on_action(cx.listener(|this, _: &ShowDay, _, cx| this.show(View::Day, cx)))
-                .on_action(cx.listener(|this, _: &ShowWeek, _, cx| this.show(View::Week, cx)))
-                .on_action(cx.listener(|this, _: &ShowMonth, _, cx| this.show(View::Month, cx)))
-                .on_action(cx.listener(|this, _: &ShowYear, _, cx| this.show(View::Year, cx)))
-                .on_action(cx.listener(|this, _: &GoToday, _, cx| {
-                    this.nav.today(current_date());
+        let mut root = div()
+            .size_full()
+            .relative()
+            .bg(mac::window())
+            .track_focus(&self.focus)
+            .key_context("Calendar")
+            .on_action(cx.listener(|this, _: &ShowDay, _, cx| this.show(View::Day, cx)))
+            .on_action(cx.listener(|this, _: &ShowWeek, _, cx| this.show(View::Week, cx)))
+            .on_action(cx.listener(|this, _: &ShowMonth, _, cx| this.show(View::Month, cx)))
+            .on_action(cx.listener(|this, _: &ShowYear, _, cx| this.show(View::Year, cx)))
+            .on_action(cx.listener(|this, _: &GoToday, _, cx| {
+                this.nav.today(current_date());
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &PreviousPeriod, _, cx| {
+                this.nav.step(-1);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &NextPeriod, _, cx| {
+                this.nav.step(1);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &SelectPreviousDay, _, cx| {
+                if this.nav.view == View::Month {
+                    this.nav.move_day(-1);
                     cx.notify();
-                }))
-                .on_action(cx.listener(|this, _: &PreviousPeriod, _, cx| {
-                    this.nav.step(-1);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SelectNextDay, _, cx| {
+                if this.nav.view == View::Month {
+                    this.nav.move_day(1);
                     cx.notify();
-                }))
-                .on_action(cx.listener(|this, _: &NextPeriod, _, cx| {
-                    this.nav.step(1);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SelectPreviousWeek, _, cx| {
+                if this.nav.view == View::Month {
+                    this.nav.move_day(-7);
                     cx.notify();
-                }))
-                .on_action(cx.listener(|this, _: &SelectPreviousDay, _, cx| {
-                    if this.nav.view == View::Month {
-                        this.nav.move_day(-1);
-                        cx.notify();
-                    }
-                }))
-                .on_action(cx.listener(|this, _: &SelectNextDay, _, cx| {
-                    if this.nav.view == View::Month {
-                        this.nav.move_day(1);
-                        cx.notify();
-                    }
-                }))
-                .on_action(cx.listener(|this, _: &SelectPreviousWeek, _, cx| {
-                    if this.nav.view == View::Month {
-                        this.nav.move_day(-7);
-                        cx.notify();
-                    }
-                }))
-                .on_action(cx.listener(|this, _: &SelectNextWeek, _, cx| {
-                    if this.nav.view == View::Month {
-                        this.nav.move_day(7);
-                        cx.notify();
-                    }
-                }))
-                .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
-                    this.scroll_period(event, cx)
-                }))
-                .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
-                    this.sidebar_visible = !this.sidebar_visible;
-                    this.sync_menu(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SelectNextWeek, _, cx| {
+                if this.nav.view == View::Month {
+                    this.nav.move_day(7);
                     cx.notify();
-                }))
-                .on_action(cx.listener(|this, _: &NewEvent, window, cx| this.new_event(window, cx)))
-                .on_action(cx.listener(|this, _: &SaveEvent, _, cx| this.save_editor(cx)))
-                .on_action(cx.listener(|this, _: &DeleteEvent, _, cx| this.delete_selected(cx)))
-                .on_action(cx.listener(|this, _: &UndoEvent, _, cx| this.undo(cx)))
-                .on_action(cx.listener(|this, _: &RedoEvent, _, cx| this.redo(cx)))
-                .on_action(cx.listener(|this, _: &ShowInspector, window, cx| {
+                }
+            }))
+            .on_scroll_wheel(
+                cx.listener(|this, event: &ScrollWheelEvent, _, cx| this.scroll_period(event, cx)),
+            )
+            .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
+                this.sidebar_visible = !this.sidebar_visible;
+                this.sync_menu(cx);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &NewEvent, window, cx| this.new_event(window, cx)))
+            .on_action(cx.listener(|this, _: &SaveEvent, _, cx| this.save_editor(cx)))
+            .on_action(cx.listener(|this, _: &DeleteEvent, _, cx| this.delete_selected(cx)))
+            .on_action(cx.listener(|this, _: &UndoEvent, _, cx| this.undo(cx)))
+            .on_action(cx.listener(|this, _: &RedoEvent, _, cx| this.redo(cx)))
+            .on_action(
+                cx.listener(|this, _: &ShowInspector, window, cx| {
                     this.inspect_selected(window, cx)
-                }))
-                .on_action(cx.listener(|this, _: &DismissInspector, _, cx| {
-                    this.editor = None;
-                    cx.notify();
-                }))
-                .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
-                .on_action(
-                    cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
-                );
+                }),
+            )
+            .on_action(cx.listener(|this, _: &DismissInspector, _, cx| this.dismiss(cx)))
+            .on_action(cx.listener(|this, _: &Search, window, cx| this.toggle_search(window, cx)))
+            .on_action(cx.listener(|this, _: &NewCalendar, _, cx| this.create_new_calendar(cx)))
+            .on_action(
+                cx.listener(|this, _: &RenameCalendar, window, cx| this.start_rename(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &DeleteCalendar, _, cx| this.start_delete(cx)))
+            .on_action(
+                cx.listener(|this, _: &NewCalendarSubscription, window, cx| {
+                    this.start_new_calendar_subscription(window, cx)
+                }),
+            )
+            .on_action(cx.listener(|_, _: &ShowSettings, _, cx| {
+                let main = cx.entity();
+                cx.defer(move |cx| crate::settings_window::show(main, cx));
+            }))
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
+                ContextMenuState::dismiss(&mut this.menu_at, window, cx);
+            }))
+            .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
+            .on_action(
+                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+            );
         root = root.child(self.toolbar(cx)).child(body);
         if self.sidebar_visible {
-            root = root.child(self.sidebar(&snapshot, cx));
+            root = root.child(self.sidebar(cx));
+        }
+        if self.search_open {
+            root = root.child(self.render_search(cx));
+        }
+        if let Some(menu_at) = self.menu_at.clone() {
+            root = root.child(
+                self.build_calendar_menu(menu_at.position())
+                    .render(&menu_at),
+            );
         }
         if let Some(error) = self.error.clone() {
             root = root.child(
@@ -1912,6 +2671,9 @@ impl Render for CalendarView {
         }
         if let Some(inspector) = self.inspector(cx) {
             root = root.child(inspector);
+        }
+        if let Some(sheet) = self.render_sheet(cx) {
+            root = root.child(sheet);
         }
         root
     }

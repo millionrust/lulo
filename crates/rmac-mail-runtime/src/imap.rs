@@ -342,6 +342,11 @@ impl ImapBackend {
     }
 }
 
+/// How many of a mailbox's newest header-only messages the background
+/// prefetch downloads after a sync, matching the Mac's own "recent mail
+/// is ready to read" feel without ever fetching a whole history.
+const PREFETCH_LIMIT: usize = 50;
+
 impl Backend for ImapBackend {
     fn sync(&mut self, store: &mut MailStorage, account: Uuid) -> Result<Vec<NewMail>, Error> {
         let mailboxes = self.client.list_mailboxes()?;
@@ -365,6 +370,44 @@ impl Backend for ImapBackend {
 
     fn interrupt(&self) -> Option<Interrupt> {
         self.client.interrupt_handle().ok()
+    }
+
+    fn fetch_one(&mut self, mailbox_name: &str, uid: i64) -> Result<Option<Vec<u8>>, Error> {
+        self.client.select(mailbox_name, None)?;
+        let uid = u32::try_from(uid).map_err(|_| Error::StaleUidValidity)?;
+        Ok(self.client.fetch_body(uid)?)
+    }
+
+    fn prefetch_recent_bodies(&mut self, store: &mut MailStorage) -> Result<(), Error> {
+        let mut touched_other_mailbox = false;
+        for mailbox in store.all_mailboxes()? {
+            let uids = store.uids_missing_body(mailbox.id, PREFETCH_LIMIT)?;
+            if uids.is_empty() {
+                continue;
+            }
+            self.client.select(&mailbox.name, None)?;
+            touched_other_mailbox |= mailbox.name != "INBOX";
+            for uid in uids {
+                let Ok(uid32) = u32::try_from(uid) else {
+                    continue;
+                };
+                let Some(bytes) = self.client.fetch_body(uid32)? else {
+                    continue;
+                };
+                let Some(summary) = store.message_by_uid(mailbox.id, uid)? else {
+                    continue;
+                };
+                if let Ok(parsed) = rmac_mail_mime::parse(&bytes) {
+                    let _ = store.attach_body(summary.id, &bytes, &parsed.plain_text);
+                }
+            }
+        }
+        // IDLE always watches Inbox; restore that if prefetch left another
+        // mailbox selected.
+        if touched_other_mailbox {
+            self.client.select("INBOX", None)?;
+        }
+        Ok(())
     }
 }
 
@@ -545,6 +588,253 @@ mod tests {
         assert!(store.pending_changes().unwrap().is_empty());
         assert!(backend.sync(&mut store, account).unwrap().is_empty());
         assert_eq!(store.cached_uids(inbox.id).unwrap(), vec![8]);
+        drop(backend);
+        server.join().unwrap();
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// MAIL-4 follow-up: a message synced header-only (as the account's
+    /// first sync always leaves historical Inbox mail) downloads its real
+    /// body when opened, instead of showing the one-line preview forever
+    /// — and the fetch never marks it \Seen, since the fixture script
+    /// below never offers a `UID STORE` response to accept one.
+    #[test]
+    fn fetch_one_downloads_a_header_only_message_without_marking_it_seen() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let config = Arc::new(
+                ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_single_cert(
+                        vec![CertificateDer::from(CERT)],
+                        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(KEY)),
+                    )
+                    .unwrap(),
+            );
+            let mut stream = StreamOwned::new(ServerConnection::new(config).unwrap(), socket);
+            send(&mut stream, "* OK ready\r\n");
+            while let Some(command) = line(&mut stream) {
+                let (tag, rest) = command.trim_end().split_once(' ').unwrap();
+                match rest {
+                    "CAPABILITY" => send(
+                        &mut stream,
+                        &format!("* CAPABILITY IMAP4rev1\r\n{tag} OK done\r\n"),
+                    ),
+                    "SELECT \"INBOX\"" => send(
+                        &mut stream,
+                        &format!("* 1 EXISTS\r\n* OK [UIDVALIDITY 42] valid\r\n{tag} OK done\r\n"),
+                    ),
+                    "UID FETCH 7 (UID BODY.PEEK[])" => literal(
+                        &mut stream,
+                        tag,
+                        7,
+                        "",
+                        b"From: Ada <ada@example.test>\r\nSubject: Existing\r\n\r\nThe full body, finally",
+                    ),
+                    _ => panic!("unexpected fixture command: {rest}"),
+                }
+            }
+        });
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(CertificateDer::from(CA)).unwrap();
+        let client = Client::connect_with_roots(
+            &Config {
+                host: "127.0.0.1".into(),
+                port,
+                tls: TlsMode::Implicit,
+                timeout: Duration::from_secs(3),
+            },
+            roots,
+        )
+        .unwrap();
+        let mut backend = ImapBackend {
+            client,
+            trash: None,
+        };
+
+        let root = std::env::temp_dir().join(format!("mail-imap-fetch-one-{}", Uuid::new_v4()));
+        let account = Uuid::new_v4();
+        let mut store = MailStorage::open(&root, account).unwrap();
+        let inbox = store.upsert_mailbox("INBOX", 42, Some("\\Inbox")).unwrap();
+        let message_id = store
+            .put_message(&NewMessage {
+                mailbox_id: inbox,
+                uid: 7,
+                message_id: None,
+                in_reply_to: None,
+                references: &[],
+                subject: "Existing",
+                sender: "Ada <ada@example.test>",
+                recipients: "bob@example.test",
+                cc: "",
+                preview: "a preview",
+                received_at: 1,
+                flags: 0,
+                body: None,
+                body_text: None,
+            })
+            .unwrap();
+
+        // Exactly how a first sync leaves historical Inbox mail: present,
+        // but header-only.
+        assert_eq!(store.uids_missing_body(inbox, 10).unwrap(), vec![7]);
+
+        let bytes = backend
+            .fetch_one("INBOX", 7)
+            .unwrap()
+            .expect("the fixture has UID 7");
+        let parsed = rmac_mail_mime::parse(&bytes).unwrap();
+        store
+            .attach_body(message_id, &bytes, &parsed.plain_text)
+            .unwrap();
+
+        // "Opening" it now shows the full body, not the one-line preview.
+        let filled = store.get_message(message_id).unwrap().unwrap();
+        assert!(filled.body_hash.is_some());
+        assert_eq!(store.read_blob(&filled.body_hash.unwrap()).unwrap(), bytes);
+        assert!(store.uids_missing_body(inbox, 10).unwrap().is_empty());
+        // Fetching a body is never a reason to mark a message read: the
+        // fixture above never answers a `UID STORE` command, and the flags
+        // the original sync wrote are untouched.
+        assert_eq!(filled.flags, 0);
+
+        drop(backend);
+        server.join().unwrap();
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// The background prefetch (run once after every sync, from
+    /// `run_worker`) only touches a mailbox that actually has header-only
+    /// mail, and always leaves Inbox selected afterwards so IDLE keeps
+    /// watching the right mailbox.
+    #[test]
+    fn prefetch_recent_bodies_fills_only_what_is_missing_and_restores_inbox() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let config = Arc::new(
+                ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_single_cert(
+                        vec![CertificateDer::from(CERT)],
+                        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(KEY)),
+                    )
+                    .unwrap(),
+            );
+            let mut stream = StreamOwned::new(ServerConnection::new(config).unwrap(), socket);
+            send(&mut stream, "* OK ready\r\n");
+            // Inbox already has a body for its one message, so prefetch
+            // never selects it to look — only "Archive", then restores
+            // Inbox at the end.
+            while let Some(command) = line(&mut stream) {
+                let (tag, rest) = command.trim_end().split_once(' ').unwrap();
+                match rest {
+                    "CAPABILITY" => send(
+                        &mut stream,
+                        &format!("* CAPABILITY IMAP4rev1\r\n{tag} OK done\r\n"),
+                    ),
+                    "SELECT \"Archive\"" => send(
+                        &mut stream,
+                        &format!("* 1 EXISTS\r\n* OK [UIDVALIDITY 43] valid\r\n{tag} OK done\r\n"),
+                    ),
+                    "UID FETCH 9 (UID BODY.PEEK[])" => literal(
+                        &mut stream,
+                        tag,
+                        9,
+                        "",
+                        b"From: Grandma\r\n\r\nPhotos from Sunday, finally downloaded",
+                    ),
+                    "SELECT \"INBOX\"" => send(
+                        &mut stream,
+                        &format!("* 1 EXISTS\r\n* OK [UIDVALIDITY 42] valid\r\n{tag} OK done\r\n"),
+                    ),
+                    _ => panic!("unexpected fixture command: {rest}"),
+                }
+            }
+        });
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(CertificateDer::from(CA)).unwrap();
+        let client = Client::connect_with_roots(
+            &Config {
+                host: "127.0.0.1".into(),
+                port,
+                tls: TlsMode::Implicit,
+                timeout: Duration::from_secs(3),
+            },
+            roots,
+        )
+        .unwrap();
+        let mut backend = ImapBackend {
+            client,
+            trash: None,
+        };
+
+        let root = std::env::temp_dir().join(format!("mail-imap-prefetch-{}", Uuid::new_v4()));
+        let account = Uuid::new_v4();
+        let mut store = MailStorage::open(&root, account).unwrap();
+        let inbox = store.upsert_mailbox("INBOX", 42, Some("\\Inbox")).unwrap();
+        let archive = store
+            .upsert_mailbox("Archive", 43, Some("\\Archive"))
+            .unwrap();
+        store
+            .put_message(&NewMessage {
+                mailbox_id: inbox,
+                uid: 1,
+                message_id: None,
+                in_reply_to: None,
+                references: &[],
+                subject: "Already read",
+                sender: "x",
+                recipients: "y",
+                cc: "",
+                preview: "z",
+                received_at: 1,
+                flags: 0,
+                body: Some(b"already have this one"),
+                body_text: Some("already have this one"),
+            })
+            .unwrap();
+        let archived = store
+            .put_message(&NewMessage {
+                mailbox_id: archive,
+                uid: 9,
+                message_id: None,
+                in_reply_to: None,
+                references: &[],
+                subject: "Photos from Sunday",
+                sender: "Grandma",
+                recipients: "y",
+                cc: "",
+                preview: "z",
+                received_at: 2,
+                flags: 0,
+                body: None,
+                body_text: None,
+            })
+            .unwrap();
+
+        backend.prefetch_recent_bodies(&mut store).unwrap();
+
+        let filled = store.get_message(archived).unwrap().unwrap();
+        assert!(filled.body_hash.is_some());
+        assert_eq!(
+            store.read_blob(&filled.body_hash.unwrap()).unwrap(),
+            b"From: Grandma\r\n\r\nPhotos from Sunday, finally downloaded"
+        );
+        assert!(store.uids_missing_body(archive, 10).unwrap().is_empty());
+        assert!(store.uids_missing_body(inbox, 10).unwrap().is_empty());
+
         drop(backend);
         server.join().unwrap();
         drop(store);

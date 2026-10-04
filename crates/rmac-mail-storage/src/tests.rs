@@ -178,6 +178,65 @@ fn all_mailboxes_and_messages_in_mailbox_feed_the_live_window() {
         .is_empty());
 }
 
+/// MAIL-4 follow-up: opening (or prefetching) a header-only message
+/// downloads and caches its real body instead of leaving it a one-line
+/// preview forever.
+#[test]
+fn attach_body_fills_in_a_header_only_message_and_keeps_its_flags() {
+    let mut fixture = Fixture::new();
+    let header_only = fixture.insert(7, "Existing", None);
+    let already_has_body = fixture.insert(8, "Has a body", Some(b"cached"));
+    fixture
+        .store
+        .set_server_flags(fixture.inbox, 7, FLAG_FLAGGED)
+        .unwrap();
+
+    assert_eq!(
+        fixture.store.uids_missing_body(fixture.inbox, 10).unwrap(),
+        vec![7]
+    );
+
+    fixture
+        .store
+        .attach_body(
+            header_only,
+            b"From: Ada\r\n\r\nThe real body text",
+            "The real body text",
+        )
+        .unwrap();
+
+    assert!(fixture
+        .store
+        .uids_missing_body(fixture.inbox, 10)
+        .unwrap()
+        .is_empty());
+    let filled = fixture.store.get_message(header_only).unwrap().unwrap();
+    assert!(filled.body_hash.is_some());
+    // Attaching a body is never a reason to change read/flagged state.
+    assert_eq!(filled.flags, FLAG_FLAGGED);
+    assert_eq!(
+        fixture.store.read_blob(&filled.body_hash.unwrap()).unwrap(),
+        b"From: Ada\r\n\r\nThe real body text"
+    );
+    // The new body text is searchable immediately (the same FTS trigger
+    // `put_message` relies on fires on this UPDATE too).
+    assert_eq!(
+        fixture
+            .store
+            .search("real body text", None, 10)
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let other = fixture
+        .store
+        .get_message(already_has_body)
+        .unwrap()
+        .unwrap();
+    assert!(other.body_hash.is_some());
+}
+
 #[test]
 fn sync_cursor_unread_and_pending_local_flags_survive_reopen() {
     let mut fixture = Fixture::new();

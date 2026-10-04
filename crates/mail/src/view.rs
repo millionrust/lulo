@@ -8,7 +8,8 @@ use gpui::{
 };
 use rmac_editor::InputState;
 use rmac_mail::{
-    compose::ComposeKind, MailState, Mailbox, Message, OrganizeAction, SearchScope, SpecialUse,
+    compose::ComposeKind, BodyState, MailState, Mailbox, Message, OrganizeAction, SearchScope,
+    SpecialUse,
 };
 use rmac_mail_mime::{BlockKind, RichText};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, TextField};
@@ -195,17 +196,30 @@ impl MailView {
             .detach();
     }
 
-    /// Fetches and parses the selected message's real body in the
-    /// background, the first time it is opened. A fixture message or one
-    /// already loaded is a no-op (MAIL-10: never parses MIME for rows
-    /// nobody has opened).
+    /// Starts loading the selected message's real body the first time it
+    /// is opened: a quick local cache check, then (only if nothing is
+    /// cached — a message synced header-only) a network download, the way
+    /// Mac Mail downloads on demand when you open older mail. A fixture
+    /// message, or one already loading/loaded, is a no-op (MAIL-10: never
+    /// parses MIME, or hits the network, for rows nobody has opened).
     fn ensure_body_loaded(&mut self, cx: &mut Context<Self>) {
         let Some(message) = self.state.selected_message() else {
             return;
         };
-        if message.body_loaded {
+        if message.body_state != BodyState::NotLoaded {
             return;
         }
+        self.load_body_for_selected(cx);
+    }
+
+    /// Does the actual local-cache-then-network load, regardless of the
+    /// message's current `BodyState`. `ensure_body_loaded` only calls this
+    /// once per message (guarded on `NotLoaded`); a Retry click after a
+    /// failed download calls it directly.
+    fn load_body_for_selected(&mut self, cx: &mut Context<Self>) {
+        let Some(message) = self.state.selected_message() else {
+            return;
+        };
         let Mailbox::Real(real) = message.mailbox.clone() else {
             return;
         };
@@ -213,17 +227,59 @@ impl MailView {
             return;
         };
         let id = message.id.clone();
+        let runtime = self.runtime.clone();
+        self.state.set_body_state(&id, BodyState::Loading);
+        cx.notify();
         cx.spawn(async move |this, cx| {
-            let loaded = cx
+            let account = real.account;
+            let mailbox_id = real.mailbox_id;
+            let cached = cx
                 .background_executor()
-                .spawn(async move { crate::live::load_body(real.account, real.mailbox_id, row_id) })
+                .spawn(async move { crate::live::cached_body(account, mailbox_id, row_id) })
                 .await;
-            if let Some((body, attachment)) = loaded {
+            if let Some((body, attachment)) = cached {
                 let _ = this.update(cx, |this, cx| {
                     this.state.set_loaded_body(&id, body, attachment);
                     cx.notify();
                 });
+                return;
             }
+            let Some(runtime) = runtime else {
+                let _ = this.update(cx, |this, cx| {
+                    this.state.set_body_state(
+                        &id,
+                        BodyState::Failed("No network connection.".to_owned()),
+                    );
+                    cx.notify();
+                });
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.state.set_body_state(&id, BodyState::Downloading);
+                cx.notify();
+            });
+            let account_path = real.account_path.clone();
+            let mailbox_name = real.name.clone();
+            let outcome = cx
+                .background_executor()
+                .spawn(async move {
+                    crate::live::fetch_and_store_body(
+                        runtime,
+                        account,
+                        account_path,
+                        mailbox_name,
+                        mailbox_id,
+                        row_id,
+                    )
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                match outcome {
+                    Ok((body, attachment)) => this.state.set_loaded_body(&id, body, attachment),
+                    Err(message) => this.state.set_body_state(&id, BodyState::Failed(message)),
+                }
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -854,18 +910,74 @@ impl MailView {
                     .child("This message contains remote content. Images are blocked."),
             );
         }
-        if message.body_loaded {
-            body = body.child(self.rich_body(&message.body));
-            if let Some(attachment) = message.attachment.clone() {
-                body = body.child(self.attachment_chip(attachment, cx));
+        match &message.body_state {
+            BodyState::Loaded => {
+                body = body.child(self.rich_body(&message.body));
+                if let Some(attachment) = message.attachment.clone() {
+                    body = body.child(self.attachment_chip(attachment, cx));
+                }
             }
-        } else {
-            body = body.child(
-                div()
-                    .text_size(px(13.0))
-                    .text_color(mac::text_secondary())
-                    .child("Loading message…"),
-            );
+            BodyState::Downloading => {
+                body = body.child(
+                    div()
+                        .id("mail-body-downloading")
+                        .role(Role::Status)
+                        .aria_label("Downloading message…")
+                        .text_size(px(13.0))
+                        .text_color(mac::text_secondary())
+                        .child("Downloading message…"),
+                );
+            }
+            BodyState::Failed(error) => {
+                let error = error.clone();
+                body = body.child(
+                    div()
+                        .id("mail-body-failed")
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.0))
+                        .child(
+                            div()
+                                .id("mail-body-failed-message")
+                                .role(Role::Status)
+                                .aria_label(error.clone())
+                                .text_size(px(13.0))
+                                .text_color(mac::text_secondary())
+                                .child(error),
+                        )
+                        .child(
+                            div()
+                                .id("mail-body-retry")
+                                .role(Role::Button)
+                                .aria_label("Retry")
+                                .cursor_pointer()
+                                .w(px(70.0))
+                                .h(px(26.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(mac::radius_control()))
+                                .bg(mac::control_fill())
+                                .text_color(mac::text())
+                                .text_size(px(12.0))
+                                .child("Retry")
+                                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                                    this.load_body_for_selected(cx);
+                                })),
+                        ),
+                );
+            }
+            BodyState::NotLoaded | BodyState::Loading => {
+                body = body.child(
+                    div()
+                        .id("mail-body-loading")
+                        .role(Role::Status)
+                        .aria_label("Loading message…")
+                        .text_size(px(13.0))
+                        .text_color(mac::text_secondary())
+                        .child("Loading message…"),
+                );
+            }
         }
         body.into_any_element()
     }

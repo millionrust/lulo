@@ -31,6 +31,7 @@ rmac-appearance-portal = { version = "=0.9.0-beta.1", path = "../crates/rmac-app
 rmac-archive = { version = "=0.9.0-beta.1", path = "../crates/rmac-archive" }
 rmac-audio = { version = "=0.9.0-beta.1", path = "../crates/rmac-audio" }
 rmac-bluetooth = { version = "=0.9.0-beta.1", path = "../crates/rmac-bluetooth" }
+rmac-calendar-agent = { version = "=0.9.0-beta.1", path = "../crates/calendar-agent" }
 rmac-compositor = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor-niri" }
 rmac-design = { version = "=0.9.0-beta.1", path = "../crates/rmac-design" }

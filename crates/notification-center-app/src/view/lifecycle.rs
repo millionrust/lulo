@@ -66,7 +66,7 @@ impl NotificationCenterView {
         // The widgets added here, read from the desktop's saved state. The
         // Weather face shows the cache the wallpaper process keeps fresh.
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            use rmac_desktop::widgets::WidgetKind;
+            use rmac_desktop::widgets::{WidgetKind, WidgetSize};
             let (widgets, data) = blocking::unblock(|| {
                 let widgets = rmac_desktop::settings::load()
                     .map(|settings| {
@@ -90,6 +90,11 @@ impl NotificationCenterView {
                     .any(|widget| widget.kind == WidgetKind::Weather)
                 {
                     data.weather = Some(rmac_desktop_widgets::read_weather(false));
+                }
+                if widgets.iter().any(|widget| {
+                    widget.kind == WidgetKind::Calendar && widget.size == WidgetSize::Medium
+                }) {
+                    data.calendar = rmac_desktop_widgets::read_calendar_events(3);
                 }
                 (widgets, data)
             })

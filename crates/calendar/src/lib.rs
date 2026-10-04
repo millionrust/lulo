@@ -2,6 +2,7 @@
 //! management and search (CAL-6). EDS work stays off the UI thread.
 
 pub mod editing;
+pub mod invitations;
 pub mod store;
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone, Utc, Weekday};

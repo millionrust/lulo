@@ -1445,6 +1445,7 @@ impl Wallpaper {
             .left(px(shown_left))
             .top(px(shown_top))
             .child(rmac_desktop_widgets::face(
+                widget.id,
                 widget.kind,
                 widget.size,
                 1.0,

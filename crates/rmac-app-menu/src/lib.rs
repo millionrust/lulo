@@ -1579,6 +1579,7 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
             item!("Next Period", "calendar::NextPeriod", "⌘→"),
             item!("Show Sidebar", "calendar::ToggleSidebar", "⌃⌘S", separator),
             item!("Search", "calendar::Search", "⌘F"),
+            item!("Invitations", "calendar::ShowInvitations", "", separator),
         ],
     },
     MenuSpec {

@@ -17,7 +17,7 @@ and the `MenuSpec { label: ..., items: &[ ... ] }` entries of a
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 @dataclass
@@ -137,10 +137,136 @@ def _find_matching_paren(s: str, open_idx: int) -> int:
     raise ValueError("unbalanced brackets")
 
 
+def _spelling_and_grammar_submenu(prefix: str) -> MenuItem:
+    """Mirrors `spelling_and_grammar_submenu!` in `crates/rmac-app-menu/src/lib.rs`."""
+    return MenuItem(
+        "Spelling and Grammar",
+        f"{prefix}::SpellingAndGrammarMenu",
+        "",
+        False,
+        [
+            MenuItem("Show Spelling and Grammar", f"{prefix}::ShowSpellingAndGrammar", "⌘:", False, []),
+            MenuItem("Check Document Now", f"{prefix}::CheckDocumentNow", "⌘;", False, []),
+            MenuItem("Check Spelling While Typing", f"{prefix}::ToggleCheckSpellingWhileTyping", "", True, []),
+            MenuItem("Check Grammar With Spelling", f"{prefix}::ToggleCheckGrammarWithSpelling", "", False, []),
+            MenuItem(
+                "Correct Spelling Automatically",
+                f"{prefix}::ToggleCorrectSpellingAutomatically",
+                "",
+                False,
+                [],
+            ),
+        ],
+    )
+
+
+def _transformations_submenu(prefix: str) -> MenuItem:
+    """Mirrors `transformations_submenu!` in `crates/rmac-app-menu/src/lib.rs`."""
+    return MenuItem(
+        "Transformations",
+        f"{prefix}::TransformationsMenu",
+        "",
+        False,
+        [
+            MenuItem("Make Uppercase", f"{prefix}::TransformUppercase", "", False, []),
+            MenuItem("Make Lowercase", f"{prefix}::TransformLowercase", "", False, []),
+            MenuItem("Capitalise", f"{prefix}::TransformCapitalise", "", False, []),
+        ],
+    )
+
+
+def _speech_submenu(prefix: str) -> MenuItem:
+    """Mirrors `speech_submenu!` in `crates/rmac-app-menu/src/lib.rs`."""
+    return MenuItem(
+        "Speech",
+        f"{prefix}::SpeechMenu",
+        "",
+        False,
+        [
+            MenuItem("Start Speaking", f"{prefix}::StartSpeaking", "", False, []),
+            MenuItem("Stop Speaking", f"{prefix}::StopSpeaking", "", False, []),
+        ],
+    )
+
+
+def _substitutions_submenu_with_master_toggle(prefix: str) -> MenuItem:
+    """Mirrors `substitutions_submenu_with_master_toggle!`."""
+    return MenuItem(
+        "Substitutions",
+        f"{prefix}::SubstitutionsMenu",
+        "",
+        False,
+        [
+            MenuItem("Smart Substitutions", f"{prefix}::ToggleSmartSubstitutions", "", False, []),
+            MenuItem("Smart Copy/Paste", f"{prefix}::ToggleSmartCopyPaste", "", True, []),
+            MenuItem("Smart Quotes", f"{prefix}::ToggleSmartQuotes", "", False, []),
+            MenuItem("Smart Dashes", f"{prefix}::ToggleSmartDashes", "", False, []),
+            MenuItem("Smart Links", f"{prefix}::ToggleSmartLinks", "", False, []),
+            MenuItem("Text Replacement", f"{prefix}::ToggleTextReplacement", "", False, []),
+        ],
+    )
+
+
+def _substitutions_submenu_with_lists_and_tags(prefix: str) -> MenuItem:
+    """Mirrors `substitutions_submenu_with_lists_and_tags!`."""
+    return MenuItem(
+        "Substitutions",
+        f"{prefix}::SubstitutionsMenu",
+        "",
+        False,
+        [
+            MenuItem("Show Substitutions", f"{prefix}::ShowSubstitutions", "", False, []),
+            MenuItem("Smart Copy/Paste", f"{prefix}::ToggleSmartCopyPaste", "", True, []),
+            MenuItem("Smart Quotes", f"{prefix}::ToggleSmartQuotes", "", False, []),
+            MenuItem("Smart Lists", f"{prefix}::ToggleSmartLists", "", False, []),
+            MenuItem("Smart Dashes", f"{prefix}::ToggleSmartDashes", "", False, []),
+            MenuItem("Smart Links", f"{prefix}::ToggleSmartLinks", "", False, []),
+            MenuItem("Smart Tags", f"{prefix}::ToggleSmartTags", "", False, []),
+            MenuItem("Text Replacement", f"{prefix}::ToggleTextReplacement", "", False, []),
+        ],
+    )
+
+
+def _substitutions_submenu_with_data_detectors(prefix: str) -> MenuItem:
+    """Mirrors `substitutions_submenu_with_data_detectors!`."""
+    return MenuItem(
+        "Substitutions",
+        f"{prefix}::SubstitutionsMenu",
+        "",
+        False,
+        [
+            MenuItem("Show Substitutions", f"{prefix}::ShowSubstitutions", "", False, []),
+            MenuItem("Smart Copy/Paste", f"{prefix}::ToggleSmartCopyPaste", "", True, []),
+            MenuItem("Smart Quotes", f"{prefix}::ToggleSmartQuotes", "", False, []),
+            MenuItem("Smart Dashes", f"{prefix}::ToggleSmartDashes", "", False, []),
+            MenuItem("Smart Links", f"{prefix}::ToggleSmartLinks", "", False, []),
+            MenuItem("Data Detectors", f"{prefix}::ToggleDataDetectors", "", False, []),
+            MenuItem("Text Replacement", f"{prefix}::ToggleTextReplacement", "", False, []),
+        ],
+    )
+
+
+# Shared Edit-menu submenu macros defined once in `rmac-app-menu/src/lib.rs`
+# and used by several apps' static tables (see the comment above them
+# there). Each takes the app's action-namespace prefix as its first
+# argument and expands to a fixed `MenuItem` tree; keep these in sync with
+# that file when a label, shortcut or shape changes.
+_SHARED_SUBMENU_BUILDERS = {
+    "spelling_and_grammar_submenu": _spelling_and_grammar_submenu,
+    "transformations_submenu": _transformations_submenu,
+    "speech_submenu": _speech_submenu,
+    "substitutions_submenu_with_master_toggle": _substitutions_submenu_with_master_toggle,
+    "substitutions_submenu_with_lists_and_tags": _substitutions_submenu_with_lists_and_tags,
+    "substitutions_submenu_with_data_detectors": _substitutions_submenu_with_data_detectors,
+}
+
+
 def parse_macro_call(call: str) -> MenuItem:
-    """Parse a single `item!(...)` or `submenu!(...)` invocation."""
+    """Parse a single `item!(...)`/`submenu!(...)` invocation, or a call to
+    one of the shared submenu macros in `_SHARED_SUBMENU_BUILDERS`."""
     call = call.strip()
-    m = re.match(r"^(item|submenu)!\s*\(", call)
+    names = "|".join(["item", "submenu", *_SHARED_SUBMENU_BUILDERS])
+    m = re.match(rf"^({names})!\s*\(", call)
     if not m:
         raise ValueError(f"not a recognised macro call: {call[:60]!r}")
     kind = m.group(1)
@@ -148,6 +274,13 @@ def parse_macro_call(call: str) -> MenuItem:
     close_idx = _find_matching_paren(call, open_idx)
     inner = call[open_idx + 1 : close_idx]
     args = split_top_level(inner, ",")
+
+    if kind in _SHARED_SUBMENU_BUILDERS:
+        prefix = _strip_literal(args[0])
+        built = _SHARED_SUBMENU_BUILDERS[kind](prefix)
+        if len(args) > 1 and args[1].strip() == "separator":
+            built = replace(built, separator_before=True)
+        return built
 
     if kind == "item":
         label = _strip_literal(args[0])

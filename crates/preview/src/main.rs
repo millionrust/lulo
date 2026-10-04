@@ -81,6 +81,13 @@ gpui::actions!(
         RevertMarkup,
         UndoMarkup,
         RedoMarkup,
+        ShowSpellingAndGrammar,
+        CheckDocumentNow,
+        ToggleCheckSpellingWhileTyping,
+        ToggleCheckGrammarWithSpelling,
+        ToggleCorrectSpellingAutomatically,
+        StartSpeaking,
+        StopSpeaking,
         // File ▸ Open Recent ▸ (PREV-08/PREV-15): one action per shown row,
         // up to `rmac_app_menu::recent::MAX_ENTRIES`, plus "Clear Menu".
         OpenRecent0,

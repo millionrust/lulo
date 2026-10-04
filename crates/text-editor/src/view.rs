@@ -14,6 +14,7 @@ mod render;
 mod responsive_layout;
 mod saving;
 mod startup;
+mod text_assist;
 
 use std::{
     ffi::OsString,
@@ -241,6 +242,12 @@ struct EditorView {
     /// The modal alert currently shown, if any (shared `rmac_ui::alert`).
     alert: Option<ActiveAlert>,
     _subscriptions: Vec<Subscription>,
+    /// Edit ▸ Spelling and Grammar / Substitutions for the document.
+    text_assist: rmac_ui::text_assist::TextAssistSettings,
+    spell_checker: Arc<rmac_spelling::HunspellChecker>,
+    /// Edit ▸ Substitutions ▸ Data Detectors: checked, persisted for this
+    /// session, with no live effect wired yet (see docs/parity.md TE-07).
+    data_detectors: bool,
 }
 
 #[cfg(test)]

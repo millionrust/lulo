@@ -219,6 +219,102 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &Capitalise, window, cx| {
                 this.transform_selection(TextTransform::Capitalise, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ShowSpellingAndGrammar, window, cx| {
+                this.check_document_now(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &CheckDocumentNow, window, cx| {
+                this.check_document_now(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &ToggleCheckSpellingWhileTyping, _, cx| {
+                    this.text_assist.check_spelling_while_typing =
+                        !this.text_assist.check_spelling_while_typing;
+                    rmac_ui::set_menu_checked(
+                        "notes::ToggleCheckSpellingWhileTyping",
+                        this.text_assist.check_spelling_while_typing,
+                        cx,
+                    );
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleCheckGrammarWithSpelling, _, cx| {
+                    this.text_assist.check_grammar_with_spelling =
+                        !this.text_assist.check_grammar_with_spelling;
+                    rmac_ui::set_menu_checked(
+                        "notes::ToggleCheckGrammarWithSpelling",
+                        this.text_assist.check_grammar_with_spelling,
+                        cx,
+                    );
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleCorrectSpellingAutomatically, _, cx| {
+                    this.text_assist.correct_spelling_automatically =
+                        !this.text_assist.correct_spelling_automatically;
+                    rmac_ui::set_menu_checked(
+                        "notes::ToggleCorrectSpellingAutomatically",
+                        this.text_assist.correct_spelling_automatically,
+                        cx,
+                    );
+                }),
+            )
+            .on_action(cx.listener(|_, _: &ShowSubstitutions, _, cx| {
+                // No dedicated Substitutions panel exists yet; Settings…
+                // is the nearest real destination (see docs/parity.md
+                // NOTES-15).
+                let main = cx.entity();
+                cx.defer(move |cx| settings_window::show(main, cx));
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartCopyPaste, _, cx| {
+                this.text_assist.smart_copy_paste = !this.text_assist.smart_copy_paste;
+                rmac_ui::set_menu_checked(
+                    "notes::ToggleSmartCopyPaste",
+                    this.text_assist.smart_copy_paste,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartQuotes, _, cx| {
+                this.text_assist.smart_quotes = !this.text_assist.smart_quotes;
+                rmac_ui::set_menu_checked(
+                    "notes::ToggleSmartQuotes",
+                    this.text_assist.smart_quotes,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartLists, _, cx| {
+                this.smart_lists = !this.smart_lists;
+                rmac_ui::set_menu_checked("notes::ToggleSmartLists", this.smart_lists, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartDashes, _, cx| {
+                this.text_assist.smart_dashes = !this.text_assist.smart_dashes;
+                rmac_ui::set_menu_checked(
+                    "notes::ToggleSmartDashes",
+                    this.text_assist.smart_dashes,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartLinks, _, cx| {
+                this.text_assist.smart_links = !this.text_assist.smart_links;
+                rmac_ui::set_menu_checked(
+                    "notes::ToggleSmartLinks",
+                    this.text_assist.smart_links,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSmartTags, _, cx| {
+                this.smart_tags = !this.smart_tags;
+                rmac_ui::set_menu_checked("notes::ToggleSmartTags", this.smart_tags, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleTextReplacement, _, cx| {
+                this.text_assist.text_replacement = !this.text_assist.text_replacement;
+                rmac_ui::set_menu_checked(
+                    "notes::ToggleTextReplacement",
+                    this.text_assist.text_replacement,
+                    cx,
+                );
+            }))
+            .on_action(cx.listener(|this, _: &StartSpeaking, _, cx| this.start_speaking(cx)))
+            .on_action(cx.listener(|_, _: &StopSpeaking, _, _| rmac_ui::stop_speaking()))
             .on_action(cx.listener(|this, _: &ExportNotes, _, cx| this.begin_export(cx)))
             .on_action(cx.listener(|this, _: &PrintNote, window, cx| this.print_note(window, cx)))
             .on_action(

@@ -160,12 +160,7 @@ impl EditorView {
         let field = if let Some(field) = focused_field {
             field
         } else {
-            if self.file_busy
-                || self.file_action_blocked()
-                || self.prevent_editing
-                || self.rtf_runs.is_some()
-                || self.long_lines.is_some()
-            {
+            if self.editing_blocked() {
                 return;
             }
             &self.input
@@ -173,6 +168,17 @@ impl EditorView {
         if rmac_ui::transform_selection(field, transformation, window, cx) {
             cx.notify();
         }
+    }
+
+    /// Whether `self.input` currently accepts an edit, for commands that
+    /// reach into the document directly (Insert ▸ breaks, Transformations,
+    /// Spelling and Grammar, Substitutions).
+    pub(super) fn editing_blocked(&self) -> bool {
+        self.file_busy
+            || self.file_action_blocked()
+            || self.prevent_editing
+            || self.rtf_runs.is_some()
+            || self.long_lines.is_some()
     }
 
     pub(super) fn insert_break(

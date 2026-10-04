@@ -27,13 +27,15 @@ use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 use crate::{
     ActualSize, ActualSizeOnAll, AddBookmark, AnnotateArrow, AnnotateHighlight, AnnotateLine,
     AnnotateOval, AnnotateRectangle, AnnotateSignature, AnnotateStrikeThrough, AnnotateText,
-    AnnotateUnderline, Back, CloseAll, CloseSelected, CloseWindow, Copy, DeleteSelection,
-    EnterFullScreen, ExportAsPdf, Find, FindNext, FindPrevious, Forward, GoToPage, HideSidebar,
-    JumpToSelection, MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument,
-    PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs,
-    SaveMarkup, SelectAll, ShowBookmarks, ShowImageBackground, ShowInspector, ShowThumbnails,
-    ToggleMarkup, ToggleToolbar, UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut,
-    ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
+    AnnotateUnderline, Back, CheckDocumentNow, CloseAll, CloseSelected, CloseWindow, Copy,
+    DeleteSelection, EnterFullScreen, ExportAsPdf, Find, FindNext, FindPrevious, Forward, GoToPage,
+    HideSidebar, JumpToSelection, MoveToTrash, NextDocument, NextItem, PageDown, PageUp,
+    PreviousDocument, PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft,
+    RotateRight, SaveAs, SaveMarkup, SelectAll, ShowBookmarks, ShowImageBackground, ShowInspector,
+    ShowSpellingAndGrammar, ShowThumbnails, StartSpeaking, StopSpeaking,
+    ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
+    ToggleCorrectSpellingAutomatically, ToggleMarkup, ToggleToolbar, UndoMarkup,
+    UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -456,6 +458,11 @@ pub(crate) struct PreviewView {
     save_as_busy: bool,
     #[cfg(target_os = "linux")]
     clipboard_checked: bool,
+    /// Edit ▸ Spelling and Grammar ▸ Check Spelling While Typing/Check
+    /// Grammar With Spelling/Correct Spelling Automatically for the Tools
+    /// ▸ Annotate ▸ Text markup field, Preview's only editable text.
+    text_assist: rmac_ui::text_assist::TextAssistSettings,
+    spell_checker: Arc<rmac_spelling::HunspellChecker>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1220,22 +1227,33 @@ impl PreviewView {
         })
         .detach();
         let markup_text_input = cx.new(|cx| InputState::new(window, cx).placeholder("Text"));
-        cx.subscribe(&markup_text_input, |this, _, event: &InputEvent, cx| {
-            if let InputEvent::Change = event {
-                let value = this.markup_text_input.read(cx).value().to_string();
-                if let Some(index) = this.markup_selected {
-                    if let Some(item) = this
-                        .slot_mut()
-                        .and_then(|slot| slot.markup.items.get_mut(index))
-                    {
-                        if item.tool == Tool::Text {
-                            item.text = value;
-                            cx.notify();
+        cx.subscribe_in(
+            &markup_text_input,
+            window,
+            |this, field, event: &InputEvent, window, cx| {
+                if let InputEvent::Change = event {
+                    let value = field.read(cx).value().to_string();
+                    if let Some(index) = this.markup_selected {
+                        if let Some(item) = this
+                            .slot_mut()
+                            .and_then(|slot| slot.markup.items.get_mut(index))
+                        {
+                            if item.tool == Tool::Text {
+                                item.text = value;
+                                cx.notify();
+                            }
                         }
                     }
+                    rmac_ui::text_assist::on_text_changed(
+                        field,
+                        this.text_assist,
+                        Some(this.spell_checker.as_ref() as &dyn rmac_ui::text_assist::SpellChecker),
+                        window,
+                        cx,
+                    );
                 }
-            }
-        })
+            },
+        )
         .detach();
         let slots: Vec<Slot> = paths
             .into_iter()
@@ -1291,12 +1309,35 @@ impl PreviewView {
             save_as_busy: false,
             #[cfg(target_os = "linux")]
             clipboard_checked: false,
+            text_assist: rmac_ui::text_assist::TextAssistSettings {
+                smart_quotes: false,
+                smart_dashes: false,
+                text_replacement: false,
+                ..rmac_ui::text_assist::TextAssistSettings::default()
+            },
+            spell_checker: rmac_spelling::shared(),
         };
         for index in 0..view.slots.len() {
             view.start_load(index, cx);
         }
         view.load_signatures(cx);
         window.focus(&view.page_focus, cx);
+        rmac_ui::set_menu_checked(
+            "preview::ToggleCheckSpellingWhileTyping",
+            view.text_assist.check_spelling_while_typing,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "preview::ToggleCheckGrammarWithSpelling",
+            view.text_assist.check_grammar_with_spelling,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "preview::ToggleCorrectSpellingAutomatically",
+            view.text_assist.correct_spelling_automatically,
+            cx,
+        );
+        rmac_ui::set_menu_enabled("preview::StopSpeaking", false, cx);
         view
     }
 
@@ -1731,6 +1772,62 @@ impl PreviewView {
             cx,
         ));
         cx.notify();
+    }
+
+    // ---- spelling and speech ------------------------------------------
+
+    /// Edit ▸ Spelling and Grammar ▸ Show Spelling and Grammar / Check
+    /// Document Now: jump to the next issue in the Tools ▸ Annotate ▸
+    /// Text markup field, Preview's only editable text (the PDF/image
+    /// itself is read-only).
+    fn check_document_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        rmac_ui::text_assist::check_document_now(
+            &self.markup_text_input,
+            self.spell_checker.as_ref(),
+            self.text_assist.check_grammar_with_spelling,
+            window,
+            cx,
+        );
+    }
+
+    /// Edit ▸ Speech ▸ Start Speaking: the focused markup Text
+    /// annotation's selection (or its whole text) when one is focused,
+    /// else the current PDF text selection.
+    fn start_speaking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let markup_focused =
+            gpui::Focusable::focus_handle(self.markup_text_input.read(cx), cx).is_focused(window);
+        let text = if markup_focused {
+            let input = self.markup_text_input.read(cx);
+            let range = input.selected_range();
+            let full = input.text().to_string();
+            full.get(range)
+                .filter(|selected| !selected.trim().is_empty())
+                .map(str::to_owned)
+                .unwrap_or(full)
+        } else {
+            self.selected_pdf_text().unwrap_or_default()
+        };
+        rmac_ui::speak(text, "preview::StopSpeaking", cx);
+    }
+
+    /// The current PDF text selection, if any (`None` for an image, or
+    /// when nothing is selected).
+    fn selected_pdf_text(&self) -> Option<String> {
+        let slot = self.slot()?;
+        if slot.kind() != Some(Kind::Pdf) {
+            return None;
+        }
+        let (anchor, focus) = self.text_selection?;
+        let TextState::Ready(pages) = &slot.text else {
+            return None;
+        };
+        let (from, to) = ordered(anchor, focus);
+        let text = poppler::selected_text(
+            pages,
+            (from.page, from.word, from.char),
+            (to.page, to.word, to.char),
+        );
+        (!text.is_empty()).then_some(text)
     }
 
     // ---- copy -------------------------------------------------------------
@@ -4376,6 +4473,51 @@ impl Render for PreviewView {
                 this.on_key_down(event, window, cx);
             }))
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
+            .on_action(cx.listener(|this, _: &ShowSpellingAndGrammar, window, cx| {
+                this.check_document_now(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &CheckDocumentNow, window, cx| {
+                this.check_document_now(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &ToggleCheckSpellingWhileTyping, _, cx| {
+                    this.text_assist.check_spelling_while_typing =
+                        !this.text_assist.check_spelling_while_typing;
+                    rmac_ui::set_menu_checked(
+                        "preview::ToggleCheckSpellingWhileTyping",
+                        this.text_assist.check_spelling_while_typing,
+                        cx,
+                    );
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleCheckGrammarWithSpelling, _, cx| {
+                    this.text_assist.check_grammar_with_spelling =
+                        !this.text_assist.check_grammar_with_spelling;
+                    rmac_ui::set_menu_checked(
+                        "preview::ToggleCheckGrammarWithSpelling",
+                        this.text_assist.check_grammar_with_spelling,
+                        cx,
+                    );
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleCorrectSpellingAutomatically, _, cx| {
+                    this.text_assist.correct_spelling_automatically =
+                        !this.text_assist.correct_spelling_automatically;
+                    rmac_ui::set_menu_checked(
+                        "preview::ToggleCorrectSpellingAutomatically",
+                        this.text_assist.correct_spelling_automatically,
+                        cx,
+                    );
+                }),
+            )
+            .on_action(cx.listener(|this, _: &StartSpeaking, window, cx| {
+                this.start_speaking(window, cx);
+            }))
+            .on_action(cx.listener(|_, _: &StopSpeaking, _, _| {
+                rmac_ui::stop_speaking();
+            }))
             .on_action(cx.listener(|this, _: &DeleteSelection, _, cx| {
                 this.delete_markup(cx);
             }))

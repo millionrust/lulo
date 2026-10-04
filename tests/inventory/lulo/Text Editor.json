@@ -285,6 +285,106 @@
           ]
         },
         {
+          "label": "Spelling and Grammar",
+          "action": "text_editor::SpellingAndGrammarMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Show Spelling and Grammar",
+              "action": "text_editor::ShowSpellingAndGrammar",
+              "shortcut": "⌘:",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Check Document Now",
+              "action": "text_editor::CheckDocumentNow",
+              "shortcut": "⌘;",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Check Spelling While Typing",
+              "action": "text_editor::ToggleCheckSpellingWhileTyping",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Check Grammar With Spelling",
+              "action": "text_editor::ToggleCheckGrammarWithSpelling",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Correct Spelling Automatically",
+              "action": "text_editor::ToggleCorrectSpellingAutomatically",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Substitutions",
+          "action": "text_editor::SubstitutionsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Show Substitutions",
+              "action": "text_editor::ShowSubstitutions",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Smart Copy/Paste",
+              "action": "text_editor::ToggleSmartCopyPaste",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Smart Quotes",
+              "action": "text_editor::ToggleSmartQuotes",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Smart Dashes",
+              "action": "text_editor::ToggleSmartDashes",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Smart Links",
+              "action": "text_editor::ToggleSmartLinks",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Data Detectors",
+              "action": "text_editor::ToggleDataDetectors",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Text Replacement",
+              "action": "text_editor::ToggleTextReplacement",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Transformations",
           "action": "text_editor::TransformationsMenu",
           "shortcut": "",
@@ -307,6 +407,28 @@
             {
               "label": "Capitalise",
               "action": "text_editor::TransformCapitalise",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Speech",
+          "action": "text_editor::SpeechMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Start Speaking",
+              "action": "text_editor::StartSpeaking",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Stop Speaking",
+              "action": "text_editor::StopSpeaking",
               "shortcut": "",
               "separator_before": false,
               "children": []

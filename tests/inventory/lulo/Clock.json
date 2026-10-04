@@ -141,6 +141,150 @@
           "shortcut": "⌘A",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Spelling and Grammar",
+          "action": "clock::SpellingAndGrammarMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Show Spelling and Grammar",
+              "action": "clock::ShowSpellingAndGrammar",
+              "shortcut": "⌘:",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Check Document Now",
+              "action": "clock::CheckDocumentNow",
+              "shortcut": "⌘;",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Check Spelling While Typing",
+              "action": "clock::ToggleCheckSpellingWhileTyping",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Check Grammar With Spelling",
+              "action": "clock::ToggleCheckGrammarWithSpelling",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Correct Spelling Automatically",
+              "action": "clock::ToggleCorrectSpellingAutomatically",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Substitutions",
+          "action": "clock::SubstitutionsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Smart Substitutions",
+              "action": "clock::ToggleSmartSubstitutions",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Smart Copy/Paste",
+              "action": "clock::ToggleSmartCopyPaste",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Smart Quotes",
+              "action": "clock::ToggleSmartQuotes",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Smart Dashes",
+              "action": "clock::ToggleSmartDashes",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Smart Links",
+              "action": "clock::ToggleSmartLinks",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Text Replacement",
+              "action": "clock::ToggleTextReplacement",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Transformations",
+          "action": "clock::TransformationsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Make Uppercase",
+              "action": "clock::TransformUppercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make Lowercase",
+              "action": "clock::TransformLowercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Capitalise",
+              "action": "clock::TransformCapitalise",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Speech",
+          "action": "clock::SpeechMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Start Speaking",
+              "action": "clock::StartSpeaking",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Stop Speaking",
+              "action": "clock::StopSpeaking",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         }
       ]
     },

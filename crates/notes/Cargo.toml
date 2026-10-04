@@ -21,6 +21,7 @@ rmac-notes-storage.workspace = true
 rmac-notes-store.workspace = true
 rmac-portal.workspace = true
 rmac-print.workspace = true
+rmac-spelling.workspace = true
 rmac-storage.workspace = true
 chrono.workspace = true
 

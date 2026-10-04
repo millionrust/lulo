@@ -10,8 +10,8 @@
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, Styled as _,
-    Window, WindowHandle,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
 use rmac_mail::settings::{self, ComposeFormat, JunkMailAction, MailSettings, Signature};
 use rmac_ui::{mac, Button, Checkbox, Root, StyledExt as _};

@@ -9,7 +9,8 @@
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Window,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render,
+    StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_mail_mime::Draft;
 use rmac_ui::{mac, Root, StyledExt as _};

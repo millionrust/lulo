@@ -19,6 +19,13 @@ pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
         &files,
         &["ssh.service", "sshd.service"],
     )?;
+    let remote_socket = service_state(&connection, &manager, &files, &[SSH_SOCKET])?;
+    let socket_active = remote_socket
+        .as_ref()
+        .map(|socket| socket.active_state.clone());
+    let socket_enabled = remote_socket
+        .as_ref()
+        .is_some_and(|socket| unit_enabled(&socket.unit_file_state));
     let file_service = service_state(&connection, &manager, &files, &["smbd.service"])?;
     let (remote_firewall, remote_firewall_detail) = firewall_state(FirewallService::Ssh);
     let (file_firewall, file_firewall_detail) = firewall_state(FirewallService::Samba);
@@ -51,9 +58,13 @@ pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
             .map(|service| RemoteLogin {
                 available: true,
                 unit: Some(service.unit),
-                active: service.active_state == "active",
-                service_state: Some(service.active_state),
-                enabled_at_boot: unit_enabled(&service.unit_file_state),
+                active: service.active_state == "active"
+                    || socket_active.as_deref() == Some("active"),
+                service_state: Some(combined_remote_state(
+                    &service.active_state,
+                    socket_active.as_deref(),
+                )),
+                enabled_at_boot: unit_enabled(&service.unit_file_state) || socket_enabled,
                 unit_file_state: Some(service.unit_file_state),
                 firewall: remote_firewall,
                 firewall_detail: remote_firewall_detail.clone(),
@@ -65,6 +76,51 @@ pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
             }),
         file_sharing,
     })
+}
+
+/// Ubuntu's openssh-server is socket-activated: `ssh.socket` listens on port
+/// 22 and starts `ssh.service` on demand, so `ssh.service` alone can read
+/// "inactive" while the port is open. Remote Login is on whenever either unit
+/// is active or enabled, and turning it off stops and disables both.
+#[cfg(target_os = "linux")]
+pub(crate) const SSH_SOCKET: &str = "ssh.socket";
+
+/// The Remote Login state shown and waited for: a listening socket counts as
+/// active even while the service itself is idle.
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn combined_remote_state(service_state: &str, socket_state: Option<&str>) -> String {
+    if socket_state == Some("active") {
+        "active".to_owned()
+    } else {
+        service_state.to_owned()
+    }
+}
+
+/// Stop and disable `ssh.socket` when it exists. Returns its previous
+/// (active, enabled at boot) state so a failed change can restore it.
+#[cfg(target_os = "linux")]
+pub(crate) fn disable_remote_login_socket() -> Result<Option<(bool, bool)>, Error> {
+    let connection = system_connection()?;
+    let manager = manager_proxy(&connection)?;
+    let files = manager
+        .call::<_, _, Vec<(String, String)>>("ListUnitFiles", &())
+        .map_err(|error| Error::new(ErrorKind::Protocol, error.to_string()))?;
+    let Some(socket) = service_state(&connection, &manager, &files, &[SSH_SOCKET])? else {
+        return Ok(None);
+    };
+    let previous = (
+        socket.active_state == "active",
+        unit_enabled(&socket.unit_file_state),
+    );
+    if previous == (false, false) {
+        return Ok(Some(previous));
+    }
+    system_set_service(SSH_SOCKET, false, "SSH").map(|()| Some(previous))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn disable_remote_login_socket() -> Result<Option<(bool, bool)>, Error> {
+    Ok(None)
 }
 
 #[cfg(target_os = "linux")]
@@ -263,6 +319,19 @@ fn managed_service_state(service: ManagedService) -> Result<(Option<String>, boo
     let Some(state) = service_state(&connection, &manager, &files, candidates)? else {
         return Ok((None, false));
     };
+    if service == ManagedService::RemoteLogin {
+        let socket = service_state(&connection, &manager, &files, &[SSH_SOCKET])?;
+        let socket_enabled = socket
+            .as_ref()
+            .is_some_and(|socket| unit_enabled(&socket.unit_file_state));
+        return Ok((
+            Some(combined_remote_state(
+                &state.active_state,
+                socket.as_ref().map(|socket| socket.active_state.as_str()),
+            )),
+            unit_enabled(&state.unit_file_state) || socket_enabled,
+        ));
+    }
     Ok((
         Some(state.active_state),
         unit_enabled(&state.unit_file_state),

@@ -1,6 +1,25 @@
 use crate::system::{
-    bounded_shares, parse_smb_conf_shares, parse_ufw_conf_enabled, requested_state_reached,
+    bounded_shares, combined_remote_state, parse_smb_conf_shares, parse_ufw_conf_enabled,
+    requested_state_reached,
 };
+
+#[test]
+fn a_listening_ssh_socket_means_remote_login_is_on() {
+    // Ubuntu socket-activates sshd: ssh.service idles while ssh.socket holds
+    // port 22 open, which must never read as Remote Login off.
+    assert_eq!(combined_remote_state("inactive", Some("active")), "active");
+    assert!(!requested_state_reached(
+        Some(&combined_remote_state("inactive", Some("active"))),
+        false,
+        false
+    ));
+    assert_eq!(
+        combined_remote_state("inactive", Some("inactive")),
+        "inactive"
+    );
+    assert_eq!(combined_remote_state("active", None), "active");
+    assert_eq!(combined_remote_state("failed", None), "failed");
+}
 use crate::watch::{firewall_path_relevant, owner_change_reappeared, samba_path_relevant};
 
 #[test]

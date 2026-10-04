@@ -3,7 +3,7 @@ use gpui::{
     div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, ClickEvent, Context, Entity,
     FocusHandle, Focusable as _, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent,
     MouseButton, MouseDownEvent, ParentElement as _, Render, Role, ScrollDelta, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Toggled, Window,
 };
 use rmac_calendar::{
     current_date,
@@ -508,8 +508,11 @@ impl CalendarView {
     }
 
     /// Escape: closes the inspector, then a CAL-6 sheet, then search, then
-    /// the CAL-8 invitations popover.
-    fn dismiss(&mut self, cx: &mut Context<Self>) {
+    /// the CAL-8 invitations popover. Whichever it closes, keyboard focus
+    /// moves back to the main view (ACC-11): closing one of these used to
+    /// leave focus on the FocusHandle of a field that had just been
+    /// dropped, which Orca reports as nothing focused at all.
+    fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.editor.is_some() {
             self.editor = None;
         } else if self.sheet.is_some() {
@@ -522,11 +525,18 @@ impl CalendarView {
         } else {
             return;
         }
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
-    fn toggle_invitations(&mut self, cx: &mut Context<Self>) {
+    fn toggle_invitations(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.invitations_open = !self.invitations_open;
+        if !self.invitations_open {
+            // ACC-11: closing the popover (Escape goes through `dismiss`;
+            // this is the toggle button and the app-menu item) must not
+            // leave focus on a row inside it that is about to stop showing.
+            window.focus(&self.focus, cx);
+        }
         self.sync_menu(cx);
         cx.notify();
     }
@@ -969,7 +979,7 @@ impl CalendarView {
         .detach();
     }
 
-    fn delete_selected(&mut self, cx: &mut Context<Self>) {
+    fn delete_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy {
             return;
         }
@@ -1007,8 +1017,12 @@ impl CalendarView {
         let scope = self.editor.as_ref().map_or("all", |editor| {
             ["this", "this-and-future", "all"][editor.scope]
         });
+        // ACC-11: Delete/Backspace can close the editor sheet along with
+        // removing the event; keep focus on the main view rather than on
+        // the sheet field that just stopped showing.
         self.editor = None;
         self.selected = None;
+        window.focus(&self.focus, cx);
         self.submit(
             Mutation::Delete {
                 source,
@@ -1172,7 +1186,9 @@ impl CalendarView {
                             .child(pending_count.to_string()),
                     )
                 })
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_invitations(cx))),
+                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.toggle_invitations(window, cx)
+                })),
         );
         bar = bar.child(
             div()
@@ -1346,6 +1362,9 @@ impl CalendarView {
             .border_color(mac::separator());
         panel = panel.child(rmac_ui::traffic_lights());
         let mut list = div()
+            .id("calendar-list")
+            .role(Role::List)
+            .aria_label("Calendars")
             .absolute()
             .top(px(48.0))
             .left(px(10.0))
@@ -1375,9 +1394,17 @@ impl CalendarView {
             list = list.child(
                 div()
                     .id(format!("calendar-toggle-{index}"))
-                    .role(Role::Row)
+                    // ACC-11: this row toggles whether the calendar's
+                    // events show, exactly like a checkbox (and like real
+                    // Calendar's own coloured checkbox) — not a selectable
+                    // row, which told Orca nothing about the checked state.
+                    .role(Role::CheckBox)
                     .aria_label(calendar.name.clone())
-                    .aria_selected(visible)
+                    .aria_toggled(if visible {
+                        Toggled::True
+                    } else {
+                        Toggled::False
+                    })
                     .h(px(24.0))
                     .flex()
                     .items_center()
@@ -1472,24 +1499,41 @@ impl CalendarView {
             ),
             View::Year => (self.nav.selected.format("%Y").to_string(), String::new()),
         };
+        let spoken_range = if subtitle.is_empty() {
+            title.clone()
+        } else {
+            format!("{title} {subtitle}")
+        };
         div()
             .h(px(44.0))
             .px(px(16.0))
             .flex()
             .items_center()
             .child(
+                // ACC-11: a named, polite live region so Orca announces the
+                // new period (Next/Previous Period, Go Today, Day/Week/
+                // Month/Year) even though this text never takes keyboard
+                // focus.
                 div()
-                    .text_size(px(22.0))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(mac::text())
-                    .child(title),
-            )
-            .child(
-                div()
-                    .ml(px(7.0))
-                    .text_size(px(22.0))
-                    .text_color(mac::text_secondary())
-                    .child(subtitle),
+                    .id("calendar-heading")
+                    .role(Role::Status)
+                    .aria_label(spoken_range)
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_size(px(22.0))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(mac::text())
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .ml(px(7.0))
+                            .text_size(px(22.0))
+                            .text_color(mac::text_secondary())
+                            .child(subtitle),
+                    ),
             )
             .child(div().flex_1())
             .child(self.control(
@@ -1730,9 +1774,25 @@ impl CalendarView {
             let h = ((slot.end_second - slot.start_second) as f32 / 3600.0 * HOUR - 2.0).max(18.0);
             let color = Self::color(snapshot.calendars[event.calendar].color);
             let event_id = event.id.clone();
+            let accessible_name = if event.location.is_empty() {
+                format!("{}, {}", event.title, event.start.format("%-H:%M"))
+            } else {
+                format!(
+                    "{}, {}, {}",
+                    event.title,
+                    event.start.format("%-H:%M"),
+                    event.location
+                )
+            };
             week = week.child(
                 div()
                     .id(format!("calendar-event-{}", event.id))
+                    // ACC-11: a selectable, openable event used to have no
+                    // role or name at all — Orca had nothing to say about
+                    // it, focused or not.
+                    .role(Role::Button)
+                    .aria_label(accessible_name)
+                    .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
                     .absolute()
                     .left(px(x))
                     .top(px(y))
@@ -1858,9 +1918,24 @@ impl CalendarView {
         for event in events {
             let color = Self::color(snapshot.calendars[event.calendar].color);
             let event_id = event.id.clone();
+            let accessible_name = if event.all_day {
+                format!("{}, all day", event.title)
+            } else {
+                format!(
+                    "{}, {}–{}, {}",
+                    event.title,
+                    event.start.format("%-H:%M"),
+                    event.end.format("%-H:%M"),
+                    snapshot.calendars[event.calendar].name
+                )
+            };
             detail = detail.child(
                 div()
                     .id(format!("calendar-day-detail-{}", event.id))
+                    // ACC-11: same fix as the grid's event blocks above.
+                    .role(Role::Button)
+                    .aria_label(accessible_name)
+                    .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
                     .border_l_3()
                     .border_color(color)
                     .pl(px(9.0))
@@ -2037,6 +2112,10 @@ impl CalendarView {
                 let event_id = event.id.clone();
                 let mut item = div()
                     .id(format!("calendar-month-event-{}", event.id))
+                    // ACC-11: same fix as the week/day grids' event blocks.
+                    .role(Role::Button)
+                    .aria_label(event.title.clone())
+                    .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
                     .absolute()
                     .left(px(6.0))
                     .right(px(6.0))
@@ -2495,7 +2574,7 @@ impl CalendarView {
                                 "Cancel",
                                 DialogButtonKind::Normal,
                             )
-                            .on_click(cx.listener(|this, _, _, cx| this.dismiss(cx))),
+                            .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
                         )
                         .child(
                             rmac_ui::dialog_button(
@@ -2524,7 +2603,7 @@ impl CalendarView {
                                 "Cancel",
                                 DialogButtonKind::Normal,
                             )
-                            .on_click(cx.listener(|this, _, _, cx| this.dismiss(cx)))
+                            .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx)))
                             .into_any_element(),
                             rmac_ui::dialog_button(
                                 "calendar-delete-confirm",
@@ -2590,7 +2669,7 @@ impl CalendarView {
                                 "Cancel",
                                 DialogButtonKind::Normal,
                             )
-                            .on_click(cx.listener(|this, _, _, cx| this.dismiss(cx))),
+                            .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
                         )
                         .child(
                             rmac_ui::dialog_button(
@@ -2607,11 +2686,11 @@ impl CalendarView {
         Some(
             rmac_ui::dialog("calendar-sheet", body)
                 .restore_focus_to(self.focus.clone())
-                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     match event.keystroke.key.as_str() {
                         "escape" => {
                             cx.stop_propagation();
-                            this.dismiss(cx);
+                            this.dismiss(window, cx);
                         }
                         "enter" => {
                             cx.stop_propagation();
@@ -2791,14 +2870,17 @@ impl CalendarView {
         let delete_label = if recurring { "Delete…" } else { "Delete" };
         let mut buttons = div().flex().items_center().gap(px(8.0));
         if !is_new {
-            buttons = buttons.child(
-                dialog_button(
-                    "calendar-editor-delete",
-                    delete_label,
-                    DialogButtonKind::Destructive,
-                )
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.delete_selected(cx))),
-            );
+            buttons =
+                buttons.child(
+                    dialog_button(
+                        "calendar-editor-delete",
+                        delete_label,
+                        DialogButtonKind::Destructive,
+                    )
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, window, cx| this.delete_selected(window, cx),
+                    )),
+                );
         }
         buttons = buttons
             .child(div().flex_1())
@@ -2935,7 +3017,9 @@ impl Render for CalendarView {
             }))
             .on_action(cx.listener(|this, _: &NewEvent, window, cx| this.new_event(window, cx)))
             .on_action(cx.listener(|this, _: &SaveEvent, _, cx| this.save_editor(cx)))
-            .on_action(cx.listener(|this, _: &DeleteEvent, _, cx| this.delete_selected(cx)))
+            .on_action(
+                cx.listener(|this, _: &DeleteEvent, window, cx| this.delete_selected(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &UndoEvent, _, cx| this.undo(cx)))
             .on_action(cx.listener(|this, _: &RedoEvent, _, cx| this.redo(cx)))
             .on_action(
@@ -2943,9 +3027,13 @@ impl Render for CalendarView {
                     this.inspect_selected(window, cx)
                 }),
             )
-            .on_action(cx.listener(|this, _: &DismissInspector, _, cx| this.dismiss(cx)))
+            .on_action(
+                cx.listener(|this, _: &DismissInspector, window, cx| this.dismiss(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &Search, window, cx| this.toggle_search(window, cx)))
-            .on_action(cx.listener(|this, _: &ShowInvitations, _, cx| this.toggle_invitations(cx)))
+            .on_action(cx.listener(|this, _: &ShowInvitations, window, cx| {
+                this.toggle_invitations(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &NewCalendar, _, cx| this.create_new_calendar(cx)))
             .on_action(
                 cx.listener(|this, _: &RenameCalendar, window, cx| this.start_rename(window, cx)),

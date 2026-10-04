@@ -594,6 +594,13 @@ class LuloRun:
             # mail/* scenario's recording expects. Test-only, same switch
             # `run-content-accessibility.sh` uses.
             self.env["RMAC_MAIL_FIXTURE"] = "1"
+        elif self.app == "calendar":
+            # Same reasoning as Mail above: no EDS source in this private
+            # session, so without the fixture `editing::load` would hand
+            # back an empty week and `calendar/*` scenarios would have no
+            # events to exercise. A real user with no calendar account
+            # configured never sees this flag set.
+            self.env["RMAC_CALENDAR_FIXTURE"] = "1"
         self.sandbox = home / "lulo-behavior" / sid.replace("/", "-") / "sandbox"
         self.files_root = home / "Desktop" if self.app == "desktop" else self.sandbox
         self.before: set[str] = set()

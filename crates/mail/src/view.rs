@@ -717,7 +717,15 @@ impl MailView {
                             .child(self.state.mailbox.label()),
                     )
                     .child(
+                        // MAIL-10/ACC-11: a named, polite live region, so
+                        // Orca announces new mail arriving while focus is
+                        // elsewhere (reading a message, say) — the list
+                        // box's own name above only gets picked up when it
+                        // already holds focus.
                         div()
+                            .id("mail-conversation-count")
+                            .role(Role::Status)
+                            .aria_label(format!("{count} conversations, {unread} unread"))
                             .text_size(px(11.0))
                             .text_color(mac::text_secondary())
                             .child(format!("{count} conversations, {unread} unread")),

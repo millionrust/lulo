@@ -337,6 +337,9 @@ pub fn apply(_change: &Mutation) -> Result<(), String> {
 
 #[cfg(target_os = "linux")]
 pub fn load() -> Result<WeekSnapshot, String> {
+    if std::env::var(crate::FIXTURE_ENV).is_ok_and(|value| value == "1") {
+        return Ok(crate::fixture_snapshot());
+    }
     use rmac_calendar_eds::Eds;
     let eds = Eds::session().map_err(|_| "Calendar service unavailable".to_owned())?;
     eds.check_available()
@@ -454,6 +457,9 @@ pub fn load() -> Result<WeekSnapshot, String> {
 
 #[cfg(not(target_os = "linux"))]
 pub fn load() -> Result<WeekSnapshot, String> {
+    if std::env::var(crate::FIXTURE_ENV).is_ok_and(|value| value == "1") {
+        return Ok(crate::fixture_snapshot());
+    }
     Err("Calendar service unavailable".into())
 }
 

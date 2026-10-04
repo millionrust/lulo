@@ -108,12 +108,12 @@ pub fn known_recipients(messages: &[Message]) -> Vec<Recipient> {
     let mut seen = std::collections::HashSet::new();
     let mut recipients = Vec::new();
     for message in messages {
-        if valid_address(message.sender_address)
+        if valid_address(&message.sender_address)
             && seen.insert(message.sender_address.to_ascii_lowercase())
         {
             recipients.push(Recipient {
-                name: message.sender.to_owned(),
-                address: message.sender_address.to_owned(),
+                name: message.sender.clone(),
+                address: message.sender_address.clone(),
             });
         }
     }
@@ -137,10 +137,10 @@ pub fn initial_draft(kind: ComposeKind, message: Option<&Message>, from: &str) -
             } else {
                 format!("Re: {subject}")
             };
-            // MAIL-5's fixture has display names, not RFC 5322 addresses.
+            // A fixture message has a display name, not an RFC 5322 address.
             // Only an actual address may enter the envelope.
-            if valid_address(message.sender_address) {
-                draft.to.push(message.sender_address.to_owned());
+            if valid_address(&message.sender_address) {
+                draft.to.push(message.sender_address.clone());
             }
             if kind == ComposeKind::ReplyAll {
                 for address in message
@@ -162,7 +162,7 @@ pub fn initial_draft(kind: ComposeKind, message: Option<&Message>, from: &str) -
             }
             draft.text = format!(
                 "\n\n{}",
-                quote_reply(message.date, message.sender, &message.body.plain_text())
+                quote_reply(&message.date, &message.sender, &message.body.plain_text())
             );
         }
         ComposeKind::Forward => {
@@ -174,9 +174,9 @@ pub fn initial_draft(kind: ComposeKind, message: Option<&Message>, from: &str) -
             draft.text = format!(
                 "\n\n{}",
                 quote_forward(
-                    message.date,
-                    message.sender,
-                    message.to,
+                    &message.date,
+                    &message.sender,
+                    &message.to,
                     subject,
                     &message.body.plain_text()
                 )

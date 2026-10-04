@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-const SCHEMA_VERSION: i32 = 3;
+const SCHEMA_VERSION: i32 = 4;
 pub const FLAG_SEEN: i64 = 1;
 pub const FLAG_ANSWERED: i64 = 2;
 pub const FLAG_FLAGGED: i64 = 4;
@@ -70,6 +70,10 @@ pub struct NewMessage<'a> {
     pub subject: &'a str,
     pub sender: &'a str,
     pub recipients: &'a str,
+    /// Cc addresses only, separate from `recipients` (the To line), so a
+    /// live Reply All can rebuild the original envelope. Empty when the
+    /// message had none.
+    pub cc: &'a str,
     pub preview: &'a str,
     pub received_at: i64,
     pub flags: i64,
@@ -85,9 +89,21 @@ pub struct MessageSummary {
     pub uid: i64,
     pub subject: String,
     pub sender: String,
+    pub recipients: String,
+    pub cc: String,
     pub preview: String,
+    pub received_at: i64,
     pub flags: i64,
     pub body_hash: Option<String>,
+}
+
+/// One row from the `mailboxes` table: every mailbox this account's cache
+/// knows about, not just one looked up by name or id.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MailboxListing {
+    pub id: i64,
+    pub name: String,
+    pub special_use: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -201,6 +217,14 @@ impl MailStorage {
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)?;
             tx.execute_batch(include_str!("schema_v3.sql"))?;
+            tx.pragma_update(None, "user_version", 3)?;
+            tx.commit()?;
+        }
+        if version < 4 {
+            let tx = self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            tx.execute_batch(include_str!("schema_v4.sql"))?;
             tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             tx.commit()?;
         }
@@ -408,9 +432,43 @@ impl MailStorage {
 
     pub fn message_by_uid(&self, mailbox_id: i64, uid: i64) -> Result<Option<MessageSummary>> {
         self.connection.query_row(
-            "SELECT id,mailbox_id,uid,subject,sender,preview,flags,body_hash FROM messages WHERE mailbox_id=?1 AND uid=?2",
+            "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash FROM messages WHERE mailbox_id=?1 AND uid=?2",
             params![mailbox_id, uid], summary_from_row,
         ).optional().map_err(Error::from)
+    }
+
+    /// Every mailbox this account's cache knows about, in no particular
+    /// order; callers group by special-use. The live app shell's mailbox
+    /// list (MAIL-4) is built from this, never from a fixture.
+    pub fn all_mailboxes(&self) -> Result<Vec<MailboxListing>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT id,name,special_use FROM mailboxes ORDER BY id")?;
+        let rows = statement.query_map([], |row| {
+            Ok(MailboxListing {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                special_use: row.get(2)?,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
+    }
+
+    /// The most recent `limit` messages in one mailbox, newest first. Bounds
+    /// how much a very large mailbox can load into memory at once; the
+    /// virtual message list only ever needs a window of rows (MAIL-10).
+    pub fn messages_in_mailbox(&self, mailbox_id: i64, limit: usize) -> Result<Vec<MessageSummary>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash \
+             FROM messages WHERE mailbox_id=?1 ORDER BY received_at DESC LIMIT ?2",
+        )?;
+        let rows = statement.query_map(
+            params![mailbox_id, i64::try_from(limit).unwrap_or(i64::MAX)],
+            summary_from_row,
+        )?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
     }
 
     pub fn cached_uids(&self, mailbox_id: i64) -> Result<Vec<i64>> {
@@ -465,14 +523,14 @@ impl MailStorage {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute(
-            "INSERT INTO messages(mailbox_id, uid, message_id, in_reply_to, subject, sender, recipients, preview, received_at, flags, body_hash, body_text) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) \
+            "INSERT INTO messages(mailbox_id, uid, message_id, in_reply_to, subject, sender, recipients, cc, preview, received_at, flags, body_hash, body_text) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) \
              ON CONFLICT(mailbox_id,uid) DO UPDATE SET message_id=excluded.message_id, in_reply_to=excluded.in_reply_to, \
-             subject=excluded.subject, sender=excluded.sender, recipients=excluded.recipients, preview=excluded.preview, \
+             subject=excluded.subject, sender=excluded.sender, recipients=excluded.recipients, cc=excluded.cc, preview=excluded.preview, \
              received_at=excluded.received_at, flags=excluded.flags, body_hash=COALESCE(excluded.body_hash,messages.body_hash), \
              body_text=COALESCE(excluded.body_text,messages.body_text)",
             params![message.mailbox_id, message.uid, message.message_id, message.in_reply_to,
-                message.subject, message.sender, message.recipients, message.preview,
+                message.subject, message.sender, message.recipients, message.cc, message.preview,
                 message.received_at, message.flags, body_hash, message.body_text],
         )?;
         let id = tx.query_row(
@@ -527,7 +585,7 @@ impl MailStorage {
 
     pub fn get_message(&self, id: i64) -> Result<Option<MessageSummary>> {
         Ok(self.connection.query_row(
-            "SELECT id,mailbox_id,uid,subject,sender,preview,flags,body_hash FROM messages WHERE id=?1",
+            "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash FROM messages WHERE id=?1",
             [id], summary_from_row,
         ).optional()?)
     }
@@ -551,7 +609,7 @@ impl MailStorage {
             return Ok(Vec::new());
         }
         let mut statement = self.connection.prepare(
-            "SELECT m.id,m.mailbox_id,m.uid,m.subject,m.sender,m.preview,m.flags,m.body_hash \
+            "SELECT m.id,m.mailbox_id,m.uid,m.subject,m.sender,m.recipients,m.cc,m.preview,m.received_at,m.flags,m.body_hash \
              FROM messages_fts JOIN messages m ON m.id=messages_fts.rowid \
              WHERE messages_fts MATCH ?1 AND (?2 IS NULL OR m.mailbox_id=?2) \
              ORDER BY bm25(messages_fts), m.received_at DESC LIMIT ?3",
@@ -724,9 +782,12 @@ fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary>
         uid: row.get(2)?,
         subject: row.get(3)?,
         sender: row.get(4)?,
-        preview: row.get(5)?,
-        flags: row.get(6)?,
-        body_hash: row.get(7)?,
+        recipients: row.get(5)?,
+        cc: row.get(6)?,
+        preview: row.get(7)?,
+        received_at: row.get(8)?,
+        flags: row.get(9)?,
+        body_hash: row.get(10)?,
     })
 }
 

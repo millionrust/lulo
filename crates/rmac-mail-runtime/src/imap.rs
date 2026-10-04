@@ -279,7 +279,14 @@ impl ImapBackend {
                 store.set_server_flags(mailbox_id, uid, bits)?;
                 continue;
             }
-            let fetch_full = kind == MailboxKind::Inbox && previous.is_some();
+            // A brand new account's very first sync fetches Inbox headers
+            // only, so a mailbox with years of history does not stall
+            // startup downloading every old body. But a message that is
+            // already unread on that first pass is exactly the mail a new
+            // user opens right away, so fetch its body too instead of
+            // leaving "read" broken until the next IDLE wake.
+            let fetch_full = kind == MailboxKind::Inbox
+                && (previous.is_some() || bits & FLAG_SEEN == 0);
             let Some(bytes) = (if fetch_full {
                 self.client.fetch_body(change.uid)?
             } else {
@@ -300,6 +307,12 @@ impl ImapBackend {
                 .map(|to| to.address.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
+            let cc = parsed
+                .cc
+                .iter()
+                .map(|cc| cc.address.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             let id = store.put_message(&NewMessage {
                 mailbox_id,
                 uid,
@@ -309,6 +322,7 @@ impl ImapBackend {
                 subject: &parsed.subject,
                 sender,
                 recipients: &recipients,
+                cc: &cc,
                 preview: &parsed.preview,
                 received_at: now,
                 flags: bits,

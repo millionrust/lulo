@@ -16,7 +16,7 @@ use gpui::{
 use rmac_mail::settings::{self, ComposeFormat, JunkMailAction, MailSettings, Signature};
 use rmac_ui::{mac, Button, Checkbox, Root, StyledExt as _};
 
-use crate::FIXTURE_ACCOUNT_ADDRESS;
+use crate::delivery::{self, ComposeAccount};
 
 const WIDTH: f32 = 560.0;
 const HEIGHT: f32 = 420.0;
@@ -93,6 +93,11 @@ struct SettingsView {
     pane: Pane,
     settings: MailSettings,
     save_error: Option<SharedString>,
+    /// The real accounts GOA knows about right now (MAIL-4): Accounts and
+    /// Signatures read this, never a fixed address, so Settings reflects
+    /// however many mail accounts (zero, one or several) the person
+    /// actually has.
+    accounts: Vec<ComposeAccount>,
 }
 
 impl SettingsView {
@@ -103,6 +108,7 @@ impl SettingsView {
             pane: Pane::General,
             settings,
             save_error: error.map(SharedString::from),
+            accounts: delivery::accounts(),
         }
     }
 
@@ -204,6 +210,29 @@ impl SettingsView {
                          Internet Accounts, so every app that uses them stays in sync.",
                     ),
             )
+            .child(div().v_flex().gap(px(4.0)).children(self.accounts.iter().map(
+                |account| {
+                    div()
+                        .p(px(8.0))
+                        .rounded(px(mac::radius_card()))
+                        .bg(mac::control_fill())
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(
+                            div()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_size(px(13.0))
+                                .child(account.address.clone()),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(mac::text_secondary())
+                                .child(account.provider.clone()),
+                        )
+                },
+            )))
             .child(
                 Button::new(
                     "mail-settings-open-internet-accounts",
@@ -472,36 +501,35 @@ impl SettingsView {
         self.persist(cx);
     }
 
-    fn set_default_signature(&mut self, id: &str, is_default: bool, cx: &mut Context<Self>) {
+    fn set_default_signature(
+        &mut self,
+        account_address: &str,
+        id: &str,
+        is_default: bool,
+        cx: &mut Context<Self>,
+    ) {
         if is_default {
             self.settings
                 .signatures
                 .default_for_account
-                .insert(FIXTURE_ACCOUNT_ADDRESS.to_owned(), id.to_owned());
+                .insert(account_address.to_owned(), id.to_owned());
         } else if self
             .settings
             .signatures
             .default_for_account
-            .get(FIXTURE_ACCOUNT_ADDRESS)
+            .get(account_address)
             .map(String::as_str)
             == Some(id)
         {
             self.settings
                 .signatures
                 .default_for_account
-                .remove(FIXTURE_ACCOUNT_ADDRESS);
+                .remove(account_address);
         }
         self.persist(cx);
     }
 
     fn signatures_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let is_default = |signature: &Signature| {
-            self.settings
-                .signatures
-                .default_for_account
-                .get(FIXTURE_ACCOUNT_ADDRESS)
-                == Some(&signature.id)
-        };
         div()
             .v_flex()
             .gap(px(8.0))
@@ -512,8 +540,6 @@ impl SettingsView {
             )
             .child(div().v_flex().gap(px(6.0)).children(
                 self.settings.signatures.signatures.iter().map(|signature| {
-                    let default = is_default(signature);
-                    let id_for_default = signature.id.clone();
                     let id_for_delete = signature.id.clone();
                     div()
                         .p(px(8.0))
@@ -552,19 +578,28 @@ impl SettingsView {
                                 .text_color(mac::text_secondary())
                                 .child(signature.body.clone()),
                         )
-                        .child(
-                            Checkbox::new(format!(
-                                "mail-settings-signature-default-{}",
-                                signature.id
-                            ))
-                            .label(format!("Use for {FIXTURE_ACCOUNT_ADDRESS}"))
-                            .checked(default)
-                            .on_change(cx.listener(
-                                move |this, value: &bool, _, cx| {
-                                    this.set_default_signature(&id_for_default, *value, cx);
-                                },
-                            )),
-                        )
+                        .child(div().v_flex().gap(px(2.0)).children(
+                            self.accounts.iter().map(|account| {
+                                let checked = self
+                                    .settings
+                                    .signatures
+                                    .default_for_account
+                                    .get(&account.address)
+                                    .map(String::as_str)
+                                    == Some(signature.id.as_str());
+                                let id_for_default = signature.id.clone();
+                                let address = account.address.clone();
+                                Checkbox::new(format!(
+                                    "mail-settings-signature-default-{}-{}",
+                                    signature.id, account.address
+                                ))
+                                .label(format!("Use for {}", account.address))
+                                .checked(checked)
+                                .on_change(cx.listener(move |this, value: &bool, _, cx| {
+                                    this.set_default_signature(&address, &id_for_default, *value, cx);
+                                }))
+                            }),
+                        ))
                 }),
             ))
             .when(self.settings.signatures.signatures.is_empty(), |parent| {

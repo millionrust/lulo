@@ -50,7 +50,7 @@ pub fn accounts() -> Vec<ComposeAccount> {
     Vec::new()
 }
 
-fn data_root() -> Option<PathBuf> {
+pub(crate) fn data_root() -> Option<PathBuf> {
     if let Some(data_home) = std::env::var_os("XDG_DATA_HOME") {
         return Some(PathBuf::from(data_home).join("lulo/mail"));
     }
@@ -135,11 +135,11 @@ pub fn save_draft(
     };
     let recipients = to
         .iter()
-        .chain(cc)
         .chain(bcc)
         .cloned()
         .collect::<Vec<_>>()
         .join(", ");
+    let cc_joined = cc.join(", ");
     let preview: String = body.chars().filter(|c| *c != '\n').take(160).collect();
     let subject = if subject.trim().is_empty() {
         "(No Subject)"
@@ -156,6 +156,7 @@ pub fn save_draft(
             subject,
             sender: from,
             recipients: &recipients,
+            cc: &cc_joined,
             preview: &preview,
             received_at: now_unix(),
             flags: FLAG_DRAFT,

@@ -28,3 +28,4 @@ async-channel.workspace = true
 uuid.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+chrono.workspace = true

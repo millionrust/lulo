@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, uniform_list, AnyElement, AppContext as _, ClickEvent,
-    Context, Entity, FocusHandle, FontWeight, InteractiveElement as _, IntoElement,
+    accesskit, div, prelude::FluentBuilder as _, px, uniform_list, AnyElement, AppContext as _,
+    ClickEvent, Context, Entity, FocusHandle, FontWeight, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
     Window,
 };
@@ -721,11 +721,19 @@ impl MailView {
                         // Orca announces new mail arriving while focus is
                         // elsewhere (reading a message, say) — the list
                         // box's own name above only gets picked up when it
-                        // already holds focus.
+                        // already holds focus. `Role::Status` alone is not
+                        // enough: confirmed live on the laptop, Orca needs
+                        // AccessKit's `live`/`live_atomic` too (the same fix
+                        // Calculator's display and Spotlight's result
+                        // announcer use).
                         div()
                             .id("mail-conversation-count")
                             .role(Role::Status)
                             .aria_label(format!("{count} conversations, {unread} unread"))
+                            .a11y_synthetic_children(|builder| {
+                                builder.parent_node().set_live(accesskit::Live::Polite);
+                                builder.parent_node().set_live_atomic();
+                            })
                             .text_size(px(11.0))
                             .text_color(mac::text_secondary())
                             .child(format!("{count} conversations, {unread} unread")),
@@ -941,6 +949,11 @@ impl MailView {
                         .id("mail-body-downloading")
                         .role(Role::Status)
                         .aria_label("Downloading message…")
+                        // ACC-32: same live-region fix as the heading above.
+                        .a11y_synthetic_children(|builder| {
+                            builder.parent_node().set_live(accesskit::Live::Polite);
+                            builder.parent_node().set_live_atomic();
+                        })
                         .text_size(px(13.0))
                         .text_color(mac::text_secondary())
                         .child("Downloading message…"),
@@ -959,6 +972,11 @@ impl MailView {
                                 .id("mail-body-failed-message")
                                 .role(Role::Status)
                                 .aria_label(error.clone())
+                                // ACC-32: same live-region fix as the heading above.
+                                .a11y_synthetic_children(|builder| {
+                                    builder.parent_node().set_live(accesskit::Live::Assertive);
+                                    builder.parent_node().set_live_atomic();
+                                })
                                 .text_size(px(13.0))
                                 .text_color(mac::text_secondary())
                                 .child(error),
@@ -991,6 +1009,11 @@ impl MailView {
                         .id("mail-body-loading")
                         .role(Role::Status)
                         .aria_label("Loading message…")
+                        // ACC-32: same live-region fix as the heading above.
+                        .a11y_synthetic_children(|builder| {
+                            builder.parent_node().set_live(accesskit::Live::Polite);
+                            builder.parent_node().set_live_atomic();
+                        })
                         .text_size(px(13.0))
                         .text_color(mac::text_secondary())
                         .child("Loading message…"),

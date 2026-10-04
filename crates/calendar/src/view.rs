@@ -1,9 +1,9 @@
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, ClickEvent, Context, Entity,
-    FocusHandle, Focusable as _, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement as _, Render, Role, ScrollDelta, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Toggled, Window,
+    accesskit, div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, ClickEvent,
+    Context, Entity, FocusHandle, Focusable as _, FontWeight, InteractiveElement as _, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement as _, Render, Role, ScrollDelta,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Toggled, Window,
 };
 use rmac_calendar::{
     current_date,
@@ -1513,11 +1513,19 @@ impl CalendarView {
                 // ACC-32: a named, polite live region so Orca announces the
                 // new period (Next/Previous Period, Go Today, Day/Week/
                 // Month/Year) even though this text never takes keyboard
-                // focus.
+                // focus. `Role::Status` plus a name is not enough on its
+                // own — confirmed live on the laptop: Orca only announces
+                // an unfocused name change when the node also carries
+                // AccessKit's `live`/`live_atomic` (the same fix Calculator's
+                // display and Spotlight's result announcer use).
                 div()
                     .id("calendar-heading")
                     .role(Role::Status)
                     .aria_label(spoken_range)
+                    .a11y_synthetic_children(|builder| {
+                        builder.parent_node().set_live(accesskit::Live::Polite);
+                        builder.parent_node().set_live_atomic();
+                    })
                     .flex()
                     .items_center()
                     .child(

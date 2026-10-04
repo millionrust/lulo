@@ -23,6 +23,8 @@ gpui::actions!(
         Forward,
         Flag,
         Move,
+        Copy,
+        Undo,
         Search
     ]
 );
@@ -37,6 +39,12 @@ fn main() {
             rmac_ui::init_application(cx);
             cx.bind_keys([
                 KeyBinding::new("cmd-shift-u", ToggleRead, Some("Mail")),
+                KeyBinding::new("cmd-shift-l", Flag, Some("Mail")),
+                KeyBinding::new("cmd-shift-j", Junk, Some("Mail")),
+                KeyBinding::new("backspace", Delete, Some("Mail")),
+                KeyBinding::new("cmd-z", Undo, Some("Mail")),
+                KeyBinding::new("cmd-f", Search, Some("Mail")),
+                KeyBinding::new("ctrl-cmd-m", Move, Some("Mail")),
                 KeyBinding::new("down", NextMessage, Some("Mail")),
                 KeyBinding::new("up", PreviousMessage, Some("Mail")),
                 KeyBinding::new("cmd-w", CloseWindow, Some("Mail")),
@@ -45,15 +53,9 @@ fn main() {
             rmac_ui::install_app_menu(MAIL, cx);
             for action in [
                 "mail::NewMessage",
-                "mail::Archive",
-                "mail::Delete",
-                "mail::Junk",
                 "mail::Reply",
                 "mail::ReplyAll",
                 "mail::Forward",
-                "mail::Flag",
-                "mail::Move",
-                "mail::Search",
             ] {
                 rmac_ui::set_menu_enabled(action, false, cx);
             }
@@ -63,7 +65,7 @@ fn main() {
                 rmac_ui::prepare_surface_window(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(MAIL, window, cx);
-                    MailView::new(fixture, cx)
+                    MailView::new(fixture, window, cx)
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);

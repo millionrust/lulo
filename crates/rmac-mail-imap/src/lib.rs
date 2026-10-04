@@ -6,7 +6,8 @@ mod protocol;
 mod transport;
 
 use protocol::{
-    parse_capabilities, parse_copyuid, parse_list, parse_select, parse_uid_fetch, quote, Response,
+    parse_capabilities, parse_copyuid, parse_list, parse_search, parse_select, parse_uid_fetch,
+    quote, quote_string, Response,
 };
 pub use protocol::{
     Capabilities, CopyUid, Mailbox, MailboxKind, MessageChange, SelectState, SyncCursor,
@@ -80,6 +81,14 @@ pub enum Authentication<'a> {
     OAuthBearer { user: &'a str, token: &'a Secret },
     Plain { user: &'a str, password: &'a Secret },
     Login { user: &'a str, password: &'a Secret },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchKey<'a> {
+    Text(&'a str),
+    From(&'a str),
+    To(&'a str),
+    Subject(&'a str),
 }
 
 #[derive(Debug)]
@@ -326,6 +335,59 @@ impl Client {
         let (_, completion) =
             self.command_with_completion(&format!("UID MOVE {uid_set} {}", quote(destination)?))?;
         Ok(parse_copyuid(&completion))
+    }
+
+    pub fn copy_uids(
+        &mut self,
+        uid_set: &str,
+        destination: &str,
+    ) -> Result<Option<CopyUid>, Error> {
+        protocol::validate_uid_set(uid_set)?;
+        let (_, completion) =
+            self.command_with_completion(&format!("UID COPY {uid_set} {}", quote(destination)?))?;
+        Ok(parse_copyuid(&completion))
+    }
+
+    /// Search older server mail on a worker thread after local FTS results.
+    /// Values are quoted as data and only known IMAP search keys are emitted.
+    pub fn search_uids(&mut self, keys: &[SearchKey<'_>]) -> Result<Vec<u32>, Error> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut command = String::from("UID SEARCH");
+        if keys.iter().any(|key| match key {
+            SearchKey::Text(value)
+            | SearchKey::From(value)
+            | SearchKey::To(value)
+            | SearchKey::Subject(value) => !value.is_ascii(),
+        }) {
+            command.push_str(" CHARSET UTF-8");
+        }
+        for key in keys {
+            let (name, value) = match key {
+                SearchKey::Text(value) => ("TEXT", value),
+                SearchKey::From(value) => ("FROM", value),
+                SearchKey::To(value) => ("TO", value),
+                SearchKey::Subject(value) => ("SUBJECT", value),
+            };
+            command.push_str(&format!(" {name} {}", quote_string(value)?));
+        }
+        Ok(parse_search(&self.command(&command)?))
+    }
+
+    pub fn create_mailbox(&mut self, name: &str) -> Result<(), Error> {
+        self.command(&format!("CREATE {}", quote(name)?))?;
+        Ok(())
+    }
+
+    pub fn rename_mailbox(&mut self, old: &str, new: &str) -> Result<(), Error> {
+        self.command(&format!("RENAME {} {}", quote(old)?, quote(new)?))?;
+        Ok(())
+    }
+
+    pub fn delete_mailbox(&mut self, name: &str) -> Result<(), Error> {
+        self.command(&format!("DELETE {}", quote(name)?))?;
+        Ok(())
     }
 
     pub fn expunge_uids(&mut self, uid_set: &str) -> Result<(), Error> {

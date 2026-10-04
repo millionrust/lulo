@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "mail/flag-message",
+  "observations": {
+    "before": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "selected": {"mail_messages": {"count": 8, "unread": 2, "flagged": 2}},
+    "flagged": {"mail_messages": {"count": 8, "unread": 2, "flagged": 3}},
+    "unflagged": {"mail_messages": {"count": 8, "unread": 2, "flagged": 2}}
+  }
+}

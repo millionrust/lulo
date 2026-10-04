@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "mail/delete-and-undo",
+  "observations": {
+    "before": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "selected": {"mail_messages": {"count": 8, "unread": 2, "flagged": 2}},
+    "deleted": {"mail_messages": {"count": 7, "unread": 2, "flagged": 2}},
+    "restored": {"mail_messages": {"count": 8, "unread": 2, "flagged": 2}}
+  }
+}

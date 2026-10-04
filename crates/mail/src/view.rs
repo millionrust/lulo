@@ -1,16 +1,19 @@
 use std::sync::Arc;
 
 use gpui::{
-    div, px, uniform_list, AnyElement, ClickEvent, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window,
+    div, prelude::FluentBuilder as _, px, uniform_list, AnyElement, AppContext as _, ClickEvent,
+    Context, Entity, FocusHandle, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Window,
 };
-use rmac_mail::{MailState, Mailbox, Message};
+use rmac_editor::InputState;
+use rmac_mail::{MailState, Mailbox, Message, OrganizeAction, SearchScope};
 use rmac_mail_mime::{BlockKind, RichText};
-use rmac_ui::mac;
+use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, TextField};
 
 use crate::{
-    CloseWindow, NextMessage, PreviousMessage, ToggleRead, ToggleThreads, ToggleUnreadFilter,
+    Archive, CloseWindow, Copy, Delete, Flag, Junk, Move, NextMessage, PreviousMessage, Search,
+    ToggleRead, ToggleThreads, ToggleUnreadFilter, Undo,
 };
 
 const SIDEBAR: f32 = 220.0;
@@ -27,11 +30,15 @@ enum ControlMode {
 pub struct MailView {
     pub focus: FocusHandle,
     state: MailState,
+    search_input: Entity<InputState>,
+    search_open: bool,
+    destination_menu: bool,
+    copy_destination: bool,
 }
 
 #[derive(Clone)]
 struct Row {
-    id: &'static str,
+    id: String,
     sender: &'static str,
     subject: &'static str,
     preview: &'static str,
@@ -44,16 +51,55 @@ struct Row {
 }
 
 impl MailView {
-    pub fn new(state: MailState, cx: &mut Context<Self>) -> Self {
+    pub fn new(state: MailState, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search Mail"));
+        cx.subscribe(&search_input, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                let query = this.search_input.read(cx).value().to_owned();
+                this.state.set_search(&query);
+                cx.notify();
+            }
+        })
+        .detach();
         Self {
             focus: cx.focus_handle(),
             state,
+            search_input,
+            search_open: false,
+            destination_menu: false,
+            copy_destination: false,
         }
     }
 
     fn sync_menu(&self, cx: &mut Context<Self>) {
         rmac_ui::set_menu_checked("mail::ToggleThreads", self.state.threads, cx);
         rmac_ui::set_menu_checked("mail::ToggleUnreadFilter", self.state.unread_only, cx);
+        rmac_ui::set_menu_enabled("mail::Undo", self.state.can_undo(), cx);
+        rmac_ui::set_menu_enabled(
+            "mail::Archive",
+            self.state
+                .selected_message()
+                .is_some_and(|message| message.mailbox.account() == "Google"),
+            cx,
+        );
+        for action in [
+            "mail::Delete",
+            "mail::Junk",
+            "mail::Flag",
+            "mail::Move",
+            "mail::Copy",
+            "mail::ToggleRead",
+        ] {
+            rmac_ui::set_menu_enabled(action, self.state.selected_message().is_some(), cx);
+        }
+    }
+
+    fn perform(&mut self, action: OrganizeAction, cx: &mut Context<Self>) {
+        if self.state.apply(action) {
+            self.destination_menu = false;
+            self.sync_menu(cx);
+            cx.notify();
+        }
     }
 
     fn control(
@@ -121,19 +167,114 @@ impl MailView {
             cx,
         ));
         bar = bar.child(div().w(px(LIST - 66.0)));
+        bar = bar.child(self.control(
+            "mail-compose",
+            "▣",
+            "Compose",
+            ControlMode::Disabled,
+            |_, _| {},
+            cx,
+        ));
+        for (id, glyph, label, action) in [
+            ("mail-archive", "▤", "Archive", OrganizeAction::Archive),
+            ("mail-trash", "⌫", "Move to Bin", OrganizeAction::Delete),
+            ("mail-junk", "⊗", "Junk or Not Junk", OrganizeAction::Junk),
+        ] {
+            // Archive has no destination on iCloud (special_mailbox returns
+            // None), so grey it out there instead of a silent no-op click.
+            let available = self.state.selected_message().is_some_and(|message| {
+                action != OrganizeAction::Archive || message.mailbox.account() != "iCloud"
+            });
+            let mode = if available {
+                ControlMode::Enabled
+            } else {
+                ControlMode::Disabled
+            };
+            bar = bar.child(self.control(
+                id,
+                glyph,
+                label,
+                mode,
+                move |this, cx| this.perform(action, cx),
+                cx,
+            ));
+        }
         for (id, glyph, label) in [
-            ("mail-compose", "▣", "Compose"),
-            ("mail-archive", "▤", "Archive"),
-            ("mail-trash", "⌫", "Delete"),
-            ("mail-junk", "⊗", "Junk"),
             ("mail-reply", "↶", "Reply"),
             ("mail-reply-all", "↞", "Reply All"),
             ("mail-forward", "↷", "Forward"),
-            ("mail-flag", "⚑", "Flag"),
-            ("mail-move", "▱", "Move"),
-            ("mail-search", "⌕", "Search"),
         ] {
             bar = bar.child(self.control(id, glyph, label, ControlMode::Disabled, |_, _| {}, cx));
+        }
+        bar = bar.child(self.control(
+            "mail-flag",
+            "⚑",
+            "Flag",
+            ControlMode::Enabled,
+            |this, cx| this.perform(OrganizeAction::Flag, cx),
+            cx,
+        ));
+        bar = bar.child(self.control(
+            "mail-move",
+            "▱",
+            "Move or Copy to Mailbox",
+            ControlMode::Enabled,
+            |this, cx| {
+                this.destination_menu = !this.destination_menu;
+                cx.notify();
+            },
+            cx,
+        ));
+        bar = bar.child(self.control(
+            "mail-search",
+            "⌕",
+            "Search",
+            ControlMode::Enabled,
+            |this, cx| {
+                this.search_open = !this.search_open;
+                cx.notify();
+            },
+            cx,
+        ));
+        if self.search_open {
+            bar = bar.child(
+                div()
+                    .id("mail-search-field")
+                    .role(Role::SearchInput)
+                    .aria_label("Search Mail")
+                    .accessible_text_input(&self.search_input, cx)
+                    .w(px(170.0))
+                    .h(px(28.0))
+                    .rounded(px(mac::radius_control()))
+                    .bg(mac::control_fill())
+                    .child(
+                        TextField::new(&self.search_input)
+                            .appearance(false)
+                            .cleanable(true)
+                            .small(),
+                    ),
+            );
+            let all = self.state.search_scope == SearchScope::AllMailboxes;
+            bar = bar.child(self.control(
+                "mail-search-scope",
+                if all { "All" } else { "Here" },
+                if all {
+                    "Search All Mailboxes"
+                } else {
+                    "Search Current Mailbox"
+                },
+                ControlMode::Enabled,
+                |this, cx| {
+                    this.state.search_scope =
+                        if this.state.search_scope == SearchScope::AllMailboxes {
+                            SearchScope::CurrentMailbox
+                        } else {
+                            SearchScope::AllMailboxes
+                        };
+                    cx.notify();
+                },
+                cx,
+            ));
         }
         bar.into_any_element()
     }
@@ -221,6 +362,61 @@ impl MailView {
             .into_any_element()
     }
 
+    fn destinations(&self, cx: &mut Context<Self>) -> AnyElement {
+        let Some(selected) = self.state.selected_message() else {
+            return div().into_any_element();
+        };
+        let account = selected.mailbox.account();
+        let mut panel = div()
+            .id("mail-destination-menu")
+            .role(Role::Menu)
+            .aria_label(if self.copy_destination {
+                "Copy to Mailbox"
+            } else {
+                "Move to Mailbox"
+            })
+            .absolute()
+            .top(px(48.0))
+            .right(px(104.0))
+            .w(px(196.0))
+            .p(px(6.0))
+            .rounded(px(mac::radius_card()))
+            .bg(mac::material_sidebar())
+            .border_1()
+            .border_color(mac::separator())
+            .flex()
+            .flex_col();
+        for mailbox in Mailbox::ALL
+            .into_iter()
+            .filter(|mailbox| mailbox.is_real() && mailbox.account() == account)
+        {
+            let label = format!("{} · {}", mailbox.account(), mailbox.label());
+            panel = panel.child(
+                div()
+                    .id(format!("mail-destination-{mailbox:?}"))
+                    .role(Role::MenuItem)
+                    .aria_label(label.clone())
+                    .h(px(27.0))
+                    .px(px(8.0))
+                    .rounded(px(mac::radius_control()))
+                    .text_size(px(12.0))
+                    .text_color(mac::text())
+                    .flex()
+                    .items_center()
+                    .child(label)
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        let action = if this.copy_destination {
+                            OrganizeAction::Copy(mailbox)
+                        } else {
+                            OrganizeAction::Move(mailbox)
+                        };
+                        this.perform(action, cx);
+                    })),
+            );
+        }
+        panel.into_any_element()
+    }
+
     fn list(&self, cx: &mut Context<Self>) -> AnyElement {
         let visible = self.state.visible();
         let rows: Arc<Vec<Row>> = Arc::new(
@@ -229,7 +425,7 @@ impl MailView {
                 .map(|&index| {
                     let message = &self.state.messages[index];
                     Row {
-                        id: message.id,
+                        id: message.id.clone(),
                         sender: message.sender,
                         subject: message.subject,
                         preview: message.preview,
@@ -238,7 +434,7 @@ impl MailView {
                         flagged: message.flagged,
                         attachment: message.attachment.is_some(),
                         thread_count: self.state.thread_count(message.thread_id),
-                        selected: self.state.selected == Some(message.id),
+                        selected: self.state.selected.as_deref() == Some(message.id.as_str()),
                     }
                 })
                 .collect(),
@@ -291,7 +487,7 @@ impl MailView {
                         range
                             .map(|index| {
                                 let row = &rows[index];
-                                let id = row.id;
+                                let id = row.id.clone();
                                 let view = view.clone();
                                 let accessible = format!(
                                     "{}{}{}, {}, {}, {}{}",
@@ -387,7 +583,7 @@ impl MailView {
                                     )
                                     .on_click(move |_: &ClickEvent, _, cx| {
                                         let _ = view.update(cx, |this, cx| {
-                                            this.state.select(id);
+                                            this.state.select(&id);
                                             cx.notify();
                                         });
                                     })
@@ -579,15 +775,46 @@ impl Render for MailView {
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &ToggleRead, _, cx| {
-                if let Some(message) = this
+                let action = if this
                     .state
-                    .messages
-                    .iter_mut()
-                    .find(|message| Some(message.id) == this.state.selected)
+                    .selected_message()
+                    .is_some_and(|message| message.unread)
                 {
-                    message.unread = !message.unread;
+                    OrganizeAction::MarkRead
+                } else {
+                    OrganizeAction::MarkUnread
+                };
+                this.perform(action, cx);
+            }))
+            .on_action(
+                cx.listener(|this, _: &Archive, _, cx| this.perform(OrganizeAction::Archive, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &Delete, _, cx| this.perform(OrganizeAction::Delete, cx)),
+            )
+            .on_action(cx.listener(|this, _: &Junk, _, cx| this.perform(OrganizeAction::Junk, cx)))
+            .on_action(cx.listener(|this, _: &Flag, _, cx| this.perform(OrganizeAction::Flag, cx)))
+            .on_action(cx.listener(|this, _: &Undo, _, cx| {
+                if this.state.undo() {
+                    this.sync_menu(cx);
                     cx.notify();
                 }
+            }))
+            .on_action(cx.listener(|this, _: &Move, _, cx| {
+                this.copy_destination = false;
+                this.destination_menu = true;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &Copy, _, cx| {
+                this.copy_destination = true;
+                this.destination_menu = true;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &Search, window, cx| {
+                this.search_open = true;
+                this.search_input
+                    .update(cx, |state, cx| state.focus(window, cx));
+                cx.notify();
             }))
             .on_action(cx.listener(|this, _: &NextMessage, _, cx| {
                 this.state.select_next(1);
@@ -614,6 +841,9 @@ impl Render for MailView {
                     .child(self.viewer()),
             )
             .child(self.sidebar(cx))
+            .when(self.destination_menu, |root| {
+                root.child(self.destinations(cx))
+            })
     }
 }
 

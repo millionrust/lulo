@@ -387,15 +387,28 @@ class Wayland:
             self._modifiers(mask)
         if mods:
             self.roundtrip()
-        for _ in range(count):
+        for index in range(count):
             self._send(self.pointer, 2, struct.pack("<III", self._time(), code, 1))
             self._send(self.pointer, 4, b"")
-            self.roundtrip()
+            if index == 0:
+                self.roundtrip()
             time.sleep(0.03)
             self._send(self.pointer, 2, struct.pack("<III", self._time(), code, 0))
             self._send(self.pointer, 4, b"")
             self.roundtrip()
-            time.sleep(0.06)
+            if index < count - 1:
+                # A real double-click's two presses land well under GPUI's
+                # 400ms interval. Skipping the post-press round trip for the
+                # repeat click and keeping this gap short (one compositor
+                # round trip total between the two clicks, not the three the
+                # single-click path below also waits through) keeps the
+                # synthetic delivery's own overhead from eating that budget;
+                # a software-rendered nested compositor under CI load was
+                # occasionally slow enough to turn a double-click into two
+                # single clicks (Settings title-bar double-click Zoom).
+                time.sleep(0.02)
+            else:
+                time.sleep(0.06)
         for mod in reversed(mods):
             mod_code, bit = MODIFIER_KEYS[mod]
             self._key(mod_code, False)

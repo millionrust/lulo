@@ -87,18 +87,23 @@ pub mod input_actions {
         InputMoveToEndOfLine as MoveToEndOfLine, InputMoveToNextWord as MoveToNextWord,
         InputMoveToPreviousWord as MoveToPreviousWord, InputMoveToStart as MoveToStart,
         InputMoveToStartOfLine as MoveToStartOfLine, InputMoveUp as MoveUp, InputRedo as Redo,
-        InputSelectDown as SelectDown, InputSelectLeft as SelectLeft,
-        InputSelectRight as SelectRight, InputSelectToEnd as SelectToEnd,
-        InputSelectToEndOfLine as SelectToEndOfLine,
+        InputSelectToEnd as SelectToEnd, InputSelectToEndOfLine as SelectToEndOfLine,
         InputSelectToNextWordEnd as SelectToNextWordEnd,
         InputSelectToPreviousWordStart as SelectToPreviousWordStart,
         InputSelectToStart as SelectToStart, InputSelectToStartOfLine as SelectToStartOfLine,
-        InputSelectUp as SelectUp, InputShowCharacterPalette as ShowCharacterPalette,
-        InputUndo as Undo, Paste, SelectAll,
+        InputShowCharacterPalette as ShowCharacterPalette, InputUndo as Undo, Paste, SelectAll,
     };
 
     /// The key context those bindings live in.
     pub const KEY_CONTEXT: &str = "Input";
+
+    /// gpui-component binds ⇧←/⇧→/⇧↑/⇧↓ in that context to actions it does
+    /// not export; an editor answers them by these names
+    /// (`App::build_action`) instead.
+    pub const SELECT_LEFT: &str = "ui::SelectLeft";
+    pub const SELECT_RIGHT: &str = "ui::SelectRight";
+    pub const SELECT_UP: &str = "ui::SelectUp";
+    pub const SELECT_DOWN: &str = "ui::SelectDown";
 }
 pub use text_transform::{transform_selection, TextTransformation};
 pub use window::*;

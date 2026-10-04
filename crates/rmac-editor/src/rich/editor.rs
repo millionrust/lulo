@@ -901,26 +901,26 @@ impl RichTextEditor {
         self.move_vertically(target, cx);
     }
 
-    fn select_left(&mut self, _: &input::SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_left(&mut self, cx: &mut Context<Self>) {
         let target = self.document.previous_boundary(self.head());
         self.goal_x = None;
         self.select_to(target, cx);
     }
 
-    fn select_right(&mut self, _: &input::SelectRight, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_right(&mut self, cx: &mut Context<Self>) {
         let target = self.document.next_boundary(self.head());
         self.goal_x = None;
         self.select_to(target, cx);
     }
 
-    fn select_up(&mut self, _: &input::SelectUp, window: &mut Window, cx: &mut Context<Self>) {
+    fn select_up(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let target = self.vertical_target(self.head(), -1, window);
         let goal = self.goal_x;
         self.select_to(target, cx);
         self.goal_x = goal;
     }
 
-    fn select_down(&mut self, _: &input::SelectDown, window: &mut Window, cx: &mut Context<Self>) {
+    fn select_down(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let target = self.vertical_target(self.head(), 1, window);
         let goal = self.goal_x;
         self.select_to(target, cx);
@@ -1534,10 +1534,6 @@ impl Render for RichTextEditor {
             .on_action(cx.listener(Self::move_down))
             .on_action(cx.listener(Self::page_up))
             .on_action(cx.listener(Self::page_down))
-            .on_action(cx.listener(Self::select_left))
-            .on_action(cx.listener(Self::select_right))
-            .on_action(cx.listener(Self::select_up))
-            .on_action(cx.listener(Self::select_down))
             .on_action(cx.listener(Self::move_home))
             .on_action(cx.listener(Self::move_end))
             .on_action(cx.listener(Self::move_line_start))
@@ -1659,6 +1655,30 @@ impl gpui::Element for RichTextElement {
             ElementInputHandler::new(bounds, self.editor.clone()),
             cx,
         );
+        // ⇧-arrow selection: gpui-component binds these keys in the "Input"
+        // context to actions it keeps private, so answer them by name.
+        for (name, direction) in [
+            (input::SELECT_LEFT, 0_u8),
+            (input::SELECT_RIGHT, 1),
+            (input::SELECT_UP, 2),
+            (input::SELECT_DOWN, 3),
+        ] {
+            let Ok(action) = cx.build_action(name, None) else {
+                continue;
+            };
+            let editor = self.editor.clone();
+            window.on_action(action.as_any().type_id(), move |_, phase, window, cx| {
+                if phase != gpui::DispatchPhase::Bubble {
+                    return;
+                }
+                editor.update(cx, |editor, cx| match direction {
+                    0 => editor.select_left(cx),
+                    1 => editor.select_right(cx),
+                    2 => editor.select_up(window, cx),
+                    _ => editor.select_down(window, cx),
+                });
+            });
+        }
         let selection_color = if focused {
             selection_color
         } else {

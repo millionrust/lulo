@@ -33,10 +33,7 @@ impl Service for SystemService {
         let socket = if enabled {
             None
         } else {
-            match disable_remote_login_socket() {
-                Ok(previous) => previous,
-                Err(error) => return Err(error),
-            }
+            disable_remote_login_socket()?
         };
         let restore = || {
             let _ = restore_service(

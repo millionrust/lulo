@@ -82,7 +82,9 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
-            libxkbcommon-x11-dev
+            libxkbcommon-x11-dev \
+            dbus \
+            python3-dbusmock
 
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
@@ -136,7 +138,11 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings
 
+      # The AccountsService and cups-pk-helper tests run against
+      # python-dbusmock on a private bus; here a missing mock is a failure.
       - name: Run tests
+        env:
+          RMAC_REQUIRE_DBUSMOCK: "1"
         run: cargo test --locked --workspace --all-features
 
       - name: Run Python tests
@@ -174,7 +180,9 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
-            libxkbcommon-x11-dev
+            libxkbcommon-x11-dev \
+            dbus \
+            python3-dbusmock
 
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
@@ -203,7 +211,11 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings
 
+      # The AccountsService and cups-pk-helper tests run against
+      # python-dbusmock on a private bus; here a missing mock is a failure.
       - name: Run tests
+        env:
+          RMAC_REQUIRE_DBUSMOCK: "1"
         run: cargo test --locked --workspace --all-features
 
       - name: Run Python tests

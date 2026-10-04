@@ -43,7 +43,7 @@ pub(super) enum SubPage {
 }
 
 pub(super) const GENERAL_DESTINATIONS: [&str; 3] = ["About", "Software Update", "Storage"];
-pub(super) const PANE_ROUTES: [(&str, &str); 27] = [
+pub(super) const PANE_ROUTES: [(&str, &str); 30] = [
     ("wifi", "Wi-Fi"),
     ("bluetooth", "Bluetooth"),
     ("network", "Network"),
@@ -71,6 +71,9 @@ pub(super) const PANE_ROUTES: [(&str, &str); 27] = [
     ("focus", "Focus"),
     ("lock-screen", "Lock Screen"),
     ("privacy-security", "Privacy & Security"),
+    ("login-password", "Login Password"),
+    ("users-groups", "Users & Groups"),
+    ("printers-scanners", "Printers & Scanners"),
 ];
 
 pub(super) fn categories() -> Vec<Vec<Category>> {
@@ -242,6 +245,20 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 blue,
                 "Control what the system and applications can access.",
             ),
+            // macOS 26 names this pane Login Password on a Mac without
+            // Touch ID; Lulo OS has no Touch ID, so it never claims one.
+            cat(
+                "Login Password",
+                "icons/key.svg",
+                red,
+                "Change the password you use to log in.",
+            ),
+            cat(
+                "Users & Groups",
+                "icons/users.svg",
+                blue,
+                "Manage the users of this computer and how they log in.",
+            ),
         ],
         // macOS 26 lists the input devices in the last group, after
         // Lock Screen and Privacy & Security.
@@ -263,6 +280,12 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 "icons/touchpad.svg",
                 gray,
                 "Adjust tracking, tapping, scrolling, and gestures.",
+            ),
+            cat(
+                "Printers & Scanners",
+                "icons/printer.svg",
+                gray,
+                "Add printers, choose the default printer and paper size.",
             ),
         ],
     ]
@@ -354,6 +377,9 @@ pub(super) fn category_has_dedicated_renderer(name: &str) -> bool {
             | "Focus"
             | "Lock Screen"
             | "Privacy & Security"
+            | "Login Password"
+            | "Users & Groups"
+            | "Printers & Scanners"
     )
 }
 

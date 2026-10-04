@@ -168,6 +168,8 @@ impl Settings {
             internet_accounts_error: None,
             internet_account_selected: None,
             internet_account_delete: false,
+            users: Default::default(),
+            printers: Default::default(),
             internet_account_sheet: None,
             storage: Vec::new(),
             storage_loading: true,
@@ -406,8 +408,11 @@ impl Settings {
             mac_keyboard_error: None,
         };
         settings.sync_catalog_for_pane(false);
-        if settings.current().name.as_ref() == "Internet Accounts" {
-            settings.refresh_internet_accounts(cx);
+        match settings.current().name.as_ref() {
+            "Internet Accounts" => settings.refresh_internet_accounts(cx),
+            "Users & Groups" | "Login Password" => settings.refresh_users(cx),
+            "Printers & Scanners" => settings.refresh_printers(cx),
+            _ => {}
         }
         settings
     }

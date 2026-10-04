@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_270 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_263 gaps across 8 apps; 181 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Finder
 
@@ -159,20 +159,13 @@ _270 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/invento
 
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
-| SET-MENU-001 | missing menu item | Printers & Scanners | View ▸ Printers & Scanners |  |  | missing from Lulo's menu bar |
-| SET-MENU-002 | missing menu item | Startup Disk | View ▸ Startup Disk |  |  | missing from Lulo's menu bar |
-| SET-MENU-003 | missing menu item | Time Machine | View ▸ Time Machine |  |  | missing from Lulo's menu bar |
-| SET-MENU-004 | missing menu item | Touch ID & Password | View ▸ Touch ID & Password |  |  | missing from Lulo's menu bar |
-| SET-MENU-005 | missing menu item | Transfer or Reset | View ▸ Transfer or Reset |  |  | missing from Lulo's menu bar |
-| SET-MENU-006 | missing menu item | Users & Groups | View ▸ Users & Groups |  |  | missing from Lulo's menu bar |
-| SET-SIDEBAR-001 | missing sidebar pane | Printers & Scanners | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-002 | missing sidebar pane | Touch ID & Password | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-003 | missing sidebar pane | Users & Groups | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-MENU-007 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
-| SET-MENU-008 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
-| SET-SIDEBAR-004 | Lulo-only (not on the Mac) | Mouse | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-005 | Lulo-only (not on the Mac) | Touchscreen | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
-| SET-SIDEBAR-006 | Lulo-only (not on the Mac) | VPN | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-MENU-001 | Lulo-only (not on the Mac) | Login Password | View ▸ Login Password |  |  | present in Lulo but not found on the Mac |
+| SET-MENU-002 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
+| SET-MENU-003 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
+| SET-SIDEBAR-001 | Lulo-only (not on the Mac) | Login Password | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-SIDEBAR-002 | Lulo-only (not on the Mac) | Mouse | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-SIDEBAR-003 | Lulo-only (not on the Mac) | Touchscreen | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
+| SET-SIDEBAR-004 | Lulo-only (not on the Mac) | VPN | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
 
 ## Terminal
 

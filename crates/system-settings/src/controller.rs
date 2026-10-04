@@ -29,6 +29,7 @@ mod navigation_state;
 mod network;
 mod notifications;
 mod power;
+mod printers;
 mod privacy_security;
 mod settings_style;
 mod sharing;
@@ -40,6 +41,7 @@ mod spotlight;
 mod state;
 mod storage;
 mod system_info;
+mod users;
 mod view_helpers;
 mod vpn;
 mod wallpaper;
@@ -190,10 +192,12 @@ actions!(
         ShowInternetAccounts,
         ShowLanguageRegion,
         ShowLockScreen,
+        ShowLoginPassword,
         ShowLoginItems,
         ShowMenuBar,
         ShowNetwork,
         ShowNotifications,
+        ShowPrintersScanners,
         ShowPrivacySecurity,
         ShowSharing,
         ShowSoftwareUpdate,
@@ -201,6 +205,7 @@ actions!(
         ShowSpotlight,
         ShowStorage,
         ShowTrackpad,
+        ShowUsersGroups,
         ShowWallpaper,
         ShowWifi,
         EnterFullScreen,

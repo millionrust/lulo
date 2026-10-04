@@ -446,6 +446,8 @@ impl Settings {
                 "Wi-Fi" => self.refresh_wifi_state(cx),
                 "Network" => self.refresh_network(cx),
                 "Internet Accounts" => self.refresh_internet_accounts(cx),
+                "Users & Groups" | "Login Password" => self.refresh_users(cx),
+                "Printers & Scanners" => self.refresh_printers(cx),
                 "VPN" => self.refresh_vpn(cx),
                 "Battery" => self.refresh_power(cx),
                 _ => {}

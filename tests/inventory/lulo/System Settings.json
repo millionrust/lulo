@@ -219,6 +219,13 @@
           "children": []
         },
         {
+          "label": "Login Password",
+          "action": "system_settings::ShowLoginPassword",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Login Items & Extensions",
           "action": "system_settings::ShowLoginItems",
           "shortcut": "",
@@ -249,6 +256,13 @@
         {
           "label": "Notifications",
           "action": "system_settings::ShowNotifications",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Printers & Scanners",
+          "action": "system_settings::ShowPrintersScanners",
           "shortcut": "",
           "separator_before": false,
           "children": []
@@ -298,6 +312,13 @@
         {
           "label": "Trackpad",
           "action": "system_settings::ShowTrackpad",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Users & Groups",
+          "action": "system_settings::ShowUsersGroups",
           "shortcut": "",
           "separator_before": false,
           "children": []
@@ -704,6 +725,18 @@
     {
       "id": "privacy-security",
       "label": "Privacy & Security"
+    },
+    {
+      "id": "login-password",
+      "label": "Login Password"
+    },
+    {
+      "id": "users-groups",
+      "label": "Users & Groups"
+    },
+    {
+      "id": "printers-scanners",
+      "label": "Printers & Scanners"
     }
   ]
 }

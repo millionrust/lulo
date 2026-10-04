@@ -149,6 +149,9 @@ PANE_ROUTES: list[tuple[str, str]] = [
     ("focus", "Focus"),
     ("lock-screen", "Lock Screen"),
     ("privacy-security", "Privacy & Security"),
+    ("login-password", "Login Password"),
+    ("users-groups", "Users & Groups"),
+    ("printers-scanners", "Printers & Scanners"),
 ]
 CATEGORY_NAMES = {name for _pane_id, name in PANE_ROUTES}
 

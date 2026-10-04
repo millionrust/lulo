@@ -42,6 +42,9 @@ impl Settings {
                 "VPN" => self.render_vpn(cx),
                 "Desktop & Dock" => self.render_desktop_dock(cx),
                 "Spotlight" => self.render_spotlight(cx),
+                "Login Password" => self.render_login_password(cx),
+                "Users & Groups" => self.render_users_groups(cx),
+                "Printers & Scanners" => self.render_printers(cx),
                 _ => self.render_unregistered_category(),
             }
         };

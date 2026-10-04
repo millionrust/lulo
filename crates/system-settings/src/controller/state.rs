@@ -103,6 +103,10 @@ pub(super) struct Settings {
     pub(super) internet_account_selected: Option<String>,
     pub(super) internet_account_delete: bool,
     pub(super) internet_account_sheet: Option<internet_accounts::Sheet>,
+    /// Users & Groups and Login Password (AccountsService).
+    pub(super) users: users::UsersState,
+    /// Printers & Scanners (CUPS, cups-pk-helper).
+    pub(super) printers: printers::PrintersState,
     pub(super) storage: Vec<rmac_mounts::Volume>,
     pub(super) storage_loading: bool,
     pub(super) storage_busy: bool,

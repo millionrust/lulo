@@ -12,6 +12,7 @@ mod lifecycle;
 mod pointer;
 mod renderer;
 mod responsive_layout;
+mod sheets;
 mod shell_commands;
 mod tab_lifecycle;
 mod view_state;
@@ -64,7 +65,9 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use rmac_terminal::accessibility::TerminalAccessibilitySnapshot;
-use rmac_ui::{AccessibleTextInput as _, Button, InputEvent, InputState, SearchField};
+use rmac_ui::{
+    AccessibleTextInput as _, Button, Checkbox, InputEvent, InputState, SearchField, TextField,
+};
 #[cfg(test)]
 use vte::ansi::Processor;
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor};
@@ -167,6 +170,24 @@ gpui::actions!(
         ResetTerminal,
         HardResetTerminal,
         ShowSettings,
+        ClearToPreviousMark,
+        ClearToPreviousBookmark,
+        // Shell ▸ New Command…/New Remote Connection…, Show Inspector,
+        // Edit Title: each opens or closes its own small overlay sheet.
+        // Committing (Run/Connect/Done) is a plain button click, not a
+        // dispatched action — only opening and the Escape-to-cancel path
+        // need one.
+        NewCommand,
+        CancelNewCommand,
+        NewRemoteConnection,
+        CancelNewRemoteConnection,
+        EditTitle,
+        CancelEditTitle,
+        ShowInspector,
+        // View ▸ Split Pane (⌘D) / Close Split Pane (⇧⌘D): two scroll
+        // positions of the same session, not a second shell.
+        SplitPane,
+        CloseSplitPane,
         // Shell ▸ New Window ▸ <profile>: ⌘N and the plain "Basic" row open
         // the same default profile under two distinct actions, matching the
         // Mac's own duplicate rows.
@@ -394,6 +415,15 @@ pub(super) struct TerminalView {
     operation_error: Option<SharedString>,
     pending_close: Option<PendingClose>,
     pending_paste: Option<PendingPaste>,
+    /// Shell ▸ New Command… (⇧⌘N).
+    pending_new_command: Option<sheets::NewCommandSheet>,
+    /// Shell ▸ New Remote Connection… (⇧⌘K).
+    pending_remote_connection: Option<sheets::RemoteConnectionSheet>,
+    /// Shell ▸ Edit Title (⇧⌘I).
+    pending_edit_title: Option<sheets::EditTitleSheet>,
+    /// Shell ▸ Show/Hide Inspector (⌘I): a non-modal panel, so it does not
+    /// appear in `modal_open()`.
+    inspector_open: bool,
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<rmac_ui::ContextMenuState>,
     /// Last published AT-SPI text projection of the visible grid, and when.

@@ -232,6 +232,17 @@ impl TerminalView {
             ),
             KeyBinding::new("alt-cmd-r", ResetTerminal, Some("Terminal")),
             KeyBinding::new("ctrl-alt-cmd-r", HardResetTerminal, Some("Terminal")),
+            KeyBinding::new("cmd-l", ClearToPreviousMark, Some("Terminal")),
+            KeyBinding::new("alt-cmd-l", ClearToPreviousBookmark, Some("Terminal")),
+            KeyBinding::new("shift-cmd-n", NewCommand, Some("Terminal")),
+            KeyBinding::new("shift-cmd-k", NewRemoteConnection, Some("Terminal")),
+            KeyBinding::new("cmd-i", ShowInspector, Some("Terminal")),
+            KeyBinding::new("shift-cmd-i", EditTitle, Some("Terminal")),
+            KeyBinding::new("cmd-d", SplitPane, Some("Terminal")),
+            KeyBinding::new("shift-cmd-d", CloseSplitPane, Some("Terminal")),
+            KeyBinding::new("escape", CancelNewCommand, Some("TerminalNewCommand")),
+            KeyBinding::new("escape", CancelNewRemoteConnection, Some("TerminalRemote")),
+            KeyBinding::new("escape", CancelEditTitle, Some("TerminalEditTitle")),
             KeyBinding::new("ctrl-cmd-n", NewWindowWithSameCommand, Some("Terminal")),
             KeyBinding::new("ctrl-cmd-t", NewTabWithSameCommand, Some("Terminal")),
             KeyBinding::new("cmd-s", ExportTextAs, Some("Terminal")),
@@ -316,6 +327,10 @@ impl TerminalView {
             operation_error: None,
             pending_close: None,
             pending_paste: None,
+            pending_new_command: None,
+            pending_remote_connection: None,
+            pending_edit_title: None,
+            inspector_open: false,
             menu_at: None,
             a11y_cache: None,
             window_generation: NEXT_WINDOW_GENERATION.fetch_add(1, AtomicOrdering::Relaxed),
@@ -398,7 +413,11 @@ impl TerminalView {
     }
 
     pub(super) fn modal_open(&self) -> bool {
-        self.pending_close.is_some() || self.pending_paste.is_some()
+        self.pending_close.is_some()
+            || self.pending_paste.is_some()
+            || self.pending_new_command.is_some()
+            || self.pending_remote_connection.is_some()
+            || self.pending_edit_title.is_some()
     }
 }
 

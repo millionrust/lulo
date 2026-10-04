@@ -123,6 +123,28 @@ impl Render for TerminalView {
             let has_exec_origin = self.tabs[self.active].exec_origin().is_some();
             rmac_ui::set_menu_enabled("terminal::NewWindowWithSameCommand", has_exec_origin, cx);
             rmac_ui::set_menu_enabled("terminal::NewTabWithSameCommand", has_exec_origin, cx);
+            rmac_ui::set_menu_label(
+                "terminal::ShowInspector",
+                if self.inspector_open {
+                    "Hide Inspector"
+                } else {
+                    "Show Inspector"
+                },
+                cx,
+            );
+            let split_active = self.tabs[self.active].ui.split_offset.is_some();
+            rmac_ui::set_menu_enabled("terminal::SplitPane", !split_active, cx);
+            rmac_ui::set_menu_enabled("terminal::CloseSplitPane", split_active, cx);
+            rmac_ui::set_menu_enabled(
+                "terminal::ClearToPreviousMark",
+                self.tabs[self.active].can_clear_to_mark(false),
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
+                "terminal::ClearToPreviousBookmark",
+                self.tabs[self.active].can_clear_to_mark(true),
+                cx,
+            );
         }
         let layout = responsive_layout::terminal_layout(f32::from(
             rmac_ui::window_content_size(window).width,
@@ -142,6 +164,9 @@ impl Render for TerminalView {
             String::new()
         };
         let rows = self.render_rows(&query);
+        let split_pane = self
+            .render_split_pane(&query, cx)
+            .map(|pane| pane.into_any_element());
         let active_title = self.tabs[self.active]
             .tab_title()
             .unwrap_or_else(|| "Terminal".into());
@@ -170,6 +195,16 @@ impl Render for TerminalView {
         let paste_confirmation = self
             .render_paste_confirmation(cx)
             .map(|alert| alert.into_any_element());
+        let new_command_sheet = self
+            .render_new_command(cx)
+            .map(|sheet| sheet.into_any_element());
+        let new_remote_connection_sheet = self
+            .render_new_remote_connection(cx)
+            .map(|sheet| sheet.into_any_element());
+        let edit_title_sheet = self
+            .render_edit_title(cx)
+            .map(|sheet| sheet.into_any_element());
+        let inspector = self.render_inspector().map(|panel| panel.into_any_element());
         let ime_preedit = (!searching && !self.modal_open())
             .then(|| self.render_ime_preedit())
             .flatten();
@@ -223,13 +258,50 @@ impl Render for TerminalView {
             .on_action(cx.listener(|this, _: &SelectToNextBookmark, _, cx| {
                 this.select_to_mark(PromptDirection::Next, true, cx)
             }))
+            .on_action(cx.listener(|this, _: &ClearToPreviousMark, _, cx| {
+                this.clear_to_previous_mark(false, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ClearToPreviousBookmark, _, cx| {
+                this.clear_to_previous_mark(true, cx)
+            }))
+            .on_action(cx.listener(|this, _: &NewCommand, window, cx| {
+                this.open_new_command(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &NewRemoteConnection, window, cx| {
+                this.open_new_remote_connection(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &EditTitle, window, cx| {
+                this.open_edit_title(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowInspector, _, cx| this.toggle_inspector(cx)))
+            .on_action(cx.listener(|this, _: &SplitPane, _, cx| this.toggle_split_pane(cx)))
+            .on_action(cx.listener(|this, _: &CloseSplitPane, _, cx| this.close_split_pane(cx)))
             .child(rmac_ui::title_bar_content(
                 self.render_title(active_title, layout.title_max_width),
             ))
             .when(show_tab_bar, |terminal: Div| {
                 terminal.child(self.render_tabs(layout.tab_title_max_width, cx))
             })
-            .child(self.render_terminal_body(rows, ime_preedit, window.is_a11y_active(), cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .v_flex()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h(px(0.0))
+                            .flex()
+                            .overflow_hidden()
+                            .child(self.render_terminal_body(
+                                rows,
+                                ime_preedit,
+                                window.is_a11y_active(),
+                                cx,
+                            )),
+                    )
+                    .when_some(split_pane, |column, pane| column.child(pane)),
+            )
             .when(searching, |terminal| {
                 terminal.child(self.render_find_panel(layout.find_width, cx))
             })
@@ -251,10 +323,18 @@ impl Render for TerminalView {
             .when_some(terminal_error, |terminal, message| {
                 terminal.child(self.render_terminal_error(message, operation_error_visible, cx))
             })
+            // Shell ▸ Show Inspector is a non-modal panel, so it paints
+            // under the modal sheets/reviews below rather than after them.
+            .when_some(inspector, |terminal, panel| terminal.child(panel))
             // Modal reviews remain the final children so no terminal surface
             // can paint over them or receive pointer input.
             .when_some(paste_confirmation, |terminal, alert| terminal.child(alert))
             .when_some(close_confirmation, |terminal, alert| terminal.child(alert))
+            .when_some(new_command_sheet, |terminal, sheet| terminal.child(sheet))
+            .when_some(new_remote_connection_sheet, |terminal, sheet| {
+                terminal.child(sheet)
+            })
+            .when_some(edit_title_sheet, |terminal, sheet| terminal.child(sheet))
     }
 }
 

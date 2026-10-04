@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Terminal — New Command / New Remote Connection / Edit Title / Inspector / Split Pane</title>
+<!--
+  HTML-first mocks for the TRM-* gaps this pass builds for real
+  (docs/parity.md TERM-11, TERM-15, TERM-16; see docs/inventory-gaps.md
+  TRM-MENU-003/004/006/007/040/041). Measurements come from
+  tests/inventory/mac/Terminal.json's recorded labels/shortcuts, not a
+  fresh on-screen capture (none was available for this pass) — sizes below
+  are the Mac's own recorded dialog sizes (499×136, 422×432) simplified to
+  what Lulo can really do with no SSH-server/Bonjour discovery on Linux.
+  Ported to crates/terminal/src/controller/sheets.rs (New Command/New
+  Remote Connection/Edit Title/Inspector) and
+  crates/terminal/src/controller/renderer/grid.rs (Split Pane).
+-->
+<link rel="stylesheet" href="tokens.css">
+<style>
+  body { margin: 0; background: #1b1b1b; font-family: var(--font); color: var(--label); }
+  .row { display: flex; flex-wrap: wrap; gap: 32px; padding: 32px; align-items: flex-start; }
+  .label { font-size: 11px; color: var(--label-3); text-align: center; margin-top: 8px; }
+  .col { display: flex; flex-direction: column; align-items: center; }
+
+  .sheet {
+    background: var(--sheet);
+    border: 1px solid var(--separator);
+    border-radius: var(--radius-card, 10px);
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .field {
+    background: var(--field);
+    border: 1px solid var(--separator);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 13px;
+    color: var(--label);
+  }
+  .field.placeholder { color: var(--label-3); }
+  .check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--label-2); }
+  .check .box { width: 14px; height: 14px; border-radius: 4px; background: var(--accent); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+  .buttons { display: flex; justify-content: flex-end; gap: 8px; }
+  .btn { padding: 5px 14px; border-radius: 6px; font-size: 13px; background: var(--btn-secondary); }
+  .btn.default { background: var(--accent); color: var(--on-accent); }
+  .error { font-size: 12px; color: var(--sys-red); }
+
+  /* New Command: 499x136 on the Mac */
+  .new-command { width: 460px; }
+
+  /* New Remote Connection: 422x432 on the Mac, simplified — no SSH-server
+     discovery exists on Linux, so Service/Server lists become a Server +
+     User form that really runs `ssh [-l USER] SERVER`. */
+  .new-remote { width: 320px; }
+  .hint { font-size: 12px; color: var(--label-3); }
+
+  /* Edit Title */
+  .edit-title { width: 320px; }
+
+  /* Inspector: a non-modal panel, Show/Hide via ⌘I */
+  .inspector {
+    width: 200px;
+    background: var(--sheet);
+    border: 1px solid var(--separator);
+    border-radius: var(--radius-card, 10px);
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+    padding: 12px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .inspector .title { font-weight: 600; margin-bottom: 2px; }
+  .inspector .line { color: var(--label-2); }
+
+  /* Split Pane: two independently scrolled viewports onto ONE session */
+  .terminal-window {
+    width: 380px;
+    height: 260px;
+    background: #1c1c1c;
+    border-radius: 8px;
+    border: 1px solid var(--separator);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: #c8c8c8;
+  }
+  .pane { flex: 1 1 0; min-height: 0; overflow: hidden; padding: 6px 8px; }
+  .pane.secondary { border-top: 1px solid var(--separator); background: #1a1a1a; }
+  .pane .cursor { background: #9c9d9d; color: #1c1c1c; }
+</style>
+</head>
+<body>
+<div class="row">
+
+  <div class="col">
+    <div class="sheet new-command">
+      <div class="field placeholder">Command</div>
+      <label class="check"><span class="box">✓</span> Run command inside a shell</label>
+      <div class="buttons">
+        <div class="btn">Cancel</div>
+        <div class="btn default">Run</div>
+      </div>
+    </div>
+    <div class="label">Shell ▸ New Command… ⇧⌘N</div>
+  </div>
+
+  <div class="col">
+    <div class="sheet new-remote">
+      <div class="hint">Connect over SSH:</div>
+      <div class="field placeholder">Server</div>
+      <div class="field placeholder">User</div>
+      <div class="buttons">
+        <div class="btn">Cancel</div>
+        <div class="btn default">Connect</div>
+      </div>
+    </div>
+    <div class="label">Shell ▸ New Remote Connection… ⇧⌘K<br>(no Bonjour/SSH discovery on Linux — Server+User, runs real ssh)</div>
+  </div>
+
+  <div class="col">
+    <div class="sheet edit-title">
+      <div class="field">vim — notes.txt</div>
+      <div class="buttons">
+        <div class="btn">Cancel</div>
+        <div class="btn default">Done</div>
+      </div>
+    </div>
+    <div class="label">Shell ▸ Edit Title ⇧⌘I</div>
+  </div>
+
+  <div class="col">
+    <div class="inspector">
+      <div class="title">Inspector</div>
+      <div class="line">Title: vim — notes.txt</div>
+      <div class="line">Size: 80 × 24</div>
+      <div class="line">Shell: Running</div>
+      <div class="line">Process: vim</div>
+    </div>
+    <div class="label">Shell ▸ Show/Hide Inspector ⌘I</div>
+  </div>
+
+  <div class="col">
+    <div class="terminal-window">
+      <div class="pane">
+        $ tail -f build.log<br>
+        compiling rmac-terminal…<br>
+        <span class="cursor">&nbsp;</span>
+      </div>
+      <div class="pane secondary">
+        $ cd ~/code/rmac<br>
+        $ cargo check -p rmac-terminal<br>
+        (scrolled back independently)
+      </div>
+    </div>
+    <div class="label">View ▸ Split Pane ⌘D / Close Split Pane ⇧⌘D<br>(two scroll positions of ONE session, not a second shell)</div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -112,6 +112,14 @@ pub(super) struct SessionUiState {
     /// The match ⌘G / ⇧⌘G last moved to, and the query it was found for.
     pub(super) find_current: Option<FindMatch>,
     pub(super) find_status: Option<(String, FindStatus)>,
+    /// View ▸ Split Pane (⌘D): `Some(offset)` shows a second, independently
+    /// scrolled viewport onto this same session's grid below the primary
+    /// one — the Mac's split pane is two scroll positions of one session,
+    /// not a second shell. `offset` is the secondary pane's own display
+    /// offset (0 = pinned to the live prompt), entirely separate from the
+    /// primary pane's `Term::grid().display_offset()`. `None` means the
+    /// tab is not split (View ▸ Close Split Pane, ⇧⌘D).
+    pub(super) split_offset: Option<i32>,
 }
 
 pub(super) fn bounded_search_query(value: &str) -> String {

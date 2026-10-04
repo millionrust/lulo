@@ -284,6 +284,38 @@ impl SessionShellState {
         Some(history_size.saturating_sub(target).min(history_size))
     }
 
+    /// Edit ▸ Clear to Previous Mark/Bookmark: the retained-grid line of the
+    /// nearest mark (or, with `bookmark_only`, bookmark) strictly above the
+    /// current viewport, if clearing up to it is possible at all. Returns
+    /// the absolute line itself (not an offset) — the caller drops exactly
+    /// that many of the oldest history rows. Fails closed past the history
+    /// eviction boundary, like every other mark lookup here.
+    pub(super) fn clear_to_mark_line(
+        &self,
+        bookmark_only: bool,
+        history_size: usize,
+        display_offset: usize,
+        history_limit: usize,
+    ) -> Option<usize> {
+        if history_limit == 0 || history_size >= history_limit {
+            return None;
+        }
+        let viewport_top = history_size.saturating_sub(display_offset);
+        let state = self.state.lock().ok()?;
+        let marks = state
+            .manual_marks
+            .iter()
+            .filter(|mark| !bookmark_only || mark.bookmark)
+            .map(|mark| mark.line);
+        let candidates = state
+            .prompt_lines
+            .iter()
+            .copied()
+            .filter(move |_| !bookmark_only)
+            .chain(marks);
+        candidates.filter(|line| *line < viewport_top).max()
+    }
+
     /// Resolve a prompt to an Alacritty display offset without retaining any
     /// shell text. Marks fail closed at the history eviction boundary because
     /// retained-grid coordinates are no longer stable after that point.

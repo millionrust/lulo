@@ -595,6 +595,10 @@ pub(super) struct Session {
     writer: SharedWriter,
     write_failed: Arc<AtomicBool>,
     title: SessionTitle,
+    /// Shell ▸ Edit Title (⇧⌘I): a user-set override, separate from the
+    /// automatic OSC/job/directory title above it so a later shell title
+    /// escape never silently replaces what the user typed.
+    manual_title: SessionTitle,
     directory: SessionDirectory,
     shell_state: SessionShellState,
     scrollback_limit: Arc<AtomicUsize>,
@@ -713,6 +717,7 @@ impl Session {
             writer,
             write_failed,
             title,
+            manual_title: SessionTitle::default(),
             directory,
             shell_state,
             scrollback_limit,
@@ -753,6 +758,7 @@ impl Session {
             )),
             write_failed: Arc::new(AtomicBool::new(false)),
             title: SessionTitle::default(),
+            manual_title: SessionTitle::default(),
             directory: SessionDirectory::default(),
             shell_state: SessionShellState::default(),
             scrollback_limit: Arc::new(AtomicUsize::new(scrollback_lines)),
@@ -816,6 +822,13 @@ impl Session {
     }
 
     pub(super) fn tab_title(&self) -> Option<String> {
+        // Shell ▸ Edit Title (⇧⌘I): a title the user typed outranks the
+        // automatic ones below, exactly as it does on the Mac — it keeps
+        // showing even while a program is in the foreground, until the
+        // user edits or clears it again.
+        if let Some(manual) = self.manual_title.current() {
+            return Some(manual);
+        }
         let job = if self.lifecycle().is_running() {
             self.job_state.label()
         } else {
@@ -823,6 +836,12 @@ impl Session {
         };
         job.or_else(|| self.title.current())
             .or_else(|| self.directory.label())
+    }
+
+    /// Shell ▸ Edit Title (⇧⌘I): `None` (an empty field) clears the
+    /// override and returns to the automatic title above.
+    pub(super) fn set_manual_title(&self, title: Option<&str>) -> bool {
+        self.manual_title.set(title)
     }
 
     pub(super) fn working_directory(&self) -> Option<PathBuf> {
@@ -999,6 +1018,56 @@ impl Session {
         let offset = history_size.saturating_sub(target);
         term.scroll_display(Scroll::Bottom);
         term.scroll_display(Scroll::Delta(i32::try_from(offset).unwrap_or(i32::MAX)));
+        Ok(true)
+    }
+
+    pub(super) fn can_clear_to_mark(&self, bookmark_only: bool) -> bool {
+        let Ok(term) = self.term.lock() else {
+            return false;
+        };
+        let grid = term.grid();
+        self.shell_state
+            .clear_to_mark_line(
+                bookmark_only,
+                grid.history_size(),
+                grid.display_offset(),
+                self.scrollback_limit.load(Ordering::Acquire),
+            )
+            .is_some()
+    }
+
+    /// Edit ▸ Clear to Previous Mark (⌘L) / Clear to Previous Bookmark
+    /// (⌥⌘L): drop every retained scrollback row older than the nearest
+    /// mark/bookmark above the viewport, keeping that row and everything
+    /// after it. The configured scrollback limit (`terminal_config`'s
+    /// `max_scrollback`) is restored right after, so this only ever
+    /// shortens *today's* history, never the budget future output can
+    /// refill — the same two-step `update_history` dance `set_scrollback_limit`
+    /// uses for the cross-tab budget. Marks are coordinates into a grid that
+    /// just got shorter, so — like every other operation that structurally
+    /// changes the grid — they're all cleared afterward rather than risking
+    /// a stale one pointing at the wrong row.
+    pub(super) fn clear_to_previous_mark(
+        &mut self,
+        bookmark_only: bool,
+    ) -> Result<bool, SessionWriteError> {
+        let mut term = self.term.lock().map_err(|_| SessionWriteError::State)?;
+        let limit = self.scrollback_limit.load(Ordering::Acquire);
+        let (history_size, display_offset) = {
+            let grid = term.grid();
+            (grid.history_size(), grid.display_offset())
+        };
+        let Some(target_line) =
+            self.shell_state
+                .clear_to_mark_line(bookmark_only, history_size, display_offset, limit)
+        else {
+            return Ok(false);
+        };
+        let keep = history_size.saturating_sub(target_line);
+        term.grid_mut().update_history(keep);
+        term.grid_mut().update_history(limit);
+        drop(term);
+        self.shell_state.clear_grid_marks();
         Ok(true)
     }
 
@@ -1451,6 +1520,7 @@ mod tests {
             writer: Arc::new(Mutex::new(Box::new(FailingWriter))),
             write_failed: Arc::new(AtomicBool::new(false)),
             title: SessionTitle::default(),
+            manual_title: SessionTitle::default(),
             directory: SessionDirectory::default(),
             shell_state: SessionShellState::default(),
             scrollback_limit: Arc::new(AtomicUsize::new(10)),

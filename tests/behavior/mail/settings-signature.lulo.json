@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "scenario": "mail/settings-signature",
+  "platform": "Lulo local contract",
+  "observations": {
+    "settings": {"windows": {"count": 2, "front": "Mail Settings"}},
+    "signatures": {
+      "windows": {"count": 2, "front": "Mail Settings"},
+      "selection": {"items": ["Signatures"]}
+    }
+  }
+}

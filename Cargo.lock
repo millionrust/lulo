@@ -6515,7 +6515,10 @@ dependencies = [
  "rmac-mail-smtp",
  "rmac-mail-storage",
  "rmac-portal",
+ "rmac-storage",
  "rmac-ui",
+ "serde",
+ "serde_json",
  "uuid",
 ]
 

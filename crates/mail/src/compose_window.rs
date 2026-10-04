@@ -31,6 +31,7 @@ enum AddressField {
 pub fn open(
     kind: ComposeKind,
     message: Option<Message>,
+    prefill: Option<Draft>,
     accounts: Vec<ComposeAccount>,
     candidates: Vec<Recipient>,
     cx: &mut App,
@@ -39,8 +40,17 @@ pub fn open(
     match cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("New Message");
-        let view =
-            cx.new(|cx| ComposeView::new(kind, message.as_ref(), accounts, candidates, window, cx));
+        let view = cx.new(|cx| {
+            ComposeView::new(
+                kind,
+                message.as_ref(),
+                prefill,
+                accounts,
+                candidates,
+                window,
+                cx,
+            )
+        });
         let focus = view.read(cx).to.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
@@ -89,6 +99,7 @@ impl ComposeView {
     fn new(
         kind: ComposeKind,
         message: Option<&Message>,
+        prefill: Option<Draft>,
         accounts: Vec<ComposeAccount>,
         candidates: Vec<Recipient>,
         window: &mut Window,
@@ -98,7 +109,32 @@ impl ComposeView {
             .first()
             .map(|account| account.address.as_str())
             .unwrap_or_default();
-        let quote = initial_draft(kind, message, from);
+        let mut quote = initial_draft(kind, message, from);
+        // A `mailto:` launch (MAIL-8, `main.rs`) hands its parsed fields in
+        // here instead of deriving them from `kind`/`message`; only the
+        // fields it actually set override the blank/quoted draft.
+        if let Some(prefill) = prefill {
+            if !prefill.to.is_empty() {
+                quote.to = prefill.to;
+            }
+            if !prefill.cc.is_empty() {
+                quote.cc = prefill.cc;
+            }
+            if !prefill.bcc.is_empty() {
+                quote.bcc = prefill.bcc;
+            }
+            if !prefill.subject.is_empty() {
+                quote.subject = prefill.subject;
+            }
+            if !prefill.text.is_empty() {
+                quote.text = prefill.text;
+            }
+        }
+        // Every new message, reply and forward gets the chosen account's
+        // automatic signature (Settings ▸ Signatures, MAIL-8) appended once,
+        // right here when the compose window opens.
+        let (settings, _error) = rmac_mail::settings::load();
+        let quote = settings.compose_draft_with_signature(quote, from);
         let to = cx.new(|cx| InputState::new(window, cx).placeholder("Add recipients"));
         let cc = cx.new(|cx| InputState::new(window, cx).placeholder("Add Cc recipients"));
         let bcc = cx.new(|cx| InputState::new(window, cx).placeholder("Add Bcc recipients"));
@@ -109,6 +145,9 @@ impl ComposeView {
         });
         cc.update(cx, |input, cx| {
             input.set_value(quote.cc.join(", "), window, cx)
+        });
+        bcc.update(cx, |input, cx| {
+            input.set_value(quote.bcc.join(", "), window, cx)
         });
         subject.update(cx, |input, cx| {
             input.set_value(quote.subject.clone(), window, cx)

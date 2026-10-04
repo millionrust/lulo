@@ -93,6 +93,12 @@ APPS: tuple[tuple[str, str, str], ...] = (
     ("notes", "rmac-notes", "org.rmac.Notes"),
     ("preview", "rmac-preview", "org.rmac.Preview"),
     ("terminal", "rmac-terminal", "org.rmac.Terminal"),
+    # No GOA account exists in the soak's private session, so this runs
+    # Mail's real empty-state path (never the `RMAC_MAIL_FIXTURE` fixture)
+    # — exactly the "no accounts configured" shape MAIL-4 must not leak or
+    # busy-poll in, including its GOA watch and NetworkManager connectivity
+    # watch threads.
+    ("mail", "rmac-mail", "org.rmac.Mail"),
 )
 WINDOW_TIMEOUT_SECONDS = 20.0
 

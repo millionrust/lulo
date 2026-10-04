@@ -275,3 +275,139 @@ pub fn deliver(
         Err(_) => DeliveryResult::Queued,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmac_mail_mime::Draft;
+
+    /// This test is the only one in the `rmac-mail` binary target reading
+    /// `XDG_DATA_HOME` (`data_root`'s path), so mutating it process-wide
+    /// for its duration is safe: nothing else in this test binary runs
+    /// concurrently against the real value.
+    struct TempDataHome {
+        previous: Option<std::ffi::OsString>,
+        root: PathBuf,
+    }
+    impl TempDataHome {
+        fn new(tag: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "rmac-mail-delivery-test-{tag}-{}-{}",
+                std::process::id(),
+                tag.len()
+            ));
+            let _ = std::fs::remove_dir_all(&root);
+            let previous = std::env::var_os("XDG_DATA_HOME");
+            std::env::set_var("XDG_DATA_HOME", &root);
+            Self { previous, root }
+        }
+    }
+    impl Drop for TempDataHome {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+                None => std::env::remove_var("XDG_DATA_HOME"),
+            }
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn account() -> ComposeAccount {
+        ComposeAccount {
+            path: "/fixture/test".to_owned(),
+            id: Uuid::new_v4(),
+            address: "jacob@example.test".to_owned(),
+            provider: "imap_smtp".to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_draft_autosave_is_readable_back_from_storage() {
+        let home = TempDataHome::new("draft");
+        let account = account();
+        let location = save_draft(
+            &account,
+            None,
+            &account.address,
+            &["anna@example.test".to_owned()],
+            &["sam@example.test".to_owned()],
+            &[],
+            "Lunch on Friday?",
+            "Fancy lunch on Friday?",
+            &[],
+        )
+        .expect("a fresh draft should save");
+
+        let storage = MailStorage::open(&home.root.join("lulo/mail"), account.id).unwrap();
+        let saved = storage
+            .message_by_uid(location.mailbox_id, location.uid)
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.subject, "Lunch on Friday?");
+        assert_eq!(saved.flags & FLAG_DRAFT, FLAG_DRAFT);
+        assert!(saved.recipients.contains("anna@example.test"));
+        assert_eq!(saved.cc, "sam@example.test");
+
+        // Re-saving the same window's draft replaces the row in place
+        // rather than leaving a trail of earlier autosaves behind.
+        let second = save_draft(
+            &account,
+            Some(location),
+            &account.address,
+            &["anna@example.test".to_owned()],
+            &[],
+            &[],
+            "Lunch on Friday?",
+            "Fancy lunch on Friday? Say noon.",
+            &[],
+        )
+        .expect("re-saving the same draft should succeed");
+        assert_eq!(second, location, "a later autosave reuses the same row");
+        let updated = storage.get_message(saved.id).unwrap().unwrap();
+        assert!(updated.preview.contains("Say noon"));
+
+        discard_draft(&account, location);
+        assert!(storage
+            .message_by_uid(location.mailbox_id, location.uid)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn sending_with_no_known_smtp_server_queues_to_outbox_and_drops_the_draft() {
+        let home = TempDataHome::new("send");
+        let account = account();
+        let draft_location = save_draft(
+            &account,
+            None,
+            &account.address,
+            &["anna@example.test".to_owned()],
+            &[],
+            &[],
+            "Hello",
+            "Hi Anna",
+            &[],
+        )
+        .unwrap();
+        let draft = Draft {
+            to: vec!["anna@example.test".to_owned()],
+            subject: "Hello".to_owned(),
+            text: "Hi Anna".to_owned(),
+            ..Draft::default()
+        };
+        // `account.provider` is not "google" and its domain matches no
+        // known preset, so `deliver` has no SMTP server to try and must
+        // queue rather than silently drop the message.
+        let result = deliver(&account, draft, Some(draft_location));
+        assert!(matches!(result, DeliveryResult::Queued));
+
+        let mut storage = MailStorage::open(&home.root.join("lulo/mail"), account.id).unwrap();
+        assert_eq!(storage.outbox_count(rmac_mail_storage::OutboxState::Queued).unwrap(), 1);
+        // The Mac drops a sent draft from Drafts the moment it leaves,
+        // whether or not SMTP has accepted it yet.
+        assert!(storage
+            .message_by_uid(draft_location.mailbox_id, draft_location.uid)
+            .unwrap()
+            .is_none());
+    }
+}

@@ -1633,11 +1633,8 @@ impl PreviewView {
                             let old_display = slot.display.take();
                             let old_pages: Vec<_> =
                                 slot.pages.drain().map(|(_, bitmap)| bitmap.image).collect();
-                            let old_thumbs: Vec<_> = slot
-                                .thumbs
-                                .drain()
-                                .map(|(_, (_, image))| image)
-                                .collect();
+                            let old_thumbs: Vec<_> =
+                                slot.thumbs.drain().map(|(_, (_, image))| image).collect();
                             slot.state = SlotState::Ready(loaded);
                             slot.rotation = Rotation::default();
                             slot.saved_rotation = Rotation::default();

@@ -341,13 +341,15 @@ pub fn unique_temp_path(destination: &Path) -> PathBuf {
 /// never leaves `destination` half-written.
 pub fn save_image(pixels: &RgbaImage, kind: ImageKind, destination: &Path) -> Result<(), String> {
     let temporary = unique_temp_path(destination);
-    match write_image(pixels, kind, &temporary) {
-        Ok(()) => std::fs::rename(&temporary, destination).map_err(|error| error.to_string()),
-        Err(error) => {
-            let _ = std::fs::remove_file(&temporary);
-            Err(error)
-        }
+    let result = write_image(pixels, kind, &temporary)
+        .and_then(|()| std::fs::rename(&temporary, destination).map_err(|error| error.to_string()));
+    if result.is_err() {
+        // Written-but-not-renamed (the destination couldn't be replaced)
+        // leaves the temp file exactly where a write failure does, so one
+        // cleanup covers both.
+        let _ = std::fs::remove_file(&temporary);
     }
+    result
 }
 
 /// Tools ▸ Crop (PRV-MENU-068): crops to a pixel rectangle, top-left

@@ -90,8 +90,8 @@ fn now_secs() -> u64 {
 }
 
 fn load(root: &Path, document: &Path) -> Option<Store> {
-    let bytes = rmac_storage::read_bounded_no_follow(&meta_path(root, document), MAX_META_BYTES)
-        .ok()?;
+    let bytes =
+        rmac_storage::read_bounded_no_follow(&meta_path(root, document), MAX_META_BYTES).ok()?;
     let store: Store = serde_json::from_slice(&bytes).ok()?;
     (store.path == document).then_some(store)
 }
@@ -175,7 +175,10 @@ pub fn latest(document: &Path) -> Option<PathBuf> {
 
 fn latest_under(root: &Path, document: &Path) -> Option<PathBuf> {
     let store = load(root, document)?;
-    let newest = store.versions.iter().max_by_key(|version| version.saved_at)?;
+    let newest = store
+        .versions
+        .iter()
+        .max_by_key(|version| version.saved_at)?;
     Some(store_dir(root, document).join(&newest.file))
 }
 
@@ -222,11 +225,23 @@ mod tests {
 
     #[test]
     fn prune_entries_keeps_the_newest_within_count_age_and_size() {
-        let now = 1_000_000;
+        let now = 50 * 24 * 60 * 60;
         let mut versions = vec![
-            Version { file: "a".into(), saved_at: now - 40 * 24 * 60 * 60, size: 10 },
-            Version { file: "b".into(), saved_at: now - 10, size: 10 },
-            Version { file: "c".into(), saved_at: now - 5, size: 10 },
+            Version {
+                file: "a".into(),
+                saved_at: now - 40 * 24 * 60 * 60,
+                size: 10,
+            },
+            Version {
+                file: "b".into(),
+                saved_at: now - 10,
+                size: 10,
+            },
+            Version {
+                file: "c".into(),
+                saved_at: now - 5,
+                size: 10,
+            },
         ];
         let removed = prune_entries(&mut versions, now);
         // "a" is older than MAX_AGE_SECS and is not the newest, so it's dropped.
@@ -266,8 +281,16 @@ mod tests {
         assert_eq!(versions.len(), MAX_VERSIONS);
 
         let mut big = vec![
-            Version { file: "old".into(), saved_at: now - 2, size: MAX_TOTAL_BYTES },
-            Version { file: "new".into(), saved_at: now - 1, size: MAX_TOTAL_BYTES },
+            Version {
+                file: "old".into(),
+                saved_at: now - 2,
+                size: MAX_TOTAL_BYTES,
+            },
+            Version {
+                file: "new".into(),
+                saved_at: now - 1,
+                size: MAX_TOTAL_BYTES,
+            },
         ];
         let removed = prune_entries(&mut big, now);
         assert_eq!(removed, vec!["old".to_owned()]);

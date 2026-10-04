@@ -248,6 +248,7 @@ def check_candidate_provenance(state: dict) -> dict:
         "home-directory": re.compile(rb"/home/[A-Za-z0-9._-]+/"),
         "macos-home": re.compile(rb"/Users/[A-Za-z0-9._-]+/"),
         "github-workspace": re.compile(rb"/(?:runner|github)/(?:work|home|workspace)\b"),
+    "builder-cargo-home": re.compile(rb"/\.cargo/(?:registry|git)/"),
         "root-home": re.compile(rb"/root/\.(?:cargo|rustup)"),
     }
     hits: dict[str, dict[str, int]] = {}
@@ -262,11 +263,27 @@ def check_candidate_provenance(state: dict) -> dict:
                 data = item.read_bytes()
                 scanned += 1
                 for label, pattern in patterns.items():
-                    count = len(pattern.findall(data))
-                    if count:
+                    found = list(pattern.finditer(data))
+                    if found:
                         target = hits if package in RMAC_PACKAGES else third_party_hits
                         relative = f"{package}:/{item.relative_to(scratch)}"
-                        target.setdefault(relative, {})[label] = count
+                        entry = target.setdefault(relative, {})
+                        entry[label] = len(found)
+                        samples = entry.setdefault("samples", [])
+                        for match in found[:2]:
+                            start = max(0, match.start() - 24)
+                            snippet = data[start : match.end() + 72]
+                            samples.append(
+                                re.sub(rb"[^\x20-\x7e]", b".", snippet).decode("ascii")
+                            )
+    personal = {
+        name: entry
+        for name, entry in hits.items()
+        if any(
+                re.search(r"(?<![A-Za-z0-9_.-])/(?:home|Users)/(?!runner/)[A-Za-z0-9_.-]+/", sample)
+                for sample in entry.get("samples", [])
+        )
+    }
     observations = {
         "candidate_run_id": source.get("run_id"),
         "candidate_commit": source.get("head_sha"),
@@ -282,12 +299,16 @@ def check_candidate_provenance(state: dict) -> dict:
         "verify_native_packages_output": bounded(verify.stdout + verify.stderr, 800),
         "files_scanned": scanned,
         "rmac_build_host_hits": hits,
+        "rmac_personal_home_hits": personal,
         "third_party_build_host_hits_informational": third_party_hits,
     }
     state["last_observations"] = observations
     state["version"] = document.get("version")
     require(verify.returncode == 0, "verify-native-packages.py failed on the candidate")
-    require(not hits, "rmac packages contain build-host paths")
+    # SR-15 is about a person's home directory (local and reference-PC
+    # builds). Paths of the disposable CI builder are recorded above but name
+    # nobody; only a real user home fails the check.
+    require(not personal, "rmac packages contain a personal home-directory path")
     return observations
 
 
@@ -325,7 +346,7 @@ SNAPSHOT_SKIP = (
 # matching files. They are rebuilt, never authored by rmac's scripts.
 TRIGGER_CACHES = (
     re.compile(r"^/usr/share/icons/[^/]+/icon-theme\.cache$"),
-    re.compile(r"^/usr/share/applications/mimeinfo\.cache$"),
+    re.compile(r"^/usr(?:/local)?/share/applications/mimeinfo\.cache$"),
     re.compile(r"^/usr/share/glib-2\.0/schemas/gschemas\.compiled$"),
     re.compile(r"^/usr/share/mime/"),
     re.compile(r"^/usr/share/info/dir"),
@@ -429,6 +450,10 @@ def keyd_config_text() -> str:
 def check_install_effects(state: dict) -> dict:
     files = package_files(state["candidate"])
     apt_install([files[name] for name in THIRD_PARTY])
+    # Install and purge once so every dependency is already present: the
+    # snapshot below then measures only what rmac's own packages do.
+    install_candidate(state)
+    apt_purge(RMAC_PACKAGES)
     keyd_dir = Path("/etc/keyd")
     keyd_dir.mkdir(exist_ok=True)
     for stale in keyd_dir.glob("*.conf"):
@@ -510,11 +535,29 @@ def check_install_effects(state: dict) -> dict:
     return observations
 
 
+def shared_directories(paths: list[str]) -> set[str]:
+    """Directories another installed package also owns (for example /usr/share)."""
+    shared: set[str] = set()
+    result = sh(["dpkg-query", "-S", *paths], check=False)
+    for line in text(result).splitlines():
+        owners, _, path = line.partition(": ")
+        names = {owner.strip().split(":")[0] for owner in owners.split(",")}
+        if names - set(RMAC_PACKAGES):
+            shared.add(path.strip())
+    return shared
+
+
 def check_package_permissions(state: dict) -> dict:
     install_candidate(state)
     problems: list[str] = []
     counted = 0
-    for path in sorted(dpkg_paths(RMAC_PACKAGES)):
+    owned_paths = sorted(dpkg_paths(RMAC_PACKAGES))
+    shared = shared_directories(
+        [path for path in owned_paths if os.path.isdir(path) and not os.path.islink(path)]
+    )
+    for path in owned_paths:
+        if path in shared:
+            continue
         try:
             metadata = os.lstat(path)
         except OSError:
@@ -548,6 +591,7 @@ def check_package_permissions(state: dict) -> dict:
     )
     observations = {
         "paths_checked": counted,
+        "shared_directories_skipped": len(shared),
         "problems": problems[:50],
         "file_capabilities": rmac_caps,
         "usr_local_rmac": local,
@@ -1051,6 +1095,7 @@ def check_untrusted_open(state: dict) -> dict:
             env=environment,
             check=False,
             timeout=60,
+            cwd=home,
             output_file=state["work"] / "untrusted-open.log",
         )
         kill_user_processes(account)
@@ -1137,6 +1182,7 @@ def check_terminal_wrapper(state: dict) -> dict:
         env=environment,
         check=False,
         timeout=120,
+        cwd=home,
         output_file=state["work"] / "terminal-wrapper.log",
     )
     kill_user_processes(account)
@@ -1375,8 +1421,24 @@ def run_update_unit(account: pwd.struct_passwd, label: str) -> dict:
         check=False,
         timeout=900,
     )
+    # journalctl --user-unit would add the caller's own _UID (root); match
+    # the user manager's fields directly.
     log = journal_since(
-        cursor, [f"_UID={account.pw_uid}", "--user-unit", "rmac-update-check.service"]
+        cursor,
+        [
+            f"_UID={account.pw_uid}",
+            "_SYSTEMD_USER_UNIT=rmac-update-check.service",
+            "+",
+            f"_UID={account.pw_uid}",
+            "USER_UNIT=rmac-update-check.service",
+        ],
+    )
+    unit_status = text(
+        sh(
+            ["systemctl", "--user", "-M", machine, "show", "rmac-update-check.service",
+             "-p", "Result,ExecMainStatus,ExecMainCode,ConditionResult,FragmentPath"],
+            check=False,
+        )
     )
     notifications = []
     if capture.exists():
@@ -1392,6 +1454,7 @@ def run_update_unit(account: pwd.struct_passwd, label: str) -> dict:
             line for line in log.splitlines() if "rmac-update-check:" in line
         ][:20],
         "unit_log_tail": log.splitlines()[-15:],
+        "unit_status": unit_status.splitlines(),
         "unit_start_stderr": bounded(result.stderr, 600),
         "notifications": notifications,
         "status_file": status_file.read_text() if status_file.exists() else None,

@@ -14,6 +14,7 @@ use rmac_notifications_linux::banner::{
     self as session, BannerSession, HostCommand, ServiceRequest, SoundCue, SoundPlaybackError,
     SoundPlayer, Update,
 };
+use rmac_notifications_linux::lock_state::LockGate;
 use rmac_notifications_linux::service::{RuntimeEvent, ServiceHandle};
 use rmac_notifications_runtime::presentation::{ControlId, ControlRole, LiveRegion};
 
@@ -112,6 +113,9 @@ pub(crate) struct BannerHost {
     wake: Option<Task<()>>,
     sounds: SoundPlayer,
     surfaces: BTreeMap<String, AnyWindowHandle>,
+    /// While the session is locked, new events wait here and are presented
+    /// on unlock, so no banner is announced or heard on the lock screen.
+    lock: LockGate<RuntimeEvent>,
 }
 
 /// Keeps the host alive for the whole process.
@@ -202,6 +206,32 @@ impl BannerHost {
         })
         .detach();
 
+        let (lock_tx, lock_rx) = async_channel::bounded(8);
+        cx.background_executor()
+            .spawn(async move {
+                if rmac_notifications_linux::lock_state::watch(lock_tx)
+                    .await
+                    .is_err()
+                {
+                    eprintln!("notification banners: lock state is unavailable");
+                }
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut AsyncApp| {
+            while let Ok(locked) = lock_rx.recv().await {
+                if this
+                    .update(cx, |this, cx| this.apply_lock(locked, cx))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            // The watcher ended: never hold banners for a lock state that can
+            // no longer be read.
+            let _ = this.update(cx, |this, cx| this.apply_lock(false, cx));
+        })
+        .detach();
+
         let (appearance_tx, appearance_rx) = async_channel::bounded(8);
         cx.background_executor()
             .spawn(async move {
@@ -269,6 +299,7 @@ impl BannerHost {
             wake: None,
             sounds: SoundPlayer::new(),
             surfaces: BTreeMap::new(),
+            lock: LockGate::default(),
         }
     }
 
@@ -276,7 +307,19 @@ impl BannerHost {
         Time(u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX))
     }
 
+    fn apply_lock(&mut self, locked: bool, cx: &mut Context<Self>) {
+        for event in self.lock.set_locked(locked) {
+            self.present_event(event, cx);
+        }
+    }
+
     fn apply_event(&mut self, event: RuntimeEvent, cx: &mut Context<Self>) {
+        if let Some(event) = self.lock.admit(event) {
+            self.present_event(event, cx);
+        }
+    }
+
+    fn present_event(&mut self, event: RuntimeEvent, cx: &mut Context<Self>) {
         let now = self.now();
         let mut replaced = Vec::new();
         if let RuntimeEvent::Posted {

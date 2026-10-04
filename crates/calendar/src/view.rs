@@ -895,6 +895,7 @@ impl CalendarView {
             .into_any_element()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn time_grid(
         &self,
         snapshot: &WeekSnapshot,

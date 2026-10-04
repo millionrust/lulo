@@ -23,6 +23,8 @@ pub const CENTER_PATH: &str = "/org/rmac/NotificationCenter1";
 // Each event can transiently own one validated 4 MiB icon and 2 MiB sound.
 // Backpressure therefore caps worst-case queued media at 192 MiB.
 const EVENT_CAPACITY: usize = 32;
+/// How long one Notify waits for the Focus delivery policy.
+const FOCUS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 const MEDIA_ADMISSIONS: usize = 4;
 
 #[derive(Clone)]
@@ -77,12 +79,26 @@ impl HistoryAuthority {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .policy(app_id)
             .delivery(false);
-        let resolved = match &self.focus_connection {
-            Some(connection) => {
-                rmac_focus_linux::client::enforce_with_connection(connection, app_id, base).await
+        let lookup = async {
+            match &self.focus_connection {
+                Some(connection) => {
+                    rmac_focus_linux::client::enforce_with_connection(connection, app_id, base)
+                        .await
+                }
+                None => Err(rmac_focus_linux::client::Error::Connect),
             }
-            None => Err(rmac_focus_linux::client::Error::Connect),
         };
+        // The shared connection has no method timeout: a Focus service that
+        // hangs instead of exiting must not stall every Notify. It fails
+        // closed like an unavailable one.
+        let deadline = async {
+            async_io::Timer::after(FOCUS_TIMEOUT).await;
+            Err(rmac_focus_linux::client::Error::Connect)
+        };
+        let resolved = futures_util::future::select(Box::pin(lookup), Box::pin(deadline))
+            .await
+            .factor_first()
+            .0;
         resolved.unwrap_or(DeliveryPolicy {
             // Fail closed for banners while Focus state is unavailable;
             // policy-allowed history remains recoverable in the Center. An

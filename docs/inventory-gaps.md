@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_270 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_271 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Finder
 
@@ -68,8 +68,9 @@ _270 gaps across 8 apps; 176 Mac-only items were allowlisted (see `tests/invento
 | NOT-MENU-008 | wrong/missing shortcut | Zoom | Window ▸ Zoom | ⌃⌘Z |  | shortcut differs |
 | NOT-MENU-009 | wrong/missing shortcut | Zoom All | Window ▸ Zoom All | ⌃⌥⌘Z |  | shortcut differs |
 | NOT-SETTINGS-001 | missing settings control | Always resume to last Quick Note | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-002 | missing settings control | When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| NOT-SETTINGS-003 | missing settings control | slider | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-002 | missing settings control | New notes start with: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-003 | missing settings control | When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| NOT-SETTINGS-004 | missing settings control | slider | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 
 ## Preview
 

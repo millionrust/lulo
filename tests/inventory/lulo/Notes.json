@@ -1345,10 +1345,6 @@
       },
       {
         "kind": "control",
-        "label": "New notes start with:"
-      },
-      {
-        "kind": "control",
         "label": "Default text size:"
       },
       {

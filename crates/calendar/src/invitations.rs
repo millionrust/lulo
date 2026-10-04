@@ -184,9 +184,7 @@ pub fn apply_response(
     self_email: &str,
     response: Response,
 ) -> Option<IcalEvent> {
-    if organizer(event).is_none() {
-        return None;
-    }
+    organizer(event)?;
     let target = self_email.trim().to_ascii_lowercase();
     if target.is_empty() {
         return None;

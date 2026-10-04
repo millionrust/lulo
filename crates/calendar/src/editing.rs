@@ -497,7 +497,7 @@ pub fn respond_to_invitation(source: &str, event: &IcalEvent) -> Result<(), Stri
         .map_err(|_| "Couldn't open calendar".to_owned())?;
     let wire = object(event);
     calendar
-        .modify(&[wire.clone()], "this")
+        .modify(std::slice::from_ref(&wire), "this")
         .map_err(|_| "Couldn't update the invitation".to_owned())?;
     let _ = calendar.send(&wire);
     Ok(())

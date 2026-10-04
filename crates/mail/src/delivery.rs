@@ -277,15 +277,22 @@ mod tests {
     use rmac_mail_mime::Draft;
 
     /// This test is the only one in the `rmac-mail` binary target reading
-    /// `XDG_DATA_HOME` (`data_root`'s path), so mutating it process-wide
-    /// for its duration is safe: nothing else in this test binary runs
-    /// concurrently against the real value.
+    /// `XDG_DATA_HOME` (`data_root`'s path). Rust's default test harness
+    /// runs `#[test]` functions on separate threads within the same
+    /// process, so two tests mutating this process-wide variable at once
+    /// would race; `ENV_LOCK` serialises every `TempDataHome` so only one
+    /// is ever active.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     struct TempDataHome {
+        _guard: std::sync::MutexGuard<'static, ()>,
         previous: Option<std::ffi::OsString>,
         root: PathBuf,
     }
     impl TempDataHome {
         fn new(tag: &str) -> Self {
+            let guard = ENV_LOCK
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let root = std::env::temp_dir().join(format!(
                 "rmac-mail-delivery-test-{tag}-{}-{}",
                 std::process::id(),
@@ -294,7 +301,11 @@ mod tests {
             let _ = std::fs::remove_dir_all(&root);
             let previous = std::env::var_os("XDG_DATA_HOME");
             std::env::set_var("XDG_DATA_HOME", &root);
-            Self { previous, root }
+            Self {
+                _guard: guard,
+                previous,
+                root,
+            }
         }
     }
     impl Drop for TempDataHome {

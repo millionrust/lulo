@@ -231,7 +231,7 @@ Beta with this risk and mitigation; each has a Known issues note in
 | ID | Severity | Decision | Risk | Mitigation until fixed |
 |---|---|---|---|---|
 | SR-18 | Low | Accept for Beta | A release build can still fail or drift in untested toolchain artifact selection; the new content-pinned workflow has not had a native run. | Release containers, rustup installer, and `cargo-cyclonedx` archive are content-pinned in source. Actions are pinned by commit SHA (SR-16), builds use `Cargo.lock` with `--locked`, `cargo-deny` gates advisories and licences (SR-05), outputs carry a workflow-bound provenance attestation that `install.sh` now requires (SR-17), and the APT publisher re-verifies every input (SR-12). |
-| SR-39 | Low | Owner decides (proposed: accept for Beta with the mitigation) | A terminal app with `$(…)` in its declared arguments gets one argument fewer. Nothing is executed. | Only third-party desktop entries with such arguments are affected, and Lulo OS ships none. |
+| SR-39 | Low | Accepted for Beta (2026-10-04); report upstream to Ptyxis | A terminal app with `$(…)` in its declared arguments gets one argument fewer. Nothing is executed. | Only third-party desktop entries with such arguments are affected, and Lulo OS ships none. |
 
 **Informational, no severity:**
 

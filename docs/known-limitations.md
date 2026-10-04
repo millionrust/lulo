@@ -130,7 +130,7 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 Two Low findings from the
 [security review](security-review-0.9.0-beta.1.md) are open. Each has a
 mitigation, and both still count against the security gate. SR-18 is
-accepted for Beta; SR-39 is proposed for acceptance.
+accepted for Beta; SR-39 is accepted for Beta too.
 
 - **SR-18, release build inputs.** Release containers, the rustup installer,
   and the `cargo-cyclonedx` source archive now have content pins in source.

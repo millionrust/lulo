@@ -9,7 +9,7 @@
   "journey_manifest_sha256": "6c3867951d1bdaf5742eb53c4a89e9409dc56510227bdf5acee2d57eb6acf264",
   "open_findings": [
     "SR-18 low packages: release toolchain artifacts version-selected and no native release-workflow run yet (accepted for Beta: content-pinned containers, rustup and cargo-cyclonedx, SHA-pinned actions, Cargo.lock, cargo-deny, attested outputs)",
-    "SR-39 low desktop-entry-execution: the default x-terminal-emulator (Ptyxis) drops a $(...) argument from -e PROGRAM ARGS; nothing is executed (proposed accept for Beta; no shipped entry affected)"
+    "SR-39 low desktop-entry-execution: the default x-terminal-emulator (Ptyxis) drops a $(...) argument from -e PROGRAM ARGS; nothing is executed (accepted for Beta 2026-10-04; no shipped entry affected)"
   ],
   "results": [
     {

@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rmac_notes_store::{
-    decode, encode, AttachmentImportPlan, BundleImportPlan, LibrarySnapshot, OrphanCollectionPlan,
-    PurgePlan, MAX_LIBRARY_BYTES,
+    decode, encode, AttachmentImportPlan, AttachmentRecord, BundleImportPlan, LibrarySnapshot,
+    OrphanCollectionPlan, PurgePlan, MAX_LIBRARY_BYTES,
 };
 use rmac_storage::{Backend, FileSystem};
 
@@ -20,6 +20,9 @@ use crate::model::Baseline;
 use crate::note_import;
 use crate::orphan::{OrphanAuthority, OrphanError, OrphanIntent, MAX_ORPHAN_INTENT_BYTES};
 use crate::purge::{PurgeAuthority, PurgeError, PurgeIntent, MAX_PURGE_INTENT_BYTES};
+use crate::rewrite::{
+    AttachmentRewrite, RewriteAuthority, RewriteError, RewriteIntent, MAX_REWRITE_INTENT_BYTES,
+};
 use crate::{
     BundleImportError, BundleImportErrorKind, BundleImportOperation, ErrorKind, LegacyLibraryInput,
     LoadedLibrary, MigrationCommitError, MigrationCommitOutcome, MigrationPlan, Operation,
@@ -119,6 +122,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         self.require_no_import_intent()?;
         self.require_no_orphan_intent()?;
         self.require_no_bundle_import_intent()?;
+        self.require_no_rewrite_intent()?;
         self.save_locked(loaded, candidate)
     }
 
@@ -145,6 +149,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         self.require_no_import_intent()?;
         self.require_no_orphan_intent()?;
         self.require_no_bundle_import_intent()?;
+        self.require_no_rewrite_intent()?;
         let intent = ImportIntent::prepare(loaded.snapshot(), candidate, plan, prepared)
             .map_err(|error| map_import_error(Operation::WriteAttachmentImportIntent, error))?;
         self.write_import_intent(&intent)?;
@@ -194,6 +199,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         self.require_no_import_intent()?;
         self.require_no_orphan_intent()?;
         self.require_no_bundle_import_intent()?;
+        self.require_no_rewrite_intent()?;
         let intent = BundleImportIntent::prepare(loaded.snapshot(), candidate, plan, prepared)
             .map_err(|error| map_bundle_error(Operation::WriteBundleImportIntent, error))?;
         self.write_bundle_import_intent(&intent)?;
@@ -220,6 +226,87 @@ impl<B: Backend> NotesLibraryStore<B> {
         Ok(outcome)
     }
 
+    /// Stage exact replacement bytes for attachments (sealing, re-sealing
+    /// or unsealing a locked note's attachments), publish the candidate that
+    /// names them, then replace the managed files (see `rewrite`).
+    pub fn save_attachment_rewrite(
+        &self,
+        loaded: &LoadedLibrary,
+        candidate: &LibrarySnapshot,
+        rewrites: &[AttachmentRewrite],
+    ) -> Result<SaveOutcome, StoreError> {
+        let _guard = self
+            .transaction_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if has_blocking_notice(loaded.notices()) {
+            return Err(StoreError::new(
+                Operation::PreflightPrimary,
+                ErrorKind::AmbiguousJournal,
+            ));
+        }
+        self.require_no_purge_intent()?;
+        self.require_no_import_intent()?;
+        self.require_no_orphan_intent()?;
+        self.require_no_bundle_import_intent()?;
+        self.require_no_rewrite_intent()?;
+        let intent = RewriteIntent::prepare(loaded.snapshot(), candidate, rewrites)
+            .map_err(|error| map_rewrite_error(Operation::WriteAttachmentRewriteIntent, error))?;
+        self.write_rewrite_intent(&intent)?;
+        intent
+            .stage(&self.root, &self.backend, rewrites)
+            .map_err(|error| map_rewrite_error(Operation::StageAttachmentRewrite, error))?;
+        let mut outcome = self.save_locked(loaded, candidate)?;
+        if outcome.maintenance_pending {
+            outcome.attachment_import_pending = true;
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::AttachmentRewritePending,
+            );
+            return Ok(outcome);
+        }
+        if intent
+            .finish(&self.root, &self.backend)
+            .map_err(|error| map_rewrite_error(Operation::FinishAttachmentRewrite, error))
+            .and_then(|()| self.remove_rewrite_intent())
+            .is_err()
+        {
+            outcome.maintenance_pending = true;
+            outcome.attachment_import_pending = true;
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::AttachmentRewritePending,
+            );
+        }
+        Ok(outcome)
+    }
+
+    /// Read one managed attachment's exact bytes, verified against its
+    /// record. Sealed attachments come back sealed.
+    pub fn read_managed_attachment(
+        &self,
+        attachment: &AttachmentRecord,
+    ) -> Result<Vec<u8>, StoreError> {
+        let maximum = usize::try_from(attachment.byte_len).map_err(|_| {
+            StoreError::new(
+                Operation::ReadManagedAttachment,
+                ErrorKind::AttachmentTooLarge,
+            )
+        })?;
+        let bytes = self
+            .backend
+            .read_bounded_no_follow(&managed_attachment_path(&self.root, attachment.id), maximum)
+            .map_err(|error| StoreError::io(Operation::ReadManagedAttachment, error))?;
+        let digest: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest(&bytes).into();
+        if bytes.len() as u64 != attachment.byte_len || digest != attachment.sha256 {
+            return Err(StoreError::new(
+                Operation::ReadManagedAttachment,
+                ErrorKind::AttachmentMismatch,
+            ));
+        }
+        Ok(bytes)
+    }
+
     /// Publish an exact purge candidate, then collect only the managed
     /// attachment bytes named by its durable private intent.
     pub fn save_purge(
@@ -242,6 +329,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         self.require_no_import_intent()?;
         self.require_no_orphan_intent()?;
         self.require_no_bundle_import_intent()?;
+        self.require_no_rewrite_intent()?;
         let intent = PurgeIntent::prepare(loaded.snapshot(), candidate, plan)
             .map_err(|error| map_purge_error(Operation::WritePurgeIntent, error))?;
         self.write_purge_intent(&intent)?;
@@ -287,6 +375,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         self.require_no_import_intent()?;
         self.require_no_orphan_intent()?;
         self.require_no_bundle_import_intent()?;
+        self.require_no_rewrite_intent()?;
         let intent = OrphanIntent::prepare(loaded.snapshot(), candidate, plan)
             .map_err(|error| map_orphan_error(Operation::WriteOrphanCollectionIntent, error))?;
         self.write_orphan_intent(&intent)?;
@@ -382,11 +471,13 @@ impl<B: Backend> NotesLibraryStore<B> {
         let orphan_present = self.intent_present(&self.orphan_path(), MAX_ORPHAN_INTENT_BYTES);
         let bundle_import_present =
             self.intent_present(&self.bundle_import_path(), MAX_BUNDLE_IMPORT_INTENT_BYTES);
+        let rewrite_present = self.intent_present(&self.rewrite_path(), MAX_REWRITE_INTENT_BYTES);
         if [
             purge_present,
             import_present,
             orphan_present,
             bundle_import_present,
+            rewrite_present,
         ]
         .into_iter()
         .filter(|present| *present)
@@ -415,12 +506,137 @@ impl<B: Backend> NotesLibraryStore<B> {
                     RecoveryNotice::CorruptBundleImportPreserved,
                 );
             }
+            if rewrite_present {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptAttachmentRewritePreserved,
+                );
+            }
             return Ok(loaded);
         }
         let loaded = self.recover_purge(loaded)?;
         let loaded = self.recover_attachment_import(loaded)?;
         let loaded = self.recover_orphan_collection(loaded)?;
-        self.recover_bundle_import(loaded)
+        let loaded = self.recover_bundle_import(loaded)?;
+        Ok(self.recover_attachment_rewrite(loaded))
+    }
+
+    pub(crate) fn recover_attachment_rewrite(&self, mut loaded: LoadedLibrary) -> LoadedLibrary {
+        let bytes = match self
+            .backend
+            .read_bounded_no_follow(&self.rewrite_path(), MAX_REWRITE_INTENT_BYTES)
+        {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return loaded,
+            Err(_) => {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptAttachmentRewritePreserved,
+                );
+                return loaded;
+            }
+        };
+        let Ok(intent) = RewriteIntent::decode(&bytes) else {
+            push_notice(
+                &mut loaded.notices,
+                RecoveryNotice::CorruptAttachmentRewritePreserved,
+            );
+            return loaded;
+        };
+        match intent.authority(&loaded.snapshot) {
+            RewriteAuthority::RolledBack => {
+                if intent
+                    .rollback(&self.root, &self.backend)
+                    .map_err(|error| map_rewrite_error(Operation::FinishAttachmentRewrite, error))
+                    .and_then(|()| self.remove_rewrite_intent())
+                    .is_ok()
+                {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::RolledBackInterruptedAttachmentRewrite,
+                    );
+                } else {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::AttachmentRewritePending,
+                    );
+                }
+            }
+            RewriteAuthority::Accepted => {
+                if intent
+                    .finish(&self.root, &self.backend)
+                    .map_err(|error| map_rewrite_error(Operation::FinishAttachmentRewrite, error))
+                    .and_then(|()| self.remove_rewrite_intent())
+                    .is_ok()
+                {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::FinishedInterruptedAttachmentRewrite,
+                    );
+                } else {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::AttachmentRewritePending,
+                    );
+                }
+            }
+            RewriteAuthority::Ambiguous => push_notice(
+                &mut loaded.notices,
+                RecoveryNotice::CorruptAttachmentRewritePreserved,
+            ),
+        }
+        loaded
+    }
+
+    pub(crate) fn write_rewrite_intent(&self, intent: &RewriteIntent) -> Result<(), StoreError> {
+        let bytes = intent
+            .encode()
+            .map_err(|error| map_rewrite_error(Operation::WriteAttachmentRewriteIntent, error))?;
+        self.backend
+            .create_dir_all_private(&self.root)
+            .map_err(|error| StoreError::io(Operation::CreateDirectory, error))?;
+        self.backend
+            .write_atomic_private(&self.rewrite_path(), &bytes)
+            .map_err(|error| StoreError::io(Operation::WriteAttachmentRewriteIntent, error))?;
+        let readback = self
+            .backend
+            .read_bounded_no_follow(&self.rewrite_path(), MAX_REWRITE_INTENT_BYTES)
+            .map_err(|error| StoreError::io(Operation::VerifyAttachmentRewriteIntent, error))?;
+        if readback != bytes || RewriteIntent::decode(&readback).ok().as_ref() != Some(intent) {
+            return Err(StoreError::new(
+                Operation::VerifyAttachmentRewriteIntent,
+                ErrorKind::ReadbackMismatch,
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn require_no_rewrite_intent(&self) -> Result<(), StoreError> {
+        match self
+            .backend
+            .read_bounded_no_follow(&self.rewrite_path(), MAX_REWRITE_INTENT_BYTES)
+        {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Ok(_) => Err(StoreError::new(
+                Operation::ReadAttachmentRewriteIntent,
+                ErrorKind::InvalidAttachmentRewrite,
+            )),
+            Err(error) => Err(StoreError::io(
+                Operation::ReadAttachmentRewriteIntent,
+                error,
+            )),
+        }
+    }
+
+    pub(crate) fn remove_rewrite_intent(&self) -> Result<(), StoreError> {
+        match self.backend.remove_file_durable(&self.rewrite_path()) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(StoreError::io(
+                Operation::RemoveAttachmentRewriteIntent,
+                error,
+            )),
+        }
     }
 
     pub(crate) fn save_locked(
@@ -1171,6 +1387,10 @@ impl<B: Backend> NotesLibraryStore<B> {
     pub(crate) fn bundle_import_path(&self) -> PathBuf {
         self.root.join("library.bundle-import.bin")
     }
+
+    pub(crate) fn rewrite_path(&self) -> PathBuf {
+        self.root.join("library.attachment-rewrite.bin")
+    }
 }
 
 fn push_notice(notices: &mut Vec<RecoveryNotice>, notice: RecoveryNotice) {
@@ -1198,8 +1418,24 @@ pub(crate) fn has_blocking_notice(notices: &[RecoveryNotice]) -> bool {
                 | RecoveryNotice::OrphanCollectionPending
                 | RecoveryNotice::CorruptBundleImportPreserved
                 | RecoveryNotice::BundleImportPending
+                | RecoveryNotice::CorruptAttachmentRewritePreserved
+                | RecoveryNotice::AttachmentRewritePending
         )
     })
+}
+
+fn map_rewrite_error(operation: Operation, error: RewriteError) -> StoreError {
+    StoreError::new(
+        operation,
+        match error {
+            RewriteError::Io(kind) => ErrorKind::Io(kind),
+            RewriteError::ReadbackMismatch => ErrorKind::ReadbackMismatch,
+            RewriteError::AttachmentMismatch => ErrorKind::AttachmentMismatch,
+            RewriteError::InvalidPlan | RewriteError::TooLarge | RewriteError::Malformed => {
+                ErrorKind::InvalidAttachmentRewrite
+            }
+        },
+    )
 }
 
 fn map_bundle_error(operation: Operation, error: BundleImportError) -> StoreError {

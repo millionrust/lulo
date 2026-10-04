@@ -116,6 +116,7 @@ fn candidate(base: &LibrarySnapshot, title: &str) -> LibrarySnapshot {
         pinned: false,
         deleted: false,
         attachments: Vec::new(),
+        lock: None,
     });
     candidate.next_note_id += 1;
     candidate
@@ -145,6 +146,7 @@ fn purge_fixture() -> (LibrarySnapshot, PathBuf, Vec<u8>) {
                 pinned: false,
                 deleted: true,
                 attachments: vec![attachment_id],
+                lock: None,
             }],
             attachments: vec![AttachmentRecord {
                 id: attachment_id,
@@ -155,7 +157,9 @@ fn purge_fixture() -> (LibrarySnapshot, PathBuf, Vec<u8>) {
                 byte_len: attachment_bytes.len() as u64,
                 sha256: digest(&attachment_bytes),
                 deleted: false,
+                sealed_key: None,
             }],
+            ..LibrarySnapshot::default()
         },
         PathBuf::from("/virtual/library/attachments/00000000000000000001.bin"),
         attachment_bytes,
@@ -206,6 +210,7 @@ fn orphan_fixture() -> (LibrarySnapshot, PathBuf, Vec<u8>) {
                 pinned: false,
                 deleted: false,
                 attachments: Vec::new(),
+                lock: None,
             }],
             attachments: vec![AttachmentRecord {
                 id: attachment_id,
@@ -216,7 +221,9 @@ fn orphan_fixture() -> (LibrarySnapshot, PathBuf, Vec<u8>) {
                 byte_len: attachment_bytes.len() as u64,
                 sha256: digest(&attachment_bytes),
                 deleted: true,
+                sealed_key: None,
             }],
+            ..LibrarySnapshot::default()
         },
         PathBuf::from("/virtual/library/attachments/00000000000000000001.bin"),
         attachment_bytes,
@@ -372,6 +379,7 @@ fn managed_preview_verifies_identity_and_returns_bounded_rgba() {
         store.root(),
         &candidate.attachments[0],
         target,
+        None,
         &backend,
     )
     .unwrap();
@@ -390,6 +398,7 @@ fn managed_preview_verifies_identity_and_returns_bounded_rgba() {
             store.root(),
             &candidate.attachments[0],
             target,
+            None,
             &backend,
         ),
         Err(PreviewError::Changed)
@@ -998,7 +1007,7 @@ fn journal_header_is_versioned_and_candidate_is_revalidated() {
     assert_eq!(&bytes[..8], JOURNAL_MAGIC);
     bytes[8..10].copy_from_slice(&(JOURNAL_VERSION + 1).to_le_bytes());
     assert!(Journal::decode(&bytes).is_err());
-    assert_eq!(rmac_notes_store::SCHEMA_VERSION, 2);
+    assert_eq!(rmac_notes_store::SCHEMA_VERSION, 3);
 }
 
 #[test]
@@ -1398,4 +1407,94 @@ fn repository_refuses_noop_transactions_without_writing() {
     );
     assert!(backend.0.lock().unwrap().files.is_empty());
     assert_eq!(repository.snapshot(), &LibrarySnapshot::default());
+}
+
+fn rewrite_candidate(
+    base: &LibrarySnapshot,
+    bytes: &[u8],
+) -> (LibrarySnapshot, Vec<crate::AttachmentRewrite>) {
+    let mut transaction = LibraryTransaction::begin(base).unwrap();
+    let id = AttachmentId::new(1).unwrap();
+    transaction
+        .rewrite_attachment(
+            id,
+            bytes.len() as u64,
+            digest(bytes),
+            None,
+            "rewritten.png".into(),
+        )
+        .unwrap();
+    (
+        transaction.finish().unwrap(),
+        vec![crate::AttachmentRewrite {
+            attachment_id: id,
+            bytes: bytes.to_vec(),
+        }],
+    )
+}
+
+#[test]
+fn attachment_rewrite_replaces_bytes_only_after_metadata_commits() {
+    let (store, backend) = store();
+    let (loaded, base, attachment_path, _) = install_purge_base(&store, &backend);
+    let new_bytes = b"replacement sealed bytes".to_vec();
+    let (next, rewrites) = rewrite_candidate(&base, &new_bytes);
+    let staged = crate::rewrite::staged_rewrite_path(store.root(), AttachmentId::new(1).unwrap());
+
+    let outcome = store
+        .save_attachment_rewrite(&loaded, &next, &rewrites)
+        .unwrap();
+
+    assert!(!outcome.maintenance_pending);
+    assert_eq!(outcome.library.snapshot(), &next);
+    assert_eq!(backend.get(&attachment_path), Some(new_bytes));
+    assert_eq!(backend.get(&staged), None);
+    assert_eq!(backend.get(&store.rewrite_path()), None);
+}
+
+#[test]
+fn interrupted_attachment_rewrite_rolls_back_or_finishes_on_load() {
+    // Metadata never committed: the managed file keeps its bytes and the
+    // staged copy is discarded.
+    let (store, backend) = store();
+    let (loaded, base, attachment_path, old_bytes) = install_purge_base(&store, &backend);
+    let new_bytes = b"replacement sealed bytes".to_vec();
+    let (next, rewrites) = rewrite_candidate(&base, &new_bytes);
+    let staged = crate::rewrite::staged_rewrite_path(store.root(), AttachmentId::new(1).unwrap());
+    backend.fail_next_write(store.primary_path());
+    assert!(store
+        .save_attachment_rewrite(&loaded, &next, &rewrites)
+        .is_err());
+    assert_eq!(backend.get(&staged), Some(new_bytes.clone()));
+    let recovered = store.load().unwrap();
+    assert_eq!(recovered.snapshot(), &base);
+    assert!(recovered
+        .notices()
+        .contains(&RecoveryNotice::RolledBackInterruptedAttachmentRewrite));
+    assert_eq!(backend.get(&attachment_path), Some(old_bytes));
+    assert_eq!(backend.get(&staged), None);
+    assert_eq!(backend.get(&store.rewrite_path()), None);
+
+    // Metadata committed but the managed file was not replaced: startup
+    // finishes the replacement from the verified staged copy.
+    let (store, backend) = self::store();
+    let (loaded, base, attachment_path, old_bytes) = install_purge_base(&store, &backend);
+    let (next, rewrites) = rewrite_candidate(&base, &new_bytes);
+    backend.fail_next_write(attachment_path.clone());
+    let outcome = store
+        .save_attachment_rewrite(&loaded, &next, &rewrites)
+        .unwrap();
+    assert!(outcome.maintenance_pending);
+    assert!(outcome
+        .library
+        .notices()
+        .contains(&RecoveryNotice::AttachmentRewritePending));
+    assert_eq!(backend.get(&attachment_path), Some(old_bytes));
+    let recovered = store.load().unwrap();
+    assert_eq!(recovered.snapshot(), &next);
+    assert!(recovered
+        .notices()
+        .contains(&RecoveryNotice::FinishedInterruptedAttachmentRewrite));
+    assert_eq!(backend.get(&attachment_path), Some(new_bytes));
+    assert_eq!(backend.get(&store.rewrite_path()), None);
 }

@@ -13,3 +13,4 @@ markdown.workspace = true
 rmac-notes-store.workspace = true
 rmac-storage.workspace = true
 sha2.workspace = true
+zeroize.workspace = true

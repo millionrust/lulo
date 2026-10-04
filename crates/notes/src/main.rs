@@ -24,6 +24,8 @@ mod root_presentation;
 mod runtime_controller;
 mod search_controller;
 mod search_highlight;
+#[cfg(target_os = "linux")]
+mod session_lock_watch;
 mod settings_window;
 mod startup_controller;
 mod status_presentation;
@@ -47,14 +49,14 @@ use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_editor::InputState;
 use rmac_notes_runtime::{
     ActionRequest, ActionResult, BundleImportAcceptRequest, BundleImportReviewRequest,
-    DraftRecoveryKind, EditGeneration, ExportRequest, LibraryAction, MarkdownPreviewState,
-    MarkdownPreviewWorkerEvent, MarkdownPreviewWorkerSendError, NotesMarkdownPreviewSession,
-    NotesMarkdownPreviewWorker, NotesMarkdownPreviewWorkerClient, NotesPreviewSession,
-    NotesPreviewWorker, NotesPreviewWorkerClient, NotesSearchSession, NotesSearchWorker,
-    NotesSearchWorkerClient, NotesSession, NotesWorker, NotesWorkerClient, PreviewState,
-    PreviewWorkerEvent, PreviewWorkerSendError, ScheduledEdit, SearchField, SearchHit, SearchState,
-    SearchWorkerEvent, SearchWorkerSendError, SessionPhase, WorkerCommand, WorkerEvent,
-    WorkerFailure, WorkerSendError, EVENT_CAPACITY, MARKDOWN_PREVIEW_EVENT_CAPACITY,
+    DraftRecoveryKind, EditGeneration, ExportRequest, LibraryAction, LockCredential, LockSecret,
+    MarkdownPreviewState, MarkdownPreviewWorkerEvent, MarkdownPreviewWorkerSendError, NotesKeyring,
+    NotesMarkdownPreviewSession, NotesMarkdownPreviewWorker, NotesMarkdownPreviewWorkerClient,
+    NotesPreviewSession, NotesPreviewWorker, NotesPreviewWorkerClient, NotesSearchSession,
+    NotesSearchWorker, NotesSearchWorkerClient, NotesSession, NotesWorker, NotesWorkerClient,
+    PreviewState, PreviewWorkerEvent, PreviewWorkerSendError, ScheduledEdit, SearchField,
+    SearchHit, SearchState, SearchWorkerEvent, SearchWorkerSendError, SessionPhase, WorkerCommand,
+    WorkerEvent, WorkerFailure, WorkerSendError, EVENT_CAPACITY, MARKDOWN_PREVIEW_EVENT_CAPACITY,
     MAX_SEARCH_RESULTS, PREVIEW_EVENT_CAPACITY, SEARCH_EVENT_CAPACITY,
 };
 use rmac_notes_storage::{
@@ -62,8 +64,8 @@ use rmac_notes_storage::{
     PreviewSize,
 };
 use rmac_notes_store::{
-    AttachmentId, BundleCollisionPolicy, BundleImportReview, ExportScope, FolderId, NewNote,
-    NoteChanges, NoteId, NoteRecord, SortOrder,
+    AttachmentId, BundleCollisionPolicy, BundleImportReview, ExportScope, FolderId, LockError,
+    NewNote, NoteChanges, NoteId, NoteRecord, SmartFolderId, SortOrder,
 };
 use rmac_ui::{mac, AccessibleTextInput as _, Button, InputEvent, PopUpButton, TextField};
 
@@ -335,22 +337,25 @@ struct NotesView {
     /// choice (`light_background_notes`) flips from. `false` (dark) matches
     /// Lulo's behaviour before this setting existed.
     light_background_default: bool,
-    /// File ▸ Lock Note / Notes ▸ Settings… ▸ Locked notes. See
-    /// `view_model::LockDialog`'s doc comment for why this is session-only.
-    notes_password_hash: Option<[u8; 32]>,
-    locked_notes: BTreeSet<NoteId>,
-    /// Locked notes unlocked (password accepted) earlier in this session;
-    /// Application ▸ Close All Locked Notes clears it.
-    unlocked_this_session: BTreeSet<NoteId>,
+    /// The session's open locked-note keys, shared with the library and
+    /// preview workers (never read here; see `view_model::LockDialog`).
+    keyring: NotesKeyring,
     lock_dialog: Option<LockDialog>,
     lock_password_input: Entity<InputState>,
-    /// File ▸ New Smart Folder / New Smart Folder with Tag Selection. See
-    /// `view_model::SmartFolder`'s doc comment for why this is session-only.
-    smart_folders: Vec<SmartFolder>,
-    next_smart_folder_id: u64,
-    /// The selected Smart Folder's id, if any; narrows the note list by its
-    /// tag on top of the ordinary folder selection.
-    smart_folder_filter: Option<u64>,
+    lock_verify_input: Entity<InputState>,
+    lock_hint_input: Entity<InputState>,
+    lock_old_password_input: Entity<InputState>,
+    /// The inline error under the password fields (wrong password + hint).
+    lock_dialog_error: Option<SharedString>,
+    /// The worker request a password dialog is waiting on.
+    lock_request_id: Option<u64>,
+    /// Last person-driven activity in Notes; open locked notes close after
+    /// `LOCKED_NOTES_IDLE_TIMEOUT` without any.
+    last_activity: std::time::Instant,
+    idle_lock_timer: Option<gpui::Task<()>>,
+    /// The selected Smart Folder (stored with the library), if any; narrows
+    /// the note list by its tag on top of the ordinary folder selection.
+    smart_folder_filter: Option<SmartFolderId>,
     /// `Some(prefill)` while the "name this Smart Folder" dialog is open.
     smart_folder_dialog: Option<String>,
     smart_folder_name_input: Entity<InputState>,
@@ -472,13 +477,16 @@ impl NotesView {
             maths_results_mode: MathsResultsMode::default(),
             show_highlights: true,
             light_background_default: false,
-            notes_password_hash: None,
-            locked_notes: BTreeSet::new(),
-            unlocked_this_session: BTreeSet::new(),
+            keyring: NotesKeyring::new(),
             lock_dialog: None,
             lock_password_input: inputs.lock_password,
-            smart_folders: Vec::new(),
-            next_smart_folder_id: 1,
+            lock_verify_input: inputs.lock_verify,
+            lock_hint_input: inputs.lock_hint,
+            lock_old_password_input: inputs.lock_old_password,
+            lock_dialog_error: None,
+            lock_request_id: None,
+            last_activity: std::time::Instant::now(),
+            idle_lock_timer: None,
             smart_folder_filter: None,
             smart_folder_dialog: None,
             smart_folder_name_input: inputs.smart_folder_name,
@@ -593,6 +601,10 @@ impl Render for NotesView {
     }
 }
 
+/// Open locked notes close after this long without activity in Notes (they
+/// also close on sleep, on the lock screen and with Close All Locked Notes).
+const LOCKED_NOTES_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8 * 60);
+
 fn worker_failure_message(failure: WorkerFailure) -> String {
     match failure {
         WorkerFailure::WrongPhase => "Notes is not ready for that action".into(),
@@ -614,6 +626,9 @@ fn worker_failure_message(failure: WorkerFailure) -> String {
         WorkerFailure::MissingMarkdownImportReview => {
             "Review the selected Markdown file again before importing".into()
         }
+        WorkerFailure::Lock(LockError::WrongPassword) => "The password is incorrect.".into(),
+        WorkerFailure::Lock(error) => error.to_string(),
+        WorkerFailure::LockedNoteClosed => "Enter the locked notes password first".into(),
     }
 }
 

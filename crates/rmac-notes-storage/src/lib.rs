@@ -21,14 +21,16 @@ mod note_import;
 mod orphan;
 mod purge;
 mod repository;
+mod rewrite;
 mod startup;
 mod store;
 mod writer;
 
 pub use attachment::{
-    load_managed_image_preview, DecodedImagePreview, PreparedImageAttachment, PreviewError,
-    PreviewSize, MAX_IMPORTED_IMAGE_BYTES, MAX_IMPORTED_IMAGE_DIMENSION, MAX_IMPORTED_IMAGE_PIXELS,
-    MAX_PREVIEW_DIMENSION, MAX_PREVIEW_PIXELS,
+    load_managed_image_preview, load_managed_image_preview_with_key, DecodedImagePreview,
+    PreparedImageAttachment, PreviewError, PreviewSize, MAX_IMPORTED_IMAGE_BYTES,
+    MAX_IMPORTED_IMAGE_DIMENSION, MAX_IMPORTED_IMAGE_PIXELS, MAX_PREVIEW_DIMENSION,
+    MAX_PREVIEW_PIXELS,
 };
 pub use bundle_import::{
     prepare_bundle_import, BundleImportError, BundleImportErrorKind, BundleImportOperation,
@@ -66,6 +68,7 @@ pub use note_import::{
     TextImportError, MAX_IMPORTED_TEXT_SOURCE_BYTES,
 };
 pub use repository::{AcceptedCommit, AcceptedLibrary, CommitError, PendingCommit, PendingReason};
+pub use rewrite::AttachmentRewrite;
 pub use startup::{
     inspect_notes_startup, resolve_notes_paths, MigrationReview, NotesPathError, NotesPaths,
     NotesStartup, StartupError,

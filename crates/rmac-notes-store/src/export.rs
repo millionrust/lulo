@@ -76,6 +76,8 @@ pub enum ExportError {
     CollectionLimit,
     MarkdownRequiresSingleNote,
     MarkdownHasAttachments,
+    /// Locked notes are never exported; remove the lock first.
+    LockedNote,
 }
 
 impl fmt::Display for ExportError {
@@ -89,6 +91,7 @@ impl fmt::Display for ExportError {
             Self::CollectionLimit => "The Notes export exceeds a checked size limit",
             Self::MarkdownRequiresSingleNote => "Markdown export requires one selected note",
             Self::MarkdownHasAttachments => "Use a Notes bundle to export a note with attachments",
+            Self::LockedNote => "Locked notes can't be exported. Remove the lock first.",
         })
     }
 }
@@ -111,6 +114,9 @@ impl LibrarySnapshot {
                 if note.revision != expected_note_revision {
                     return Err(ExportError::RevisionConflict);
                 }
+                if note.lock.is_some() {
+                    return Err(ExportError::LockedNote);
+                }
                 vec![note_id]
             }
             ExportScope::Folder {
@@ -130,7 +136,9 @@ impl LibrarySnapshot {
                 }
                 self.notes
                     .iter()
-                    .filter(|note| !note.deleted && note.folder_id == Some(folder_id))
+                    .filter(|note| {
+                        !note.deleted && note.folder_id == Some(folder_id) && note.lock.is_none()
+                    })
                     .map(|note| note.id)
                     .collect()
             }
@@ -140,7 +148,11 @@ impl LibrarySnapshot {
                 if self.revision != expected_library_revision {
                     return Err(ExportError::RevisionConflict);
                 }
-                self.notes.iter().map(|note| note.id).collect()
+                self.notes
+                    .iter()
+                    .filter(|note| note.lock.is_none())
+                    .map(|note| note.id)
+                    .collect()
             }
         };
         note_ids.sort_unstable();
@@ -310,6 +322,7 @@ mod tests {
                     pinned: true,
                     deleted: false,
                     attachments: vec![attachment_id],
+                    lock: None,
                 },
                 NoteRecord {
                     id: second_id,
@@ -323,6 +336,7 @@ mod tests {
                     pinned: false,
                     deleted: false,
                     attachments: Vec::new(),
+                    lock: None,
                 },
             ],
             attachments: vec![AttachmentRecord {
@@ -334,7 +348,9 @@ mod tests {
                 byte_len: 4,
                 sha256: [9; 32],
                 deleted: false,
+                sealed_key: None,
             }],
+            ..LibrarySnapshot::default()
         }
     }
 
@@ -410,6 +426,7 @@ mod tests {
             byte_len: 8,
             sha256: [8; 32],
             deleted: true,
+            sealed_key: None,
         });
         snapshot.next_attachment_id = 3;
         snapshot.validate().unwrap();

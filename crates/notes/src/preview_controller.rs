@@ -71,7 +71,11 @@ impl NotesView {
 
     pub(super) fn sync_attachment_preview(&mut self, force: bool, cx: &mut Context<Self>) {
         let candidate = self.session.snapshot().and_then(|snapshot| {
-            let note = self.session.selected_note()?;
+            // A closed locked note's images stay sealed.
+            let note = self
+                .session
+                .selected_note()
+                .filter(|note| !self.session.is_note_closed(note))?;
             let selected = self
                 .selected_attachment
                 .filter(|id| note.attachments.contains(id))

@@ -467,8 +467,10 @@ mod tests {
                 pinned: false,
                 deleted: false,
                 attachments: Vec::new(),
+                lock: None,
             }],
             attachments: Vec::new(),
+            ..LibrarySnapshot::default()
         })
     }
 

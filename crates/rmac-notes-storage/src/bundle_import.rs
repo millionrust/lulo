@@ -1007,6 +1007,7 @@ mod tests {
                     pinned: false,
                     deleted: false,
                     attachments: vec![attachment_id],
+                    lock: None,
                 }],
                 attachments: vec![AttachmentRecord {
                     id: attachment_id,
@@ -1017,7 +1018,9 @@ mod tests {
                     byte_len: attachment_bytes.len() as u64,
                     sha256: Sha256::digest(&attachment_bytes).into(),
                     deleted: false,
+                    sealed_key: None,
                 }],
+                ..LibrarySnapshot::default()
             },
             attachment_bytes,
         )

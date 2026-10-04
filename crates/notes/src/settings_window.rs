@@ -169,10 +169,11 @@ impl SettingsView {
     fn show_locked_notes_help(&mut self, cx: &mut Context<Self>) {
         self.main.update(cx, |notes, cx| {
             notes.notes_help = Some(
-                "Lock a note from File ▸ Lock Note. The one password you set here locks and \
-                 unlocks every locked note for this session; Notes has no Touch ID or account \
-                 password service on Linux, so it is never saved and is forgotten when Notes \
-                 closes.",
+                "Lock a note with File ▸ Lock Note. Locked notes are encrypted on this PC with \
+                 the password you set here, and stay open until you choose Close All Locked \
+                 Notes, Notes is idle for 8 minutes, the PC sleeps or the screen locks. A \
+                 forgotten password can't be recovered: Reset Password sets a new one for \
+                 notes you lock from then on, and notes already locked keep their old one.",
             );
             cx.notify();
         });

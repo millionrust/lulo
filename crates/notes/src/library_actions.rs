@@ -93,6 +93,7 @@ impl NotesView {
         if !self.is_interactive_ready() {
             return;
         }
+        self.note_activity();
         let previous = self.session.selected_note_id();
         if self.session.select_note(note_id) {
             if previous != Some(note_id) || self.latest_local_generation.is_none() {
@@ -208,6 +209,9 @@ impl NotesView {
 
     pub(super) fn begin_folder_delete(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
+            return;
+        }
+        if self.delete_selected_smart_folder(cx) {
             return;
         }
         if let rmac_notes_runtime::FolderSelection::Folder(folder_id) =
@@ -328,6 +332,9 @@ impl NotesView {
         let Some(note) = self.session.selected_note() else {
             return;
         };
+        if note.lock.is_some() {
+            return;
+        }
         self.send_action(
             LibraryAction::CreateNote(NewNote {
                 created_unix_ms: now_unix_ms(),
@@ -549,13 +556,22 @@ impl NotesView {
             .session
             .selected_note()
             .map_or((false, false), |note| (true, note.pinned));
+        let locked_note = self
+            .session
+            .selected_note()
+            .is_some_and(|note| note.lock.is_some());
         rmac_ui::set_menu_enabled("notes::TogglePin", ready && has_note, cx);
         rmac_ui::set_menu_label(
             "notes::TogglePin",
             if pinned { "Unpin Note" } else { "Pin Note" },
             cx,
         );
-        rmac_ui::set_menu_enabled("notes::DuplicateNote", ready && has_note, cx);
+        // A locked note is never copied into a plaintext note.
+        rmac_ui::set_menu_enabled(
+            "notes::DuplicateNote",
+            ready && has_note && !locked_note,
+            cx,
+        );
         rmac_ui::set_menu_enabled("notes::ToggleLightBackground", ready && has_note, cx);
         rmac_ui::set_menu_checked(
             "notes::ToggleLightBackground",
@@ -566,6 +582,7 @@ impl NotesView {
         );
         let body_editable = ready
             && !self.markdown_preview_visible
+            && !self.selected_note_closed()
             && self
                 .session
                 .selected_note()
@@ -639,7 +656,11 @@ impl NotesView {
             );
         }
         rmac_ui::set_menu_enabled("notes::FindAndReplace", body_editable, cx);
-        rmac_ui::set_menu_enabled("notes::PrintNote", has_note, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::PrintNote",
+            has_note && !self.selected_note_closed(),
+            cx,
+        );
         rmac_ui::set_menu_enabled("notes::ExportNotePdf", has_note, cx);
         rmac_ui::set_menu_enabled(
             "notes::ExportNoteMarkdown",
@@ -859,14 +880,19 @@ impl NotesView {
             cx,
         );
         rmac_ui::set_menu_checked("notes::ToggleShowHighlights", self.show_highlights, cx);
-        let locked = self
+        let (locked, deleted) = self
             .session
             .selected_note()
-            .is_some_and(|note| self.locked_notes.contains(&note.id));
-        rmac_ui::set_menu_enabled("notes::ToggleLockNote", ready && has_note && !locked, cx);
+            .map_or((false, false), |note| (note.lock.is_some(), note.deleted));
+        rmac_ui::set_menu_enabled("notes::ToggleLockNote", ready && has_note && !deleted, cx);
+        rmac_ui::set_menu_label(
+            "notes::ToggleLockNote",
+            if locked { "Remove Lock" } else { "Lock Note" },
+            cx,
+        );
         rmac_ui::set_menu_enabled(
             "notes::CloseAllLockedNotes",
-            !self.unlocked_this_session.is_empty(),
+            self.session.any_locked_note_open(),
             cx,
         );
         rmac_ui::set_menu_enabled("notes::CreateSmartFolder", ready, cx);
@@ -914,131 +940,386 @@ impl NotesView {
         self.send(WorkerCommand::RetryPending, cx);
     }
 
-    fn hash_password(password: &str) -> [u8; 32] {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(password.as_bytes());
-        hasher.finalize().into()
+    /// The selected note is locked and its password is not open: only the
+    /// lock is shown, nothing of its content.
+    pub(super) fn selected_note_closed(&self) -> bool {
+        self.session
+            .selected_note()
+            .is_some_and(|note| self.session.is_note_closed(note))
     }
 
-    /// File ▸ Lock Note: lock the selected, not-yet-locked note (the menu
-    /// item is disabled once it is — see `publish_menu_state`), setting a
-    /// password first if none exists yet. See `view_model::LockDialog`'s
-    /// doc comment for why the password lives only in this process's
-    /// memory. Unlocking a locked note to view it is a separate action,
-    /// `request_unlock`, from the locked-note placeholder's own button.
-    pub(super) fn toggle_lock_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(note) = self.session.selected_note() else {
-            return;
-        };
-        let note_id = note.id;
-        if self.locked_notes.contains(&note_id) {
-            return;
+    /// Any activity inside Notes keeps open locked notes open for another
+    /// `LOCKED_NOTES_IDLE_TIMEOUT`.
+    pub(super) fn note_activity(&mut self) {
+        self.last_activity = std::time::Instant::now();
+    }
+
+    fn clear_lock_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for input in [
+            self.lock_password_input.clone(),
+            self.lock_verify_input.clone(),
+            self.lock_hint_input.clone(),
+            self.lock_old_password_input.clone(),
+        ] {
+            input.update(cx, |input, cx| input.set_value("", window, cx));
         }
-        if self.notes_password_hash.is_none() {
-            self.lock_password_input.update(cx, |input, cx| {
-                input.set_value("", window, cx);
-            });
-            self.lock_dialog = Some(LockDialog::SetPassword(Some(note_id)));
-            cx.notify();
-            return;
-        }
-        self.locked_notes.insert(note_id);
+    }
+
+    fn open_lock_dialog(
+        &mut self,
+        dialog: LockDialog,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.clear_lock_inputs(window, cx);
+        self.lock_dialog = Some(dialog);
+        self.lock_dialog_error = None;
+        self.lock_request_id = None;
+        self.lock_password_input
+            .update(cx, |input, cx| input.focus(window, cx));
         cx.notify();
     }
 
-    /// The locked-note placeholder's "View Note…" button: ask for the
-    /// password before revealing this note for the rest of the session.
+    /// File ▸ Lock Note / Remove Lock (one menu item, relabelled like the
+    /// Mac's). Locking with the password open needs no prompt; the first
+    /// lock creates the password; otherwise Notes asks for it.
+    pub(super) fn toggle_lock_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note() else {
+            return;
+        };
+        if note.deleted {
+            return;
+        }
+        let (note_id, revision, locked) = (note.id, note.revision, note.lock.is_some());
+        self.note_activity();
+        if locked {
+            if self.session.is_note_open(note_id) {
+                self.send_lock_action(
+                    LibraryAction::RemoveNoteLock {
+                        note_id,
+                        expected_revision: revision,
+                        password: None,
+                    },
+                    cx,
+                );
+            } else {
+                self.open_lock_dialog(LockDialog::RemoveLock { note_id, revision }, window, cx);
+            }
+            return;
+        }
+        match self
+            .session
+            .snapshot()
+            .and_then(|snapshot| snapshot.current_lock_key)
+        {
+            None => self.open_lock_dialog(
+                LockDialog::CreatePassword {
+                    then_lock: Some((note_id, revision)),
+                },
+                window,
+                cx,
+            ),
+            Some(current) if self.keyring.contains(current) => self.send_lock_action(
+                LibraryAction::LockNote {
+                    note_id,
+                    expected_revision: revision,
+                    credential: LockCredential::Open,
+                },
+                cx,
+            ),
+            Some(_) => self.open_lock_dialog(
+                LockDialog::LockWithPassword { note_id, revision },
+                window,
+                cx,
+            ),
+        }
+    }
+
+    fn send_lock_action(&mut self, action: LibraryAction, cx: &mut Context<Self>) {
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let Ok(request) = ActionRequest::new(request_id, action) else {
+            return;
+        };
+        if self.send(WorkerCommand::Apply(request), cx) {
+            self.lock_request_id = Some(request_id);
+        }
+        cx.notify();
+    }
+
+    /// The locked-note placeholder's "View Note…" button.
     pub(super) fn request_unlock(
         &mut self,
         note_id: NoteId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.locked_notes.contains(&note_id) || self.unlocked_this_session.contains(&note_id) {
-            return;
+        let closed = self
+            .session
+            .snapshot()
+            .and_then(|snapshot| snapshot.notes.iter().find(|note| note.id == note_id))
+            .is_some_and(|note| self.session.is_note_closed(note));
+        if closed {
+            self.open_lock_dialog(LockDialog::Unlock(note_id), window, cx);
         }
-        self.lock_password_input.update(cx, |input, cx| {
-            input.set_value("", window, cx);
-        });
-        self.lock_dialog = Some(LockDialog::Unlock(note_id));
-        cx.notify();
     }
 
-    /// Application ▸ Close All Locked Notes: re-lock every note this
-    /// session unlocked, without touching which notes are locked at all.
+    /// Application ▸ Close All Locked Notes (and inactivity, sleep, the lock
+    /// screen): the worker commits the open note's last edit, then forgets
+    /// every key; the view re-renders every locked note closed.
     pub(super) fn close_all_locked_notes(&mut self, cx: &mut Context<Self>) {
-        if self.unlocked_this_session.is_empty() {
+        self.idle_lock_timer = None;
+        if !self.session.any_locked_note_open() && self.keyring.is_empty() {
             return;
         }
-        self.unlocked_this_session.clear();
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        self.send(WorkerCommand::CloseLockedNotes { request_id }, cx);
         cx.notify();
     }
 
-    /// Notes ▸ Settings… ▸ Change Password…: open the single-field dialog
-    /// used to set or change the one password that locks every note. Opened
-    /// from the Settings window, a separate top-level window from the one
-    /// that owns `lock_password_input`, so unlike `toggle_lock_note`'s
-    /// first-lock path this does not clear the field first (GPUI ties a
-    /// `Window` to the render pass that produced it, so a Settings-window
-    /// event handler has no window reference for the main window's own
-    /// input); the field's own clear button covers it.
+    /// Start (once) the inactivity timer while any locked note is open. It
+    /// wakes only at its deadline, never polls.
+    pub(super) fn arm_idle_lock(&mut self, cx: &mut Context<Self>) {
+        if !self.session.any_locked_note_open() {
+            self.idle_lock_timer = None;
+            return;
+        }
+        if self.idle_lock_timer.is_some() {
+            return;
+        }
+        self.idle_lock_timer = Some(cx.spawn(async move |this, cx| loop {
+            let Ok(remaining) = this.update(cx, |this, _| {
+                LOCKED_NOTES_IDLE_TIMEOUT.saturating_sub(this.last_activity.elapsed())
+            }) else {
+                return;
+            };
+            if remaining.is_zero() {
+                let _ = this.update(cx, |this, cx| {
+                    this.idle_lock_timer = None;
+                    this.close_all_locked_notes(cx);
+                });
+                return;
+            }
+            cx.background_executor().timer(remaining).await;
+        }));
+    }
+
+    /// Notes ▸ Settings… ▸ Change Password… (or, with no password yet, the
+    /// first password). Opened from the Settings window, which has no
+    /// handle on this window's inputs, so the fields are cleared when the
+    /// dialog closes instead.
     pub(super) fn begin_change_password(&mut self, cx: &mut Context<Self>) {
-        self.lock_dialog = Some(LockDialog::SetPassword(None));
+        let has_password = self
+            .session
+            .snapshot()
+            .is_some_and(|snapshot| snapshot.current_lock_key.is_some());
+        self.lock_dialog = Some(if has_password {
+            LockDialog::ChangePassword
+        } else {
+            LockDialog::CreatePassword { then_lock: None }
+        });
+        self.lock_dialog_error = None;
+        self.lock_request_id = None;
         cx.notify();
     }
 
-    /// Notes ▸ Settings… ▸ Reset Password…: open the confirmation that
-    /// clears the password and unlocks every locked note.
+    /// Notes ▸ Settings… ▸ Reset Password…: confirmation first.
     pub(super) fn begin_reset_password(&mut self, cx: &mut Context<Self>) {
         self.lock_dialog = Some(LockDialog::ConfirmReset);
+        self.lock_dialog_error = None;
+        self.lock_request_id = None;
         cx.notify();
     }
 
-    pub(super) fn cancel_lock_dialog(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn cancel_lock_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.lock_dialog = None;
+        self.lock_dialog_error = None;
+        self.lock_request_id = None;
+        self.clear_lock_inputs(window, cx);
         cx.notify();
     }
 
-    pub(super) fn confirm_lock_dialog(&mut self, cx: &mut Context<Self>) {
+    /// A password request finished: close its dialog and wipe the fields.
+    pub(super) fn finish_lock_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.lock_request_id = None;
+        self.lock_dialog = None;
+        self.lock_dialog_error = None;
+        self.clear_lock_inputs(window, cx);
+    }
+
+    /// A password request failed: keep the dialog, say why, and show the
+    /// hint after a wrong password (as macOS does).
+    pub(super) fn fail_lock_request(&mut self, failure: WorkerFailure, cx: &mut Context<Self>) {
+        self.lock_request_id = None;
+        let hint = self.lock_dialog.and_then(|dialog| {
+            let snapshot = self.session.snapshot()?;
+            let key_id = match dialog {
+                LockDialog::Unlock(note_id) | LockDialog::RemoveLock { note_id, .. } => {
+                    snapshot
+                        .notes
+                        .iter()
+                        .find(|note| note.id == note_id)?
+                        .lock
+                        .as_ref()?
+                        .key_id
+                }
+                _ => snapshot.current_lock_key?,
+            };
+            let hint = snapshot.lock_key(key_id)?.hint.clone();
+            (!hint.is_empty()).then_some(hint)
+        });
+        let message = worker_failure_message(failure);
+        self.lock_dialog_error = Some(match (failure, hint) {
+            (WorkerFailure::Lock(LockError::WrongPassword), Some(hint)) => {
+                format!("{message} Hint: {hint}").into()
+            }
+            _ => message.into(),
+        });
+        if self.lock_dialog.is_none() {
+            self.message = self.lock_dialog_error.take();
+        }
+        cx.notify();
+    }
+
+    fn lock_field(&self, input: &Entity<InputState>, cx: &Context<Self>) -> LockSecret {
+        LockSecret::new(input.read(cx).value().to_string())
+    }
+
+    pub(super) fn confirm_lock_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(dialog) = self.lock_dialog else {
             return;
         };
+        if self.lock_request_id.is_some() {
+            return;
+        }
+        self.note_activity();
+        let password = self.lock_field(&self.lock_password_input, cx);
+        let verify = self.lock_field(&self.lock_verify_input, cx);
+        let hint = self.lock_hint_input.read(cx).value().trim().to_string();
+        let new_password_error = if password.is_empty() {
+            Some("Enter a password.")
+        } else if password.as_str() != verify.as_str() {
+            Some("The passwords don’t match.")
+        } else if !hint.is_empty() && hint == password.as_str() {
+            Some("The hint can’t be the password.")
+        } else {
+            None
+        };
         match dialog {
-            LockDialog::SetPassword(then_lock) => {
-                let password = self.lock_password_input.read(cx).value().to_string();
-                if password.is_empty() {
-                    return;
-                }
-                self.notes_password_hash = Some(Self::hash_password(&password));
-                if let Some(note_id) = then_lock {
-                    self.locked_notes.insert(note_id);
-                }
-            }
-            LockDialog::Unlock(note_id) => {
-                let password = self.lock_password_input.read(cx).value().to_string();
-                if self.notes_password_hash != Some(Self::hash_password(&password)) {
-                    self.message = Some("That password doesn't match".into());
+            LockDialog::CreatePassword { then_lock } => {
+                if let Some(error) = new_password_error {
+                    self.lock_dialog_error = Some(error.into());
                     cx.notify();
                     return;
                 }
-                self.unlocked_this_session.insert(note_id);
+                let action = match then_lock {
+                    Some((note_id, revision)) => LibraryAction::LockNote {
+                        note_id,
+                        expected_revision: revision,
+                        credential: LockCredential::NewPassword { password, hint },
+                    },
+                    None => LibraryAction::ResetLockPassword {
+                        new_password: password,
+                        hint,
+                    },
+                };
+                self.send_lock_action(action, cx);
+            }
+            LockDialog::LockWithPassword { note_id, revision } => {
+                if password.is_empty() {
+                    return;
+                }
+                self.send_lock_action(
+                    LibraryAction::LockNote {
+                        note_id,
+                        expected_revision: revision,
+                        credential: LockCredential::Password(password),
+                    },
+                    cx,
+                );
+            }
+            LockDialog::Unlock(note_id) => {
+                if password.is_empty() {
+                    return;
+                }
+                let Some(request_id) = self.take_request_id() else {
+                    return;
+                };
+                if self.send(
+                    WorkerCommand::UnlockNotes {
+                        request_id,
+                        note_id,
+                        password,
+                    },
+                    cx,
+                ) {
+                    self.lock_request_id = Some(request_id);
+                }
+            }
+            LockDialog::RemoveLock { note_id, revision } => {
+                if password.is_empty() {
+                    return;
+                }
+                self.send_lock_action(
+                    LibraryAction::RemoveNoteLock {
+                        note_id,
+                        expected_revision: revision,
+                        password: Some(password),
+                    },
+                    cx,
+                );
+            }
+            LockDialog::ChangePassword => {
+                let old_password = self.lock_field(&self.lock_old_password_input, cx);
+                if old_password.is_empty() {
+                    self.lock_dialog_error = Some("Enter the old password.".into());
+                    cx.notify();
+                    return;
+                }
+                if let Some(error) = new_password_error {
+                    self.lock_dialog_error = Some(error.into());
+                    cx.notify();
+                    return;
+                }
+                self.send_lock_action(
+                    LibraryAction::ChangeLockPassword {
+                        old_password,
+                        new_password: password,
+                        hint,
+                    },
+                    cx,
+                );
             }
             LockDialog::ConfirmReset => {
-                self.notes_password_hash = None;
-                self.locked_notes.clear();
-                self.unlocked_this_session.clear();
+                self.open_lock_dialog(LockDialog::ResetPassword, window, cx);
+            }
+            LockDialog::ResetPassword => {
+                if let Some(error) = new_password_error {
+                    self.lock_dialog_error = Some(error.into());
+                    cx.notify();
+                    return;
+                }
+                self.send_lock_action(
+                    LibraryAction::ResetLockPassword {
+                        new_password: password,
+                        hint,
+                    },
+                    cx,
+                );
             }
         }
-        self.lock_dialog = None;
-        self.message = None;
         cx.notify();
     }
 
-    /// File ▸ New Smart Folder: a session-only saved tag filter
-    /// (`view_model::SmartFolder`'s doc comment explains why it is not a
-    /// real `FolderRecord`), named through the same dialog New Smart
-    /// Folder with Tag Selection prefills from the current tag selection.
+    /// File ▸ New Smart Folder: a tag collection stored with the library,
+    /// named through the same dialog New Smart Folder with Tag Selection
+    /// prefills from the current tag selection.
     pub(super) fn begin_create_smart_folder(
         &mut self,
         window: &mut Window,
@@ -1062,7 +1343,7 @@ impl NotesView {
         let Some(selected) = value.get(selection).filter(|text| !text.is_empty()) else {
             return;
         };
-        let prefill = selected.to_string();
+        let prefill = selected.trim().trim_start_matches('#').to_string();
         self.smart_folder_name_input.update(cx, |input, cx| {
             input.set_value(prefill.clone(), window, cx);
         });
@@ -1076,24 +1357,37 @@ impl NotesView {
     }
 
     pub(super) fn commit_smart_folder(&mut self, cx: &mut Context<Self>) {
-        if self.smart_folder_dialog.is_none() {
+        if self.smart_folder_dialog.is_none() || !self.is_interactive_ready() {
             return;
         }
-        let name = self.smart_folder_name_input.read(cx).value().to_string();
-        let name = name.trim();
+        let name = self
+            .smart_folder_name_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
         if name.is_empty() {
             return;
         }
-        let id = self.next_smart_folder_id;
-        self.next_smart_folder_id += 1;
-        self.smart_folders.push(SmartFolder {
-            id,
-            name: name.to_string(),
-            tag: name.to_string(),
-        });
+        let tag = name.trim_start_matches('#').trim().to_string();
         self.smart_folder_dialog = None;
-        self.smart_folder_filter = Some(id);
+        self.send_action(LibraryAction::CreateSmartFolder { name, tag }, cx);
         cx.notify();
+    }
+
+    /// Delete the selected Smart Folder (File ▸ Delete Folder while it is
+    /// selected). Its notes are untouched: a Smart Folder only collects.
+    pub(super) fn delete_selected_smart_folder(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(smart_folder_id) = self.smart_folder_filter else {
+            return false;
+        };
+        if !self.is_interactive_ready() {
+            return true;
+        }
+        self.smart_folder_filter = None;
+        self.send_action(LibraryAction::DeleteSmartFolder { smart_folder_id }, cx);
+        cx.notify();
+        true
     }
 
     /// Selecting a Smart Folder in the sidebar: narrow the note list to
@@ -1101,7 +1395,7 @@ impl NotesView {
     /// selection (Smart Folders have no folder membership of their own).
     pub(super) fn select_smart_folder(
         &mut self,
-        id: u64,
+        id: SmartFolderId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

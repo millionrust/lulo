@@ -28,6 +28,7 @@ pub(crate) fn fixture() -> LibrarySnapshot {
             pinned: true,
             deleted: false,
             attachments: vec![attachment_id],
+            lock: None,
         }],
         attachments: vec![AttachmentRecord {
             id: attachment_id,
@@ -38,7 +39,9 @@ pub(crate) fn fixture() -> LibrarySnapshot {
             byte_len: 2048,
             sha256: [7; 32],
             deleted: false,
+            sealed_key: None,
         }],
+        ..LibrarySnapshot::default()
     }
 }
 

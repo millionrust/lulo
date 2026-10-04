@@ -1,10 +1,12 @@
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
 
 use rmac_notes_storage::{MarkdownImportReview, PendingReason, RecoveryNotice, StartupError};
 use rmac_notes_store::{
-    BundleImportReview, FolderId, FolderRecord, LibrarySnapshot, NoteId, NoteRecord, SortOrder,
+    BundleImportReview, FolderId, FolderRecord, LibrarySnapshot, NoteId, NoteRecord,
+    SmartFolderRecord, SortOrder,
 };
 
 use crate::{
@@ -45,6 +47,9 @@ pub enum SessionPhase {
 pub struct NotesSession {
     phase: SessionPhase,
     snapshot: Option<Arc<LibrarySnapshot>>,
+    /// Locked notes whose password is open in this session; their content
+    /// in `snapshot` is the decrypted in-memory view.
+    open_notes: Arc<BTreeSet<NoteId>>,
     folder: FolderSelection,
     selected_note: Option<NoteId>,
     last_rejection: Option<RejectedEvent>,
@@ -59,6 +64,7 @@ impl NotesSession {
         Self {
             phase: SessionPhase::Starting,
             snapshot: None,
+            open_notes: Arc::default(),
             folder: FolderSelection::All,
             selected_note: None,
             last_rejection: None,
@@ -92,6 +98,38 @@ impl NotesSession {
             .notes
             .iter()
             .find(|note| note.id == selected && self.note_is_visible(note))
+    }
+
+    /// A locked note whose content is visible this session.
+    pub fn is_note_open(&self, note_id: NoteId) -> bool {
+        self.open_notes.contains(&note_id)
+    }
+
+    /// A locked note whose password is not open: show only the lock.
+    pub fn is_note_closed(&self, note: &NoteRecord) -> bool {
+        note.lock.is_some() && !self.open_notes.contains(&note.id)
+    }
+
+    /// Whether any locked note is open (Close All Locked Notes is enabled).
+    pub fn any_locked_note_open(&self) -> bool {
+        !self.open_notes.is_empty()
+    }
+
+    /// Smart Folders stored with the library, by name.
+    pub fn smart_folders(&self) -> Vec<&SmartFolderRecord> {
+        let mut folders = self
+            .snapshot
+            .as_ref()
+            .into_iter()
+            .flat_map(|snapshot| snapshot.smart_folders.iter())
+            .collect::<Vec<_>>();
+        folders.sort_by(|left, right| {
+            left.name
+                .to_lowercase()
+                .cmp(&right.name.to_lowercase())
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        folders
     }
 
     pub fn last_rejection(&self) -> Option<RejectedEvent> {
@@ -191,6 +229,7 @@ impl NotesSession {
                     SessionPhase::Starting | SessionPhase::MigrationReview(_)
                 );
                 let phase = phase_from_notices(&event.notices);
+                self.open_notes = event.open_notes;
                 self.adopt_snapshot(event.snapshot, None, false);
                 self.phase = phase;
                 self.last_rejection = None;
@@ -264,6 +303,7 @@ impl NotesSession {
                 } else {
                     SessionPhase::Ready
                 };
+                self.open_notes = event.accepted.open_notes;
                 self.adopt_snapshot(event.accepted.snapshot, preferred, reveal_preferred);
                 self.phase = phase;
                 self.last_rejection = None;
@@ -308,6 +348,7 @@ impl NotesSession {
                 self.last_rejection = None;
             }
             WorkerEvent::Pending(event) => {
+                self.open_notes = event.accepted.open_notes;
                 self.adopt_snapshot(event.accepted.snapshot, self.selected_note, false);
                 self.phase = SessionPhase::Pending {
                     request_id: event.request_id,
@@ -318,6 +359,11 @@ impl NotesSession {
                 self.last_rejection = None;
             }
             WorkerEvent::Rejected(event) => self.last_rejection = Some(event),
+            WorkerEvent::LockStateChanged(event) => {
+                self.open_notes = event.accepted.open_notes;
+                self.adopt_snapshot(event.accepted.snapshot, self.selected_note, false);
+                self.last_rejection = None;
+            }
             WorkerEvent::StartupFailed(error) => {
                 self.phase = SessionPhase::Failed(error);
                 self.snapshot = None;
@@ -417,6 +463,8 @@ fn phase_from_notices(notices: &[RecoveryNotice]) -> SessionPhase {
                 | RecoveryNotice::OrphanCollectionPending
                 | RecoveryNotice::CorruptBundleImportPreserved
                 | RecoveryNotice::BundleImportPending
+                | RecoveryNotice::CorruptAttachmentRewritePreserved
+                | RecoveryNotice::AttachmentRewritePending
         )
     });
     if maintenance_pending {
@@ -432,6 +480,8 @@ fn phase_from_notices(notices: &[RecoveryNotice]) -> SessionPhase {
                     notice,
                     RecoveryNotice::CorruptAttachmentImportPreserved
                         | RecoveryNotice::AttachmentImportPending
+                        | RecoveryNotice::CorruptAttachmentRewritePreserved
+                        | RecoveryNotice::AttachmentRewritePending
                 )
             }),
             orphan_collection_pending: notices.iter().any(|notice| {
@@ -593,6 +643,7 @@ mod tests {
             pinned,
             deleted,
             attachments: Vec::new(),
+            lock: None,
         }
     }
 
@@ -611,6 +662,7 @@ mod tests {
                 note(4, Some(2), "Trashed", 13, 31, false, true),
             ],
             attachments: Vec::new(),
+            ..LibrarySnapshot::default()
         })
     }
 
@@ -619,6 +671,7 @@ mod tests {
             request_id: None,
             snapshot,
             notices: Vec::<RecoveryNotice>::new(),
+            open_notes: Arc::default(),
         }
     }
 

@@ -485,6 +485,11 @@ fn remap_note(
     note_map: &BTreeMap<u64, u64>,
     attachment_map: &BTreeMap<u64, u64>,
 ) -> Result<NoteRecord, BundlePlanError> {
+    // Bundles never carry locked notes (export leaves them out), and a
+    // bundle cannot carry the password generation needed to open one.
+    if note.lock.is_some() {
+        return Err(BundlePlanError::InvalidPlan);
+    }
     Ok(NoteRecord {
         id: note_id(
             *note_map
@@ -520,6 +525,7 @@ fn remap_note(
                     .and_then(attachment_id)
             })
             .collect::<Result<Vec<_>, _>>()?,
+        lock: None,
     })
 }
 
@@ -528,6 +534,9 @@ fn remap_attachment(
     note_map: &BTreeMap<u64, u64>,
     attachment_map: &BTreeMap<u64, u64>,
 ) -> Result<AttachmentRecord, BundlePlanError> {
+    if attachment.sealed_key.is_some() {
+        return Err(BundlePlanError::InvalidPlan);
+    }
     Ok(AttachmentRecord {
         id: attachment_id(
             *attachment_map
@@ -545,6 +554,7 @@ fn remap_attachment(
         byte_len: attachment.byte_len,
         sha256: attachment.sha256,
         deleted: false,
+        sealed_key: None,
     })
 }
 
@@ -644,6 +654,7 @@ mod tests {
                 pinned: true,
                 deleted: false,
                 attachments: vec![attachment_id],
+                lock: None,
             }],
             attachments: vec![AttachmentRecord {
                 id: attachment_id,
@@ -654,7 +665,9 @@ mod tests {
                 byte_len: 12,
                 sha256: [7; 32],
                 deleted: false,
+                sealed_key: None,
             }],
+            ..LibrarySnapshot::default()
         }
     }
 

@@ -2,15 +2,15 @@ use std::fmt;
 use std::path::Path;
 
 use rmac_notes_store::{
-    AttachmentImportPlan, BundleImportPlan, LibrarySnapshot, LibraryTransaction, MutationError,
-    OrphanCollectionPlan, PlannedBundleImport, PurgePlan,
+    AttachmentImportPlan, AttachmentRecord, BundleImportPlan, LibrarySnapshot, LibraryTransaction,
+    MutationError, OrphanCollectionPlan, PlannedBundleImport, PurgePlan,
 };
 use rmac_storage::{Backend, FileSystem};
 
 use crate::{
-    ExportFailure, ExportFormat, ExportOutcome, LoadedLibrary, NotesLibraryStore,
-    PreparedBundleImport, PreparedExportDestination, PreparedImageAttachment, PreparedTextNote,
-    RecoveryNotice, StoreError, TextImportError,
+    AttachmentRewrite, ExportFailure, ExportFormat, ExportOutcome, LoadedLibrary,
+    NotesLibraryStore, PreparedBundleImport, PreparedExportDestination, PreparedImageAttachment,
+    PreparedTextNote, RecoveryNotice, StoreError, TextImportError,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,6 +39,7 @@ impl fmt::Debug for PendingCommit {
                     PendingOperation::AttachmentImport { .. } => "attachment import",
                     PendingOperation::OrphanCollection(_) => "orphan collection",
                     PendingOperation::BundleImport { .. } => "bundle import",
+                    PendingOperation::AttachmentRewrite(_) => "attachment rewrite",
                 },
             )
             .field("reason", &self.reason)
@@ -59,6 +60,7 @@ enum PendingOperation {
         plan: Box<BundleImportPlan>,
         prepared: Box<PreparedBundleImport>,
     },
+    AttachmentRewrite(Vec<AttachmentRewrite>),
 }
 
 impl PendingCommit {
@@ -77,41 +79,33 @@ impl PendingCommit {
     pub fn purge_plan(&self) -> Option<&PurgePlan> {
         match &self.operation {
             PendingOperation::Purge(plan) => Some(plan),
-            PendingOperation::Ordinary
-            | PendingOperation::AttachmentImport { .. }
-            | PendingOperation::OrphanCollection(_)
-            | PendingOperation::BundleImport { .. } => None,
+            _ => None,
         }
     }
 
     pub fn attachment_import_plan(&self) -> Option<&AttachmentImportPlan> {
         match &self.operation {
             PendingOperation::AttachmentImport { plan, .. } => Some(plan),
-            PendingOperation::Ordinary
-            | PendingOperation::Purge(_)
-            | PendingOperation::OrphanCollection(_)
-            | PendingOperation::BundleImport { .. } => None,
+            _ => None,
         }
     }
 
     pub fn orphan_collection_plan(&self) -> Option<&OrphanCollectionPlan> {
         match &self.operation {
             PendingOperation::OrphanCollection(plan) => Some(plan),
-            PendingOperation::Ordinary
-            | PendingOperation::Purge(_)
-            | PendingOperation::AttachmentImport { .. }
-            | PendingOperation::BundleImport { .. } => None,
+            _ => None,
         }
     }
 
     pub fn bundle_import_plan(&self) -> Option<&BundleImportPlan> {
         match &self.operation {
             PendingOperation::BundleImport { plan, .. } => Some(plan),
-            PendingOperation::Ordinary
-            | PendingOperation::Purge(_)
-            | PendingOperation::OrphanCollection(_)
-            | PendingOperation::AttachmentImport { .. } => None,
+            _ => None,
         }
+    }
+
+    pub fn is_attachment_rewrite(&self) -> bool {
+        matches!(self.operation, PendingOperation::AttachmentRewrite(_))
     }
 
     fn store(
@@ -257,6 +251,32 @@ impl<B: Backend> AcceptedLibrary<B> {
         .map_err(CommitError::Pending)
     }
 
+    /// Commit a transaction that changed attachment bytes descriptions
+    /// together with the exact new bytes for each (locked-note sealing).
+    pub fn commit_attachment_rewrite(
+        &mut self,
+        transaction: LibraryTransaction,
+        mut rewrites: Vec<AttachmentRewrite>,
+    ) -> Result<AcceptedCommit, CommitError> {
+        let candidate = transaction.finish().map_err(CommitError::Mutation)?;
+        rewrites.sort_by_key(|rewrite| rewrite.attachment_id);
+        let operation = if rewrites.is_empty() {
+            PendingOperation::Ordinary
+        } else {
+            PendingOperation::AttachmentRewrite(rewrites)
+        };
+        self.commit_candidate(candidate, operation, false)
+            .map_err(CommitError::Pending)
+    }
+
+    /// Exact verified bytes of one managed attachment (sealed ones sealed).
+    pub fn read_managed_attachment(
+        &self,
+        attachment: &AttachmentRecord,
+    ) -> Result<Vec<u8>, StoreError> {
+        self.store.read_managed_attachment(attachment)
+    }
+
     pub fn commit_orphan_collection(
         &mut self,
         transaction: LibraryTransaction,
@@ -347,6 +367,10 @@ impl<B: Backend> AcceptedLibrary<B> {
                 self.store
                     .save_bundle_import(&self.loaded, &candidate, plan, prepared)
             }
+            PendingOperation::AttachmentRewrite(rewrites) => {
+                self.store
+                    .save_attachment_rewrite(&self.loaded, &candidate, rewrites)
+            }
         };
         match outcome {
             Ok(outcome) => {
@@ -392,6 +416,8 @@ fn has_blocking_maintenance(notices: &[RecoveryNotice]) -> bool {
                 | RecoveryNotice::OrphanCollectionPending
                 | RecoveryNotice::CorruptBundleImportPreserved
                 | RecoveryNotice::BundleImportPending
+                | RecoveryNotice::CorruptAttachmentRewritePreserved
+                | RecoveryNotice::AttachmentRewritePending
         )
     })
 }
@@ -402,6 +428,8 @@ fn has_attachment_maintenance(notices: &[RecoveryNotice]) -> bool {
             notice,
             RecoveryNotice::CorruptAttachmentImportPreserved
                 | RecoveryNotice::AttachmentImportPending
+                | RecoveryNotice::CorruptAttachmentRewritePreserved
+                | RecoveryNotice::AttachmentRewritePending
         )
     })
 }

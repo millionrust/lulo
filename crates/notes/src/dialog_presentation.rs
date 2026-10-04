@@ -828,146 +828,151 @@ impl NotesView {
         }
     }
 
-    /// File ▸ Lock Note / Notes ▸ Settings… ▸ Change/Reset Password…. See
-    /// `view_model::LockDialog`'s doc comment for why the password is
-    /// session-only.
+    /// File ▸ Lock Note / Remove Lock, View Note… and Notes ▸ Settings… ▸
+    /// Change/Reset Password… (see `view_model::LockDialog`).
     pub(super) fn render_lock_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
 
         let dialog = self.lock_dialog?;
-        match dialog {
-            LockDialog::SetPassword(_) => {
-                let card = div()
-                    .w(px(360.0))
-                    .p(px(20.0))
-                    .v_flex()
-                    .gap_3()
-                    .rounded(px(rmac_ui::mac::radius_card()))
-                    .bg(mac::window())
-                    .border_1()
-                    .border_color(mac::separator())
-                    .shadow_xl()
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(15.0))
-                            .font_weight(mac::BOLD)
-                            .child("Set the Locked Notes Password"),
-                    )
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(mac::text_secondary())
-                            .child(
-                                "This one password locks and unlocks every locked note for this \
-                                 session. Notes has no Touch ID or account password service on \
-                                 Linux, so it is not saved anywhere and is forgotten when Notes \
-                                 closes.",
-                            ),
-                    )
-                    .child(TextField::new(&self.lock_password_input).cleanable(true))
-                    .child(
-                        div()
-                            .flex()
-                            .justify_end()
-                            .gap_2()
-                            .child(
-                                rmac_ui::dialog_button("cancel-lock-dialog", "Cancel", Normal)
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.cancel_lock_dialog(cx)),
-                                    ),
-                            )
-                            .child(
-                                rmac_ui::dialog_button(
-                                    "confirm-lock-dialog",
-                                    "Set Password",
-                                    Primary,
-                                )
-                                .on_click(
-                                    cx.listener(|this, _, _, cx| this.confirm_lock_dialog(cx)),
-                                ),
-                            ),
-                    );
-                Some(
-                    rmac_ui::dialog("lock-password-dialog", card)
-                        .restore_focus_to(self.focus.clone())
-                        .into_any_element(),
-                )
-            }
-            LockDialog::Unlock(note_id) => {
-                let title = self
-                    .session
-                    .snapshot()
-                    .and_then(|snapshot| snapshot.notes.iter().find(|note| note.id == note_id))
-                    .map_or_else(
-                        || "this note".to_string(),
-                        |note| display_title(&note.title).to_string(),
-                    );
-                let card = div()
-                    .w(px(340.0))
-                    .p(px(20.0))
-                    .v_flex()
-                    .gap_3()
-                    .rounded(px(rmac_ui::mac::radius_card()))
-                    .bg(mac::window())
-                    .border_1()
-                    .border_color(mac::separator())
-                    .shadow_xl()
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(15.0))
-                            .font_weight(mac::BOLD)
-                            .child(format!("Enter the password to view “{title}”")),
-                    )
-                    .child(TextField::new(&self.lock_password_input).cleanable(true))
-                    .child(
-                        div()
-                            .flex()
-                            .justify_end()
-                            .gap_2()
-                            .child(
-                                rmac_ui::dialog_button("cancel-lock-dialog", "Cancel", Normal)
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.cancel_lock_dialog(cx)),
-                                    ),
-                            )
-                            .child(
-                                rmac_ui::dialog_button("confirm-lock-dialog", "Unlock", Primary)
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.confirm_lock_dialog(cx)),
-                                    ),
-                            ),
-                    );
-                Some(
-                    rmac_ui::dialog("lock-unlock-dialog", card)
-                        .restore_focus_to(self.focus.clone())
-                        .into_any_element(),
-                )
-            }
-            LockDialog::ConfirmReset => Some(
+        if dialog == LockDialog::ConfirmReset {
+            return Some(
                 rmac_ui::alert(
                     "Reset the locked notes password?",
-                    "Every locked note unlocks immediately, and the password is forgotten. You \
-                     will need to lock notes again with a new password.",
+                    "Notes you already locked keep the password they were locked with. The new \
+                     password applies to notes you lock from now on.",
                     vec![
                         rmac_ui::dialog_button("cancel-lock-dialog", "Cancel", Normal)
-                            .on_click(cx.listener(|this, _, _, cx| this.cancel_lock_dialog(cx)))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.cancel_lock_dialog(window, cx)
+                            }))
                             .into_any_element(),
                         rmac_ui::dialog_button(
                             "confirm-lock-dialog",
                             "Reset Password",
                             Destructive,
                         )
-                        .on_click(cx.listener(|this, _, _, cx| this.confirm_lock_dialog(cx)))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.confirm_lock_dialog(window, cx)),
+                        )
                         .into_any_element(),
                     ],
                 )
                 .into_any_element(),
-            ),
+            );
         }
+        let (title, detail, confirm, old, new_password) = match dialog {
+            LockDialog::CreatePassword { .. } => (
+                "Create a password for your locked notes",
+                "You use this password to lock and unlock notes. If you forget it, \
+                 notes locked with it can’t be opened.",
+                "Set Password",
+                false,
+                true,
+            ),
+            LockDialog::LockWithPassword { .. } => (
+                "Enter the password for your locked notes",
+                "The note is encrypted with this password.",
+                "Lock Note",
+                false,
+                false,
+            ),
+            LockDialog::Unlock(_) => (
+                "Enter the password for your locked notes",
+                "Every note locked with this password stays open until you close \
+                 locked notes, Notes is idle or the screen locks.",
+                "View Note",
+                false,
+                false,
+            ),
+            LockDialog::RemoveLock { .. } => (
+                "Enter the password to remove the lock",
+                "The note is stored unencrypted again.",
+                "Remove Lock",
+                false,
+                false,
+            ),
+            LockDialog::ChangePassword => (
+                "Change the password for your locked notes",
+                "Every note locked with the old password is encrypted again with \
+                 the new one.",
+                "Change Password",
+                true,
+                true,
+            ),
+            LockDialog::ResetPassword | LockDialog::ConfirmReset => (
+                "Create a new password for locked notes",
+                "Notes you already locked keep their old password.",
+                "Set Password",
+                false,
+                true,
+            ),
+        };
+        let busy = self.lock_request_id.is_some();
+        let card = div()
+            .w(px(360.0))
+            .p(px(20.0))
+            .v_flex()
+            .gap_3()
+            .rounded(px(rmac_ui::mac::radius_card()))
+            .bg(mac::window())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(15.0))
+                    .font_weight(mac::BOLD)
+                    .child(title),
+            )
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child(detail),
+            )
+            .when(old, |card| {
+                card.child(TextField::new(&self.lock_old_password_input).cleanable(true))
+            })
+            .child(TextField::new(&self.lock_password_input).cleanable(true))
+            .when(new_password, |card| {
+                card.child(TextField::new(&self.lock_verify_input).cleanable(true))
+                    .child(TextField::new(&self.lock_hint_input).cleanable(true))
+            })
+            .when_some(self.lock_dialog_error.clone(), |card, error| {
+                card.child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::danger())
+                        .child(error),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button("cancel-lock-dialog", "Cancel", Normal).on_click(
+                            cx.listener(|this, _, window, cx| this.cancel_lock_dialog(window, cx)),
+                        ),
+                    )
+                    .child(
+                        rmac_ui::dialog_button("confirm-lock-dialog", confirm, Primary)
+                            .disabled(busy)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.confirm_lock_dialog(window, cx)
+                            })),
+                    ),
+            );
+        Some(
+            rmac_ui::dialog("lock-password-dialog", card)
+                .restore_focus_to(self.focus.clone())
+                .into_any_element(),
+        )
     }
 
-    /// File ▸ New Smart Folder / New Smart Folder with Tag Selection. See
-    /// `view_model::SmartFolder`'s doc comment for why this is session-only.
+    /// File ▸ New Smart Folder / New Smart Folder with Tag Selection: stored
+    /// with the library.
     pub(super) fn render_smart_folder_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use rmac_ui::DialogButtonKind::{Normal, Primary};
 

@@ -8,11 +8,12 @@ use rmac_notifications::{AppId, DeliveryPolicy};
 
 use crate::service::{
     activation_source, decode_configuration, decode_policy, encode_configuration, encode_policy,
-    projection, WireConfiguration, WirePolicy, WireSettings, WireState, SCHEDULED_DISABLE_DETAIL,
+    projection, WireConfiguration, WirePolicy, WireSettings, WireState, BUS_NAME,
+    SCHEDULED_DISABLE_DETAIL,
 };
 
 #[cfg(test)]
-use crate::service::{BUS_NAME, INTERFACE_NAME, OBJECT_PATH};
+use crate::service::{INTERFACE_NAME, OBJECT_PATH};
 
 #[zbus::proxy(
     interface = "org.rmac.Focus1",
@@ -143,7 +144,7 @@ pub async fn enforce_with_connection(
 
 pub async fn watch(sender: Sender<Result<Projection, String>>) -> Result<(), Error> {
     loop {
-        match watch_once(&sender).await {
+        let service_unavailable = match watch_once(&sender).await {
             Ok(()) if sender.is_closed() => return Ok(()),
             Ok(()) => {
                 if sender
@@ -153,11 +154,20 @@ pub async fn watch(sender: Sender<Result<Projection, String>>) -> Result<(), Err
                 {
                     return Ok(());
                 }
+                true
             }
             Err(error) => {
                 if sender.send(Err(error.to_string())).await.is_err() {
                     return Ok(());
                 }
+                matches!(error, Error::Connect | Error::Subscribe | Error::Call)
+            }
+        };
+        if service_unavailable {
+            match wait_for_focus(&sender).await {
+                None => return Ok(()),
+                Some(true) => continue,
+                Some(false) => {}
             }
         }
         let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
@@ -174,7 +184,7 @@ pub async fn watch(sender: Sender<Result<Projection, String>>) -> Result<(), Err
 
 pub async fn watch_configuration(sender: Sender<Result<Config, String>>) -> Result<(), Error> {
     loop {
-        match watch_configuration_once(&sender).await {
+        let service_unavailable = match watch_configuration_once(&sender).await {
             Ok(()) if sender.is_closed() => return Ok(()),
             Ok(()) => {
                 if sender
@@ -184,11 +194,20 @@ pub async fn watch_configuration(sender: Sender<Result<Config, String>>) -> Resu
                 {
                     return Ok(());
                 }
+                true
             }
             Err(error) => {
                 if sender.send(Err(error.to_string())).await.is_err() {
                     return Ok(());
                 }
+                matches!(error, Error::Connect | Error::Subscribe | Error::Call)
+            }
+        };
+        if service_unavailable {
+            match wait_for_focus(&sender).await {
+                None => return Ok(()),
+                Some(true) => continue,
+                Some(false) => {}
             }
         }
         let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
@@ -203,6 +222,22 @@ pub async fn watch_configuration(sender: Sender<Result<Config, String>>) -> Resu
     }
 }
 
+/// Parks a watcher whose Focus service is absent (a private nested session,
+/// or a stopped service) until the service claims its bus name, instead of
+/// reconnecting every second for the life of the process: each failure
+/// republishes an error, which kept System Settings repainting. `Some(true)`:
+/// the service appeared, reconnect now; `Some(false)`: fall back to the
+/// bounded retry; `None`: the receiver closed.
+async fn wait_for_focus<T>(sender: &Sender<T>) -> Option<bool> {
+    let appeared = futures_util::FutureExt::fuse(rmac_dbus::wait_for_session_name(BUS_NAME));
+    let closed = futures_util::FutureExt::fuse(sender.closed());
+    futures_util::pin_mut!(appeared, closed);
+    futures_util::select! {
+        wait = appeared => Some(matches!(wait, Ok(rmac_dbus::NameWait::Appeared))),
+        _ = closed => None,
+    }
+}
+
 /// Publishes complete configuration and live-state pairs for Settings clients.
 ///
 /// Both signal streams are installed before the initial reads, closing the
@@ -210,7 +245,7 @@ pub async fn watch_configuration(sender: Sender<Result<Config, String>>) -> Resu
 /// reread so consumers never have to merge independently versioned payloads.
 pub async fn watch_settings(sender: Sender<Result<SettingsSnapshot, String>>) -> Result<(), Error> {
     loop {
-        match watch_settings_once(&sender).await {
+        let service_unavailable = match watch_settings_once(&sender).await {
             Ok(()) if sender.is_closed() => return Ok(()),
             Ok(()) => {
                 if sender
@@ -220,11 +255,20 @@ pub async fn watch_settings(sender: Sender<Result<SettingsSnapshot, String>>) ->
                 {
                     return Ok(());
                 }
+                true
             }
             Err(error) => {
                 if sender.send(Err(error.to_string())).await.is_err() {
                     return Ok(());
                 }
+                matches!(error, Error::Connect | Error::Subscribe | Error::Call)
+            }
+        };
+        if service_unavailable {
+            match wait_for_focus(&sender).await {
+                None => return Ok(()),
+                Some(true) => continue,
+                Some(false) => {}
             }
         }
         let timer = futures_util::FutureExt::fuse(async_io::Timer::after(

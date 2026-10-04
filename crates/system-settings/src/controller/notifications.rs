@@ -61,22 +61,29 @@ impl Settings {
         }
     }
 
+    /// Applies one live Notifications update and reports whether anything
+    /// visible changed; a repeated stream error must not repaint the window.
     pub(super) fn apply_notification_stream_update(
         &mut self,
         update: std::result::Result<
             Vec<rmac_notifications_linux::center::ApplicationPolicy>,
             String,
         >,
-    ) {
-        self.notifications_loading = false;
+    ) -> bool {
+        let was_loading = std::mem::replace(&mut self.notifications_loading, false);
         match update {
             Ok(applications) => {
                 self.notification_apps = applications;
                 self.notification_stream_error = None;
+                true
             }
             Err(error) => {
-                self.notification_stream_error =
-                    Some(format!("Live Notification updates unavailable: {error}").into());
+                let message: SharedString =
+                    format!("Live Notification updates unavailable: {error}").into();
+                let changed =
+                    was_loading || self.notification_stream_error.as_ref() != Some(&message);
+                self.notification_stream_error = Some(message);
+                changed
             }
         }
     }

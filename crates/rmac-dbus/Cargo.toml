@@ -8,4 +8,5 @@ publish = false
 
 [dependencies]
 async-io.workspace = true
+futures-util.workspace = true
 zbus.workspace = true

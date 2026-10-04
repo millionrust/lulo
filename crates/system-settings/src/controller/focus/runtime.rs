@@ -21,20 +21,28 @@ impl Settings {
         }
     }
 
+    /// Applies one live Focus update and reports whether anything visible
+    /// changed. A repeated stream error (the service is still absent) changes
+    /// nothing, so it must not repaint the window.
     pub(in crate::controller) fn apply_focus_stream_update(
         &mut self,
         update: std::result::Result<rmac_focus_linux::client::SettingsSnapshot, String>,
-    ) {
-        self.focus_policy_loading = false;
+    ) -> bool {
+        let was_loading = std::mem::replace(&mut self.focus_policy_loading, false);
         match update {
             Ok(update) => {
                 self.focus_policy_config = Some(update.configuration);
                 self.focus_policy_state = Some(update.state);
                 self.focus_policy_stream_error = None;
+                true
             }
             Err(error) => {
-                self.focus_policy_stream_error =
-                    Some(format!("Live Focus updates unavailable: {error}").into());
+                let message: SharedString =
+                    format!("Live Focus updates unavailable: {error}").into();
+                let changed =
+                    was_loading || self.focus_policy_stream_error.as_ref() != Some(&message);
+                self.focus_policy_stream_error = Some(message);
+                changed
             }
         }
     }

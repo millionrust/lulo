@@ -495,48 +495,14 @@ pub async fn watch(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error
 
 #[cfg(target_os = "linux")]
 async fn wait_for_lock_service(sender: &Sender<Result<Snapshot, String>>) -> Result<bool, Error> {
-    use futures_util::{FutureExt as _, StreamExt as _};
-    use zbus::{message::Type, MatchRule, MessageStream};
+    use futures_util::FutureExt as _;
 
-    let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
-    let rule = MatchRule::builder()
-        .msg_type(Type::Signal)
-        .sender("org.freedesktop.DBus")
-        .map_err(|_| Error::Subscribe)?
-        .path("/org/freedesktop/DBus")
-        .map_err(|_| Error::Subscribe)?
-        .interface("org.freedesktop.DBus")
-        .map_err(|_| Error::Subscribe)?
-        .member("NameOwnerChanged")
-        .map_err(|_| Error::Subscribe)?
-        .add_arg(BUS_NAME)
-        .map_err(|_| Error::Subscribe)?
-        .build();
-    // Arm the stream before checking ownership so a new service cannot
-    // appear between the check and the subscription.
-    let mut owners = MessageStream::for_match_rule(rule, &connection, Some(4))
-        .await
-        .map_err(|_| Error::Subscribe)?;
-    let dbus = zbus::fdo::DBusProxy::new(&connection)
-        .await
-        .map_err(|_| Error::Connect)?;
-    let name = zbus::names::BusName::try_from(BUS_NAME).map_err(|_| Error::Protocol)?;
-    if dbus.name_has_owner(name).await.map_err(|_| Error::Call)? {
-        return Ok(false);
-    }
-    loop {
-        let closed = sender.closed().fuse();
-        let next = owners.next().fuse();
-        futures_util::pin_mut!(closed, next);
-        let message = futures_util::select! {
-            message = next => message.ok_or(Error::Subscribe)?.map_err(|_| Error::Subscribe)?,
-            _ = closed => return Ok(true),
-        };
-        let (name, _old_owner, new_owner): (String, String, String) =
-            message.body().deserialize().map_err(|_| Error::Protocol)?;
-        if name == BUS_NAME && !new_owner.is_empty() {
-            return Ok(true);
-        }
+    let appeared = rmac_dbus::wait_for_session_name(BUS_NAME).fuse();
+    let closed = sender.closed().fuse();
+    futures_util::pin_mut!(appeared, closed);
+    futures_util::select! {
+        wait = appeared => Ok(wait.map_err(|_| Error::Subscribe)? == rmac_dbus::NameWait::Appeared),
+        _ = closed => Ok(true),
     }
 }
 

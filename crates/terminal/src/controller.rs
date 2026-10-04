@@ -362,6 +362,12 @@ pub(super) struct TerminalView {
     /// Invalidates an in-flight blink task after a newer one starts, so two
     /// never race if focus is regained before the old one has noticed.
     blink_generation: u64,
+    /// When the user last typed. Blinking parks with the cursor shown
+    /// `CURSOR_PARK_AFTER` later, so an idle focused window stops
+    /// repainting itself twice a second.
+    blink_last_input: std::time::Instant,
+    /// The blink loop parked for inactivity; the next keystroke restarts it.
+    blink_parked: bool,
     persistence_error: Option<SharedString>,
     operation_error: Option<SharedString>,
     pending_close: Option<PendingClose>,

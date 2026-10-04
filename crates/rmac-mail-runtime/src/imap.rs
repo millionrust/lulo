@@ -300,6 +300,12 @@ impl ImapBackend {
                 .map(|to| to.address.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
+            let cc = parsed
+                .cc
+                .iter()
+                .map(|cc| cc.address.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             let id = store.put_message(&NewMessage {
                 mailbox_id,
                 uid,
@@ -309,6 +315,7 @@ impl ImapBackend {
                 subject: &parsed.subject,
                 sender,
                 recipients: &recipients,
+                cc: &cc,
                 preview: &parsed.preview,
                 received_at: now,
                 flags: bits,

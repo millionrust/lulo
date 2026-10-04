@@ -35,6 +35,7 @@ impl Fixture {
                 subject,
                 sender: "Ada <ada@example.test>",
                 recipients: "Bob <bob@example.test>",
+                cc: "",
                 preview: "A short preview",
                 received_at: 100,
                 flags: 0,
@@ -71,6 +72,7 @@ fn search_tokens_scope_and_fts_escaping() {
             subject: "Lunch on Friday",
             sender: "Ada <ada@example.test>",
             recipients: "Bob <bob@example.test>",
+            cc: "",
             preview: "A short preview",
             received_at: 101,
             flags: 0,
@@ -106,6 +108,74 @@ fn search_tokens_scope_and_fts_escaping() {
         SearchQuery::parse("from: Ada").terms[0].field,
         SearchField::From
     );
+}
+
+/// MAIL-4: `crate::live::load` (`crates/mail`) builds the window's sidebar
+/// and message list entirely from these two reads.
+#[test]
+fn all_mailboxes_and_messages_in_mailbox_feed_the_live_window() {
+    let mut fixture = Fixture::new();
+    let inbox = fixture.inbox;
+    let mut message = |uid: i64, subject: &str, received_at: i64| {
+        fixture
+            .store
+            .put_message(&NewMessage {
+                mailbox_id: inbox,
+                uid,
+                message_id: None,
+                in_reply_to: None,
+                references: &[],
+                subject,
+                sender: "Ada <ada@example.test>",
+                recipients: "Bob <bob@example.test>",
+                cc: "",
+                preview: "preview",
+                received_at,
+                flags: 0,
+                body: None,
+                body_text: None,
+            })
+            .unwrap()
+    };
+    message(1, "Oldest", 100);
+    message(2, "Middle", 200);
+    let newest = message(3, "Newest", 300);
+    let archive = fixture
+        .store
+        .upsert_mailbox("Archive", 43, Some("\\Archive"))
+        .unwrap();
+
+    let listing = fixture.store.all_mailboxes().unwrap();
+    assert_eq!(listing.len(), 2);
+    let inbox_listing = listing
+        .iter()
+        .find(|mailbox| mailbox.id == fixture.inbox)
+        .expect("INBOX listed");
+    assert_eq!(inbox_listing.name, "INBOX");
+    assert_eq!(inbox_listing.special_use.as_deref(), Some("\\Inbox"));
+    let archive_listing = listing
+        .iter()
+        .find(|mailbox| mailbox.id == archive)
+        .expect("Archive listed");
+    assert_eq!(archive_listing.special_use.as_deref(), Some("\\Archive"));
+
+    // Newest first, and bounded by `limit`.
+    let newest_first = fixture
+        .store
+        .messages_in_mailbox(fixture.inbox, 10)
+        .unwrap();
+    assert_eq!(
+        newest_first.iter().map(|m| m.id).collect::<Vec<_>>(),
+        vec![newest, 2, 1]
+    );
+    let bounded = fixture.store.messages_in_mailbox(fixture.inbox, 1).unwrap();
+    assert_eq!(bounded.len(), 1);
+    assert_eq!(bounded[0].id, newest);
+    assert!(fixture
+        .store
+        .messages_in_mailbox(archive, 10)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -151,7 +221,11 @@ fn existing_v2_cache_adds_cursor_without_losing_messages() {
     fixture
         .store
         .connection
-        .execute_batch("ALTER TABLE mailboxes DROP COLUMN highest_modseq; PRAGMA user_version=2;")
+        .execute_batch(
+            "ALTER TABLE mailboxes DROP COLUMN highest_modseq; \
+             ALTER TABLE messages DROP COLUMN cc; \
+             PRAGMA user_version=2;",
+        )
         .unwrap();
     let reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
     assert_eq!(
@@ -170,7 +244,7 @@ fn existing_v2_cache_adds_cursor_without_losing_messages() {
     assert_eq!(
         db.pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .unwrap(),
-        3
+        4
     );
 }
 
@@ -187,7 +261,7 @@ fn migration_is_idempotent_and_rejects_future_schema() {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .expect("version"),
-        3
+        4
     );
     drop(reopened);
     let db = Connection::open(path).expect("open raw");
@@ -247,7 +321,12 @@ fn existing_v1_cache_gains_outbox_without_losing_mail() {
     fixture
         .store
         .connection
-        .execute_batch("DROP TABLE outbox_recipients; DROP TABLE outbox; ALTER TABLE mailboxes DROP COLUMN highest_modseq; PRAGMA user_version=1;")
+        .execute_batch(
+            "DROP TABLE outbox_recipients; DROP TABLE outbox; \
+             ALTER TABLE mailboxes DROP COLUMN highest_modseq; \
+             ALTER TABLE messages DROP COLUMN cc; \
+             PRAGMA user_version=1;",
+        )
         .unwrap();
     let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
     assert_eq!(
@@ -351,6 +430,7 @@ fn draft_autosave_reuses_its_uid_and_replaces_attachments_until_discarded() {
             subject: "Draft subject",
             sender: "jacob@example.test",
             recipients: "anna@example.test",
+            cc: "",
             preview: "First draft",
             received_at: 1,
             flags: FLAG_DRAFT,
@@ -376,6 +456,7 @@ fn draft_autosave_reuses_its_uid_and_replaces_attachments_until_discarded() {
             subject: "Draft subject, edited",
             sender: "jacob@example.test",
             recipients: "anna@example.test",
+            cc: "",
             preview: "Edited draft",
             received_at: 2,
             flags: FLAG_DRAFT,
@@ -428,6 +509,7 @@ fn fts_tracks_insert_update_and_delete_and_scopes_mailbox() {
             subject: "Purple planets",
             sender: "x",
             recipients: "y",
+            cc: "",
             preview: "z",
             received_at: 1,
             flags: 0,
@@ -462,6 +544,7 @@ fn fts_tracks_insert_update_and_delete_and_scopes_mailbox() {
             subject: "Blue moons",
             sender: "x",
             recipients: "y",
+            cc: "",
             preview: "z",
             received_at: 2,
             flags: 0,
@@ -522,6 +605,7 @@ fn references_feed_threading_and_survive_reopen() {
             subject: "Other",
             sender: "x",
             recipients: "y",
+            cc: "",
             preview: "z",
             received_at: 101,
             flags: 0,

@@ -7,7 +7,9 @@ use gpui::{
     Window,
 };
 use rmac_editor::InputState;
-use rmac_mail::{compose::ComposeKind, MailState, Mailbox, Message, OrganizeAction, SearchScope};
+use rmac_mail::{
+    compose::ComposeKind, MailState, Mailbox, Message, OrganizeAction, SearchScope, SpecialUse,
+};
 use rmac_mail_mime::{BlockKind, RichText};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, TextField};
 
@@ -36,15 +38,19 @@ pub struct MailView {
     destination_menu: bool,
     copy_destination: bool,
     accounts: Vec<ComposeAccount>,
+    /// `None` under `RMAC_MAIL_FIXTURE=1` and in tests; otherwise the live
+    /// sync runtime, kept only to wake the right account's worker right
+    /// after an organise action queues its journal entry.
+    runtime: Option<Arc<rmac_mail_runtime::Runtime>>,
 }
 
 #[derive(Clone)]
 struct Row {
     id: String,
-    sender: &'static str,
-    subject: &'static str,
-    preview: &'static str,
-    date: &'static str,
+    sender: String,
+    subject: String,
+    preview: String,
+    date: String,
     unread: bool,
     flagged: bool,
     attachment: bool,
@@ -56,6 +62,7 @@ impl MailView {
     pub fn new(
         state: MailState,
         accounts: Vec<ComposeAccount>,
+        runtime: Option<Arc<rmac_mail_runtime::Runtime>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -68,7 +75,7 @@ impl MailView {
             }
         })
         .detach();
-        Self {
+        let mut view = Self {
             focus: cx.focus_handle(),
             state,
             search_input,
@@ -76,20 +83,65 @@ impl MailView {
             destination_menu: false,
             copy_destination: false,
             accounts,
+            runtime,
+        };
+        view.ensure_body_loaded(cx);
+        view
+    }
+
+    /// Replaces the mailbox/message list with a freshly loaded one, keeping
+    /// the current selection, mailbox and search — called after a sync
+    /// snapshot or new-mail event (`main.rs`'s background event loop, which
+    /// only exists on Linux: GOA and the sync runtime are Linux session
+    /// services).
+    #[cfg(target_os = "linux")]
+    pub fn refresh_live(
+        &mut self,
+        mailboxes: Vec<Mailbox>,
+        messages: Vec<Message>,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.refresh_live(mailboxes, messages);
+        self.ensure_body_loaded(cx);
+        self.sync_menu(cx);
+        cx.notify();
+    }
+
+    /// The `Message::id` for a live notification's `(account, row_id)`
+    /// pair — `rmac_mail_runtime`'s `NewMail`/`OpenMessage` events only
+    /// carry the account and the storage row id, not Mail's own composite
+    /// id string.
+    #[cfg(target_os = "linux")]
+    pub fn message_id_for_row(&self, account: uuid::Uuid, row_id: i64) -> Option<String> {
+        self.state
+            .messages
+            .iter()
+            .find(|message| {
+                message.row_id == Some(row_id)
+                    && matches!(&message.mailbox, Mailbox::Real(real) if real.account == account)
+            })
+            .map(|message| message.id.clone())
+    }
+
+    /// Selects `id` (for example from a clicked new-mail notification),
+    /// opening its mailbox first if needed.
+    #[cfg(target_os = "linux")]
+    pub fn open_message(&mut self, id: &str, cx: &mut Context<Self>) {
+        if let Some(message) = self.state.messages.iter().find(|message| message.id == id) {
+            self.state.mailbox = message.mailbox.clone();
         }
+        self.state.select(id);
+        self.ensure_body_loaded(cx);
+        self.dispatch_persist(cx);
+        self.sync_menu(cx);
+        cx.notify();
     }
 
     fn sync_menu(&self, cx: &mut Context<Self>) {
         rmac_ui::set_menu_checked("mail::ToggleThreads", self.state.threads, cx);
         rmac_ui::set_menu_checked("mail::ToggleUnreadFilter", self.state.unread_only, cx);
         rmac_ui::set_menu_enabled("mail::Undo", self.state.can_undo(), cx);
-        rmac_ui::set_menu_enabled(
-            "mail::Archive",
-            self.state
-                .selected_message()
-                .is_some_and(|message| message.mailbox.account() == "Google"),
-            cx,
-        );
+        rmac_ui::set_menu_enabled("mail::Archive", self.can_archive_selected(), cx);
         for action in [
             "mail::Delete",
             "mail::Junk",
@@ -102,12 +154,78 @@ impl MailView {
         }
     }
 
+    /// Whether the selected message's account has an Archive mailbox at
+    /// all (iCloud, for example, has none) — decides whether the toolbar's
+    /// Archive button is a real action or greyed out.
+    fn can_archive_selected(&self) -> bool {
+        self.state.selected_message().is_some_and(|message| {
+            matches!(&message.mailbox, Mailbox::Real(real) if self
+                .state
+                .find_special(real.account, SpecialUse::Archive)
+                .is_some())
+        })
+    }
+
     fn perform(&mut self, action: OrganizeAction, cx: &mut Context<Self>) {
         if self.state.apply(action) {
             self.destination_menu = false;
+            self.dispatch_persist(cx);
             self.sync_menu(cx);
             cx.notify();
         }
+    }
+
+    /// Replays whatever `Persist` the last mutating `MailState` call queued
+    /// into that account's storage journal, off the GPUI thread, and wakes
+    /// its sync worker so the change reaches the server promptly instead of
+    /// waiting for the next IDLE timeout. A no-op for fixture data, which
+    /// never produces a `Persist`.
+    fn dispatch_persist(&mut self, cx: &mut Context<Self>) {
+        let Some(persist) = self.state.take_persist() else {
+            return;
+        };
+        let runtime = self.runtime.clone();
+        cx.background_executor()
+            .spawn(async move {
+                crate::live::persist(persist.clone());
+                if let Some(runtime) = runtime {
+                    runtime.sync_now(&persist.account_path);
+                }
+            })
+            .detach();
+    }
+
+    /// Fetches and parses the selected message's real body in the
+    /// background, the first time it is opened. A fixture message or one
+    /// already loaded is a no-op (MAIL-10: never parses MIME for rows
+    /// nobody has opened).
+    fn ensure_body_loaded(&mut self, cx: &mut Context<Self>) {
+        let Some(message) = self.state.selected_message() else {
+            return;
+        };
+        if message.body_loaded {
+            return;
+        }
+        let Mailbox::Real(real) = message.mailbox.clone() else {
+            return;
+        };
+        let Some(row_id) = message.row_id else {
+            return;
+        };
+        let id = message.id.clone();
+        cx.spawn(async move |this, cx| {
+            let loaded = cx
+                .background_executor()
+                .spawn(async move { crate::live::load_body(real.account, real.mailbox_id, row_id) })
+                .await;
+            if let Some((body, attachment)) = loaded {
+                let _ = this.update(cx, |this, cx| {
+                    this.state.set_loaded_body(&id, body, attachment);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     /// Address completion candidates for a freshly opened compose window:
@@ -203,11 +321,9 @@ impl MailView {
             ("mail-trash", "⌫", "Move to Bin", OrganizeAction::Delete),
             ("mail-junk", "⊗", "Junk or Not Junk", OrganizeAction::Junk),
         ] {
-            // Archive has no destination on iCloud (special_mailbox returns
-            // None), so grey it out there instead of a silent no-op click.
-            let available = self.state.selected_message().is_some_and(|message| {
-                action != OrganizeAction::Archive || message.mailbox.account() != "iCloud"
-            });
+            // Some accounts (iCloud, for example) have no Archive mailbox,
+            // so grey the button out there instead of a silent no-op click.
+            let available = action != OrganizeAction::Archive || self.can_archive_selected();
             let mode = if available {
                 ControlMode::Enabled
             } else {
@@ -218,16 +334,38 @@ impl MailView {
                 glyph,
                 label,
                 mode,
-                move |this, cx| this.perform(action, cx),
+                move |this, cx| this.perform(action.clone(), cx),
                 cx,
             ));
         }
-        for (id, glyph, label) in [
-            ("mail-reply", "↶", "Reply"),
-            ("mail-reply-all", "↞", "Reply All"),
-            ("mail-forward", "↷", "Forward"),
+        let has_selection = self.state.selected_message().is_some();
+        for (id, glyph, label, kind) in [
+            ("mail-reply", "↶", "Reply", ComposeKind::Reply),
+            ("mail-reply-all", "↞", "Reply All", ComposeKind::ReplyAll),
+            ("mail-forward", "↷", "Forward", ComposeKind::Forward),
         ] {
-            bar = bar.child(self.control(id, glyph, label, ControlMode::Disabled, |_, _| {}, cx));
+            let mode = if has_selection {
+                ControlMode::Enabled
+            } else {
+                ControlMode::Disabled
+            };
+            bar = bar.child(self.control(
+                id,
+                glyph,
+                label,
+                mode,
+                move |this, cx| {
+                    compose_window::open(
+                        kind,
+                        this.state.selected_message().cloned(),
+                        None,
+                        this.accounts.clone(),
+                        this.compose_candidates(),
+                        cx,
+                    );
+                },
+                cx,
+            ));
         }
         bar = bar.child(self.control(
             "mail-flag",
@@ -315,10 +453,10 @@ impl MailView {
             .overflow_y_scroll()
             .flex()
             .flex_col();
-        let mut account = "";
-        for mailbox in Mailbox::ALL {
+        let mut account = String::new();
+        for mailbox in self.state.mailboxes.clone() {
             if mailbox.account() != account {
-                account = mailbox.account();
+                account = mailbox.account().to_owned();
                 list = list.child(
                     div()
                         .h(px(30.0))
@@ -327,15 +465,15 @@ impl MailView {
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_size(px(11.0))
                         .text_color(mac::text_secondary())
-                        .child(account),
+                        .child(account.clone()),
                 );
             }
             let selected = self.state.mailbox == mailbox;
-            let count = self.state.unread_count(mailbox);
+            let count = self.state.unread_count(&mailbox);
             let label = if count > 0 {
                 format!("{}, {} unread", mailbox.label(), count)
             } else {
-                mailbox.label().to_owned()
+                mailbox.label()
             };
             list = list.child(
                 div()
@@ -356,7 +494,7 @@ impl MailView {
                     })
                     .text_color(if selected { mac::white() } else { mac::text() })
                     .text_size(px(12.0))
-                    .child(div().w(px(16.0)).child(mailbox_icon(mailbox)))
+                    .child(div().w(px(16.0)).child(mailbox_icon(&mailbox)))
                     .child(mailbox.label())
                     .child(div().flex_1())
                     .child(if count > 0 {
@@ -365,7 +503,10 @@ impl MailView {
                         String::new()
                     })
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.state.select_mailbox(mailbox);
+                        this.state.select_mailbox(mailbox.clone());
+                        this.ensure_body_loaded(cx);
+                        this.dispatch_persist(cx);
+                        this.sync_menu(cx);
                         cx.notify();
                     })),
             );
@@ -409,7 +550,10 @@ impl MailView {
             .border_color(mac::separator())
             .flex()
             .flex_col();
-        for mailbox in Mailbox::ALL
+        for mailbox in self
+            .state
+            .mailboxes
+            .clone()
             .into_iter()
             .filter(|mailbox| mailbox.is_real() && mailbox.account() == account)
         {
@@ -429,9 +573,9 @@ impl MailView {
                     .child(label)
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         let action = if this.copy_destination {
-                            OrganizeAction::Copy(mailbox)
+                            OrganizeAction::Copy(mailbox.clone())
                         } else {
-                            OrganizeAction::Move(mailbox)
+                            OrganizeAction::Move(mailbox.clone())
                         };
                         this.perform(action, cx);
                     })),
@@ -442,6 +586,14 @@ impl MailView {
 
     fn list(&self, cx: &mut Context<Self>) -> AnyElement {
         let visible = self.state.visible();
+        // `MailState::thread_count` scans every message; calling it once
+        // per visible row would make building the list O(n²) in a 10 000
+        // -message mailbox (MAIL-10). One pass here keeps it O(n).
+        let mut thread_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::with_capacity(self.state.messages.len());
+        for message in &self.state.messages {
+            *thread_counts.entry(message.thread_id.as_str()).or_insert(0) += 1;
+        }
         let rows: Arc<Vec<Row>> = Arc::new(
             visible
                 .iter()
@@ -449,14 +601,17 @@ impl MailView {
                     let message = &self.state.messages[index];
                     Row {
                         id: message.id.clone(),
-                        sender: message.sender,
-                        subject: message.subject,
-                        preview: message.preview,
-                        date: message.date,
+                        sender: message.sender.clone(),
+                        subject: message.subject.clone(),
+                        preview: message.preview.clone(),
+                        date: message.date.clone(),
                         unread: message.unread,
                         flagged: message.flagged,
                         attachment: message.attachment.is_some(),
-                        thread_count: self.state.thread_count(message.thread_id),
+                        thread_count: thread_counts
+                            .get(message.thread_id.as_str())
+                            .copied()
+                            .unwrap_or(1),
                         selected: self.state.selected.as_deref() == Some(message.id.as_str()),
                     }
                 })
@@ -573,13 +728,13 @@ impl MailView {
                                                             })
                                                             .text_size(px(13.0))
                                                             .text_color(mac::text())
-                                                            .child(row.sender),
+                                                            .child(row.sender.clone()),
                                                     )
                                                     .child(
                                                         div()
                                                             .text_size(px(10.0))
                                                             .text_color(mac::text_secondary())
-                                                            .child(row.date),
+                                                            .child(row.date.clone()),
                                                     ),
                                             )
                                             .child(
@@ -588,7 +743,7 @@ impl MailView {
                                                     .gap(px(4.0))
                                                     .text_size(px(12.0))
                                                     .text_color(mac::text())
-                                                    .child(row.subject)
+                                                    .child(row.subject.clone())
                                                     .child(if row.thread_count > 1 {
                                                         format!("({})", row.thread_count)
                                                     } else {
@@ -601,12 +756,15 @@ impl MailView {
                                                     .text_size(px(11.0))
                                                     .text_color(mac::text_secondary())
                                                     .overflow_hidden()
-                                                    .child(row.preview),
+                                                    .child(row.preview.clone()),
                                             ),
                                     )
                                     .on_click(move |_: &ClickEvent, _, cx| {
                                         let _ = view.update(cx, |this, cx| {
                                             this.state.select(&id);
+                                            this.ensure_body_loaded(cx);
+                                            this.dispatch_persist(cx);
+                                            this.sync_menu(cx);
                                             cx.notify();
                                         });
                                     })
@@ -696,9 +854,18 @@ impl MailView {
                     .child("This message contains remote content. Images are blocked."),
             );
         }
-        body = body.child(self.rich_body(&message.body));
-        if let Some(attachment) = message.attachment {
-            body = body.child(self.attachment_chip(attachment, cx));
+        if message.body_loaded {
+            body = body.child(self.rich_body(&message.body));
+            if let Some(attachment) = message.attachment.clone() {
+                body = body.child(self.attachment_chip(attachment, cx));
+            }
+        } else {
+            body = body.child(
+                div()
+                    .text_size(px(13.0))
+                    .text_color(mac::text_secondary())
+                    .child("Loading message…"),
+            );
         }
         body.into_any_element()
     }
@@ -712,7 +879,7 @@ impl MailView {
         attachment: rmac_mail::MessageAttachment,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let is_calendar_invite = rmac_mail::ics::has_ics_extension(attachment.filename);
+        let is_calendar_invite = rmac_mail::ics::has_ics_extension(&attachment.filename);
         let mut chip = div()
             .id("mail-attachment")
             .w(px(170.0))
@@ -736,10 +903,10 @@ impl MailView {
                 .aria_label(format!("Add {} to Calendar", attachment.filename))
                 .cursor_pointer()
                 .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
-                    let filename = attachment.filename;
-                    let bytes = attachment.bytes;
+                    let filename = attachment.filename.clone();
+                    let bytes = attachment.bytes.clone();
                     cx.spawn(async move |_, _cx| {
-                        let staged = rmac_mail::ics::stage_for_handoff(filename, bytes);
+                        let staged = rmac_mail::ics::stage_for_handoff(&filename, &bytes);
                         match staged {
                             Ok(path) => {
                                 if let Err(error) = rmac_portal::open_item(&path).await {
@@ -783,7 +950,7 @@ impl MailView {
                     .justify_center()
                     .text_color(mac::white())
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child(message.initials),
+                    .child(message.initials.clone()),
             )
             .child(
                 div()
@@ -796,7 +963,7 @@ impl MailView {
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_size(px(15.0))
                             .text_color(mac::text())
-                            .child(message.sender),
+                            .child(message.sender.clone()),
                     )
                     .child(
                         div()
@@ -809,14 +976,93 @@ impl MailView {
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_size(px(13.0))
                             .text_color(mac::text())
-                            .child(message.subject),
+                            .child(message.subject.clone()),
                     ),
             )
             .child(
                 div()
                     .text_size(px(11.0))
                     .text_color(mac::text_secondary())
-                    .child(message.date),
+                    .child(message.date.clone()),
+            )
+            .into_any_element()
+    }
+
+    /// Shown instead of the three-pane window when GOA has no mail
+    /// account yet. Mail must never show fixture or sample data to a real
+    /// user — this, not a fake mailbox, is what someone with no account
+    /// sees (`docs/design/calendar-mail.md` §3).
+    fn empty_state(&self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .size_full()
+            .relative()
+            .bg(mac::window())
+            .track_focus(&self.focus)
+            .key_context("Mail")
+            .child(rmac_ui::traffic_lights())
+            .child(
+                div()
+                    .id("mail-empty-state")
+                    .role(Role::Group)
+                    .aria_label("No Mail Accounts")
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .gap(px(14.0))
+                    .child(
+                        div()
+                            .text_size(px(34.0))
+                            .text_color(mac::text_tertiary())
+                            .child("✉"),
+                    )
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_size(px(17.0))
+                            .text_color(mac::text())
+                            .child("No Mail Accounts"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .text_color(mac::text_secondary())
+                            .child("Add an account to send and receive mail."),
+                    )
+                    .child(
+                        div()
+                            .id("mail-empty-add-account")
+                            .role(Role::Button)
+                            .aria_label("Add Account…")
+                            .cursor_pointer()
+                            .mt(px(6.0))
+                            .px(px(16.0))
+                            .h(px(28.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(mac::radius_control()))
+                            .bg(mac::accent())
+                            .text_color(mac::white())
+                            .text_size(px(13.0))
+                            .child("Add Account…")
+                            .on_click(cx.listener(|_, _: &ClickEvent, _, cx| {
+                                cx.spawn(async move |_, _| {
+                                    if let Err(error) =
+                                        std::process::Command::new("rmac-system-settings")
+                                            .arg("--pane")
+                                            .arg("internet-accounts")
+                                            .spawn()
+                                    {
+                                        eprintln!(
+                                            "rmac-mail: could not open System Settings: {error}"
+                                        );
+                                    }
+                                })
+                                .detach();
+                            })),
+                    ),
             )
             .into_any_element()
     }
@@ -824,6 +1070,9 @@ impl MailView {
 
 impl Render for MailView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.accounts.is_empty() {
+            return self.empty_state(cx);
+        }
         self.sync_menu(cx);
         div()
             .size_full()
@@ -903,6 +1152,7 @@ impl Render for MailView {
             .on_action(cx.listener(|this, _: &Flag, _, cx| this.perform(OrganizeAction::Flag, cx)))
             .on_action(cx.listener(|this, _: &Undo, _, cx| {
                 if this.state.undo() {
+                    this.dispatch_persist(cx);
                     this.sync_menu(cx);
                     cx.notify();
                 }
@@ -954,18 +1204,24 @@ impl Render for MailView {
             .when(self.destination_menu, |root| {
                 root.child(self.destinations(cx))
             })
+            .into_any_element()
     }
 }
 
-fn mailbox_icon(mailbox: Mailbox) -> &'static str {
+fn mailbox_icon(mailbox: &Mailbox) -> &'static str {
     match mailbox {
-        Mailbox::AllInboxes | Mailbox::GoogleInbox | Mailbox::IcloudInbox => "▤",
+        Mailbox::AllInboxes => "▤",
         Mailbox::Flagged => "⚑",
-        Mailbox::Drafts | Mailbox::GoogleDrafts => "✎",
-        Mailbox::Sent | Mailbox::GoogleSent | Mailbox::IcloudSent => "➤",
-        Mailbox::GoogleJunk | Mailbox::IcloudJunk => "⊗",
-        Mailbox::GoogleTrash | Mailbox::IcloudTrash => "⌫",
-        Mailbox::GoogleArchive => "▥",
-        Mailbox::GoogleReceipts => "▱",
+        Mailbox::Drafts => "✎",
+        Mailbox::Sent => "➤",
+        Mailbox::Real(real) => match real.special_use {
+            Some(SpecialUse::Inbox) => "▤",
+            Some(SpecialUse::Drafts) => "✎",
+            Some(SpecialUse::Sent) => "➤",
+            Some(SpecialUse::Junk) => "⊗",
+            Some(SpecialUse::Trash) => "⌫",
+            Some(SpecialUse::Archive) => "▥",
+            None => "▱",
+        },
     }
 }

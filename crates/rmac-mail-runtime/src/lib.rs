@@ -103,6 +103,19 @@ pub trait BackendFactory: Send + Sync + 'static {
     fn connect(&self, account: &Account) -> Result<Box<dyn Backend>, Error>;
 }
 
+/// Plugs into `linux::ProviderFactory`'s `graph` slot until MAIL-9 builds
+/// the real Microsoft Graph backend. Every `ms_graph` account fails to
+/// connect with `Error::GraphUnavailable`, which the worker treats as a
+/// user-visible failure rather than a silent no-op — `docs/parity.md`
+/// APP-13.
+pub struct NoGraphFactory;
+
+impl BackendFactory for NoGraphFactory {
+    fn connect(&self, _account: &Account) -> Result<Box<dyn Backend>, Error> {
+        Err(Error::GraphUnavailable)
+    }
+}
+
 #[derive(Debug)]
 pub enum Error {
     Account,

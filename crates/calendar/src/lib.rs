@@ -562,10 +562,13 @@ mod tests {
             subscription_default_name("webcal://example.com/cal/"),
             "cal"
         );
+        // No path beyond the host: the host itself is a reasonable name.
         assert_eq!(
             subscription_default_name("https://example.com/"),
-            "Subscription"
+            "example.com"
         );
+        // Nothing at all to build a name from falls back to "Subscription".
+        assert_eq!(subscription_default_name(""), "Subscription");
     }
 
     #[test]
@@ -578,11 +581,15 @@ mod tests {
         assert!(results
             .windows(2)
             .all(|pair| pair[0].start <= pair[1].start));
+        // Matches on location, not just title, while every calendar is shown.
+        assert_eq!(search_events(&snapshot, &visible, "Café Lulo").len(), 1);
+        // "Lunch with Ana" (the Café Lulo event) is on calendar 3; hiding it
+        // drops that match from both searches.
         visible[3] = false;
         let results = search_events(&snapshot, &visible, "lunch");
         assert_eq!(results.len(), 1);
         assert_eq!(search_events(&snapshot, &visible, "  ").len(), 0);
-        assert_eq!(search_events(&snapshot, &visible, "Café Lulo").len(), 1);
+        assert_eq!(search_events(&snapshot, &visible, "Café Lulo").len(), 0);
     }
 
     #[test]

@@ -312,12 +312,14 @@ pub const PASTE_MATCH_STYLE_ACTION: &str = "rmac_ui::PasteAndMatchStyle";
 const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Application",
-        items: &[item!(
-            "Settings…",
-            "text_editor::ShowSettings",
-            "⌘,",
-            separator
-        )],
+        items: &[
+            item!("Settings…", "text_editor::ShowSettings", "⌘,", separator),
+            item!(
+                "Quit and Keep Windows",
+                "text_editor::QuitAndKeepWindows",
+                "⌥⌘Q"
+            ),
+        ],
     },
     MenuSpec {
         label: "File",
@@ -337,8 +339,16 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             item!("Save…", "text_editor::SaveFile", "⌘S", separator),
             item!("Duplicate", "text_editor::DuplicateDocument", "⇧⌘S"),
             item!("Save As…", "text_editor::SaveFileAs", "⌥⇧⌘S"),
+            item!("Rename…", "text_editor::RenameDocument", "", separator),
+            item!("Move To…", "text_editor::MoveToFolder", ""),
+            submenu!(
+                "Revert To",
+                "text_editor::RevertToMenu",
+                [item!("Last Saved", "text_editor::RevertToLastSaved", "")]
+            ),
             item!("Export as PDF…", "text_editor::ExportPdf", "", separator),
-            item!("Print…", "text_editor::PrintFile", "⌘P", separator),
+            item!("Page Setup…", "text_editor::OpenPageSetup", "⇧⌘P"),
+            item!("Print…", "text_editor::PrintFile", "⌘P"),
         ],
     },
     MenuSpec {
@@ -406,6 +416,23 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                     item!("Smaller", "text_editor::DecreaseFont", "⌘-"),
                 ]
             ),
+            // Lulo's document model has no per-paragraph attributes
+            // (TE-03/TE-14): these alignment/ruler/spacing commands apply
+            // to the whole document at once, gated by Make Rich Text below.
+            submenu!(
+                "Text",
+                "text_editor::TextFormatMenu",
+                [
+                    item!("Align Left", "text_editor::AlignLeft", "⌘{"),
+                    item!("Centre", "text_editor::AlignCentre", "⌘|"),
+                    item!("Align Right", "text_editor::AlignRight", "⌘}"),
+                    item!("Show Ruler", "text_editor::ShowRuler", "⌘R", separator),
+                    item!("Copy Ruler", "text_editor::CopyRuler", "⌃⌘C"),
+                    item!("Paste Ruler", "text_editor::PasteRuler", "⌃⌘V"),
+                    item!("Spacing…", "text_editor::OpenSpacing", ""),
+                ]
+            ),
+            item!("Make Rich Text", "text_editor::ToggleRichText", "⇧⌘T"),
             item!("Wrap to Page", "text_editor::ToggleWrapToPage", "⇧⌘W"),
             item!("Prevent Editing", "text_editor::PreventEditing", ""),
         ],
@@ -416,6 +443,12 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             item!("Actual Size", "text_editor::ActualSize", "⌘0"),
             item!("Zoom In", "text_editor::ZoomIn", "⇧⌘."),
             item!("Zoom Out", "text_editor::ZoomOut", "⇧⌘,"),
+            item!(
+                "Use Dark Background for Windows",
+                "text_editor::ToggleDarkBackground",
+                "",
+                separator
+            ),
             item!(
                 "Enter Full Screen",
                 "text_editor::EnterFullScreen",

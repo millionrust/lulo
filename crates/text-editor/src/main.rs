@@ -79,6 +79,28 @@ gpui::actions!(
         SheetEncodingUtf8Bom,
         SheetEncodingUtf16Le,
         SheetEncodingUtf16Be,
+        // Application ▸ Quit and Keep Windows (TXT-MENU-001).
+        QuitAndKeepWindows,
+        // File ▸ Rename…/Move To…/Revert To ▸ Last Saved/Page Setup…
+        // (TXT-MENU-002/003/004/006). Each sheet's own Cancel/Rename/OK and
+        // radio rows are click-handled directly (like the Settings window's
+        // controls), not dispatched as further menu-bar actions.
+        RenameDocument,
+        MoveToFolder,
+        RevertToLastSaved,
+        OpenPageSetup,
+        // Format ▸ Make Rich Text / Make Plain Text (TXT-MENU-075).
+        ToggleRichText,
+        // Format ▸ Text ▸ alignment, ruler and spacing (TXT-MENU-060..074).
+        AlignLeft,
+        AlignCentre,
+        AlignRight,
+        ShowRuler,
+        CopyRuler,
+        PasteRuler,
+        OpenSpacing,
+        // View ▸ Use Dark Background for Windows (TXT-MENU-082).
+        ToggleDarkBackground,
     ]
 );
 

@@ -158,15 +158,48 @@ impl SettingsView {
     }
 
     fn render_new_document(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let plain_selected = !self.settings.rich_text_default;
+        let rich_selected = self.settings.rich_text_default;
         div()
             .child(Self::section_label("Format"))
             .child(
+                // Format ▸ radio row: Plain text (TXT-SETTINGS-013's
+                // sibling), the default new documents open as unless Rich
+                // text is chosen below.
                 div()
-                    .id("settings-plain-text")
+                    .id("settings-format-plain-text")
                     .role(Role::RadioButton)
                     .aria_label("Plain text")
-                    .aria_selected(true)
-                    .child("✓  Plain text"),
+                    .aria_selected(plain_selected)
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .py_1()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.edit(|settings| settings.rich_text_default = false, cx);
+                    }))
+                    .child(if plain_selected { "✓" } else { " " })
+                    .child("Plain text"),
+            )
+            .child(
+                // Format ▸ radio row: Rich text (TXT-SETTINGS-013), the
+                // default [`settings::Settings::rich_text_default`] a new
+                // document window opens with (see
+                // `EditorView::new_with_path`).
+                div()
+                    .id("settings-format-rich-text")
+                    .role(Role::RadioButton)
+                    .aria_label("Rich text")
+                    .aria_selected(rich_selected)
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .py_1()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.edit(|settings| settings.rich_text_default = true, cx);
+                    }))
+                    .child(if rich_selected { "✓" } else { " " })
+                    .child("Rich text"),
             )
             .child(Self::section_label("Window Size"))
             .child(Self::number_row(
@@ -218,6 +251,57 @@ impl SettingsView {
                 |this, cx| this.edit(|s| s.font_size = s.font_size.saturating_add(1).min(32), cx),
                 cx,
             ))
+            .child("Rich text font:")
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .py_1()
+                    .child(format!(
+                        "{} {}",
+                        self.settings.rich_text_font.label(),
+                        self.settings.rich_text_font_size
+                    ))
+                    .child(
+                        Button::new("settings-rich-text-font-change", "Change…")
+                            .small()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.edit(
+                                    |prefs| {
+                                        prefs.rich_text_font = match prefs.rich_text_font {
+                                            settings::RichTextFont::Inter => {
+                                                settings::RichTextFont::JetBrainsMono
+                                            }
+                                            settings::RichTextFont::JetBrainsMono => {
+                                                settings::RichTextFont::Inter
+                                            }
+                                        };
+                                    },
+                                    cx,
+                                );
+                            })),
+                    ),
+            )
+            .child(Self::number_row(
+                "settings-rich-text-font-size",
+                "Size:",
+                self.settings.rich_text_font_size.to_string(),
+                "pt",
+                |this, cx| {
+                    this.edit(
+                        |s| s.rich_text_font_size = s.rich_text_font_size.saturating_sub(1).max(8),
+                        cx,
+                    )
+                },
+                |this, cx| {
+                    this.edit(
+                        |s| s.rich_text_font_size = s.rich_text_font_size.saturating_add(1).min(32),
+                        cx,
+                    )
+                },
+                cx,
+            ))
             .child(Self::section_label("Options"))
             .child(Self::checkbox_row(
                 "settings-wrap-to-page",
@@ -225,6 +309,14 @@ impl SettingsView {
                 self.settings.wrap_to_page,
                 cx.listener(|this, value: &bool, _, cx| {
                     this.edit(|settings| settings.wrap_to_page = *value, cx);
+                }),
+            ))
+            .child(Self::checkbox_row(
+                "settings-show-ruler",
+                "Show ruler",
+                self.settings.show_ruler_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.show_ruler_default = *value, cx);
                 }),
             ))
             .child(

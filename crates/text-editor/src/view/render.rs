@@ -1,5 +1,6 @@
 mod alert;
 mod chrome;
+mod document_dialogs;
 mod find;
 mod rtf;
 mod save_sheet;
@@ -14,14 +15,16 @@ use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
-    document, ActualSize, ClearRecentMenu, CloseAll, CloseBar, CloseWindow, DecreaseFont,
-    DuplicateDocument, EnterFullScreen, ExportPdf, FindNext, FindPrev, IncreaseFont,
-    InsertLineBreak, InsertPageBreak, InsertParagraphBreak, JumpToSelection, NewFile, OpenFile,
-    OpenRecent0, OpenRecent1, OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6,
-    OpenRecent7, OpenRecent8, OpenRecent9, PreventEditing, PrintFile, SaveFile, SaveFileAs,
-    SaveGoToFolder, SelectLine, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8,
-    SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ShowSettings,
-    ToggleFind, ToggleMono, ToggleReplace, ToggleWrapToPage, TransformCapitalise,
+    document, ActualSize, AlignCentre, AlignLeft, AlignRight, ClearRecentMenu, CloseAll, CloseBar,
+    CloseWindow, CopyRuler, DecreaseFont, DuplicateDocument, EnterFullScreen, ExportPdf, FindNext,
+    FindPrev, IncreaseFont, InsertLineBreak, InsertPageBreak, InsertParagraphBreak,
+    JumpToSelection, MoveToFolder, NewFile, OpenFile, OpenPageSetup, OpenRecent0, OpenRecent1,
+    OpenRecent2, OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8,
+    OpenRecent9, OpenSpacing, PasteRuler, PreventEditing, PrintFile, QuitAndKeepWindows,
+    RenameDocument, RevertToLastSaved, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine,
+    SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr,
+    SetLineEndingCrLf, SetLineEndingLf, ShowRuler, ShowSettings, ToggleDarkBackground, ToggleFind,
+    ToggleMono, ToggleReplace, ToggleRichText, ToggleWrapToPage, TransformCapitalise,
     TransformLowercase, TransformUppercase, UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
@@ -35,13 +38,31 @@ const TEXT_INSET_X: f32 = 10.0;
 /// Menlo 11 sets 13 pt lines in TextEdit.
 const PLAIN_LINE_RATIO: f32 = 13.0 / 11.0;
 
-/// NSTextView's text background: #1E1E1E in dark mode (measured), white in
-/// light, untinted by the wallpaper unlike the title bar.
+/// NSTextView's dark-mode paper colour (measured): #1E1E1E.
+fn dark_paper() -> gpui::Hsla {
+    gpui::rgb(0x1e1e1e).into()
+}
+
+/// NSTextView's text background: dark paper in dark mode (measured), white
+/// in light, untinted by the wallpaper unlike the title bar.
 pub(super) fn text_background() -> gpui::Hsla {
     if mac::window().l < 0.5 {
-        gpui::rgb(0x1e1e1e).into()
+        dark_paper()
     } else {
         gpui::rgb(0xffffff).into()
+    }
+}
+
+impl EditorView {
+    /// View ▸ Use Dark Background for Windows (TXT-MENU-082): this
+    /// window's own paper colour, overriding the system appearance with
+    /// the same dark paper `text_background()` already falls back to.
+    pub(super) fn text_background(&self) -> gpui::Hsla {
+        if self.dark_background {
+            dark_paper()
+        } else {
+            text_background()
+        }
     }
 }
 
@@ -77,6 +98,7 @@ impl Render for EditorView {
         let line_height = (size * PLAIN_LINE_RATIO).round();
         let page_width = f32::from(self.page_width_chars) * size * 0.596 + TEXT_INSET_X * 2.0;
         let wrap_to_page = self.wrap_to_page;
+        let ruler = self.ruler;
         let recovery_loading = self.recovery_loading;
         let recovery_error = self.recovery_error.clone();
         let status_notice = self.status_notice.clone();
@@ -186,6 +208,36 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &PreventEditing, _, cx| {
                 this.prevent_editing = !this.prevent_editing;
                 cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &RenameDocument, window, cx| {
+                this.rename_document(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &MoveToFolder, window, cx| this.move_to_folder(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &RevertToLastSaved, window, cx| {
+                this.revert_to_last_saved(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenPageSetup, _, cx| this.open_page_setup(cx)))
+            .on_action(
+                cx.listener(|this, _: &QuitAndKeepWindows, _, cx| this.quit_and_keep_windows(cx)),
+            )
+            .on_action(cx.listener(|this, _: &ToggleRichText, _, cx| this.toggle_rich_text(cx)))
+            .on_action(cx.listener(|this, _: &AlignLeft, _, cx| {
+                this.set_alignment(gpui::TextAlign::Left, cx)
+            }))
+            .on_action(cx.listener(|this, _: &AlignCentre, _, cx| {
+                this.set_alignment(gpui::TextAlign::Center, cx)
+            }))
+            .on_action(cx.listener(|this, _: &AlignRight, _, cx| {
+                this.set_alignment(gpui::TextAlign::Right, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowRuler, _, cx| this.toggle_show_ruler(cx)))
+            .on_action(cx.listener(|this, _: &CopyRuler, _, cx| this.copy_ruler(cx)))
+            .on_action(cx.listener(|this, _: &PasteRuler, _, cx| this.paste_ruler(cx)))
+            .on_action(cx.listener(|this, _: &OpenSpacing, _, cx| this.open_spacing(cx)))
+            .on_action(cx.listener(|this, _: &ToggleDarkBackground, _, cx| {
+                this.toggle_dark_background(cx)
             }))
             .on_action(cx.listener(|this, _: &SetEncodingUtf8, _, cx| {
                 this.set_encoding(document::TextEncoding::Utf8, cx)
@@ -386,7 +438,7 @@ impl Render for EditorView {
                     .min_h(px(0.0))
                     .flex()
                     .flex_col()
-                    .bg(text_background())
+                    .bg(self.text_background())
                     .child(body)
                     .into_any_element()
             } else {
@@ -407,16 +459,22 @@ impl Render for EditorView {
                     .accessible_text_input(&self.input, cx)
                     .flex_1()
                     .min_h(px(0.0))
-                    .bg(text_background())
+                    .v_flex()
+                    .bg(self.text_background())
+                    .when(self.rich_text && self.show_ruler, |body| {
+                        body.child(self.render_ruler_bar(cx))
+                    })
                     .child(
                         TextField::new(&self.input)
                             .large()
-                            .h_full()
+                            .flex_1()
+                            .min_h(px(0.0))
                             .appearance(false)
                             .disabled(!editable)
                             .font_family(font_family)
                             .text_size(px(size))
-                            .line_height(px(line_height))
+                            .text_align(ruler.alignment)
+                            .line_height(px(line_height * ruler.line_spacing))
                             .pl(px(TEXT_INSET_X))
                             .pr(px(TEXT_INSET_X))
                             .pt(px(0.0))
@@ -442,6 +500,27 @@ impl Render for EditorView {
                 d.child(
                     rmac_ui::dialog("text-editor-save-goto", self.render_save_goto(cx))
                         .aria_label("Go to Folder")
+                        .attached(),
+                )
+            })
+            .when(self.rename_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-rename", self.render_rename_dialog(cx))
+                        .aria_label("Rename Document")
+                        .attached(),
+                )
+            })
+            .when(self.page_setup_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-page-setup", self.render_page_setup_dialog(cx))
+                        .aria_label("Page Setup")
+                        .attached(),
+                )
+            })
+            .when(self.spacing_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-spacing", self.render_spacing_dialog(cx))
+                        .aria_label("Spacing")
                         .attached(),
                 )
             })

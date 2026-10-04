@@ -105,6 +105,18 @@ impl EditorView {
                         .into_any_element(),
                 ],
             ),
+            ActiveAlert::ConfirmRevert => (
+                "Revert to the last saved version?".to_owned(),
+                "Your changes since the last save will be lost. This cannot be undone.".into(),
+                vec![
+                    rmac_ui::dialog_button("alert-cancel-revert", "Cancel", Normal)
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_cancel(window, cx)))
+                        .into_any_element(),
+                    rmac_ui::dialog_button("alert-confirm-revert", "Revert", Destructive)
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
+                        .into_any_element(),
+                ],
+            ),
             ActiveAlert::Error { title, message } => (
                 title.to_owned(),
                 message,

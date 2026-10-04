@@ -30,8 +30,8 @@ pub use app_menu::{
 };
 pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{
-    body_bg, double_click_title_bar_action, minimize_focused_window, page, title_bar,
-    title_bar_content, title_bar_drag_region, toolbar, toolbar_group, toolbar_title,
+    body_bg, double_click_title_bar_action, minimize_focused_window, page, quit_application,
+    title_bar, title_bar_content, title_bar_drag_region, toolbar, toolbar_group, toolbar_title,
     traffic_lights, traffic_lights_active, traffic_lights_fixed_size, traffic_lights_origin,
     TrafficLights,
 };

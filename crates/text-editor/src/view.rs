@@ -5,6 +5,8 @@ mod conflicts;
 mod document_io;
 mod document_state;
 mod editing;
+mod file_ops;
+mod format_text;
 mod lifecycle;
 mod long_line_view;
 mod opening;
@@ -38,9 +40,10 @@ use rmac_ui::{InputEvent, InputState, Position, Rope, RopeExt as _};
 use crate::PrintFile;
 use crate::{document, long_lines, recovery, rtf, storage};
 use crate::{
-    ActualSize, CloseAll, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, FindNext,
-    FindPrev, IncreaseFont, JumpToSelection, NewFile, OpenFile, SaveFile, SaveFileAs,
-    SaveGoToFolder, SelectLine, ShowSettings, ToggleFind, ToggleMono, ToggleReplace,
+    ActualSize, AlignCentre, AlignLeft, AlignRight, CloseAll, CloseBar, CloseWindow, CopyRuler,
+    DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont, JumpToSelection, NewFile,
+    OpenFile, OpenPageSetup, PasteRuler, QuitAndKeepWindows, SaveFile, SaveFileAs, SaveGoToFolder,
+    SelectLine, ShowRuler, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleRichText,
     ToggleWrapToPage, UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
@@ -131,11 +134,34 @@ enum ActiveAlert {
     /// Edit as Plain Text (the RTF preview's only way to edit): confirms
     /// before discarding the document's formatting, as TextEdit does.
     ConfirmPlainTextConversion,
+    /// File ▸ Revert To ▸ Last Saved: confirms before discarding unsaved
+    /// edits, since reverting cannot be undone.
+    ConfirmRevert,
     /// A document open/save error — title + message + OK.
     Error {
         title: &'static str,
         message: String,
     },
+}
+
+/// Format ▸ Text's whole-document alignment and line spacing, the "ruler"
+/// (TXT-MENU-071/072/073): Lulo's document model has no per-paragraph
+/// attributes, so a rich-text document's ruler applies to the whole buffer
+/// at once rather than to each paragraph individually.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Ruler {
+    pub(super) alignment: gpui::TextAlign,
+    /// A line-height multiplier over the document's own font size.
+    pub(super) line_spacing: f32,
+}
+
+impl Default for Ruler {
+    fn default() -> Self {
+        Self {
+            alignment: gpui::TextAlign::Left,
+            line_spacing: 1.0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -209,10 +235,37 @@ struct EditorView {
     wrap_to_page: bool,
     prevent_editing: bool,
     page_width_chars: u16,
+    /// Format ▸ Make Rich Text / Make Plain Text (TXT-MENU-075): gates the
+    /// Format ▸ Text submenu (alignment, ruler), as the Mac greys that whole
+    /// submenu out for a plain-text document.
+    rich_text: bool,
+    /// Format ▸ Text's current whole-document alignment and line spacing.
+    ruler: Ruler,
+    /// Format ▸ Text ▸ Show Ruler: shows the alignment/spacing bar under
+    /// the title bar, only while `rich_text` is on.
+    show_ruler: bool,
+    /// View ▸ Use Dark Background for Windows: a per-window paper-colour
+    /// override, independent of the system's light/dark appearance.
+    dark_background: bool,
 
     /// When an `.rtf` is opened, its parsed styled runs for the formatted
     /// preview. `Some` puts the editor in read-only RTF-viewer mode.
     rtf_runs: Option<Vec<rtf::RtfRun>>,
+
+    // File ▸ Rename…
+    rename_open: bool,
+    rename_input: Entity<InputState>,
+    rename_busy: bool,
+    rename_error: Option<SharedString>,
+    // File ▸ Move To…
+    move_busy: bool,
+    // File ▸ Page Setup…
+    page_setup_open: bool,
+    page_setup_letter: bool,
+    page_setup_landscape: bool,
+    page_setup_before: Option<(bool, bool)>,
+    // Format ▸ Text ▸ Spacing…
+    spacing_open: bool,
 
     // Infra
     focus: FocusHandle,
@@ -406,7 +459,12 @@ mod tests {
         std::fs::create_dir(&directory).unwrap();
         let path = directory.join("export.pdf");
 
-        render_pdf_export(&path, "Exported from Text Editor").unwrap();
+        render_pdf_export(
+            &path,
+            "Exported from Text Editor",
+            rmac_print::PageLayout::default(),
+        )
+        .unwrap();
 
         let bytes = std::fs::read(&path).unwrap();
         assert!(bytes.starts_with(b"%PDF"));

@@ -104,6 +104,9 @@ impl EditorView {
             Some(ActiveAlert::ConfirmPlainTextConversion) => {
                 self.perform_edit_as_plain_text(cx);
             }
+            Some(ActiveAlert::ConfirmRevert) => {
+                self.perform_revert(window, cx);
+            }
             Some(ActiveAlert::Error { .. }) | None => {}
         }
         self.refocus_document_after_alert(window, cx);

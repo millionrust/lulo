@@ -567,6 +567,16 @@ def _verify_metainfo(root: Path, identity: str, specification: dict[str, object]
         or rating.attrib != {"type": "oars-1.1"}
     ):
         raise VerificationError(f"AppStream integration fields are invalid: {identity}")
+    # AppStream 1.x (Ubuntu 26.04) no longer takes categories from the
+    # desktop entry: metainfo without them fails `appstreamcli validate`.
+    categories = [
+        category.text for category in component.findall("categories/category")
+    ]
+    if not categories or any(
+        not category or not re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", category)
+        for category in categories
+    ):
+        raise VerificationError(f"AppStream categories are missing: {identity}")
 
 
 def _po_entries(raw: bytes, *, translated: bool) -> dict[str, str]:

@@ -15,6 +15,9 @@
   <launchable type="desktop-id">org.rmac.Notes.desktop</launchable>
   <icon type="stock">org.rmac.Notes</icon>
   <provides><binary>rmac-notes</binary></provides>
+  <categories>
+    <category>Office</category>
+  </categories>
   <url type="homepage">https://github.com/snehacodex/rmac</url>
   <developer id="org.rmac"><name>Lulo OS contributors</name></developer>
   <releases><release version="0.9.0-beta.1" date="2026-09-24"/></releases>

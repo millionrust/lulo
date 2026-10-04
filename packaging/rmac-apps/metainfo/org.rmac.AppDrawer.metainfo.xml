@@ -15,6 +15,9 @@
   <launchable type="desktop-id">org.rmac.AppDrawer.desktop</launchable>
   <icon type="stock">org.rmac.AppDrawer</icon>
   <provides><binary>rmac-app-drawer</binary></provides>
+  <categories>
+    <category>System</category>
+  </categories>
   <url type="homepage">https://github.com/snehacodex/rmac</url>
   <developer id="org.rmac"><name>Lulo OS contributors</name></developer>
   <releases><release version="0.9.0-beta.1" date="2026-09-24"/></releases>

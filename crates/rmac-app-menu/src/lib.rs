@@ -1340,11 +1340,14 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
 const PREVIEW_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
-        items: &[item!(
-            "Quit and Keep Windows",
-            "preview::QuitAndKeepWindows",
-            "⌥⌘Q"
-        )],
+        items: &[
+            item!("Settings…", "preview::ShowSettings", "⌘,"),
+            item!(
+                "Quit and Keep Windows",
+                "preview::QuitAndKeepWindows",
+                "⌥⌘Q"
+            ),
+        ],
     },
     MenuSpec {
         label: "File",
@@ -1370,12 +1373,27 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 [item!("No Document", "preview::RevertMarkup", "")],
                 separator
             ),
-            // PREV-15: the Mac's File menu also has Duplicate, Rename…, Move To…,
-            // Enter Password…, Edit Permissions…, Import from
-            // Camera/Scanner, Take Screenshot ▸, Export…, Share ▸ — none of
-            // those has a working implementation to wire up yet, so none is
-            // listed rather than adding a dead item.
-            item!("Export as PDF…", "preview::ExportAsPdf", "", separator),
+            // PREV-15: the Mac's File menu also has Duplicate, Rename…,
+            // Move To…, Enter Password…, Edit Permissions…, Import from
+            // Camera/Scanner and Share ▸ — none of those has a working
+            // implementation to wire up yet, so none is listed rather than
+            // adding a dead item. Take Screenshot and Export As… now do.
+            submenu!(
+                "Take Screenshot",
+                "preview::TakeScreenshotMenu",
+                [
+                    item!("From Selection…", "preview::TakeScreenshotSelection", ""),
+                    item!("From Window…", "preview::TakeScreenshotWindow", ""),
+                    item!(
+                        "From Entire Screen",
+                        "preview::TakeScreenshotEntireScreen",
+                        ""
+                    ),
+                ],
+                separator
+            ),
+            item!("Export As…", "preview::ExportAs", ""),
+            item!("Export as PDF…", "preview::ExportAsPdf", ""),
             item!("Print…", "preview::PrintDocument", "⌘P", separator),
         ],
     },
@@ -1413,10 +1431,39 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
+            item!("Show Tab Bar", "preview::ShowTabBar", ""),
+            item!("Show All Tabs", "preview::ShowAllTabs", "⇧⌘\\", separator),
             item!("Hide Sidebar", "preview::HideSidebar", "⌥⌘1"),
             item!("Thumbnails", "preview::ShowThumbnails", "⌥⌘2"),
+            item!("Table of Contents", "preview::ShowTableOfContents", "⌥⌘3"),
+            item!(
+                "Highlights and Notes",
+                "preview::ShowHighlightsAndNotes",
+                "⌥⌘4"
+            ),
             item!("Bookmarks", "preview::ShowBookmarks", "⌥⌘5"),
-            item!("Actual Size", "preview::ActualSize", "⌘0", separator),
+            item!("Contact Sheet", "preview::ContactSheet", "⌥⌘6", separator),
+            item!("Continuous Scroll", "preview::ContinuousScroll", "⌘1"),
+            item!("Single Page", "preview::SinglePage", "⌘2"),
+            item!("Two Pages", "preview::TwoPages", "⌘3", separator),
+            // PRV-MENU-035..048: Soft Proof with Profile needs a real ICC
+            // colour-management engine (lcms2 or similar, which links a
+            // system liblcms2 this build has no access to) to do anything
+            // but repaint the same pixels under a different label; faking
+            // the transform would violate the "no stub items" rule, so it
+            // is left out. See docs/parity.md PREV-23.
+            item!(
+                "Show Image Background",
+                "preview::ShowImageBackground",
+                "⌥⌘B"
+            ),
+            item!(
+                "Use Dark Appearance for PDF",
+                "preview::UseDarkAppearanceForPdf",
+                "",
+                separator
+            ),
+            item!("Actual Size", "preview::ActualSize", "⌘0"),
             item!("Actual Size on All", "preview::ActualSizeOnAll", "⌥⌘0"),
             item!("Zoom to Fit", "preview::ZoomToFit", "⌘9"),
             item!("Zoom All to Fit", "preview::ZoomAllToFit", "⌥⌘9"),
@@ -1425,19 +1472,21 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Zoom Out", "preview::ZoomOut", "⌘−"),
             item!("Zoom All Out", "preview::ZoomAllOut", "⌥⌘−"),
             item!(
-                "Show Image Background",
-                "preview::ShowImageBackground",
-                "⌥⌘B",
+                "Zoom to Selection",
+                "preview::ZoomToSelection",
+                "⌘*",
                 separator
             ),
+            item!("Show Markup Toolbar", "preview::ToggleMarkup", "⇧⌘A"),
+            item!("Show Toolbar", "preview::ToggleToolbar", "⌥⌘T"),
             item!(
-                "Show Markup Toolbar",
-                "preview::ToggleMarkup",
-                "⇧⌘A",
+                "Customise Toolbar…",
+                "preview::CustomiseToolbar",
+                "",
                 separator
             ),
+            item!("Slideshow", "preview::Slideshow", "⇧⌘F"),
             item!("Enter Full Screen", "preview::EnterFullScreen", "F"),
-            item!("Show Toolbar", "preview::ToggleToolbar", "⌥⌘T", separator),
         ],
     },
     MenuSpec {
@@ -1458,7 +1507,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         label: "Tools",
         items: &[
             item!("Show Inspector", "preview::ShowInspector", "⌘I"),
-            item!("Add Bookmark", "preview::AddBookmark", "⌘D"),
+            item!("Adjust Size…", "preview::AdjustSize", "", separator),
             submenu!(
                 "Annotate",
                 "preview::AnnotateMenu",
@@ -1470,17 +1519,34 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                         "preview::AnnotateStrikeThrough",
                         "⌃⌘S"
                     ),
-                    item!("Rectangle", "preview::AnnotateRectangle", "⌃⌘R"),
+                    item!("Rectangle", "preview::AnnotateRectangle", "⌃⌘R", separator),
                     item!("Oval", "preview::AnnotateOval", "⌃⌘O"),
                     item!("Line", "preview::AnnotateLine", "⌃⌘I"),
                     item!("Arrow", "preview::AnnotateArrow", "⌃⌘A"),
+                    item!("Polygon", "preview::AnnotatePolygon", ""),
+                    item!("Star", "preview::AnnotateStar", ""),
                     item!("Text", "preview::AnnotateText", "⌃⌘T", separator),
-                    item!("Signature", "preview::AnnotateSignature", ""),
+                    item!("Speech Bubble", "preview::AnnotateSpeechBubble", ""),
+                    item!("Mask", "preview::AnnotateMask", "", separator),
+                    item!("Loupe", "preview::AnnotateLoupe", "⌃⌘L"),
+                    item!("Note", "preview::AnnotateNote", "⌃⌘N", separator),
+                    submenu!(
+                        "Signature",
+                        "preview::SignatureMenu",
+                        [
+                            item!("Add Signature", "preview::AnnotateSignature", ""),
+                            item!("Manage Signatures…", "preview::ManageSignatures", ""),
+                        ]
+                    ),
                 ],
                 separator
             ),
+            item!("Add Bookmark", "preview::AddBookmark", "⌘D", separator),
             item!("Rotate Left", "preview::RotateLeft", "⌘L", separator),
             item!("Rotate Right", "preview::RotateRight", "⌘R"),
+            item!("Flip Horizontal", "preview::FlipHorizontal", ""),
+            item!("Flip Vertical", "preview::FlipVertical", ""),
+            item!("Crop", "preview::Crop", "⌘K"),
         ],
     },
 ];
@@ -2978,6 +3044,36 @@ mod tests {
         assert_eq!(shortcut("Next Item").as_deref(), Some("⌥"));
         assert_eq!(shortcut("Zoom All to Fit").as_deref(), Some("⌥⌘9"));
         assert_eq!(shortcut("Show Markup Toolbar").as_deref(), Some("⇧⌘A"));
+        assert_eq!(shortcut("Settings…").as_deref(), Some("⌘,"));
+        assert_eq!(shortcut("Table of Contents").as_deref(), Some("⌥⌘3"));
+        assert_eq!(shortcut("Highlights and Notes").as_deref(), Some("⌥⌘4"));
+        assert_eq!(shortcut("Contact Sheet").as_deref(), Some("⌥⌘6"));
+        assert_eq!(shortcut("Continuous Scroll").as_deref(), Some("⌘1"));
+        assert_eq!(shortcut("Single Page").as_deref(), Some("⌘2"));
+        assert_eq!(shortcut("Two Pages").as_deref(), Some("⌘3"));
+        assert_eq!(shortcut("Zoom to Selection").as_deref(), Some("⌘*"));
+        assert_eq!(shortcut("Slideshow").as_deref(), Some("⇧⌘F"));
+        assert_eq!(shortcut("Show All Tabs").as_deref(), Some("⇧⌘\\"));
+        assert_eq!(shortcut("Crop").as_deref(), Some("⌘K"));
+        assert_eq!(shortcut("Adjust Size…").as_deref(), Some(""));
+        assert_eq!(shortcut("Export As…").as_deref(), Some(""));
+        let take_screenshot = menus
+            .iter()
+            .find(|menu| menu.label == "File")
+            .and_then(|menu| {
+                menu.items
+                    .iter()
+                    .find(|item| item.label == "Take Screenshot")
+            })
+            .unwrap();
+        assert_eq!(
+            take_screenshot
+                .children
+                .iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            ["From Selection…", "From Window…", "From Entire Screen"]
+        );
         let annotate = menus
             .iter()
             .find(|menu| menu.label == "Tools")
@@ -2990,6 +3086,50 @@ mod tests {
             .unwrap();
         assert_eq!(rectangle.shortcut, "⌃⌘R");
         assert_eq!(rectangle.action, "preview::AnnotateRectangle");
+        let annotate_child = |label: &str| {
+            annotate
+                .children
+                .iter()
+                .find(|item| item.label == label)
+                .map(|item| (item.action.clone(), item.shortcut.clone()))
+        };
+        assert_eq!(
+            annotate_child("Polygon"),
+            Some(("preview::AnnotatePolygon".into(), "".into()))
+        );
+        assert_eq!(
+            annotate_child("Star"),
+            Some(("preview::AnnotateStar".into(), "".into()))
+        );
+        assert_eq!(
+            annotate_child("Speech Bubble"),
+            Some(("preview::AnnotateSpeechBubble".into(), "".into()))
+        );
+        assert_eq!(
+            annotate_child("Mask"),
+            Some(("preview::AnnotateMask".into(), "".into()))
+        );
+        assert_eq!(
+            annotate_child("Loupe"),
+            Some(("preview::AnnotateLoupe".into(), "⌃⌘L".into()))
+        );
+        assert_eq!(
+            annotate_child("Note"),
+            Some(("preview::AnnotateNote".into(), "⌃⌘N".into()))
+        );
+        let signature = annotate
+            .children
+            .iter()
+            .find(|item| item.label == "Signature")
+            .unwrap();
+        assert_eq!(
+            signature
+                .children
+                .iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Add Signature", "Manage Signatures…"]
+        );
         assert_eq!(shortcut("Delete").as_deref(), Some(""));
         assert!(validate_menus(&menus).is_ok());
     }

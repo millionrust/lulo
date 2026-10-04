@@ -10,4 +10,5 @@ pub mod metrics;
 pub mod pdfwriter;
 pub mod poppler;
 pub mod render;
+pub mod settings_store;
 pub mod zoom;

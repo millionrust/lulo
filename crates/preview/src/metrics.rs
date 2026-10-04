@@ -13,6 +13,11 @@ pub const WAYLAND_VISIBLE_WIDTH_RESERVE: f32 = 24.0;
 #[cfg(not(target_os = "linux"))]
 pub const WAYLAND_VISIBLE_WIDTH_RESERVE: f32 = 0.0;
 pub const TOOLBAR_HEIGHT: f32 = 52.0;
+/// View ▸ Show Tab Bar (PRV-MENU-027): the document-name strip's height,
+/// below the toolbar, when this window has more than one open document.
+/// Not independently measured on the Mac; sized to read as one easy
+/// tap/click target, like the toolbar's own 36 pt controls plus padding.
+pub const TAB_BAR_HEIGHT: f32 = 32.0;
 /// Close button centre; the lights sit on a 23 pt pitch.
 pub const TRAFFIC_LIGHT_CENTER: (f32, f32) = (26.0, 26.0);
 

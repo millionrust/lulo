@@ -352,6 +352,9 @@ SETTINGS_FILES = {
     "Weather": [
         "crates/weather/src/settings_window.rs",
     ],
+    "Preview": [
+        "crates/preview/src/settings_window.rs",
+    ],
 }
 
 
@@ -439,6 +442,27 @@ def read_settings_window(app_display_name: str) -> dict:
             for label in ("Blink cursor", "Use Option as Meta Key"):
                 if f'.child("{label}")' in text:
                     labels.append({"kind": "control", "label": label})
+        if app_display_name == "Preview" and path.name == "settings_window.rs":
+            # Button labels pass through the constructor's second argument,
+            # and the "Window background:" row is a plain text child, not
+            # a `.label(...)` call the generic scanner above would catch.
+            for m in re.finditer(r'\.(?:aria_label|child)\("([^"]+)"\)', text):
+                key = ("control", m.group(1))
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "control", "label": m.group(1)})
+            for m in re.finditer(r'Button::new\([^,]+,\s*"([^"]+)"\)', text):
+                key = ("control", m.group(1))
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "control", "label": m.group(1)})
+            # The tab row is built from a (label, Tab::variant) literal
+            # table, not a direct Button::new("...") call.
+            for m in re.finditer(r'\("([^"]+)",\s*Tab::\w+\)', text):
+                key = ("control", m.group(1))
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "control", "label": m.group(1)})
     return {"present": True, "extraction": "heuristic", "controls": labels}
 
 

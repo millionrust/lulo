@@ -849,6 +849,48 @@
       "label": "Purgeable Memory",
       "match": "exact",
       "reason": "This is the macOS VM purgeable allocation class, which Linux does not expose per process."
+    },
+    {
+      "app": "Preview",
+      "label": "Fill",
+      "match": "exact",
+      "reason": "Window ▸ Fill's Mac shortcut is fn⌃F, shown by Accessibility as the plain ⌃F it also is for Centre and Move & Resize (fn does not expose as an AX modifier). PC keyboards have no Globe/fn key, so Lulo's keyd layer substitutes ⌘ for it (ADR 0017, docs/decisions/0017-mac-keyboard.md); bare ⌃-only chords for this family also matter for the arrow keys, where niri already binds ⌃←/→/↑/↓ to Mission Control's Spaces (packaging/rmac-session/shell.kdl), so the whole group keeps the same ⌃⌘ pattern for consistency (WIN-01, docs/parity.md)."
+    },
+    {
+      "app": "Preview",
+      "label": "Centre",
+      "match": "exact",
+      "reason": "Window ▸ Centre's Mac shortcut is fn⌃C, shown by Accessibility as the plain ⌃C fn does not expose as an AX modifier. PC keyboards have no Globe/fn key, so Lulo's keyd layer substitutes ⌘ for it (ADR 0017); see the Fill entry above for the rest of this family's reasoning (WIN-01, docs/parity.md)."
+    },
+    {
+      "app": "Preview",
+      "label": "Left",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Left's Mac shortcut is fn⌃←, shown by Accessibility as plain ⌃←. niri already binds bare ⌃← to Mission Control's \"Previous Space\" (packaging/rmac-session/shell.kdl), and PC keyboards have no Globe/fn key to tell the two apart, so Lulo's keyd layer uses ⌃⌘← instead (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "Preview",
+      "label": "Right",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Right's Mac shortcut is fn⌃→, shown by Accessibility as plain ⌃→. niri already binds bare ⌃→ to Mission Control's \"Next Space\", and PC keyboards have no Globe/fn key to tell the two apart, so Lulo's keyd layer uses ⌃⌘→ instead (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "Preview",
+      "label": "Top",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Top's Mac shortcut is fn⌃↑, shown by Accessibility as plain ⌃↑. niri already binds bare ⌃↑ to Mission Control itself, and PC keyboards have no Globe/fn key to tell the two apart, so Lulo's keyd layer uses ⌃⌘↑ instead (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "Preview",
+      "label": "Bottom",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Bottom's Mac shortcut is fn⌃↓, shown by Accessibility as plain ⌃↓. niri already binds bare ⌃↓ to Mission Control's App Windows, and PC keyboards have no Globe/fn key to tell the two apart, so Lulo's keyd layer uses ⌃⌘↓ instead (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "Preview",
+      "label": "Return to Previous Size",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Return to Previous Size's Mac shortcut is fn⌃R, shown by Accessibility as plain ⌃R (fn does not expose as an AX modifier). PC keyboards have no Globe/fn key, so Lulo's keyd layer uses ⌃⇧⌘R instead, matching the rest of this family (ADR 0017, WIN-01 in docs/parity.md)."
     }
   ]
 }

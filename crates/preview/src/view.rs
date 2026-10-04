@@ -25,15 +25,20 @@ use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
-    ActualSize, ActualSizeOnAll, AddBookmark, AnnotateArrow, AnnotateHighlight, AnnotateLine,
-    AnnotateOval, AnnotateRectangle, AnnotateSignature, AnnotateStrikeThrough, AnnotateText,
-    AnnotateUnderline, Back, CloseAll, CloseSelected, CloseWindow, Copy, DeleteSelection,
-    EnterFullScreen, ExportAsPdf, Find, FindNext, FindPrevious, Forward, GoToPage, HideSidebar,
-    JumpToSelection, MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument,
-    PreviousItem, PrintDocument, RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs,
-    SaveMarkup, SelectAll, ShowBookmarks, ShowImageBackground, ShowInspector, ShowThumbnails,
-    ToggleMarkup, ToggleToolbar, UndoMarkup, UseSelectionForFind, ZoomAllIn, ZoomAllOut,
-    ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit,
+    ActualSize, ActualSizeOnAll, AddBookmark, AdjustSize, AnnotateArrow, AnnotateHighlight,
+    AnnotateLine, AnnotateLoupe, AnnotateMask, AnnotateNote, AnnotateOval, AnnotatePolygon,
+    AnnotateRectangle, AnnotateSignature, AnnotateSpeechBubble, AnnotateStar,
+    AnnotateStrikeThrough, AnnotateText, AnnotateUnderline, Back, CloseAll, CloseSelected,
+    CloseWindow, ContactSheet, ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection,
+    EnterFullScreen, ExportAs, ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal,
+    FlipVertical, Forward, GoToPage, HideSidebar, JumpToSelection, ManageSignatures, MoveToTrash,
+    NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
+    RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll, ShowAllTabs,
+    ShowBookmarks, ShowHighlightsAndNotes, ShowImageBackground, ShowInspector, ShowTabBar,
+    ShowTableOfContents, ShowThumbnails, SinglePage, Slideshow, TakeScreenshotEntireScreen,
+    TakeScreenshotSelection, TakeScreenshotWindow, ToggleMarkup, ToggleToolbar, TwoPages,
+    UndoMarkup, UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit,
+    ZoomIn, ZoomOut, ZoomToFit, ZoomToSelection,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -62,8 +67,24 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::HideSidebar",
         "preview::ShowThumbnails",
         "preview::ShowBookmarks",
+        "preview::ShowTableOfContents",
+        "preview::ShowHighlightsAndNotes",
+        "preview::ShowTabBar",
+        "preview::ShowAllTabs",
         "preview::AddBookmark",
         "preview::ShowImageBackground",
+        "preview::UseDarkAppearanceForPdf",
+        "preview::ContinuousScroll",
+        "preview::SinglePage",
+        "preview::TwoPages",
+        "preview::ContactSheet",
+        "preview::Slideshow",
+        "preview::CustomiseToolbar",
+        "preview::ZoomToSelection",
+        "preview::AdjustSize",
+        "preview::FlipHorizontal",
+        "preview::FlipVertical",
+        "preview::Crop",
         "preview::AnnotateHighlight",
         "preview::AnnotateUnderline",
         "preview::AnnotateStrikeThrough",
@@ -73,6 +94,14 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::AnnotateOval",
         "preview::AnnotateLine",
         "preview::AnnotateText",
+        "preview::AnnotatePolygon",
+        "preview::AnnotateStar",
+        "preview::AnnotateSpeechBubble",
+        "preview::AnnotateMask",
+        "preview::AnnotateLoupe",
+        "preview::AnnotateNote",
+        "preview::ManageSignatures",
+        "preview::ExportAs",
         "preview::ActualSize",
         "preview::ZoomToFit",
         "preview::ZoomIn",
@@ -261,6 +290,72 @@ struct Slot {
     text: TextState,
     markup: Markup,
     markup_original: Option<PathBuf>,
+    /// View ▸ Table of Contents: `None` until first requested (it is read
+    /// from the PDF's `/Outlines` off the UI thread), then the flattened
+    /// outline — empty when the PDF has none.
+    toc: Option<Vec<markup::OutlineEntry>>,
+    toc_loading: bool,
+}
+
+/// View's page-layout radio group (Single Page / Two Pages / Contact
+/// Sheet), kept on `PreviewView` since Preview shows one layout per
+/// window regardless of which open document is frontmost (like the
+/// existing `image_background` toggle). Continuous Scroll is a separate,
+/// independent checkbox (`PreviewView::continuous_scroll`): e.g. Two
+/// Pages + Continuous Scroll shows spreads that scroll continuously,
+/// matching macOS Preview.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PageMode {
+    Single,
+    Two,
+    Contact,
+}
+
+/// Collapses every page outside what `mode`/`continuous` should show to
+/// zero size, keeping the full, globally-indexed array (markup and text
+/// selection address pages by their position in the whole document, so
+/// the array cannot simply be truncated). A collapsed page still takes
+/// its [`layout::PAGE_MARGIN`], so [`layout::scroll_to_page`] still lands
+/// the real page at the top of the viewport; it just scrolls past empty
+/// space to get there, the same cost as scrolling there in Continuous
+/// Scroll. Contact Sheet does not use this (see `render_contact_sheet`).
+fn display_page_sizes(
+    sizes: Vec<(f32, f32)>,
+    mode: PageMode,
+    continuous: bool,
+    current_page: usize,
+) -> Vec<(f32, f32)> {
+    if continuous || mode == PageMode::Contact || sizes.is_empty() {
+        return sizes;
+    }
+    let current_page = current_page.min(sizes.len() - 1);
+    let visible = if mode == PageMode::Two {
+        let start = current_page - current_page % 2;
+        start..(start + 2).min(sizes.len())
+    } else {
+        current_page..(current_page + 1).min(sizes.len())
+    };
+    sizes
+        .into_iter()
+        .enumerate()
+        .map(|(index, size)| {
+            if visible.contains(&index) {
+                size
+            } else {
+                (0.0, 0.0)
+            }
+        })
+        .collect()
+}
+
+/// [`layout::continuous`] for Single Page, [`layout::spreads`] for Two
+/// Pages — Contact Sheet never reaches this (it has its own grid layout).
+fn page_layout(sizes: &[(f32, f32)], mode: PageMode, scale: f32, width: f32) -> layout::PageLayout {
+    if mode == PageMode::Two {
+        layout::spreads(sizes, scale, width)
+    } else {
+        layout::continuous(sizes, scale, width)
+    }
 }
 
 /// A navigation destination survives reordering of the open-document list.
@@ -289,11 +384,22 @@ impl Slot {
             text: TextState::NotLoaded,
             markup: Markup::default(),
             markup_original: None,
+            toc: None,
+            toc_loading: false,
         }
     }
 
     fn loaded(&self) -> Option<&Loaded> {
         match &self.state {
+            SlotState::Ready(loaded) => Some(loaded),
+            _ => None,
+        }
+    }
+
+    /// Mutable access for Tools ▸ Crop / Adjust Size / Flip Horizontal /
+    /// Flip Vertical, which edit `ImageContent::pixels` in place.
+    fn loaded_mut(&mut self) -> Option<&mut Loaded> {
+        match &mut self.state {
             SlotState::Ready(loaded) => Some(loaded),
             _ => None,
         }
@@ -456,12 +562,67 @@ pub(crate) struct PreviewView {
     save_as_busy: bool,
     #[cfg(target_os = "linux")]
     clipboard_checked: bool,
+    /// View ▸ Single Page / Two Pages / Contact Sheet and the independent
+    /// Continuous Scroll checkbox (PRV-MENU-031..034, 052's neighbours).
+    page_mode: PageMode,
+    continuous_scroll: bool,
+    /// View ▸ Use Dark Appearance for PDF (PRV-MENU-049): inverts the
+    /// rendered page bitmap. Seeded from Settings ▸ PDF for a new window.
+    dark_appearance_for_pdf: bool,
+    /// View ▸ Slideshow (PRV-MENU-052): full-screen, one page/image at a
+    /// time, with its own Next/Previous and Esc-to-exit.
+    slideshow: bool,
+    /// View ▸ Show Tab Bar (PRV-MENU-027): forces the tab strip visible
+    /// even with a single open document.
+    tab_bar_shown: bool,
+    /// View ▸ Show All Tabs (PRV-MENU-028): an Exposé-style grid of every
+    /// open document in this window.
+    show_all_tabs: bool,
+    /// View ▸ Customise Toolbar… (PRV-MENU-051): which built-in toolbar
+    /// controls are hidden, persisted to Settings on close.
+    customise_toolbar_open: bool,
+    hidden_toolbar_items: std::collections::BTreeSet<String>,
+    /// Tools ▸ Annotate ▸ Loupe (PRV-MENU-063): a live magnifier overlay
+    /// that follows the pointer while active; it is a viewing aid, not a
+    /// saved PDF annotation.
+    loupe_active: bool,
+    loupe_position: Option<(f32, f32)>,
+    /// Settings ▸ General ▸ Window background, applied in place of the
+    /// theme's default document colour once Settings has loaded. `None`
+    /// until then (and briefly at launch), so the very first frame still
+    /// paints something sensible via the theme default.
+    window_background: Option<u32>,
+    /// Tools ▸ Adjust Size… (PRV-MENU-054): a width/height sheet, modelled
+    /// on Go to Page…. Images only; a crop/resize edits
+    /// `ImageContent::pixels` in place like Rotate (PREV-04), visible at
+    /// once but not yet written back to the source file by Save.
+    adjust_size_open: bool,
+    adjust_size_width: Entity<InputState>,
+    adjust_size_height: Entity<InputState>,
+    /// Tools ▸ Crop (⌘K, PRV-MENU-068): a centred width/height crop (the
+    /// Mac's own Crop is an interactive drag handle on the image itself;
+    /// Preview has no selection-rectangle tool yet (PRV-MENU-055..058 are
+    /// out of this change's scope), so this asks for the kept size instead
+    /// and crops that much out of the middle).
+    crop_open: bool,
+    crop_width: Entity<InputState>,
+    crop_height: Entity<InputState>,
+    /// Tools ▸ Annotate ▸ Signature ▸ Manage Signatures… (PRV-MENU-065): a
+    /// sheet listing the reusable signatures captured so far, each
+    /// removable.
+    manage_signatures_open: bool,
+    /// File ▸ Export As… (PRV-MENU-013): true while the picker/background
+    /// re-encode is running, so the menu item disables rather than
+    /// re-entering.
+    export_as_busy: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SidebarMode {
     Thumbnails,
     Bookmarks,
+    TableOfContents,
+    HighlightsAndNotes,
 }
 
 #[derive(Clone, Copy)]
@@ -503,6 +664,11 @@ impl PreviewView {
         self.toolbar_height()
             + if self.toolbar_shown && self.markup_shown {
                 48.0
+            } else {
+                0.0
+            }
+            + if self.tab_bar_shown && self.slots.len() > 1 {
+                metrics::TAB_BAR_HEIGHT
             } else {
                 0.0
             }
@@ -1219,6 +1385,26 @@ impl PreviewView {
             }
         })
         .detach();
+        let adjust_size_width = cx.new(|cx| InputState::new(window, cx).placeholder("Width"));
+        let adjust_size_height = cx.new(|cx| InputState::new(window, cx).placeholder("Height"));
+        let crop_width = cx.new(|cx| InputState::new(window, cx).placeholder("Width"));
+        let crop_height = cx.new(|cx| InputState::new(window, cx).placeholder("Height"));
+        for input in [&adjust_size_width, &adjust_size_height] {
+            cx.subscribe(input, |this, _, event: &InputEvent, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    this.submit_adjust_size(cx);
+                }
+            })
+            .detach();
+        }
+        for input in [&crop_width, &crop_height] {
+            cx.subscribe(input, |this, _, event: &InputEvent, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    this.submit_crop(cx);
+                }
+            })
+            .detach();
+        }
         let markup_text_input = cx.new(|cx| InputState::new(window, cx).placeholder("Text"));
         cx.subscribe(&markup_text_input, |this, _, event: &InputEvent, cx| {
             if let InputEvent::Change = event {
@@ -1291,13 +1477,54 @@ impl PreviewView {
             save_as_busy: false,
             #[cfg(target_os = "linux")]
             clipboard_checked: false,
+            page_mode: PageMode::Single,
+            continuous_scroll: true,
+            dark_appearance_for_pdf: false,
+            slideshow: false,
+            tab_bar_shown: false,
+            show_all_tabs: false,
+            customise_toolbar_open: false,
+            hidden_toolbar_items: std::collections::BTreeSet::new(),
+            loupe_active: false,
+            loupe_position: None,
+            window_background: None,
+            adjust_size_open: false,
+            adjust_size_width,
+            adjust_size_height,
+            crop_open: false,
+            crop_width,
+            crop_height,
+            manage_signatures_open: false,
+            export_as_busy: false,
         };
         for index in 0..view.slots.len() {
             view.start_load(index, cx);
         }
         view.load_signatures(cx);
+        view.load_settings(cx);
         window.focus(&view.page_focus, cx);
         view
+    }
+
+    /// Applies Settings ▸ General/Images/PDF's saved defaults to this
+    /// window once they have loaded off the UI thread: the window
+    /// background colour, and the Show Image Background / Use Dark
+    /// Appearance for PDF defaults for whichever document is open when
+    /// Settings has not yet been changed in this session.
+    fn load_settings(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let settings = blocking::unblock(rmac_preview::settings_store::load_settings)
+                .await
+                .unwrap_or_default();
+            let _ = this.update(cx, |this, cx| {
+                this.window_background = Some(settings.window_background);
+                this.image_background = settings.show_image_background_default;
+                this.dark_appearance_for_pdf = settings.dark_appearance_for_pdf_default;
+                this.hidden_toolbar_items = settings.hidden_toolbar_items.into_iter().collect();
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn slot(&self) -> Option<&Slot> {
@@ -1512,7 +1739,13 @@ impl PreviewView {
         }
         let Some(slot) = self.slot() else { return };
         let scale = slot.zoom.resolve(slot.fit_scale(self.viewport));
-        let layout = layout::continuous(&slot.page_sizes(), scale, self.viewport.0);
+        let sizes = display_page_sizes(
+            slot.page_sizes(),
+            self.page_mode,
+            self.continuous_scroll,
+            page,
+        );
+        let layout = page_layout(&sizes, self.page_mode, scale, self.viewport.0);
         let top = layout::scroll_to_page(&layout.pages, page);
         let x = -f32::from(self.scroll.offset().x);
         self.scroll.set_offset(point(px(-x), px(-top)));
@@ -1686,6 +1919,488 @@ impl PreviewView {
         self.sidebar = true;
         self.sidebar_mode = SidebarMode::Bookmarks;
         cx.notify();
+    }
+
+    /// View ▸ Table of Contents (⌥⌘3, PRV-MENU-029): the PDF's own
+    /// `/Outlines`, read off the UI thread the first time it is shown for
+    /// this document and then cached on the slot.
+    fn show_table_of_contents(&mut self, cx: &mut Context<Self>) {
+        if self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+            return;
+        }
+        self.sidebar = true;
+        self.sidebar_mode = SidebarMode::TableOfContents;
+        let Some(slot) = self.slot() else {
+            cx.notify();
+            return;
+        };
+        if slot.toc.is_none() && !slot.toc_loading {
+            let id = slot.id;
+            let path = slot.path.clone();
+            if let Some(slot) = self.slot_mut() {
+                slot.toc_loading = true;
+            }
+            cx.spawn(async move |this, cx| {
+                let entries = blocking::unblock(move || markup::read_outline(&path)).await;
+                let _ = this.update(cx, |this, cx| {
+                    if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                        slot.toc_loading = false;
+                        slot.toc = Some(entries);
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+        cx.notify();
+    }
+
+    /// View ▸ Highlights and Notes (⌥⌘4, PRV-MENU-030): every Highlight,
+    /// Underline, Strike Through and Note annotation already on this PDF,
+    /// listed in page order — no separate storage, it reads the same
+    /// `Markup` the Markup toolbar edits.
+    fn show_highlights_and_notes(&mut self, cx: &mut Context<Self>) {
+        if self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+            return;
+        }
+        self.sidebar = true;
+        self.sidebar_mode = SidebarMode::HighlightsAndNotes;
+        cx.notify();
+    }
+
+    // ---- page layout: Single Page / Two Pages / Contact Sheet / Continuous
+    // Scroll (PRV-MENU-031..034) --------------------------------------------
+
+    fn set_page_mode(&mut self, mode: PageMode, cx: &mut Context<Self>) {
+        if self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+            return;
+        }
+        self.page_mode = mode;
+        cx.notify();
+    }
+
+    fn toggle_continuous_scroll(&mut self, cx: &mut Context<Self>) {
+        if self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+            return;
+        }
+        self.continuous_scroll = !self.continuous_scroll;
+        cx.notify();
+    }
+
+    /// View ▸ Use Dark Appearance for PDF (PRV-MENU-049): a cheap RGB
+    /// invert applied while rendering page bitmaps (`render::invert`), not
+    /// a real colour-managed dark mode (Preview has no ICC engine — see
+    /// Soft Proof's note in parity.md). Clears cached bitmaps so already-
+    /// rendered pages pick up the new setting instead of staying stale.
+    fn toggle_dark_appearance_for_pdf(&mut self, cx: &mut Context<Self>) {
+        self.dark_appearance_for_pdf = !self.dark_appearance_for_pdf;
+        if let Some(slot) = self.slots.get_mut(self.selected) {
+            self.garbage
+                .extend(slot.pages.drain().map(|(_, bitmap)| bitmap.image));
+            self.garbage
+                .extend(slot.thumbs.drain().map(|(_, (_, image))| image));
+            slot.pending.clear();
+        }
+        cx.notify();
+    }
+
+    /// View ▸ Zoom to Selection (⌘*, PRV-MENU-050): scales so the current
+    /// PDF text selection's bounding box fills most of the viewport, then
+    /// centres on it — the same word-rect arithmetic Edit ▸ Copy and Find
+    /// already use (`poppler::selection_rects`), just driving the zoom
+    /// level instead of the clipboard.
+    fn zoom_to_selection(&mut self, cx: &mut Context<Self>) {
+        let Some((anchor, focus)) = self.text_selection else {
+            return;
+        };
+        if anchor == focus {
+            return;
+        }
+        let (from, to) = ordered(anchor, focus);
+        let viewport = self.viewport;
+        let page_mode = self.page_mode;
+        let continuous_scroll = self.continuous_scroll;
+        let Some(slot) = self.slots.get_mut(self.selected) else {
+            return;
+        };
+        let TextState::Ready(pages) = &slot.text else {
+            return;
+        };
+        let Some(text_page) = pages.get(from.page) else {
+            return;
+        };
+        let to_pos = (to.page == from.page).then_some((to.word, to.char));
+        let rects = poppler::selection_rects(text_page, Some((from.word, from.char)), to_pos);
+        let Some(bounds) = rects.into_iter().reduce(|a, b| layout::UnitRect {
+            x0: a.x0.min(b.x0),
+            y0: a.y0.min(b.y0),
+            x1: a.x1.max(b.x1),
+            y1: a.y1.max(b.y1),
+        }) else {
+            return;
+        };
+        let bounds = slot.rotation.apply_unit_rect(bounds);
+        let page_sizes = slot.page_sizes();
+        let Some(&page_size) = page_sizes.get(from.page) else {
+            return;
+        };
+        let selection = (
+            ((bounds.x1 - bounds.x0) * page_size.0).max(1.0),
+            ((bounds.y1 - bounds.y0) * page_size.1).max(1.0),
+        );
+        let fit = slot.fit_scale(viewport);
+        let scale =
+            zoom::clamp(((viewport.0 * 0.9) / selection.0).min((viewport.1 * 0.9) / selection.1));
+        slot.zoom = if (scale - fit).abs() < 1e-3 {
+            Zoom::Fit
+        } else {
+            Zoom::Scale(scale)
+        };
+        let sizes = display_page_sizes(page_sizes, page_mode, continuous_scroll, from.page);
+        let layout = page_layout(&sizes, page_mode, scale, viewport.0);
+        let Some(page) = layout.pages.get(from.page) else {
+            return;
+        };
+        let centre_x = page.x + (bounds.x0 + bounds.x1) / 2.0 * page.width;
+        let centre_y = page.y + (bounds.y0 + bounds.y1) / 2.0 * page.height;
+        let x = (centre_x - viewport.0 / 2.0).max(0.0);
+        let y = (centre_y - viewport.1 / 2.0).max(0.0);
+        self.scroll.set_offset(point(px(-x), px(-y)));
+        cx.notify();
+    }
+
+    // ---- Tools ▸ Annotate ▸ Loupe (⌃⌘L, PRV-MENU-063) ----------------------
+
+    /// Toggles a magnifier overlay (`render_loupe`) centred on the open
+    /// page or image — a live viewing aid, not a saved PDF annotation
+    /// like the other Annotate tools.
+    fn toggle_loupe(&mut self, cx: &mut Context<Self>) {
+        if self.slot().and_then(Slot::loaded).is_none() {
+            return;
+        }
+        self.loupe_active = !self.loupe_active;
+        self.loupe_position = None;
+        cx.notify();
+    }
+
+    /// Clicking a PDF page while the Loupe is active moves the magnifier
+    /// to that point (`render_loupe` samples around it instead of the
+    /// page centre). Images have no click-to-page-point mapping yet, so
+    /// the Loupe stays centred for them.
+    fn set_loupe_position(
+        &mut self,
+        screen_position: gpui::Point<gpui::Pixels>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some((_, point)) = self.screen_to_page_point(screen_position) {
+            self.loupe_position = Some(point);
+            cx.notify();
+        }
+    }
+
+    // ---- Tools ▸ Adjust Size… / Crop / Flip (PRV-MENU-054/068/066/067) -----
+
+    /// Applies a pixel-space edit to the open image in place: replaces
+    /// `ImageContent::pixels`/`size`, rebuilds its thumbnail, and drops the
+    /// slot's cached display bitmap so it re-renders from the edited
+    /// pixels. Images only, like Rotate (PDFs have no equivalent pixel
+    /// buffer to edit). The edit is visible at once but, like Rotate
+    /// (PREV-04), is not yet written back to the source file by Save —
+    /// Save/Save As still send the original bytes.
+    fn edit_image(
+        &mut self,
+        edit: impl FnOnce(&image::RgbaImage) -> image::RgbaImage,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(slot) = self.slots.get_mut(self.selected) else {
+            return;
+        };
+        let Some(loaded) = slot.loaded_mut() else {
+            return;
+        };
+        let Content::Image(image) = &mut loaded.content else {
+            return;
+        };
+        let edited = edit(&image.pixels);
+        image.size = edited.dimensions();
+        image.thumbnail = render::image_thumbnail(&edited);
+        image.pixels = Arc::new(edited);
+        if let Some((_, old)) = slot.display.take() {
+            self.garbage.push(old);
+        }
+        cx.notify();
+    }
+
+    fn flip_horizontal(&mut self, cx: &mut Context<Self>) {
+        self.edit_image(render::flip_horizontal, cx);
+    }
+
+    fn flip_vertical(&mut self, cx: &mut Context<Self>) {
+        self.edit_image(render::flip_vertical, cx);
+    }
+
+    fn image_pixel_size(&self) -> Option<(u32, u32)> {
+        match &self.slot()?.loaded()?.content {
+            Content::Image(image) => Some(image.size),
+            Content::Pdf(_) => None,
+        }
+    }
+
+    fn open_adjust_size(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((width, height)) = self.image_pixel_size() else {
+            return;
+        };
+        self.adjust_size_open = true;
+        self.adjust_size_width.update(cx, |state, cx| {
+            state.set_value(width.to_string(), window, cx);
+        });
+        self.adjust_size_height.update(cx, |state, cx| {
+            state.set_value(height.to_string(), window, cx);
+            state.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    fn close_adjust_size(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.adjust_size_open = false;
+        window.focus(&self.page_focus, cx);
+        cx.notify();
+    }
+
+    fn submit_adjust_size(&mut self, cx: &mut Context<Self>) {
+        let width = self
+            .adjust_size_width
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<u32>();
+        let height = self
+            .adjust_size_height
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<u32>();
+        if let (Ok(width), Ok(height)) = (width, height) {
+            if width > 0 && height > 0 {
+                self.edit_image(|pixels| render::adjust_size(pixels, width, height), cx);
+            }
+        }
+        self.adjust_size_open = false;
+        cx.notify();
+    }
+
+    fn open_crop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((width, height)) = self.image_pixel_size() else {
+            return;
+        };
+        self.crop_open = true;
+        self.crop_width.update(cx, |state, cx| {
+            state.set_value(width.to_string(), window, cx);
+        });
+        self.crop_height.update(cx, |state, cx| {
+            state.set_value(height.to_string(), window, cx);
+            state.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    fn close_crop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.crop_open = false;
+        window.focus(&self.page_focus, cx);
+        cx.notify();
+    }
+
+    /// Crops to the requested width/height, centred in the current image
+    /// (PRV-MENU-068's note on `crop_open` explains why this is a kept-
+    /// size crop rather than the Mac's drag-rectangle one).
+    fn submit_crop(&mut self, cx: &mut Context<Self>) {
+        let width = self.crop_width.read(cx).value().trim().parse::<u32>();
+        let height = self.crop_height.read(cx).value().trim().parse::<u32>();
+        if let (Ok(width), Ok(height)) = (width, height) {
+            if width > 0 && height > 0 {
+                self.edit_image(
+                    |pixels| {
+                        let (current_width, current_height) = pixels.dimensions();
+                        let x = current_width.saturating_sub(width) / 2;
+                        let y = current_height.saturating_sub(height) / 2;
+                        render::crop(pixels, x, y, width, height)
+                    },
+                    cx,
+                );
+            }
+        }
+        self.crop_open = false;
+        cx.notify();
+    }
+
+    // ---- Tools ▸ Annotate ▸ Signature ▸ Manage Signatures… (PRV-MENU-065) --
+
+    fn open_manage_signatures(&mut self, cx: &mut Context<Self>) {
+        self.manage_signatures_open = true;
+        cx.notify();
+    }
+
+    fn close_manage_signatures(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.manage_signatures_open = false;
+        window.focus(&self.page_focus, cx);
+        cx.notify();
+    }
+
+    fn delete_signature(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index >= self.signatures.len() {
+            return;
+        }
+        self.signatures.remove(index);
+        if self.signature_active >= self.signatures.len() {
+            self.signature_active = 0;
+        }
+        self.save_signatures(cx);
+        cx.notify();
+    }
+
+    // ---- View ▸ Show Tab Bar / Show All Tabs (PRV-MENU-027/028) -----------
+
+    fn toggle_tab_bar(&mut self, cx: &mut Context<Self>) {
+        self.tab_bar_shown = !self.tab_bar_shown;
+        cx.notify();
+    }
+
+    fn toggle_show_all_tabs(&mut self, cx: &mut Context<Self>) {
+        if self.slots.len() < 2 {
+            return;
+        }
+        self.show_all_tabs = !self.show_all_tabs;
+        cx.notify();
+    }
+
+    fn select_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index < self.slots.len() {
+            self.selected = index;
+            self.show_all_tabs = false;
+            self.clear_search(cx);
+            cx.notify();
+        }
+    }
+
+    // ---- View ▸ Customise Toolbar… (PRV-MENU-051) --------------------------
+
+    fn open_customise_toolbar(&mut self, cx: &mut Context<Self>) {
+        self.customise_toolbar_open = true;
+        cx.notify();
+    }
+
+    fn close_customise_toolbar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.customise_toolbar_open = false;
+        window.focus(&self.page_focus, cx);
+        let hidden: Vec<String> = self.hidden_toolbar_items.iter().cloned().collect();
+        cx.background_executor()
+            .spawn(async move {
+                let mut settings =
+                    rmac_preview::settings_store::load_settings().unwrap_or_default();
+                settings.hidden_toolbar_items = hidden;
+                if let Err(error) = rmac_preview::settings_store::save_settings(&settings) {
+                    eprintln!("rmac-preview: could not save toolbar customisation: {error}");
+                }
+            })
+            .detach();
+        cx.notify();
+    }
+
+    fn toggle_toolbar_item(&mut self, name: &str, cx: &mut Context<Self>) {
+        if !self.hidden_toolbar_items.remove(name) {
+            self.hidden_toolbar_items.insert(name.to_owned());
+        }
+        cx.notify();
+    }
+
+    // ---- View ▸ Slideshow (⇧⌘F, PRV-MENU-052) ------------------------------
+
+    fn toggle_slideshow(&mut self, cx: &mut Context<Self>) {
+        if self.slot().and_then(Slot::loaded).is_none() {
+            return;
+        }
+        self.slideshow = !self.slideshow;
+        cx.notify();
+    }
+
+    fn exit_slideshow(&mut self, cx: &mut Context<Self>) {
+        self.slideshow = false;
+        cx.notify();
+    }
+
+    fn slideshow_step(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let Some(slot) = self.slot() else { return };
+        let count = slot.loaded().map(Loaded::page_count).unwrap_or(0);
+        if count == 0 {
+            return;
+        }
+        let next = (slot.current_page as isize + delta).rem_euclid(count as isize) as usize;
+        self.go_to_page(next, cx);
+    }
+
+    // ---- File ▸ Export As… (PRV-MENU-013) ----------------------------------
+
+    /// Re-encodes the open image to a format chosen from its own file
+    /// extension (png/jpg/jpeg/bmp/gif/tiff/webp) and writes it to a
+    /// picked path — unlike Save As (which copies bytes unchanged), this
+    /// is a real format conversion. PDFs export through Export as PDF…
+    /// instead (that one already sends PDF bytes verbatim).
+    fn export_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.export_as_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        let Some(Content::Image(image)) = slot.loaded().map(|loaded| &loaded.content) else {
+            return;
+        };
+        let pixels = image.pixels.clone();
+        let directory = slot
+            .path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(std::env::temp_dir);
+        let suggested = slot
+            .path
+            .file_stem()
+            .map(|stem| format!("{}.png", stem.to_string_lossy()))
+            .unwrap_or_else(|| "Untitled.png".to_owned());
+        self.export_as_busy = true;
+        cx.notify();
+        let receiver = cx.prompt_for_new_path(&directory, Some(suggested.as_str()));
+        cx.spawn_in(window, async move |this, cx| {
+            let result = match receiver.await {
+                Ok(Ok(Some(path))) => {
+                    blocking::unblock(move || render::export_image(&pixels, &path)).await
+                }
+                _ => Ok(()),
+            };
+            let _ = this.update_in(cx, |this, _, cx| {
+                this.export_as_busy = false;
+                if let Err(error) = result {
+                    eprintln!("rmac-preview: Export As failed: {error}");
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    // ---- File ▸ Take Screenshot ▸ … (PRV-MENU-010/011/012) -----------------
+
+    /// Hands off to the existing `screenshot` CLI/service (the same one
+    /// niri's own screenshot keybindings and ⇧⌘5 use) rather than
+    /// reimplementing capture here. `From Entire Screen`/`From Selection…`
+    /// map directly to its `screen`/`selection` commands; it has no
+    /// separate window-capture word, so `From Window…` reuses the
+    /// interactive selection overlay, which lets the user click a window.
+    fn take_screenshot(command: &'static str) {
+        if let Err(error) = std::process::Command::new("screenshot")
+            .arg(command)
+            .spawn()
+        {
+            eprintln!("rmac-preview: could not start screenshot {command}: {error}");
+        }
     }
 
     fn add_bookmark(&mut self, cx: &mut Context<Self>) {
@@ -2086,7 +2801,13 @@ impl PreviewView {
             return;
         };
         let scale = slot.zoom.resolve(slot.fit_scale(self.viewport));
-        let layout = layout::continuous(&slot.page_sizes(), scale, self.viewport.0);
+        let sizes = display_page_sizes(
+            slot.page_sizes(),
+            self.page_mode,
+            self.continuous_scroll,
+            from.page,
+        );
+        let layout = page_layout(&sizes, self.page_mode, scale, self.viewport.0);
         let Some(page) = layout.pages.get(from.page) else {
             return;
         };
@@ -2110,8 +2831,13 @@ impl PreviewView {
         }
         let left = metrics::document_left(self.sidebar);
         let scale = slot.zoom.resolve(slot.fit_scale(self.viewport));
-        let sizes = slot.page_sizes();
-        let layout = layout::continuous(&sizes, scale, self.viewport.0);
+        let sizes = display_page_sizes(
+            slot.page_sizes(),
+            self.page_mode,
+            self.continuous_scroll,
+            slot.current_page,
+        );
+        let layout = page_layout(&sizes, self.page_mode, scale, self.viewport.0);
         let scroll_x = -f32::from(self.scroll.offset().x);
         let scroll_y = -f32::from(self.scroll.offset().y);
         let doc_x = f32::from(position.x) - left + scroll_x;
@@ -2404,7 +3130,13 @@ impl PreviewView {
         };
         let Some(slot) = self.slot() else { return };
         let scale = slot.zoom.resolve(slot.fit_scale(self.viewport));
-        let layout = layout::continuous(&slot.page_sizes(), scale, self.viewport.0);
+        let sizes = display_page_sizes(
+            slot.page_sizes(),
+            self.page_mode,
+            self.continuous_scroll,
+            found.page,
+        );
+        let layout = page_layout(&sizes, self.page_mode, scale, self.viewport.0);
         let Some(page) = layout.pages.get(found.page) else {
             return;
         };
@@ -2438,6 +3170,9 @@ impl PreviewView {
         let sidebar_height = f32::from(window.viewport_size().height) - self.toolbar_height();
         let scroll_top = -f32::from(self.scroll.offset().y);
         let single = self.slots.len() == 1;
+        let page_mode = self.page_mode;
+        let continuous_scroll = self.continuous_scroll;
+        let dark_appearance_for_pdf = self.dark_appearance_for_pdf;
         let Some(slot) = self.slots.get_mut(self.selected) else {
             return;
         };
@@ -2476,9 +3211,14 @@ impl PreviewView {
             }
             Content::Pdf(info) => {
                 let info = info.clone();
-                let sizes = slot.page_sizes();
+                let sizes = display_page_sizes(
+                    slot.page_sizes(),
+                    page_mode,
+                    continuous_scroll,
+                    slot.current_page,
+                );
                 let scale = slot.zoom.resolve(slot.fit_scale(viewport));
-                let layout = layout::continuous(&sizes, scale, viewport.0);
+                let layout = page_layout(&sizes, page_mode, scale, viewport.0);
                 let visible = layout::visible_pages(&layout.pages, scroll_top, viewport.1, 1);
                 let mut wanted: Vec<(usize, bool, f32)> = Vec::new();
                 for page in visible.clone() {
@@ -2507,6 +3247,23 @@ impl PreviewView {
                         if !slot.thumbs.contains_key(&page) {
                             let pixel_scale = item.thumb.0 / sizes[page].0 * scale_factor;
                             wanted.push((page, true, pixel_scale));
+                        }
+                    }
+                }
+                // Contact Sheet (View ▸ Contact Sheet, PRV-MENU-031): it is
+                // its own grid, not the sidebar's single column, so it is
+                // not worth replicating the sidebar's windowed visibility
+                // math here — just keep requesting whatever is still
+                // missing, up to MAX_THUMBNAILS (evicted above by distance
+                // from the current page).
+                if page_mode == PageMode::Contact {
+                    for (page, size) in sizes.iter().enumerate() {
+                        if !slot.thumbs.contains_key(&page) && size.0 > 0.0 {
+                            wanted.push((
+                                page,
+                                true,
+                                layout::CONTACT_TILE_WIDTH / size.0 * scale_factor,
+                            ));
                         }
                     }
                 }
@@ -2545,7 +3302,19 @@ impl PreviewView {
                         let rendered = cx
                             .background_executor()
                             .spawn(async move {
-                                render::render_page(&path, page, page_size, pixel_scale, rotation)
+                                let mut rendered = render::render_page(
+                                    &path,
+                                    page,
+                                    page_size,
+                                    pixel_scale,
+                                    rotation,
+                                );
+                                if dark_appearance_for_pdf {
+                                    if let Ok(pixels) = &mut rendered {
+                                        render::invert(pixels);
+                                    }
+                                }
+                                rendered
                             })
                             .await;
                         let _ = this.update(cx, |view, cx| {
@@ -2615,6 +3384,43 @@ impl PreviewView {
         }
         let is_pdf = self.slot().and_then(Slot::kind) == Some(Kind::Pdf);
         let page = (self.viewport.1 - LINE_SCROLL).max(LINE_SCROLL);
+        if self.slideshow {
+            match event.keystroke.key.as_str() {
+                "escape" => self.slideshow = false,
+                "left" | "up" => self.slideshow_step(-1, cx),
+                "right" | "down" | "space" => self.slideshow_step(1, cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+            return;
+        }
+        if self.customise_toolbar_open
+            || self.adjust_size_open
+            || self.crop_open
+            || self.manage_signatures_open
+        {
+            if event.keystroke.key == "escape" {
+                if self.customise_toolbar_open {
+                    self.close_customise_toolbar(window, cx);
+                }
+                if self.adjust_size_open {
+                    self.close_adjust_size(window, cx);
+                }
+                if self.crop_open {
+                    self.close_crop(window, cx);
+                }
+                if self.manage_signatures_open {
+                    self.close_manage_signatures(window, cx);
+                }
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.show_all_tabs && event.keystroke.key == "escape" {
+            self.show_all_tabs = false;
+            cx.stop_propagation();
+            return;
+        }
         match event.keystroke.key.as_str() {
             "left" | "up" if !is_pdf => self.step_item(-1, cx),
             "right" | "down" if !is_pdf => self.step_item(1, cx),
@@ -3243,12 +4049,42 @@ impl PreviewView {
             )
     }
 
-    fn render_sidebar(
+    /// The rounded, bordered sidebar frame shared by every sidebar mode
+    /// (Thumbnails' own grid aside — it lays its items out directly), with
+    /// `body` scrolling inside it below the toolbar.
+    fn render_sidebar_panel(
         &self,
         palette: Palette,
         height: f32,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+        id: &'static str,
+        body: AnyElement,
+    ) -> AnyElement {
+        div()
+            .absolute()
+            .left(px(metrics::SIDEBAR_INSET))
+            .top(px(metrics::SIDEBAR_INSET))
+            .w(px(metrics::SIDEBAR_WIDTH))
+            .h(px(height - 2.0 * metrics::SIDEBAR_INSET))
+            .rounded(px(metrics::SIDEBAR_RADIUS))
+            .bg(rgb(palette.sidebar))
+            .border_1()
+            .border_color(rgb(palette.sidebar_edge))
+            .overflow_hidden()
+            .child(
+                div()
+                    .id(id)
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(self.toolbar_height() - metrics::SIDEBAR_INSET))
+                    .bottom_0()
+                    .overflow_y_scroll()
+                    .child(body),
+            )
+            .into_any_element()
+    }
+
+    fn render_sidebar(&self, palette: Palette, height: f32, cx: &mut Context<Self>) -> AnyElement {
         if self.sidebar_mode == SidebarMode::Bookmarks && self.slots.len() == 1 {
             let current_page = self.slot().map_or(0, |slot| slot.current_page);
             let pages = self
@@ -3298,7 +4134,97 @@ impl PreviewView {
                                 }))
                                 .into_any_element()
                         }),
-                );
+                )
+                .into_any_element();
+        }
+        if self.sidebar_mode == SidebarMode::TableOfContents && self.slots.len() == 1 {
+            let body = match self.slot().and_then(|slot| slot.toc.as_ref()) {
+                None => div().p_3().child("Loading…").into_any_element(),
+                Some(entries) if entries.is_empty() => {
+                    div().p_3().child("No Table of Contents").into_any_element()
+                }
+                Some(entries) => div()
+                    .flex()
+                    .flex_col()
+                    .children(entries.iter().cloned().enumerate().map(|(index, entry)| {
+                        let page = entry.page;
+                        div()
+                            .id(("preview-toc", index))
+                            .role(Role::Button)
+                            .aria_label(entry.title.clone())
+                            .px_3()
+                            .py_2()
+                            .pl(px(12.0 + entry.depth as f32 * 14.0))
+                            .truncate()
+                            .child(entry.title)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.go_to_page(page, cx);
+                            }))
+                    }))
+                    .into_any_element(),
+            };
+            return self.render_sidebar_panel(palette, height, "preview-toc-scroll", body);
+        }
+        if self.sidebar_mode == SidebarMode::HighlightsAndNotes && self.slots.len() == 1 {
+            let rows: Vec<(usize, usize, String)> = self
+                .slot()
+                .map(|slot| {
+                    slot.markup
+                        .items
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, item)| {
+                            matches!(
+                                item.tool,
+                                Tool::Highlight
+                                    | Tool::Underline
+                                    | Tool::StrikeThrough
+                                    | Tool::Note
+                            )
+                        })
+                        .map(|(index, item)| {
+                            let kind = match item.tool {
+                                Tool::Highlight => "Highlight",
+                                Tool::Underline => "Underline",
+                                Tool::StrikeThrough => "Strike Through",
+                                _ => "Note",
+                            };
+                            let label = if item.text.trim().is_empty() {
+                                format!("{kind} on page {}", item.page + 1)
+                            } else {
+                                format!("{kind}: {}", item.text)
+                            };
+                            (index, item.page, label)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let body = if rows.is_empty() {
+                div()
+                    .p_3()
+                    .child("No Highlights or Notes")
+                    .into_any_element()
+            } else {
+                div()
+                    .flex()
+                    .flex_col()
+                    .children(rows.into_iter().map(|(markup_index, page, label)| {
+                        div()
+                            .id(("preview-highlight", markup_index))
+                            .role(Role::Button)
+                            .aria_label(label.clone())
+                            .px_3()
+                            .py_2()
+                            .truncate()
+                            .child(label)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.markup_selected = Some(markup_index);
+                                this.go_to_page(page, cx);
+                            }))
+                    }))
+                    .into_any_element()
+            };
+            return self.render_sidebar_panel(palette, height, "preview-highlights-scroll", body);
         }
         // Items: documents when several are open, otherwise the pages.
         let several = self.slots.len() > 1;
@@ -3384,6 +4310,7 @@ impl PreviewView {
                     .on_scroll_wheel(cx.listener(|_, _: &ScrollWheelEvent, _, cx| cx.notify()))
                     .child(div().relative().w_full().h(px(total)).children(children)),
             )
+            .into_any_element()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3452,6 +4379,73 @@ impl PreviewView {
             .into_any_element()
     }
 
+    /// View ▸ Contact Sheet (⌥⌘6, PRV-MENU-031): every page as a grid of
+    /// tiles in the main document area (not the sidebar's single column).
+    /// Clicking a tile jumps to that page and switches back to Single Page,
+    /// the same gesture macOS Preview uses.
+    fn render_contact_sheet(
+        &self,
+        slot: &Slot,
+        palette: Palette,
+        viewport: (f32, f32),
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let sizes = slot.page_sizes();
+        let (tiles, total_height) = layout::contact_sheet(&sizes, viewport.0);
+        let current = slot.current_page;
+        let children = tiles
+            .into_iter()
+            .enumerate()
+            .map(|(page, tile)| {
+                let image = slot.thumbs.get(&page).map(|(_, image)| image.clone());
+                div()
+                    .id(("preview-contact-tile", page))
+                    .absolute()
+                    .left(px(tile.x - 4.0))
+                    .top(px(tile.y - 4.0))
+                    .w(px(tile.width + 8.0))
+                    .h(px(tile.height + 8.0 + layout::THUMB_LABEL))
+                    .p(px(4.0))
+                    .rounded(px(6.0))
+                    .when(page == current, |item| item.bg(rgb(palette.selection)))
+                    .child(
+                        div()
+                            .w(px(tile.width))
+                            .h(px(tile.height))
+                            .rounded(px(3.0))
+                            .overflow_hidden()
+                            .bg(rgb(0xFFFFFF))
+                            .when_some(image, |thumb, image| thumb.child(img(image).size_full())),
+                    )
+                    .child(
+                        div()
+                            .w(px(tile.width))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(metrics::THUMB_LABEL_SIZE))
+                            .text_color(rgb(if page == current {
+                                0xFFFFFF
+                            } else {
+                                palette.thumb_label
+                            }))
+                            .child(format!("{}", page + 1)),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.page_mode = PageMode::Single;
+                        this.go_to_page(page, cx);
+                    }))
+            })
+            .collect::<Vec<_>>();
+        div()
+            .id("preview-contact-sheet")
+            .relative()
+            .w(px(viewport.0))
+            .h(px(total_height.max(viewport.1)))
+            .children(children)
+            .into_any_element()
+    }
+
     fn render_document(
         &mut self,
         palette: Palette,
@@ -3460,7 +4454,12 @@ impl PreviewView {
     ) -> AnyElement {
         let viewport = self.viewport;
         let scroll_top = -f32::from(self.scroll.offset().y);
-        let is_pdf = self.slot().and_then(Slot::kind) == Some(Kind::Pdf);
+        // Contact Sheet has its own click handling (jump to a page) and no
+        // text/markup of its own to select or draw, so the PDF mouse
+        // handlers below (text selection, markup drawing) stay off while
+        // it is showing.
+        let is_pdf = self.page_mode != PageMode::Contact
+            && self.slot().and_then(Slot::kind) == Some(Kind::Pdf);
         let body = match self.slots.get(self.selected) {
             None => self.render_empty_state(palette, cx),
             Some(slot) => match &slot.state {
@@ -3499,9 +4498,18 @@ impl PreviewView {
                             })
                             .into_any_element()
                     }
+                    Content::Pdf(_) if self.page_mode == PageMode::Contact => {
+                        self.render_contact_sheet(slot, palette, viewport, cx)
+                    }
                     Content::Pdf(_) => {
                         let scale = slot.zoom.resolve(slot.fit_scale(viewport));
-                        let layout = layout::continuous(&slot.page_sizes(), scale, viewport.0);
+                        let sizes = display_page_sizes(
+                            slot.page_sizes(),
+                            self.page_mode,
+                            self.continuous_scroll,
+                            slot.current_page,
+                        );
+                        let layout = page_layout(&sizes, self.page_mode, scale, viewport.0);
                         let visible =
                             layout::visible_pages(&layout.pages, scroll_top, viewport.1, 1);
                         let current = layout::current_page(&layout.pages, scroll_top, viewport.1);
@@ -3565,7 +4573,9 @@ impl PreviewView {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, event: &MouseDownEvent, window, cx| {
-                            if !this.markup_mouse_down(event, window, cx) {
+                            if this.loupe_active {
+                                this.set_loupe_position(event.position, window, cx);
+                            } else if !this.markup_mouse_down(event, window, cx) {
                                 this.text_mouse_down(event, window, cx);
                             }
                         }),
@@ -3844,6 +4854,427 @@ impl PreviewView {
                     .child(SharedString::from(format!("Go to page (1–{pages})"))),
             )
             .child(rmac_ui::TextField::new(&self.go_to_page_input).small())
+            .into_any_element()
+    }
+
+    /// Shared card for Tools ▸ Adjust Size… and Tools ▸ Crop (PRV-MENU-054,
+    /// 068): a width/height field pair, modelled on Go to Page's card.
+    /// `Escape` cancels (`on_key_down`); `Enter` in either field submits
+    /// (wired when the two `InputState`s are created in `new`).
+    fn render_size_sheet(
+        &self,
+        palette: Palette,
+        width: f32,
+        height: f32,
+        label: &'static str,
+        width_input: &Entity<InputState>,
+        height_input: &Entity<InputState>,
+    ) -> AnyElement {
+        div()
+            .id("preview-size-sheet")
+            .absolute()
+            .left(px((width - 220.0) / 2.0))
+            .top(px(height / 3.0))
+            .w(px(220.0))
+            .rounded(px(10.0))
+            .bg(rgb(palette.card))
+            .border_1()
+            .border_color(rgb(palette.card_separator))
+            .shadow_lg()
+            .p(px(10.0))
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.glyph))
+                    .child(label),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(div().w(px(42.0)).text_size(px(12.0)).child("Width"))
+                    .child(rmac_ui::TextField::new(width_input).small()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(div().w(px(42.0)).text_size(px(12.0)).child("Height"))
+                    .child(rmac_ui::TextField::new(height_input).small()),
+            )
+            .into_any_element()
+    }
+
+    /// Tools ▸ Annotate ▸ Signature ▸ Manage Signatures… (PRV-MENU-065): the
+    /// reusable signatures, each removable; `Escape` closes it.
+    fn render_manage_signatures(
+        &self,
+        palette: Palette,
+        width: f32,
+        height: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id("preview-manage-signatures")
+            .absolute()
+            .left(px((width - 260.0) / 2.0))
+            .top(px(height / 3.0))
+            .w(px(260.0))
+            .rounded(px(10.0))
+            .bg(rgb(palette.card))
+            .border_1()
+            .border_color(rgb(palette.card_separator))
+            .shadow_lg()
+            .p(px(10.0))
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.glyph))
+                    .child("Manage Signatures"),
+            )
+            .child(if self.signatures.is_empty() {
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgb(palette.subtitle))
+                    .child("No signatures yet")
+                    .into_any_element()
+            } else {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .children(self.signatures.iter().enumerate().map(|(index, _)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .px_2()
+                            .py_1()
+                            .rounded(px(6.0))
+                            .bg(rgb(palette.control_fill))
+                            .child(format!("Signature {}", index + 1))
+                            .child(
+                                div()
+                                    .id(("preview-signature-delete", index))
+                                    .role(Role::Button)
+                                    .aria_label("Delete")
+                                    .text_color(rgb(palette.subtitle))
+                                    .child("Remove")
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.delete_signature(index, cx);
+                                    })),
+                            )
+                    }))
+                    .into_any_element()
+            })
+            .into_any_element()
+    }
+
+    /// View ▸ Customise Toolbar… (PRV-MENU-051): toggles for the built-in
+    /// toolbar sections `render_toolbar` checks `hidden_toolbar_items`
+    /// for. `Escape` closes and saves (`close_customise_toolbar`).
+    fn render_customise_toolbar(
+        &self,
+        palette: Palette,
+        width: f32,
+        height: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        const ITEMS: [(&str, &str); 3] = [
+            ("sidebar", "Sidebar button"),
+            ("markup", "Markup toolbar button"),
+            ("search", "Search field"),
+        ];
+        div()
+            .id("preview-customise-toolbar")
+            .absolute()
+            .left(px((width - 240.0) / 2.0))
+            .top(px(height / 3.0))
+            .w(px(240.0))
+            .rounded(px(10.0))
+            .bg(rgb(palette.card))
+            .border_1()
+            .border_color(rgb(palette.card_separator))
+            .shadow_lg()
+            .p(px(10.0))
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.glyph))
+                    .child("Customise Toolbar"),
+            )
+            .children(ITEMS.into_iter().map(|(key, label)| {
+                let shown = !self.hidden_toolbar_items.contains(key);
+                div()
+                    .id(SharedString::from(format!("preview-customise-item-{key}")))
+                    .role(Role::CheckBox)
+                    .aria_label(label)
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(if shown { "☑" } else { "☐" })
+                    .child(label)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.toggle_toolbar_item(key, cx);
+                    }))
+            }))
+            .into_any_element()
+    }
+
+    /// View ▸ Show Tab Bar (PRV-MENU-027): a horizontal strip of this
+    /// window's open documents, below the toolbar. Shown either when the
+    /// window has several open documents, or when the user forced it on.
+    fn render_tab_bar(
+        &self,
+        palette: Palette,
+        left: f32,
+        width: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id("preview-tab-bar")
+            .absolute()
+            .left(px(left))
+            .top(px(self.toolbar_height()))
+            .w(px((width - left).max(0.0)))
+            .h(px(metrics::TAB_BAR_HEIGHT))
+            .flex()
+            .items_center()
+            .gap(px(4.0))
+            .px(px(6.0))
+            .bg(rgb(palette.window))
+            .border_b_1()
+            .border_color(rgb(palette.divider))
+            .children(self.slots.iter().enumerate().map(|(index, slot)| {
+                let selected = index == self.selected;
+                div()
+                    .id(("preview-tab", index))
+                    .role(Role::Button)
+                    .aria_label(slot.name.clone())
+                    .px(px(10.0))
+                    .py(px(4.0))
+                    .rounded(px(6.0))
+                    .truncate()
+                    .when(selected, |tab| tab.bg(rgb(palette.selection)))
+                    .child(slot.name.clone())
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.select_tab(index, cx);
+                    }))
+            }))
+            .into_any_element()
+    }
+
+    /// View ▸ Show All Tabs (⇧⌘\, PRV-MENU-028): an Exposé-style grid of
+    /// every open document in this window, reusing the Contact Sheet grid
+    /// math (`layout::contact_sheet`) with each slot's own thumbnail.
+    fn render_all_tabs(
+        &self,
+        palette: Palette,
+        width: f32,
+        height: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let sizes: Vec<(f32, f32)> = self
+            .slots
+            .iter()
+            .map(|slot| slot.page_sizes().first().copied().unwrap_or((400.0, 300.0)))
+            .collect();
+        let (tiles, _) = layout::contact_sheet(&sizes, width - 80.0);
+        div()
+            .id("preview-all-tabs")
+            .absolute()
+            .left_0()
+            .top_0()
+            .w(px(width))
+            .h(px(height))
+            .bg(rgba(0x000000CC))
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.show_all_tabs = false;
+                cx.notify();
+            }))
+            .child(
+                div().relative().left(px(40.0)).top(px(40.0)).children(
+                    self.slots
+                        .iter()
+                        .zip(tiles)
+                        .enumerate()
+                        .map(|(index, (slot, tile))| {
+                            let image = image_thumbnail(slot);
+                            div()
+                                .id(("preview-all-tabs-tile", index))
+                                .absolute()
+                                .left(px(tile.x))
+                                .top(px(tile.y))
+                                .w(px(tile.width + 8.0))
+                                .h(px(tile.height + 8.0 + layout::THUMB_LABEL))
+                                .p(px(4.0))
+                                .rounded(px(6.0))
+                                .when(index == self.selected, |item| {
+                                    item.bg(rgb(palette.selection))
+                                })
+                                .child(
+                                    div()
+                                        .w(px(tile.width))
+                                        .h(px(tile.height))
+                                        .rounded(px(3.0))
+                                        .overflow_hidden()
+                                        .bg(rgb(0xFFFFFF))
+                                        .when_some(image, |thumb, image| {
+                                            thumb.child(img(image).size_full())
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .w(px(tile.width))
+                                        .truncate()
+                                        .text_size(px(metrics::THUMB_LABEL_SIZE))
+                                        .text_color(rgb(0xFFFFFF))
+                                        .child(slot.name.clone()),
+                                )
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.select_tab(index, cx);
+                                    window.focus(&this.page_focus, cx);
+                                    cx.stop_propagation();
+                                }))
+                        }),
+                ),
+            )
+            .into_any_element()
+    }
+
+    /// Tools ▸ Annotate ▸ Loupe (⌃⌘L, PRV-MENU-063): a live, round
+    /// magnifier centred on the open page/image at a fixed 2.2× zoom, not
+    /// a saved PDF annotation like the other Annotate tools.
+    fn render_loupe(&self, palette: Palette, width: f32, _height: f32) -> Option<AnyElement> {
+        if !self.loupe_active {
+            return None;
+        }
+        let slot = self.slot()?;
+        const SIZE: f32 = 160.0;
+        const ZOOM_FACTOR: f32 = 2.2;
+        let natural = slot.page_sizes().get(slot.current_page).copied()?;
+        let image = match &slot.loaded()?.content {
+            Content::Image(_) => slot.display.as_ref().map(|(_, image)| image.clone())?,
+            Content::Pdf(_) => slot.pages.get(&slot.current_page)?.image.clone(),
+        };
+        let scaled = (natural.0 * ZOOM_FACTOR, natural.1 * ZOOM_FACTOR);
+        let (unit_x, unit_y) = self.loupe_position.unwrap_or((0.5, 0.5));
+        let left = (SIZE / 2.0 - unit_x * scaled.0).min(0.0);
+        let top = (SIZE / 2.0 - unit_y * scaled.1).min(0.0);
+        Some(
+            div()
+                .id("preview-loupe")
+                .absolute()
+                .left(px(width - SIZE - 20.0))
+                .top(px(20.0))
+                .w(px(SIZE))
+                .h(px(SIZE))
+                .rounded_full()
+                .border_2()
+                .border_color(rgb(palette.card_separator))
+                .shadow_lg()
+                .overflow_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(left))
+                        .top(px(top))
+                        .w(px(scaled.0))
+                        .h(px(scaled.1))
+                        .child(img(image).size_full()),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// View ▸ Slideshow (⇧⌘F, PRV-MENU-052): the current page or image,
+    /// full-bleed over black, with Next/Previous below it. Arrow keys,
+    /// Space and Escape are handled in `on_key_down`; this only draws it.
+    fn render_slideshow(
+        &self,
+        _palette: Palette,
+        width: f32,
+        height: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let image = self.slot().and_then(|slot| match &slot.state {
+            SlotState::Ready(loaded) => match &loaded.content {
+                Content::Image(_) => slot.display.as_ref().map(|(_, image)| image.clone()),
+                Content::Pdf(_) => slot.pages.get(&slot.current_page).map(|b| b.image.clone()),
+            },
+            _ => None,
+        });
+        let natural = self
+            .slot()
+            .and_then(|slot| slot.page_sizes().first().copied());
+        let shown =
+            natural.map(|(w, h)| zoom::fit_contain((w, h), (width - 160.0, height - 120.0)));
+        div()
+            .id("preview-slideshow")
+            .absolute()
+            .left_0()
+            .top_0()
+            .w(px(width))
+            .h(px(height))
+            .bg(rgb(0x000000))
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(px(12.0))
+            .child(match (image, natural, shown) {
+                (Some(image), Some((natural_w, natural_h)), Some(scale)) => div()
+                    .w(px(natural_w * scale))
+                    .h(px(natural_h * scale))
+                    .child(img(image).size_full())
+                    .into_any_element(),
+                _ => div().into_any_element(),
+            })
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(16.0))
+                    .text_color(rgb(0xFFFFFF))
+                    .child(
+                        div()
+                            .id("preview-slideshow-previous")
+                            .role(Role::Button)
+                            .aria_label("Previous")
+                            .child("◀")
+                            .on_click(cx.listener(|this, _, _, cx| this.slideshow_step(-1, cx))),
+                    )
+                    .child(
+                        div()
+                            .id("preview-slideshow-exit")
+                            .role(Role::Button)
+                            .aria_label("Exit Slideshow")
+                            .child("Done")
+                            .on_click(cx.listener(|this, _, _, cx| this.exit_slideshow(cx))),
+                    )
+                    .child(
+                        div()
+                            .id("preview-slideshow-next")
+                            .role(Role::Button)
+                            .aria_label("Next")
+                            .child("▶")
+                            .on_click(cx.listener(|this, _, _, cx| this.slideshow_step(1, cx))),
+                    ),
+            )
             .into_any_element()
     }
 }
@@ -4158,7 +5589,35 @@ impl Render for PreviewView {
                 self.sidebar && self.sidebar_mode == SidebarMode::Bookmarks,
                 cx,
             );
+            rmac_ui::set_menu_checked(
+                "preview::ShowTableOfContents",
+                self.sidebar && self.sidebar_mode == SidebarMode::TableOfContents,
+                cx,
+            );
+            rmac_ui::set_menu_checked(
+                "preview::ShowHighlightsAndNotes",
+                self.sidebar && self.sidebar_mode == SidebarMode::HighlightsAndNotes,
+                cx,
+            );
             rmac_ui::set_menu_checked("preview::ShowImageBackground", self.image_background, cx);
+            rmac_ui::set_menu_checked(
+                "preview::UseDarkAppearanceForPdf",
+                self.dark_appearance_for_pdf,
+                cx,
+            );
+            rmac_ui::set_menu_checked("preview::ShowTabBar", self.tab_bar_shown, cx);
+            rmac_ui::set_menu_checked("preview::ContinuousScroll", self.continuous_scroll, cx);
+            rmac_ui::set_menu_checked(
+                "preview::SinglePage",
+                self.page_mode == PageMode::Single,
+                cx,
+            );
+            rmac_ui::set_menu_checked("preview::TwoPages", self.page_mode == PageMode::Two, cx);
+            rmac_ui::set_menu_checked(
+                "preview::ContactSheet",
+                self.page_mode == PageMode::Contact,
+                cx,
+            );
             for (action, tool) in [
                 ("preview::AnnotateHighlight", Tool::Highlight),
                 ("preview::AnnotateUnderline", Tool::Underline),
@@ -4169,9 +5628,15 @@ impl Render for PreviewView {
                 ("preview::AnnotateOval", Tool::Oval),
                 ("preview::AnnotateLine", Tool::Line),
                 ("preview::AnnotateText", Tool::Text),
+                ("preview::AnnotatePolygon", Tool::Polygon),
+                ("preview::AnnotateStar", Tool::Star),
+                ("preview::AnnotateSpeechBubble", Tool::SpeechBubble),
+                ("preview::AnnotateMask", Tool::Mask),
+                ("preview::AnnotateNote", Tool::Note),
             ] {
                 rmac_ui::set_menu_checked(action, self.markup_tool == tool, cx);
             }
+            rmac_ui::set_menu_checked("preview::AnnotateLoupe", self.loupe_active, cx);
             rmac_ui::set_menu_checked("preview::ToggleMarkup", self.markup_shown, cx);
             rmac_ui::set_menu_checked("preview::ToggleToolbar", self.toolbar_shown, cx);
             #[cfg(target_os = "linux")]
@@ -4293,13 +5758,35 @@ impl Render for PreviewView {
                 "preview::AnnotateOval",
                 "preview::AnnotateLine",
                 "preview::AnnotateText",
+                "preview::AnnotatePolygon",
+                "preview::AnnotateStar",
+                "preview::AnnotateSpeechBubble",
+                "preview::AnnotateMask",
+                "preview::AnnotateNote",
+                "preview::ShowTableOfContents",
+                "preview::ShowHighlightsAndNotes",
+                "preview::ContinuousScroll",
+                "preview::SinglePage",
+                "preview::TwoPages",
+                "preview::ContactSheet",
             ] {
                 rmac_ui::set_menu_enabled(action, pdf, cx);
             }
+            rmac_ui::set_menu_enabled("preview::AnnotateLoupe", loaded, cx);
+            rmac_ui::set_menu_enabled("preview::Slideshow", loaded, cx);
+            let is_image = self
+                .slot()
+                .is_some_and(|slot| matches!(slot.kind(), Some(Kind::Image(_))));
+            rmac_ui::set_menu_enabled("preview::ShowImageBackground", is_image, cx);
+            rmac_ui::set_menu_enabled("preview::FlipHorizontal", is_image, cx);
+            rmac_ui::set_menu_enabled("preview::FlipVertical", is_image, cx);
+            rmac_ui::set_menu_enabled("preview::Crop", is_image, cx);
+            rmac_ui::set_menu_enabled("preview::AdjustSize", is_image, cx);
+            rmac_ui::set_menu_enabled("preview::ExportAs", is_image && !self.export_as_busy, cx);
+            rmac_ui::set_menu_enabled("preview::UseDarkAppearanceForPdf", pdf, cx);
             rmac_ui::set_menu_enabled(
-                "preview::ShowImageBackground",
-                self.slot()
-                    .is_some_and(|slot| matches!(slot.kind(), Some(Kind::Image(_)))),
+                "preview::ZoomToSelection",
+                self.text_selection.is_some_and(|(a, b)| a != b),
                 cx,
             );
             rmac_ui::set_menu_enabled("preview::Back", !self.back.is_empty(), cx);
@@ -4309,13 +5796,17 @@ impl Render for PreviewView {
             rmac_ui::set_menu_enabled("preview::AddBookmark", pdf && !multiple, cx);
             rmac_ui::set_menu_enabled("preview::UseSelectionForFind", selected_text, cx);
             rmac_ui::set_menu_enabled("preview::JumpToSelection", selected_text, cx);
+            rmac_ui::set_menu_enabled("preview::ShowAllTabs", self.slots.len() > 1, cx);
         } else {
             #[cfg(target_os = "linux")]
             {
                 self.clipboard_checked = false;
             }
         }
-        let palette = palette();
+        let mut palette = palette();
+        if let Some(window_background) = self.window_background {
+            palette.document = window_background;
+        }
         let size = window.viewport_size();
         // niri's visible rectangle is narrower than GPUI's Wayland viewport;
         // reserve that difference so pages and right-hand controls remain in
@@ -4465,6 +5956,69 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &AnnotateText, _, cx| {
                 this.choose_annotation(Tool::Text, cx);
             }))
+            .on_action(cx.listener(|this, _: &AnnotatePolygon, _, cx| {
+                this.choose_annotation(Tool::Polygon, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateStar, _, cx| {
+                this.choose_annotation(Tool::Star, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateSpeechBubble, _, cx| {
+                this.choose_annotation(Tool::SpeechBubble, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateMask, _, cx| {
+                this.choose_annotation(Tool::Mask, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateNote, _, cx| {
+                this.choose_annotation(Tool::Note, cx);
+            }))
+            .on_action(cx.listener(|this, _: &AnnotateLoupe, _, cx| this.toggle_loupe(cx)))
+            .on_action(cx.listener(|this, _: &ManageSignatures, _, cx| {
+                this.open_manage_signatures(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowTableOfContents, _, cx| {
+                this.show_table_of_contents(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowHighlightsAndNotes, _, cx| {
+                this.show_highlights_and_notes(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowTabBar, _, cx| this.toggle_tab_bar(cx)))
+            .on_action(cx.listener(|this, _: &ShowAllTabs, _, cx| this.toggle_show_all_tabs(cx)))
+            .on_action(cx.listener(|this, _: &ContinuousScroll, _, cx| {
+                this.toggle_continuous_scroll(cx);
+            }))
+            .on_action(cx.listener(|this, _: &SinglePage, _, cx| {
+                this.set_page_mode(PageMode::Single, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TwoPages, _, cx| {
+                this.set_page_mode(PageMode::Two, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ContactSheet, _, cx| {
+                this.set_page_mode(PageMode::Contact, cx);
+            }))
+            .on_action(cx.listener(|this, _: &UseDarkAppearanceForPdf, _, cx| {
+                this.toggle_dark_appearance_for_pdf(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ZoomToSelection, _, cx| this.zoom_to_selection(cx)))
+            .on_action(cx.listener(|this, _: &Slideshow, _, cx| this.toggle_slideshow(cx)))
+            .on_action(cx.listener(|this, _: &CustomiseToolbar, _, cx| {
+                this.open_customise_toolbar(cx);
+            }))
+            .on_action(cx.listener(|this, _: &FlipHorizontal, _, cx| this.flip_horizontal(cx)))
+            .on_action(cx.listener(|this, _: &FlipVertical, _, cx| this.flip_vertical(cx)))
+            .on_action(cx.listener(|this, _: &Crop, window, cx| this.open_crop(window, cx)))
+            .on_action(cx.listener(|this, _: &AdjustSize, window, cx| {
+                this.open_adjust_size(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ExportAs, window, cx| this.export_as(window, cx)))
+            .on_action(cx.listener(|_, _: &TakeScreenshotSelection, _, _| {
+                PreviewView::take_screenshot("selection");
+            }))
+            .on_action(cx.listener(|_, _: &TakeScreenshotWindow, _, _| {
+                PreviewView::take_screenshot("selection");
+            }))
+            .on_action(cx.listener(|_, _: &TakeScreenshotEntireScreen, _, _| {
+                PreviewView::take_screenshot("screen");
+            }))
             .on_action(cx.listener(|this, _: &ActualSize, _, cx| this.actual_size(cx)))
             .on_action(cx.listener(|this, _: &ZoomToFit, _, cx| this.zoom_to_fit(cx)))
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom_in(cx)))
@@ -4531,6 +6085,42 @@ impl Render for PreviewView {
             .children(menu)
             .when(self.go_to_page_open, |root| {
                 root.child(self.render_go_to_page(palette, width, height))
+            })
+            .when(self.adjust_size_open, |root| {
+                root.child(self.render_size_sheet(
+                    palette,
+                    width,
+                    height,
+                    "Adjust Size",
+                    &self.adjust_size_width,
+                    &self.adjust_size_height,
+                ))
+            })
+            .when(self.crop_open, |root| {
+                root.child(self.render_size_sheet(
+                    palette,
+                    width,
+                    height,
+                    "Crop (kept size, centred)",
+                    &self.crop_width,
+                    &self.crop_height,
+                ))
+            })
+            .when(self.manage_signatures_open, |root| {
+                root.child(self.render_manage_signatures(palette, width, height, cx))
+            })
+            .when(self.customise_toolbar_open, |root| {
+                root.child(self.render_customise_toolbar(palette, width, height, cx))
+            })
+            .when(self.tab_bar_shown && self.slots.len() > 1, |root| {
+                root.child(self.render_tab_bar(palette, left, width, cx))
+            })
+            .when(self.show_all_tabs, |root| {
+                root.child(self.render_all_tabs(palette, width, height, cx))
+            })
+            .children(self.render_loupe(palette, width, height))
+            .when(self.slideshow, |root| {
+                root.child(self.render_slideshow(palette, width, height, cx))
             })
     }
 }

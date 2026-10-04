@@ -50,7 +50,10 @@ class Menu:
 def _strip_literal(text: str) -> str:
     text = text.strip()
     if text.startswith('"') and text.endswith('"'):
-        return text[1:-1]
+        # Unescape the two sequences a shortcut/label literal can actually
+        # need (e.g. Preview's Show All Tabs ⇧⌘\, written "⇧⌘\\" in source,
+        # was previously read back with its escaping backslash doubled).
+        return text[1:-1].replace('\\"', '"').replace("\\\\", "\\")
     return text
 
 

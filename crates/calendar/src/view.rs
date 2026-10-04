@@ -509,7 +509,7 @@ impl CalendarView {
 
     /// Escape: closes the inspector, then a CAL-6 sheet, then search, then
     /// the CAL-8 invitations popover. Whichever it closes, keyboard focus
-    /// moves back to the main view (ACC-11): closing one of these used to
+    /// moves back to the main view (ACC-32): closing one of these used to
     /// leave focus on the FocusHandle of a field that had just been
     /// dropped, which Orca reports as nothing focused at all.
     fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -532,7 +532,7 @@ impl CalendarView {
     fn toggle_invitations(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.invitations_open = !self.invitations_open;
         if !self.invitations_open {
-            // ACC-11: closing the popover (Escape goes through `dismiss`;
+            // ACC-32: closing the popover (Escape goes through `dismiss`;
             // this is the toggle button and the app-menu item) must not
             // leave focus on a row inside it that is about to stop showing.
             window.focus(&self.focus, cx);
@@ -1017,7 +1017,7 @@ impl CalendarView {
         let scope = self.editor.as_ref().map_or("all", |editor| {
             ["this", "this-and-future", "all"][editor.scope]
         });
-        // ACC-11: Delete/Backspace can close the editor sheet along with
+        // ACC-32: Delete/Backspace can close the editor sheet along with
         // removing the event; keep focus on the main view rather than on
         // the sheet field that just stopped showing.
         self.editor = None;
@@ -1394,7 +1394,7 @@ impl CalendarView {
             list = list.child(
                 div()
                     .id(format!("calendar-toggle-{index}"))
-                    // ACC-11: this row toggles whether the calendar's
+                    // ACC-32: this row toggles whether the calendar's
                     // events show, exactly like a checkbox (and like real
                     // Calendar's own coloured checkbox) — not a selectable
                     // row, which told Orca nothing about the checked state.
@@ -1510,7 +1510,7 @@ impl CalendarView {
             .flex()
             .items_center()
             .child(
-                // ACC-11: a named, polite live region so Orca announces the
+                // ACC-32: a named, polite live region so Orca announces the
                 // new period (Next/Previous Period, Go Today, Day/Week/
                 // Month/Year) even though this text never takes keyboard
                 // focus.
@@ -1787,7 +1787,7 @@ impl CalendarView {
             week = week.child(
                 div()
                     .id(format!("calendar-event-{}", event.id))
-                    // ACC-11: a selectable, openable event used to have no
+                    // ACC-32: a selectable, openable event used to have no
                     // role or name at all — Orca had nothing to say about
                     // it, focused or not.
                     .role(Role::Button)
@@ -1932,7 +1932,7 @@ impl CalendarView {
             detail = detail.child(
                 div()
                     .id(format!("calendar-day-detail-{}", event.id))
-                    // ACC-11: same fix as the grid's event blocks above.
+                    // ACC-32: same fix as the grid's event blocks above.
                     .role(Role::Button)
                     .aria_label(accessible_name)
                     .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
@@ -2112,7 +2112,7 @@ impl CalendarView {
                 let event_id = event.id.clone();
                 let mut item = div()
                     .id(format!("calendar-month-event-{}", event.id))
-                    // ACC-11: same fix as the week/day grids' event blocks.
+                    // ACC-32: same fix as the week/day grids' event blocks.
                     .role(Role::Button)
                     .aria_label(event.title.clone())
                     .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))

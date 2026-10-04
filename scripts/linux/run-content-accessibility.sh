@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# Launch Terminal, Notes, Files and Clock once each, one at a time, with temporary
-# XDG_* directories, and run their assert_*_accessibility.py checks.
+# Launch Terminal, Notes, Files, Clock, Mail and Calendar once each, one at a
+# time, with temporary XDG_* directories, and run their
+# assert_*_accessibility.py checks.
 # Needs a live niri session with the AT-SPI bus
 # enabled (org.a11y.Status.IsEnabled). It never turns on the screen reader,
 # never injects input, and never touches the user's own app data.
 #
-# usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock|mail]...
+# usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock|mail|calendar]...
 #   BIN_DIR holds the corresponding rmac-* binaries.
 set -euo pipefail
 
-bin_dir=${1:?usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock|mail]...}
+bin_dir=${1:?usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock|mail|calendar]...}
 shift
 apps=("$@")
-[[ ${#apps[@]} -gt 0 ]] || apps=(terminal notes files clock mail)
+[[ ${#apps[@]} -gt 0 ]] || apps=(terminal notes files clock mail calendar)
 scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
@@ -43,6 +44,7 @@ run_app() {
     files) binary=rmac-files; assert=assert_files_accessibility.py ;;
     clock) binary=rmac-clock; assert=assert_clock_accessibility.py ;;
     mail) binary=rmac-mail; assert=assert_mail_accessibility.py ;;
+    calendar) binary=rmac-calendar; assert=assert_calendar_accessibility.py ;;
     *) echo "unknown app $app" >&2; return 2 ;;
   esac
   comm=${binary:0:15}
@@ -81,6 +83,11 @@ EOF
       # session asserting the sidebar/list/viewer tree, never a real
       # account (docs/design/calendar-mail.md §3).
       env_vars+=(RMAC_MAIL_FIXTURE=1)
+      ;;
+    calendar)
+      # Same reasoning as Mail above: no EDS source here, so without the
+      # fixture Calendar would show an empty week with nothing to assert.
+      env_vars+=(RMAC_CALENDAR_FIXTURE=1)
       ;;
   esac
 

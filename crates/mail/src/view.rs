@@ -717,7 +717,7 @@ impl MailView {
                             .child(self.state.mailbox.label()),
                     )
                     .child(
-                        // MAIL-10/ACC-11: a named, polite live region, so
+                        // MAIL-10/ACC-32: a named, polite live region, so
                         // Orca announces new mail arriving while focus is
                         // elsewhere (reading a message, say) — the list
                         // box's own name above only gets picked up when it

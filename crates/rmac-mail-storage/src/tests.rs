@@ -303,7 +303,7 @@ fn existing_v2_cache_adds_cursor_without_losing_messages() {
     assert_eq!(
         db.pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .unwrap(),
-        4
+        5
     );
 }
 
@@ -320,7 +320,7 @@ fn migration_is_idempotent_and_rejects_future_schema() {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .expect("version"),
-        4
+        5
     );
     drop(reopened);
     let db = Connection::open(path).expect("open raw");
@@ -774,4 +774,116 @@ fn crash_writer_child() {
         .read_exact(&mut byte)
         .expect("parent holds pipe");
     tx.commit().expect("commit only if test failed to kill");
+}
+
+#[test]
+fn graph_remote_ids_bind_move_and_cascade() {
+    let mut fixture = Fixture::new();
+    fixture
+        .store
+        .bind_remote_mailbox(fixture.inbox, "folder-inbox")
+        .expect("bind folder");
+    fixture
+        .store
+        .set_remote_cursor(
+            fixture.inbox,
+            Some("https://graph.microsoft.com/v1.0/delta"),
+        )
+        .expect("cursor");
+    // Rebinding the same id keeps the cursor; a new id clears it.
+    fixture
+        .store
+        .bind_remote_mailbox(fixture.inbox, "folder-inbox")
+        .expect("rebind");
+    let bound = fixture
+        .store
+        .remote_mailbox("folder-inbox")
+        .expect("lookup")
+        .expect("bound");
+    assert_eq!(bound.mailbox_id, fixture.inbox);
+    assert!(bound.sync_cursor.is_some());
+    let message = fixture.insert(3, "Hello", None);
+    fixture
+        .store
+        .bind_remote_message(message, "AAMk-1")
+        .expect("bind message");
+    assert_eq!(
+        fixture
+            .store
+            .message_by_remote_id("AAMk-1")
+            .expect("lookup")
+            .expect("found")
+            .id,
+        message
+    );
+    assert_eq!(
+        fixture.store.remote_uids(fixture.inbox).expect("uids"),
+        vec![(3, "AAMk-1".to_owned())]
+    );
+    // An immutable id seen again in another mailbox moves the binding.
+    let archive = fixture
+        .store
+        .upsert_mailbox("Archive", 1, Some("\\Archive"))
+        .expect("archive");
+    fixture
+        .store
+        .rename_mailbox(archive, "Old Archive")
+        .expect("rename");
+    let moved = fixture
+        .store
+        .put_message(&NewMessage {
+            mailbox_id: archive,
+            uid: 3,
+            message_id: None,
+            in_reply_to: None,
+            references: &[],
+            subject: "Hello",
+            sender: "Ada",
+            recipients: "Bob",
+            cc: "",
+            preview: "",
+            received_at: 1,
+            flags: 0,
+            body: None,
+            body_text: None,
+        })
+        .expect("insert moved");
+    fixture
+        .store
+        .bind_remote_message(moved, "AAMk-1")
+        .expect("rebind message");
+    assert!(fixture
+        .store
+        .remote_id_of_message(message)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        fixture
+            .store
+            .remote_id_of_message(moved)
+            .unwrap()
+            .as_deref(),
+        Some("AAMk-1")
+    );
+    assert_eq!(
+        fixture.store.mailbox_by_id(archive).unwrap().unwrap().name,
+        "Old Archive"
+    );
+    // Removing a folder cascades to its messages and bindings.
+    fixture
+        .store
+        .bind_remote_mailbox(archive, "folder-archive")
+        .expect("bind archive");
+    fixture.store.remove_mailbox(archive).expect("remove");
+    assert!(fixture
+        .store
+        .message_by_remote_id("AAMk-1")
+        .unwrap()
+        .is_none());
+    assert!(fixture
+        .store
+        .remote_mailbox("folder-archive")
+        .unwrap()
+        .is_none());
+    assert_eq!(fixture.store.remote_mailboxes().unwrap().len(), 1);
 }

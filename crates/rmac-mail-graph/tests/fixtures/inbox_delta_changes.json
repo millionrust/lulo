@@ -1,0 +1,33 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(message)",
+  "@odata.deltaLink": "https://graph.microsoft.com/v1.0/me/mailFolders('AAMkInbox%3D')/messages/delta?$deltatoken=inbox2",
+  "value": [
+    {
+      "@odata.type": "#microsoft.graph.message",
+      "@odata.etag": "W/\"CQAAABYAAAC\"",
+      "id": "AAMkMsgC=",
+      "subject": "Compiler notes",
+      "bodyPreview": "The notes are attached in spirit.",
+      "receivedDateTime": "2026-10-04T08:15:00Z",
+      "isRead": false,
+      "isDraft": false,
+      "internetMessageId": "<c@example.test>",
+      "flag": { "flagStatus": "notFlagged" },
+      "from": { "emailAddress": { "name": "Grace Hopper", "address": "grace@example.test" } },
+      "toRecipients": [ { "emailAddress": { "name": "Test User", "address": "test@example.test" } } ],
+      "ccRecipients": []
+    },
+    {
+      "@odata.type": "#microsoft.graph.message",
+      "@odata.etag": "W/\"CQAAABYAAAD\"",
+      "id": "AAMkMsgA=",
+      "isRead": true,
+      "flag": { "flagStatus": "flagged" }
+    },
+    {
+      "@odata.type": "#microsoft.graph.message",
+      "id": "AAMkMsgB=",
+      "@removed": { "reason": "deleted" }
+    }
+  ]
+}

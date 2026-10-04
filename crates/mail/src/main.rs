@@ -77,9 +77,11 @@ fn start_live_sync(
         }
     });
     let sink: Arc<dyn rmac_mail_runtime::EventSink> = Arc::new(DesktopSink::new(Some(std_tx)));
+    // GOA `ms_graph` accounts (Microsoft 365, Outlook.com) sync through
+    // Microsoft Graph (MAIL-9); `linux::resolve_goa` routes them here.
     let factory = Arc::new(linux::ProviderFactory {
         imap: rmac_mail_runtime::ImapFactory::goa(),
-        graph: Arc::new(rmac_mail_runtime::NoGraphFactory),
+        graph: Arc::new(rmac_mail_graph::GraphFactory::goa(root.clone())),
     });
     let runtime = Arc::new(rmac_mail_runtime::Runtime::new(root, factory, sink));
     // Seeds every mail-capable GOA account already configured (`watch`

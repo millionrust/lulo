@@ -20,6 +20,7 @@ rmac-ui.workspace = true
 rmac-mail-storage.workspace = true
 rmac-mail-smtp.workspace = true
 rmac-mail-runtime.workspace = true
+rmac-mail-graph.workspace = true
 rmac-accounts.workspace = true
 rmac-accounts-linux.workspace = true
 rmac-portal.workspace = true

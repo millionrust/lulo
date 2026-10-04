@@ -1,0 +1,21 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(message)",
+  "@odata.deltaLink": "https://graph.microsoft.com/v1.0/me/mailFolders('AAMkInbox%3D')/messages/delta?$deltatoken=inbox1",
+  "value": [
+    {
+      "@odata.type": "#microsoft.graph.message",
+      "@odata.etag": "W/\"CQAAABYAAAB\"",
+      "id": "AAMkMsgB=",
+      "subject": "Quarterly report",
+      "bodyPreview": "The numbers are in.",
+      "receivedDateTime": "2026-09-30T16:05:00Z",
+      "isRead": true,
+      "isDraft": false,
+      "internetMessageId": "<b@example.test>",
+      "flag": { "flagStatus": "flagged" },
+      "from": { "emailAddress": { "name": "Charles Babbage", "address": "charles@example.test" } },
+      "toRecipients": [ { "emailAddress": { "name": "Test User", "address": "test@example.test" } } ],
+      "ccRecipients": [ { "emailAddress": { "name": "Ada Lovelace", "address": "ada@example.test" } } ]
+    }
+  ]
+}

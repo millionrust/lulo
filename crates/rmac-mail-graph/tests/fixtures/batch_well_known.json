@@ -1,0 +1,48 @@
+{
+  "responses": [
+    {
+      "id": "inbox",
+      "status": 200,
+      "headers": { "Content-Type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8" },
+      "body": {
+        "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('00000000-0000-0000-0000-000000000001')/mailFolders(id)/$entity",
+        "id": "AAMkInbox="
+      }
+    },
+    {
+      "id": "drafts",
+      "status": 200,
+      "headers": { "Content-Type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8" },
+      "body": { "id": "AAMkDrafts=" }
+    },
+    {
+      "id": "sentitems",
+      "status": 200,
+      "headers": { "Content-Type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8" },
+      "body": { "id": "AAMkSent=" }
+    },
+    {
+      "id": "deleteditems",
+      "status": 200,
+      "headers": { "Content-Type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8" },
+      "body": { "id": "AAMkDeleted=" }
+    },
+    {
+      "id": "junkemail",
+      "status": 200,
+      "headers": { "Content-Type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8" },
+      "body": { "id": "AAMkJunk=" }
+    },
+    {
+      "id": "archive",
+      "status": 404,
+      "headers": { "Content-Type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8" },
+      "body": {
+        "error": {
+          "code": "ErrorItemNotFound",
+          "message": "The specified object was not found in the store."
+        }
+      }
+    }
+  ]
+}

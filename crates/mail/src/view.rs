@@ -76,6 +76,16 @@ impl MailView {
             }
         })
         .detach();
+        // Microsoft Graph accounts have no push: focusing Mail runs one
+        // delta query (debounced in the runtime; IMAP accounts keep IDLE).
+        if let Some(runtime) = runtime.clone() {
+            cx.observe_window_activation(window, move |_, window, _| {
+                if window.is_window_active() {
+                    runtime.refresh_on_focus();
+                }
+            })
+            .detach();
+        }
         let mut view = Self {
             focus: cx.focus_handle(),
             state,

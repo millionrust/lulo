@@ -1,0 +1,11 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('00000000-0000-0000-0000-000000000001')/mailFolders(id,displayName,childFolderCount)",
+  "value": [
+    { "id": "AAMkInbox=", "displayName": "Inbox", "childFolderCount": 0 },
+    { "id": "AAMkDrafts=", "displayName": "Drafts", "childFolderCount": 0 },
+    { "id": "AAMkSent=", "displayName": "Sent Items", "childFolderCount": 0 },
+    { "id": "AAMkDeleted=", "displayName": "Deleted Items", "childFolderCount": 0 },
+    { "id": "AAMkJunk=", "displayName": "Junk Email", "childFolderCount": 0 },
+    { "id": "AAMkProjects=", "displayName": "Projects", "childFolderCount": 1 }
+  ]
+}

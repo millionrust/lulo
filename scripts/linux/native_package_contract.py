@@ -166,7 +166,12 @@ PACKAGE_SPECS = (
             "xdg-desktop-portal",
             "xdg-utils",
         ),
-        recommends=(),
+        # evolution-ews-core supplies EDS's `microsoft365` calendar backend,
+        # which EDS's GOA module uses for GOA `ms_graph` accounts: Calendar
+        # shows Microsoft 365 and Outlook.com calendars through it (CAL-9).
+        # Only the -core package: `evolution-ews` itself pulls in the whole
+        # Evolution mail client.
+        recommends=("evolution-ews-core",),
         summary="macOS-inspired applications for the rmac Linux desktop",
         description=(
             "Provides Files, Terminal, Notes, Text Editor, System Monitor, "

@@ -36,6 +36,25 @@
                 lines 16 tall with a 6 dot (timed) or tinted bar (all-day).
   Year view     4 × 3 mini months; busy days tinted with the accent at
                 15 / 30 / 45 % by event count (verify on Mac).
+
+  CAL-6 additions (calendar list management, subscriptions, search, Settings):
+  Context menu   Right-click/⌃-click a calendar row: Rename, Delete…,
+                 separator, Hide Other Calendars. Popover, 168 wide.
+  New Calendar   "+" below the calendar list opens a small menu: New
+                 Calendar, New Calendar Subscription…; New Calendar inserts
+                 a row already in rename mode (same affordance as Files'
+                 New Folder). Subscription sheet: Name, URL, colour
+                 swatches, Cancel/Subscribe.
+  Search         Toolbar search field; typing shows a results popover
+                 (320 wide) under the search capsule: coloured dot per
+                 calendar, title, day/time on the right; Return opens the
+                 first/selected result.
+  Settings       ⌘, opens a small window (480 × 360), tab strip General /
+                 Accounts (verify on Mac: exact pane list). General:
+                 default calendar, start of week, day starts/ends, time
+                 zone support checkbox. Accounts: one row per account from
+                 rmac-accounts with the services it syncs; empty state
+                 explains accounts are added in Internet Accounts.
 -->
 <style>
   .win{--win:rgb(33,33,46);--panel:rgb(30,30,39);--panel-edge:rgba(255,255,255,.10);--text:rgb(223,223,225);
@@ -130,6 +149,43 @@
   .pop .dot{width:8px;height:8px;border-radius:50%;background:var(--c)}
   .pop .acts{display:flex;gap:6px;margin-top:12px} .pop .acts span{flex:1;text-align:center;padding:4px 0;border-radius:7px;background:var(--cap-on);font-weight:500}
   .pop .acts span.on{background:var(--accent);color:#fff}
+  /* CAL-6: calendar-list context menu, new-calendar/subscription sheet, search results, Settings window */
+  .cmenu{position:absolute;width:168px;border-radius:12px;background:var(--pop);backdrop-filter:blur(40px);padding:5px;color:var(--strong);
+       box-shadow:0 0 0 .5px rgba(0,0,0,.6),inset 0 0 0 1px var(--panel-edge),0 16px 40px rgba(0,0,0,.45);z-index:6;font-size:12.5px}
+  .cmenu .mi{height:25px;display:flex;align-items:center;padding:0 9px;border-radius:7px}
+  .cmenu .mi.danger{color:var(--red)} .cmenu i.sep{display:block;height:1px;margin:4px 6px;background:var(--hair)}
+  .sheetbg{position:absolute;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:7}
+  .sheet{width:360px;border-radius:14px;background:var(--panel);box-shadow:0 0 0 .5px rgba(0,0,0,.6),inset 0 0 0 1px var(--panel-edge),0 20px 50px rgba(0,0,0,.5);padding:20px 20px 16px;color:var(--strong)}
+  .sheet h3{margin:0 0 12px;font:700 15px var(--font)}
+  .sheet .fr{margin-bottom:10px} .sheet .fr label{display:block;font-size:11px;color:var(--sec);margin-bottom:3px}
+  .sheet .fr input{width:100%;height:28px;border-radius:7px;border:none;background:var(--cap);box-shadow:inset 0 0 0 1px var(--cap-edge);color:var(--strong);font-size:12.5px;padding:0 8px;box-sizing:border-box}
+  .sheet .swatches{display:flex;gap:7px;margin-top:4px}
+  .sheet .swatches i{width:18px;height:18px;border-radius:50%;display:block}
+  .sheet .swatches i.sel{box-shadow:0 0 0 2px var(--strong)}
+  .sheet .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+  .sheet .btns span{padding:5px 14px;border-radius:7px;background:var(--cap-on);font-weight:500;font-size:12.5px}
+  .sheet .btns span.on{background:var(--accent);color:#fff}
+  .results{position:absolute;right:9px;top:48px;width:320px;max-height:420px;border-radius:14px;background:var(--pop);backdrop-filter:blur(40px);
+       box-shadow:0 0 0 .5px rgba(0,0,0,.6),inset 0 0 0 1px var(--panel-edge),0 16px 40px rgba(0,0,0,.45);z-index:6;padding:6px;overflow:hidden}
+  .results .ri{display:flex;align-items:center;gap:8px;height:34px;padding:0 8px;border-radius:8px;font-size:12px}
+  .results .ri .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .results .ri .tt{font-weight:600} .results .ri .sub{color:var(--sec);margin-left:auto;font-size:11px}
+  .results .ri.sel{background:var(--cap-on)}
+  /* Settings window (Calendar ▸ Settings… ⌘,) */
+  .swin{position:relative;width:480px;height:360px;background:var(--win);border-radius:16px;overflow:hidden;color:var(--text);font-size:12.5px;
+       box-shadow:0 0 0 .5px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.14)}
+  .swin.light{box-shadow:0 0 0 .5px rgba(0,0,0,.25),0 12px 30px rgba(0,0,0,.25)}
+  .swin .stabs{display:flex;justify-content:center;gap:4px;padding:14px 0 10px;box-shadow:inset 0 -1px 0 var(--hair)}
+  .swin .stabs span{padding:4px 14px;border-radius:7px;font-weight:500}
+  .swin .stabs span.on{background:var(--cap-on);font-weight:600}
+  .swin .sbody{position:absolute;left:0;right:0;top:56px;bottom:0;padding:16px 22px}
+  .swin .row{display:flex;align-items:center;min-height:30px;gap:10px}
+  .swin .row label{width:150px;text-align:right;color:var(--sec);font-size:12px}
+  .swin .row .v{flex:1} .swin .pop2{height:24px;border-radius:6px;background:var(--cap);box-shadow:inset 0 0 0 1px var(--cap-edge);display:inline-flex;align-items:center;padding:0 10px}
+  .swin .acc{display:flex;align-items:center;gap:10px;height:40px;padding:0 4px;box-shadow:inset 0 -1px 0 var(--hair2)}
+  .swin .acc .av{width:26px;height:26px;border-radius:50%;background:var(--cap-on);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px}
+  .swin .acc .nm{font-weight:600} .swin .acc .svc{color:var(--sec);font-size:11px}
+  .swin .empty{color:var(--sec);text-align:center;margin-top:30px;line-height:18px}
 </style>
 </head>
 <body>
@@ -260,6 +316,47 @@ function inspector(){
     <div class="r" style="box-shadow:none"><span class="k">notes</span><span class="v" style="color:var(--sec)">Add Notes or URL</span></div>
     <div class="acts"><span class="on">Accept</span><span>Maybe</span><span>Decline</span></div></div>`;
 }
+function contextMenu(){
+  return `<div class="cmenu" style="left:30px;top:100px">
+    <div class="mi">Rename</div><div class="mi danger">Delete…</div><i class="sep"></i><div class="mi">Hide Other Calendars</div></div>`;
+}
+function newCalendarMenu(){
+  return `<div class="cmenu" style="left:30px;top:206px;width:200px">
+    <div class="mi">New Calendar</div><div class="mi">New Calendar Subscription…</div></div>`;
+}
+function subscriptionSheet(){
+  const swatches = Object.values(C).map((c,i)=>`<i style="background:${c}" class="${i===4?'sel':''}"></i>`).join('');
+  return `<div class="sheetbg"><div class="sheet"><h3>New Calendar Subscription</h3>
+    <div class="fr"><label>Name</label><input value="Lulo Release Dates" readonly></div>
+    <div class="fr"><label>URL</label><input value="webcal://calendar.example.com/release.ics" readonly></div>
+    <div class="fr"><label>Colour</label><div class="swatches">${swatches}</div></div>
+    <div class="btns"><span>Cancel</span><span class="on">Subscribe</span></div></div></div>`;
+}
+function searchResults(){
+  const rows = [
+    ['work','Design review','Sat 3 Oct · 13:00',true],
+    ['team','Calendar sync spec','Tue 29 Sep · 10:30',false],
+    ['family','Family lunch','Sun 4 Oct · 11:00',false],
+  ];
+  return `<div class="results">${rows.map(([c,t,s,sel])=>`<div class="ri${sel?' sel':''}"><i class="dot" style="background:${C[c]}"></i><span class="tt">${t}</span><span class="sub">${s}</span></div>`).join('')}</div>`;
+}
+function settingsGeneral(){
+  return `<div class="sbody">
+    <div class="row"><label>Default Calendar</label><div class="v"><span class="pop2"><i class="dot" style="background:${C.work};width:8px;height:8px;border-radius:50%;margin-right:6px;display:inline-block"></i>Work</span></div></div>
+    <div class="row"><label>Start Week On</label><div class="v"><span class="pop2">Monday</span></div></div>
+    <div class="row"><label>Day Starts At</label><div class="v"><span class="pop2">8:00 AM</span></div></div>
+    <div class="row"><label>Day Ends At</label><div class="v"><span class="pop2">8:00 PM</span></div></div>
+    <div class="row"><label></label><div class="v" style="color:var(--strong)">☑ Turn on time zone support</div></div>
+    <div class="row"><label>Time Zone</label><div class="v"><span class="pop2">London</span></div></div>
+  </div>`;
+}
+function settingsAccountsEmpty(){
+  return `<div class="sbody"><div class="empty">No Internet Accounts yet.<br>Add one in System Settings ▸ Internet Accounts.</div></div>`;
+}
+function settingsAccounts(){
+  const accs = [['Jacob Samas','jacob@icloud.com','iCloud · Mail, Calendars'],['Work','jacob@example.com','Google · Calendars']];
+  return `<div class="sbody">${accs.map(([n,a,s])=>`<div class="acc"><span class="av">${n[0]}</span><span><span class="nm">${n}</span><br><span class="svc">${s}</span></span></div>`).join('')}</div>`;
+}
 const frames = [
   ['Week — dark (today Saturday 3 October, 11:24)', 'dark', 'Week', head('October 2026', ''), week(-1)],
   ['Week — light, event selected with the inspector popover', 'light', 'Week', head('October 2026', ''), week(4) + ''],
@@ -270,6 +367,25 @@ const frames = [
 ];
 document.getElementById('stage').innerHTML = frames.map(([label, theme, view, hd, body], i) =>
   `<div><p class="cap-label">${label}</p><div class="win ${theme}">${sidebar()}${toolbar(view)}<div class="content">${hd}${body}</div>${i === 1 ? inspector() : ''}</div></div>`).join('');
+
+const cal6 = [
+  ['Calendar list — context menu (Rename / Delete…)', 'dark', () => sidebar() + contextMenu()],
+  ['Calendar list — "+" menu (New Calendar / New Calendar Subscription…)', 'dark', () => sidebar() + newCalendarMenu()],
+  ['New Calendar Subscription sheet', 'dark', () => sidebar() + toolbar('Week') + subscriptionSheet()],
+  ['Search — results popover under the toolbar field', 'light', () => sidebar() + toolbar('Week') + head('October 2026','') + week(-1) + searchResults()],
+];
+document.getElementById('stage').innerHTML += cal6.map(([label, theme, body]) =>
+  `<div><p class="cap-label">${label}</p><div class="win ${theme}">${body()}</div></div>`).join('');
+
+const settingsFrames = [
+  ['Calendar ▸ Settings… — General', 'dark', settingsGeneral()],
+  ['Calendar ▸ Settings… — Accounts (empty state)', 'dark', settingsAccountsEmpty()],
+  ['Calendar ▸ Settings… — Accounts (from rmac-accounts)', 'light', settingsAccounts()],
+];
+document.getElementById('stage').innerHTML += settingsFrames.map(([label, theme, body]) =>
+  `<div><p class="cap-label">${label}</p><div class="swin ${theme}">
+     <div class="stabs"><span class="${body === settingsAccounts() || body === settingsAccountsEmpty() ? '' : 'on'}">General</span><span class="${body === settingsAccounts() || body === settingsAccountsEmpty() ? 'on' : ''}">Accounts</span></div>
+     ${body}</div></div>`).join('');
 </script>
 </body>
 </html>

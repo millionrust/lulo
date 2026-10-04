@@ -1168,9 +1168,19 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
 
 const CALENDAR_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!("Settings…", "calendar::ShowSettings", "⌘,")],
+    },
+    MenuSpec {
         label: "File",
         items: &[
             item!("New Event", "calendar::NewEvent", "⌘N"),
+            item!("New Calendar", "calendar::NewCalendar", "", separator),
+            item!(
+                "New Calendar Subscription…",
+                "calendar::NewCalendarSubscription",
+                ""
+            ),
             item!("Close Window", "calendar::CloseWindow", "⌘W", separator),
         ],
     },
@@ -1199,6 +1209,7 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
             item!("Previous Period", "calendar::PreviousPeriod", "⌘←"),
             item!("Next Period", "calendar::NextPeriod", "⌘→"),
             item!("Show Sidebar", "calendar::ToggleSidebar", "⌃⌘S", separator),
+            item!("Search", "calendar::Search", "⌘F"),
         ],
     },
     MenuSpec {

@@ -253,8 +253,11 @@ pub fn load() -> Result<WeekSnapshot, String> {
                 _ => CalendarColor::Red,
             },
             visible: true,
+            id: source.uid.clone(),
             source_uid: Some(source.uid),
             writable,
+            removed: false,
+            subscription_url: None,
         });
         let mut ical = IcalCalendar { events: Vec::new() };
         for raw in client

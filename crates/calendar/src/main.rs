@@ -21,6 +21,12 @@ gpui::actions!(
         SelectNextWeek,
         ToggleSidebar,
         NewEvent,
+        SaveEvent,
+        DeleteEvent,
+        UndoEvent,
+        RedoEvent,
+        ShowInspector,
+        DismissInspector,
         ShowInvitations,
         Search,
         CloseWindow,
@@ -38,6 +44,13 @@ fn main() {
                 KeyBinding::new("cmd-3", ShowMonth, Some("Calendar")),
                 KeyBinding::new("cmd-4", ShowYear, Some("Calendar")),
                 KeyBinding::new("cmd-t", GoToday, Some("Calendar")),
+                KeyBinding::new("cmd-n", NewEvent, Some("Calendar")),
+                KeyBinding::new("cmd-i", ShowInspector, Some("Calendar")),
+                KeyBinding::new("delete", DeleteEvent, Some("Calendar")),
+                KeyBinding::new("backspace", DeleteEvent, Some("Calendar")),
+                KeyBinding::new("cmd-z", UndoEvent, Some("Calendar")),
+                KeyBinding::new("shift-cmd-z", RedoEvent, Some("Calendar")),
+                KeyBinding::new("escape", DismissInspector, Some("Calendar")),
                 KeyBinding::new("cmd-left", PreviousPeriod, Some("Calendar")),
                 KeyBinding::new("cmd-right", NextPeriod, Some("Calendar")),
                 KeyBinding::new("left", SelectPreviousDay, Some("Calendar")),
@@ -49,12 +62,8 @@ fn main() {
                 KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Calendar")),
             ]);
             rmac_ui::install_app_menu(CALENDAR, cx);
-            // Event creation, invitations, and search arrive in CAL-5/6/8.
-            for action in [
-                "calendar::NewEvent",
-                "calendar::ShowInvitations",
-                "calendar::Search",
-            ] {
+            // Invitations and search arrive in CAL-6/8.
+            for action in ["calendar::ShowInvitations", "calendar::Search"] {
                 rmac_ui::set_menu_enabled(action, false, cx);
             }
             let mut options = rmac_ui::window_options_for_app(CALENDAR, 1100.0, 720.0, cx);

@@ -383,6 +383,7 @@ impl Render for Gallery {
             let top = COLUMN_TOP + (index / 2) as f32 * pitch;
             root = root
                 .child(div().absolute().left(px(left)).top(px(top)).child(face(
+                    widget.id,
                     widget.kind,
                     widget.size,
                     1.0,
@@ -487,7 +488,7 @@ impl Render for Gallery {
                     .absolute()
                     .left(px(CONTENT_LEFT + index as f32 * TILE_PITCH))
                     .top(px(TILES_TOP))
-                    .child(face(kind, WidgetSize::Small, GALLERY_SCALE, &data))
+                    .child(face(0, kind, WidgetSize::Small, GALLERY_SCALE, &data))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -621,7 +622,7 @@ impl Render for Gallery {
                     .left(px(f32::from(drag.current.x) - half))
                     .top(px(f32::from(drag.current.y) - half))
                     .opacity(0.9)
-                    .child(face(drag.kind, WidgetSize::Small, 1.0, &data)),
+                    .child(face(0, drag.kind, WidgetSize::Small, 1.0, &data)),
             );
         }
         root

@@ -3,12 +3,12 @@
 //! Pixels are kept in GPUI's BGRA order so they become textures unchanged.
 
 use std::fs::File;
-use std::io::Read as _;
+use std::io::{BufWriter, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use crate::document::{self, Kind};
+use crate::document::{self, ImageKind, Kind};
 use crate::layout::Rotation;
 use crate::poppler::{self, PdfInfo, TextPage};
 use gpui::RenderImage;
@@ -240,6 +240,88 @@ pub fn export_image(pixels: &RgbaImage, destination: &Path) -> Result<(), String
     let mut rgba = pixels.clone();
     swap_red_blue(&mut rgba);
     rgba.save(destination).map_err(|error| error.to_string())
+}
+
+/// File ▸ Save / Save As for a loaded image: writes `pixels` to `path` in
+/// `kind`'s own format rather than converting it (that is Export As' job,
+/// `export_image` above). PNG/TIFF/BMP/WebP are written through this
+/// crate's lossless encoders for that format; JPEG is written at a fixed
+/// high quality (92, versus the encoder's low 75 default) with alpha
+/// flattened onto white like a printed page, mirroring
+/// `encode_print_jpeg`. EXIF orientation was already applied to `pixels`
+/// when the file was first opened (`load_image`'s `apply_orientation`),
+/// and none of these encoders write an EXIF block back, so the saved file
+/// needs no orientation tag of its own: its pixels are already the right
+/// way up. Does not itself write atomically — `save_image` below wraps
+/// this in a temp-file-then-rename for a caller writing straight to the
+/// live document path; `save_as`, which already writes to its own
+/// not-yet-visible temporary file before a single rename, calls this
+/// directly.
+pub fn write_image(pixels: &RgbaImage, kind: ImageKind, path: &Path) -> Result<(), String> {
+    let mut rgba = pixels.clone();
+    swap_red_blue(&mut rgba);
+    let (width, height) = rgba.dimensions();
+    let raw = rgba.as_raw().as_slice();
+    let file = File::create(path).map_err(|error| error.to_string())?;
+    let mut writer = BufWriter::new(file);
+    match kind {
+        ImageKind::Jpeg => {
+            let mut rgb = image::RgbImage::new(width, height);
+            for (x, y, pixel) in rgba.enumerate_pixels() {
+                let [red, green, blue, alpha] = pixel.0;
+                let blend = |channel: u8| {
+                    ((u16::from(channel) * u16::from(alpha) + 255 * (255 - u16::from(alpha))) / 255)
+                        as u8
+                };
+                rgb.put_pixel(x, y, image::Rgb([blend(red), blend(green), blend(blue)]));
+            }
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 92)
+                .write_image(rgb.as_raw(), width, height, image::ExtendedColorType::Rgb8)
+                .map_err(|error| error.to_string())?;
+        }
+        ImageKind::Png => {
+            image::codecs::png::PngEncoder::new(&mut writer)
+                .write_image(raw, width, height, image::ExtendedColorType::Rgba8)
+                .map_err(|error| error.to_string())?;
+        }
+        ImageKind::Tiff => {
+            image::codecs::tiff::TiffEncoder::new(&mut writer)
+                .write_image(raw, width, height, image::ExtendedColorType::Rgba8)
+                .map_err(|error| error.to_string())?;
+        }
+        ImageKind::Bmp => {
+            image::codecs::bmp::BmpEncoder::new(&mut writer)
+                .write_image(raw, width, height, image::ExtendedColorType::Rgba8)
+                .map_err(|error| error.to_string())?;
+        }
+        ImageKind::Gif => {
+            image::codecs::gif::GifEncoder::new(&mut writer)
+                .write_image(raw, width, height, image::ExtendedColorType::Rgba8)
+                .map_err(|error| error.to_string())?;
+        }
+        ImageKind::Webp => {
+            image::codecs::webp::WebPEncoder::new_lossless(&mut writer)
+                .write_image(raw, width, height, image::ExtendedColorType::Rgba8)
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    writer.flush().map_err(|error| error.to_string())
+}
+
+/// File ▸ Save (⌘S) for an edited image: `write_image` into a sibling temp
+/// file, then rename over `destination` — the same temp-file-then-rename
+/// atomicity `save_markup` already uses for PDF annotations, so a save that
+/// is interrupted (power loss, a full disk) never leaves `destination`
+/// half-written.
+pub fn save_image(pixels: &RgbaImage, kind: ImageKind, destination: &Path) -> Result<(), String> {
+    let temporary = destination.with_extension(format!("lulo-saving-{}.tmp", std::process::id()));
+    match write_image(pixels, kind, &temporary) {
+        Ok(()) => std::fs::rename(&temporary, destination).map_err(|error| error.to_string()),
+        Err(error) => {
+            let _ = std::fs::remove_file(&temporary);
+            Err(error)
+        }
+    }
 }
 
 /// Tools ▸ Crop (PRV-MENU-068): crops to a pixel rectangle, top-left
@@ -494,5 +576,79 @@ mod edit_tests {
         // A rectangle wider than the image clamps instead of panicking.
         let clamped = crop(&image, 0, 0, 100, 100);
         assert_eq!(clamped.dimensions(), (2, 2));
+    }
+
+    /// A unique path per test: the process id makes it unique across test
+    /// *binaries*, but within one binary `cargo test`'s default thread
+    /// pool runs every `#[test]` fn concurrently, and `save_image` itself
+    /// derives its intermediate temp file from `destination`'s own stem
+    /// (`Path::with_extension`, which drops whatever extension `name` ends
+    /// in) — so `name` must give each caller a distinct *stem*, not just a
+    /// distinct extension, or two tests racing on that shared temp file is
+    /// exactly the bug this suite is here to catch, not a flake to retry.
+    fn temp_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "rmac-preview-save-test-{}-{name}",
+            std::process::id()
+        ))
+    }
+
+    /// File ▸ Save for a PNG: lossless, so reloading gives back the exact
+    /// edited pixels (bytes identical, not just visually close).
+    #[test]
+    fn save_image_round_trips_png_losslessly() {
+        let path = temp_path("roundtrip-png.png");
+        let edited = rotate(&swatch(), Rotation::from_degrees(90));
+        save_image(&edited, ImageKind::Png, &path).unwrap();
+        let reloaded = load_image(&path).unwrap();
+        assert_eq!(reloaded.pixels.dimensions(), edited.dimensions());
+        assert_eq!(*reloaded.pixels, edited);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// TIFF and BMP are written through this crate's own lossless
+    /// encoders too.
+    #[test]
+    fn save_image_round_trips_tiff_and_bmp_losslessly() {
+        for (kind, name) in [
+            (ImageKind::Tiff, "roundtrip-tiff.tiff"),
+            (ImageKind::Bmp, "roundtrip-bmp.bmp"),
+        ] {
+            let path = temp_path(name);
+            let edited = crop(&swatch(), 0, 0, 2, 1);
+            save_image(&edited, kind, &path).unwrap();
+            let reloaded = load_image(&path).unwrap();
+            assert_eq!(*reloaded.pixels, edited, "{name}");
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    /// JPEG is written at a fixed high quality rather than the encoder's
+    /// low 75 default, and flattens transparency onto white like a printed
+    /// page; a solid, opaque swatch should survive the round trip within a
+    /// few levels of JPEG's own lossy compression.
+    #[test]
+    fn save_image_writes_jpeg_at_high_quality() {
+        let path = temp_path("roundtrip-jpg.jpg");
+        // BGRA (this module's convention): blue 200, green/red 40.
+        let solid = RgbaImage::from_pixel(4, 4, image::Rgba([200, 40, 40, 255]));
+        save_image(&solid, ImageKind::Jpeg, &path).unwrap();
+        let reloaded = load_image(&path).unwrap();
+        assert_eq!(reloaded.pixels.dimensions(), (4, 4));
+        let pixel = reloaded.pixels.get_pixel(0, 0).0;
+        assert!((i32::from(pixel[0]) - 200).abs() < 10, "{pixel:?}");
+        assert!((i32::from(pixel[1]) - 40).abs() < 10, "{pixel:?}");
+        assert!((i32::from(pixel[2]) - 40).abs() < 10, "{pixel:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A failed encode (an unwritable destination directory) must not leave
+    /// its temp file behind.
+    #[test]
+    fn save_image_cleans_up_its_temp_file_on_failure() {
+        let path = PathBuf::from("/nonexistent-rmac-preview-dir/roundtrip.png");
+        assert!(save_image(&swatch(), ImageKind::Png, &path).is_err());
+        let temporary = path.with_extension(format!("lulo-saving-{}.tmp", std::process::id()));
+        assert!(!temporary.exists());
     }
 }

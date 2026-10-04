@@ -282,10 +282,7 @@ fn converse(
 ) {
     let mut pending = Vec::new();
     let mut success = false;
-    loop {
-        let Line::Text(raw) = read_line(&mut transport, &wake, &mut pending) else {
-            break;
-        };
+    while let Line::Text(raw) = read_line(&mut transport, &wake, &mut pending) {
         match parse_line(&raw) {
             Some(HelperEvent::Finished(result)) => {
                 success = result;

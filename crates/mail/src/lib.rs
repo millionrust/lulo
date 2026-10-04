@@ -262,16 +262,17 @@ impl MailState {
     pub fn fixture() -> Self {
         let google = FIXTURE_GOOGLE_ACCOUNT;
         let icloud = FIXTURE_ICLOUD_ACCOUNT;
-        let real = |account: Uuid, label: &str, id: i64, name: &str, special: Option<SpecialUse>| {
-            Mailbox::Real(RealMailbox {
-                account,
-                account_path: format!("/fixture/{label}"),
-                account_label: label.to_owned(),
-                mailbox_id: id,
-                name: name.to_owned(),
-                special_use: special,
-            })
-        };
+        let real =
+            |account: Uuid, label: &str, id: i64, name: &str, special: Option<SpecialUse>| {
+                Mailbox::Real(RealMailbox {
+                    account,
+                    account_path: format!("/fixture/{label}"),
+                    account_label: label.to_owned(),
+                    mailbox_id: id,
+                    name: name.to_owned(),
+                    special_use: special,
+                })
+            };
         let google_inbox = real(google, "Google", 1, "INBOX", Some(SpecialUse::Inbox));
         let google_drafts = real(google, "Google", 2, "Drafts", Some(SpecialUse::Drafts));
         let google_sent = real(google, "Google", 3, "Sent", Some(SpecialUse::Sent));
@@ -416,13 +417,37 @@ impl MailState {
         ];
         let mut messages: Vec<Message> = data
             .into_iter()
-            .map(|(id, sender, initials, date, subject, preview, unread, flagged, thread_id)| {
-                fixture_message(id, google_inbox.clone(), sender, initials, date, subject, preview, unread, flagged, thread_id)
-            })
+            .map(
+                |(id, sender, initials, date, subject, preview, unread, flagged, thread_id)| {
+                    fixture_message(
+                        id,
+                        google_inbox.clone(),
+                        sender,
+                        initials,
+                        date,
+                        subject,
+                        preview,
+                        unread,
+                        flagged,
+                        thread_id,
+                    )
+                },
+            )
             .collect();
         messages.extend(icloud_data.into_iter().map(
             |(id, sender, initials, date, subject, preview, unread, flagged, thread_id)| {
-                fixture_message(id, icloud_inbox.clone(), sender, initials, date, subject, preview, unread, flagged, thread_id)
+                fixture_message(
+                    id,
+                    icloud_inbox.clone(),
+                    sender,
+                    initials,
+                    date,
+                    subject,
+                    preview,
+                    unread,
+                    flagged,
+                    thread_id,
+                )
             },
         ));
         // Built directly rather than through `new()`/`select_mailbox()`,
@@ -469,7 +494,11 @@ impl MailState {
         self.mailboxes = mailboxes;
         self.messages = messages;
         if let Some(selected_id) = &self.selected {
-            if !self.messages.iter().any(|message| &message.id == selected_id) {
+            if !self
+                .messages
+                .iter()
+                .any(|message| &message.id == selected_id)
+            {
                 self.selected = None;
             }
         }
@@ -520,13 +549,12 @@ impl MailState {
             .iter()
             .enumerate()
             .filter_map(|(index, message)| {
-                let in_mailbox = if !self.search.is_empty()
-                    && self.search_scope == SearchScope::AllMailboxes
-                {
-                    true
-                } else {
-                    self.in_mailbox(message, &self.mailbox)
-                };
+                let in_mailbox =
+                    if !self.search.is_empty() && self.search_scope == SearchScope::AllMailboxes {
+                        true
+                    } else {
+                        self.in_mailbox(message, &self.mailbox)
+                    };
                 // `matches_fields` on an empty query is vacuously true, so
                 // skip building its (body-formatting, allocating) argument
                 // for the common case of no active search — otherwise
@@ -649,7 +677,9 @@ impl MailState {
         };
         let original_real = original_real.clone();
         let destination = match &action {
-            OrganizeAction::Archive => self.find_special(original_real.account, SpecialUse::Archive),
+            OrganizeAction::Archive => {
+                self.find_special(original_real.account, SpecialUse::Archive)
+            }
             OrganizeAction::Delete => self.find_special(original_real.account, SpecialUse::Trash),
             OrganizeAction::Junk => {
                 if original_real.special_use == Some(SpecialUse::Junk) {
@@ -884,7 +914,10 @@ fn fixture_message(
         ("Jacob Samas".to_owned(), String::new())
     };
     let (to_addresses, cc_addresses) = if id == "anna" {
-        ("jacob@example.test".to_owned(), "sam@example.test".to_owned())
+        (
+            "jacob@example.test".to_owned(),
+            "sam@example.test".to_owned(),
+        )
     } else {
         ("jacob@example.test".to_owned(), String::new())
     };
@@ -1027,7 +1060,16 @@ mod tests {
             special_use: Some(SpecialUse::Inbox),
         });
         let mut message = fixture_message(
-            "live-1", inbox.clone(), "Ada", "A", "Today", "Hi", "Hi", true, false, "t1",
+            "live-1",
+            inbox.clone(),
+            "Ada",
+            "A",
+            "Today",
+            "Hi",
+            "Hi",
+            true,
+            false,
+            "t1",
         );
         message.row_id = Some(42);
         let mut state = MailState::new(vec![Mailbox::AllInboxes, inbox], vec![message]);

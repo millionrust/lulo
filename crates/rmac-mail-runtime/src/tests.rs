@@ -254,7 +254,10 @@ fn account_discovery_sync_search_and_mark_read_round_trip() {
         .recv_timeout(Duration::from_secs(3))
         .expect("a snapshot after the first sync");
     assert_eq!(snapshot.account, account_id);
-    assert_eq!(snapshot.unread_inbox, 1, "the unread badge count after sync");
+    assert_eq!(
+        snapshot.unread_inbox, 1,
+        "the unread badge count after sync"
+    );
     assert!(snapshot.online);
 
     // Search (MAIL-7's FTS5 index is populated by the same `put_message`

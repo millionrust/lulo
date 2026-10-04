@@ -5,7 +5,9 @@
 //! mirroring `compose_window.rs`'s pattern for drafts and attachments.
 
 use chrono::{Datelike, Local, TimeZone};
-use rmac_mail::{Mailbox, Message, MessageAttachment, Persist, PersistChange, RealMailbox, SpecialUse};
+use rmac_mail::{
+    Mailbox, Message, MessageAttachment, Persist, PersistChange, RealMailbox, SpecialUse,
+};
 use rmac_mail_storage::{Change, MailStorage, MessageSummary};
 use uuid::Uuid;
 

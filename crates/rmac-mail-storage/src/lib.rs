@@ -458,7 +458,11 @@ impl MailStorage {
     /// The most recent `limit` messages in one mailbox, newest first. Bounds
     /// how much a very large mailbox can load into memory at once; the
     /// virtual message list only ever needs a window of rows (MAIL-10).
-    pub fn messages_in_mailbox(&self, mailbox_id: i64, limit: usize) -> Result<Vec<MessageSummary>> {
+    pub fn messages_in_mailbox(
+        &self,
+        mailbox_id: i64,
+        limit: usize,
+    ) -> Result<Vec<MessageSummary>> {
         let mut statement = self.connection.prepare(
             "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash \
              FROM messages WHERE mailbox_id=?1 ORDER BY received_at DESC LIMIT ?2",

@@ -133,12 +133,7 @@ pub fn save_draft(
         Some(location) => location.uid,
         None => storage.allocate_local_uid(mailbox_id).ok()?,
     };
-    let recipients = to
-        .iter()
-        .chain(bcc)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join(", ");
+    let recipients = to.iter().chain(bcc).cloned().collect::<Vec<_>>().join(", ");
     let cc_joined = cc.join(", ");
     let preview: String = body.chars().filter(|c| *c != '\n').take(160).collect();
     let subject = if subject.trim().is_empty() {
@@ -402,7 +397,12 @@ mod tests {
         assert!(matches!(result, DeliveryResult::Queued));
 
         let mut storage = MailStorage::open(&home.root.join("lulo/mail"), account.id).unwrap();
-        assert_eq!(storage.outbox_count(rmac_mail_storage::OutboxState::Queued).unwrap(), 1);
+        assert_eq!(
+            storage
+                .outbox_count(rmac_mail_storage::OutboxState::Queued)
+                .unwrap(),
+            1
+        );
         // The Mac drops a sent draft from Drafts the moment it leaves,
         // whether or not SMTP has accepted it yet.
         assert!(storage

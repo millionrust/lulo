@@ -210,29 +210,32 @@ impl SettingsView {
                          Internet Accounts, so every app that uses them stays in sync.",
                     ),
             )
-            .child(div().v_flex().gap(px(4.0)).children(self.accounts.iter().map(
-                |account| {
-                    div()
-                        .p(px(8.0))
-                        .rounded(px(mac::radius_card()))
-                        .bg(mac::control_fill())
-                        .flex()
-                        .items_center()
-                        .gap(px(8.0))
-                        .child(
-                            div()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_size(px(13.0))
-                                .child(account.address.clone()),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(12.0))
-                                .text_color(mac::text_secondary())
-                                .child(account.provider.clone()),
-                        )
-                },
-            )))
+            .child(
+                div()
+                    .v_flex()
+                    .gap(px(4.0))
+                    .children(self.accounts.iter().map(|account| {
+                        div()
+                            .p(px(8.0))
+                            .rounded(px(mac::radius_card()))
+                            .bg(mac::control_fill())
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_size(px(13.0))
+                                    .child(account.address.clone()),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(mac::text_secondary())
+                                    .child(account.provider.clone()),
+                            )
+                    })),
+            )
             .child(
                 Button::new(
                     "mail-settings-open-internet-accounts",
@@ -578,28 +581,36 @@ impl SettingsView {
                                 .text_color(mac::text_secondary())
                                 .child(signature.body.clone()),
                         )
-                        .child(div().v_flex().gap(px(2.0)).children(
-                            self.accounts.iter().map(|account| {
-                                let checked = self
-                                    .settings
-                                    .signatures
-                                    .default_for_account
-                                    .get(&account.address)
-                                    .map(String::as_str)
-                                    == Some(signature.id.as_str());
-                                let id_for_default = signature.id.clone();
-                                let address = account.address.clone();
-                                Checkbox::new(format!(
-                                    "mail-settings-signature-default-{}-{}",
-                                    signature.id, account.address
-                                ))
-                                .label(format!("Use for {}", account.address))
-                                .checked(checked)
-                                .on_change(cx.listener(move |this, value: &bool, _, cx| {
-                                    this.set_default_signature(&address, &id_for_default, *value, cx);
-                                }))
-                            }),
-                        ))
+                        .child(
+                            div()
+                                .v_flex()
+                                .gap(px(2.0))
+                                .children(self.accounts.iter().map(|account| {
+                                    let checked = self
+                                        .settings
+                                        .signatures
+                                        .default_for_account
+                                        .get(&account.address)
+                                        .map(String::as_str)
+                                        == Some(signature.id.as_str());
+                                    let id_for_default = signature.id.clone();
+                                    let address = account.address.clone();
+                                    Checkbox::new(format!(
+                                        "mail-settings-signature-default-{}-{}",
+                                        signature.id, account.address
+                                    ))
+                                    .label(format!("Use for {}", account.address))
+                                    .checked(checked)
+                                    .on_change(cx.listener(move |this, value: &bool, _, cx| {
+                                        this.set_default_signature(
+                                            &address,
+                                            &id_for_default,
+                                            *value,
+                                            cx,
+                                        );
+                                    }))
+                                })),
+                        )
                 }),
             ))
             .when(self.settings.signatures.signatures.is_empty(), |parent| {

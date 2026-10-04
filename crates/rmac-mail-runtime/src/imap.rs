@@ -285,8 +285,8 @@ impl ImapBackend {
             // already unread on that first pass is exactly the mail a new
             // user opens right away, so fetch its body too instead of
             // leaving "read" broken until the next IDLE wake.
-            let fetch_full = kind == MailboxKind::Inbox
-                && (previous.is_some() || bits & FLAG_SEEN == 0);
+            let fetch_full =
+                kind == MailboxKind::Inbox && (previous.is_some() || bits & FLAG_SEEN == 0);
             let Some(bytes) = (if fetch_full {
                 self.client.fetch_body(change.uid)?
             } else {

@@ -92,7 +92,12 @@ impl MailView {
     /// Replaces the mailbox/message list with a freshly loaded one, keeping
     /// the current selection, mailbox and search — called after a sync
     /// snapshot or new-mail event (`main.rs`'s background event loop).
-    pub fn refresh_live(&mut self, mailboxes: Vec<Mailbox>, messages: Vec<Message>, cx: &mut Context<Self>) {
+    pub fn refresh_live(
+        &mut self,
+        mailboxes: Vec<Mailbox>,
+        messages: Vec<Message>,
+        cx: &mut Context<Self>,
+    ) {
         self.state.refresh_live(mailboxes, messages);
         self.ensure_body_loaded(cx);
         self.sync_menu(cx);
@@ -313,8 +318,7 @@ impl MailView {
         ] {
             // Some accounts (iCloud, for example) have no Archive mailbox,
             // so grey the button out there instead of a silent no-op click.
-            let available =
-                action != OrganizeAction::Archive || self.can_archive_selected();
+            let available = action != OrganizeAction::Archive || self.can_archive_selected();
             let mode = if available {
                 ControlMode::Enabled
             } else {
@@ -719,7 +723,7 @@ impl MailView {
                                                             })
                                                             .text_size(px(13.0))
                                                             .text_color(mac::text())
-                                            .child(row.sender.clone()),
+                                                            .child(row.sender.clone()),
                                                     )
                                                     .child(
                                                         div()

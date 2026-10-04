@@ -1665,6 +1665,7 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
                 ""
             ),
             item!("Lock Screen", "system_settings::ShowLockScreen", ""),
+            item!("Login Password", "system_settings::ShowLoginPassword", ""),
             item!(
                 "Login Items & Extensions",
                 "system_settings::ShowLoginItems",
@@ -1679,6 +1680,11 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
             ),
             item!("Notifications", "system_settings::ShowNotifications", ""),
             item!(
+                "Printers & Scanners",
+                "system_settings::ShowPrintersScanners",
+                ""
+            ),
+            item!(
                 "Privacy & Security",
                 "system_settings::ShowPrivacySecurity",
                 ""
@@ -1689,6 +1695,7 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
             item!("Spotlight", "system_settings::ShowSpotlight", ""),
             item!("Storage", "system_settings::ShowStorage", ""),
             item!("Trackpad", "system_settings::ShowTrackpad", ""),
+            item!("Users & Groups", "system_settings::ShowUsersGroups", ""),
             item!("Wallpaper", "system_settings::ShowWallpaper", ""),
             item!("Wi-Fi", "system_settings::ShowWifi", ""),
             item!(

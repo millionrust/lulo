@@ -891,6 +891,30 @@
       "label": "Return to Previous Size",
       "match": "exact",
       "reason": "Window ▸ Move & Resize ▸ Return to Previous Size's Mac shortcut is fn⌃R, shown by Accessibility as plain ⌃R (fn does not expose as an AX modifier). PC keyboards have no Globe/fn key, so Lulo's keyd layer uses ⌃⇧⌘R instead, matching the rest of this family (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "System Settings",
+      "label": "Time Machine",
+      "match": "exact",
+      "reason": "Time Machine is Apple's backup engine (APFS snapshots, Time Machine volumes); Lulo has no backup engine yet and does not show a pane that cannot back up. Tracked as SET-10 in docs/parity.md."
+    },
+    {
+      "app": "System Settings",
+      "label": "Startup Disk",
+      "match": "exact",
+      "reason": "Startup Disk picks which macOS volume the Mac firmware boots; a single-OS Lulo PC boots through its own firmware/GRUB, so the pane would have nothing true to change (SET-10)."
+    },
+    {
+      "app": "System Settings",
+      "label": "Transfer or Reset",
+      "match": "exact",
+      "reason": "Transfer or Reset runs Apple's Migration Assistant and Erase All Content and Settings for Apple hardware; Lulo has neither a migration service nor a safe factory reset (SET-10)."
+    },
+    {
+      "app": "System Settings",
+      "label": "Touch ID & Password",
+      "match": "exact",
+      "reason": "Lulo has no Touch ID. The same password row lives in the Login Password pane, the name macOS 26 gives this pane on a Mac without Touch ID (SET-05)."
     }
   ]
 }

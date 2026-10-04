@@ -17,6 +17,15 @@ onto it:
     one open), one of them active.
   * BlueZ: one adapter with one paired, connected device.
   * UPower: an 80%, discharging display battery.
+  * AccountsService (tests/dbusmock/accounts_service.py): the account
+    running the session (its real UID, so Settings treats it as the
+    signed-in user, an administrator) and one standard user.
+  * cups-pk-helper (tests/dbusmock/cups_pk_helper.py): driverless printers
+    to discover, and a record of every printer change.
+
+Printers are read from cupsd's socket, not D-Bus, so `fake_cupsd.py`
+serves one idle printer and one waiting job on a scratch socket that
+CUPS_SERVER points the nested apps at.
 
 It also writes a scratch tree shaped like `/sys` (battery, backlight,
 bluetooth and wifi classes) so `system-settings::hardware::current()` and
@@ -34,6 +43,9 @@ behaviour (hardware stays unavailable) rather than failing the whole run.
 
 from __future__ import annotations
 
+import json
+import os
+import pwd
 import subprocess
 import sys
 from pathlib import Path
@@ -51,13 +63,20 @@ class FakeHardware:
         processes: list[subprocess.Popen],
         logs: list,
         system_bus,
+        cupsd=None,
     ) -> None:
         self.env = env
         self._processes = processes
         self._logs = logs
         self._system_bus = system_bus
+        self._cupsd = cupsd
 
     def stop(self) -> None:
+        if self._cupsd is not None:
+            try:
+                self._cupsd.stop()
+            except Exception:
+                pass
         for process in self._processes:
             try:
                 process.terminate()
@@ -228,6 +247,41 @@ def start(work: Path) -> Optional["FakeHardware"]:
             pass
         return None
 
+    # Accounts and printers ride on the same private bus but must never take
+    # the hardware mocks above down with them: a failure here only leaves
+    # Users & Groups and Printers & Scanners unavailable.
+    templates = Path(__file__).resolve().parents[2] / "tests" / "dbusmock"
+    try:
+        uid = os.getuid()
+        try:
+            account = pwd.getpwuid(uid)
+            name, real_name = account.pw_name, (account.pw_gecos.split(",")[0] or account.pw_name)
+        except KeyError:
+            name, real_name = "lulo", "Lulo User"
+        # Passed as one JSON string: dbus-python cannot marshal a list of
+        # mixed-type dicts into the a{sv} AddTemplate takes.
+        people = json.dumps([
+            {"uid": uid, "name": name, "real_name": real_name, "admin": True},
+            {"uid": uid + 7000, "name": "amy", "real_name": "Amy Brown", "admin": False},
+        ])
+        accounts_log = open(logs_dir / "fake-accountsservice.log", "w")
+        logs.append(accounts_log)
+        accounts = SpawnedMock.spawn_with_template(
+            str(templates / "accounts_service.py"), {"users_json": people}, BusType.SYSTEM,
+            stdout=accounts_log, stderr=accounts_log,
+        )
+        processes.append(accounts.process)
+
+        printers_log = open(logs_dir / "fake-cups-pk-helper.log", "w")
+        logs.append(printers_log)
+        printers = SpawnedMock.spawn_with_template(
+            str(templates / "cups_pk_helper.py"), {}, BusType.SYSTEM,
+            stdout=printers_log, stderr=printers_log,
+        )
+        processes.append(printers.process)
+    except Exception as error:  # accounts/printers stay unavailable; never fail the run
+        print(f"fake_hardware: accounts/printer mocks unavailable ({error})", file=sys.stderr)
+
     sys_root = work / "fake-sys"
     _fake_sysfs(sys_root)
 
@@ -235,4 +289,13 @@ def start(work: Path) -> Optional["FakeHardware"]:
         "DBUS_SYSTEM_BUS_ADDRESS": system_bus.address,
         "LULO_FAKE_SYS_ROOT": str(sys_root),
     }
-    return FakeHardware(env, processes, logs, system_bus)
+    cupsd = None
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import fake_cupsd
+
+        cupsd = fake_cupsd.FakeCupsd(work / "fake-cups.sock")
+        env["CUPS_SERVER"] = str(cupsd.socket_path)
+    except Exception as error:  # printers stay "unavailable"; never fail the run
+        print(f"fake_hardware: fake cupsd unavailable ({error})", file=sys.stderr)
+    return FakeHardware(env, processes, logs, system_bus, cupsd)

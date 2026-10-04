@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Users, Login Password, Printers — Settings panes</title>
+<link rel="stylesheet" href="lab.css">
+<!--
+  System Settings ▸ Users & Groups, Login Password and Printers & Scanners
+  (crates/system-settings/src/controller/users*.rs, printers*.rs, shared
+  sheets in controller/view_helpers/sheets.rs; SET-05/06/07 in
+  docs/parity.md).
+  Mac truth: tests/inventory/mac/System Settings.json records only the
+  sidebar order (… Privacy & Security, Touch ID & Password, Users & Groups …
+  Keyboard, Trackpad, Printers & Scanners) and no pane contents, so the
+  layouts below follow macOS 26's published panes and reuse the measured
+  Settings grammar (design-lab/settings.html): 38 pt form rows in radius-12
+  groups, 10 pt group gap, right-aligned footer push buttons.
+  Estimates to verify on the Mac: user rows 52 pt with a 32 pt round
+  picture; sheets 460 wide, radius 24, padding 20 (as Internet Accounts);
+  field column 240 wide.
+  Lulo has no Touch ID, so its pane uses the name macOS 26 gives the same
+  pane on a Mac without Touch ID: "Login Password".
+  Pictures are neutral monogram discs here; no Apple artwork.
+-->
+<style>
+  .win{--win:#222025;--side:#29252E;--grp:#29272D;--text:#F5F5F7;--sec:#B9B9BF;--ter:#98989F;--hair:rgba(255,255,255,.10);
+       --sheet:#262227;--field:#181818;--btn:#363237;--plate:rgba(255,255,255,.10);--sel:rgba(255,255,255,.08);--red:#FF453A}
+  .win.light{--win:#FFFFFF;--side:#F2F2F4;--grp:#F5F5F7;--text:#1d1d1f;--sec:#6e6e73;--ter:#8e8e93;--hair:rgba(0,0,0,.10);
+       --sheet:#ECECEE;--field:#FFFFFF;--btn:#E1E1E5;--plate:rgba(0,0,0,.07);--sel:rgba(0,0,0,.06);--red:#FF3B30}
+  .stage{padding:24px;display:flex;flex-wrap:wrap;gap:28px}
+  .cap-label{font:600 12px var(--font);color:#999;margin:0 0 6px}
+  .win{position:relative;width:780px;height:560px;background:var(--win);border-radius:27px;overflow:hidden;color:var(--text);font-size:13px;
+       box-shadow:0 0 0 .5px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.14)}
+  .win.light{box-shadow:0 0 0 .5px rgba(0,0,0,.25),0 12px 30px rgba(0,0,0,.25)}
+  .tl{position:absolute;top:19px;width:14px;height:14px;border-radius:50%}
+  .side{position:absolute;left:8px;top:8px;bottom:8px;width:240px;border-radius:19px;background:var(--side);padding:48px 10px 0}
+  .side .q{height:28px;border-radius:8px;background:var(--plate);color:var(--ter);padding:0 10px;line-height:28px;margin-bottom:10px}
+  .side .r{height:28px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:8px}
+  .side .r.on{background:var(--accent);color:#fff}
+  .side .ic{width:20px;height:20px;border-radius:5px;flex:none}
+  .pane{position:absolute;left:256px;right:0;top:0;bottom:0;padding:14px 20px}
+  .pane h1{font:700 15px/24px var(--font);margin:0 0 14px}
+  .pane h3{font:700 13px/16px var(--font);margin:20px 10px 10px}
+  .group{background:var(--grp);border-radius:12px;margin-bottom:10px}
+  .row{min-height:38px;display:flex;align-items:center;gap:10px;padding:0 10px;box-shadow:inset 0 -1px 0 var(--hair)}
+  .row:last-child{box-shadow:none} .row .v{margin-left:auto;color:var(--sec)} .row small{display:block;color:var(--sec);font-size:11px}
+  .row.big{min-height:52px}
+  .pic{width:32px;height:32px;border-radius:50%;background:var(--plate);display:flex;align-items:center;justify-content:center;font:700 13px var(--font);color:var(--sec);flex:none}
+  .pic.l{width:64px;height:64px;font-size:26px}
+  .info{margin-left:auto;width:17px;height:17px;border-radius:50%;box-shadow:inset 0 0 0 1.3px var(--sec);color:var(--sec);font:700 11px/17px var(--font);text-align:center}
+  .tile{width:32px;height:32px;border-radius:9px;background:#8E8E93;flex:none}
+  .chev{margin-left:auto;color:var(--ter)}
+  .pop{margin-left:auto;color:var(--sec)} .pop::after{content:" ⌃⌄";color:var(--ter);font-size:11px}
+  .foot{display:flex;justify-content:flex-end;gap:10px;margin-bottom:10px}
+  .b{height:24px;padding:0 10px;border-radius:6px;background:var(--btn);display:inline-flex;align-items:center;color:var(--text)}
+  .b.def{background:var(--accent);color:#fff} .b.red{color:var(--red)} .b.off{opacity:.45}
+  .note{color:var(--sec);font-size:11px;margin:0 10px 10px}
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.28)}
+  .sheet{position:absolute;left:50%;top:44px;transform:translateX(-50%);width:460px;border-radius:24px;background:var(--sheet);padding:20px;
+         box-shadow:0 12px 32px rgba(0,0,0,.55),0 0 0 1px var(--hair);display:flex;flex-direction:column;gap:12px;z-index:3}
+  .sheet h2{font:700 15px var(--font);margin:0} .sheet p{margin:0;color:var(--sec);line-height:16px;font-size:12px}
+  .sheet .group{margin:0}
+  .fld{width:240px;height:22px;border-radius:5px;background:var(--field);box-shadow:inset 0 0 0 1px var(--hair);padding:0 7px;line-height:22px;margin-left:auto}
+  .fld.ph{color:var(--ter)}
+  .err{color:var(--red);font-size:12px}
+  .acts{display:flex;gap:8px;justify-content:flex-end} .acts .left{margin-right:auto}
+  .acts .b{height:28px;padding:0 14px;border-radius:7px}
+  .radio{display:flex;flex-direction:column;gap:6px;margin-left:4px}
+  .radio span::before{content:"○ ";color:var(--sec)} .radio span.on::before{content:"◉ ";color:var(--accent)}
+  .faces{display:flex;flex-wrap:wrap;gap:8px} .faces .pic{width:56px;height:56px}
+</style>
+</head>
+<body>
+<header class="lab">
+  <h1>Users, Login Password, Printers</h1>
+  <nav><a href="index.html">Overview</a><a href="settings.html">Settings</a><a href="internet-accounts.html">Internet Accounts</a><a href="settings-users-printers.html" class="on">Users &amp; Printers</a></nav>
+  <span class="spacer"></span><span style="font-size:12px;color:#8b8b93">Estimates, not Mac measurements</span>
+</header>
+<div class="stage" id="stage"></div>
+<script>
+const tl = `<i class="tl" style="left:19px;background:#ff5f57"></i><i class="tl" style="left:42px;background:#febc2e"></i><i class="tl" style="left:65px;background:#28c840"></i>`;
+const side = on => `<div class="side"><div class="q">Search</div>
+  ${[['Lock Screen','#3A3A3E'],['Privacy & Security','#0A84FF'],['Login Password','#FF453A'],['Users & Groups','#0A84FF'],['Internet Accounts','#0A84FF'],['Keyboard','#8E8E93'],['Trackpad','#8E8E93'],['Printers & Scanners','#8E8E93']]
+    .map(([n, c]) => `<div class="r${n === on ? ' on' : ''}"><i class="ic" style="background:${c}"></i>${n}</div>`).join('')}</div>`;
+const users = `<div class="pane"><h1>Users &amp; Groups</h1>
+  <div class="group">
+    <div class="row big"><span class="pic">JS</span><span>Jacob Samas<small>Admin, Signed in</small></span><span class="info">i</span></div>
+    <div class="row big"><span class="pic">AB</span><span>Amy Brown</span><span class="info">i</span></div></div>
+  <div class="foot"><span class="b">Add User…</span></div>
+  <div class="group"><div class="row">Automatically log in as<span class="pop">Off</span></div></div></div>`;
+const login = `<div class="pane"><h1>Login Password</h1>
+  <div class="group"><div class="row big"><span>Login password<small>The password you use to log in and to unlock the screen.</small></span><span class="b" style="margin-left:auto">Change…</span></div></div>
+  <div class="group"><div class="row">Password hint<span class="v">the usual</span></div></div>
+  <p class="note">Lulo OS has no fingerprint unlock on this computer, so this pane covers the login password only.</p></div>`;
+const printers = `<div class="pane"><h1>Printers &amp; Scanners</h1>
+  <div class="group"><div class="row">Default printer<span class="pop">Office Laser</span></div><div class="row">Default paper size<span class="pop">A4</span></div></div>
+  <h3>Printers</h3>
+  <div class="group"><div class="row big"><span class="tile"></span><span>Office Laser<small>Idle, Default</small></span><span class="chev">›</span></div>
+    <div class="row big"><span class="tile"></span><span>Photo Printer<small>Offline</small></span><span class="chev">›</span></div></div>
+  <div class="foot"><span class="b">Add Printer, Scanner or Fax…</span></div></div>`;
+const info = `<div class="sheet"><h2>Jacob Samas</h2>
+  <div style="display:flex;gap:12px;align-items:center"><span class="pic l">JS</span><span>Jacob Samas<small style="display:block;color:var(--sec);font-size:11px">jacob · Administrator</small></span></div>
+  <div class="group"><div class="row">Full name<span class="fld">Jacob Samas</span></div><div class="row">Account name<span class="v">jacob</span></div><div class="row">Password<span class="b" style="margin-left:auto">Change Password…</span></div></div>
+  <div class="acts"><span class="b def">OK</span></div></div>`;
+const newUser = `<div class="sheet"><h2>New User</h2><p>The account name is used for the home folder and can’t be changed later.</p>
+  <div class="group"><div class="row">New User<span class="pop">Standard</span></div><div class="row">Full Name<span class="fld">Amy Brown</span></div><div class="row">Account Name<span class="fld">amybrown</span></div>
+  <div class="row">Password<span class="fld">••••••••</span></div><div class="row">Verify<span class="fld">••••••••</span></div><div class="row">Password Hint<span class="fld ph">Recommended</span></div></div>
+  <div class="acts"><span class="b">Cancel</span><span class="b def">Create User</span></div></div>`;
+const change = `<div class="sheet"><h2>Change Password</h2>
+  <div class="group"><div class="row">Old Password<span class="fld">•••••••</span></div><div class="row">New Password<span class="fld">••••••••••</span></div><div class="row">Verify<span class="fld">••••••••••</span></div><div class="row">Password Hint<span class="fld ph">Recommended</span></div></div>
+  <div class="err">The old password you entered isn’t correct.</div>
+  <div class="acts"><span class="b">Cancel</span><span class="b def">Change Password</span></div></div>`;
+const del = `<div class="sheet"><h2>Are you sure you want to delete the user account “Amy Brown”?</h2><p>Deleting this account can’t be undone. Choose what happens to its home folder.</p>
+  <div class="radio"><span class="on">Don’t change the home folder</span><span>Delete the home folder</span></div>
+  <div class="acts"><span class="b">Cancel</span><span class="b red">Delete User</span></div></div>`;
+const picture = `<div class="sheet"><h2>Edit Picture</h2><p>Choose a picture for your account. It appears on the login screen and in Settings.</p>
+  <div class="faces">${'abcdefghijkl'.split('').map(() => '<span class="pic"></span>').join('')}</div>
+  <div class="acts"><span class="b left">Choose File…</span><span class="b">Cancel</span></div></div>`;
+const add = `<div class="sheet"><h2>Add Printer</h2><p>Lulo OS sets up printers that print without a driver: AirPrint, IPP Everywhere and Mopria printers on the network or USB.</p>
+  <div class="group"><div class="row" style="background:var(--sel)">Office Laser<span class="v">Bonjour</span></div><div class="row">Photo Printer<span class="v">IP</span></div></div>
+  <div class="group"><div class="row">Name<span class="fld">Office_Laser</span></div><div class="row">Location<span class="fld">Study</span></div><div class="row">Use<span class="v">Driverless printing (IPP Everywhere)</span></div></div>
+  <div class="acts"><span class="b">Cancel</span><span class="b def">Add</span></div></div>`;
+const queue = `<div class="sheet"><h2>Office Laser</h2><p>Printing</p>
+  <div class="group"><div class="row"><span>Report.pdf<small>jacob · Printing · 40 KB</small></span><span class="b" style="margin-left:auto">Cancel Job</span></div><div class="row"><span>Letter.odt<small>jacob · Waiting</small></span><span class="b" style="margin-left:auto">Cancel Job</span></div></div>
+  <div class="acts"><span class="b left">Pause</span><span class="b def">Close</span></div></div>`;
+const frame = (label, theme, on, pane, sheet) => `<div><p class="cap-label">${label}</p><div class="win ${theme}">${tl}${side(on)}${pane}${sheet ? '<div class="dim"></div>' + sheet : ''}</div></div>`;
+document.getElementById('stage').innerHTML = [
+  frame('Users & Groups — dark', 'dark', 'Users & Groups', users, ''),
+  frame('Users & Groups — light', 'light', 'Users & Groups', users, ''),
+  frame('ⓘ on your own account', 'dark', 'Users & Groups', users, info),
+  frame('Add User… → New User', 'light', 'Users & Groups', users, newUser),
+  frame('Delete User… (another user, administrators only)', 'dark', 'Users & Groups', users, del),
+  frame('Edit Picture (click your picture in ⓘ)', 'light', 'Users & Groups', users, picture),
+  frame('Login Password — dark', 'dark', 'Login Password', login, ''),
+  frame('Change… → Change Password (PAM error shown inline)', 'light', 'Login Password', login, change),
+  frame('Printers & Scanners — dark', 'dark', 'Printers & Scanners', printers, ''),
+  frame('Printers & Scanners — light', 'light', 'Printers & Scanners', printers, ''),
+  frame('Add Printer, Scanner or Fax…', 'dark', 'Printers & Scanners', printers, add),
+  frame('Printer Queue…', 'light', 'Printers & Scanners', printers, queue),
+].join('');
+</script>
+</body>
+</html>

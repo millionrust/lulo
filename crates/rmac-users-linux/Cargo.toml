@@ -1,0 +1,14 @@
+[package]
+name = "rmac-users-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+getrandom.workspace = true
+libc.workspace = true
+sha2.workspace = true
+zbus.workspace = true
+zeroize.workspace = true

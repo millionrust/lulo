@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "settings/users-new-user-sheet",
+  "platform": "Lulo local contract",
+  "observations": {
+    "sheet": {"dialog": {"present": true, "title": "New User"}},
+    "cancelled": {"dialog": {"present": false}}
+  }
+}

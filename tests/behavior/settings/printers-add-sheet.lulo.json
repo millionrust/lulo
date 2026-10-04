@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "settings/printers-add-sheet",
+  "platform": "Lulo local contract",
+  "observations": {
+    "sheet": {"dialog": {"present": true, "title": "Add Printer", "buttons": ["Cancel", "Add"]}},
+    "cancelled": {"dialog": {"present": false}}
+  }
+}

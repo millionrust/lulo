@@ -674,6 +674,10 @@ class LuloRun:
                 command += [str(self.sandbox / launch["file"])]
         elif self.app == "text-editor" and "file" in launch:
             command.append(str(self.sandbox / launch["file"]))
+        elif self.app == "settings" and "pane" in launch:
+            # Open straight on a pane (`--pane <id>`, PANE_ROUTES), for panes
+            # that sit below the sidebar's visible rows.
+            command += ["--pane", str(launch["pane"])]
         self.log = open(
             self.nested.logs / f"{self.sid.replace('/', '-')}.log",
             "a" if launch_override is not None else "w",

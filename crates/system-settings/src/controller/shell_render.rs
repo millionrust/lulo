@@ -54,6 +54,8 @@ impl Render for Settings {
         let keyboard_shortcuts_sheet = self.render_keyboard_shortcuts_sheet(cx);
         let internet_account_sheet = self.render_internet_account_sheet(cx);
         let internet_account_delete = self.render_internet_account_delete(cx);
+        let users_overlay = self.render_users_overlay(cx);
+        let printers_overlay = self.render_printers_overlay(cx);
         div()
             .id(rmac_system_settings::accessibility::ROOT_ID)
             .size_full()
@@ -207,6 +209,15 @@ impl Render for Settings {
             }))
             .on_action(cx.listener(|t, _: &ShowLockScreen, window, cx| {
                 t.navigate_to_pane("lock-screen", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowLoginPassword, window, cx| {
+                t.navigate_to_pane("login-password", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowUsersGroups, window, cx| {
+                t.navigate_to_pane("users-groups", window, cx)
+            }))
+            .on_action(cx.listener(|t, _: &ShowPrintersScanners, window, cx| {
+                t.navigate_to_pane("printers-scanners", window, cx)
             }))
             .on_action(cx.listener(|t, _: &ShowLoginItems, window, cx| {
                 t.navigate_to_pane("login-items", window, cx)
@@ -458,5 +469,7 @@ impl Render for Settings {
             .when_some(keyboard_shortcuts_sheet, |root, sheet| root.child(sheet))
             .when_some(internet_account_sheet, |root, sheet| root.child(sheet))
             .when_some(internet_account_delete, |root, alert| root.child(alert))
+            .when_some(users_overlay, |root, sheet| root.child(sheet))
+            .when_some(printers_overlay, |root, sheet| root.child(sheet))
     }
 }

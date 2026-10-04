@@ -197,6 +197,24 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
                 "privacy",
             ],
         ),
+        (
+            "login-password",
+            "Login Password",
+            "Change your login password",
+            &["password", "change password", "passwd"],
+        ),
+        (
+            "users-groups",
+            "Users & Groups",
+            "Users, pictures, and automatic login",
+            &["users", "accounts", "add user", "automatic login", "admin"],
+        ),
+        (
+            "printers-scanners",
+            "Printers & Scanners",
+            "Printers, print queues, and paper size",
+            &["printer", "print", "cups", "paper size", "airprint"],
+        ),
     ]
     .into_iter()
     .map(|(pane_id, title, subtitle, keywords)| SettingEntry {

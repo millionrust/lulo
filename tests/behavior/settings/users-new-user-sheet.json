@@ -1,0 +1,13 @@
+{
+  "title": "Users & Groups Add User sheet opens and Escape cancels without creating a user",
+  "app": "settings",
+  "lulo_only": true,
+  "launch": {"pane": "users-groups"},
+  "steps": [
+    {"wait": 1.5},
+    {"select": "Add User…", "settle": 0.5},
+    {"observe": "sheet", "facts": ["dialog"]},
+    {"key": "escape", "settle": 0.5},
+    {"observe": "cancelled", "facts": ["dialog"]}
+  ]
+}

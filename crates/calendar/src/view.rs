@@ -1,8 +1,9 @@
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
 use gpui::{
-    div, px, AnyElement, ClickEvent, Context, Entity, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, ScrollDelta,
-    ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    div, px, AnyElement, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable as _,
+    FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
+    ScrollDelta, ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Window,
 };
 use rmac_calendar::{
     current_date,
@@ -10,10 +11,7 @@ use rmac_calendar::{
     events_on_day, is_weekend, month_grid_start, CalendarColor, Navigator, View, WeekSnapshot,
 };
 use rmac_calendar_store::{TimeValue, Zone};
-use rmac_ui::{
-    dialog, dialog_button, mac, AccessibleTextInput as _, DialogButtonKind, InputEvent, InputState,
-    TextField,
-};
+use rmac_ui::{dialog, dialog_button, mac, DialogButtonKind, InputEvent, InputState, TextField};
 
 use crate::{
     CloseWindow, DeleteEvent, DismissInspector, GoToday, NewEvent, NextPeriod, PreviousPeriod,

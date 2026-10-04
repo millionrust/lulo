@@ -127,6 +127,7 @@ pub fn set_property(event: &mut IcalEvent, name: &str, value: &str) {
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn object(event: &IcalEvent) -> String {
     let wire = IcalCalendar {
         events: vec![event.clone()],

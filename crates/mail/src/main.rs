@@ -134,7 +134,7 @@ fn start_live_sync(
 }
 
 fn main() {
-    let fixture_mode = std::env::var_os(FIXTURE_ENV).is_some_and(|value| value == "1");
+    let fixture_mode = std::env::var(FIXTURE_ENV).is_ok_and(|value| value == "1");
     let accounts = if fixture_mode {
         vec![
             delivery::ComposeAccount {

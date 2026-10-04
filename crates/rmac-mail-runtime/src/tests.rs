@@ -267,6 +267,15 @@ fn account_discovery_sync_search_and_mark_read_round_trip() {
     assert_eq!(hits.len(), 1, "FTS5 should find the synced message");
     let message_id = hits[0].id;
 
+    // Read: the viewer fetches the full body from the content-addressed
+    // blob the same way `crate::live::load_body` does, not only the
+    // summary row.
+    let body_hash = hits[0].body_hash.clone().expect("a synced body hash");
+    let body = store.read_blob(&body_hash).unwrap();
+    assert!(String::from_utf8(body)
+        .unwrap()
+        .contains("Fancy lunch on Friday?"));
+
     // Mark read (the same `Change::SetFlags` a live `MailState::select`'s
     // `Persist` queues): write it to the journal exactly as
     // `crate::live::persist` (the Mail app's own call site) would.

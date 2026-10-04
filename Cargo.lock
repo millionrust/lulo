@@ -7304,11 +7304,8 @@ version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
- "async-process",
- "futures-lite",
  "futures-util",
  "rmac-audio",
- "rmac-process",
  "zbus",
 ]
 

@@ -187,11 +187,9 @@ fn widget_rows(
                 .flex()
                 .gap(px(gap))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .children(
-                    row.iter().map(|widget| {
-                        rmac_desktop_widgets::face(widget.kind, widget.size, 1.0, data)
-                    }),
-                )
+                .children(row.iter().map(|widget| {
+                    rmac_desktop_widgets::face(widget.id, widget.kind, widget.size, 1.0, data)
+                }))
                 .into_any_element()
         })
         .collect()

@@ -19,8 +19,9 @@ pub const FIRST_TOP: f32 = 53.0;
 pub const MENU_BAR: f32 = 33.0;
 pub const MAX_WIDGETS: usize = 32;
 
-/// Widgets rmac can back with real data. Reminders, Photos, Notes and the
-/// Calendar "Up Next" list have no rmac data source yet and are omitted.
+/// Widgets rmac can back with real data. Reminders, Photos and Notes have
+/// no rmac data source yet and are omitted; Calendar's "Up Next" list
+/// (CAL-8) reads it from EDS through `rmac-calendar-agent`.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum WidgetKind {
     /// Batteries: this computer's charge (UPower).
@@ -46,10 +47,14 @@ impl WidgetKind {
         }
     }
 
-    /// Sizes rmac draws. Medium and Large need data rmac does not have yet
-    /// (a per-widget hourly forecast, other devices' batteries, events).
+    /// Sizes rmac draws. Calendar also offers Medium (CAL-8's "Up Next"
+    /// list); the others need data rmac does not have yet (a per-widget
+    /// hourly forecast, other devices' batteries).
     pub fn sizes(self) -> &'static [WidgetSize] {
-        &[WidgetSize::Small]
+        match self {
+            Self::Calendar => &[WidgetSize::Small, WidgetSize::Medium],
+            Self::Battery | Self::Clock | Self::Weather => &[WidgetSize::Small],
+        }
     }
 }
 

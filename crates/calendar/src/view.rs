@@ -8,9 +8,10 @@ use gpui::{
 use rmac_calendar::{
     current_date,
     editing::{self, Mutation},
-    events_on_day, is_weekend, month_grid_start, search_events, store, subscription_default_name,
-    unique_calendar_name, validate_calendar_name, validate_subscription_url, Calendar,
-    CalendarColor, Navigator, SearchResult, View, WeekSnapshot,
+    events_on_day, invitations, is_weekend, month_grid_start, search_events, store,
+    subscription_default_name, unique_calendar_name, validate_calendar_name,
+    validate_subscription_url, Calendar, CalendarColor, Navigator, SearchResult, View,
+    WeekSnapshot,
 };
 use rmac_calendar_store::{TimeValue, Zone};
 use rmac_ui::{
@@ -22,7 +23,8 @@ use crate::{
     CloseWindow, DeleteCalendar, DeleteEvent, DismissInspector, GoToday, NewCalendar,
     NewCalendarSubscription, NewEvent, NextPeriod, PreviousPeriod, RedoEvent, RenameCalendar,
     SaveEvent, Search, SelectNextDay, SelectNextWeek, SelectPreviousDay, SelectPreviousWeek,
-    ShowDay, ShowInspector, ShowMonth, ShowSettings, ShowWeek, ShowYear, ToggleSidebar, UndoEvent,
+    ShowDay, ShowInspector, ShowInvitations, ShowMonth, ShowSettings, ShowWeek, ShowYear,
+    ToggleSidebar, UndoEvent,
 };
 
 const SIDEBAR: f32 = 220.0;
@@ -104,10 +106,23 @@ pub struct CalendarView {
     redo: Vec<Mutation>,
     busy: bool,
     error: Option<String>,
+    /// CAL-8: the calendar-enabled signed-in accounts' addresses, for
+    /// matching this computer's own ATTENDEE line on an invitation.
+    self_emails: Vec<String>,
+    invitations_open: bool,
+    responding: Option<String>,
+    /// A `--event`/`--date` launch argument (the CAL-7 reminder's default
+    /// action, or the Notification Centre Calendar widget), resolved once
+    /// the first EDS snapshot loads.
+    deep_link: Option<crate::DeepLink>,
 }
 
 impl CalendarView {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        deep_link: Option<crate::DeepLink>,
+    ) -> Self {
         let rename_input = cx.new(|cx| InputState::new(window, cx));
         let subscription_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("e.g. Team Releases"));
@@ -151,6 +166,10 @@ impl CalendarView {
             redo: Vec::new(),
             busy: false,
             error: None,
+            self_emails: Vec::new(),
+            invitations_open: false,
+            responding: None,
+            deep_link,
         };
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             // Saved prefs first, so the first EDS snapshot already renders
@@ -164,6 +183,17 @@ impl CalendarView {
             let result = blocking::unblock(editing::load).await;
             let _ = this.update(cx, |this: &mut CalendarView, cx| {
                 this.accept_load(result, cx)
+            });
+        })
+        .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            // CAL-8: who "me" is, for matching an ATTENDEE line on an
+            // invitation. Independent of the snapshot load above so a slow
+            // or unavailable GOA bus never delays the calendar grid.
+            let self_emails = blocking::unblock(editing::self_emails).await;
+            let _ = this.update(cx, |this: &mut CalendarView, cx| {
+                this.self_emails = self_emails;
+                cx.notify();
             });
         })
         .detach();
@@ -188,7 +218,48 @@ impl CalendarView {
         }
         self.busy = false;
         self.update_search(cx);
+        self.resolve_deep_link();
         cx.notify();
+    }
+
+    /// CAL-8: the first (and only -- `load` is one-shot, not a live
+    /// subscription) snapshot has just landed, so this is the one chance to
+    /// jump to a `--event`/`--date` launch argument. Matches a `--event`
+    /// link within a minute of its occurrence to tolerate the small clock
+    /// skew between this read and the one that posted the reminder.
+    fn resolve_deep_link(&mut self) {
+        let Some(link) = self.deep_link.take() else {
+            return;
+        };
+        match link {
+            crate::DeepLink::Date(date) => {
+                self.nav.view = View::Day;
+                self.nav.selected = date;
+            }
+            crate::DeepLink::Event {
+                calendar_uid,
+                event_uid,
+                occurrence_start,
+            } => {
+                let found = self.snapshot.events.iter().find(|event| {
+                    self.snapshot
+                        .calendars
+                        .get(event.calendar)
+                        .and_then(|calendar| calendar.source_uid.as_deref())
+                        == Some(calendar_uid.as_str())
+                        && event
+                            .ical
+                            .as_ref()
+                            .is_some_and(|ical| ical.uid == event_uid)
+                        && (event.start - occurrence_start).num_seconds().abs() <= 60
+                });
+                if let Some(event) = found {
+                    self.nav.view = View::Day;
+                    self.nav.selected = event.start.date_naive();
+                    self.selected = Some(event.id.clone());
+                }
+            }
+        }
     }
 
     fn set_snapshot(&mut self, mut snapshot: WeekSnapshot) {
@@ -436,7 +507,8 @@ impl CalendarView {
         );
     }
 
-    /// Escape: closes the inspector, then a CAL-6 sheet, then search.
+    /// Escape: closes the inspector, then a CAL-6 sheet, then search, then
+    /// the CAL-8 invitations popover.
     fn dismiss(&mut self, cx: &mut Context<Self>) {
         if self.editor.is_some() {
             self.editor = None;
@@ -445,10 +517,87 @@ impl CalendarView {
             self.sheet_error = None;
         } else if self.search_open {
             self.search_open = false;
+        } else if self.invitations_open {
+            self.invitations_open = false;
         } else {
             return;
         }
         cx.notify();
+    }
+
+    fn toggle_invitations(&mut self, cx: &mut Context<Self>) {
+        self.invitations_open = !self.invitations_open;
+        self.sync_menu(cx);
+        cx.notify();
+    }
+
+    fn pending_invitations(&self) -> Vec<invitations::PendingInvitation> {
+        invitations::pending(&self.snapshot, &self.self_emails)
+    }
+
+    /// Accept/Maybe/Decline (CAL-8): optimistically rewrites the local
+    /// PARTSTAT so the popover drops the invitation immediately, then
+    /// writes through the EDS adapter on a worker. A write failure shows
+    /// the error banner and restores the invitation to the pending list.
+    fn respond_to_invitation(
+        &mut self,
+        event_id: String,
+        response: invitations::Response,
+        cx: &mut Context<Self>,
+    ) {
+        if self.responding.is_some() {
+            return;
+        }
+        let Some(index) = self
+            .snapshot
+            .events
+            .iter()
+            .position(|event| event.id == event_id)
+        else {
+            return;
+        };
+        let Some(ical) = self.snapshot.events[index].ical.clone() else {
+            return;
+        };
+        let Some(source) = self
+            .snapshot
+            .calendars
+            .get(self.snapshot.events[index].calendar)
+            .and_then(|calendar| calendar.source_uid.clone())
+        else {
+            return;
+        };
+        let Some(self_email) =
+            invitations::my_attendee(&ical, &self.self_emails).map(|attendee| attendee.email)
+        else {
+            return;
+        };
+        let Some(updated) = invitations::apply_response(&ical, &self_email, response) else {
+            return;
+        };
+        self.snapshot.events[index].ical = Some(updated.clone());
+        self.responding = Some(event_id.clone());
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result =
+                blocking::unblock(move || editing::respond_to_invitation(&source, &updated)).await;
+            let _ = this.update(cx, |this, cx| {
+                this.responding = None;
+                if let Err(error) = result {
+                    this.error = Some(error);
+                    if let Some(event) = this
+                        .snapshot
+                        .events
+                        .iter_mut()
+                        .find(|event| event.id == event_id)
+                    {
+                        event.ical = Some(ical);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -913,6 +1062,7 @@ impl CalendarView {
             rmac_ui::set_menu_checked(action, self.nav.view == view, cx);
         }
         rmac_ui::set_menu_checked("calendar::ToggleSidebar", self.sidebar_visible, cx);
+        rmac_ui::set_menu_checked("calendar::ShowInvitations", self.invitations_open, cx);
         rmac_ui::set_menu_enabled("calendar::UndoEvent", !self.undo.is_empty(), cx);
         rmac_ui::set_menu_enabled("calendar::RedoEvent", !self.redo.is_empty(), cx);
         rmac_ui::set_menu_enabled("calendar::ShowInspector", self.selected.is_some(), cx);
@@ -987,7 +1137,43 @@ impl CalendarView {
             },
             cx,
         ));
-        bar = bar.child(self.control("calendar-inbox", "▢", "Invitations", false, |_, _| {}, cx));
+        let pending_count = self.pending_invitations().len();
+        bar = bar.child(
+            div()
+                .id("calendar-inbox")
+                .role(Role::Button)
+                .aria_label(if pending_count > 0 {
+                    format!("Invitations, {pending_count} pending")
+                } else {
+                    "Invitations".to_owned()
+                })
+                .aria_selected(self.invitations_open)
+                .h(px(28.0))
+                .px(px(10.0))
+                .rounded(px(mac::radius_pill()))
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap(px(4.0))
+                .bg(if self.invitations_open {
+                    mac::control_fill()
+                } else {
+                    mac::material_clear()
+                })
+                .text_color(mac::text())
+                .text_size(px(12.0))
+                .child("▢")
+                .when(pending_count > 0, |control| {
+                    control.child(
+                        div()
+                            .text_size(px(10.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(mac::system_red())
+                            .child(pending_count.to_string()),
+                    )
+                })
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_invitations(cx))),
+        );
         bar = bar.child(
             div()
                 .id("calendar-new")
@@ -1070,7 +1256,13 @@ impl CalendarView {
         let first = month_grid_start(self.nav.selected);
         let selected_month = self.nav.selected.month();
         let today = current_date();
-        let mut grid = div().flex().flex_wrap().w_full();
+        let mut grid = div()
+            .id("calendar-mini-month")
+            .flex()
+            .flex_wrap()
+            .w_full()
+            .role(Role::Table)
+            .aria_label(self.nav.selected.format("%B %Y").to_string());
         for title in ["M", "T", "W", "T", "F", "S", "S"] {
             grid = grid.child(
                 div()
@@ -1086,9 +1278,13 @@ impl CalendarView {
             let day = first + Duration::days(offset);
             let text = day.day().to_string();
             let is_today = day == today;
+            let selected = day == self.nav.selected;
             grid = grid.child(
                 div()
                     .id(format!("mini-{}", offset))
+                    .role(Role::Button)
+                    .aria_label(day.format("%A %-d %B %Y").to_string())
+                    .aria_selected(selected)
                     .w(px(26.0))
                     .h(px(22.0))
                     .rounded_full()
@@ -2087,6 +2283,135 @@ impl CalendarView {
             .into_any_element()
     }
 
+    /// The toolbar inbox's invitations popover (CAL-8): every event this
+    /// computer has an outstanding RSVP for, with Accept/Maybe/Decline.
+    /// Pointed at the inbox icon the same way the search results are
+    /// pointed at the search field.
+    fn render_invitations(&self, cx: &mut Context<Self>) -> AnyElement {
+        let pending = self.pending_invitations();
+        let mut popover = div()
+            .id("calendar-invitations")
+            .role(Role::Dialog)
+            .aria_label("Invitations")
+            .absolute()
+            .right(px(9.0))
+            .top(px(44.0))
+            .w(px(300.0))
+            .max_h(px(360.0))
+            .overflow_y_scroll()
+            .rounded(px(mac::radius_large_surface()))
+            .bg(mac::material_sidebar())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_lg()
+            .p(px(8.0))
+            .flex()
+            .flex_col()
+            .gap(px(6.0));
+        if pending.is_empty() {
+            popover = popover.child(
+                div()
+                    .p(px(8.0))
+                    .text_size(px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child("No pending invitations."),
+            );
+        }
+        for invitation in &pending {
+            let busy = self.responding.as_deref() == Some(invitation.event_id.as_str());
+            let color = Self::color(
+                self.snapshot
+                    .calendars
+                    .get(invitation.calendar)
+                    .map_or(CalendarColor::Blue, |calendar| calendar.color),
+            );
+            let when = if invitation.all_day {
+                invitation.start.format("%a %-d %b").to_string()
+            } else {
+                invitation.start.format("%a %-d %b, %-I:%M %p").to_string()
+            };
+            let mut row = div()
+                .id(SharedString::from(format!(
+                    "calendar-invitation-{}",
+                    invitation.event_id
+                )))
+                .v_flex()
+                .gap(px(4.0))
+                .p(px(8.0))
+                .rounded(px(mac::radius_control()))
+                .bg(mac::material_clear())
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .child(div().size(px(7.0)).rounded_full().bg(color))
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_size(px(12.0))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(mac::text())
+                                .child(invitation.title.clone()),
+                        ),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(mac::text_secondary())
+                        .child(match &invitation.organizer {
+                            Some(organizer) => format!("{when} · {organizer}"),
+                            None => when,
+                        }),
+                );
+            let mut actions = div().flex().gap(px(6.0));
+            for response in invitations::Response::ALL {
+                let event_id = invitation.event_id.clone();
+                actions = actions.child(
+                    div()
+                        .id(SharedString::from(format!(
+                            "calendar-invitation-{}-{}",
+                            invitation.event_id,
+                            response.label()
+                        )))
+                        .role(Role::Button)
+                        .aria_label(if busy {
+                            format!("{}, working", response.label())
+                        } else {
+                            response.label().to_owned()
+                        })
+                        .flex_1()
+                        .h(px(26.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(mac::radius_control()))
+                        .bg(mac::control_fill())
+                        .text_size(px(11.0))
+                        .text_color(if busy {
+                            mac::text_secondary()
+                        } else {
+                            mac::text()
+                        })
+                        .child(response.label())
+                        .when(!busy, |button| {
+                            button.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                this.respond_to_invitation(event_id.clone(), response, cx);
+                            }))
+                        }),
+                );
+            }
+            row = row.child(actions);
+            popover = popover.child(row);
+        }
+        div()
+            .id("calendar-invitations-overlay")
+            .absolute()
+            .inset_0()
+            .child(popover)
+            .into_any_element()
+    }
+
     fn color_swatches(
         &self,
         id_prefix: &'static str,
@@ -2620,6 +2945,7 @@ impl Render for CalendarView {
             )
             .on_action(cx.listener(|this, _: &DismissInspector, _, cx| this.dismiss(cx)))
             .on_action(cx.listener(|this, _: &Search, window, cx| this.toggle_search(window, cx)))
+            .on_action(cx.listener(|this, _: &ShowInvitations, _, cx| this.toggle_invitations(cx)))
             .on_action(cx.listener(|this, _: &NewCalendar, _, cx| this.create_new_calendar(cx)))
             .on_action(
                 cx.listener(|this, _: &RenameCalendar, window, cx| this.start_rename(window, cx)),
@@ -2647,6 +2973,9 @@ impl Render for CalendarView {
         }
         if self.search_open {
             root = root.child(self.render_search(cx));
+        }
+        if self.invitations_open {
+            root = root.child(self.render_invitations(cx));
         }
         if let Some(menu_at) = self.menu_at.clone() {
             root = root.child(

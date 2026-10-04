@@ -4,11 +4,14 @@
 //! design-lab/desktop.html: the gallery tiles were measured on the Mac; the
 //! 170-point layout is those numbers × 1.52 (S).
 
-use chrono::{Datelike as _, Local, Timelike as _};
+use std::process::Stdio;
+
+use chrono::{Datelike as _, Local, NaiveDate, Timelike as _};
 use gpui::{
-    canvas, div, point, prelude::*, px, rgb, rgba, svg, AnyElement, Bounds, FontWeight, Hsla,
-    PathBuilder, Pixels, SharedString, Window,
+    canvas, div, point, prelude::*, px, rgb, rgba, svg, AnyElement, Bounds, ClickEvent, FontWeight,
+    Hsla, PathBuilder, Pixels, Role, SharedString, Window,
 };
+use rmac_calendar_agent::upcoming::UpcomingEvent;
 use rmac_desktop::widgets::{self, WidgetKind, WidgetSize};
 use rmac_weather::widget::{Unavailable, WidgetWeather};
 
@@ -51,6 +54,9 @@ pub struct WidgetData {
     pub battery: Option<Battery>,
     /// The power service answered and there is no battery.
     pub no_battery: bool,
+    /// The Medium Calendar face's "Up Next" list (CAL-8), soonest first.
+    /// Empty both while unread and when nothing is coming up.
+    pub calendar: Vec<UpcomingEvent>,
 }
 
 impl WidgetData {
@@ -78,6 +84,44 @@ pub fn read_weather(refresh: bool) -> Result<WidgetWeather, Unavailable> {
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(0);
     rmac_weather::widget::load(now, refresh)
+}
+
+/// Blocking: the Medium Calendar face's "Up Next" events (CAL-8), read
+/// fresh each time the panel opens rather than through a live subscription
+/// (no idle EDS watcher just for a widget that may never be opened again).
+pub fn read_calendar_events(limit: usize) -> Vec<UpcomingEvent> {
+    rmac_calendar_agent::upcoming::load(limit).unwrap_or_default()
+}
+
+/// Launches Calendar deep-linked to `event` (CAL-8), the same `--event`
+/// argument the CAL-7 reminders agent's notification uses.
+fn open_calendar_event(event: &UpcomingEvent) {
+    let _ = std::process::Command::new("systemd-run")
+        .args(["--user", "--collect", "--quiet", "--"])
+        .arg("rmac-calendar")
+        .arg("--event")
+        .arg(&event.calendar_uid)
+        .arg(&event.event_uid)
+        .arg(event.start.to_rfc3339())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+}
+
+/// Launches Calendar on `date` (the Small widget's mini month and the
+/// Medium widget's own mini-month half, which have no single event to
+/// point at).
+fn open_calendar_date(date: NaiveDate) {
+    let _ = std::process::Command::new("systemd-run")
+        .args(["--user", "--collect", "--quiet", "--"])
+        .arg("rmac-calendar")
+        .arg("--date")
+        .arg(date.format("%Y-%m-%d").to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
 }
 
 macro_rules! weather_glyphs {
@@ -122,7 +166,13 @@ fn glyph(name: &str, size: f32, color: u32) -> gpui::Svg {
 }
 
 /// A widget face `WidgetSize::size() × scale` points large.
-pub fn face(kind: WidgetKind, size: WidgetSize, scale: f32, data: &WidgetData) -> AnyElement {
+pub fn face(
+    id: u64,
+    kind: WidgetKind,
+    size: WidgetSize,
+    scale: f32,
+    data: &WidgetData,
+) -> AnyElement {
     let (width, height) = size.size();
     let tile = div()
         .relative()
@@ -135,9 +185,13 @@ pub fn face(kind: WidgetKind, size: WidgetSize, scale: f32, data: &WidgetData) -
         .border_color(rgba(RIM));
     match kind {
         WidgetKind::Clock => tile.bg(rgba(GLASS)).child(clock(scale)).into_any_element(),
+        WidgetKind::Calendar if size == WidgetSize::Medium => tile
+            .bg(rgba(GLASS))
+            .child(calendar_medium(id, scale, &data.calendar))
+            .into_any_element(),
         WidgetKind::Calendar => tile
             .bg(rgba(GLASS))
-            .child(calendar(scale))
+            .child(calendar(id, scale))
             .into_any_element(),
         WidgetKind::Battery => tile
             .bg(rgba(GLASS))
@@ -223,7 +277,7 @@ fn clock(scale: f32) -> impl IntoElement {
         )
 }
 
-fn calendar(scale: f32) -> impl IntoElement {
+fn calendar(id: u64, scale: f32) -> impl IntoElement {
     let today = Local::now().date_naive();
     let grid = widgets::month_grid(today.year(), today.month(), today.day());
     let cell = 20.5 * scale;
@@ -264,6 +318,10 @@ fn calendar(scale: f32) -> impl IntoElement {
             .children(week.iter().map(|value| day_cell(*value)))
     });
     div()
+        .id(("widget-calendar-small", id as usize))
+        .role(Role::Button)
+        .aria_label("Calendar")
+        .on_click(move |_: &ClickEvent, _, _| open_calendar_date(today))
         .absolute()
         .inset_0()
         .pt(px(14.0 * scale))
@@ -284,6 +342,86 @@ fn calendar(scale: f32) -> impl IntoElement {
         )
         .child(div().flex().children(header))
         .children(weeks)
+}
+
+/// The Medium Calendar face (CAL-8): the same mini month plus an "Up Next"
+/// list of the next few events, each opening Calendar at that occurrence.
+fn calendar_medium(id: u64, scale: f32, events: &[UpcomingEvent]) -> AnyElement {
+    let month = div()
+        .relative()
+        .w(px(widgets::SMALL * scale))
+        .h_full()
+        .child(calendar(id, scale));
+    let mut list = div()
+        .flex_1()
+        .h_full()
+        .pt(px(14.0 * scale))
+        .pr(px(13.0 * scale))
+        .pb(px(13.0 * scale))
+        .flex()
+        .flex_col()
+        .gap(px(6.0 * scale))
+        .text_color(rgb(0xFFFFFF))
+        .child(
+            div()
+                .text_size(px(11.0 * scale))
+                .line_height(px(13.0 * scale))
+                .font_weight(FontWeight::BOLD)
+                .text_color(rgb(CALENDAR_RED))
+                .child("UP NEXT"),
+        );
+    if events.is_empty() {
+        list = list.child(
+            div()
+                .text_size(px(10.0 * scale))
+                .text_color(rgba(0xFFFFFF8C))
+                .child("Nothing coming up."),
+        );
+    }
+    for (index, event) in events.iter().take(3).enumerate() {
+        let target = event.clone();
+        let when = if event.all_day {
+            "All day".to_owned()
+        } else {
+            event
+                .start
+                .with_timezone(&Local)
+                .format("%-I:%M %p")
+                .to_string()
+        };
+        list = list.child(
+            div()
+                .id(SharedString::from(format!(
+                    "widget-calendar-event-{id}-{index}"
+                )))
+                .role(Role::Button)
+                .aria_label(format!("{}, {when}", event.title))
+                .flex()
+                .flex_col()
+                .gap(px(1.0 * scale))
+                .on_click(move |_: &ClickEvent, _, _| open_calendar_event(&target))
+                .child(
+                    div()
+                        .text_size(px(10.0 * scale))
+                        .text_color(rgba(0xFFFFFFB3))
+                        .child(when),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0 * scale))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .truncate()
+                        .child(event.title.clone()),
+                ),
+        );
+    }
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .child(month)
+        .child(list)
+        .into_any_element()
 }
 
 fn battery(scale: f32, battery: Option<Battery>) -> impl IntoElement {

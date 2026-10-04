@@ -457,6 +457,59 @@ pub fn load() -> Result<WeekSnapshot, String> {
     Err("Calendar service unavailable".into())
 }
 
+/// The calendar-enabled signed-in accounts' addresses (ACC-2's GOA bus),
+/// lowercased, for matching this computer's own ATTENDEE line on an
+/// invitation (CAL-8). Best-effort: no GOA account, or none with Calendar
+/// enabled, just means Calendar never recognises an event as its own
+/// pending RSVP.
+#[cfg(target_os = "linux")]
+pub fn self_emails() -> Vec<String> {
+    use rmac_accounts_linux::{goa::GoaBus, GoaApi};
+    let Ok(bus) = GoaBus::session() else {
+        return Vec::new();
+    };
+    let Ok(accounts) = GoaApi::accounts(&bus) else {
+        return Vec::new();
+    };
+    accounts
+        .into_iter()
+        .filter(|account| account.services.calendar)
+        .map(|account| account.identity.trim().to_ascii_lowercase())
+        .filter(|identity| !identity.is_empty())
+        .collect()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn self_emails() -> Vec<String> {
+    Vec::new()
+}
+
+/// Replies to an invitation: persists the updated PARTSTAT on the calendar
+/// (`ModifyObjects`), then asks EDS to deliver the reply (`SendObjects`).
+/// Google and iCloud's CalDAV scheduling sends it from here; other
+/// backends return recipients Mail would need to iMIP instead (MAIL-8, not
+/// yet built), so that half is best-effort and its failure does not undo
+/// the local PARTSTAT change already saved.
+#[cfg(target_os = "linux")]
+pub fn respond_to_invitation(source: &str, event: &IcalEvent) -> Result<(), String> {
+    use rmac_calendar_eds::Eds;
+    let eds = Eds::session().map_err(|_| "Calendar service unavailable".to_owned())?;
+    let calendar = eds
+        .open(source)
+        .map_err(|_| "Couldn't open calendar".to_owned())?;
+    let wire = object(event);
+    calendar
+        .modify(std::slice::from_ref(&wire), "this")
+        .map_err(|_| "Couldn't update the invitation".to_owned())?;
+    let _ = calendar.send(&wire);
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn respond_to_invitation(_source: &str, _event: &IcalEvent) -> Result<(), String> {
+    Err("Calendar service unavailable".into())
+}
+
 pub fn at_day(date: NaiveDate, hour: u32) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
     let start = date.and_hms_opt(hour, 0, 0)?.and_utc();
     Some((start, start + Duration::hours(1)))

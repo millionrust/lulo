@@ -12,6 +12,7 @@
 pub mod alarms;
 pub mod engine;
 pub mod state;
+pub mod upcoming;
 
 #[cfg(target_os = "linux")]
 pub mod linux;

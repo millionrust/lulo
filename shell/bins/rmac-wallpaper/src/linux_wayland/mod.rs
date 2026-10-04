@@ -39,6 +39,9 @@ const READY_FILE_ENV: &str = "RMAC_WALLPAPER_READY_FILE";
 const RENDER_COUNT_DIR_ENV: &str = "RMAC_WALLPAPER_RENDER_COUNT_DIR";
 /// How often the Weather widget's forecast is refreshed.
 const WEATHER_REFRESH: Duration = Duration::from_secs(15 * 60);
+/// How long to wait before restarting `upcoming::watch` after it returns
+/// (no EDS, no enabled calendar, or a source added/removed/toggled).
+const CALENDAR_RETRY_DELAY: Duration = Duration::from_secs(30);
 static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
 
 fn bin_word() -> &'static str {
@@ -131,6 +134,7 @@ enum PreparedUpdate {
     },
     Battery(Option<rmac_desktop_widgets::Battery>, bool),
     Weather(Result<rmac_weather::widget::WidgetWeather, rmac_weather::widget::Unavailable>),
+    Calendar(Vec<rmac_calendar_agent::upcoming::UpcomingEvent>),
     Gallery(GalleryTarget),
 }
 
@@ -189,6 +193,12 @@ impl WallpaperStatus {
                             }
                             PreparedUpdate::Weather(weather) => {
                                 this.widgets.weather = Some(weather);
+                            }
+                            PreparedUpdate::Calendar(events) => {
+                                if this.widgets.calendar == events {
+                                    return;
+                                }
+                                this.widgets.calendar = events;
                             }
                             PreparedUpdate::Gallery(target) => {
                                 // Opened after this update, since the
@@ -711,6 +721,9 @@ fn start_status(cx: &mut App) -> Entity<WallpaperStatus> {
         .spawn(watch_battery(prepared_tx.clone()))
         .detach();
     cx.background_executor()
+        .spawn(watch_calendar(prepared_tx.clone()))
+        .detach();
+    cx.background_executor()
         .spawn(refresh_weather(
             prepared_tx.clone(),
             weather_wanted.clone(),
@@ -789,6 +802,35 @@ async fn watch_battery(updates: async_channel::Sender<PreparedUpdate>) {
         }
     };
     futures_util::join!(watcher, forward);
+}
+
+/// Up Next for the desktop's Medium Calendar widget (CAL-8): blocking,
+/// event-driven EDS views, no timer. `rmac_calendar_agent::upcoming::watch`
+/// returns if EDS or a calendar source list changes, so this loops to
+/// restart it -- the same shape systemd's `Restart=always` gives the
+/// reminders agent for the same reason (`upcoming::watch`'s own doc
+/// comment).
+async fn watch_calendar(updates: async_channel::Sender<PreparedUpdate>) {
+    const CALENDAR_EVENT_LIMIT: usize = 3;
+    loop {
+        let inner = updates.clone();
+        blocking::unblock(move || {
+            rmac_calendar_agent::upcoming::watch(CALENDAR_EVENT_LIMIT, move |events| {
+                inner
+                    .send_blocking(PreparedUpdate::Calendar(events))
+                    .is_ok()
+            });
+        })
+        .await;
+        if updates
+            .send(PreparedUpdate::Calendar(Vec::new()))
+            .await
+            .is_err()
+        {
+            return;
+        }
+        async_io::Timer::after(CALENDAR_RETRY_DELAY).await;
+    }
 }
 
 async fn refresh_weather(

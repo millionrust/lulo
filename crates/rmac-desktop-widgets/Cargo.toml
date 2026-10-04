@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 chrono.workspace = true
 gpui.workspace = true
+rmac-calendar-agent.workspace = true
 rmac-desktop.workspace = true
 rmac-power.workspace = true
 rmac-weather.workspace = true

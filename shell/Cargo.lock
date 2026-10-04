@@ -942,6 +942,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono-tz"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3"
+dependencies = [
+ "chrono",
+ "phf 0.12.1",
+]
+
+[[package]]
 name = "cipher"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1031,7 +1041,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.1.14",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
@@ -4608,6 +4618,15 @@ dependencies = [
 
 [[package]]
 name = "phf"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "913273894cec178f401a31ec4b656318d95473527be05c0752cc41cdc32be8b7"
+dependencies = [
+ "phf_shared 0.12.1",
+]
+
+[[package]]
+name = "phf"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
@@ -4665,6 +4684,15 @@ name = "phf_shared"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67eabc2ef2a60eb7faa00097bd1ffdb5bd28e62bf39990626a582201b7a754e5"
+dependencies = [
+ "siphasher",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06005508882fb681fd97892ecff4b7fd0fee13ef1aa569f8695dae7ab9099981"
 dependencies = [
  "siphasher",
 ]
@@ -5569,6 +5597,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-calendar-agent"
+version = "0.9.0-beta.1"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "rmac-calendar-eds",
+ "rmac-calendar-runtime",
+ "rmac-calendar-store",
+ "rmac-dbus",
+ "rmac-storage",
+ "rustix 1.1.4",
+ "serde",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
+name = "rmac-calendar-eds"
+version = "0.9.0-beta.1"
+dependencies = [
+ "futures-lite",
+ "rmac-dbus",
+ "zbus",
+]
+
+[[package]]
+name = "rmac-calendar-runtime"
+version = "0.9.0-beta.1"
+dependencies = [
+ "rmac-calendar-eds",
+ "rmac-calendar-store",
+]
+
+[[package]]
+name = "rmac-calendar-store"
+version = "0.9.0-beta.1"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "rrule",
+]
+
+[[package]]
 name = "rmac-compositor"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -5622,6 +5693,7 @@ version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "gpui",
+ "rmac-calendar-agent",
  "rmac-desktop",
  "rmac-power",
  "rmac-weather",
@@ -6293,6 +6365,7 @@ dependencies = [
  "rmac-app-menu",
  "rmac-apps",
  "rmac-archive",
+ "rmac-calendar-agent",
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-desktop",
@@ -6504,6 +6577,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1964b10c76125c36f8afe190065a4bf9a87bf324842c05701330bba9f1cacbb"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "rrule"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "720acfb4980b9d8a6a430f6d7a11933e701ebbeba5eee39cc9d8c5f932aaff74"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "log",
+ "regex",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -7563,7 +7649,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",

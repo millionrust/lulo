@@ -300,7 +300,7 @@ fn handle_action(
                 target.occurrence_start,
                 target.trigger_at,
             );
-            open_calendar();
+            open_calendar_at(&target);
         }
         _ => {}
     }
@@ -308,10 +308,16 @@ fn handle_action(
 
 /// A transient unit so the agent's own service lifecycle never owns
 /// Calendar's window (mirrors `rmac-clock`'s `--ring-due` -> `open_clock`).
-fn open_calendar() {
+/// `--event` deep-links to the exact occurrence that fired (CAL-8; this
+/// used to open Calendar generally, `docs/parity.md` APP-01).
+fn open_calendar_at(target: &Target) {
     let _ = std::process::Command::new("systemd-run")
         .args(["--user", "--collect", "--quiet", "--"])
         .arg(CALENDAR_EXECUTABLE)
+        .arg("--event")
+        .arg(&target.calendar_uid)
+        .arg(&target.event_uid)
+        .arg(target.occurrence_start.to_rfc3339())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

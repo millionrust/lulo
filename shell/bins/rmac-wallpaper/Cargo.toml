@@ -29,6 +29,7 @@ rmac-apps.workspace = true
 rmac-app-launch.workspace = true
 rmac-app-menu.workspace = true
 rmac-archive.workspace = true
+rmac-calendar-agent.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-desktop.workspace = true

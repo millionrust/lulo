@@ -5992,6 +5992,7 @@ dependencies = [
  "chrono-tz",
  "gpui",
  "rmac-accounts",
+ "rmac-accounts-linux",
  "rmac-calendar-agent",
  "rmac-calendar-eds",
  "rmac-calendar-store",
@@ -6151,6 +6152,7 @@ version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "gpui",
+ "rmac-calendar-agent",
  "rmac-desktop",
  "rmac-power",
  "rmac-weather",

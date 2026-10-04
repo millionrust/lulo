@@ -53,20 +53,36 @@ certificate trust, Lulo's own OAuth client registrations.
 - Calendars: show/hide (checkbox), colour, rename, New Calendar (local or on an account),
   File ▸ New Calendar Subscription… (webcal/https ICS), File ▸ Import… (.ics), Export.
 - Invitations: events with attendees show organiser and attendee status; Accept / Maybe /
-  Decline in the inspector and the inbox popover. Google and iCloud servers send the replies
-  (CalDAV scheduling); for other servers the reply is sent by Mail as iMIP (MAIL-8).
+  Decline in the toolbar's inbox popover (**built**, CAL-8: a count badge next to the inbox
+  icon, each pending invitation's title/time/organiser and three reply buttons). Google and
+  iCloud servers send the replies the moment `Calendar::send` is called (CalDAV scheduling);
+  for other servers that call returns a recipient list Mail would need to send by iMIP
+  (MAIL-8, not yet built) -- the local PARTSTAT change is saved either way. **Simplified:**
+  the event inspector does not yet show attendee status or its own Accept/Maybe/Decline (the
+  toolbar popover is the only way to reply, matching the inspector's own "simplified form
+  first" precedent from CAL-5); self-identification for matching "my" ATTENDEE line uses the
+  calendar-enabled GOA accounts' addresses (ACC-2's `GoaBus`), so an invitation addressed to
+  an email Lulo has no account for never shows as pending.
 - Reminders: alerts fire as Lulo notifications through `rmac-calendar-agent` even when Calendar
-  is closed; Snooze and Close, and a default action that opens the event (**built**, CAL-7).
-  Default Alerts for Events and All-day Events live in Settings ▸ Alerts (**built**, global, not
-  per account, matching the Mac's one Alerts pane); Birthdays has no row since Lulo has no
-  Birthdays calendar yet.
+  is closed; Snooze and Close, and a default action that opens the exact event (**built**,
+  CAL-7/CAL-8: `--event <calendar-uid> <event-uid> <occurrence>` deep-links Calendar to the
+  occurrence that fired, replacing CAL-7's "opens Calendar generally"). Default Alerts for
+  Events and All-day Events live in Settings ▸ Alerts (**built**, global, not per account,
+  matching the Mac's one Alerts pane); Birthdays has no row since Lulo has no Birthdays
+  calendar yet.
 - Search: finds events by title, location, notes and people across visible calendars; results
   list under the toolbar, Return jumps to the event.
 - Settings (⌘,): General (default calendar, start of week, day starts/ends, show N days,
   show week numbers, default alert times), Accounts (refresh interval, enable/disable),
   Alerts. **(verify on Mac: exact panes and labels)**
-- Integration: menu-bar clock and the desktop Calendar widget open Calendar on that date; the
-  widget shows the next events (CAL-8).
+- Integration (**built**, CAL-8): the desktop/Notification Centre Calendar widget gains a
+  Medium size with an "Up Next" list of the next few events (`rmac-calendar-agent::upcoming`,
+  event-driven EDS views on the always-running desktop widget host, a one-shot read for
+  Notification Centre's transient panel); clicking an Up Next row or the mini month opens
+  Calendar on that event or date (`--event`/`--date`, the same deep link CAL-7's reminders use).
+  **(verify on Mac: whether the menu-bar clock's own date menu, as opposed to Notification
+  Centre, also lists events on macOS 26 -- Lulo has no separate date-menu dropdown, so the
+  widget is the one place this shows.)**
 
 **Mac behaviour to match (verify on Mac):** Week view's today column header has the date in a
 red circle; the now-line is red with a dot on today's column and the time in the gutter; weekend
@@ -160,7 +176,7 @@ tokens only, no polling, no UI-thread I/O, HTML mock first for any new surface.
 | CAL-5 | Create/edit/move/resize/delete, inspector popover, repeat-edit choices, undo | L | `calendar` | `calendar/new-event`, `calendar/edit-event-inspector`, `calendar/delete-event-undo` |
 | CAL-6 | Calendars management, subscriptions, import/export, search, Settings window | M | `calendar` | `calendar/hide-calendar`, `calendar/search-events` |
 | CAL-7 | Reminders agent + notification actions + default alerts — **built** (`rmac-calendar-agent`; `docs/parity.md` APP-01) | M | `rmac-calendar-agent` | 16 unit tests (`alarms`/`state`/`engine`) with a fake clock (plain `DateTime<Utc>` values); laptop alert-on-time and 0-wakeups checks still open |
-| CAL-8 | Invitations (inbox popover, accept/decline), menu-bar clock & desktop widget integration, Orca pass | M | `calendar`, `rmac-desktop-widgets`, top bar | `calendar/invitation-accept` (fixture CalDAV server) |
+| CAL-8 | Invitations (inbox popover, accept/decline), desktop/Notification Centre widget integration, event deep links, Orca pass — **built** (`docs/parity.md` APP-01) | M | `calendar`, `rmac-calendar-agent`, `rmac-desktop`, `rmac-desktop-widgets`, `rmac-shell-wallpaper`, `notification-center-app` | `invitation_accept_updates_status_and_leaves_the_pending_list` fixture unit test (no Docker); the recorded `calendar/invitation-accept` dual scenario stays pending, same as CAL-5/6's scenarios |
 | CAL-9 | Microsoft calendars: verify `evolution-ews` Microsoft 365 backend with GOA `ms_graph`; if unusable, Graph calendar adapter behind the same runtime trait — **built** via EDS (see "MAIL-9 and CAL-9 notes"); no Lulo Graph calendar adapter needed | M | `rmac-calendar-eds`, packaging | `microsoft365_calendars_from_goa_are_ordinary_sources`; laptop check with the owner's test account still open |
 
 ### Mail (MAIL)

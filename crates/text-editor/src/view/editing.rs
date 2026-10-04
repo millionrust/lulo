@@ -603,6 +603,7 @@ impl EditorView {
         // Mac greys them out in a plain document.
         let text_format_enabled = self.rich_text && can_insert;
         for action in [
+            "text_editor::ShowFonts",
             "text_editor::ToggleBold",
             "text_editor::ToggleItalic",
             "text_editor::ToggleUnderline",

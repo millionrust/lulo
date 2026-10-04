@@ -11,6 +11,72 @@
 
 use super::*;
 use rmac_editor::rich::{Alignment, CharStyle, ListKind, ParagraphStyle};
+
+/// A size typed in the Fonts panel, in points.
+fn parse_font_size(text: &str) -> Option<f32> {
+    let size = text
+        .trim()
+        .trim_end_matches("pt")
+        .trim()
+        .parse::<f32>()
+        .ok()?;
+    (size.is_finite() && (4.0..=288.0).contains(&size)).then_some(size)
+}
+
+/// Installed font families, from fontconfig (`fc-list`), sorted and
+/// deduplicated. Runs off the UI thread; empty when fontconfig's tool is
+/// unavailable.
+fn installed_font_families() -> Vec<String> {
+    let Ok(output) = std::process::Command::new("fc-list")
+        .args([":", "family"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    parse_font_families(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// `fc-list : family` lines list a family's localized names separated by
+/// commas; the first is its own name. Hidden faces start with a dot.
+fn parse_font_families(listing: &str) -> Vec<String> {
+    let mut families: Vec<String> = listing
+        .lines()
+        .filter_map(|line| line.split(',').next())
+        .map(|name| name.trim().replace("\\-", "-"))
+        .filter(|name| !name.is_empty() && !name.starts_with('.'))
+        .collect();
+    families.sort_by_key(|name| name.to_lowercase());
+    families.dedup();
+    families
+}
+
+#[cfg(test)]
+mod font_tests {
+    use super::*;
+
+    #[test]
+    fn fontconfig_family_lines_become_one_sorted_name_each() {
+        let listing =
+            "Noto Sans,Noto Sans Regular\nDejaVu Serif\n.Hidden\nnoto sans mono\nDejaVu Serif\n";
+        assert_eq!(
+            parse_font_families(listing),
+            ["DejaVu Serif", "Noto Sans", "noto sans mono"]
+        );
+    }
+
+    #[test]
+    fn font_sizes_must_be_sane_points() {
+        assert_eq!(parse_font_size(" 14 "), Some(14.0));
+        assert_eq!(parse_font_size("10.5pt"), Some(10.5));
+        assert_eq!(parse_font_size("0"), None);
+        assert_eq!(parse_font_size("big"), None);
+    }
+}
 use std::sync::{Mutex, OnceLock};
 
 /// Format ▸ Text ▸ Copy Ruler / Paste Ruler: one process-wide clipboard, as
@@ -77,9 +143,14 @@ impl EditorView {
             return;
         }
         if self.rich_text {
-            // TextEdit always asks before a document loses its formatting.
-            self.alert = Some(ActiveAlert::ConfirmPlainTextConversion);
-            cx.notify();
+            // An empty document has no formatting to lose, so it converts
+            // at once; otherwise TextEdit asks first.
+            if self.rich.read(cx).document().is_empty() {
+                self.perform_make_plain_text(window, cx);
+            } else {
+                self.alert = Some(ActiveAlert::ConfirmPlainTextConversion);
+                cx.notify();
+            }
             return;
         }
         if self.long_lines.is_some() {
@@ -113,6 +184,7 @@ impl EditorView {
         self.spacing_open = false;
         self.colours_open = false;
         self.lists_open = false;
+        self.fonts_open = false;
         self.rich.update(cx, |editor, cx| {
             let style = editor.default_style().clone();
             editor.set_document(rich::Document::empty(&style), cx);
@@ -219,6 +291,80 @@ impl EditorView {
         ]
         .into_iter()
         .find(|highlight| highlight.color() == current)
+    }
+
+    /// Format ▸ Font ▸ Show Fonts (⌘T): the installed families and a size.
+    pub(super) fn show_fonts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.text_format_editable() {
+            return;
+        }
+        self.fonts_open = !self.fonts_open;
+        if !self.fonts_open {
+            self.focus_body(window, cx);
+            cx.notify();
+            return;
+        }
+        let size = self.rich.read(cx).style_at_selection().size;
+        let size = if size.fract() == 0.0 {
+            format!("{size:.0}")
+        } else {
+            format!("{size:.1}")
+        };
+        self.font_size_input
+            .update(cx, |input, cx| input.set_value(size, window, cx));
+        if self.font_families.is_none() {
+            cx.spawn(async move |this, cx| {
+                let scanned = cx
+                    .background_executor()
+                    .spawn(async { installed_font_families() })
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    let families = if scanned.is_empty() {
+                        // No fontconfig tool: GPUI's own font list.
+                        let mut names = cx.text_system().all_font_names();
+                        names.sort_by_key(|name| name.to_lowercase());
+                        names.dedup();
+                        names
+                    } else {
+                        scanned
+                    };
+                    this.font_families =
+                        Some(families.into_iter().map(SharedString::from).collect());
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+        cx.notify();
+    }
+
+    pub(super) fn close_fonts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_font_size(window, cx);
+        self.fonts_open = false;
+        self.focus_body(window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn set_font_family(&mut self, family: SharedString, cx: &mut Context<Self>) {
+        if self.text_format_editable() {
+            let family = std::sync::Arc::<str>::from(family.as_ref());
+            self.rich
+                .update(cx, |editor, cx| editor.set_family(Some(family), cx));
+        }
+    }
+
+    /// Apply the Fonts panel's size field, when it holds a valid size that
+    /// differs from the selection's.
+    pub(super) fn apply_font_size(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if !self.text_format_editable() {
+            return;
+        }
+        let Some(size) = parse_font_size(&self.font_size_input.read(cx).value()) else {
+            return;
+        };
+        if self.rich.read(cx).style_at_selection().size != size {
+            self.rich.update(cx, |editor, cx| editor.set_size(size, cx));
+        }
     }
 
     /// Format ▸ Font ▸ Show Colours (⇧⌘C).

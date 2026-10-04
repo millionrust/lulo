@@ -165,7 +165,34 @@ pub(crate) fn validate_layout(layout: PageLayout) -> Result<ValidLayout, Error> 
     })
 }
 
+/// One page raster, already compressed, as a PDF image.
+pub(crate) struct PageImage {
+    pub(crate) compressed: Vec<u8>,
+    pub(crate) color_space: &'static str,
+    pub(crate) bits_per_component: u8,
+}
+
+pub(crate) fn compress(raster: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(raster).map_err(|_| Error::Encode)?;
+    encoder.finish().map_err(|_| Error::Encode)
+}
+
 fn encode_pdf(pages: &[Vec<u8>], layout: &ValidLayout) -> Result<Vec<u8>, Error> {
+    let images = pages
+        .iter()
+        .map(|page| {
+            Ok(PageImage {
+                compressed: compress(page)?,
+                color_space: "/DeviceGray",
+                bits_per_component: 1,
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    assemble_pdf(&images, layout)
+}
+
+pub(crate) fn assemble_pdf(pages: &[PageImage], layout: &ValidLayout) -> Result<Vec<u8>, Error> {
     let page_count = pages.len();
     let object_count = 2_usize
         .checked_add(page_count.checked_mul(3).ok_or(Error::Encode)?)
@@ -192,17 +219,16 @@ fn encode_pdf(pages: &[Vec<u8>], layout: &ValidLayout) -> Result<Vec<u8>, Error>
             )
             .into_bytes(),
         );
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(page).map_err(|_| Error::Encode)?;
-        let compressed = encoder.finish().map_err(|_| Error::Encode)?;
         let mut image = format!(
-            "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /FlateDecode /Length {} >>\nstream\n",
+            "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace {} /BitsPerComponent {} /Filter /FlateDecode /Length {} >>\nstream\n",
             layout.width_px,
             layout.height_px,
-            compressed.len()
+            page.color_space,
+            page.bits_per_component,
+            page.compressed.len()
         )
         .into_bytes();
-        image.extend_from_slice(&compressed);
+        image.extend_from_slice(&page.compressed);
         image.extend_from_slice(b"\nendstream");
         objects.push(image);
         let command = format!(

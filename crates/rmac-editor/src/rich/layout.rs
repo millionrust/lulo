@@ -159,6 +159,12 @@ enum Atom {
     Tab {
         at: usize,
     },
+    /// A line or page break: never shaped (no font has a glyph for it, and
+    /// asking would send GPUI through its whole fallback list).
+    Break {
+        at: usize,
+        len: usize,
+    },
 }
 
 fn atoms(paragraph: &Paragraph) -> Vec<Atom> {
@@ -189,11 +195,21 @@ fn atoms(paragraph: &Paragraph) -> Vec<Atom> {
                 style_ranges: vec![(sub, style.clone())],
             });
         };
-        for (offset, _) in text[range.clone()].match_indices('\t') {
+        for (offset, character) in text[range.clone()]
+            .char_indices()
+            .filter(|(_, character)| *character == '\t' || is_forced_break(*character))
+        {
             let at = range.start + offset;
             push_text(&mut atoms, cursor..at);
-            atoms.push(Atom::Tab { at });
-            cursor = at + 1;
+            if character == '\t' {
+                atoms.push(Atom::Tab { at });
+            } else {
+                atoms.push(Atom::Break {
+                    at,
+                    len: character.len_utf8(),
+                });
+            }
+            cursor = at + character.len_utf8();
         }
         push_text(&mut atoms, cursor..range.end);
     }
@@ -271,6 +287,10 @@ pub(crate) fn layout_paragraph(
                 stops.push((*at, x));
                 let steps = (f32::from(x) / f32::from(tab)).floor() + 1.0;
                 x = tab * steps;
+            }
+            Atom::Break { at, len } => {
+                stops.push((*at, x));
+                stops.push((*at + *len, x));
             }
         }
     }

@@ -236,6 +236,12 @@ struct EditorView {
     colours_open: bool,
     /// Format ▸ List….
     lists_open: bool,
+    /// Format ▸ Font ▸ Show Fonts (⌘T): the panel, the installed families
+    /// (`None` until the background fontconfig scan returns), and its size
+    /// field.
+    fonts_open: bool,
+    font_families: Option<Vec<SharedString>>,
+    font_size_input: Entity<InputState>,
     /// View ▸ Use Dark Background for Windows: a per-window paper-colour
     /// override, independent of the system's light/dark appearance.
     dark_background: bool,
@@ -460,6 +466,30 @@ mod tests {
         );
 
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rich_documents_print_with_their_formatting_markers_and_breaks() {
+        let mut rich_document =
+            rich::Document::from_plain_text("Title\nitem\u{2028}more", &rich::CharStyle::default());
+        rich_document.update_char_style(0..5, |style| {
+            style.bold = true;
+            style.color = Some(rich::Rgb::new(200, 0, 0));
+        });
+        rich_document
+            .update_paragraph_style(0..0, |style| style.alignment = rich::Alignment::Center);
+        rich_document
+            .update_paragraph_style(6..6, |style| style.list = Some(rich::ListKind::Numbered));
+        let lines = super::document_io::print_lines(&rich_document);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].align, rmac_print::RichAlign::Center);
+        assert!(lines[0].spans[0].bold);
+        assert_eq!(lines[0].spans[0].color, (200, 0, 0));
+        assert_eq!(lines[1].spans[0].text, "1.\t");
+        assert_eq!(lines[1].spans[1].text, "item");
+        assert_eq!(lines[2].spans[0].text, "more");
+        let pdf = rmac_print::render_rich_pdf(&lines, rmac_print::PageLayout::default()).unwrap();
+        assert!(pdf.starts_with(b"%PDF"));
     }
 
     #[test]

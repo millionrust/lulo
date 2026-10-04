@@ -134,6 +134,8 @@ gpui::actions!(
         AlignJustify,
         // Format ▸ List…
         ShowLists,
+        // Format ▸ Font ▸ Show Fonts (⌘T).
+        ShowFonts,
     ]
 );
 

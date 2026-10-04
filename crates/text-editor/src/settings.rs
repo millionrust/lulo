@@ -59,7 +59,8 @@ impl Default for Settings {
             font_size: 11,
             wrap_to_page: false,
             default_encoding: TextEncoding::Utf8,
-            rich_text_default: false,
+            // TextEdit's own default: new documents are rich text (TE-23).
+            rich_text_default: true,
             rich_text_font: RichTextFont::default(),
             rich_text_font_size: 12,
             show_ruler_default: true,

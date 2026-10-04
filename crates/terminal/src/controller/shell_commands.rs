@@ -152,6 +152,7 @@ impl TerminalView {
             current_document_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             title,
             text,
+            rich: None,
         };
         cx.spawn_in(window, async move |this, cx| {
             let result = rmac_print_linux::print_document(request).await;

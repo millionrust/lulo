@@ -28,6 +28,9 @@ pub struct PrintDocument {
     pub current_document_generation: Arc<AtomicU64>,
     pub title: String,
     pub text: String,
+    /// The formatted document, when the source is rich text: printed with
+    /// its formatting instead of `text`.
+    pub rich: Option<Vec<rmac_print::RichLine>>,
 }
 
 impl fmt::Debug for PrintDocument {
@@ -40,6 +43,7 @@ impl fmt::Debug for PrintDocument {
             .field("document_generation", &self.document_generation)
             .field("title", &"<private>")
             .field("text", &"<private>")
+            .field("rich", &self.rich.is_some())
             .finish()
     }
 }
@@ -169,9 +173,13 @@ pub async fn print_document(request: PrintDocument) -> Result<Outcome, Error> {
         })?;
 
     let text = request.text.clone();
-    let pdf = blocking::unblock(move || rmac_print::render_pdf(&text, layout))
-        .await
-        .map_err(|_| Error::new(ErrorKind::Render))?;
+    let rich = request.rich.clone();
+    let pdf = blocking::unblock(move || match rich {
+        Some(lines) => rmac_print::render_rich_pdf(&lines, layout),
+        None => rmac_print::render_pdf(&text, layout),
+    })
+    .await
+    .map_err(|_| Error::new(ErrorKind::Render))?;
     let current = current_identity(&request, &parent_string)?;
     transaction
         .rendered(&current, layout, OutputFormat::Pdf)
@@ -663,6 +671,7 @@ mod tests {
             current_document_generation: Arc::new(AtomicU64::new(document_generation)),
             title: "private-title.txt".into(),
             text: "private document body".into(),
+            rich: None,
         }
     }
 

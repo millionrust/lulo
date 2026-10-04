@@ -490,6 +490,13 @@
           "separator_before": false,
           "children": [
             {
+              "label": "Show Fonts",
+              "action": "text_editor::ShowFonts",
+              "shortcut": "⌘T",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Bold",
               "action": "text_editor::ToggleBold",
               "shortcut": "⌘B",

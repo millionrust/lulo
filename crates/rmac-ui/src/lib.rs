@@ -43,11 +43,11 @@ pub use components::{
     PasteAndMatchStyle, RequestClose,
 };
 pub use controls::{
-    slider_bulge_lerp, uniform_list_scrollbar, Button, ButtonRole, Checkbox, CollectionState,
-    DocumentTitleMenu, InputEvent, InputState, KeyboardAction, List, ListRow, PopUpButton,
-    Position, Radio, RadioGroup, Rope, RopeExt, SearchField, SegmentedControl, SelectAll, Slider,
-    SliderAxis, SliderBulge, SliderEvent, SliderState, SwitchSize, Table, Tabs, TextField, Toggle,
-    ToggleState, Tree, TreeRow, SLIDER_BULGE_MS,
+    overlay_scrollbar, slider_bulge_lerp, uniform_list_scrollbar, Button, ButtonRole, Checkbox,
+    CollectionState, DocumentTitleMenu, InputEvent, InputState, KeyboardAction, List, ListRow,
+    PopUpButton, Position, Radio, RadioGroup, Rope, RopeExt, ScrollPosition, SearchField,
+    SegmentedControl, SelectAll, Slider, SliderAxis, SliderBulge, SliderEvent, SliderState,
+    SwitchSize, Table, Tabs, TextField, Toggle, ToggleState, Tree, TreeRow, SLIDER_BULGE_MS,
 };
 pub use controls::{tooltip_view, Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{
@@ -96,14 +96,6 @@ pub mod input_actions {
 
     /// The key context those bindings live in.
     pub const KEY_CONTEXT: &str = "Input";
-
-    /// gpui-component binds ⇧←/⇧→/⇧↑/⇧↓ in that context to actions it does
-    /// not export; an editor answers them by these names
-    /// (`App::build_action`) instead.
-    pub const SELECT_LEFT: &str = "ui::SelectLeft";
-    pub const SELECT_RIGHT: &str = "ui::SelectRight";
-    pub const SELECT_UP: &str = "ui::SelectUp";
-    pub const SELECT_DOWN: &str = "ui::SelectDown";
 }
 pub use text_transform::{transform_selection, TextTransformation};
 pub use window::*;

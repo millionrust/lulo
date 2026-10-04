@@ -1188,7 +1188,7 @@ impl TextElement {
 
         if is_single_line {
             let shaped_line = window.text_system().shape_line(
-                display_text.to_string().into(),
+                shapeable(&display_text.to_string()).into(),
                 font_size,
                 &runs,
                 None,
@@ -1251,7 +1251,7 @@ impl TextElement {
                     )
                 };
 
-                let sub_line: SharedString = line_text[range.clone()].to_string().into();
+                let sub_line: SharedString = shapeable(&line_text[range.clone()]).into();
                 let shaped_line = window
                     .text_system()
                     .shape_line(sub_line, font_size, &line_runs, None);
@@ -2692,4 +2692,23 @@ mod tests {
             raw.min(half),
         );
     }
+}
+
+/// rmac: text as handed to the shaper, with ASCII control characters other
+/// than tab (a page break's U+000C, a stray U+0007…) shown as spaces. No font
+/// has a glyph for them, so shaping one sends GPUI through its whole
+/// fallback font list on the frame it first appears, which can stall that
+/// frame for a long time on a machine with many fonts. Byte offsets are
+/// unchanged (each is one byte either way), so carets and hit tests still
+/// line up with the document.
+fn shapeable(text: &str) -> String {
+    text.chars()
+        .map(|character| {
+            if character.is_ascii_control() && character != '\t' {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect()
 }

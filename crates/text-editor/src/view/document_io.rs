@@ -220,11 +220,88 @@ pub(super) fn render_pdf_export(
     layout: rmac_print::PageLayout,
 ) -> Result<(), ExportPdfFailure> {
     let pdf = rmac_print::render_pdf(text, layout).map_err(ExportPdfFailure::Render)?;
+    write_pdf_export(path, &pdf)
+}
+
+/// Export as PDF for a rich document: its formatting, through the same
+/// renderer printing uses.
+pub(super) fn render_rich_pdf_export(
+    path: &Path,
+    lines: &[rmac_print::RichLine],
+    layout: rmac_print::PageLayout,
+) -> Result<(), ExportPdfFailure> {
+    let pdf = rmac_print::render_rich_pdf(lines, layout).map_err(ExportPdfFailure::Render)?;
+    write_pdf_export(path, &pdf)
+}
+
+/// A rich document as the print renderer's lines: each paragraph, split at
+/// its line and page breaks, keeps its alignment, spacing and list marker,
+/// and each run its face, size, styles and colours. Automatic text colour
+/// prints black on paper, as it does on the Mac.
+pub(super) fn print_lines(document: &rich::Document) -> Vec<rmac_print::RichLine> {
+    let numbers = document.list_numbers();
+    let mut lines = Vec::new();
+    for (index, paragraph) in document.paragraphs().iter().enumerate() {
+        let style = paragraph.style();
+        let align = match style.alignment {
+            rich::Alignment::Left => rmac_print::RichAlign::Left,
+            rich::Alignment::Center => rmac_print::RichAlign::Center,
+            rich::Alignment::Right => rmac_print::RichAlign::Right,
+            rich::Alignment::Justified => rmac_print::RichAlign::Justified,
+        };
+        let new_line = || rmac_print::RichLine {
+            spans: Vec::new(),
+            align,
+            line_spacing: style.line_spacing,
+        };
+        let mut line = new_line();
+        let span = |text: &str, run: &rich::CharStyle| rmac_print::RichSpan {
+            text: text.to_owned(),
+            family: run.family.as_deref().map(str::to_owned),
+            size_pt: run.size,
+            bold: run.bold,
+            italic: run.italic,
+            underline: run.underline,
+            strikethrough: run.strikethrough,
+            color: run
+                .color
+                .map_or((0, 0, 0), |color| (color.r, color.g, color.b)),
+            highlight: run.highlight.map(|color| (color.r, color.g, color.b)),
+        };
+        if let Some(kind) = style.list {
+            let marker = match kind {
+                rich::ListKind::Bullet => "\u{2022}\t".to_owned(),
+                rich::ListKind::Numbered => format!("{}.\t", numbers[index]),
+            };
+            let mut marker_span = span(&marker, paragraph.style_of_char_at(0));
+            marker_span.underline = false;
+            marker_span.strikethrough = false;
+            marker_span.highlight = None;
+            line.spans.push(marker_span);
+        }
+        for (range, run) in paragraph.styled_ranges() {
+            let text = &paragraph.text()[range];
+            let mut pieces = text.split(['\u{2028}', '\u{000C}']).peekable();
+            while let Some(piece) = pieces.next() {
+                if !piece.is_empty() {
+                    line.spans.push(span(piece, run));
+                }
+                if pieces.peek().is_some() {
+                    lines.push(std::mem::replace(&mut line, new_line()));
+                }
+            }
+        }
+        lines.push(line);
+    }
+    lines
+}
+
+fn write_pdf_export(path: &Path, pdf: &[u8]) -> Result<(), ExportPdfFailure> {
     storage::write(
         &storage::RealStorage,
         storage::Operation::ExportPdf,
         path,
-        &pdf,
+        pdf,
     )
     .map_err(ExportPdfFailure::Storage)
 }

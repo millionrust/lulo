@@ -19,7 +19,7 @@ use rmac_ui::text_assist::SpellChecker;
 enum LoadState {
     NotStarted,
     Loading,
-    Ready(spellbook::Dictionary),
+    Ready(Box<spellbook::Dictionary>),
     /// No dictionary found (not Ubuntu, or `hunspell-en-gb`/`-en-us` not
     /// installed) or it failed to parse.
     Unavailable,
@@ -55,7 +55,7 @@ impl HunspellChecker {
             let loaded = load_dictionary();
             let mut state = this.lock();
             *state = match loaded {
-                Some(dictionary) => LoadState::Ready(dictionary),
+                Some(dictionary) => LoadState::Ready(Box::new(dictionary)),
                 None => LoadState::Unavailable,
             };
         });

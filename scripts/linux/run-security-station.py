@@ -1172,6 +1172,10 @@ def check_terminal_wrapper(state: dict) -> dict:
             "WLR_RENDERER": "pixman",
             "WLR_LIBINPUT_NO_DEVICES": "1",
             "GSK_RENDERER": "cairo",
+            # No portal backend can answer on a headless runner; without this
+            # GTK waits on the Settings portal before mapping the window.
+            "GDK_DEBUG": "no-portals",
+            "GTK_A11Y": "none",
             "LIBGL_ALWAYS_SOFTWARE": "1",
             "XDG_CURRENT_DESKTOP": "rmac:niri",
         },
@@ -1186,7 +1190,7 @@ def check_terminal_wrapper(state: dict) -> dict:
         "for i in $(seq 1 50); do [ -S \"$XDG_RUNTIME_DIR/wayland-1\" ] && break; sleep 0.2; done\n"
         "export WAYLAND_DISPLAY=wayland-1\n"
         f"{quoted} >/dev/null 2>\"$HOME/terminal-stderr.txt\" & term=$!\n"
-        "for i in $(seq 1 150); do [ -s \"$HOME/argv-probe.json\" ] && break; sleep 0.2; done\n"
+        "for i in $(seq 1 450); do [ -s \"$HOME/argv-probe.json\" ] && break; sleep 0.2; done\n"
         "kill $term $sway 2>/dev/null; wait 2>/dev/null; exit 0\n"
     )
     # Ptyxis starts each command in a systemd scope, so the user needs a
@@ -1202,7 +1206,7 @@ def check_terminal_wrapper(state: dict) -> dict:
         user=account.pw_name,
         env=environment,
         check=False,
-        timeout=120,
+        timeout=180,
         cwd=home,
         output_file=state["work"] / "terminal-wrapper.log",
     )

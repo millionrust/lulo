@@ -6,8 +6,10 @@ name: Security station (disposable Ubuntu 26.04)
 # afterwards, so the destructive native checks (install/upgrade/rollback/purge,
 # maintainer scripts, PackageKit offline updates, polkit, journald) run here
 # and never on the reference laptop. The job installs the exact unsigned
-# candidate that candidate.yml built for a dev commit and records one JSON
-# result per native check as the security-station-evidence artifact.
+# candidate that candidate.yml built (pass its run id; by default the latest
+# green dev run) and records one JSON result per native check as the
+# security-station-evidence artifact. It runs only on request: each run takes
+# a runner for about 30 minutes.
 
 on:
   workflow_dispatch:
@@ -16,8 +18,6 @@ on:
         description: "candidate.yml run id to test (default: latest successful dev run)"
         type: string
         default: ""
-  push:
-    branches: [agent/sec, agent/sec-*]
 
 permissions:
   contents: read

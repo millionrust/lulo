@@ -4955,7 +4955,8 @@ mod linux_wayland {
         let installed = installed.chain([PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../../packaging/rmac-apps/icons")
             .join(file)]);
-        installed.into_iter().find(|path| path.is_file())
+        let mut candidates = installed;
+        candidates.find(|path| path.is_file())
     }
 
     fn trash_icon_path(full: bool) -> Option<PathBuf> {

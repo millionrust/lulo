@@ -2048,7 +2048,7 @@ impl CalendarView {
                 div()
                     .id(format!("calendar-search-result-{index}"))
                     .role(Role::ListBoxOption)
-                    .aria_label(title)
+                    .aria_label(title.clone())
                     .aria_selected(selected)
                     .h(px(32.0))
                     .flex()

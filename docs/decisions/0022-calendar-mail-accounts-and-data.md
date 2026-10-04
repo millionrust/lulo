@@ -81,7 +81,7 @@ above is D-Bus activated, so it costs nothing until something asks for it.
    | Button | GOA accounts created | Mail | Calendar |
    |---|---|---|---|
    | Google | `google` (OAuth) | IMAP/SMTP, SASL XOAUTH2 | EDS CalDAV (GOA source) |
-   | Microsoft (Outlook, Hotmail, Microsoft 365) | `ms_graph` (OAuth, tenant `common`) | Microsoft Graph REST (the token has no IMAP scope) | EDS needs `evolution-ews`'s Microsoft 365 backend, else Lulo's Graph calendar adapter (milestone CAL-9) |
+   | Microsoft (Outlook, Hotmail, Microsoft 365) | `ms_graph` (OAuth, tenant `common`) | Microsoft Graph REST (the token has no IMAP scope) | EDS's GOA module maps `ms_graph` to the `microsoft365` backend from `evolution-ews-core` (CAL-9, see `docs/design/calendar-mail.md`) |
    | Yahoo | `imap_smtp` + `webdav` (app password) | IMAP/SMTP, PLAIN | EDS CalDAV `caldav.calendar.yahoo.com` |
    | iCloud | `imap_smtp` + `webdav` (app-specific password) | IMAP/SMTP, PLAIN | EDS CalDAV `caldav.icloud.com` |
    | Other | `imap_smtp` after autoconfig; optional `webdav` | IMAP/SMTP | CalDAV if discovered (RFC 6764) |
@@ -194,9 +194,10 @@ above is D-Bus activated, so it costs nothing until something asks for it.
 
 ## Consequences
 
-- Session packaging adds `Recommends: evolution-ews` (Microsoft calendars) and keeps
+- Packaging adds `Recommends: evolution-ews-core` to `rmac-apps` (Microsoft calendars, CAL-9;
+  the `evolution-ews` package itself would pull in the Evolution client) and keeps
   `gnome-online-accounts` and `evolution-data-server` as dependencies (they are already
-  installed on stock Ubuntu). If `evolution-ews` is absent, Microsoft accounts show Mail only and
+  installed on stock Ubuntu). If `evolution-ews-core` is absent, Microsoft accounts show Mail only and
   the Calendars switch explains why.
 - New third-party crates need the usual cargo-deny review: an IMAP codec, `mail-parser`,
   `mail-builder`, `rusqlite` (bundled SQLite, public domain), an iCalendar parser, `rrule`,

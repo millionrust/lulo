@@ -147,7 +147,7 @@ tokens only, no polling, no UI-thread I/O, HTML mock first for any new surface.
 | ACC-1 | Domain: providers table (GOA IDs, client IDs, scopes, server presets), account/service model, autoconfig decision logic, sign-in state machine | M | `rmac-accounts` (no D-Bus) | unit tests: domain→provider, ISPDB XML parse, state machine; laptop test compares the provider table with `strings libgoa-backend` |
 | ACC-2 | GOA adapter: ObjectManager watch, `AddAccount`, `Remove`, service toggles, token/password fetch API, OAuth2 handler name owner + PKCE + code exchange, autoconfig HTTP/DNS | L | `rmac-accounts-linux` (zbus, `ureq`+rustls) | fake goa-daemon on a private bus (python-dbusmock); no secret in logs test |
 | ACC-3 | Internet Accounts pane + Add Account sheet (from `design-lab/internet-accounts.html`) | M | `system-settings` (`controller/internet_accounts`), `rmac-accounts-ui` | `docs/behavior-pending/settings/internet-accounts-add-sheet.json`; Orca assert script; SET-63 |
-| ACC-4 | Session packaging: deps/Recommends (`evolution-ews`), `calendar-agent` unit, `mailto`/`text/calendar` MIME, desktop files, original app icons (no Apple artwork) | S | `packaging/`, `assets/icons` | `scripts/test_session_package.py` additions |
+| ACC-4 | Session packaging: deps/Recommends (`evolution-ews-core`, done with CAL-9), `calendar-agent` unit, `mailto`/`text/calendar` MIME, desktop files, original app icons (no Apple artwork) | S | `packaging/`, `assets/icons` | `scripts/test_session_package.py` additions |
 
 ### Calendar (CAL)
 
@@ -161,7 +161,7 @@ tokens only, no polling, no UI-thread I/O, HTML mock first for any new surface.
 | CAL-6 | Calendars management, subscriptions, import/export, search, Settings window | M | `calendar` | `calendar/hide-calendar`, `calendar/search-events` |
 | CAL-7 | Reminders agent + notification actions + default alerts — **built** (`rmac-calendar-agent`; `docs/parity.md` APP-01) | M | `rmac-calendar-agent` | 16 unit tests (`alarms`/`state`/`engine`) with a fake clock (plain `DateTime<Utc>` values); laptop alert-on-time and 0-wakeups checks still open |
 | CAL-8 | Invitations (inbox popover, accept/decline), menu-bar clock & desktop widget integration, Orca pass | M | `calendar`, `rmac-desktop-widgets`, top bar | `calendar/invitation-accept` (fixture CalDAV server) |
-| CAL-9 | Microsoft calendars: verify `evolution-ews` Microsoft 365 backend with GOA `ms_graph`; if unusable, Graph calendar adapter behind the same runtime trait | M | `rmac-calendar-eds` or `rmac-calendar-graph` | laptop check with the owner's test account |
+| CAL-9 | Microsoft calendars: verify `evolution-ews` Microsoft 365 backend with GOA `ms_graph`; if unusable, Graph calendar adapter behind the same runtime trait — **built** via EDS (see "MAIL-9 and CAL-9 notes"); no Lulo Graph calendar adapter needed | M | `rmac-calendar-eds`, packaging | `microsoft365_calendars_from_goa_are_ordinary_sources`; laptop check with the owner's test account still open |
 
 ### Mail (MAIL)
 
@@ -175,7 +175,7 @@ tokens only, no polling, no UI-thread I/O, HTML mock first for any new surface.
 | MAIL-6 | Compose window: fields, address completion (EDS contacts), attachments, signatures, drafts, send | L | `mail` (reuses `rmac-editor`) | `mail/compose-new-message`, `mail/reply-quotes`, `mail/forward` |
 | MAIL-7 | Organise + search: delete/archive/move/flag/junk, undo, search tokens, server search | M | `mail` | `mail/flag-message`, `mail/move-to-junk`, `mail/delete-and-undo`, `mail/search-mailbox` |
 | MAIL-8 | Settings window, signatures editor, default mail app (S16), `mailto:`, `.ics` invitations → Calendar, iMIP replies | M | `mail`, `system-settings` | `mail/settings-signature` |
-| MAIL-9 | Microsoft Graph backend (messages, delta, sendMail, folders) | M | `rmac-mail-graph` | recorded-response tests; laptop check with a test account |
+| MAIL-9 | Microsoft Graph backend (messages, delta, sendMail, folders) — **built** | M | `rmac-mail-graph`, `rmac-mail-storage` (schema v5), `rmac-mail-runtime` | 10 recorded-response tests (fixture JSON, no network); laptop check with a test account still open |
 | MAIL-10 | Accessibility + performance pass: Orca script, 100–200 % scaling, 10 k-message mailbox scroll at 60 fps on the laptop, memory soak | M | `mail`, `scripts/assert_mail_accessibility.py` | `scripts/behavior/run_memory_soak.py` entry |
 
 Order: ACC-1 → ACC-2 → (ACC-3 ∥ CAL-1 ∥ MAIL-1) → CAL-2 ∥ MAIL-2 → … Calendar is ~9 milestones
@@ -192,12 +192,86 @@ rustls 0.23.45 with the ring provider and native root certificates; this
 version fixes RUSTSEC-2026-0285, which CI caught in the previously locked
 0.23.41. No GPL/LGPL crate or new Git source enters the graph.
 
+### MAIL-9 and CAL-9 notes
+
+Owner decision (Option A): Microsoft accounts sign in through GOA's `ms_graph` provider with
+GOA's own client id, so Microsoft's consent page names GNOME.
+
+**Mail (`rmac-mail-graph`).** Implements `rmac_mail_runtime::Backend`; `linux::resolve_goa`
+already routes `ms_graph` accounts to `Transport::Graph`, and Mail's `ProviderFactory` now
+plugs in `GraphFactory::goa`. No new crates: `ureq` + rustls (ring, platform verifier),
+`serde_json`, `base64`, `chrono` are already in the graph.
+
+- Folders: `GET /me/mailFolders` and `childFolders` (paths like `Projects/2026`), roles from one
+  `$batch` of the well-known names (`inbox`, `drafts`, `sentitems`, `deleteditems`, `junkemail`,
+  `archive`). Renames are followed and server-deleted folders dropped (schema v5's
+  `remote_mailboxes`).
+- Messages: `GET /me/mailFolders/{id}/messages/delta` with `$select` of list fields and
+  `Prefer: IdType="ImmutableId", odata.maxpagesize=100`. The delta (or next) link is stored per
+  folder; a 400/410 for an expired cursor triggers one full resync that removes anything the
+  server no longer lists. `@removed` items are dropped; an immutable id seen in another folder
+  is a move. Graph ids map to stable hash-derived UIDs (schema v5's `remote_messages`).
+- Bodies: `GET /me/messages/{id}/$value` (RFC 5322 source) on open (`fetch_one`), at once for
+  new Inbox mail, and for the newest 50 header-only messages per folder after a sync. Reading
+  never changes `isRead`.
+- Changes: the storage journal replays as `PATCH isRead/flag`, `POST …/move`, Delete as a move
+  to Deleted Items (a real `DELETE` only inside Deleted Items). Graph v1.0 has no "answered"
+  property, so that bit stays local.
+- Send: Outbox messages go out as base64 MIME through `POST /me/sendMail` (Graph files the copy
+  in Sent Items); envelope-only Bcc recipients are restored as a `Bcc:` header. A definite
+  refusal for auth/throttling stays Queued; an ambiguous failure is Held, as with SMTP. Compose
+  sends at once and the sync worker retries the Outbox.
+- When it syncs (no polling): Mail start, NetworkManager reporting the network back, the Mail
+  window becoming active (debounced to once a minute, `Runtime::refresh_on_focus`), right after
+  an organise action, and a `GRAPH_REFRESH` deadline of 5 minutes **only while Mail runs**.
+  Between those the worker blocks on its channel: idle CPU stays at zero, and an unchanged
+  account costs one small delta request per folder per refresh. Graph change notifications need
+  a public HTTPS webhook, which a desktop cannot offer, so there is no push.
+- Security: the access token comes from GOA (`EnsureCredentials` + `GetAccessToken`) on every
+  worker connection, lives only in memory, is sent only to `https://graph.microsoft.com/` (paging
+  links from the server are checked before the token follows them), uses verified TLS with no
+  redirects, and never appears in logs, errors or `Debug` output. Delta links are stored; they
+  are sync positions, not credentials. Errors carry categories only, never server text.
+
+**Calendar (CAL-9): EDS, no Lulo adapter.** Checked on Ubuntu 26.04 without a live sign-in:
+EDS 3.56.2's `module-gnome-online-accounts.so` recognises `ms_graph`, creates a `microsoft365`
+collection for it and hands EDS GOA's OAuth token (`goa_oauth2_based_call_get_access_token_sync`).
+The archive's `evolution-ews-core` 3.56.2-3 ships that backend
+(`module-microsoft365-backend.so`, `libecalbackendmicrosoft365.so`) with event
+create/update/delete, delta sync, `receive_objects`/`send_objects` and
+`e_m365_connection_response_event_sync` for Accept/Tentative/Decline. GOA 3.58's `ms_graph`
+provider exposes the Calendar service and its scopes include `calendars.readwrite`. So Microsoft
+calendars arrive as ordinary EDS sources with `BackendName=microsoft365` and use the existing
+`rmac-calendar-eds` / `rmac-calendar-runtime` path unchanged. `rmac-apps` Recommends
+`evolution-ews-core` (3.7 MB; plain `evolution-ews` would pull in the Evolution mail client).
+If a live check disproves this, the fallback is still a Graph calendar adapter behind
+`CalendarBackend`.
+
+**Live check with a real account (owner, once):**
+1. Install the candidate build with `evolution-ews-core` (`apt install evolution-ews-core` if the
+   package Recommends were skipped) and log out and in so EDS loads the module.
+2. Settings ▸ Internet Accounts ▸ Add Account… ▸ Microsoft; sign in with a test Outlook.com or
+   Microsoft 365 account; accept the consent page (it names GNOME); leave Mail and Calendars on.
+3. Open Mail. Within a few seconds the account's folders appear (Inbox, Drafts, Sent Items,
+   Deleted Items, Junk Email, Archive if it exists) with headers; open an older message: its body
+   downloads and it is not marked read on outlook.com.
+4. From another device send the account a message; focus Mail: it arrives with a notification.
+5. Mark read/unread, flag, move to a folder, delete, and check each on outlook.com; delete from
+   Deleted Items removes it there.
+6. Send a message with a Bcc from Mail; check the To recipient does not see the Bcc, the Bcc
+   recipient receives it, and Sent Items holds the copy.
+7. Open Calendar: the account's calendars appear labelled "Microsoft". Create, move and delete
+   an event; accept an invitation sent from another account; check each on outlook.com.
+8. Turn Wi-Fi off and on with Mail open: Mail resyncs once when the network returns. With Mail
+   idle for 10 minutes, `top` shows ~0 % CPU for `rmac-mail`.
+
 ## 6. Risks and blockers
 
 1. **Using GNOME's OAuth clients** from Lulo's own UI (ADR 0022 §2): owner approval needed; the
    consent screen says "GNOME".
-2. **Microsoft personal accounts** with GOA `ms_graph` (tenant `common`) are unverified; mail must
-   use Graph, not IMAP; calendars need `evolution-ews` (not installed by default).
+2. **Microsoft personal accounts** with GOA `ms_graph` (tenant `common`) are unverified against a
+   live account; mail uses Graph (MAIL-9), not IMAP; calendars need `evolution-ews-core`, which
+   `rmac-apps` now Recommends (CAL-9).
 3. **Yahoo and iCloud** have no GOA OAuth provider: app-specific passwords only in Beta 1 (the
    Mac signs in with the provider's web page).
 4. **HTML mail rendering** without a web engine: the rich-text model will not match complex

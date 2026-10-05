@@ -348,9 +348,7 @@ fn desktop_icons(cx: &App) -> &'static DesktopIcons {
                     include_bytes!("../../../../../assets/icons/folder.svg"),
                     1.0,
                 )
-                .map_err(|error| {
-                    eprintln!("the bundled folder icon could not be decoded: {error}")
-                })
+                .map_err(|error| eprintln!("the bundled folder icon could not be decoded: {error}"))
                 .ok(),
             document: renderer
                 .render_single_frame(
@@ -367,7 +365,11 @@ fn desktop_icons(cx: &App) -> &'static DesktopIcons {
 
 /// `decoded` when the one-time synchronous decode above succeeded, else the
 /// asset path GPUI resolves asynchronously as it always has.
-fn bundled_icon(decoded: Option<Arc<RenderImage>>, fallback: &'static str, size: f32) -> AnyElement {
+fn bundled_icon(
+    decoded: Option<Arc<RenderImage>>,
+    fallback: &'static str,
+    size: f32,
+) -> AnyElement {
     match decoded {
         Some(image) => img(image).size(px(size)).into_any_element(),
         None => img(fallback).size(px(size)).into_any_element(),
@@ -382,7 +384,12 @@ fn is_previewable(item: &Item) -> bool {
     PREVIEW_EXTENSIONS.contains(&extension.as_str()) && item.size_bytes <= PREVIEW_LIMIT
 }
 
-fn item_icon(item: &Item, size: f32, thumbnails: &BTreeMap<PathBuf, PathBuf>, cx: &App) -> AnyElement {
+fn item_icon(
+    item: &Item,
+    size: f32,
+    thumbnails: &BTreeMap<PathBuf, PathBuf>,
+    cx: &App,
+) -> AnyElement {
     if item.kind == ItemKind::Directory {
         return bundled_icon(desktop_icons(cx).folder.clone(), FOLDER_ICON, size);
     }
@@ -406,7 +413,11 @@ fn item_icon(item: &Item, size: f32, thumbnails: &BTreeMap<PathBuf, PathBuf>, cx
     div()
         .relative()
         .size(px(size))
-        .child(bundled_icon(desktop_icons(cx).document.clone(), DOCUMENT_ICON, size))
+        .child(bundled_icon(
+            desktop_icons(cx).document.clone(),
+            DOCUMENT_ICON,
+            size,
+        ))
         .child(
             div()
                 .absolute()
@@ -569,9 +580,11 @@ impl Wallpaper {
                 item.kind != ItemKind::Directory
                     && is_previewable(item)
                     && !self.desk.pending_thumbnails.contains(&item.path)
-                    && !self.desk.thumbnails.get(&item.path).is_some_and(|thumbnail| {
-                        rmac_thumbnails::is_current(&item.path, thumbnail)
-                    })
+                    && !self
+                        .desk
+                        .thumbnails
+                        .get(&item.path)
+                        .is_some_and(|thumbnail| rmac_thumbnails::is_current(&item.path, thumbnail))
             })
             .map(|item| item.path.clone())
             .collect();

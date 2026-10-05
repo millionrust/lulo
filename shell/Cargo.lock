@@ -6388,6 +6388,7 @@ dependencies = [
  "rmac-sound",
  "rmac-storage",
  "rmac-theme",
+ "rmac-thumbnails",
  "rmac-wallpaper",
  "rmac-wallpaper-image",
  "rmac-wallpaper-runtime",
@@ -6443,6 +6444,15 @@ dependencies = [
  "rmac-storage",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rmac-thumbnails"
+version = "0.9.0-beta.1"
+dependencies = [
+ "image",
+ "libc",
+ "rmac-storage",
 ]
 
 [[package]]

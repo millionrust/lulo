@@ -23,5 +23,5 @@ built on Ubuntu 26.04 and niri.
 - Software Update in System Settings, with updates installed at restart.
 
 This is an early-access Beta, not a finished daily driver: expect rough
-edges, no NVIDIA testing yet, and no in-place updates. Known issues are
+edges, some apps opening slower than they will after updates, no NVIDIA testing yet, and no in-place updates. Known issues are
 listed in docs/known-limitations.md.

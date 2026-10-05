@@ -111,6 +111,15 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   `SetValue`/`ReplaceSelectedText` actions, ready for when a dependency
   upgrade adds the AT-SPI bridge for them.
 
+## Speed
+
+- **Some apps and panels open slower than they should.** On the reference
+  laptop (Intel, 6.7 GB RAM), most apps take about 0.6–1.8 s to show their
+  first window, Files up to about 5 s on a cold start, and Spotlight, Control
+  Centre and Notification Centre about 0.35 s to open. The targets are 0.3 s
+  and 0.1 s. Oversized icon drawing is already fixed. Further speed fixes come
+  in the first Beta updates (docs/perf/speed-sweep-2026-10-05.md).
+
 ## Feature limits
 
 - Clicking the Dock while a menu (the app/system menu, a status menu,

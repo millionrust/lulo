@@ -35,9 +35,7 @@ impl Service for SystemService {
         // round trip, so a toggle no longer re-authorizes and reloads the
         // daemon once per unit.
         let units = remote_login_units(unit, enabled, remote_login_socket_present()?);
-        if let Err(error) = system_set_service(&units, enabled, "SSH") {
-            return Err(error);
-        }
+        system_set_service(&units, enabled, "SSH")?;
         match verify_state(ManagedService::RemoteLogin, enabled) {
             Ok(snapshot) => Ok(snapshot),
             Err(error) => {
@@ -59,9 +57,7 @@ impl Service for SystemService {
             return Ok(current);
         }
         let units = [unit];
-        if let Err(error) = system_set_service(&units, enabled, "SMB") {
-            return Err(error);
-        }
+        system_set_service(&units, enabled, "SMB")?;
         match verify_state(ManagedService::FileSharing, enabled) {
             Ok(snapshot) => Ok(snapshot),
             Err(error) => {

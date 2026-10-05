@@ -362,11 +362,11 @@ fn wait_for_job(
     stream: zbus::MessageStream,
     job: &zbus::zvariant::OwnedObjectPath,
 ) -> Result<String, Error> {
-    use futures_util::{FutureExt as _, StreamExt as _};
+    use futures_util::StreamExt as _;
 
     async_io::block_on(async {
         let mut stream = stream.fuse();
-        let mut timeout = async_io::Timer::after(JOB_WAIT_TIMEOUT).fuse();
+        let mut timeout = futures_util::FutureExt::fuse(async_io::Timer::after(JOB_WAIT_TIMEOUT));
         loop {
             futures_util::select! {
                 message = stream.next() => {

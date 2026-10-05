@@ -189,6 +189,10 @@ jobs:
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
             cd "'"$GITHUB_WORKSPACE"'"
+            # build-native-inputs.sh requires its --output parent to
+            # already exist (candidate.yml and native-reproducibility.yml
+            # both mkdir this ahead of the call too).
+            mkdir -p "$PWD/target"
             bash scripts/linux/build-native-inputs.sh \
               --output "$PWD/target/native-package-inputs"
           '
@@ -307,6 +311,10 @@ jobs:
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
             cd "'"$GITHUB_WORKSPACE"'"
+            # build-native-inputs.sh requires its --output parent to
+            # already exist (candidate.yml and native-reproducibility.yml
+            # both mkdir this ahead of the call too).
+            mkdir -p "$PWD/target"
             bash scripts/linux/build-native-inputs.sh \
               --output "$PWD/target/native-package-inputs"
           '
@@ -1009,6 +1017,9 @@ jobs:
           sudo -E -u builder bash -lc '
             set -euo pipefail
             cd "'"$GITHUB_WORKSPACE"'"
+            # build-keyring-packages.py requires its --output parent to
+            # already exist, same as build-native-inputs.sh.
+            mkdir -p "$PWD/target"
             epoch="$(git log -1 --format=%ct)"
             python3 scripts/linux/build-keyring-packages.py \
               --keyring "$PWD/packaging/apt/archive-keyring.asc" \

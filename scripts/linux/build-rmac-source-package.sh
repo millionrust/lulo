@@ -205,8 +205,20 @@ build_source() {
   local tree="$parent/$SRC_TOP_DIRECTORY"
   [[ -f "$tree/Cargo.lock" && -f "$tree/shell/Cargo.lock" ]] \
     || fail "the export is missing Cargo.lock or shell/Cargo.lock"
-  [[ ! -e "$tree/debian" && ! -e "$tree/vendor" ]] \
-    || fail "the export already has a top-level debian/ or vendor/"
+  [[ ! -e "$tree/debian" ]] \
+    || fail "the export already has a top-level debian/"
+  if [[ -e "$tree/vendor" ]]; then
+    # vendor/gpui-component is a deliberately committed path dependency
+    # (Cargo.toml's [workspace] exclude), not cargo-vendor output, so a
+    # top-level vendor/ is expected here. `cargo vendor --sync` below adds
+    # the crates.io dependency tree alongside it without touching
+    # unrelated entries; anything else already in vendor/ would collide
+    # with that output instead.
+    local unexpected
+    unexpected="$(find "$tree/vendor" -mindepth 1 -maxdepth 1 ! -name gpui-component)"
+    [[ -z "$unexpected" ]] \
+      || fail "the export's vendor/ has unexpected top-level entries: $unexpected"
+  fi
   [[ "$(python3 "$helper" version --repo-root "$tree")" == "$SRC_VERSION" ]] \
     || fail "the exported tree's version differs from the checkout's"
 

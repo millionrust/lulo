@@ -25,8 +25,9 @@ BUILD_SCRIPT = REPO_ROOT / "scripts" / "linux" / "build-rmac-source-package.sh"
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
-# The shape `cargo vendor --locked --sync shell/Cargo.toml vendor` prints for
-# this repository: crates.io plus git sources with and without a pinned rev.
+# The shape `cargo vendor --locked --sync shell/Cargo.toml vendor/crates-io`
+# prints for this repository: crates.io plus git sources with and without a
+# pinned rev.
 CARGO_VENDOR_OUTPUT = """\
 [source.crates-io]
 replace-with = "vendored-sources"
@@ -46,7 +47,7 @@ git = "https://github.com/zed-industries/zed.git"
 replace-with = "vendored-sources"
 
 [source.vendored-sources]
-directory = "vendor"
+directory = "vendor/crates-io"
 """
 
 
@@ -234,7 +235,7 @@ class VendorConfigTests(unittest.TestCase):
                 text_config = (
                     '[source.crates-io]\nreplace-with = "vendored-sources"\n\n'
                     + "\n".join(lines)
-                    + '\n\n[source.vendored-sources]\ndirectory = "vendor"\n'
+                    + '\n\n[source.vendored-sources]\ndirectory = "vendor/crates-io"\n'
                 )
                 with self.subTest(source=name):
                     self.assertEqual(len(source.parse_vendor_config(text_config)), 1)
@@ -242,10 +243,10 @@ class VendorConfigTests(unittest.TestCase):
     def test_rejects_extra_keys_paths_and_sources(self):
         bad = {
             "absolute directory": CARGO_VENDOR_OUTPUT.replace(
-                'directory = "vendor"', 'directory = "/tmp/vendor"'
+                'directory = "vendor/crates-io"', 'directory = "/tmp/vendor/crates-io"'
             ),
             "other directory": CARGO_VENDOR_OUTPUT.replace(
-                'directory = "vendor"', 'directory = "../vendor"'
+                'directory = "vendor/crates-io"', 'directory = "../vendor/crates-io"'
             ),
             "extra key": CARGO_VENDOR_OUTPUT.replace(
                 'git = "https://github.com/zed-industries/zed.git"\n',
@@ -276,7 +277,9 @@ class VendorConfigTests(unittest.TestCase):
                 'rev = "94b0f28166665e8fd2f53ff6d268a14955c82269"\nbranch = "main"\n',
             ),
             "carriage return": CARGO_VENDOR_OUTPUT.replace("\n", "\r\n"),
-            "escaped quote": CARGO_VENDOR_OUTPUT.replace('directory = "vendor"', 'directory = "ven\\"dor"'),
+            "escaped quote": CARGO_VENDOR_OUTPUT.replace(
+                'directory = "vendor/crates-io"', 'directory = "ven\\"dor/crates-io"'
+            ),
         }
         for label, text in bad.items():
             with self.subTest(label):

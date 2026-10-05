@@ -60,7 +60,7 @@ debian/stamp-build:
 > mkdir -p "$(LULO_CARGO_HOME)"
 > python3 scripts/linux/rmac_source_package.py cargo-config \
 >   --input vendor/.lulo-cargo-config.toml \
->   --vendor-dir "$(CURDIR)/vendor" \
+>   --vendor-dir "$(CURDIR)/vendor/crates-io" \
 >   --output "$(LULO_CARGO_HOME)/config.toml"
 > bash scripts/linux/build-native-inputs.sh --output "$(NATIVE_INPUTS)"
 > python3 scripts/linux/build-native-packages.py \

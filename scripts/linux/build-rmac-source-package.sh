@@ -209,21 +209,21 @@ build_source() {
     || fail "the export already has a top-level debian/"
   # vendor/gpui-component is a deliberately committed path dependency
   # (Cargo.toml's [workspace] exclude), not cargo-vendor output, so a
-  # top-level vendor/ is expected here -- but `cargo vendor --sync` below
-  # deletes anything already in its destination directory that it does not
-  # itself manage, which silently dropped gpui-component from a real run
-  # (confirmed: 0 of its 459 files survived in the packed vendor/ tarball).
-  # Move it out of vendor/'s way before vendoring and back afterwards
-  # instead of leaving it for cargo vendor to delete.
-  local gpui_holding=""
+  # top-level vendor/ is expected here. It has to stay at its real path
+  # for `cargo vendor` below to resolve the workspace's dependency graph
+  # (moving it aside first made cargo vendor itself fail: "failed to read
+  # .../vendor/gpui-component/crates/ui/Cargo.toml"), but `--sync` then
+  # deletes it from vendor/ anyway as an entry it doesn't itself manage
+  # (confirmed: 0 of its 459 files survived in the packed vendor/
+  # tarball). Keep a backup copy and restore it afterwards instead.
+  local gpui_backup=""
   if [[ -e "$tree/vendor" ]]; then
     local unexpected
     unexpected="$(find "$tree/vendor" -mindepth 1 -maxdepth 1 ! -name gpui-component)"
     [[ -z "$unexpected" ]] \
       || fail "the export's vendor/ has unexpected top-level entries: $unexpected"
-    gpui_holding="$run_dir/gpui-component-holding"
-    mv "$tree/vendor/gpui-component" "$gpui_holding"
-    rmdir "$tree/vendor" || fail "vendor/ was not empty after moving gpui-component aside"
+    gpui_backup="$run_dir/gpui-component-backup"
+    cp -a "$tree/vendor/gpui-component" "$gpui_backup"
   fi
   [[ "$(python3 "$helper" version --repo-root "$tree")" == "$SRC_VERSION" ]] \
     || fail "the exported tree's version differs from the checkout's"
@@ -235,8 +235,9 @@ build_source() {
   python3 "$helper" check-vendor-config --input "$parent/cargo-vendor-config.toml" \
     || fail "cargo vendor printed an unexpected source replacement"
   mv "$parent/cargo-vendor-config.toml" "$tree/vendor/.lulo-cargo-config.toml"
-  if [[ -n "$gpui_holding" ]]; then
-    mv "$gpui_holding" "$tree/vendor/gpui-component" \
+  if [[ -n "$gpui_backup" ]]; then
+    rm -rf "$tree/vendor/gpui-component"
+    mv "$gpui_backup" "$tree/vendor/gpui-component" \
       || fail "could not restore vendor/gpui-component after cargo vendor"
   fi
 

@@ -129,6 +129,7 @@ jobs:
             gnupg \
             libfontconfig1-dev \
             libfreetype-dev \
+            libpam0g-dev \
             libssl-dev \
             libvulkan-dev \
             libwayland-dev \
@@ -251,6 +252,7 @@ jobs:
             gnupg \
             libfontconfig1-dev \
             libfreetype-dev \
+            libpam0g-dev \
             libssl-dev \
             libvulkan-dev \
             libwayland-dev \
@@ -668,6 +670,7 @@ jobs:
             gnupg \
             libfontconfig1-dev \
             libfreetype-dev \
+            libpam0g-dev \
             libssl-dev \
             libvulkan-dev \
             libwayland-dev \

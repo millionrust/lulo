@@ -816,7 +816,10 @@ jobs:
       needs.sbom.result == 'success' &&
       needs.rmac-source.result == 'success' &&
       (needs.keyring.result == 'success' || needs.keyring.result == 'skipped')
-    runs-on: ubuntu-24.04
+    # ubuntu-latest: on 2026-10-05 three attempts on ubuntu-24.04 were never
+    # acquired by a hosted runner ("not acquired ... after multiple attempts")
+    # while the ubuntu-latest jobs in the same run started at once.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: write

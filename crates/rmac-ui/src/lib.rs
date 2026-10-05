@@ -19,6 +19,7 @@ pub mod scroll;
 pub mod session;
 pub mod shortcuts;
 mod speech;
+mod svg_icon;
 pub mod text_assist;
 mod text_keys;
 mod text_transform;
@@ -69,6 +70,7 @@ pub use runtime::{
     text_px,
 };
 pub use speech::{speak, start_speaking, stop_speaking};
+pub use svg_icon::{svg_icon, IconSource};
 pub use text_assist::EditableText;
 
 /// The text-field actions every rmac text field answers (the "Input" key

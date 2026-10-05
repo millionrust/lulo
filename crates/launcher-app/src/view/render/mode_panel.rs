@@ -80,9 +80,9 @@ fn rule_line() -> gpui::Div {
 }
 
 impl LauncherView {
-    fn panel_icon(icon: &PanelIcon, size: f32) -> AnyElement {
+    fn panel_icon(icon: &PanelIcon, size: f32, cx: &mut Context<Self>) -> AnyElement {
         match icon {
-            PanelIcon::Image(path) => img(path.clone())
+            PanelIcon::Image(path) => rmac_ui::svg_icon(path.clone(), size, cx)
                 .size(px(size))
                 .rounded(px(size * 0.2))
                 .flex_none()
@@ -110,7 +110,7 @@ impl LauncherView {
         mode: PanelMode,
         query: &str,
         rows: &[PanelRow],
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let top = if query.is_empty() { None } else { rows.first() };
         let completion = top.map(
@@ -149,12 +149,11 @@ impl LauncherView {
                 cx,
             ))
             .when_some(top, |header, row| {
-                header.child(
-                    div()
-                        .flex_none()
-                        .ml(px(8.0))
-                        .child(Self::panel_icon(&row.icon, metrics::TOP_HIT_ICON)),
-                )
+                header.child(div().flex_none().ml(px(8.0)).child(Self::panel_icon(
+                    &row.icon,
+                    metrics::TOP_HIT_ICON,
+                    cx,
+                )))
             })
             .into_any_element()
     }
@@ -165,7 +164,7 @@ impl LauncherView {
         index: usize,
         selected: bool,
         plated: bool,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         // Rows start inside the rim, or at the plate's inset once filtered.
         let start = if plated {
@@ -189,7 +188,7 @@ impl LauncherView {
                     .absolute()
                     .left(px(pm::ICON_LEFT - start))
                     .top(px((pm::ROW - pm::ICON) / 2.0))
-                    .child(Self::panel_icon(&row.icon, pm::ICON)),
+                    .child(Self::panel_icon(&row.icon, pm::ICON, cx)),
             )
             .child(
                 div()
@@ -345,7 +344,7 @@ impl LauncherView {
         query: &str,
         selected: usize,
         navigated: bool,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let sectioned = query.is_empty() && rows.iter().any(|row| !row.section.is_empty());
         let mut children = Vec::new();
@@ -370,7 +369,7 @@ impl LauncherView {
             .into_any_element()
     }
 
-    pub(super) fn mode_panel(&self, query: &str, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn mode_panel(&self, query: &str, cx: &mut Context<Self>) -> AnyElement {
         let Some(panel) = self.panel.as_ref() else {
             return div().into_any_element();
         };

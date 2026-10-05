@@ -49,7 +49,16 @@ fn third_party_art_edge(size: f32) -> f32 {
 }
 
 impl AppDrawer {
-    pub(super) fn icon_element(&self, app: &App, size: f32) -> gpui::AnyElement {
+    /// `cx` lets the icon's correctly-sized bitmap decode off the UI thread
+    /// and notify this view once it lands (`rmac_ui::svg_icon`) instead of
+    /// GPUI's default `img(path)`, which decodes every master SVG at its
+    /// native 1024×1024 size regardless of how small Launchpad shows it.
+    pub(super) fn icon_element(
+        &self,
+        app: &App,
+        size: f32,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let plate_edge = icon_plate_edge(size);
         let frame = div()
             .w(px(size))
@@ -61,7 +70,7 @@ impl AppDrawer {
         if app.first_party {
             return frame
                 .child(match &app.icon {
-                    Some(path) => img(path.clone())
+                    Some(path) => rmac_ui::svg_icon(path.clone(), plate_edge, cx)
                         .w(px(plate_edge))
                         .h(px(plate_edge))
                         .object_fit(ObjectFit::Contain)
@@ -73,7 +82,7 @@ impl AppDrawer {
 
         let art_edge = third_party_art_edge(size);
         let content = match &app.icon {
-            Some(path) => img(path.clone())
+            Some(path) => rmac_ui::svg_icon(path.clone(), art_edge, cx)
                 .w(px(art_edge))
                 .h(px(art_edge))
                 .object_fit(ObjectFit::Contain)
@@ -105,7 +114,7 @@ impl AppDrawer {
         app: &App,
         position: usize,
         selected: bool,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let launch = app.launch.clone();
         let id = app.id.clone();
@@ -129,7 +138,7 @@ impl AppDrawer {
                 element.border_1().border_color(gpui::transparent_black())
             })
             .hover(|hover| hover.bg(mac::hover()))
-            .child(self.icon_element(app, ICON))
+            .child(self.icon_element(app, ICON, cx))
             .child(
                 div()
                     .w(px(TILE_W - 8.0))
@@ -179,7 +188,7 @@ impl AppDrawer {
         &self,
         app: &App,
         position: usize,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let launch = app.launch.clone();
         let id = app.id.clone();
@@ -196,7 +205,7 @@ impl AppDrawer {
             .border_1()
             .border_color(gpui::transparent_black())
             .hover(|hover| hover.bg(mac::hover()))
-            .child(self.icon_element(app, ICON))
+            .child(self.icon_element(app, ICON, cx))
             .child(
                 div()
                     .w(px(TILE_W - 8.0))
@@ -239,7 +248,11 @@ impl AppDrawer {
     /// The recents row itself (APPS-01): the tiles, then a divider. Spacing
     /// values are structural, not measured from the Mac (S) — the row reuses
     /// the same tile metrics and gap as the A–Z grid below it.
-    pub(super) fn recents_row(&self, indices: &[usize], cx: &Context<Self>) -> gpui::AnyElement {
+    pub(super) fn recents_row(
+        &self,
+        indices: &[usize],
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let tiles = indices
             .iter()
             .map(|&index| self.recent_tile(&self.apps[index], index, cx))
@@ -267,7 +280,7 @@ impl AppDrawer {
         app: &App,
         position: usize,
         selected: bool,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let launch = app.launch.clone();
         let id = app.id.clone();
@@ -286,7 +299,7 @@ impl AppDrawer {
             .when(!selected, |element: Stateful<Div>| {
                 element.hover(|hover| hover.bg(mac::hover()))
             })
-            .child(self.icon_element(app, ROW_ICON))
+            .child(self.icon_element(app, ROW_ICON, cx))
             .child(
                 div()
                     .flex_1()

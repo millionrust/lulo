@@ -14,7 +14,7 @@
 use std::path::PathBuf;
 
 use gpui::{
-    div, img, prelude::*, px, AnyWindowHandle, App, Context, FocusHandle, Global, KeyBinding,
+    div, prelude::*, px, AnyWindowHandle, App, Context, FocusHandle, Global, KeyBinding,
     SharedString, Window,
 };
 
@@ -117,7 +117,9 @@ impl AboutPanel {
 impl Render for AboutPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let icon = match &self.icon {
-            Some(path) => img(path.clone()).size(px(ICON_EDGE)).into_any_element(),
+            Some(path) => crate::svg_icon(path.clone(), ICON_EDGE, cx)
+                .size(px(ICON_EDGE))
+                .into_any_element(),
             None => div().size(px(ICON_EDGE)).into_any_element(),
         };
         div()

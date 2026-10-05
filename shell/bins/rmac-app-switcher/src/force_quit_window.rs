@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use gpui::{
-    div, img, point, prelude::*, px, rgba, AnyElement, App, AsyncApp, Bounds, Context, FocusHandle,
+    div, point, prelude::*, px, rgba, AnyElement, App, AsyncApp, Bounds, Context, FocusHandle,
     FontWeight, KeyDownEvent, Role, ScrollHandle, Size, TitlebarOptions, WeakEntity, Window,
     WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowDecorations, WindowHandle,
     WindowOptions,
@@ -285,7 +285,7 @@ impl ForceQuitView {
                     .left(px(layout::ICON_LEFT))
                     .top(px(layout::ICON_TOP))
                     .size(px(layout::ICON))
-                    .child(icon(self.icons.get(&entry.app_id), &entry.name)),
+                    .child(icon(self.icons.get(&entry.app_id), &entry.name, cx)),
             )
             .child(
                 div()
@@ -408,7 +408,10 @@ impl ForceQuitView {
                     .shadow_lg()
                     .text_color(rgba(colors.text))
                     .when_some(icon_path, |sheet, path| {
-                        sheet.child(img(path).size(px(metrics.alert_icon)))
+                        sheet.child(
+                            rmac_shell_ui::svg_icon(path, metrics.alert_icon, cx)
+                                .size(px(metrics.alert_icon)),
+                        )
                     })
                     .child(
                         div()
@@ -433,9 +436,11 @@ fn capitalized(text: &str) -> String {
 }
 
 /// The app's artwork, or a plain plate with the name's initial.
-fn icon(path: Option<&PathBuf>, name: &str) -> AnyElement {
+fn icon(path: Option<&PathBuf>, name: &str, cx: &mut Context<ForceQuitView>) -> AnyElement {
     if let Some(path) = path {
-        return img(path.clone()).size(px(layout::ICON)).into_any_element();
+        return rmac_shell_ui::svg_icon(path.clone(), layout::ICON, cx)
+            .size(px(layout::ICON))
+            .into_any_element();
     }
     div()
         .size(px(layout::ICON))

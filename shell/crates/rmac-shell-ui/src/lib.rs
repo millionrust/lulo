@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use gpui::FontFeatures;
 
+pub mod svg_icon;
 pub mod text_edit;
 pub mod text_field;
 pub mod tokens;

@@ -3,16 +3,23 @@
 use super::*;
 
 impl LauncherView {
-    pub(super) fn result_icon(row: &Row, size: f32) -> AnyElement {
+    /// `cx` lets the icon's correctly-sized bitmap decode off the UI thread
+    /// via `rmac_ui::svg_icon`, instead of GPUI's default `img(path)`,
+    /// which decodes every master SVG at its native 1024×1024 size no
+    /// matter how small Spotlight shows it.
+    pub(super) fn result_icon(row: &Row, size: f32, cx: &mut Context<Self>) -> AnyElement {
         if let Some(icon) = row.icon.clone() {
-            return img(icon)
+            return rmac_ui::svg_icon(icon, size, cx)
                 .size(px(size))
                 .rounded(px(size * 0.2))
                 .flex_none()
                 .into_any_element();
         }
         if let Some(asset) = category_icon(row.category) {
-            return img(asset).size(px(size)).flex_none().into_any_element();
+            return rmac_ui::svg_icon(asset, size, cx)
+                .size(px(size))
+                .flex_none()
+                .into_any_element();
         }
         let (glyph, color): (&str, Hsla) = match row.category {
             Category::Applications => ("A", mac::system_blue()),
@@ -39,7 +46,7 @@ impl LauncherView {
             .into_any_element()
     }
 
-    fn grid_tile(&self, row: &Row, index: usize, cx: &Context<Self>) -> AnyElement {
+    fn grid_tile(&self, row: &Row, index: usize, cx: &mut Context<Self>) -> AnyElement {
         let id = row.id.clone();
         div()
             .id(SharedString::from(format!("launcher-grid-{index}")))
@@ -57,7 +64,7 @@ impl LauncherView {
             .when(!row.selected, |tile| {
                 tile.hover(|hover| hover.bg(mac::hover()))
             })
-            .child(Self::result_icon(row, 54.0))
+            .child(Self::result_icon(row, 54.0, cx))
             .child(
                 div()
                     .w_full()
@@ -77,7 +84,7 @@ impl LauncherView {
 
     /// One Spotlight result row: icon, name and a tertiary " — kind" suffix
     /// on one line; the selected row takes the accent fill.
-    fn list_row(&self, row: &Row, index: usize, cx: &Context<Self>) -> AnyElement {
+    fn list_row(&self, row: &Row, index: usize, cx: &mut Context<Self>) -> AnyElement {
         let primary_id = row.id.clone();
         let alternate_id = row.id.clone();
         let selected = row.selected;
@@ -110,7 +117,7 @@ impl LauncherView {
             .text_size(rmac_ui::text_px(metrics::ROW_TEXT))
             .when(selected, |item| item.bg(mac::accent()))
             .when(!selected, |item| item.hover(|hover| hover.bg(mac::hover())))
-            .child(Self::result_icon(row, metrics::ROW_ICON))
+            .child(Self::result_icon(row, metrics::ROW_ICON, cx))
             .child(
                 div()
                     .flex_1()
@@ -177,7 +184,7 @@ impl LauncherView {
             .into_any_element()
     }
 
-    pub(super) fn results(&self, rows: &[Row], query: &str, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn results(&self, rows: &[Row], query: &str, cx: &mut Context<Self>) -> AnyElement {
         if self.browse_mode == Some(BrowseMode::Applications) {
             return self.application_results(rows, cx);
         }
@@ -232,7 +239,7 @@ impl LauncherView {
         content.into_any_element()
     }
 
-    fn application_results(&self, rows: &[Row], cx: &Context<Self>) -> AnyElement {
+    fn application_results(&self, rows: &[Row], cx: &mut Context<Self>) -> AnyElement {
         let mut content = div().v_flex().gap_4();
         for group in ApplicationGroup::ORDER {
             let matching = rows

@@ -417,7 +417,7 @@ impl LauncherView {
         query: &str,
         rows: &[Row],
         activating: bool,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let compact = self.compact;
         // The circles show only while the pointer is over the bar; without
@@ -483,12 +483,11 @@ impl LauncherView {
             )
         })
         .when_some(top_hit, |pill, row| {
-            pill.child(
-                div()
-                    .flex_none()
-                    .ml(px(8.0))
-                    .child(Self::result_icon(row, metrics::TOP_HIT_ICON)),
-            )
+            pill.child(div().flex_none().ml(px(8.0)).child(Self::result_icon(
+                row,
+                metrics::TOP_HIT_ICON,
+                cx,
+            )))
         });
 
         div()
@@ -545,7 +544,7 @@ impl LauncherView {
         query: &str,
         groups: &[ApplicationGroup],
         phase_message: SharedString,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let applications = self.browse_mode == Some(BrowseMode::Applications);
         let mut list_height =

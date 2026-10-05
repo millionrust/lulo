@@ -22,7 +22,7 @@ pub(crate) mod linux_wayland {
     use std::time::{Duration, Instant};
 
     use gpui::{
-        div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
+        div, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
         AnyElement, App, AsyncApp, Bounds, Context, Entity, FocusHandle, FontWeight, KeyDownEvent,
         ModifiersChangedEvent, QuitMode, Role, Size, WeakEntity, Window,
         WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions,
@@ -567,7 +567,7 @@ pub(crate) mod linux_wayland {
                             )),
                     )
                 })
-                .child(icon(item, &app.app_id, layout.icon))
+                .child(icon(item, &app.app_id, layout.icon, cx))
                 .when(selected, |tile| {
                     tile.child(
                         div()
@@ -627,9 +627,14 @@ pub(crate) mod linux_wayland {
     /// The application's artwork fills the 128 frame; macOS-grid artwork
     /// draws its squircle at 104 inside it. Without artwork, a plain plate
     /// carries the name's initial.
-    fn icon(item: Option<&Item>, app_id: &str, size: f32) -> AnyElement {
+    fn icon(
+        item: Option<&Item>,
+        app_id: &str,
+        size: f32,
+        cx: &mut Context<SwitcherView>,
+    ) -> AnyElement {
         if let Some(path) = item.and_then(|item| item.icon.clone()) {
-            return img(path)
+            return rmac_shell_ui::svg_icon(path, size, cx)
                 .absolute()
                 .top_0()
                 .left_0()

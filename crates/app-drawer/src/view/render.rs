@@ -1,7 +1,7 @@
 mod content;
 
 use gpui::{
-    div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, DragMoveEvent,
+    div, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, DragMoveEvent,
     InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
     ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
     StyledImage as _, Window,

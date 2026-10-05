@@ -11,9 +11,9 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    canvas, div, img, linear_color_stop, linear_gradient, px, rgba, size, AnyElement,
-    AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, InteractiveElement as _,
-    IntoElement, MouseButton, ParentElement as _, Pixels, Render, Role, SharedString,
+    canvas, div, linear_color_stop, linear_gradient, px, rgba, size, AnyElement, AnyWindowHandle,
+    App, AppContext as _, Bounds, Context, Entity, InteractiveElement as _, IntoElement,
+    MouseButton, ParentElement as _, Pixels, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window,
 };
 use gpui_component::{IconName, StyledExt as _};

@@ -4,7 +4,7 @@ mod results;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    accesskit, div, img, px, svg, AccessibleAction, AnyElement, BoxShadow, Context, Hsla,
+    accesskit, div, px, svg, AccessibleAction, AnyElement, BoxShadow, Context, Hsla,
     InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement as _, Render,
     Role, SharedString, StatefulInteractiveElement as _, Styled, Window,
 };

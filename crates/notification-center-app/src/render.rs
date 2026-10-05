@@ -7,9 +7,9 @@ mod history;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    canvas, div, img, linear_color_stop, linear_gradient, px, rgba, size, AccessibleAction,
-    AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement as _, Render, Role, SharedString,
+    canvas, div, linear_color_stop, linear_gradient, px, rgba, size, AccessibleAction, AnyElement,
+    App, Context, Entity, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window,
 };
 use gpui_component::{IconName, StyledExt as _};

@@ -429,6 +429,12 @@ apart from the action it names. Keep raw logs and screenshots out of Git.
 | dbus-polkit / mutation-requires-authoritative-readback | With `openssh-server` installed, run `systemctl is-enabled ssh.socket ssh.service; ss -ltn 'sport = :22'`. Toggle System Settings > General > Sharing > Remote Login on and off, and run the same commands after each toggle. Also toggle Date & Time > Set automatically. | The pane always matches systemd and the listening socket (SR-30). F-1 is fixed and `rmac-polkit-agent` runs, so each toggle shows Lulo's password dialog ("System Settings wants to make changes."); Cancel leaves the switch as it was. |
 | packages / license-inventory-complete | The owner confirms the provenance of the non-Rust assets that the packages ship (`packaging/rmac-session/wallpapers`, `assets/sounds`, `assets/cursors`, `assets/icons`, `assets/brand`, the greeter artwork) and records it in a `packaging/rmac-session/LICENSES.md`, as `packaging/rmac-apps/LICENSES.md` already does for the apps. | Every shipped non-ELF file falls under a recorded licence. |
 
+**Owner run, 2026-10-05, installed build 154d6dbd** (guided script `lulo-checks.sh`; raw log stays on the laptop):
+- lock-screen-content-redacted: a critical `notify-send` posted while locked was not shown, spoken or played; it appeared after unlock. Observed pass (Orca-on variant not run).
+- suspend-waits-for-lock-readiness: after Sleep and wake, the first frame was the lock screen with no desktop flash. Observed pass (journal ordering not yet extracted).
+- mutation-requires-authoritative-readback: Remote Login off then on; each toggle went through polkit (`polkit-agent-helper@…` ran twice), `ssh.service` stopped and started to match, and port 22 followed. Pass. The toggle took about 20–30 s after authorization (tracked as SHARE-SLOW in docs/parity.md).
+- The lock, TTY-recovery, mount-disappearance and licence checks are still pending.
+
 **Functional issues found and fixed (not security findings).**
 - F-1 (`4432cac0`): Sharing's systemd1 calls sent no
   `ALLOW_INTERACTIVE_AUTHORIZATION`, so under `auth_admin_keep` every Remote

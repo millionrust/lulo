@@ -96,31 +96,39 @@ pub(crate) fn combined_remote_state(service_state: &str, socket_state: Option<&s
     }
 }
 
-/// Stop and disable `ssh.socket` when it exists. Returns its previous
-/// (active, enabled at boot) state so a failed change can restore it.
+/// Whether `ssh.socket` exists on this system, so a Remote Login change
+/// knows to fold it into the same `EnableUnitFiles`/`DisableUnitFiles` and
+/// `Reload` call as `ssh.service` instead of a separate round trip.
 #[cfg(target_os = "linux")]
-pub(crate) fn disable_remote_login_socket() -> Result<Option<(bool, bool)>, Error> {
+pub(crate) fn remote_login_socket_present() -> Result<bool, Error> {
     let connection = system_connection()?;
     let manager = manager_proxy(&connection)?;
     let files = manager
         .call::<_, _, Vec<(String, String)>>("ListUnitFiles", &())
         .map_err(|error| Error::new(ErrorKind::Protocol, error.to_string()))?;
-    let Some(socket) = service_state(&connection, &manager, &files, &[SSH_SOCKET])? else {
-        return Ok(None);
-    };
-    let previous = (
-        socket.active_state == "active",
-        unit_enabled(&socket.unit_file_state),
-    );
-    if previous == (false, false) {
-        return Ok(Some(previous));
-    }
-    system_set_service(SSH_SOCKET, false, "SSH").map(|()| Some(previous))
+    Ok(service_state(&connection, &manager, &files, &[SSH_SOCKET])?.is_some())
 }
 
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn disable_remote_login_socket() -> Result<Option<(bool, bool)>, Error> {
-    Ok(None)
+pub(crate) fn remote_login_socket_present() -> Result<bool, Error> {
+    Ok(false)
+}
+
+/// The units a Remote Login change moves together through one
+/// `EnableUnitFiles`/`DisableUnitFiles` call: turning it on only ever
+/// starts `ssh.service` (Remote Login never re-enables socket
+/// activation), but turning it off must also close `ssh.socket` when it
+/// exists, ordered first so it cannot re-trigger `ssh.service` once that
+/// is stopped.
+pub(crate) fn remote_login_units(unit: &str, enabled: bool, socket_present: bool) -> Vec<&str> {
+    if enabled || !socket_present {
+        vec![unit]
+    } else {
+        // Matches `SSH_SOCKET`, kept as a literal so this helper (and its
+        // tests) compile on every platform, not just where that constant
+        // (`target_os = "linux"` or `test`) is in scope.
+        vec!["ssh.socket", unit]
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -207,14 +215,28 @@ where
         .ok_or(zbus::Error::InvalidReply)
 }
 
+/// One toggle used to run a whole separate Enable/Disable + Reload + Start
+/// round trip per unit (e.g. `ssh.socket` then `ssh.service`), each
+/// re-authorizing and reloading the daemon on its own — visibly slow
+/// (SHARE-SLOW). `units` now moves together through a single
+/// `EnableUnitFiles`/`DisableUnitFiles` call and a single `Reload`; only
+/// the run-state change (`StartUnit`/`StopUnit`) stays per unit, because
+/// that is the one step systemd genuinely queues as a separate job per
+/// unit, and each such call waits on that job's own `JobRemoved` signal
+/// (`run_unit`) instead of a later polling pass.
+///
+/// `units[0]` is enabled and started when `enabled` is true. All of
+/// `units` are stopped (in the given order — callers put a unit that can
+/// re-trigger another, like `ssh.socket`, before it) and disabled together
+/// when `enabled` is false.
 #[cfg(target_os = "linux")]
-pub(crate) fn system_set_service(unit: &str, enabled: bool, label: &str) -> Result<(), Error> {
+pub(crate) fn system_set_service(units: &[&str], enabled: bool, label: &str) -> Result<(), Error> {
     let connection = system_connection()?;
     let manager = manager_proxy(&connection)?;
-    let files = vec![unit];
     if enabled {
+        let unit = units[0];
         let (install, _changes): (bool, Vec<(String, String, String)>) =
-            interactive(&manager, "EnableUnitFiles", &(files, false, false))
+            interactive(&manager, "EnableUnitFiles", &(units, false, false))
                 .map_err(mutation_error)?;
         if !install {
             return Err(Error::new(
@@ -223,31 +245,33 @@ pub(crate) fn system_set_service(unit: &str, enabled: bool, label: &str) -> Resu
             ));
         }
         interactive::<_, ()>(&manager, "Reload", &()).map_err(mutation_error)?;
-        if let Err(error) = interactive::<_, zbus::zvariant::OwnedObjectPath>(
-            &manager,
-            "StartUnit",
-            &(unit, "replace"),
-        ) {
+        if let Err(error) = run_unit(&connection, &manager, unit, "StartUnit") {
             let _ = interactive::<_, Vec<(String, String, String)>>(
                 &manager,
                 "DisableUnitFiles",
-                &(vec![unit], false),
+                &(units, false),
             );
-            return Err(mutation_error(error));
+            return Err(error);
         }
     } else {
-        interactive::<_, zbus::zvariant::OwnedObjectPath>(&manager, "StopUnit", &(unit, "replace"))
-            .map_err(mutation_error)?;
+        let mut stopped: Vec<&str> = Vec::with_capacity(units.len());
+        for unit in units.iter().copied() {
+            if let Err(error) = run_unit(&connection, &manager, unit, "StopUnit") {
+                for restarted in stopped.iter().rev().copied() {
+                    let _ = run_unit(&connection, &manager, restarted, "StartUnit");
+                }
+                return Err(error);
+            }
+            stopped.push(unit);
+        }
         if let Err(error) = interactive::<_, Vec<(String, String, String)>>(
             &manager,
             "DisableUnitFiles",
-            &(files, false),
+            &(units, false),
         ) {
-            let _ = interactive::<_, zbus::zvariant::OwnedObjectPath>(
-                &manager,
-                "StartUnit",
-                &(unit, "replace"),
-            );
+            for restarted in stopped.iter().rev().copied() {
+                let _ = run_unit(&connection, &manager, restarted, "StartUnit");
+            }
             return Err(mutation_error(error));
         }
         interactive::<_, ()>(&manager, "Reload", &()).map_err(mutation_error)?;
@@ -255,55 +279,128 @@ pub(crate) fn system_set_service(unit: &str, enabled: bool, label: &str) -> Resu
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
-pub(crate) fn restore_service(
-    unit: &str,
-    was_active: bool,
-    was_enabled_at_boot: bool,
-) -> Result<(), Error> {
-    let connection = system_connection()?;
-    let manager = manager_proxy(&connection)?;
-    if was_enabled_at_boot {
-        let _: (bool, Vec<(String, String, String)>) =
-            interactive(&manager, "EnableUnitFiles", &(vec![unit], false, false))
-                .map_err(mutation_error)?;
-    } else {
-        let _: Vec<(String, String, String)> =
-            interactive(&manager, "DisableUnitFiles", &(vec![unit], false))
-                .map_err(mutation_error)?;
-    }
-    interactive::<_, ()>(&manager, "Reload", &()).map_err(mutation_error)?;
-    let method = if was_active { "StartUnit" } else { "StopUnit" };
-    interactive::<_, zbus::zvariant::OwnedObjectPath>(&manager, method, &(unit, "replace"))
-        .map(|_| ())
-        .map_err(mutation_error)
-}
-
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn system_set_service(_unit: &str, _enabled: bool, _label: &str) -> Result<(), Error> {
+pub(crate) fn system_set_service(
+    _units: &[&str],
+    _enabled: bool,
+    _label: &str,
+) -> Result<(), Error> {
     Err(Error::new(
         ErrorKind::Unavailable,
         "Sharing changes are available in the supported Linux session",
     ))
 }
 
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn restore_service(
-    _unit: &str,
-    _was_active: bool,
-    _was_enabled_at_boot: bool,
+/// Start or stop one unit and wait for systemd's own authoritative word
+/// that the job finished, instead of returning as soon as the job is
+/// merely queued and leaving the caller to poll for the result later. The
+/// `JobRemoved` subscription is created before `StartUnit`/`StopUnit` is
+/// sent so a job that completes immediately cannot be missed.
+#[cfg(target_os = "linux")]
+fn run_unit(
+    connection: &zbus::blocking::Connection,
+    manager: &zbus::blocking::Proxy<'_>,
+    unit: &str,
+    method: &'static str,
 ) -> Result<(), Error> {
-    system_snapshot().map(|_| ())
+    let jobs = subscribe_job_removed(connection)?;
+    let job: zbus::zvariant::OwnedObjectPath =
+        interactive(manager, method, &(unit, "replace")).map_err(mutation_error)?;
+    let result = wait_for_job(jobs, &job)?;
+    if job_succeeded(&result) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            ErrorKind::Mutation,
+            format!("the {unit} job did not complete ({result})"),
+        ))
+    }
+}
+
+/// systemd's own verdict on a job: anything but `"done"` (`"canceled"`,
+/// `"timeout"`, `"failed"`, `"dependency"`, `"skipped"`, `"invalid"`) means
+/// the unit did not reach the requested run state.
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn job_succeeded(result: &str) -> bool {
+    result == "done"
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn wait_for_state(service: ManagedService, enabled: bool) -> Result<Snapshot, Error> {
-    for _ in 0..25 {
-        let (service_state, enabled_at_boot) = managed_service_state(service)?;
-        if requested_state_reached(service_state.as_deref(), enabled_at_boot, enabled) {
-            return system_snapshot();
+fn subscribe_job_removed(
+    connection: &zbus::blocking::Connection,
+) -> Result<zbus::MessageStream, Error> {
+    use zbus::{message::Type, MatchRule};
+
+    let rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .sender("org.freedesktop.systemd1")
+        .map_err(|_| Error::new(ErrorKind::Protocol, "invalid systemd sender"))?
+        .path("/org/freedesktop/systemd1")
+        .map_err(|_| Error::new(ErrorKind::Protocol, "invalid systemd path"))?
+        .interface("org.freedesktop.systemd1.Manager")
+        .map_err(|_| Error::new(ErrorKind::Protocol, "invalid manager interface"))?
+        .member("JobRemoved")
+        .map_err(|_| Error::new(ErrorKind::Protocol, "invalid job-removed signal"))?
+        .build();
+    async_io::block_on(zbus::MessageStream::for_match_rule(
+        rule,
+        connection.inner(),
+        Some(8),
+    ))
+    .map_err(|_| Error::new(ErrorKind::Unavailable, "could not watch systemd jobs"))
+}
+
+/// How long a `StartUnit`/`StopUnit` job gets to finish before this gives
+/// up and reports a failure (systemd itself still has its own, longer,
+/// per-unit start/stop timeouts; this just bounds how long a Sharing
+/// toggle can block the caller).
+#[cfg(target_os = "linux")]
+const JOB_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+#[cfg(target_os = "linux")]
+fn wait_for_job(
+    stream: zbus::MessageStream,
+    job: &zbus::zvariant::OwnedObjectPath,
+) -> Result<String, Error> {
+    use futures_util::StreamExt as _;
+
+    async_io::block_on(async {
+        let mut stream = stream.fuse();
+        let mut timeout = futures_util::FutureExt::fuse(async_io::Timer::after(JOB_WAIT_TIMEOUT));
+        loop {
+            futures_util::select! {
+                message = stream.next() => {
+                    let message = message
+                        .ok_or_else(|| Error::new(ErrorKind::Unavailable, "job stream ended"))?
+                        .map_err(|_| Error::new(ErrorKind::Unavailable, "job stream failed"))?;
+                    let (_id, path, _unit, result): (u32, zbus::zvariant::OwnedObjectPath, String, String) =
+                        message.body().deserialize().map_err(|_| {
+                            Error::new(ErrorKind::Protocol, "invalid job-removed signal")
+                        })?;
+                    if &path == job {
+                        return Ok(result);
+                    }
+                }
+                _ = timeout => {
+                    return Err(Error::new(
+                        ErrorKind::Mutation,
+                        "the service did not report completion in time",
+                    ));
+                }
+            }
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    })
+}
+
+/// The authoritative readback (SR-30): `system_set_service` only returns
+/// once systemd's `JobRemoved` signal says the run-state job is done, so
+/// by the time this runs the state is already settled — one immediate
+/// re-read of the manager is enough to confirm it, not a 100 ms poll.
+#[cfg(target_os = "linux")]
+pub(crate) fn verify_state(service: ManagedService, enabled: bool) -> Result<Snapshot, Error> {
+    let (service_state, enabled_at_boot) = managed_service_state(service)?;
+    if requested_state_reached(service_state.as_deref(), enabled_at_boot, enabled) {
+        return system_snapshot();
     }
     Err(Error::new(
         ErrorKind::Mutation,
@@ -362,7 +459,7 @@ fn managed_service_state(service: ManagedService) -> Result<(Option<String>, boo
 }
 
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn wait_for_state(_service: ManagedService, _enabled: bool) -> Result<Snapshot, Error> {
+pub(crate) fn verify_state(_service: ManagedService, _enabled: bool) -> Result<Snapshot, Error> {
     system_snapshot()
 }
 

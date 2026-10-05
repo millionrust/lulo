@@ -1,6 +1,6 @@
 use crate::system::{
-    bounded_shares, combined_remote_state, parse_smb_conf_shares, parse_ufw_conf_enabled,
-    requested_state_reached,
+    bounded_shares, combined_remote_state, job_succeeded, parse_smb_conf_shares,
+    parse_ufw_conf_enabled, remote_login_units, requested_state_reached,
 };
 
 #[test]
@@ -86,6 +86,71 @@ fn watcher_filters_firewall_files_and_systemd_idle_exit() {
     )));
     assert!(!owner_change_reappeared("org.freedesktop.systemd1", ""));
     assert!(owner_change_reappeared("org.freedesktop.systemd1", ":1.42"));
+}
+
+#[test]
+fn remote_login_off_combines_the_socket_and_service_in_one_unit_file_call() {
+    // SHARE-SLOW: turning Remote Login off used to stop/disable
+    // `ssh.socket` through its own full round trip, then stop/disable
+    // `ssh.service` through a second one, each with its own Reload. The
+    // socket must come first so it cannot restart the service once that
+    // is stopped, but both now move through a single call.
+    assert_eq!(
+        remote_login_units("ssh.service", false, true),
+        vec!["ssh.socket", "ssh.service"]
+    );
+    // No socket unit on this system: nothing to add.
+    assert_eq!(
+        remote_login_units("ssh.service", false, false),
+        vec!["ssh.service"]
+    );
+    // Turning it on never re-enables socket activation, socket present or
+    // not.
+    assert_eq!(
+        remote_login_units("ssh.service", true, true),
+        vec!["ssh.service"]
+    );
+    assert_eq!(
+        remote_login_units("ssh.service", true, false),
+        vec!["ssh.service"]
+    );
+}
+
+#[test]
+fn only_a_done_job_counts_as_success() {
+    // A `StartUnit`/`StopUnit` job that systemd reports as anything other
+    // than "done" (cancelled, timed out, failed, a missed dependency, or
+    // skipped) must not be read as the unit having reached that state.
+    assert!(job_succeeded("done"));
+    assert!(!job_succeeded("canceled"));
+    assert!(!job_succeeded("timeout"));
+    assert!(!job_succeeded("failed"));
+    assert!(!job_succeeded("dependency"));
+    assert!(!job_succeeded("skipped"));
+}
+
+#[test]
+fn a_remote_login_toggle_reloads_systemd_at_most_once() {
+    // SHARE-SLOW: one toggle used to run three `EnableUnitFiles`/
+    // `DisableUnitFiles` + `Reload` round trips (socket, service, and a
+    // failed-readback retry). `system_set_service` now has exactly one
+    // `Reload` call in its enable branch and one in its disable branch, so
+    // a single invocation can never reload the daemon more than once, and
+    // it no longer sleeps waiting for systemd to catch up.
+    let source = include_str!("system.rs");
+    let reload_calls = source.matches("\"Reload\"").count();
+    assert_eq!(
+        reload_calls, 2,
+        "expected exactly one Reload call site per system_set_service branch"
+    );
+    assert!(
+        !source.contains("thread::sleep"),
+        "readback must wait on systemd's JobRemoved signal, not poll with a sleep"
+    );
+    assert!(
+        source.contains("JobRemoved"),
+        "StartUnit/StopUnit completion must be confirmed via the JobRemoved signal"
+    );
 }
 
 #[test]

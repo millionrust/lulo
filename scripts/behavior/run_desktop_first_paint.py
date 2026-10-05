@@ -87,6 +87,13 @@ MIN_SWATCH_PIXELS = 2000
 # Main-thread wake-ups an idle, inactive desktop may take in IDLE_SECONDS.
 IDLE_SECONDS = 10
 MAX_IDLE_WAKEUPS = 10
+# The same bar compare() uses for "the folder icon paints at all".
+FOLDER_ICON_THRESHOLD = 400
+# How long time-to-icon polling waits before giving up, and how often it
+# samples. 20 ms is below a 60 Hz frame (16.6 ms) so a capture rarely
+# straddles two frames; grim itself costs a few ms per call.
+TIME_TO_ICON_TIMEOUT = 5.0
+TIME_TO_ICON_INTERVAL = 0.02
 
 
 def write_solid_png(path: Path, width: int, height: int, rgb: tuple[int, int, int]) -> None:
@@ -155,6 +162,9 @@ class Run:
         self.children: list[subprocess.Popen] = []
         self.results: list[tuple[str, bool, str]] = []
         self.desktop: subprocess.Popen | None = None
+        # Time from spawn to the folder icon's blue crossing FOLDER_ICON_THRESHOLD,
+        # one entry per login round that reached it at all.
+        self.time_to_icon_ms: list[float] = []
         self.home = work / "home"
         self.desktop_dir = self.home / "Desktop"
         for sub in (".config", ".local/share", ".local/state", ".cache", "Desktop", "Documents"):
@@ -375,6 +385,34 @@ class Run:
         self.check(f"idle {label} main thread stays asleep", wakeups <= MAX_IDLE_WAKEUPS,
                    f"({wakeups} context switches in {IDLE_SECONDS} s, want <= {MAX_IDLE_WAKEUPS})")
 
+    def measure_time_to_icon(self, start: float) -> tuple[Optional[float], Optional[bool], int]:
+        """Polls captures from `start` (the desktop's spawn time) until the
+        folder icon's blue crosses FOLDER_ICON_THRESHOLD, with no settle
+        wait and no input: the time-to-icon the owner actually sees. Returns
+        (milliseconds to the icon, whether the very first capture already
+        had it, captures taken). macOS shows desktop icons instantly; this
+        polls tightly enough (TIME_TO_ICON_INTERVAL, under one frame) that a
+        folder icon queued even one frame behind the rest of the desktop
+        shows up as a non-zero, later sample rather than vanishing into a
+        single settled capture."""
+        deadline = time.monotonic() + TIME_TO_ICON_TIMEOUT
+        first_frame_had_icon: Optional[bool] = None
+        sample = 0
+        while time.monotonic() < deadline:
+            if self.desktop is None or self.desktop.poll() is not None:
+                return None, first_frame_had_icon, sample
+            frame = self.capture(f"time-to-icon-{sample}")
+            if frame is not None:
+                blue = run_lulo.folder_blue_pixels(frame)
+                has_icon = blue >= FOLDER_ICON_THRESHOLD
+                if first_frame_had_icon is None:
+                    first_frame_had_icon = has_icon
+                if has_icon:
+                    return (time.monotonic() - start) * 1000.0, first_frame_had_icon, sample + 1
+                sample += 1
+            time.sleep(TIME_TO_ICON_INTERVAL)
+        return None, first_frame_had_icon, sample
+
     def reset_desktop_folder(self, with_folder: bool) -> None:
         for entry in self.desktop_dir.iterdir():
             shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
@@ -429,8 +467,18 @@ class Run:
         companions = [self.spawn([binary], Path(binary).name, self.desktop_env())
                       for binary in filter(None, (self.args.companions or "").split(","))]
         dropped = self.args.unpresented_draws if attempt > 0 else 0
+        label = f"login {attempt}" + (f" ({dropped} unpresented frames)" if dropped else "")
+        start = time.monotonic()
         self.launch_desktop(focus_terminal=False,
                             extra={"RMAC_GPUI_TEST_UNPRESENTED_DRAWS": str(dropped)} if dropped else None)
+        icon_ms, first_frame_had_icon, samples = self.measure_time_to_icon(start)
+        if icon_ms is not None:
+            self.time_to_icon_ms.append(icon_ms)
+            print(f"{label}: time to icon {icon_ms:.1f} ms ({samples} captures)", flush=True)
+        self.check(f"{label}: the folder icon is present in the very first captured frame",
+                   bool(first_frame_had_icon),
+                   f"(time to icon {icon_ms:.1f} ms)" if icon_ms is not None
+                   else f"(icon never painted in {TIME_TO_ICON_TIMEOUT:.1f}s, {samples} captures)")
         self.settle_desktop()
         if self.desktop is None or self.desktop.poll() is not None:
             self.check("desktop starts", False, (self.out / "wallpaper.log").read_text()[-400:])
@@ -438,7 +486,6 @@ class Run:
         idle = self.capture(f"login-{attempt}")
         self.click_empty_desktop()
         time.sleep(1.5)
-        label = f"login {attempt}" + (f" ({dropped} unpresented frames)" if dropped else "")
         self.compare(label, idle, self.capture(f"login-clicked-{attempt}"))
         if dropped and attempt == self.args.login_rounds - 1:
             # Redrawing a dropped frame must not leave the loop running.
@@ -558,6 +605,10 @@ class Run:
                 process.wait(5)
             except subprocess.TimeoutExpired:
                 process.kill()
+        if self.time_to_icon_ms:
+            times = self.time_to_icon_ms
+            print(f"time to icon: min {min(times):.1f} ms, max {max(times):.1f} ms, "
+                  f"mean {sum(times) / len(times):.1f} ms, over {len(times)} round(s)", flush=True)
         failed = [result for result in self.results if not result[1]]
         print(f"\n{len(self.results) - len(failed)}/{len(self.results)} checks passed", flush=True)
         return 1 if failed or not self.results else 0

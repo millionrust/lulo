@@ -331,6 +331,7 @@ impl Wallpaper {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&status, |_, _, cx| cx.notify()).detach();
+        desktop::warm_desktop_icons(cx);
         Self {
             display_id: u64::from(display_id),
             display: display_id,

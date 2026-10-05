@@ -90,6 +90,13 @@ const MARQUEE_BORDER: u32 = 0xFFFFFF80;
 /// Image files larger than this show the generic document icon.
 const PREVIEW_LIMIT: u64 = 32 * 1024 * 1024;
 const PREVIEW_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+/// gen_desktop_thumbnails waits this long before decoding: the full-size
+/// decode a cold thumbnail needs is real CPU work on a low-end PC, and
+/// starting it immediately competed with the desktop's own first frame
+/// for the CPU, which the bundled icon fix must never do. The generic
+/// document glyph (already instant) covers a previewable image until its
+/// thumbnail lands.
+const THUMBNAIL_START_DELAY: Duration = Duration::from_millis(400);
 /// Info and View Options panels (S).
 const PANEL_RADIUS: f32 = 12.0;
 const INFO_WIDTH: f32 = 265.0;
@@ -320,29 +327,50 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-/// The folder and document glyphs, decoded once (the first time either is
-/// needed, which is always within the desktop's very first frame) through
-/// GPUI's own SVG renderer, then kept as a shared bitmap for the life of
-/// the process. `item_icon` hands that bitmap to `img()` as
-/// `ImageSource::Render`, which GPUI returns synchronously — unlike
-/// `ImageSource::Resource` (a path or embedded asset), it never asks the
-/// window's asset cache to decode on the background executor. That
-/// executor's small pool is also where full-size image previews decode
-/// (see `gen_desktop_thumbnails`), and a bundled icon queued behind one of
-/// those was the "folder icon paints last" delay: the owner's labels and
-/// everything else that doesn't route through an async decode painted
-/// immediately, but the folder glyph waited for its turn.
+/// The folder and document glyphs, decoded once into a shared bitmap and
+/// reused for the life of the process. `item_icon` hands that bitmap to
+/// `img()` as `ImageSource::Render`, which GPUI returns synchronously —
+/// unlike `ImageSource::Resource` (a path or embedded asset), it never
+/// asks the window's asset cache to decode on the background executor.
+/// That executor's small pool is also where full-size image previews
+/// decode (see `gen_desktop_thumbnails`), and a bundled icon queued
+/// behind one of those was the "folder icon paints last" delay.
+///
+/// The decode itself is not cheap to do inline: the *first* SVG GPUI
+/// renders in a process pays a one-time, roughly 2 second cost inside its
+/// SVG renderer's font-aware parser (measured on the reference laptop,
+/// independent of which SVG or how small it is). Doing that synchronously
+/// during the desktop's first frame would freeze the whole frame — worse
+/// than the original bug, which only delayed the icon. `warm_desktop_icons`
+/// instead runs it once, off the main thread, as early as the first
+/// display's Wallpaper is created; `desktop_icons()` returns `None` until
+/// it lands, and `bundled_icon` falls back to the pre-existing async asset
+/// path for exactly as long as that takes — never slower than before this
+/// change, and instant once warmed.
 struct DesktopIcons {
     folder: Option<Arc<RenderImage>>,
     document: Option<Arc<RenderImage>>,
 }
 
 static DESKTOP_ICONS: OnceLock<DesktopIcons> = OnceLock::new();
+static DESKTOP_ICONS_WARMING: AtomicBool = AtomicBool::new(false);
 
-fn desktop_icons(cx: &App) -> &'static DesktopIcons {
-    DESKTOP_ICONS.get_or_init(|| {
-        let renderer = cx.svg_renderer();
-        DesktopIcons {
+fn desktop_icons() -> Option<&'static DesktopIcons> {
+    DESKTOP_ICONS.get()
+}
+
+/// Kicks off the one-time decode above exactly once per process (later
+/// displays, or a later call, are a no-op): on the dedicated blocking-task
+/// pool, not GPUI's small `background_executor` (LINUX-HW-07) and not the
+/// main thread. Notifies `cx`'s entity so a desktop already on screen
+/// repaints with the fast path once it lands.
+pub(crate) fn warm_desktop_icons(cx: &mut Context<Wallpaper>) {
+    if DESKTOP_ICONS.get().is_some() || DESKTOP_ICONS_WARMING.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let renderer = cx.svg_renderer();
+    cx.spawn(async move |this, cx| {
+        let icons = blocking::unblock(move || DesktopIcons {
             folder: renderer
                 .render_single_frame(
                     include_bytes!("../../../../../assets/icons/folder.svg"),
@@ -359,12 +387,16 @@ fn desktop_icons(cx: &App) -> &'static DesktopIcons {
                     eprintln!("the bundled document icon could not be decoded: {error}")
                 })
                 .ok(),
-        }
+        })
+        .await;
+        let _ = DESKTOP_ICONS.set(icons);
+        let _ = this.update(cx, |_, cx| cx.notify());
     })
+    .detach();
 }
 
-/// `decoded` when the one-time synchronous decode above succeeded, else the
-/// asset path GPUI resolves asynchronously as it always has.
+/// `decoded` once `warm_desktop_icons` has landed, else the asset path
+/// GPUI resolves asynchronously as it always has.
 fn bundled_icon(
     decoded: Option<Arc<RenderImage>>,
     fallback: &'static str,
@@ -384,14 +416,10 @@ fn is_previewable(item: &Item) -> bool {
     PREVIEW_EXTENSIONS.contains(&extension.as_str()) && item.size_bytes <= PREVIEW_LIMIT
 }
 
-fn item_icon(
-    item: &Item,
-    size: f32,
-    thumbnails: &BTreeMap<PathBuf, PathBuf>,
-    cx: &App,
-) -> AnyElement {
+fn item_icon(item: &Item, size: f32, thumbnails: &BTreeMap<PathBuf, PathBuf>) -> AnyElement {
     if item.kind == ItemKind::Directory {
-        return bundled_icon(desktop_icons(cx).folder.clone(), FOLDER_ICON, size);
+        let folder = desktop_icons().and_then(|icons| icons.folder.clone());
+        return bundled_icon(folder, FOLDER_ICON, size);
     }
     if is_previewable(item) {
         // A disk-cached thumbnail, decoded at icon size instead of the
@@ -410,14 +438,11 @@ fn item_icon(
         }
     }
     let extension = extension(&item.name);
+    let document = desktop_icons().and_then(|icons| icons.document.clone());
     div()
         .relative()
         .size(px(size))
-        .child(bundled_icon(
-            desktop_icons(cx).document.clone(),
-            DOCUMENT_ICON,
-            size,
-        ))
+        .child(bundled_icon(document, DOCUMENT_ICON, size))
         .child(
             div()
                 .absolute()
@@ -439,7 +464,6 @@ fn stack_icon<'a>(
     members: impl Iterator<Item = &'a Item>,
     size: f32,
     thumbnails: &BTreeMap<PathBuf, PathBuf>,
-    cx: &App,
 ) -> AnyElement {
     let layer = size * 0.8;
     let members = members.take(3).collect::<Vec<_>>();
@@ -453,7 +477,7 @@ fn stack_icon<'a>(
                 .absolute()
                 .left(px((size - layer) / 2.0 - offset + 3.0))
                 .top(px((size - layer) / 2.0 - offset + 3.0))
-                .child(item_icon(item, layer, thumbnails, cx))
+                .child(item_icon(item, layer, thumbnails))
         }))
         .into_any_element()
 }
@@ -595,6 +619,9 @@ impl Wallpaper {
             self.desk.pending_thumbnails.insert(path.clone());
         }
         cx.spawn(async move |this, cx| {
+            // Let the current frame (and the folder/document icons painting
+            // in it) land before spending CPU on a cold decode.
+            cx.background_executor().timer(THUMBNAIL_START_DELAY).await;
             let results = blocking::unblock(move || {
                 targets
                     .into_iter()
@@ -1497,7 +1524,7 @@ impl Wallpaper {
             .chain(renaming);
         for index in order {
             let placed = &layout.placed[index];
-            let visual = self.tile_visual(placed, &layout, active, true, cx);
+            let visual = self.tile_visual(placed, &layout, active, true);
             children.push(
                 visual
                     .id(("desktop-tile", index))
@@ -1540,7 +1567,7 @@ impl Wallpaper {
                         top: placed.top + dy,
                     };
                     children.push(
-                        self.tile_visual(&ghost, &layout, active, false, cx)
+                        self.tile_visual(&ghost, &layout, active, false)
                             .opacity(0.6)
                             .into_any_element(),
                     );
@@ -1638,7 +1665,6 @@ impl Wallpaper {
         layout: &DeskLayout,
         active: bool,
         editing: bool,
-        cx: &App,
     ) -> gpui::Div {
         let options = layout.grid.options;
         let icon = options.icon_size;
@@ -1650,14 +1676,13 @@ impl Wallpaper {
                     top.iter().filter_map(|index| layout.items.get(*index)),
                     icon,
                     &self.desk.thumbnails,
-                    cx,
                 ),
                 false,
             ),
             Tile::Item { index, .. } => match layout.items.get(*index) {
                 Some(item) => (
                     item.name.clone(),
-                    item_icon(item, icon, &self.desk.thumbnails, cx),
+                    item_icon(item, icon, &self.desk.thumbnails),
                     self.desk.selection.contains(&item.path),
                 ),
                 None => (String::new(), div().into_any_element(), false),
@@ -2131,7 +2156,7 @@ impl Wallpaper {
                 };
                 (
                     item.name.clone(),
-                    item_icon(item, 32.0, &self.desk.thumbnails, cx),
+                    item_icon(item, 32.0, &self.desk.thumbnails),
                     vec![
                         ("Kind:", kind.to_owned()),
                         ("Size:", size),
@@ -2148,7 +2173,11 @@ impl Wallpaper {
             }
             None => (
                 "Desktop".to_owned(),
-                bundled_icon(desktop_icons(cx).folder.clone(), FOLDER_ICON, 32.0),
+                bundled_icon(
+                    desktop_icons().and_then(|icons| icons.folder.clone()),
+                    FOLDER_ICON,
+                    32.0,
+                ),
                 vec![
                     ("Kind:", "Folder".to_owned()),
                     ("Contents:", format!("{} items", layout.items.len())),

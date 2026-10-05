@@ -62,6 +62,14 @@ MANIFEST_NAME = "rmac-source.json"
 REBUILD_MANIFEST_NAME = "rebuild.json"
 CHECKSUM_NAME = "SHA256SUMS"
 VENDOR_DIRECTORY = "vendor"
+# cargo vendor's own destination, one level under VENDOR_DIRECTORY rather than
+# VENDOR_DIRECTORY itself: vendor/gpui-component is a committed path
+# dependency living alongside it (Cargo.toml's [workspace] exclude), and
+# cargo's directory-source replacement scans every top-level entry of its
+# configured directory expecting a flat vendored crate, choking on
+# gpui-component's own workspace manifest if it is a sibling there.
+CARGO_VENDOR_SUBDIRECTORY = "crates-io"
+CARGO_VENDOR_DIRECTORY = f"{VENDOR_DIRECTORY}/{CARGO_VENDOR_SUBDIRECTORY}"
 VENDORED_SOURCES = "vendored-sources"
 CARGO_LOCKS = ("Cargo.lock", "shell/Cargo.lock")
 
@@ -210,8 +218,8 @@ def parse_vendor_config(text: str) -> tuple[GitSource, ...]:
     Accepts exactly cargo's shape for crates.io plus git dependencies:
     `[source.crates-io]` and every `[source."git+https://..."]` replaced with
     `vendored-sources`, and one `[source.vendored-sources]` whose directory is
-    the relative `vendor`. Anything else (another registry, a path, extra
-    keys, duplicates) is refused. Returns the git sources in file order.
+    the relative `vendor/crates-io`. Anything else (another registry, a path,
+    extra keys, duplicates) is refused. Returns the git sources in file order.
     """
     if not isinstance(text, str) or "\r" in text or "\0" in text:
         raise SourcePackageError("vendor config is not plain text")
@@ -239,8 +247,10 @@ def parse_vendor_config(text: str) -> tuple[GitSource, ...]:
 
     if sections.get("crates-io") != {"replace-with": VENDORED_SOURCES}:
         raise SourcePackageError("vendor config must replace crates-io with the vendored sources")
-    if sections.get(VENDORED_SOURCES) != {"directory": VENDOR_DIRECTORY}:
-        raise SourcePackageError('vendor config must name the one directory "vendor"')
+    if sections.get(VENDORED_SOURCES) != {"directory": CARGO_VENDOR_DIRECTORY}:
+        raise SourcePackageError(
+            f'vendor config must name the one directory "{CARGO_VENDOR_DIRECTORY}"'
+        )
 
     git_sources = []
     for name in order:

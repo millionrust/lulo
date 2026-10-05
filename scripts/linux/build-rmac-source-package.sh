@@ -205,14 +205,33 @@ build_source() {
   local tree="$parent/$SRC_TOP_DIRECTORY"
   [[ -f "$tree/Cargo.lock" && -f "$tree/shell/Cargo.lock" ]] \
     || fail "the export is missing Cargo.lock or shell/Cargo.lock"
-  [[ ! -e "$tree/debian" && ! -e "$tree/vendor" ]] \
-    || fail "the export already has a top-level debian/ or vendor/"
+  [[ ! -e "$tree/debian" ]] \
+    || fail "the export already has a top-level debian/"
+  # vendor/gpui-component is a deliberately committed path dependency
+  # (Cargo.toml's [workspace] exclude), not cargo-vendor output, so a
+  # top-level vendor/ is expected here. cargo vendor's own destination
+  # below is vendor/crates-io, a sibling, not vendor/ itself: it needs
+  # gpui-component present at its real path to resolve the dependency
+  # graph (moving it aside first made cargo vendor itself fail: "failed
+  # to read .../vendor/gpui-component/crates/ui/Cargo.toml"), but
+  # deletes anything else it doesn't manage from whatever directory it
+  # is pointed at, and cargo's directory-source replacement chokes
+  # ("found a virtual manifest ... instead of a package manifest") if
+  # gpui-component's workspace manifest is a sibling inside the
+  # directory it scans. Keeping cargo vendor's own output one level
+  # down, in vendor/crates-io, avoids both.
+  if [[ -e "$tree/vendor" ]]; then
+    local unexpected
+    unexpected="$(find "$tree/vendor" -mindepth 1 -maxdepth 1 ! -name gpui-component)"
+    [[ -z "$unexpected" ]] \
+      || fail "the export's vendor/ has unexpected top-level entries: $unexpected"
+  fi
   [[ "$(python3 "$helper" version --repo-root "$tree")" == "$SRC_VERSION" ]] \
     || fail "the exported tree's version differs from the checkout's"
 
-  # The only networked step: both workspaces' exact Cargo.lock graphs into one
-  # vendor/ directory. cargo prints the source replacement on stdout.
-  (cd "$tree" && cargo vendor --locked --sync shell/Cargo.toml vendor >"$parent/cargo-vendor-config.toml") \
+  # The only networked step: both workspaces' exact Cargo.lock graphs into
+  # vendor/crates-io. cargo prints the source replacement on stdout.
+  (cd "$tree" && cargo vendor --locked --sync shell/Cargo.toml vendor/crates-io >"$parent/cargo-vendor-config.toml") \
     || fail "cargo vendor failed"
   python3 "$helper" check-vendor-config --input "$parent/cargo-vendor-config.toml" \
     || fail "cargo vendor printed an unexpected source replacement"

@@ -22,6 +22,17 @@ on:
   push:
     tags:
       - "v*"
+  # Dry-run dispatch: every build, test, SBOM and verification job below
+  # still runs; `github.ref_type == 'tag'` is what keeps attach-release and
+  # apt-repository (publishing and signing) exclusive to a real `v*` tag
+  # push. Exercised end to end (dependency-policy, sbom, rmac-source,
+  # build-amd64, build-third-party-amd64, rmac-source-rebuild) on a
+  # temporary `push: branches: [agent/release-fix]` trigger -- same
+  # approach as native-reproducibility.yml's history, since
+  # workflow_dispatch can only be invoked through the GitHub API once the
+  # workflow file exists on the default branch. See run 37297752669 for
+  # the result.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -56,7 +67,7 @@ jobs:
           persist-credentials: false
 
       - name: Check advisories, licenses, bans, and sources
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
         with:
           log-level: error
           command: check
@@ -64,13 +75,19 @@ jobs:
           command-arguments: --hide-inclusion-graph
 
       # The shell workspace builds the session's own binaries (Dock, menu
-      # bar, …) that rmac-session ships, so it passes the same gate.
+      # bar, …) that rmac-session ships, so it passes the same gate. Pinned
+      # to the same cargo-deny-action version/invocation shape as
+      # ci.yml's "Check shell dependency policy" step: a newer action
+      # version's bundled cargo-deny rejects --config after the check
+      # subcommand, and manifest-path must be its own input rather than
+      # folded into `arguments`.
       - name: Check shell-workspace advisories, licenses, bans, and sources
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
         with:
           log-level: error
+          manifest-path: shell/Cargo.toml
           command: check
-          arguments: --locked --manifest-path shell/Cargo.toml
+          arguments: --locked
           command-arguments: --config shell/deny.toml --hide-inclusion-graph
 
       - name: Record that the license/advisory gate passed
@@ -156,7 +173,7 @@ jobs:
             curl --proto "=https" --tlsv1.2 -sSf \
               "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
               -o rustup-init
-            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            printf "%s  rustup-init\n" "$rustup_sha256" | sha256sum --check --status
             chmod +x rustup-init
             ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
             rm rustup-init
@@ -171,6 +188,10 @@ jobs:
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
             cd "'"$GITHUB_WORKSPACE"'"
+            # build-native-inputs.sh requires its --output parent to
+            # already exist (candidate.yml and native-reproducibility.yml
+            # both mkdir this ahead of the call too).
+            mkdir -p "$PWD/target"
             bash scripts/linux/build-native-inputs.sh \
               --output "$PWD/target/native-package-inputs"
           '
@@ -274,7 +295,7 @@ jobs:
             curl --proto "=https" --tlsv1.2 -sSf \
               "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
               -o rustup-init
-            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            printf "%s  rustup-init\n" "$rustup_sha256" | sha256sum --check --status
             chmod +x rustup-init
             ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
             rm rustup-init
@@ -289,6 +310,10 @@ jobs:
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
             cd "'"$GITHUB_WORKSPACE"'"
+            # build-native-inputs.sh requires its --output parent to
+            # already exist (candidate.yml and native-reproducibility.yml
+            # both mkdir this ahead of the call too).
+            mkdir -p "$PWD/target"
             bash scripts/linux/build-native-inputs.sh \
               --output "$PWD/target/native-package-inputs"
           '
@@ -389,7 +414,7 @@ jobs:
             curl --proto "=https" --tlsv1.2 -sSf \
               "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
               -o rustup-init
-            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            printf "%s  rustup-init\n" "$rustup_sha256" | sha256sum --check --status
             chmod +x rustup-init
             ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
             rm rustup-init
@@ -488,7 +513,7 @@ jobs:
             curl --proto "=https" --tlsv1.2 -sSf \
               "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
               -o rustup-init
-            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            printf "%s  rustup-init\n" "$rustup_sha256" | sha256sum --check --status
             chmod +x rustup-init
             ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
             rm rustup-init
@@ -573,7 +598,7 @@ jobs:
             curl --proto "=https" --tlsv1.2 -sSf \
               "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
               -o rustup-init
-            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            printf "%s  rustup-init\n" "$rustup_sha256" | sha256sum --check --status
             chmod +x rustup-init
             ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
             rm rustup-init
@@ -586,9 +611,17 @@ jobs:
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
             cd "'"$GITHUB_WORKSPACE"'"
+            # --tag must name a real tag pointing at --revision. On a
+            # workflow_dispatch or test-branch dry run (see the "on:"
+            # trigger above) GITHUB_REF_NAME is a branch, not a tag, so
+            # omit --tag entirely rather than fail the dry run.
+            tag_arguments=()
+            if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+              tag_arguments=(--tag "$GITHUB_REF_NAME")
+            fi
             bash scripts/linux/build-rmac-source-package.sh source \
               --revision "$GITHUB_SHA" \
-              --tag "$GITHUB_REF_NAME" \
+              "${tag_arguments[@]}" \
               --output "$PWD/target/rmac-source" \
               --minimum-free-gib 8
           '
@@ -684,7 +717,7 @@ jobs:
             curl --proto "=https" --tlsv1.2 -sSf \
               "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
               -o rustup-init
-            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            printf "%s  rustup-init\n" "$rustup_sha256" | sha256sum --check --status
             chmod +x rustup-init
             ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
             rm rustup-init
@@ -724,12 +757,20 @@ jobs:
         run: rustup show active-toolchain
 
       - name: Install cargo-cyclonedx
+        # Installed from outside this checkout: `cargo install --path` walks
+        # up from the crate's own manifest looking for an enclosing
+        # workspace, and cargo-cyclonedx's Cargo.toml has no [workspace]
+        # table of its own, so running this from inside $GITHUB_WORKSPACE
+        # makes cargo fold it into the rmac workspace ("current package
+        # believes it's in a workspace when it's not") instead of installing
+        # it as a standalone tool.
         run: |
+          cd "$RUNNER_TEMP"
           crate="cargo-cyclonedx-${RMAC_CARGO_CYCLONEDX_VERSION}.crate"
           curl --proto "=https" --tlsv1.2 -sSf \
             "https://static.crates.io/crates/cargo-cyclonedx/${crate}" \
             -o "$crate"
-          printf '%s  %s\n' "$RMAC_CARGO_CYCLONEDX_SHA256" "$crate" \
+          printf "%s  %s\n" "$RMAC_CARGO_CYCLONEDX_SHA256" "$crate" \
             | sha256sum --check --status
           mkdir cargo-cyclonedx-source
           tar -xzf "$crate" -C cargo-cyclonedx-source
@@ -758,10 +799,14 @@ jobs:
     # keyring job skipped before the archive key exists) through.
     # rmac-session cannot install without niri and xwayland-satellite, so a
     # Release is only published once their amd64 packages exist too, and
-    # never without rmac's own source package.
+    # never without rmac's own source package. `github.ref_type == 'tag'`
+    # keeps this (and apt-repository below) off a workflow_dispatch or
+    # test-branch dry run (see the "on:" trigger above): everything else
+    # in this workflow still builds and verifies on those triggers.
     needs: [dependency-policy, build-amd64, build-arm64, build-third-party-amd64, build-third-party-arm64, sbom, rmac-source, keyring]
     if: >-
       always() &&
+      github.ref_type == 'tag' &&
       needs.dependency-policy.result == 'success' &&
       needs.build-amd64.result == 'success' &&
       needs.build-third-party-amd64.result == 'success' &&
@@ -971,6 +1016,9 @@ jobs:
           sudo -E -u builder bash -lc '
             set -euo pipefail
             cd "'"$GITHUB_WORKSPACE"'"
+            # build-keyring-packages.py requires its --output parent to
+            # already exist, same as build-native-inputs.sh.
+            mkdir -p "$PWD/target"
             epoch="$(git log -1 --format=%ct)"
             python3 scripts/linux/build-keyring-packages.py \
               --keyring "$PWD/packaging/apt/archive-keyring.asc" \
@@ -1008,6 +1056,7 @@ jobs:
     needs: [attach-release, rmac-source-rebuild, keyring, dependency-policy]
     if: >-
       always() &&
+      github.ref_type == 'tag' &&
       vars.RMAC_APT_PUBLISHING_ENABLED == 'true' &&
       needs.attach-release.result == 'success' &&
       needs.rmac-source-rebuild.result == 'success' &&

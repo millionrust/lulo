@@ -64,6 +64,17 @@ pub(crate) struct QuickSettingsView {
     pub(crate) received_snapshot: bool,
     pub(crate) focus: FocusHandle,
     pub(crate) initial_control_focus: FocusHandle,
+    /// Real Tab stops for the Display and Sound sliders. `key_down` reads
+    /// these directly (`is_focused`) so Left/Right nudge whichever slider
+    /// Tab actually landed on, independent of the module-grid's own
+    /// mouse/arrow roving focus (`module_focus`), which Tab never updates.
+    pub(crate) display_slider_focus: FocusHandle,
+    pub(crate) sound_slider_focus: FocusHandle,
+    /// Real Tab stops for the Wi-Fi, Bluetooth and Focus toggle circles,
+    /// read the same way by `key_down` for Space/Enter.
+    pub(crate) wifi_toggle_focus: FocusHandle,
+    pub(crate) bluetooth_toggle_focus: FocusHandle,
+    pub(crate) focus_toggle_focus: FocusHandle,
     /// Backlight level in percent; `None` hides the Display module.
     pub(crate) brightness: Option<u8>,
     /// The player Now Playing shows; `None` hides the module.
@@ -123,6 +134,11 @@ impl QuickSettingsView {
     ) -> Self {
         let focus = cx.focus_handle();
         let initial_control_focus = cx.focus_handle();
+        let display_slider_focus = cx.focus_handle();
+        let sound_slider_focus = cx.focus_handle();
+        let wifi_toggle_focus = cx.focus_handle();
+        let bluetooth_toggle_focus = cx.focus_handle();
+        let focus_toggle_focus = cx.focus_handle();
         focus.focus(window, cx);
         let first_control = initial_control_focus.clone();
         window.on_next_frame(move |window, cx| window.focus(&first_control, cx));
@@ -195,6 +211,11 @@ impl QuickSettingsView {
             received_snapshot: false,
             focus,
             initial_control_focus,
+            display_slider_focus,
+            sound_slider_focus,
+            wifi_toggle_focus,
+            bluetooth_toggle_focus,
+            focus_toggle_focus,
             brightness: None,
             player: None,
             volume_preview: None,
@@ -339,6 +360,29 @@ impl QuickSettingsView {
         }
     }
 
+    /// Space/Enter on the focused Wi-Fi toggle circle: flips the switch,
+    /// the same command the pointer and AT-SPI Click paths already run.
+    fn toggle_wifi(&mut self, cx: &mut Context<Self>) {
+        let wifi = self.state.view().wifi;
+        if wifi.available && !wifi.busy {
+            self.execute(Command::SetWifiEnabled(!wifi.value), cx);
+        }
+    }
+
+    fn toggle_bluetooth(&mut self, cx: &mut Context<Self>) {
+        let bluetooth = self.state.view().bluetooth;
+        if bluetooth.available && !bluetooth.busy {
+            self.execute(Command::SetBluetoothPowered(!bluetooth.value), cx);
+        }
+    }
+
+    fn toggle_focus_mode(&mut self, cx: &mut Context<Self>) {
+        let focus = self.state.view().focus;
+        if focus.available && !focus.busy {
+            self.execute(Command::SetFocusEnabled(!focus.value.enabled), cx);
+        }
+    }
+
     fn nudge_slider(&mut self, kind: SliderKind, up: bool, cx: &mut Context<Self>) {
         let current = match kind {
             SliderKind::Brightness => match self.brightness {
@@ -420,6 +464,26 @@ impl QuickSettingsView {
                 }
                 _ => {}
             }
+        } else if matches!(key, "left" | "right") && self.display_slider_focus.is_focused(window) {
+            // Real Tab focus is on the Display slider: nudge it directly,
+            // regardless of the module grid's own mouse/arrow roving state
+            // (`module_focus`, below), which Tab never updates. Sync
+            // `module_focus` too, so the focus ring (`ring()`) matches.
+            self.module_focus = Some(Module::Display);
+            self.nudge_slider(SliderKind::Brightness, key == "right", cx);
+        } else if matches!(key, "left" | "right") && self.sound_slider_focus.is_focused(window) {
+            self.module_focus = Some(Module::Sound);
+            self.nudge_slider(SliderKind::Volume, key == "right", cx);
+        } else if matches!(key, "enter" | "space") && self.wifi_toggle_focus.is_focused(window) {
+            // Real Tab focus is on the Wi-Fi toggle circle itself, not the
+            // "Wi-Fi details" label `activate_module` below would open:
+            // Space/Enter here flips the switch, as on the Mac.
+            self.toggle_wifi(cx);
+        } else if matches!(key, "enter" | "space") && self.bluetooth_toggle_focus.is_focused(window)
+        {
+            self.toggle_bluetooth(cx);
+        } else if matches!(key, "enter" | "space") && self.focus_toggle_focus.is_focused(window) {
+            self.toggle_focus_mode(cx);
         } else {
             let order = self.module_order();
             let current = self.module_focus.filter(|module| order.contains(module));

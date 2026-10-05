@@ -25,6 +25,7 @@ rmac-apps.workspace = true
 rmac-clock.workspace = true
 rmac-clipboard.workspace = true
 rmac-clipboard-linux.workspace = true
+rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-launcher.workspace = true
 rmac-launcher-providers.workspace = true

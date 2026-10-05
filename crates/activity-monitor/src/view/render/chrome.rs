@@ -247,27 +247,45 @@ impl MonitorView {
                 .when(!selected, |element| {
                     element.hover(|hover| hover.bg(mac::hover()))
                 })
-                .track_focus(&focus.tab_stop(true).tab_index(index as isize))
+                // Roving tabindex (ACC orca audit): giving every tab its
+                // own ascending `tab_index` (0..4) raced against every
+                // other default-indexed control in the window (the
+                // traffic lights, the column headers, "Columns"), pushing
+                // Energy/Disk/Network's real Tab stops dozens of controls
+                // later than Tab ever reached — "unreachable", not merely
+                // slow. Only the selected tab is a real Tab stop now, at
+                // the shared default index; the other four stay reachable
+                // by the arrow-key roving handler below, exactly like an
+                // ARIA tablist (and like `tabs_row`'s own `Role::TabList`,
+                // which exempts every child from the per-control
+                // reachability check as arrow-key-navigable).
+                .track_focus(&focus.tab_stop(selected).tab_index(0))
                 .when(focused, |el| el.shadow(mac::focus_ring_shadow()))
                 .child(tab.label())
                 .on_click(cx.listener(move |this, _, _, cx| this.select_tab(tab, cx)))
         });
-        let tabs_row = div().flex().items_center().children(tabs).on_key_down({
-            let view = view.clone();
-            move |event: &gpui::KeyDownEvent, window, cx| {
-                let Some(next) = crate::metrics::tab_roving_target(
-                    current_tab_index,
-                    event.keystroke.key.as_str(),
-                ) else {
-                    return;
-                };
-                window.prevent_default();
-                cx.stop_propagation();
-                let target = Tab::ALL[next];
-                tab_focus[next].focus(window, cx);
-                view.update(cx, |this, cx| this.select_tab(target, cx));
-            }
-        });
+        let tabs_row = div()
+            .id("monitor-tab-list")
+            .role(Role::TabList)
+            .flex()
+            .items_center()
+            .children(tabs)
+            .on_key_down({
+                let view = view.clone();
+                move |event: &gpui::KeyDownEvent, window, cx| {
+                    let Some(next) = crate::metrics::tab_roving_target(
+                        current_tab_index,
+                        event.keystroke.key.as_str(),
+                    ) else {
+                        return;
+                    };
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    let target = Tab::ALL[next];
+                    tab_focus[next].focus(window, cx);
+                    view.update(cx, |this, cx| this.select_tab(target, cx));
+                }
+            });
         let search_open = self.search_open || !self.search.read(cx).value().is_empty();
         let search = if search_open {
             let query = self.search.read(cx).value().to_string();

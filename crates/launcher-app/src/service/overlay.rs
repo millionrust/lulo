@@ -169,6 +169,7 @@ fn open_launcher(
     event: rmac_shortcuts::Event,
     options: WindowOptions,
     excluded: Option<Bounds<gpui::Pixels>>,
+    previous_window: Option<rmac_compositor::WindowId>,
     cx: &mut App,
 ) {
     #[cfg(not(target_os = "linux"))]
@@ -262,6 +263,7 @@ fn open_launcher(
                     clipboard,
                     applications,
                     learning,
+                    previous_window,
                 },
                 window,
                 cx,
@@ -330,7 +332,10 @@ pub(super) fn route_shortcut(event: rmac_shortcuts::Event, cx: &mut App) {
     if route_existing(&event, cx) {
         return;
     }
-    open_launcher(event, fallback_options(cx), None, cx);
+    // The dev-host shortcut path has no compositor snapshot to restore
+    // focus from; ACC's Escape-focus-restore applies to the Linux shell
+    // activation path below.
+    open_launcher(event, fallback_options(cx), None, None, cx);
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -368,10 +373,15 @@ pub(super) fn route_activation(
                 return;
             }
         };
+    // Captured before Spotlight's own window opens and takes focus, so
+    // Escape (or an outside click) can hand focus back to it, as on the
+    // Mac. `None` whenever nothing was focused (e.g. an empty desktop).
+    let previous_window = context.compositor().focus.window;
     open_launcher(
         event,
         overlay_options(WindowBounds::Windowed(bounds), description.margin_top),
         Some(bounds),
+        previous_window,
         cx,
     );
 }

@@ -66,9 +66,28 @@ impl QuickSettingsView {
         let toggle_view = cx.entity().downgrade();
         let toggle = Rc::new(toggle);
         let pointer_toggle = toggle.clone();
+        let a11y_toggle_view = toggle_view.clone();
+        let a11y_toggle = toggle.clone();
         let label_view = cx.entity().downgrade();
         let toggle_name = pill.title;
         let label_name = format!("{} details", pill.title);
+        // A real, dedicated Tab stop unconditionally (ACC orca audit:
+        // focusability was previously wrapped in `.when(pill.enabled, ...)`
+        // alongside the Click action, so a momentarily unavailable backend
+        // — e.g. this audit's sandboxed session, which has no
+        // NetworkManager/BlueZ bus at all — made the toggle pointer-only;
+        // a Mac toggle stays keyboard-reachable regardless). A stored
+        // `FocusHandle`, not an ad hoc `.focusable()` one, so
+        // `QuickSettingsView::key_down`'s window-level capture handler
+        // (which claims Space/Enter before any bubble handler on this
+        // element would see them) can read it directly and flip the
+        // switch; only the pointer/AT-SPI Click paths below stay gated on
+        // `pill.enabled`.
+        let badge_focus = match pill.module {
+            Module::Wifi => self.wifi_toggle_focus.clone(),
+            Module::Bluetooth => self.bluetooth_toggle_focus.clone(),
+            _ => self.focus_toggle_focus.clone(),
+        };
         let badge = div()
             .id(SharedString::from(format!("{}-toggle", pill.id)))
             .role(Role::Switch)
@@ -78,13 +97,11 @@ impl QuickSettingsView {
             } else {
                 Toggled::False
             })
+            .track_focus(&badge_focus.tab_stop(true).tab_index(0))
             .when(pill.enabled, |badge| {
-                badge.focusable().tab_stop(true).on_a11y_action(
-                    AccessibleAction::Click,
-                    move |_, _, cx| {
-                        let _ = toggle_view.update(cx, |this, cx| toggle(this, cx));
-                    },
-                )
+                badge.on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                    let _ = a11y_toggle_view.update(cx, |this, cx| a11y_toggle(this, cx));
+                })
             })
             .absolute()
             .left(px(BADGE_INSET))

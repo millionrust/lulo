@@ -727,6 +727,7 @@ impl RenderOnce for PopUpButton {
         } else {
             mac::button_secondary()
         };
+        let label = self.label.clone();
         let button = painted(
             ComponentButton::new(self.id.clone()).label(self.label),
             fill,
@@ -737,7 +738,16 @@ impl RenderOnce for PopUpButton {
         )
         .border_1()
         .border_color(mac::separator());
-        let mut dropdown = DropdownButton::new(self.id).button(button).compact();
+        // The label button above always has a visible name, but the
+        // dropdown's own chevron trigger does not (ACC orca audit: Notes'
+        // "Off"/Maths Results toggle read as an unnamed button). Give the
+        // whole control the same name so the vendored `DropdownButton`
+        // passes it to the chevron as a fallback, the same label-or-tooltip
+        // convention `Button` itself already uses.
+        let mut dropdown = DropdownButton::new(self.id)
+            .button(button)
+            .compact()
+            .tooltip(label);
         if let Some(builder) = self.menu {
             dropdown = dropdown.dropdown_menu(move |menu, window, cx| builder(menu, window, cx));
         }

@@ -155,6 +155,12 @@ impl Selectable for DropdownButton {
 impl RenderOnce for DropdownButton {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let rounded = self.variant.is_ghost() && !self.selected;
+        // The chevron below has no label of its own, so without a name of
+        // its own it reads to a screen reader as an unnamed button (Notes'
+        // "Off"/Maths Results toggle, found live by the Orca audit). Give
+        // it the same name `DropdownButton::tooltip` set for the whole
+        // control, the same label-or-tooltip fallback `Button` itself uses.
+        let chevron_name = self.tooltip.text.clone().map(|(text, _)| text);
 
         div()
             .id(self.id)
@@ -207,6 +213,7 @@ impl RenderOnce for DropdownButton {
                             .when(self.outline, |this| this.outline())
                             .with_size(self.size)
                             .with_variant(self.variant)
+                            .when_some(chevron_name, |this, name| this.tooltip(name))
                             .dropdown_menu_with_anchor(self.anchor, menu),
                     )
                 })

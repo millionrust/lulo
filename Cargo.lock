@@ -6522,6 +6522,7 @@ dependencies = [
  "rmac-clipboard",
  "rmac-clipboard-linux",
  "rmac-clock",
+ "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-launcher",
  "rmac-launcher-providers",

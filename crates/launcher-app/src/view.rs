@@ -53,6 +53,11 @@ pub(crate) struct LauncherView {
     /// Set only by the private timing runner; normal result updates never
     /// build a snapshot solely to measure latency.
     input_probe: Option<InputProbe>,
+    /// The window that held keyboard focus just before Spotlight opened, so
+    /// `dismiss` can hand focus back to it on Escape or an outside click,
+    /// as on the Mac. `None` on a result activation: the launched app takes
+    /// focus itself.
+    previous_window: Option<rmac_compositor::WindowId>,
 }
 
 struct InputProbe {
@@ -109,6 +114,9 @@ pub(crate) struct OverlayEnvironment {
     pub(crate) applications: rmac_launcher_providers::ApplicationProvider,
     /// What earlier choices taught (local only).
     pub(crate) learning: Arc<rmac_launcher::Learning>,
+    /// The window focused just before this overlay opened (Linux only
+    /// today; the non-Linux dev shortcut path has no compositor snapshot).
+    pub(crate) previous_window: Option<rmac_compositor::WindowId>,
 }
 
 impl LauncherView {
@@ -143,6 +151,7 @@ impl LauncherView {
             clipboard,
             applications,
             learning,
+            previous_window,
         } = environment;
         let initial_browse_mode = requested_browse_mode(&event);
         // The placeholder is drawn by the bar itself in the measured label
@@ -245,6 +254,7 @@ impl LauncherView {
                     pending: None,
                 }
             }),
+            previous_window,
         };
         view.ensure_browse_selection();
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
@@ -358,6 +368,19 @@ impl LauncherView {
         let _ = self.coordinator.handle_key(KeyCommand::Escape);
         service::release(self.token, cx);
         window.remove_window();
+        // Spotlight is a layer-shell popup: once its window is gone the
+        // compositor has nothing to hand focus to on its own. Ask it to
+        // refocus whatever had keyboard focus before Spotlight opened, the
+        // same restore `rmac-dock`'s ⌃F3 keyboard mode does on Escape.
+        if let Some(window_id) = self.previous_window {
+            cx.spawn(async move |_, _| {
+                let action = rmac_compositor::Action::FocusWindow { window: window_id };
+                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                    eprintln!("could not restore focus after Spotlight: {error:?}");
+                }
+            })
+            .detach();
+        }
     }
 
     fn handle_key(&mut self, command: KeyCommand, window: &mut Window, cx: &mut Context<Self>) {

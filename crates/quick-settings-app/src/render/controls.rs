@@ -58,6 +58,11 @@ impl QuickSettingsView {
         let decrement_view = cx.entity().downgrade();
         let set_value_view = cx.entity().downgrade();
         let step = 5;
+        let slider_focus = if kind == SliderKind::Brightness {
+            self.display_slider_focus.clone()
+        } else {
+            self.sound_slider_focus.clone()
+        };
         let hit = div()
             .id(id)
             .role(Role::Slider)
@@ -66,26 +71,34 @@ impl QuickSettingsView {
             .aria_numeric_value_step(5.0)
             .aria_min_numeric_value(0.0)
             .aria_max_numeric_value(100.0)
+            // A real Tab stop unconditionally (ACC orca audit: the Sound
+            // slider was pointer-only whenever its backend reported
+            // unavailable, and Display's own arrow keys had no effect
+            // because the window's capture-phase key_down always claimed
+            // left/right for the module grid's separate mouse/arrow roving
+            // state (`module_focus`), which real Tab focus never updated).
+            // `key_down` (view.rs) now checks this handle directly, so
+            // Left/Right nudge whichever slider Tab actually reached. Only
+            // the value-changing actions below stay gated on `enabled`,
+            // matching the mouse-drag handler further down.
+            .track_focus(&slider_focus.tab_stop(true).tab_index(0))
             .when(enabled, |hit| {
-                hit.focusable()
-                    .tab_stop(true)
-                    .on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
-                        let _ = increment_view.update(cx, |this, cx| {
-                            this.slide(kind, value.saturating_add(step).min(100), cx)
-                        });
-                    })
-                    .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
-                        let _ = decrement_view.update(cx, |this, cx| {
-                            this.slide(kind, value.saturating_sub(step), cx)
-                        });
-                    })
-                    .on_a11y_action(AccessibleAction::SetValue, move |data, _, cx| {
-                        if let Some(accesskit::ActionData::NumericValue(requested)) = data {
-                            let value = requested.round().clamp(0.0, 100.0) as u8;
-                            let _ =
-                                set_value_view.update(cx, |this, cx| this.slide(kind, value, cx));
-                        }
-                    })
+                hit.on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
+                    let _ = increment_view.update(cx, |this, cx| {
+                        this.slide(kind, value.saturating_add(step).min(100), cx)
+                    });
+                })
+                .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
+                    let _ = decrement_view.update(cx, |this, cx| {
+                        this.slide(kind, value.saturating_sub(step), cx)
+                    });
+                })
+                .on_a11y_action(AccessibleAction::SetValue, move |data, _, cx| {
+                    if let Some(accesskit::ActionData::NumericValue(requested)) = data {
+                        let value = requested.round().clamp(0.0, 100.0) as u8;
+                        let _ = set_value_view.update(cx, |this, cx| this.slide(kind, value, cx));
+                    }
+                })
             })
             .absolute()
             .left(px(left - 8.0))

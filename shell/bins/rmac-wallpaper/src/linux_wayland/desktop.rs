@@ -327,6 +327,26 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
+/// `folder.svg`/`document.svg` are 1024×1024 "master" artwork with a
+/// `feDropShadow` filter. `SvgRenderer::render_single_frame(bytes, scale)`
+/// rasterizes at the SVG's own size times `scale` times GPUI's internal
+/// `SMOOTH_SVG_SCALE_FACTOR` (2, for crisp downscaling) — passing `1.0`,
+/// as a plain `img(path)` load implicitly does, rasterizes a 2048×2048
+/// canvas and blurs the drop shadow across it, even though no desktop
+/// icon ever shows above 128pt (`ViewOptions::ICON_SIZES`). Timed
+/// directly (`warm_desktop_icons`, before this constant existed): ~1.4–1.75s
+/// per icon on the reference laptop under load, independent of which SVG
+/// or whether it was the first one decoded in the process — ruling out a
+/// one-time cost (e.g. font-database warm-up) and matching a per-call
+/// rasterize-and-blur cost that scales with canvas area instead. Scaling
+/// to the actual maximum on-screen size keeps the same filter crisp while
+/// shrinking that canvas 64x.
+const ICON_SVG_NATIVE_SIZE: f32 = 1024.0;
+/// `ViewOptions::ICON_SIZES` tops out at 128pt; nothing on the desktop
+/// shows these two glyphs any larger.
+const ICON_SVG_MAX_DISPLAY_SIZE: f32 = 128.0;
+const ICON_SVG_SCALE: f32 = ICON_SVG_MAX_DISPLAY_SIZE / ICON_SVG_NATIVE_SIZE;
+
 /// The folder and document glyphs, decoded once into a shared bitmap and
 /// reused for the life of the process. `item_icon` hands that bitmap to
 /// `img()` as `ImageSource::Render`, which GPUI returns synchronously —
@@ -334,19 +354,7 @@ fn format_size(bytes: u64) -> String {
 /// asks the window's asset cache to decode on the background executor.
 /// That executor's small pool is also where full-size image previews
 /// decode (see `gen_desktop_thumbnails`), and a bundled icon queued
-/// behind one of those was the "folder icon paints last" delay.
-///
-/// The decode itself is not cheap to do inline: the *first* SVG GPUI
-/// renders in a process pays a one-time, roughly 2 second cost inside its
-/// SVG renderer's font-aware parser (measured on the reference laptop,
-/// independent of which SVG or how small it is). Doing that synchronously
-/// during the desktop's first frame would freeze the whole frame — worse
-/// than the original bug, which only delayed the icon. `warm_desktop_icons`
-/// instead runs it once, off the main thread, as early as the first
-/// display's Wallpaper is created; `desktop_icons()` returns `None` until
-/// it lands, and `bundled_icon` falls back to the pre-existing async asset
-/// path for exactly as long as that takes — never slower than before this
-/// change, and instant once warmed.
+/// behind one of those was the original "folder icon paints last" delay.
 struct DesktopIcons {
     folder: Option<Arc<RenderImage>>,
     document: Option<Arc<RenderImage>>,
@@ -362,8 +370,9 @@ fn desktop_icons() -> Option<&'static DesktopIcons> {
 /// Kicks off the one-time decode above exactly once per process (later
 /// displays, or a later call, are a no-op): on the dedicated blocking-task
 /// pool, not GPUI's small `background_executor` (LINUX-HW-07) and not the
-/// main thread. Notifies `cx`'s entity so a desktop already on screen
-/// repaints with the fast path once it lands.
+/// main thread, so even the now much smaller decode never risks the first
+/// frame. Notifies `cx`'s entity so a desktop already on screen repaints
+/// with the fast path once it lands.
 pub(crate) fn warm_desktop_icons(cx: &mut Context<Wallpaper>) {
     if DESKTOP_ICONS.get().is_some() || DESKTOP_ICONS_WARMING.swap(true, Ordering::Relaxed) {
         return;
@@ -374,14 +383,14 @@ pub(crate) fn warm_desktop_icons(cx: &mut Context<Wallpaper>) {
             folder: renderer
                 .render_single_frame(
                     include_bytes!("../../../../../assets/icons/folder.svg"),
-                    1.0,
+                    ICON_SVG_SCALE,
                 )
                 .map_err(|error| eprintln!("the bundled folder icon could not be decoded: {error}"))
                 .ok(),
             document: renderer
                 .render_single_frame(
                     include_bytes!("../../../../../assets/icons/document.svg"),
-                    1.0,
+                    ICON_SVG_SCALE,
                 )
                 .map_err(|error| {
                     eprintln!("the bundled document icon could not be decoded: {error}")

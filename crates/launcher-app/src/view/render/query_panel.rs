@@ -131,7 +131,7 @@ impl LauncherView {
         rows: &[Row],
         activating: bool,
         phase_message: SharedString,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let card = rows
             .first()
@@ -230,7 +230,7 @@ impl LauncherView {
         query: &str,
         rows: &[Row],
         activating: bool,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let selected = rows.iter().position(|row| row.selected);
         let completion = selected.and_then(|index| completion_for(query, &rows[index], index));
@@ -262,12 +262,11 @@ impl LauncherView {
             )
             .child(self.query_field(query, QUERY_NAME, completion, activating, cx))
             .when_some(icon_row, |header, row| {
-                header.child(
-                    div()
-                        .flex_none()
-                        .ml(px(8.0))
-                        .child(Self::result_icon(row, metrics::TOP_HIT_ICON)),
-                )
+                header.child(div().flex_none().ml(px(8.0)).child(Self::result_icon(
+                    row,
+                    metrics::TOP_HIT_ICON,
+                    cx,
+                )))
             })
             .into_any_element()
     }
@@ -280,7 +279,7 @@ impl LauncherView {
         index: usize,
         state: RowState,
         gap: bool,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let primary_id = row.id.clone();
         let subtitle = row.subtitle.clone().filter(|subtitle| !subtitle.is_empty());
@@ -345,7 +344,7 @@ impl LauncherView {
                     .absolute()
                     .left(px(qm::ICON_LEFT - qm::PLATE_INSET))
                     .top(px((qm::ROW - qm::ICON) / 2.0))
-                    .child(Self::result_icon(row, qm::ICON)),
+                    .child(Self::result_icon(row, qm::ICON, cx)),
             )
             .child(text)
             .on_click(cx.listener(move |this, _, window, cx| {
@@ -403,7 +402,7 @@ impl LauncherView {
     /// The answer card under the bar: a calculation or conversion (label,
     /// value, copy button; currency adds its source), the time in a city,
     /// or a definition.
-    fn answer_card(&self, row: &Row, cx: &Context<Self>) -> AnyElement {
+    fn answer_card(&self, row: &Row, cx: &mut Context<Self>) -> AnyElement {
         let height = card_height(row);
         let id = row.id.clone();
         let card = div()
@@ -427,7 +426,7 @@ impl LauncherView {
                         .absolute()
                         .left(px(qm::CARD_INSET - 1.0))
                         .top(px((height - qm::ICON) / 2.0 - 1.0))
-                        .child(Self::result_icon(row, qm::ICON)),
+                        .child(Self::result_icon(row, qm::ICON, cx)),
                 )
                 .child(
                     div()
@@ -487,7 +486,7 @@ impl LauncherView {
                         .absolute()
                         .left(px(qm::CARD_INSET - 1.0))
                         .top(px((height - qm::ICON) / 2.0 - 1.0))
-                        .child(Self::result_icon(row, qm::ICON)),
+                        .child(Self::result_icon(row, qm::ICON, cx)),
                 )
                 .child(
                     div()

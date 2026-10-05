@@ -83,10 +83,10 @@ fn close_glyph(size: f32) -> impl IntoElement {
 }
 
 impl NotificationCenterView {
-    fn app_icon(identity: &ApplicationIdentity) -> AnyElement {
+    fn app_icon(identity: &ApplicationIdentity, cx: &mut Context<Self>) -> AnyElement {
         let size = card::ICON;
         if let Some(icon) = &identity.icon {
-            return img(icon.clone())
+            return rmac_ui::svg_icon(icon.clone(), size, cx)
                 .size(px(size))
                 .flex_none()
                 .into_any_element();
@@ -178,7 +178,7 @@ impl NotificationCenterView {
         close: CloseTarget,
         on_click_expand: Option<String>,
         clock: Clock,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let hovered = self.hovered.as_deref() == Some(hover_key.as_str());
         let time = record.origin.posted_unix_ms.map(|posted| {
@@ -287,7 +287,7 @@ impl NotificationCenterView {
                     });
                 }
             })
-            .child(Self::app_icon(identity))
+            .child(Self::app_icon(identity, cx))
             .child(
                 div()
                     .flex_1()
@@ -345,7 +345,7 @@ impl NotificationCenterView {
         &self,
         group: &RecordGroup<'_>,
         clock: Clock,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let group_close = CloseTarget::Group {
             key: group.key.clone(),

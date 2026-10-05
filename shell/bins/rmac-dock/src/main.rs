@@ -21,7 +21,7 @@ mod linux_wayland {
 
     use futures_util::FutureExt as _;
     use gpui::{
-        canvas, div, img, layer_shell::*, point, prelude::*, px, rgba, AccessibleAction,
+        canvas, div, layer_shell::*, point, prelude::*, px, rgba, AccessibleAction,
         AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, ExternalPaths, FocusHandle,
         FontWeight, KeyDownEvent, MouseButton, PathBuilder, PlatformDisplay, QuitMode, Role,
         SharedString, Size, WeakEntity, Window, WindowBackgroundAppearance, WindowBounds,
@@ -2970,7 +2970,7 @@ mod linux_wayland {
                     };
                     visual = match main_icon {
                         Some(path) => visual.child(
-                            img(path)
+                            rmac_shell_ui::svg_icon(path, visual_size * ICON_ART_SCALE, cx)
                                 .w(px(visual_size * ICON_ART_SCALE))
                                 .h(px(visual_size * ICON_ART_SCALE))
                                 .rounded(px(tokens::dock_tile_radius(visual_size))),
@@ -2993,7 +2993,7 @@ mod linux_wayland {
                     tile = tile.child(visual);
                     if let Some(path) = badge_overlay {
                         tile = tile.child(
-                            img(path)
+                            rmac_shell_ui::svg_icon(path, 20.0, cx)
                                 .absolute()
                                 .bottom(px(-2.0))
                                 .right(px(-2.0))
@@ -3116,7 +3116,7 @@ mod linux_wayland {
                     };
                     if let Some(path) = icon_path {
                         visual = visual.child(
-                            img(path)
+                            rmac_shell_ui::svg_icon(path, visual_size * ICON_ART_SCALE, cx)
                                 .w(px(visual_size * ICON_ART_SCALE))
                                 .h(px(visual_size * ICON_ART_SCALE))
                                 .rounded(px(tokens::dock_tile_radius(visual_size))),
@@ -3351,7 +3351,7 @@ mod linux_wayland {
                         let squircle = visual_size * ICON_SQUIRCLE;
                         if let Some(path) = icon_path {
                             visual = visual.child(
-                                img(path)
+                                rmac_shell_ui::svg_icon(path, visual_size * ICON_ART_SCALE, cx)
                                     .w(px(visual_size * ICON_ART_SCALE))
                                     .h(px(visual_size * ICON_ART_SCALE))
                                     .rounded(px(tokens::dock_tile_radius(visual_size))),
@@ -3655,14 +3655,18 @@ mod linux_wayland {
                             let art = visual_size * ICON_ART_SCALE;
                             let inset = (visual_size - art) / 2.0;
                             // Darkened while its menu is open, like a tile.
-                            let image = img(path).absolute().w(px(art)).h(px(art)).when(
-                                menu_anchor == Some(trash_center)
-                                    || keyboard_focus_id.as_ref()
-                                        == Some(&rmac_dock::presentation::EntryId::Special(
-                                            rmac_dock::SpecialItemKind::Trash,
-                                        )),
-                                |image| image.opacity(0.47),
-                            );
+                            let image = rmac_shell_ui::svg_icon(path, art, cx)
+                                .absolute()
+                                .w(px(art))
+                                .h(px(art))
+                                .when(
+                                    menu_anchor == Some(trash_center)
+                                        || keyboard_focus_id.as_ref()
+                                            == Some(&rmac_dock::presentation::EntryId::Special(
+                                                rmac_dock::SpecialItemKind::Trash,
+                                            )),
+                                    |image| image.opacity(0.47),
+                                );
                             let image = match self.placement {
                                 rmac_shell_settings::DockPlacement::Bottom => {
                                     image.left(px(visual_offset + inset)).bottom(px(inset))
@@ -3696,7 +3700,7 @@ mod linux_wayland {
                             .w(px(metrics.icon_size))
                             .h(px(metrics.icon_size))
                             .children(ui.icon.clone().map(|path| {
-                                img(path)
+                                rmac_shell_ui::svg_icon(path, art, cx)
                                     .absolute()
                                     .left(px(inset))
                                     .top(px(inset))
@@ -3743,10 +3747,9 @@ mod linux_wayland {
                     .h(px(art))
                     .opacity(fade)
                     .children(
-                        removed
-                            .icon
-                            .clone()
-                            .map(|path| img(path).w(px(art)).h(px(art))),
+                        removed.icon.clone().map(|path| {
+                            rmac_shell_ui::svg_icon(path, art, cx).w(px(art)).h(px(art))
+                        }),
                     )
             }))
             .children(self.trash_review.as_ref().map(|review| {
@@ -4220,7 +4223,7 @@ mod linux_wayland {
         metrics: TileMetrics,
         shelf_start: f32,
         display_id: u64,
-        cx: &Context<Dock>,
+        cx: &mut Context<Dock>,
     ) -> Vec<gpui::AnyElement> {
         let Some(popover) = popover else {
             return Vec::new();
@@ -4355,7 +4358,7 @@ mod linux_wayland {
     fn stack_popover_item(
         item: &rmac_desktop::Item,
         emphasize: bool,
-        cx: &Context<Dock>,
+        cx: &mut Context<Dock>,
     ) -> gpui::AnyElement {
         let size = if emphasize {
             STACK_POPOVER_ITEM
@@ -4375,10 +4378,11 @@ mod linux_wayland {
             .gap(px(4.0))
             .cursor_pointer()
             .rounded(px(tokens::menu_item_radius()))
-            .children(
-                stack_popover_item_icon_path(item)
-                    .map(|icon_path| img(icon_path).w(px(size)).h(px(size))),
-            )
+            .children(stack_popover_item_icon_path(item).map(|icon_path| {
+                rmac_shell_ui::svg_icon(icon_path, size, cx)
+                    .w(px(size))
+                    .h(px(size))
+            }))
             .child(
                 div()
                     .text_size(px(10.5))
@@ -4639,7 +4643,7 @@ mod linux_wayland {
         surface_width: f32,
         surface_height: f32,
         display_id: u64,
-        cx: &Context<Dock>,
+        cx: &mut Context<Dock>,
     ) -> gpui::AnyElement {
         const WIDTH: f32 = 260.0;
         // The count stays in the accessible name; the text is the Mac's.
@@ -4683,7 +4687,11 @@ mod linux_wayland {
             .shadow_lg()
             .text_color(rgba(tokens::primary_text()))
             .occlude()
-            .children(trash_icon_path(true).map(|path| img(path).w(px(64.0)).h(px(64.0))))
+            .children(trash_icon_path(true).map(|path| {
+                rmac_shell_ui::svg_icon(path, 64.0, cx)
+                    .w(px(64.0))
+                    .h(px(64.0))
+            }))
             .child(
                 div()
                     .text_size(px(13.0))

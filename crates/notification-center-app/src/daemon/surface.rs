@@ -11,9 +11,9 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    canvas, div, img, linear_color_stop, linear_gradient, px, rgba, size, AnyElement,
-    AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, InteractiveElement as _,
-    IntoElement, MouseButton, ParentElement as _, Pixels, Render, Role, SharedString,
+    canvas, div, linear_color_stop, linear_gradient, px, rgba, size, AnyElement, AnyWindowHandle,
+    App, AppContext as _, Bounds, Context, Entity, InteractiveElement as _, IntoElement,
+    MouseButton, ParentElement as _, Pixels, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window,
 };
 use gpui_component::{IconName, StyledExt as _};
@@ -169,9 +169,9 @@ fn input_region(regions: &Regions) -> impl IntoElement {
     .inset_0()
 }
 
-fn app_icon(view: &CardView) -> AnyElement {
+fn app_icon(view: &CardView, cx: &mut Context<BannerSurface>) -> AnyElement {
     if let Some(icon) = &view.icon {
-        return img(icon.clone())
+        return rmac_ui::svg_icon(icon.clone(), card::ICON, cx)
             .size(px(card::ICON))
             .flex_none()
             .into_any_element();
@@ -338,7 +338,12 @@ fn options_list(view: &CardView, host: &Entity<BannerHost>) -> AnyElement {
         .into_any_element()
 }
 
-fn banner(view: CardView, host: &Entity<BannerHost>, regions: &Regions) -> AnyElement {
+fn banner(
+    view: CardView,
+    host: &Entity<BannerHost>,
+    regions: &Regions,
+    cx: &mut Context<BannerSurface>,
+) -> AnyElement {
     let id = view.id;
     let show_controls = view.hovered || view.persistent;
     let action = show_controls.then(|| action_button(&view, host)).flatten();
@@ -372,7 +377,7 @@ fn banner(view: CardView, host: &Entity<BannerHost>, regions: &Regions) -> AnyEl
         .on_click(move |_, _, cx| {
             click_host.update(cx, |host, cx| host.click(id, cx));
         })
-        .child(app_icon(&view))
+        .child(app_icon(&view, cx))
         .child(
             div()
                 .ml(px(card::ICON_GAP))
@@ -433,7 +438,7 @@ impl Render for BannerSurface {
         let regions: Regions = Rc::new(RefCell::new(Vec::new()));
         let banners = views
             .into_iter()
-            .map(|view| banner(view, &self.host, &regions))
+            .map(|view| banner(view, &self.host, &regions, cx))
             .collect::<Vec<_>>();
 
         // Sizes the surface to its banners after layout.

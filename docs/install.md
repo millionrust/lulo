@@ -3,8 +3,8 @@
 > **Lulo OS 0.9 Beta 1 — early access.** Try it on a spare PC or a second
 > login session; expect rough edges. This Beta publishes `.deb` packages
 > from a tagged GitHub Release that you install and later remove by hand
-> (see "Install from a GitHub Release" below) -- the signed APT repository
-> and a clean-PC install/upgrade/uninstall run are still pending. See
+> (see "Install from a GitHub Release" below); a signed APT repository
+> comes after Beta. See
 > [Known limitations](known-limitations.md) for what's untested.
 
 The repository contains the applications, session integration payload, and

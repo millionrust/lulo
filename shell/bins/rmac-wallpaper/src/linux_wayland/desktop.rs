@@ -14,6 +14,7 @@ use rmac_desktop::widgets::{self as desk_widgets, Widget};
 use rmac_desktop::{Item, ItemKind, RenameError};
 use rmac_shell_ui::text_field::{TextField, TextFieldEvent, TextFieldStyle};
 use std::sync::atomic::AtomicBool;
+use std::sync::OnceLock;
 
 fn copy_drop_item(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
     let metadata = fs::symlink_metadata(source)?;
@@ -89,6 +90,13 @@ const MARQUEE_BORDER: u32 = 0xFFFFFF80;
 /// Image files larger than this show the generic document icon.
 const PREVIEW_LIMIT: u64 = 32 * 1024 * 1024;
 const PREVIEW_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+/// gen_desktop_thumbnails waits this long before decoding: the full-size
+/// decode a cold thumbnail needs is real CPU work on a low-end PC, and
+/// starting it immediately competed with the desktop's own first frame
+/// for the CPU, which the bundled icon fix must never do. The generic
+/// document glyph (already instant) covers a previewable image until its
+/// thumbnail lands.
+const THUMBNAIL_START_DELAY: Duration = Duration::from_millis(400);
 /// Info and View Options panels (S).
 const PANEL_RADIUS: f32 = 12.0;
 const INFO_WIDTH: f32 = 265.0;
@@ -122,6 +130,17 @@ pub(crate) struct DeskState {
     pub expanded: BTreeSet<StackKind>,
     pub panel: Option<Panel>,
     pub rename: Option<Rename>,
+    /// Image previews, generated once as disk-cached thumbnails
+    /// (`rmac_thumbnails`, shared with Files) so a preview's full-size
+    /// decode never sits in memory and a repaint is a small, fast decode
+    /// instead of the original file. Keyed by item path; `rmac_thumbnails`
+    /// itself keys the cached file by path, size, mtime and inode, so a
+    /// changed file regenerates. See `Wallpaper::gen_desktop_thumbnails`.
+    pub thumbnails: BTreeMap<PathBuf, PathBuf>,
+    /// Paths whose thumbnail is being generated off the main thread, so a
+    /// path already queued is never queued a second time while its batch
+    /// is still running (a bounded background queue: one batch at a time).
+    pending_thumbnails: BTreeSet<PathBuf>,
     /// A folder New Folder just created: renamed in place as soon as the
     /// desktop listing shows it, as Finder does.
     pub rename_when_listed: Option<PathBuf>,
@@ -308,21 +327,131 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-fn item_icon(item: &Item, size: f32) -> AnyElement {
+/// `folder.svg`/`document.svg` are 1024×1024 "master" artwork with a
+/// `feDropShadow` filter. `SvgRenderer::render_single_frame(bytes, scale)`
+/// rasterizes at the SVG's own size times `scale` times GPUI's internal
+/// `SMOOTH_SVG_SCALE_FACTOR` (2, for crisp downscaling) — passing `1.0`,
+/// as a plain `img(path)` load implicitly does, rasterizes a 2048×2048
+/// canvas and blurs the drop shadow across it, even though no desktop
+/// icon ever shows above 128pt (`ViewOptions::ICON_SIZES`). Timed
+/// directly (`warm_desktop_icons`, before this constant existed): ~1.4–1.75s
+/// per icon on the reference laptop under load, independent of which SVG
+/// or whether it was the first one decoded in the process — ruling out a
+/// one-time cost (e.g. font-database warm-up) and matching a per-call
+/// rasterize-and-blur cost that scales with canvas area instead. Scaling
+/// to the actual maximum on-screen size keeps the same filter crisp while
+/// shrinking that canvas 64x.
+const ICON_SVG_NATIVE_SIZE: f32 = 1024.0;
+/// `ViewOptions::ICON_SIZES` tops out at 128pt; nothing on the desktop
+/// shows these two glyphs any larger.
+const ICON_SVG_MAX_DISPLAY_SIZE: f32 = 128.0;
+const ICON_SVG_SCALE: f32 = ICON_SVG_MAX_DISPLAY_SIZE / ICON_SVG_NATIVE_SIZE;
+
+/// The folder and document glyphs, decoded once into a shared bitmap and
+/// reused for the life of the process. `item_icon` hands that bitmap to
+/// `img()` as `ImageSource::Render`, which GPUI returns synchronously —
+/// unlike `ImageSource::Resource` (a path or embedded asset), it never
+/// asks the window's asset cache to decode on the background executor.
+/// That executor's small pool is also where full-size image previews
+/// decode (see `gen_desktop_thumbnails`), and a bundled icon queued
+/// behind one of those was the original "folder icon paints last" delay.
+struct DesktopIcons {
+    folder: Option<Arc<RenderImage>>,
+    document: Option<Arc<RenderImage>>,
+}
+
+static DESKTOP_ICONS: OnceLock<DesktopIcons> = OnceLock::new();
+static DESKTOP_ICONS_WARMING: AtomicBool = AtomicBool::new(false);
+
+fn desktop_icons() -> Option<&'static DesktopIcons> {
+    DESKTOP_ICONS.get()
+}
+
+/// Kicks off the one-time decode above exactly once per process (later
+/// displays, or a later call, are a no-op): on the dedicated blocking-task
+/// pool, not GPUI's small `background_executor` (LINUX-HW-07) and not the
+/// main thread, so even the now much smaller decode never risks the first
+/// frame. Notifies `cx`'s entity so a desktop already on screen repaints
+/// with the fast path once it lands.
+pub(crate) fn warm_desktop_icons(cx: &mut Context<Wallpaper>) {
+    if DESKTOP_ICONS.get().is_some() || DESKTOP_ICONS_WARMING.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let renderer = cx.svg_renderer();
+    cx.spawn(async move |this, cx| {
+        let icons = blocking::unblock(move || DesktopIcons {
+            folder: renderer
+                .render_single_frame(
+                    include_bytes!("../../../../../assets/icons/folder.svg"),
+                    ICON_SVG_SCALE,
+                )
+                .map_err(|error| eprintln!("the bundled folder icon could not be decoded: {error}"))
+                .ok(),
+            document: renderer
+                .render_single_frame(
+                    include_bytes!("../../../../../assets/icons/document.svg"),
+                    ICON_SVG_SCALE,
+                )
+                .map_err(|error| {
+                    eprintln!("the bundled document icon could not be decoded: {error}")
+                })
+                .ok(),
+        })
+        .await;
+        let _ = DESKTOP_ICONS.set(icons);
+        let _ = this.update(cx, |_, cx| cx.notify());
+    })
+    .detach();
+}
+
+/// `decoded` once `warm_desktop_icons` has landed, else the asset path
+/// GPUI resolves asynchronously as it always has.
+fn bundled_icon(
+    decoded: Option<Arc<RenderImage>>,
+    fallback: &'static str,
+    size: f32,
+) -> AnyElement {
+    match decoded {
+        Some(image) => img(image).size(px(size)).into_any_element(),
+        None => img(fallback).size(px(size)).into_any_element(),
+    }
+}
+
+/// Whether `item_icon` shows this file's own contents rather than the
+/// generic document glyph: an image, within the size Finder still
+/// thumbnails inline rather than treating as a large file.
+fn is_previewable(item: &Item) -> bool {
+    let extension = extension(&item.name);
+    PREVIEW_EXTENSIONS.contains(&extension.as_str()) && item.size_bytes <= PREVIEW_LIMIT
+}
+
+fn item_icon(item: &Item, size: f32, thumbnails: &BTreeMap<PathBuf, PathBuf>) -> AnyElement {
     if item.kind == ItemKind::Directory {
-        return img(FOLDER_ICON).size(px(size)).into_any_element();
+        let folder = desktop_icons().and_then(|icons| icons.folder.clone());
+        return bundled_icon(folder, FOLDER_ICON, size);
+    }
+    if is_previewable(item) {
+        // A disk-cached thumbnail, decoded at icon size instead of the
+        // original's full resolution (gen_desktop_thumbnails); until one
+        // exists, Finder's own fallback for a pending thumbnail — the
+        // generic glyph with the extension — shows below rather than this
+        // decoding the full-size file inline.
+        if let Some(thumbnail) = thumbnails
+            .get(&item.path)
+            .filter(|thumbnail| rmac_thumbnails::is_current(&item.path, thumbnail))
+        {
+            return img(thumbnail.clone())
+                .size(px(size))
+                .object_fit(gpui::ObjectFit::Contain)
+                .into_any_element();
+        }
     }
     let extension = extension(&item.name);
-    if PREVIEW_EXTENSIONS.contains(&extension.as_str()) && item.size_bytes <= PREVIEW_LIMIT {
-        return img(item.path.clone())
-            .size(px(size))
-            .object_fit(gpui::ObjectFit::Contain)
-            .into_any_element();
-    }
+    let document = desktop_icons().and_then(|icons| icons.document.clone());
     div()
         .relative()
         .size(px(size))
-        .child(img(DOCUMENT_ICON).size(px(size)))
+        .child(bundled_icon(document, DOCUMENT_ICON, size))
         .child(
             div()
                 .absolute()
@@ -340,7 +469,11 @@ fn item_icon(item: &Item, size: f32) -> AnyElement {
 }
 
 /// A stack: its newest items piled with a slight offset (S).
-fn stack_icon<'a>(members: impl Iterator<Item = &'a Item>, size: f32) -> AnyElement {
+fn stack_icon<'a>(
+    members: impl Iterator<Item = &'a Item>,
+    size: f32,
+    thumbnails: &BTreeMap<PathBuf, PathBuf>,
+) -> AnyElement {
     let layer = size * 0.8;
     let members = members.take(3).collect::<Vec<_>>();
     let count = members.len();
@@ -353,7 +486,7 @@ fn stack_icon<'a>(members: impl Iterator<Item = &'a Item>, size: f32) -> AnyElem
                 .absolute()
                 .left(px((size - layer) / 2.0 - offset + 3.0))
                 .top(px((size - layer) / 2.0 - offset + 3.0))
-                .child(item_icon(item, layer))
+                .child(item_icon(item, layer, thumbnails))
         }))
         .into_any_element()
 }
@@ -464,6 +597,61 @@ impl Wallpaper {
             items,
             placed,
         }
+    }
+
+    /// Generates missing or stale desktop image previews as disk-cached
+    /// thumbnails (`rmac_thumbnails`, Finder's own `FinderView::gen_thumbs`
+    /// pattern), off the background executor — which must stay free for
+    /// cheap async work, not image decode (LINUX-HW-07) — and in one
+    /// serial batch at a time per call, so a full-size decode never sits
+    /// behind, or blocks, the bundled folder/document icons that now paint
+    /// synchronously on the first frame.
+    fn gen_desktop_thumbnails(&mut self, items: &[Item], cx: &mut Context<Self>) {
+        let targets: Vec<PathBuf> = items
+            .iter()
+            .filter(|item| {
+                item.kind != ItemKind::Directory
+                    && is_previewable(item)
+                    && !self.desk.pending_thumbnails.contains(&item.path)
+                    && !self
+                        .desk
+                        .thumbnails
+                        .get(&item.path)
+                        .is_some_and(|thumbnail| rmac_thumbnails::is_current(&item.path, thumbnail))
+            })
+            .map(|item| item.path.clone())
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        for path in &targets {
+            self.desk.pending_thumbnails.insert(path.clone());
+        }
+        cx.spawn(async move |this, cx| {
+            // Let the current frame (and the folder/document icons painting
+            // in it) land before spending CPU on a cold decode.
+            cx.background_executor().timer(THUMBNAIL_START_DELAY).await;
+            let results = blocking::unblock(move || {
+                targets
+                    .into_iter()
+                    .map(|path| {
+                        let thumbnail = rmac_thumbnails::generate(&path).ok();
+                        (path, thumbnail)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                for (path, thumbnail) in results {
+                    this.desk.pending_thumbnails.remove(&path);
+                    if let Some(thumbnail) = thumbnail {
+                        this.desk.thumbnails.insert(path, thumbnail);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn near_external_drop_target(
@@ -1303,6 +1491,7 @@ impl Wallpaper {
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
         let layout = self.desk_layout(window, cx);
+        self.gen_desktop_thumbnails(&layout.items, cx);
         // New Folder: start renaming once the watcher has listed the folder.
         if let Some(path) = self.desk.rename_when_listed.clone() {
             if layout.items.iter().any(|item| item.path == path) {
@@ -1495,13 +1684,14 @@ impl Wallpaper {
                 stack_icon(
                     top.iter().filter_map(|index| layout.items.get(*index)),
                     icon,
+                    &self.desk.thumbnails,
                 ),
                 false,
             ),
             Tile::Item { index, .. } => match layout.items.get(*index) {
                 Some(item) => (
                     item.name.clone(),
-                    item_icon(item, icon),
+                    item_icon(item, icon, &self.desk.thumbnails),
                     self.desk.selection.contains(&item.path),
                 ),
                 None => (String::new(), div().into_any_element(), false),
@@ -1975,7 +2165,7 @@ impl Wallpaper {
                 };
                 (
                     item.name.clone(),
-                    item_icon(item, 32.0),
+                    item_icon(item, 32.0, &self.desk.thumbnails),
                     vec![
                         ("Kind:", kind.to_owned()),
                         ("Size:", size),
@@ -1992,7 +2182,11 @@ impl Wallpaper {
             }
             None => (
                 "Desktop".to_owned(),
-                img(FOLDER_ICON).size(px(32.0)).into_any_element(),
+                bundled_icon(
+                    desktop_icons().and_then(|icons| icons.folder.clone()),
+                    FOLDER_ICON,
+                    32.0,
+                ),
                 vec![
                     ("Kind:", "Folder".to_owned()),
                     ("Contents:", format!("{} items", layout.items.len())),

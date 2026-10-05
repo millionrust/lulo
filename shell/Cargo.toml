@@ -52,6 +52,7 @@ rmac-quick-settings-system = { version = "=0.9.0-beta.1", path = "../crates/rmac
 rmac-screen-reader = { version = "=0.9.0-beta.1", path = "../crates/rmac-screen-reader" }
 rmac-search = { version = "=0.9.0-beta.1", path = "../crates/rmac-search" }
 rmac-storage = { version = "=0.9.0-beta.1", path = "../crates/rmac-storage" }
+rmac-thumbnails = { version = "=0.9.0-beta.1", path = "../crates/rmac-thumbnails" }
 rmac-osd = { version = "=0.9.0-beta.1", path = "../crates/rmac-osd" }
 rmac-login-items-linux = { version = "=0.9.0-beta.1", path = "../crates/rmac-login-items-linux" }
 rmac-shell-layer = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-layer" }

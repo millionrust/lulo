@@ -11,6 +11,8 @@ pub mod text_edit;
 pub mod text_field;
 pub mod tokens;
 
+pub use svg_icon::svg_icon;
+
 /// Stable-width figures and the two measured Inter alternates used by shell
 /// values whose numbers change in place.
 pub fn tabular_font_features() -> FontFeatures {

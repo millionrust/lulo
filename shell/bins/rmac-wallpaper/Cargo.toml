@@ -51,6 +51,7 @@ rmac-shell-status.workspace = true
 rmac-sound.workspace = true
 rmac-shell-ui.workspace = true
 rmac-storage.workspace = true
+rmac-thumbnails.workspace = true
 rmac-theme.workspace = true
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true

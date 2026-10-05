@@ -4223,7 +4223,7 @@ mod linux_wayland {
         metrics: TileMetrics,
         shelf_start: f32,
         display_id: u64,
-        cx: &Context<Dock>,
+        cx: &mut Context<Dock>,
     ) -> Vec<gpui::AnyElement> {
         let Some(popover) = popover else {
             return Vec::new();

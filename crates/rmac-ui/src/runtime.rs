@@ -695,6 +695,8 @@ fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {
         }
         gpui_component::theme::Theme::change(mode, None, app);
         apply_component_theme(app);
+        // SPEED-02: a whole-window repaint of every window.
+        crate::trace_mark("theme_refresh");
         app.refresh_windows();
     });
 }

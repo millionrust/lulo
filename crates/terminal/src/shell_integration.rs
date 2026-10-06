@@ -80,7 +80,18 @@ impl SessionShellState {
     /// Accept one complete OSC 133 payload after the command separator. A
     /// prompt coordinate is supplied only when the parser is on the primary
     /// grid and its retained history has not reached the eviction boundary.
-    pub(super) fn set_marker(&self, marker: &str, position: Option<MarkerPosition>) -> bool {
+    ///
+    /// `auto_mark_prompts` is Edit ▸ Marks ▸ Automatically Mark Prompt
+    /// Lines: when false, a prompt's line is never recorded into
+    /// `prompt_lines` (so Jump/Select to Previous/Next Mark skip it), but
+    /// the command/output range bookkeeping below — a separate feature —
+    /// still runs exactly as it would with the setting on.
+    pub(super) fn set_marker(
+        &self,
+        marker: &str,
+        position: Option<MarkerPosition>,
+        auto_mark_prompts: bool,
+    ) -> bool {
         let Some(next) = parse_marker(marker) else {
             return false;
         };
@@ -97,6 +108,9 @@ impl SessionShellState {
                     command_start: None,
                     output_start: None,
                 });
+                if !auto_mark_prompts {
+                    return phase_changed;
+                }
                 let Some(line) = position
                     .map(|position| position.line)
                     .filter(|line| !state.prompt_lines.contains(line))
@@ -211,10 +225,41 @@ impl SessionShellState {
         }
     }
 
+    /// View ▸ Show Marks (TERM-23): whether there is anything at all for
+    /// the gutter to show — automatic prompt marks or manual marks/bookmarks.
+    pub(super) fn has_any_marks(&self) -> bool {
+        self.state
+            .lock()
+            .is_ok_and(|state| !state.prompt_lines.is_empty() || !state.manual_marks.is_empty())
+    }
+
     pub(super) fn has_bookmarks(&self) -> bool {
         self.state
             .lock()
             .is_ok_and(|state| state.manual_marks.iter().any(|mark| mark.bookmark))
+    }
+
+    /// Edit ▸ Bookmarks ▸: every bookmarked line, oldest first — the
+    /// Mac shows them listed in the order they were set, as plain "line
+    /// N" rows (no prompt/command text is ever retained to label them
+    /// with). Fails closed past the history eviction boundary, like every
+    /// other mark lookup here, since retained-grid coordinates are no
+    /// longer stable past that point.
+    pub(super) fn bookmark_lines(&self, history_size: usize, history_limit: usize) -> Vec<usize> {
+        if history_limit == 0 || history_size >= history_limit {
+            return Vec::new();
+        }
+        let Ok(state) = self.state.lock() else {
+            return Vec::new();
+        };
+        let mut lines: Vec<usize> = state
+            .manual_marks
+            .iter()
+            .filter(|mark| mark.bookmark)
+            .map(|mark| mark.line)
+            .collect();
+        lines.sort_unstable();
+        lines
     }
 
     pub(super) fn has_mark_at(&self, line: usize) -> bool {
@@ -431,11 +476,11 @@ mod tests {
     #[test]
     fn reports_running_and_failure_without_retaining_command_text() {
         let shell = SessionShellState::default();
-        assert!(shell.set_marker("C", None));
+        assert!(shell.set_marker("C", None, true));
         assert_eq!(shell.tab_label().as_deref(), Some("Running"));
-        assert!(shell.set_marker("D;127", None));
+        assert!(shell.set_marker("D;127", None, true));
         assert_eq!(shell.tab_label().as_deref(), Some("Failed 127"));
-        assert!(shell.set_marker("A", Some(position(4, 0))));
+        assert!(shell.set_marker("A", Some(position(4, 0)), true));
         assert_eq!(shell.tab_label(), None);
     }
 
@@ -444,7 +489,7 @@ mod tests {
         let first = SessionShellState::default();
         let first_reader = first.clone();
         let second = SessionShellState::default();
-        assert!(first_reader.set_marker("D;1", None));
+        assert!(first_reader.set_marker("D;1", None, true));
         assert_eq!(first.tab_label().as_deref(), Some("Failed 1"));
         assert_eq!(second.tab_label(), None);
 
@@ -456,7 +501,7 @@ mod tests {
             "C;unexpected",
             "A\nspoof",
         ] {
-            assert!(!first_reader.set_marker(marker, None), "{marker:?}");
+            assert!(!first_reader.set_marker(marker, None, true), "{marker:?}");
         }
         assert_eq!(first.tab_label().as_deref(), Some("Failed 1"));
     }
@@ -464,17 +509,68 @@ mod tests {
     #[test]
     fn successful_or_statusless_completion_has_no_failure_badge() {
         let shell = SessionShellState::default();
-        assert!(shell.set_marker("D;0", None));
+        assert!(shell.set_marker("D;0", None, true));
         assert_eq!(shell.tab_label(), None);
-        assert!(shell.set_marker("D", None));
+        assert!(shell.set_marker("D", None, true));
         assert_eq!(shell.tab_label(), None);
+    }
+
+    #[test]
+    fn automatically_mark_prompt_lines_off_skips_only_prompt_marks() {
+        // Edit ▸ Marks ▸ Automatically Mark Prompt Lines, off: prompt lines
+        // never enter `prompt_lines` (so Jump/Select to Previous/Next Mark
+        // find nothing from it), but the separate command/output-range
+        // bookkeeping (Select Between Marks) still records normally.
+        let shell = SessionShellState::default();
+        assert!(shell.set_marker("A", Some(position(2, 0)), false));
+        assert!(shell.set_marker("B", Some(position(2, 4)), false));
+        assert!(shell.set_marker("C", Some(position(3, 0)), false));
+        assert!(shell.set_marker("D;0", Some(position(5, 0)), false));
+
+        assert_eq!(
+            shell.prompt_offset(PromptDirection::Previous, 10, 0, 100),
+            None
+        );
+        assert_eq!(
+            shell.command_range(CommandRangeKind::Command, 10, 0, 100, 10),
+            Some(MarkerRange {
+                start: position(2, 4),
+                end: position(2, 9),
+            })
+        );
+    }
+
+    #[test]
+    fn has_any_marks_tracks_prompt_and_manual_marks_separately() {
+        let shell = SessionShellState::default();
+        assert!(!shell.has_any_marks());
+        shell.set_marker("A", Some(position(1, 0)), true);
+        assert!(shell.has_any_marks());
+        shell.clear_grid_marks();
+        assert!(!shell.has_any_marks());
+        shell.mark_line(5, false);
+        assert!(shell.has_any_marks());
+        shell.unmark_line(5);
+        assert!(!shell.has_any_marks());
+    }
+
+    #[test]
+    fn bookmark_lines_are_sorted_oldest_first_and_bounded() {
+        let shell = SessionShellState::default();
+        shell.mark_line(20, true);
+        shell.mark_line(4, true);
+        shell.mark_line(12, false); // a plain mark, not a bookmark
+        shell.mark_line(9, true);
+        assert_eq!(shell.bookmark_lines(25, 100), vec![4, 9, 20]);
+        assert_eq!(shell.bookmark_lines(25, 25), Vec::<usize>::new());
+        assert_eq!(shell.bookmark_lines(25, 0), Vec::<usize>::new());
     }
 
     #[test]
     fn prompt_navigation_is_bounded_ordered_and_private() {
         let shell = SessionShellState::default();
         for line in [25, 2, 12, 25] {
-            shell.set_marker("A", Some(position(line, 0)));
+            shell.set_marker("A", Some(position(line, 0)), true);
         }
 
         assert_eq!(
@@ -501,7 +597,7 @@ mod tests {
     #[test]
     fn prompt_navigation_fails_closed_at_history_eviction() {
         let shell = SessionShellState::default();
-        assert!(shell.set_marker("A", Some(position(2, 0))));
+        assert!(shell.set_marker("A", Some(position(2, 0)), true));
         assert_eq!(
             shell.prompt_offset(PromptDirection::Previous, 10, 0, 10),
             None
@@ -571,10 +667,10 @@ mod tests {
     #[test]
     fn complete_marker_sequences_produce_private_command_and_output_ranges() {
         let shell = SessionShellState::default();
-        assert!(shell.set_marker("A", Some(position(2, 0))));
-        assert!(shell.set_marker("B", Some(position(2, 4))));
-        assert!(shell.set_marker("C", Some(position(3, 0))));
-        assert!(shell.set_marker("D;0", Some(position(5, 0))));
+        assert!(shell.set_marker("A", Some(position(2, 0)), true));
+        assert!(shell.set_marker("B", Some(position(2, 4)), true));
+        assert!(shell.set_marker("C", Some(position(3, 0)), true));
+        assert!(shell.set_marker("D;0", Some(position(5, 0)), true));
 
         assert_eq!(
             shell.command_range(CommandRangeKind::Command, 10, 0, 100, 10),
@@ -591,10 +687,10 @@ mod tests {
             })
         );
 
-        shell.set_marker("A", Some(position(7, 0)));
-        shell.set_marker("B", Some(position(7, 2)));
-        shell.set_marker("C", Some(position(8, 0)));
-        shell.set_marker("D", Some(position(9, 3)));
+        shell.set_marker("A", Some(position(7, 0)), true);
+        shell.set_marker("B", Some(position(7, 2)), true);
+        shell.set_marker("C", Some(position(8, 0)), true);
+        shell.set_marker("D", Some(position(9, 3)), true);
         assert_eq!(
             shell.command_range(CommandRangeKind::Output, 10, 0, 100, 10),
             Some(MarkerRange {
@@ -614,28 +710,28 @@ mod tests {
     #[test]
     fn ranges_require_ordered_complete_markers_and_clear_with_grid_identity() {
         let shell = SessionShellState::default();
-        shell.set_marker("A", Some(position(4, 0)));
-        shell.set_marker("C", Some(position(5, 0)));
-        shell.set_marker("D", Some(position(6, 0)));
+        shell.set_marker("A", Some(position(4, 0)), true);
+        shell.set_marker("C", Some(position(5, 0)), true);
+        shell.set_marker("D", Some(position(6, 0)), true);
         assert_eq!(
             shell.command_range(CommandRangeKind::Output, 10, 0, 100, 10),
             None
         );
 
-        shell.set_marker("A", Some(position(5, 0)));
-        shell.set_marker("B", Some(position(5, 2)));
-        shell.set_marker("B", Some(position(5, 3)));
-        shell.set_marker("C", Some(position(6, 0)));
-        shell.set_marker("D", Some(position(6, 4)));
+        shell.set_marker("A", Some(position(5, 0)), true);
+        shell.set_marker("B", Some(position(5, 2)), true);
+        shell.set_marker("B", Some(position(5, 3)), true);
+        shell.set_marker("C", Some(position(6, 0)), true);
+        shell.set_marker("D", Some(position(6, 4)), true);
         assert_eq!(
             shell.command_range(CommandRangeKind::Command, 10, 0, 100, 10),
             None
         );
 
-        shell.set_marker("A", Some(position(7, 0)));
-        shell.set_marker("B", Some(position(7, 2)));
-        shell.set_marker("C", Some(position(8, 0)));
-        shell.set_marker("D", Some(position(9, 3)));
+        shell.set_marker("A", Some(position(7, 0)), true);
+        shell.set_marker("B", Some(position(7, 2)), true);
+        shell.set_marker("C", Some(position(8, 0)), true);
+        shell.set_marker("D", Some(position(9, 3)), true);
         assert!(shell
             .command_range(CommandRangeKind::Output, 10, 0, 100, 10)
             .is_some());

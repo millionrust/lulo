@@ -794,7 +794,14 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
 const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
-        items: &[item!("Settings…", "terminal::ShowSettings", "⌘,")],
+        items: &[
+            item!("Settings…", "terminal::ShowSettings", "⌘,"),
+            item!(
+                "Quit and Keep Windows",
+                "terminal::QuitAndKeepWindows",
+                "⌥⌘Q"
+            ),
+        ],
     },
     MenuSpec {
         label: "Shell",
@@ -861,6 +868,7 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 "terminal::NewRemoteConnection",
                 "⇧⌘K"
             ),
+            item!("Open…", "terminal::OpenShell", "⌘O"),
             item!("Close Window", "terminal::CloseTab", "⌘W", separator),
             item!("Close All", "terminal::CloseAll", "⌥⌘W"),
             item!(
@@ -878,6 +886,11 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             ),
             item!("Show Inspector", "terminal::ShowInspector", "⌘I", separator),
             item!("Edit Title", "terminal::EditTitle", "⇧⌘I"),
+            item!(
+                "Edit Background Colour",
+                "terminal::EditBackgroundColour",
+                "⌥⌘I"
+            ),
             item!("Reset", "terminal::ResetTerminal", "⌥⌘R", separator),
             item!("Hard Reset", "terminal::HardResetTerminal", "⌃⌥⌘R"),
             item!(
@@ -926,10 +939,31 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                 "Marks",
                 "terminal::MarksMenu",
                 [
-                    item!("Mark", "terminal::Mark", "⌘U"),
+                    item!(
+                        "Automatically Mark Prompt Lines",
+                        "terminal::AutomaticallyMarkPromptLines",
+                        ""
+                    ),
+                    item!(
+                        "Mark Line and Send Return",
+                        "terminal::MarkLineAndSendReturn",
+                        "",
+                        separator
+                    ),
+                    item!(
+                        "Send Return Without Marking",
+                        "terminal::SendReturnWithoutMarking",
+                        ""
+                    ),
+                    item!("Mark", "terminal::Mark", "⌘U", separator),
                     item!("Mark as Bookmark", "terminal::MarkAsBookmark", "⌥⌘U"),
                     item!("Unmark", "terminal::Unmark", "⇧⌘U"),
                 ]
+            ),
+            submenu!(
+                "Bookmarks",
+                "terminal::BookmarksMenu",
+                [item!("No Bookmarks", "terminal::NoBookmarks", "")]
             ),
             submenu!(
                 "Navigate",
@@ -982,6 +1016,12 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                     item!("Find…", "terminal::Find", "⌘F"),
                     item!("Find Next", "terminal::FindNext", "⌘G"),
                     item!("Find Previous", "terminal::FindPrevious", "⇧⌘G"),
+                    item!("Select All", "terminal::FindSelectAll", ""),
+                    item!(
+                        "Select All in Selection",
+                        "terminal::FindSelectAllInSelection",
+                        ""
+                    ),
                     item!("Hide Find Bar", "terminal::HideFindBar", "⇧⌘F"),
                     item!(
                         "Use Selection for Find",
@@ -1004,7 +1044,19 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
+            item!("Show All Tabs", "terminal::ShowAllTabs", "⇧⌘\\"),
             item!("Show Tab Bar", "terminal::ShowTabBar", "⇧⌘T"),
+            item!("Show Marks", "terminal::ShowMarks", ""),
+            item!(
+                "Show Alternative Screen",
+                "terminal::ShowAlternativeScreen",
+                ""
+            ),
+            item!(
+                "Hide Alternative Screen",
+                "terminal::HideAlternativeScreen",
+                ""
+            ),
             item!(
                 "Allow Mouse Reporting",
                 "terminal::AllowMouseReporting",

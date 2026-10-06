@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Terminal — New Command / New Remote Connection / Edit Title / Inspector / Split Pane</title>
+<title>Terminal — New Command / New Remote Connection / Open / Edit Title / Edit Background Colour / Inspector / Split Pane</title>
 <!--
   HTML-first mocks for the TRM-* gaps this pass builds for real
   (docs/parity.md TERM-11, TERM-15, TERM-16; see docs/inventory-gaps.md
@@ -12,8 +12,11 @@
   are the Mac's own recorded dialog sizes (499×136, 422×432) simplified to
   what Lulo can really do with no SSH-server/Bonjour discovery on Linux.
   Ported to crates/terminal/src/controller/sheets.rs (New Command/New
-  Remote Connection/Edit Title/Inspector) and
+  Remote Connection/Edit Title/Open/Edit Background Colour/Inspector) and
   crates/terminal/src/controller/renderer/grid.rs (Split Pane).
+
+  Open… and Edit Background Colour (TERM-15, `3fb0b57c`) added the same
+  way: mocked here first, then ported 1:1 to sheets.rs.
 -->
 <link rel="stylesheet" href="tokens.css">
 <style>
@@ -59,6 +62,16 @@
 
   /* Edit Title */
   .edit-title { width: 320px; }
+
+  /* Open…: a typed/chosen path field plus the portal's Choose… */
+  .open-shell { width: 420px; }
+  .open-shell .buttons { justify-content: space-between; }
+  .open-shell .buttons .right { display: flex; gap: 8px; }
+
+  /* Edit Background Colour: a hex field with a live swatch preview */
+  .background-colour { width: 320px; }
+  .swatch-row { display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--separator); background: #1e1e1e; }
 
   /* Inspector: a non-modal panel, Show/Hide via ⌘I */
   .inspector {
@@ -132,6 +145,34 @@
       </div>
     </div>
     <div class="label">Shell ▸ Edit Title ⇧⌘I</div>
+  </div>
+
+  <div class="col">
+    <div class="sheet open-shell">
+      <div class="field placeholder">Path</div>
+      <div class="buttons">
+        <div class="btn">Choose…</div>
+        <div class="right">
+          <div class="btn">Cancel</div>
+          <div class="btn default">Open</div>
+        </div>
+      </div>
+    </div>
+    <div class="label">Shell ▸ Open… ⌘O<br>(a folder cds a new window there; a file runs it — directly if executable, through /bin/sh otherwise)</div>
+  </div>
+
+  <div class="col">
+    <div class="sheet background-colour">
+      <div class="swatch-row">
+        <div class="swatch"></div>
+        <div class="field" style="flex:1">1E1E1E</div>
+      </div>
+      <div class="buttons">
+        <div class="btn">Cancel</div>
+        <div class="btn default">Set</div>
+      </div>
+    </div>
+    <div class="label">Shell ▸ Edit Background Colour ⌥⌘I<br>(live preview swatch; overrides the active profile's bg for this window, persists for new ones)</div>
   </div>
 
   <div class="col">

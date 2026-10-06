@@ -35,6 +35,22 @@ pub(super) struct EditTitleSheet {
     pub(super) title: Entity<InputState>,
 }
 
+/// Shell ▸ Open… (⌘O): a path typed directly, or chosen with the portal's
+/// file chooser — a folder opens a new window there, a file runs it (as a
+/// script through the shell, or directly if it is itself executable).
+pub(super) struct OpenShellSheet {
+    pub(super) path: Entity<InputState>,
+    pub(super) error: Option<&'static str>,
+}
+
+/// Shell ▸ Edit Background Colour (⌥⌘I): a hex colour that overrides the
+/// active profile's background for new windows, like `font_size`'s own
+/// "Use Settings as Default" escape hatch.
+pub(super) struct BackgroundColourSheet {
+    pub(super) hex: Entity<InputState>,
+    pub(super) error: bool,
+}
+
 impl TerminalView {
     pub(super) fn open_new_command(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.modal_open() {
@@ -465,5 +481,442 @@ impl TerminalView {
                         .child(format!("Process: {process}")),
                 ),
         )
+    }
+
+    /// Shell ▸ Open… (⌘O): a folder path opens a new window there; a file
+    /// path runs it in one (directly if it is itself executable, through
+    /// `/bin/sh` otherwise) — the plain double-click convention this
+    /// desktop already uses for scripts, since there is no `.term`/`.command`
+    /// document format to open instead.
+    pub(super) fn open_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        self.menu_at = None;
+        self.picker_open = false;
+        let path = cx.new(|cx| InputState::new(window, cx).placeholder("Path"));
+        let focus = path.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        self.pending_open_shell = Some(OpenShellSheet { path, error: None });
+        cx.notify();
+    }
+
+    pub(super) fn cancel_open_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.pending_open_shell = None;
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    /// Shell ▸ Open…'s "Choose…": the portal's own Open panel, filling the
+    /// typed-path field rather than committing immediately, so the user
+    /// can still see (and edit) what was chosen before opening it.
+    pub(super) fn choose_open_shell_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending_open_shell.is_none() {
+            return;
+        }
+        cx.spawn_in(window, async move |this, cx| {
+            let chosen = rmac_portal::choose_terminal_open_target().await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let Some(sheet) = this.pending_open_shell.as_ref() else {
+                    return;
+                };
+                match chosen {
+                    Ok(Some(path)) => {
+                        let text = path.to_string_lossy().into_owned();
+                        sheet.path.update(cx, |state, cx| {
+                            state.set_value(text, window, cx);
+                        });
+                        if let Some(sheet) = this.pending_open_shell.as_mut() {
+                            sheet.error = None;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        if let Some(sheet) = this.pending_open_shell.as_mut() {
+                            sheet.error = Some("Could not open the file chooser.");
+                            let _ = error;
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn commit_open_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(sheet) = self.pending_open_shell.as_ref() else {
+            return;
+        };
+        let typed = sheet.path.read(cx).value().trim().to_string();
+        if typed.is_empty() {
+            if let Some(sheet) = self.pending_open_shell.as_mut() {
+                sheet.error = Some("Type a path, or choose one, to open.");
+            }
+            cx.notify();
+            return;
+        }
+        let path = std::path::PathBuf::from(&typed);
+        let Some(restore) = open_target_restore_window(&path, self.profile) else {
+            if let Some(sheet) = self.pending_open_shell.as_mut() {
+                sheet.error = Some("Terminal could not find that path.");
+            }
+            cx.notify();
+            return;
+        };
+        self.pending_open_shell = None;
+        window.focus(&self.focus, cx);
+        match crate::cli::restore_flag(&restore) {
+            Some(flag) if rmac_ui::open_another_window(vec![flag.clone()], cx) => {}
+            _ => {
+                self.operation_error = Some("Terminal could not open a new window.".into());
+            }
+        }
+        cx.notify();
+    }
+
+    /// Shell ▸ Edit Background Colour (⌥⌘I): a hex field, pre-filled with
+    /// whatever this window is drawing right now (the override if it set
+    /// one, otherwise the active profile's own colour).
+    pub(super) fn open_edit_background_colour(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.modal_open() {
+            return;
+        }
+        self.menu_at = None;
+        self.picker_open = false;
+        let current = self
+            .background_override
+            .unwrap_or_else(|| profiles::active().bg);
+        let hex = cx.new(|cx| {
+            let mut state = InputState::new(window, cx).placeholder("RRGGBB");
+            state.set_value(format!("{current:06x}"), window, cx);
+            state
+        });
+        let focus = hex.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        self.pending_background_colour = Some(BackgroundColourSheet { hex, error: false });
+        cx.notify();
+    }
+
+    pub(super) fn cancel_edit_background_colour(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.pending_background_colour = None;
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    pub(super) fn commit_edit_background_colour(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(sheet) = self.pending_background_colour.as_ref() else {
+            return;
+        };
+        let typed = sheet
+            .hex
+            .read(cx)
+            .value()
+            .trim()
+            .trim_start_matches('#')
+            .to_string();
+        let Ok(colour) = u32::from_str_radix(&typed, 16).map(|value| value & 0x00ff_ffff) else {
+            if let Some(sheet) = self.pending_background_colour.as_mut() {
+                sheet.error = true;
+            }
+            cx.notify();
+            return;
+        };
+        if typed.len() != 6 {
+            if let Some(sheet) = self.pending_background_colour.as_mut() {
+                sheet.error = true;
+            }
+            cx.notify();
+            return;
+        }
+        self.background_override = Some(colour);
+        if let Err(error) = profiles::save_background_override(colour) {
+            self.persistence_error = Some(error.to_string().into());
+        }
+        self.pending_background_colour = None;
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    /// Shell ▸ Open…'s 360 × 150-ish sheet: a path field, "Choose…", Cancel
+    /// · Open.
+    pub(super) fn render_open_shell(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let sheet = self.pending_open_shell.as_ref()?;
+        let panel = Self::sheet_panel("terminal-open-shell", "Open")
+            .key_context("TerminalOpenShell")
+            .on_action(cx.listener(|this, _: &CancelOpenShell, window, cx| {
+                this.cancel_open_shell(window, cx);
+            }))
+            .w(px(420.0))
+            .child(
+                div()
+                    .id("open-shell-field")
+                    .role(Role::TextInput)
+                    .aria_label("Path")
+                    .accessible_text_input(&sheet.path, cx)
+                    .child(TextField::new(&sheet.path)),
+            )
+            .when_some(sheet.error, |panel, error| {
+                panel.child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(rmac_ui::mac::danger())
+                        .child(error),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "open-shell-choose",
+                            "Choose…",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.choose_open_shell_path(window, cx);
+                        })),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(8.0))
+                            .child(
+                                rmac_ui::dialog_button(
+                                    "open-shell-cancel",
+                                    "Cancel",
+                                    rmac_ui::DialogButtonKind::Normal,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| {
+                                        this.cancel_open_shell(window, cx);
+                                    },
+                                )),
+                            )
+                            .child(
+                                rmac_ui::dialog_button(
+                                    "open-shell-open",
+                                    "Open",
+                                    rmac_ui::DialogButtonKind::Primary,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| {
+                                        this.commit_open_shell(window, cx);
+                                    },
+                                )),
+                            ),
+                    ),
+            );
+        Some(Self::sheet_overlay(panel))
+    }
+
+    /// Shell ▸ Edit Background Colour's small sheet: a hex field, Cancel ·
+    /// Set.
+    pub(super) fn render_edit_background_colour(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement> {
+        let sheet = self.pending_background_colour.as_ref()?;
+        let typed = sheet
+            .hex
+            .read(cx)
+            .value()
+            .trim()
+            .trim_start_matches('#')
+            .to_string();
+        let preview = (typed.len() == 6)
+            .then(|| u32::from_str_radix(&typed, 16).ok())
+            .flatten()
+            .unwrap_or_else(|| {
+                self.background_override
+                    .unwrap_or_else(|| profiles::active().bg)
+            });
+        let panel = Self::sheet_panel("terminal-edit-background-colour", "Edit Background Colour")
+            .key_context("TerminalBackgroundColour")
+            .on_action(
+                cx.listener(|this, _: &CancelEditBackgroundColour, window, cx| {
+                    this.cancel_edit_background_colour(window, cx);
+                }),
+            )
+            .w(px(320.0))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .id("background-colour-swatch")
+                            .role(Role::Image)
+                            .aria_label("Preview")
+                            .w(px(24.0))
+                            .h(px(24.0))
+                            .rounded(px(rmac_ui::mac::radius_control()))
+                            .border_1()
+                            .border_color(rmac_ui::mac::separator())
+                            .bg(Hsla::from(gpui::rgb(preview))),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .id("background-colour-field")
+                            .role(Role::TextInput)
+                            .aria_label("Background colour (hex)")
+                            .accessible_text_input(&sheet.hex, cx)
+                            .child(TextField::new(&sheet.hex)),
+                    ),
+            )
+            .when(sheet.error, |panel| {
+                panel.child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(rmac_ui::mac::danger())
+                        .child("Type a 6-digit hex colour, like 1E1E1E."),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "background-colour-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.cancel_edit_background_colour(window, cx);
+                        })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "background-colour-set",
+                            "Set",
+                            rmac_ui::DialogButtonKind::Primary,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.commit_edit_background_colour(window, cx);
+                        })),
+                    ),
+            );
+        Some(Self::sheet_overlay(panel))
+    }
+}
+
+/// Shell ▸ Open…: what opening `path` should do, as a one-tab
+/// [`crate::session_restore::RestoreWindow`] — a folder just sets the new
+/// window's working directory; a file runs it (directly if executable,
+/// through `/bin/sh` otherwise), starting in its own parent folder. `None`
+/// if `path` does not exist.
+fn open_target_restore_window(
+    path: &std::path::Path,
+    profile: usize,
+) -> Option<crate::session_restore::RestoreWindow> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = std::fs::metadata(path).ok()?;
+    let tab = if metadata.is_dir() {
+        crate::session_restore::RestoreTab {
+            cwd: Some(path.to_path_buf()),
+            program: None,
+            args: Vec::new(),
+            profile,
+            scrollback: String::new(),
+        }
+    } else {
+        let executable = metadata.permissions().mode() & 0o111 != 0;
+        let parent = path.parent().map(std::path::Path::to_path_buf);
+        if executable {
+            crate::session_restore::RestoreTab {
+                cwd: parent,
+                program: Some(path.to_string_lossy().into_owned()),
+                args: Vec::new(),
+                profile,
+                scrollback: String::new(),
+            }
+        } else {
+            crate::session_restore::RestoreTab {
+                cwd: parent,
+                program: Some("/bin/sh".to_string()),
+                args: vec![path.to_string_lossy().into_owned()],
+                profile,
+                scrollback: String::new(),
+            }
+        }
+    };
+    Some(crate::session_restore::RestoreWindow { tabs: vec![tab] })
+}
+
+#[cfg(test)]
+mod open_target_tests {
+    use super::open_target_restore_window;
+
+    #[test]
+    fn a_missing_path_opens_nothing() {
+        assert_eq!(
+            open_target_restore_window(std::path::Path::new("/does/not/exist-xyz"), 0),
+            None
+        );
+    }
+
+    #[test]
+    fn a_directory_just_sets_the_new_windows_cwd() {
+        let dir = std::env::temp_dir();
+        let restore = open_target_restore_window(&dir, 2).expect("exists");
+        assert_eq!(restore.tabs.len(), 1);
+        assert_eq!(restore.tabs[0].cwd.as_deref(), Some(dir.as_path()));
+        assert_eq!(restore.tabs[0].program, None);
+        assert_eq!(restore.tabs[0].profile, 2);
+    }
+
+    #[test]
+    fn a_non_executable_file_runs_through_a_plain_shell() {
+        let path = std::env::temp_dir().join(format!(
+            "rmac-terminal-open-target-test-{}",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"#!/bin/sh\necho hi\n").unwrap();
+        let restore = open_target_restore_window(&path, 0).expect("exists");
+        assert_eq!(restore.tabs[0].program.as_deref(), Some("/bin/sh"));
+        assert_eq!(
+            restore.tabs[0].args,
+            vec![path.to_string_lossy().into_owned()]
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn an_executable_file_runs_directly() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::temp_dir().join(format!(
+            "rmac-terminal-open-target-test-exec-{}",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"#!/bin/sh\necho hi\n").unwrap();
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        let restore = open_target_restore_window(&path, 0).expect("exists");
+        assert_eq!(
+            restore.tabs[0].program.as_deref(),
+            Some(path.to_str().unwrap())
+        );
+        assert!(restore.tabs[0].args.is_empty());
+        std::fs::remove_file(&path).ok();
     }
 }

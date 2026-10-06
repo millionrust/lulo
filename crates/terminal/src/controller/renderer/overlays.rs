@@ -207,4 +207,80 @@ impl TerminalView {
                     })),
             )
     }
+
+    /// View ▸ Show All Tabs (⇧⌘\): an Exposé-style grid of this window's
+    /// tabs, like Preview/Text Editor's own. A terminal tab has no page
+    /// image to thumbnail, so each tile shows its title, state and colour
+    /// profile swatch instead — enough to tell tabs apart at a glance.
+    pub(super) fn render_all_tabs(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        if !self.show_all_tabs || self.tabs.len() < 2 {
+            return None;
+        }
+        const TILE_W: f32 = 160.0;
+        const TILE_H: f32 = 110.0;
+        Some(
+            div()
+                .id("terminal-all-tabs")
+                .role(Role::Group)
+                .aria_label("All Tabs")
+                .absolute()
+                .inset_0()
+                .flex()
+                .flex_wrap()
+                .items_start()
+                .content_start()
+                .gap(px(16.0))
+                .p(px(32.0))
+                .bg(rmac_ui::mac::scrim())
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.show_all_tabs = false;
+                    cx.notify();
+                }))
+                .children((0..self.tabs.len()).map(|index| {
+                    let title = self.tabs[index]
+                        .tab_title()
+                        .unwrap_or_else(|| format!("Terminal {}", index + 1));
+                    let state = self.tabs[index].tab_state_label();
+                    let swatch = profiles::resolved(self.tab_profiles[index]).bg;
+                    let is_active = index == self.active;
+                    div()
+                        .id(("terminal-all-tabs-tile", index))
+                        .w(px(TILE_W))
+                        .h(px(TILE_H))
+                        .v_flex()
+                        .gap(px(4.0))
+                        .p(px(6.0))
+                        .rounded(px(rmac_ui::mac::radius_card()))
+                        .when(is_active, |tile| tile.bg(hsla(active().selection)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.select_tab(index, window, cx);
+                            this.show_all_tabs = false;
+                            cx.notify();
+                        }))
+                        .child(
+                            div()
+                                .flex_1()
+                                .rounded(px(rmac_ui::mac::radius_control()))
+                                .bg(hsla(swatch))
+                                .border_1()
+                                .border_color(rmac_ui::mac::separator()),
+                        )
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(rmac_ui::mac::white())
+                                .truncate()
+                                .child(title),
+                        )
+                        .when_some(state, |tile, state| {
+                            tile.child(
+                                div()
+                                    .text_size(rmac_ui::text_px(10.0))
+                                    .text_color(rmac_ui::mac::text_secondary())
+                                    .child(state),
+                            )
+                        })
+                })),
+        )
+    }
 }

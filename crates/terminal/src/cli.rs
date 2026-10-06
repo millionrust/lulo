@@ -92,6 +92,28 @@ impl std::fmt::Display for ExecFlagError {
     }
 }
 
+/// Application ▸ Quit and Keep Windows (TERM-22): the prefix on the one
+/// argument that carries a whole restored window — see
+/// `session_restore::RestoreWindow`. A window opened this way is handed to
+/// `rmac_ui::boot_app_instance` exactly like any other (one argument list
+/// per window), so the restore itself needs no extra IPC.
+const RESTORE_PREFIX: &str = "--restore=";
+
+/// Shell ▸ Open…/Edit Background Colour and ordinary launches never set
+/// this; only a relaunch after Quit and Keep Windows does.
+pub(crate) fn parse_restore_flag(args: &[String]) -> Option<crate::session_restore::RestoreWindow> {
+    args.iter()
+        .find_map(|arg| arg.strip_prefix(RESTORE_PREFIX))
+        .and_then(crate::session_restore::decode)
+}
+
+/// The one argument that reopens `window`, for `rmac_ui::open_another_window`
+/// (while already running) or the next launch's argument list (after Quit
+/// and Keep Windows). `None` only if `window` somehow fails to serialize.
+pub(crate) fn restore_flag(window: &crate::session_restore::RestoreWindow) -> Option<String> {
+    crate::session_restore::encode(window).map(|json| format!("{RESTORE_PREFIX}{json}"))
+}
+
 /// Looks for `-e PROGRAM ARGS…` in a process's own argv (already without
 /// argv[0]). `Ok(None)` means there was no `-e` at all — the caller falls
 /// back to an interactive shell. Every argument from the first `-e` onward
@@ -203,6 +225,31 @@ mod tests {
             split_command_words(r#"echo "unterminated"#),
             vec!["echo".to_string(), "unterminated".to_string()]
         );
+    }
+
+    #[test]
+    fn restore_flag_round_trips_through_argv() {
+        use crate::session_restore::{RestoreTab, RestoreWindow};
+
+        let window = RestoreWindow {
+            tabs: vec![RestoreTab {
+                cwd: Some(std::path::PathBuf::from("/home/user")),
+                program: None,
+                args: Vec::new(),
+                profile: 3,
+                scrollback: "hi\n".to_string(),
+            }],
+        };
+        let flag = restore_flag(&window).expect("encodes");
+        assert!(flag.starts_with("--restore="));
+        let parsed = parse_restore_flag(&args(&["--profile=1", &flag]));
+        assert_eq!(parsed, Some(window));
+    }
+
+    #[test]
+    fn no_restore_flag_is_none() {
+        assert_eq!(parse_restore_flag(&args(&["--profile=1"])), None);
+        assert_eq!(parse_restore_flag(&args(&[])), None);
     }
 
     #[test]

@@ -175,6 +175,49 @@ impl TerminalView {
                 cx.listener(|this, _: &MarkAsBookmark, _, cx| this.mark_current_line(true, cx)),
             )
             .on_action(cx.listener(|this, _: &Unmark, _, cx| this.unmark_current_line(cx)))
+            .on_action(
+                cx.listener(|this, _: &AutomaticallyMarkPromptLines, _, cx| {
+                    this.toggle_automatically_mark_prompt_lines(cx);
+                }),
+            )
+            .on_action(cx.listener(|this, _: &MarkLineAndSendReturn, _, cx| {
+                this.mark_line_and_send_return(cx);
+            }))
+            .on_action(cx.listener(|this, _: &SendReturnWithoutMarking, _, cx| {
+                this.send_return_without_marking(cx);
+            }))
+            .on_action(cx.listener(|_, _: &NoBookmarks, _, _| {}))
+            .on_action(cx.listener(|this, _: &JumpToBookmark0, _, cx| this.jump_to_bookmark(0, cx)))
+            .on_action(cx.listener(|this, _: &JumpToBookmark1, _, cx| this.jump_to_bookmark(1, cx)))
+            .on_action(cx.listener(|this, _: &JumpToBookmark2, _, cx| this.jump_to_bookmark(2, cx)))
+            .on_action(cx.listener(|this, _: &JumpToBookmark3, _, cx| this.jump_to_bookmark(3, cx)))
+            .on_action(cx.listener(|this, _: &JumpToBookmark4, _, cx| this.jump_to_bookmark(4, cx)))
+            .on_action(cx.listener(|this, _: &ShowMarks, _, cx| this.toggle_show_marks(cx)))
+            .on_action(cx.listener(|this, _: &ShowAllTabs, _, cx| this.toggle_show_all_tabs(cx)))
+            .on_action(cx.listener(|this, _: &ShowAlternativeScreen, _, cx| {
+                this.set_viewing_primary_while_alt_screen(false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &HideAlternativeScreen, _, cx| {
+                this.set_viewing_primary_while_alt_screen(true, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FindSelectAll, _, cx| {
+                this.find_select_all(false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FindSelectAllInSelection, _, cx| {
+                this.find_select_all(true, cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenShell, window, cx| this.open_shell(window, cx)))
+            .on_action(cx.listener(|this, _: &CancelOpenShell, window, cx| {
+                this.cancel_open_shell(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &EditBackgroundColour, window, cx| {
+                this.open_edit_background_colour(window, cx);
+            }))
+            .on_action(
+                cx.listener(|this, _: &CancelEditBackgroundColour, window, cx| {
+                    this.cancel_edit_background_colour(window, cx);
+                }),
+            )
             .on_action(cx.listener(|this, _: &PreviousBookmark, _, cx| {
                 this.navigate_bookmark(PromptDirection::Previous, cx)
             }))
@@ -347,6 +390,10 @@ impl TerminalView {
                             anchor: cell,
                             head: cell,
                         });
+                        // A fresh drag-selection replaces Find ▸ Select
+                        // All's set, the same way starting one elsewhere
+                        // replaces the single-range selection above.
+                        this.tabs[this.active].ui.selected_matches.clear();
                         this.selecting = true;
                     }
                     MouseButton::Right => {

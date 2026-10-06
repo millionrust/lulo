@@ -12,6 +12,58 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Edit ▸ Marks ▸ Automatically Mark Prompt Lines: persists for
+    /// windows opened after this one, like `option_as_meta`.
+    pub(super) fn toggle_automatically_mark_prompt_lines(&mut self, cx: &mut Context<Self>) {
+        self.automatically_mark_prompt_lines = !self.automatically_mark_prompt_lines;
+        if let Err(error) =
+            profiles::save_automatically_mark_prompt_lines(self.automatically_mark_prompt_lines)
+        {
+            self.persistence_error = Some(error.to_string().into());
+        }
+        cx.notify();
+    }
+
+    /// View ▸ Show Marks (TERM-23): a window-local gutter toggle, like
+    /// `toggle_tab_bar`.
+    pub(super) fn toggle_show_marks(&mut self, cx: &mut Context<Self>) {
+        self.show_marks = !self.show_marks;
+        cx.notify();
+    }
+
+    /// View ▸ Show All Tabs (TERM-23): nothing to show with one tab, so a
+    /// stray keystroke/menu click on a single-tab window is a no-op, like
+    /// Preview/Text Editor's own Show All Tabs.
+    pub(super) fn toggle_show_all_tabs(&mut self, cx: &mut Context<Self>) {
+        if self.tabs.len() < 2 {
+            return;
+        }
+        self.show_all_tabs = !self.show_all_tabs;
+        cx.notify();
+    }
+
+    /// View ▸ Show/Hide Alternative Screen (TERM-23): only meaningful
+    /// while the active tab actually holds the alternate screen; leaving
+    /// it (or switching tabs) always restores the live view.
+    pub(super) fn set_viewing_primary_while_alt_screen(
+        &mut self,
+        viewing_primary: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.active_tab_in_alt_screen() {
+            return;
+        }
+        self.viewing_primary_while_alt_screen = viewing_primary;
+        cx.notify();
+    }
+
+    pub(super) fn active_tab_in_alt_screen(&self) -> bool {
+        self.tabs[self.active]
+            .term
+            .lock()
+            .is_ok_and(|term| term.mode().contains(TermMode::ALT_SCREEN))
+    }
+
     pub(super) fn active_cursor_viewport_cell(&self) -> Option<(usize, usize)> {
         let term = self.tabs[self.active].term.lock().ok()?;
         let grid = term.grid();
@@ -280,6 +332,38 @@ impl TerminalView {
         }
     }
 
+    /// Edit ▸ Marks ▸ Mark Line and Send Return: mark the current line —
+    /// the same mark ⌘U records — then send a carriage return to the
+    /// shell, one click for "confirm this prompt and remember where it
+    /// was" (a pager's "press return to continue", a y/N confirmation).
+    pub(super) fn mark_line_and_send_return(&mut self, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        self.tabs[self.active].mark_current_line(false);
+        if let Err(error) = self.tabs[self.active].write(b"\r") {
+            if !matches!(error, SessionWriteError::Exited | SessionWriteError::Write) {
+                self.operation_error = Some(error.to_string().into());
+            }
+        }
+        cx.notify();
+    }
+
+    /// Edit ▸ Marks ▸ Send Return Without Marking: the same carriage
+    /// return, with no mark recorded — the plain menu-driven equivalent of
+    /// pressing Return.
+    pub(super) fn send_return_without_marking(&mut self, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        if let Err(error) = self.tabs[self.active].write(b"\r") {
+            if !matches!(error, SessionWriteError::Exited | SessionWriteError::Write) {
+                self.operation_error = Some(error.to_string().into());
+            }
+        }
+        cx.notify();
+    }
+
     /// Edit ▸ Clear to Previous Mark (⌘L) / Clear to Previous Bookmark
     /// (⌥⌘L).
     pub(super) fn clear_to_previous_mark(&mut self, bookmark_only: bool, cx: &mut Context<Self>) {
@@ -287,6 +371,31 @@ impl TerminalView {
             return;
         }
         match self.tabs[self.active].clear_to_previous_mark(bookmark_only) {
+            Ok(true) => cx.notify(),
+            Ok(false) => {}
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    /// Edit ▸ Bookmarks ▸: the active tab's bookmarked lines, for the
+    /// menu's dynamic children (`rmac_ui::set_menu_children`).
+    pub(super) fn bookmark_menu_lines(&self) -> Vec<usize> {
+        self.tabs[self.active].bookmark_lines()
+    }
+
+    /// Edit ▸ Bookmarks ▸ <a listed bookmark> (predefined slots 0–4, see
+    /// `BOOKMARK_MENU_SLOTS`).
+    pub(super) fn jump_to_bookmark(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        let Some(&line) = self.bookmark_menu_lines().get(index) else {
+            return;
+        };
+        match self.tabs[self.active].scroll_to_bookmark_line(line) {
             Ok(true) => cx.notify(),
             Ok(false) => {}
             Err(error) => {
@@ -359,6 +468,7 @@ impl TerminalView {
             anchor: (-history, 0),
             head: (self.rows as i32 - 1, self.cols.saturating_sub(1)),
         });
+        self.tabs[self.active].ui.selected_matches.clear();
         cx.notify();
     }
 

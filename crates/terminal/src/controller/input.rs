@@ -101,9 +101,11 @@ impl TerminalView {
         Ok(true)
     }
 
-    /// Copy the current selection to the system clipboard.
+    /// Copy the current selection — or, after Edit ▸ Find ▸ Select
+    /// All/Select All in Selection, every selected match — to the system
+    /// clipboard.
     pub(super) fn copy(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = self.selection_text() {
+        if let Some(text) = self.any_selection_text() {
             if !text.is_empty() {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
             }
@@ -222,6 +224,41 @@ impl TerminalView {
     pub(super) fn buffer_text(&self) -> Option<String> {
         let term = self.tabs[self.active].term.lock().ok()?;
         Some(crate::ui_state::buffer_text(&term, self.rows, self.cols))
+    }
+
+    /// Edit ▸ Find ▸ Select All/Select All in Selection: every selected
+    /// match's own text, one per line — what Copy/Export Selected Text As…
+    /// use instead of `selection_text` whenever `ui.selected_matches` is
+    /// what is actually selected.
+    pub(super) fn selected_matches_text(&self) -> Option<String> {
+        let matches = &self.tabs[self.active].ui.selected_matches;
+        if matches.is_empty() {
+            return None;
+        }
+        let term = self.tabs[self.active].term.lock().ok()?;
+        Some(
+            matches
+                .iter()
+                .map(|found| {
+                    Selection {
+                        anchor: (found.line, found.start),
+                        head: (found.line, found.end.saturating_sub(1)),
+                    }
+                    .text(&term, self.rows, self.cols)
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    }
+
+    /// Either kind of "selected text" this tab currently has: Find's
+    /// multi-match selection takes precedence when present, otherwise the
+    /// plain drag-selection — the two never coexist (`find_select_all`
+    /// clears `selection`; starting a drag-selection clears
+    /// `selected_matches`).
+    pub(super) fn any_selection_text(&self) -> Option<String> {
+        self.selected_matches_text()
+            .or_else(|| self.selection_text())
     }
 }
 

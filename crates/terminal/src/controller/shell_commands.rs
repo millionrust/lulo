@@ -53,7 +53,7 @@ impl TerminalView {
 
     /// Shell ▸ Export Selected Text As…: just the current selection.
     pub(super) fn export_selected_text_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = self.selection_text().filter(|text| !text.is_empty()) else {
+        let Some(text) = self.any_selection_text().filter(|text| !text.is_empty()) else {
             return;
         };
         self.save_text_to_chosen_file(
@@ -116,7 +116,7 @@ impl TerminalView {
 
     /// Shell ▸ Print Selection…: just the current selection.
     pub(super) fn print_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = self.selection_text().filter(|text| !text.is_empty()) else {
+        let Some(text) = self.any_selection_text().filter(|text| !text.is_empty()) else {
             return;
         };
         self.print_text(text, window, cx);

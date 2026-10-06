@@ -31,6 +31,24 @@ fn row_cells(row: &Row<Cell>, cols: usize) -> Vec<find::CellText> {
     cells
 }
 
+/// Every match of `needle` anywhere in `term`'s buffer (scrollback and
+/// screen), top to bottom — the same whole-history scan `find_step` already
+/// did inline, shared with Edit ▸ Find ▸ Select All.
+fn all_matches<T>(term: &alacritty_terminal::term::Term<T>, needle: &[char]) -> Vec<FindMatch> {
+    let grid = term.grid();
+    let history = grid.history_size();
+    let rows = grid.screen_lines();
+    let cols = grid.columns();
+    let mut matches = Vec::new();
+    for line in -(history as i32)..rows as i32 {
+        let cells = row_cells(&grid[Line(line)], cols);
+        for (start, end) in find::match_columns(&cells, needle) {
+            matches.push(FindMatch { line, start, end });
+        }
+    }
+    matches
+}
+
 impl TerminalView {
     /// Move to the next or previous Find match anywhere in the scrollback,
     /// scroll it into view and select it (⌘G, ⇧⌘G, Return, Shift-Return).
@@ -51,18 +69,10 @@ impl TerminalView {
             cx.notify();
             return;
         };
-        let grid = term.grid();
-        let history = grid.history_size();
-        let rows = grid.screen_lines();
-        let cols = grid.columns();
-        let display_offset = grid.display_offset();
-        let mut matches = Vec::new();
-        for line in -(history as i32)..rows as i32 {
-            let cells = row_cells(&grid[Line(line)], cols);
-            for (start, end) in find::match_columns(&cells, &needle) {
-                matches.push(FindMatch { line, start, end });
-            }
-        }
+        let matches = all_matches(&term, &needle);
+        let history = term.grid().history_size();
+        let rows = term.grid().screen_lines();
+        let display_offset = term.grid().display_offset();
         let current = tab
             .ui
             .find_status
@@ -87,6 +97,7 @@ impl TerminalView {
             anchor: (found.line, found.start),
             head: (found.line, found.end.saturating_sub(1)),
         });
+        tab.ui.selected_matches.clear();
         tab.ui.find_current = Some(found);
         tab.ui.find_status = Some((
             query,
@@ -95,6 +106,54 @@ impl TerminalView {
                 total: matches.len(),
             },
         ));
+        cx.notify();
+    }
+
+    /// Edit ▸ Find ▸ Select All / Select All in Selection (TERM-23):
+    /// selects every match at once (`ui.selected_matches`), instead of
+    /// stepping to just one the way ⌘G/⇧⌘G does. "in Selection" narrows
+    /// the whole-buffer scan to matches that fall entirely inside the
+    /// current single-range selection, which this then replaces.
+    pub(crate) fn find_select_all(&mut self, in_selection_only: bool, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        self.capture_active_search_query(cx);
+        let query = self.tabs[self.active].ui.search_query.clone();
+        if query.is_empty() {
+            return;
+        }
+        let needle = find::fold_query(&query);
+        let bounds = in_selection_only
+            .then(|| self.tabs[self.active].ui.selection)
+            .flatten();
+        if in_selection_only && bounds.is_none() {
+            return;
+        }
+        let tab = &mut self.tabs[self.active];
+        let Ok(term) = tab.term.lock() else {
+            self.operation_error = Some(SessionWriteError::State.to_string().into());
+            cx.notify();
+            return;
+        };
+        let mut matches = all_matches(&term, &needle);
+        drop(term);
+        if let Some(selection) = bounds {
+            matches.retain(|found| {
+                selection.contains(found.line, found.start)
+                    && selection.contains(found.line, found.end.saturating_sub(1))
+            });
+        }
+        tab.ui.selection = None;
+        tab.ui.find_current = None;
+        tab.ui.find_status = Some((
+            query,
+            FindStatus {
+                current: matches.len().min(1),
+                total: matches.len(),
+            },
+        ));
+        tab.ui.selected_matches = matches;
         cx.notify();
     }
 
@@ -211,11 +270,24 @@ impl TerminalView {
         forced_offset: Option<i32>,
         allow_cursor: bool,
     ) -> Vec<gpui::AnyElement> {
-        let Ok(term) = self.tabs[self.active].term.lock() else {
+        let Ok(mut term) = self.tabs[self.active].term.lock() else {
             return Vec::new();
         };
+        // View ▸ Show/Hide Alternative Screen (TERM-23): a manual peek at
+        // the primary screen underneath, done by actually swapping the
+        // grid the same way the program's own DECSET 1049 would — then
+        // swapping straight back below before anything else observes the
+        // flip (`term.mode()`, selection, …) or the PTY reader (blocked on
+        // this same lock) can write to the wrong buffer. There is no
+        // early return between the two swaps.
+        let peeking_primary_screen =
+            self.viewing_primary_while_alt_screen && term.mode().contains(TermMode::ALT_SCREEN);
+        if peeking_primary_screen {
+            term.swap_alt();
+        }
         let grid = term.grid();
         let offset = forced_offset.unwrap_or(grid.display_offset() as i32);
+        let history_size = grid.history_size();
         let cursor = grid.cursor.point;
         // Full-screen programs hide the cursor (DECTCEM) while they draw.
         let show_cursor = allow_cursor
@@ -245,6 +317,16 @@ impl TerminalView {
                 )
             };
             let current_match = current_match.filter(|found| found.line == line_index);
+            // Edit ▸ Find ▸ Select All/Select All in Selection: every
+            // selected match on this row reads as selected text, same as
+            // `current_match` below but for the whole set at once.
+            let selected_matches_here: Vec<(usize, usize)> = ui
+                .selected_matches
+                .iter()
+                .filter(|found| found.line == line_index)
+                .map(|found| (found.start, found.end))
+                .collect();
+            let selected_match_columns = find::covered_columns(&selected_matches_here, self.cols);
             let mut spans = Vec::new();
             let mut run = String::new();
             let mut run_style: Option<Style> = None;
@@ -290,7 +372,9 @@ impl TerminalView {
                 }
                 // The match ⌘G moved to reads as selected text; the others
                 // keep the yellow highlight.
-                if current_match.is_some_and(|found| (found.start..found.end).contains(&column)) {
+                if current_match.is_some_and(|found| (found.start..found.end).contains(&column))
+                    || selected_match_columns.get(column).copied().unwrap_or(false)
+                {
                     background = hsla(active().selection);
                 } else if matched.get(column).copied().unwrap_or(false) {
                     background = hsla(FIND_HL);
@@ -325,13 +409,38 @@ impl TerminalView {
                 }
             }
 
+            // View ▸ Show Marks (TERM-23): a small gutter dot on any row
+            // with a mark or bookmark, at the absolute line coordinate
+            // marks are recorded in (`history_size` shifts alacritty's
+            // signed `Line` into that always-non-negative numbering).
+            let marked = self.show_marks
+                && usize::try_from(i64::from(history_size as i32) + i64::from(line_index))
+                    .is_ok_and(|absolute| {
+                        self.tabs[self.active].has_mark_at_absolute_line(absolute)
+                    });
             rows.push(
                 div()
+                    .relative()
                     .flex()
                     .h(px(self.line_h))
                     .children(spans)
+                    .when(marked, |row| {
+                        row.child(
+                            div()
+                                .absolute()
+                                .left_0()
+                                .top(px(self.line_h / 2.0 - 2.0))
+                                .w(px(4.0))
+                                .h(px(4.0))
+                                .rounded(px(rmac_ui::mac::radius_pill()))
+                                .bg(hsla(active().cursor)),
+                        )
+                    })
                     .into_any_element(),
             );
+        }
+        if peeking_primary_screen {
+            term.swap_alt();
         }
         rows
     }

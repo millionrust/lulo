@@ -53,6 +53,13 @@
           "shortcut": "⌘Q",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "action": "terminal::QuitAndKeepWindows",
+          "shortcut": "⌥⌘Q",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -286,6 +293,13 @@
           "children": []
         },
         {
+          "label": "Open…",
+          "action": "terminal::OpenShell",
+          "shortcut": "⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Close Window",
           "action": "terminal::CloseTab",
           "shortcut": "⌘W",
@@ -338,6 +352,13 @@
           "label": "Edit Title",
           "action": "terminal::EditTitle",
           "shortcut": "⇧⌘I",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Edit Background Colour",
+          "action": "terminal::EditBackgroundColour",
+          "shortcut": "⌥⌘I",
           "separator_before": false,
           "children": []
         },
@@ -473,10 +494,31 @@
           "separator_before": false,
           "children": [
             {
+              "label": "Automatically Mark Prompt Lines",
+              "action": "terminal::AutomaticallyMarkPromptLines",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Mark Line and Send Return",
+              "action": "terminal::MarkLineAndSendReturn",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Send Return Without Marking",
+              "action": "terminal::SendReturnWithoutMarking",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Mark",
               "action": "terminal::Mark",
               "shortcut": "⌘U",
-              "separator_before": false,
+              "separator_before": true,
               "children": []
             },
             {
@@ -490,6 +532,21 @@
               "label": "Unmark",
               "action": "terminal::Unmark",
               "shortcut": "⇧⌘U",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Bookmarks",
+          "action": "terminal::BookmarksMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "No Bookmarks",
+              "action": "terminal::NoBookmarks",
+              "shortcut": "",
               "separator_before": false,
               "children": []
             }
@@ -608,6 +665,20 @@
               "children": []
             },
             {
+              "label": "Select All",
+              "action": "terminal::FindSelectAll",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Select All in Selection",
+              "action": "terminal::FindSelectAllInSelection",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Hide Find Bar",
               "action": "terminal::HideFindBar",
               "shortcut": "⇧⌘F",
@@ -657,9 +728,37 @@
       "label": "View",
       "items": [
         {
+          "label": "Show All Tabs",
+          "action": "terminal::ShowAllTabs",
+          "shortcut": "⇧⌘\\",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Show Tab Bar",
           "action": "terminal::ShowTabBar",
           "shortcut": "⇧⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Marks",
+          "action": "terminal::ShowMarks",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Alternative Screen",
+          "action": "terminal::ShowAlternativeScreen",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Hide Alternative Screen",
+          "action": "terminal::HideAlternativeScreen",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },

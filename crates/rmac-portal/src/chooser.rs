@@ -2,6 +2,47 @@ use std::path::PathBuf;
 
 use crate::{Error, NotesExportFormat, Operation};
 
+/// Ask the desktop portal for one local file to open — Shell ▸ Open… (⌘O).
+/// Unlike Terminal's own `.term`/`.command` documents, there is no filter:
+/// any file can be a script to run or a plain path whose folder a new
+/// window should start in.
+pub async fn choose_terminal_open_target() -> Result<Option<PathBuf>, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::file_chooser::OpenFileRequest;
+        use ashpd::{desktop::ResponseError, Error as PortalError};
+
+        let request = OpenFileRequest::default()
+            .title("Open")
+            .accept_label("Open")
+            .modal(true)
+            .send()
+            .await
+            .map_err(choose_failure)?;
+        let response = match request.response() {
+            Ok(response) => response,
+            Err(PortalError::Response(ResponseError::Cancelled)) => return Ok(None),
+            Err(error) => return Err(choose_failure(error)),
+        };
+        let Some(uri) = response.uris().first() else {
+            return Ok(None);
+        };
+        uri.to_file_path().map(Some).map_err(|()| Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the portal returned a non-local file".into(),
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the file chooser is available in the supported Linux session".into(),
+        })
+    }
+}
+
 /// Ask the desktop portal for one local desktop-entry file.
 pub async fn choose_desktop_entry() -> Result<Option<PathBuf>, Error> {
     #[cfg(target_os = "linux")]

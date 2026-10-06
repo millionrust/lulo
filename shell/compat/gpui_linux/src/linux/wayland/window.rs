@@ -1747,6 +1747,7 @@ impl WaylandWindowStatePtr {
     }
 
     pub fn set_focused(&self, focus: bool) {
+        super::frame_trace::record(if focus { "focus_in" } else { "focus_out" });
         {
             let mut state = self.state.borrow_mut();
             state.active_presumed = false;

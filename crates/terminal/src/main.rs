@@ -13,6 +13,7 @@ mod output_filter;
 mod paste;
 mod profiles;
 mod session;
+mod session_restore;
 mod settings;
 mod settings_window;
 mod shell_integration;
@@ -32,6 +33,19 @@ fn main() {
         std::process::exit(1);
     }
 
+    // Application ▸ Quit and Keep Windows (TERM-22): a plain launch (no
+    // `-e`, no explicit profile/arguments of its own) reopens whatever was
+    // kept last time, once — read and removed here, before GPUI starts, so
+    // a crashed read never reopens the same session twice. Any argument at
+    // all (a file manager's "Open Terminal here", `-e`, …) means the user
+    // asked for something specific instead, so the kept session is left
+    // for the next plain launch rather than silently dropped.
+    let windows = if arguments.is_empty() {
+        kept_window_launch_arguments().unwrap_or_else(|| vec![arguments])
+    } else {
+        vec![arguments]
+    };
+
     // Several Terminal windows is the default way of working (⌘N). One
     // process owns the app's menu and every window; the app stays running,
     // in the Dock with its menu, after the last one closes — as on the Mac.
@@ -41,7 +55,7 @@ fn main() {
         // 80 × 24 cells of 7 × 14 plus the measured insets and title bar.
         580.0,
         385.0,
-        vec![arguments],
+        windows,
         |arguments, window, cx| {
             let profile = arguments
                 .iter()
@@ -52,8 +66,31 @@ fn main() {
             // launch; a second launch handed off over D-Bus is re-checked
             // the same way and just falls back to a shell if it recurs.
             let exec = cli::parse_exec_flag(arguments).ok().flatten();
-            controller::TerminalView::new(window, cx, profile, exec)
+            // Application ▸ Quit and Keep Windows (TERM-22): a relaunch
+            // carrying a saved window takes over tab/cwd/scrollback setup
+            // entirely, ignoring `profile`/`exec` above.
+            let restore = cli::parse_restore_flag(arguments);
+            controller::TerminalView::new(window, cx, profile, exec, restore)
         },
         controller::register_windowless_actions,
     );
+}
+
+/// Application ▸ Quit and Keep Windows (TERM-22): one `--restore=` argument
+/// list per window last kept, or `None` if there is nothing kept (the
+/// common case — an ordinary launch falls back to the default window).
+/// Reading and removing the file happens together so a session is never
+/// replayed twice.
+fn kept_window_launch_arguments() -> Option<Vec<Vec<String>>> {
+    let path = session_restore::kept_windows_path()?;
+    let bytes = std::fs::read(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+    let windows: Vec<session_restore::RestoreWindow> = serde_json::from_slice(&bytes).ok()?;
+    let arguments: Vec<Vec<String>> = windows
+        .iter()
+        .filter(|window| !window.is_empty())
+        .filter_map(|window| cli::restore_flag(window))
+        .map(|flag| vec![flag])
+        .collect();
+    (!arguments.is_empty()).then_some(arguments)
 }

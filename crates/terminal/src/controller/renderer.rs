@@ -10,6 +10,7 @@ use super::*;
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         profiles::set_active(self.profile);
+        profiles::set_active_background_override(self.background_override);
         // Settings ▸ Shell ▸ "When the shell exits": never empties `tabs`
         // (the single-tab case closes the whole *window* instead, leaving
         // `tabs` untouched while GPUI tears it down), so `self.active` stays
@@ -42,7 +43,11 @@ impl Render for TerminalView {
                 crate::working_directory::set_last_front_directory(directory);
             }
             let selection = self.selection_text();
-            let has_selection = selection.as_ref().is_some_and(|text| !text.is_empty());
+            // Copy/Export/Print: either kind of "selected text" counts —
+            // the plain drag-selection, or Find ▸ Select All's matches.
+            let has_selection = self
+                .any_selection_text()
+                .is_some_and(|text| !text.is_empty());
             let has_man_topic = selection
                 .as_ref()
                 .is_some_and(|text| super::input::man_command(text, false).is_some());
@@ -145,6 +150,76 @@ impl Render for TerminalView {
                 self.tabs[self.active].can_clear_to_mark(true),
                 cx,
             );
+            // Edit ▸ Marks (TERM-16/TERM-23).
+            rmac_ui::set_menu_checked(
+                "terminal::AutomaticallyMarkPromptLines",
+                self.automatically_mark_prompt_lines,
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
+                "terminal::MarkLineAndSendReturn",
+                can_mark && self.tabs[self.active].accepts_input(),
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
+                "terminal::SendReturnWithoutMarking",
+                self.tabs[self.active].accepts_input(),
+                cx,
+            );
+            // Edit ▸ Bookmarks ▸: a fresh list every time the menu is
+            // about to open, the same convention `rmac_app_menu::recent`
+            // uses for File ▸ Open Recent.
+            let bookmark_lines = self.bookmark_menu_lines();
+            let bookmark_items: Vec<rmac_ui::MenuItem> = bookmark_lines
+                .iter()
+                .take(BOOKMARK_MENU_SLOTS)
+                .enumerate()
+                .map(|(index, line)| {
+                    rmac_ui::MenuItem::new(
+                        format!("Bookmark at line {line}"),
+                        format!("terminal::JumpToBookmark{index}"),
+                        "",
+                    )
+                })
+                .collect();
+            if bookmark_items.is_empty() {
+                rmac_ui::set_menu_children(
+                    "terminal::BookmarksMenu",
+                    vec![
+                        rmac_ui::MenuItem::new("No Bookmarks", "terminal::NoBookmarks", "")
+                            .enabled(false),
+                    ],
+                    cx,
+                );
+            } else {
+                rmac_ui::set_menu_children("terminal::BookmarksMenu", bookmark_items, cx);
+            }
+            // View (TERM-23).
+            rmac_ui::set_menu_enabled("terminal::ShowAllTabs", self.tabs.len() > 1, cx);
+            let has_any_marks = self.tabs[self.active].has_any_marks();
+            rmac_ui::set_menu_enabled("terminal::ShowMarks", has_any_marks, cx);
+            rmac_ui::set_menu_checked("terminal::ShowMarks", self.show_marks, cx);
+            let in_alt_screen = self.active_tab_in_alt_screen();
+            rmac_ui::set_menu_enabled(
+                "terminal::ShowAlternativeScreen",
+                in_alt_screen && self.viewing_primary_while_alt_screen,
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
+                "terminal::HideAlternativeScreen",
+                in_alt_screen && !self.viewing_primary_while_alt_screen,
+                cx,
+            );
+            // Edit ▸ Find ▸ Select All/Select All in Selection: only
+            // meaningful with a query typed and, for "in Selection", an
+            // existing single-range selection to search within.
+            let has_query = !self.tabs[self.active].ui.search_query.is_empty();
+            rmac_ui::set_menu_enabled("terminal::FindSelectAll", has_query, cx);
+            rmac_ui::set_menu_enabled(
+                "terminal::FindSelectAllInSelection",
+                has_query && self.tabs[self.active].ui.selection.is_some(),
+                cx,
+            );
         }
         let layout = responsive_layout::terminal_layout(f32::from(
             rmac_ui::window_content_size(window).width,
@@ -204,6 +279,15 @@ impl Render for TerminalView {
         let edit_title_sheet = self
             .render_edit_title(cx)
             .map(|sheet| sheet.into_any_element());
+        let open_shell_sheet = self
+            .render_open_shell(cx)
+            .map(|sheet| sheet.into_any_element());
+        let background_colour_sheet = self
+            .render_edit_background_colour(cx)
+            .map(|sheet| sheet.into_any_element());
+        let all_tabs_overlay = self
+            .render_all_tabs(cx)
+            .map(|overlay| overlay.into_any_element());
         let inspector = self
             .render_inspector()
             .map(|panel| panel.into_any_element());
@@ -337,6 +421,15 @@ impl Render for TerminalView {
                 terminal.child(sheet)
             })
             .when_some(edit_title_sheet, |terminal, sheet| terminal.child(sheet))
+            .when_some(open_shell_sheet, |terminal, sheet| terminal.child(sheet))
+            .when_some(background_colour_sheet, |terminal, sheet| {
+                terminal.child(sheet)
+            })
+            // View ▸ Show All Tabs paints over everything else in the
+            // window, like Preview/Text Editor's own Exposé-style grid.
+            .when_some(all_tabs_overlay, |terminal, overlay| {
+                terminal.child(overlay)
+            })
     }
 }
 

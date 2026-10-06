@@ -12,6 +12,7 @@ mod lifecycle;
 mod pointer;
 mod renderer;
 mod responsive_layout;
+mod restore;
 mod sheets;
 mod shell_commands;
 mod tab_lifecycle;
@@ -218,8 +219,43 @@ gpui::actions!(
         TabRedSands,
         TabSilverAerogel,
         TabSolidColors,
+        // Edit ▸ Marks (TERM-16/TERM-23).
+        AutomaticallyMarkPromptLines,
+        MarkLineAndSendReturn,
+        SendReturnWithoutMarking,
+        // Edit ▸ Bookmarks ▸ <bookmark N> (TERM-15/TERM-16): up to
+        // `BOOKMARK_MENU_SLOTS` predefined rows, the same fixed-slot
+        // convention `rmac_app_menu::recent` uses for File ▸ Open Recent.
+        JumpToBookmark0,
+        JumpToBookmark1,
+        JumpToBookmark2,
+        JumpToBookmark3,
+        JumpToBookmark4,
+        // Edit ▸ Bookmarks ▸ No Bookmarks: an always-disabled placeholder
+        // row, like Clock's NoRecentTimers; never actually dispatched.
+        NoBookmarks,
+        // View (TERM-23).
+        ShowMarks,
+        ShowAllTabs,
+        ShowAlternativeScreen,
+        HideAlternativeScreen,
+        // Edit ▸ Find (TERM-23).
+        FindSelectAll,
+        FindSelectAllInSelection,
+        // Shell ▸ Open…/Edit Background Colour (TERM-15).
+        OpenShell,
+        CancelOpenShell,
+        EditBackgroundColour,
+        CancelEditBackgroundColour,
+        // Application ▸ Quit and Keep Windows (TERM-22).
+        QuitAndKeepWindows,
     ]
 );
+
+/// Edit ▸ Bookmarks ▸: how many bookmarked lines the submenu lists before
+/// falling back to "No Bookmarks", using the same predefined-action-slot
+/// convention as `rmac_app_menu::recent`'s Open Recent rows.
+pub(super) const BOOKMARK_MENU_SLOTS: usize = 5;
 
 fn open_windowless_profile(profile: Option<usize>, cx: &mut gpui::App) {
     if cx.windows().is_empty() {
@@ -267,6 +303,46 @@ pub(crate) fn register_windowless_actions(cx: &mut gpui::App) {
             crate::settings_window::show(cx);
         }
     });
+    cx.on_action(|_: &QuitAndKeepWindows, cx| quit_and_keep_windows(cx));
+}
+
+/// Application ▸ Quit and Keep Windows (TERM-22): capture every open
+/// window's tabs (working directory, what each execs, its profile, and a
+/// bounded snapshot of its visible text), save them, then quit. The next
+/// plain launch reopens them once (`main::kept_window_launch_arguments`).
+fn quit_and_keep_windows(cx: &mut gpui::App) {
+    let windows: Vec<crate::session_restore::RestoreWindow> = open_terminal_views()
+        .into_iter()
+        .filter_map(|view| view.upgrade())
+        .map(|view| view.read(cx).capture_for_restore())
+        .filter(|window| !window.is_empty())
+        .collect();
+    // The write happens off the UI thread, and `cx.quit()` only runs once
+    // it finishes — quitting first would race a still-running write
+    // against the process actually exiting.
+    cx.spawn(async move |cx| {
+        if let Some(path) = crate::session_restore::kept_windows_path() {
+            let _ = cx
+                .background_executor()
+                .spawn(async move { save_kept_windows(&path, &windows) })
+                .await;
+        }
+        cx.update(|cx| cx.quit());
+    })
+    .detach();
+}
+
+fn save_kept_windows(
+    path: &std::path::Path,
+    windows: &[crate::session_restore::RestoreWindow],
+) -> std::io::Result<()> {
+    let bytes = serde_json::to_vec(windows).map_err(std::io::Error::other)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&temporary, bytes)?;
+    std::fs::rename(temporary, path)
 }
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
@@ -434,6 +510,61 @@ pub(super) struct TerminalView {
     /// A unique id for this window, used only as Shell ▸ Print…'s
     /// `PrintDocument::window_generation`.
     window_generation: u64,
+    /// Edit ▸ Marks ▸ Automatically Mark Prompt Lines, read once at
+    /// creation like `option_as_meta`; toggling persists for windows
+    /// opened after this one.
+    automatically_mark_prompt_lines: bool,
+    /// View ▸ Show Marks (TERM-23): a gutter indicator beside the grid for
+    /// the marks/bookmarks TERM-16 already tracks. Window-local, like
+    /// `show_tab_bar`.
+    show_marks: bool,
+    /// View ▸ Show All Tabs (TERM-23): an Exposé-style grid of this
+    /// window's tabs.
+    show_all_tabs: bool,
+    /// View ▸ Show/Hide Alternative Screen (TERM-23): while the active
+    /// tab's program holds the alternate screen (vim, less, …), a manual
+    /// override to look at the primary screen underneath without leaving
+    /// the program. Ignored — and always false the next time the mode
+    /// actually changes — whenever the active tab is not in alternate-
+    /// screen mode, so leaving the program always restores the live view.
+    viewing_primary_while_alt_screen: bool,
+    /// Shell ▸ Open… (⌘O).
+    pending_open_shell: Option<sheets::OpenShellSheet>,
+    /// Shell ▸ Edit Background Colour (⌥⌘I).
+    pending_background_colour: Option<sheets::BackgroundColourSheet>,
+    /// Shell ▸ Edit Background Colour (⌥⌘I): this window's live override
+    /// of the active profile's background, read once at creation (like
+    /// `font_size`) and published to `profiles::active()` each render.
+    background_override: Option<u32>,
 }
 
 static NEXT_WINDOW_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+thread_local! {
+    /// Every open Terminal window's view, weakly held so a closed window
+    /// drops out on its own. Application ▸ Quit and Keep Windows reads
+    /// this to capture every window before quitting, since one process
+    /// hosts every Terminal window (`rmac_ui::boot_app_instance`) and the
+    /// menu-bar action fires at the app level, not inside any one view.
+    static OPEN_TERMINAL_VIEWS: std::cell::RefCell<Vec<gpui::WeakEntity<TerminalView>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Registers a newly created window's view so Quit and Keep Windows can
+/// find it later. Called once from [`TerminalView::new`].
+fn register_open_view(view: gpui::WeakEntity<TerminalView>) {
+    OPEN_TERMINAL_VIEWS.with(|views| {
+        let mut views = views.borrow_mut();
+        views.retain(|existing| existing.upgrade().is_some());
+        views.push(view);
+    });
+}
+
+/// Every still-open Terminal window's view, for Quit and Keep Windows.
+pub(super) fn open_terminal_views() -> Vec<gpui::WeakEntity<TerminalView>> {
+    OPEN_TERMINAL_VIEWS.with(|views| {
+        let mut views = views.borrow_mut();
+        views.retain(|existing| existing.upgrade().is_some());
+        views.clone()
+    })
+}

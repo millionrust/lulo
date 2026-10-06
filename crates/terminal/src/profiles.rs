@@ -150,15 +150,35 @@ static BASIC_DARK: Profile = Profile {
 
 thread_local! {
     static ACTIVE: std::cell::Cell<usize> = const { std::cell::Cell::new(DEFAULT_PROFILE) };
+    /// Shell ▸ Edit Background Colour (⌥⌘I): this window's live override,
+    /// published right before `render` the same way `set_active` already
+    /// publishes its profile index — never polled, just read back by
+    /// `active()` during that one render.
+    static ACTIVE_BACKGROUND_OVERRIDE: std::cell::Cell<Option<u32>> =
+        const { std::cell::Cell::new(None) };
 }
 
 pub(crate) fn set_active(index: usize) {
     ACTIVE.with(|active| active.set(index));
 }
 
-pub(crate) fn active() -> &'static Profile {
+pub(crate) fn set_active_background_override(colour: Option<u32>) {
+    ACTIVE_BACKGROUND_OVERRIDE.with(|cell| cell.set(colour));
+}
+
+/// The active profile's colours as this window should actually draw them
+/// right now: `resolved(index)`, with Shell ▸ Edit Background Colour's live
+/// override (if any) replacing `bg`. Unlike `resolved`, which is pure
+/// profile data for pickers/previews, this reflects one window's own
+/// override — so a window that hasn't set one still draws the profile's
+/// own colour exactly as before.
+pub(crate) fn active() -> Profile {
     let index = ACTIVE.with(|active| active.get());
-    resolved(index)
+    let mut profile = *resolved(index);
+    if let Some(bg) = ACTIVE_BACKGROUND_OVERRIDE.with(std::cell::Cell::get) {
+        profile.bg = bg;
+    }
+    profile
 }
 
 /// The profile at `index` as drawn in the current appearance: Basic swaps to
@@ -302,6 +322,73 @@ pub(crate) fn save_font_size(size: f32) -> Result<(), storage::Failure> {
         &storage::RealStorage,
         &path,
         format!("{size}"),
+        storage::Operation::SaveSetting,
+    )
+}
+
+/// Shell ▸ Edit Background Colour (⌥⌘I): overrides the active profile's `bg`
+/// for new windows, like `load_font_size`/`save_font_size` override the
+/// profile's font size. `None` means "use the profile's own colour".
+pub(crate) fn load_background_override() -> Option<u32> {
+    let path = setting_path("background-colour.txt").ok()?;
+    let stored = storage::load_optional(
+        &storage::RealStorage,
+        &path,
+        storage::Operation::LoadSetting,
+    )
+    .ok()
+    .flatten()?;
+    u32::from_str_radix(stored.trim().trim_start_matches('#'), 16).ok()
+}
+
+pub(crate) fn save_background_override(colour: u32) -> Result<(), storage::Failure> {
+    let path = setting_path("background-colour.txt")?;
+    storage::save(
+        &storage::RealStorage,
+        &path,
+        format!("{:06x}", colour & 0x00ff_ffff),
+        storage::Operation::SaveSetting,
+    )
+}
+
+pub(crate) fn clear_background_override() -> Result<(), storage::Failure> {
+    let path = setting_path("background-colour.txt")?;
+    // Removing the file is enough; `load_background_override` already
+    // treats "missing" as "no override" via `load_optional`'s `Ok(None)`.
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(storage::Failure::from_io(
+            storage::Operation::SaveSetting,
+            &path,
+            error,
+        )),
+    }
+}
+
+/// Edit ▸ Marks ▸ Automatically Mark Prompt Lines: on by default, like the
+/// Mac. Turning it off stops `shell_integration`'s OSC 133 handler from
+/// recording a prompt mark for Edit ▸ Navigate's Jump/Select to
+/// Previous/Next Mark — manual marks (⌘U) and bookmarks are unaffected.
+pub(crate) fn load_automatically_mark_prompt_lines() -> bool {
+    (|| -> Result<bool, storage::Failure> {
+        let path = setting_path("auto-mark-prompts.txt")?;
+        let stored = storage::load_optional(
+            &storage::RealStorage,
+            &path,
+            storage::Operation::LoadSetting,
+        )?;
+        Ok(stored.is_none_or(|value| value.trim() != "0"))
+    })()
+    .unwrap_or(true)
+}
+
+pub(crate) fn save_automatically_mark_prompt_lines(enabled: bool) -> Result<(), storage::Failure> {
+    let path = setting_path("auto-mark-prompts.txt")?;
+    storage::save(
+        &storage::RealStorage,
+        &path,
+        if enabled { "1" } else { "0" },
         storage::Operation::SaveSetting,
     )
 }

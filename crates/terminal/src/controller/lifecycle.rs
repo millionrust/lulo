@@ -8,7 +8,17 @@ impl TerminalView {
         cx: &mut Context<Self>,
         initial_profile: Option<usize>,
         initial_exec: Option<crate::cli::ExecCommand>,
+        // Application ▸ Quit and Keep Windows (TERM-22): a relaunch
+        // restoring a saved window. Its first tab takes over every field
+        // below that an ordinary launch would otherwise compute from
+        // `initial_profile`/`initial_exec`/Settings; the remaining tabs
+        // are pushed after construction (see the end of this function).
+        initial_restore: Option<crate::session_restore::RestoreWindow>,
     ) -> Self {
+        let restoring_tab0 = initial_restore
+            .as_ref()
+            .and_then(|restore| restore.tabs.first())
+            .cloned();
         let (redraw, redraw_rx) = async_channel::bounded(1);
         let (profile, persistence_error) = match load_profile() {
             Ok((profile, legacy_index)) => {
@@ -23,7 +33,12 @@ impl TerminalView {
                 Some(SharedString::from(failure.to_string())),
             ),
         };
-        let profile = initial_profile.unwrap_or(profile);
+        let profile = restoring_tab0
+            .as_ref()
+            .map(|tab| tab.profile)
+            .filter(|index| *index < PROFILES.len())
+            .or(initial_profile)
+            .unwrap_or(profile);
         let option_as_meta = profiles::load_option_as_meta();
         let font_size = profiles::load_font_size().unwrap_or(FONT_SIZE);
         let (settings, settings_error) = match settings::load() {
@@ -43,7 +58,21 @@ impl TerminalView {
                 crate::working_directory::last_front_directory()
             }
         };
+        let starting_directory = restoring_tab0
+            .as_ref()
+            .and_then(|tab| tab.cwd.clone())
+            .or(starting_directory);
         let program = initial_exec.map_or(InitialProgram::Shell, InitialProgram::from);
+        let program = restoring_tab0
+            .as_ref()
+            .map(|tab| match &tab.program {
+                Some(program) => InitialProgram::Exec {
+                    program: program.clone(),
+                    args: tab.args.clone(),
+                },
+                None => InitialProgram::Shell,
+            })
+            .unwrap_or(program);
         let session = Session::spawn(
             cols,
             rows,
@@ -53,6 +82,9 @@ impl TerminalView {
             program,
         )
         .unwrap_or_else(|error| Session::failed(cols, rows, scrollback_lines, error));
+        if let Some(tab) = &restoring_tab0 {
+            session.inject_restored_scrollback(&tab.scrollback);
+        }
         // Settings ▸ Window ▸ Size: the OS window itself is resized to the
         // requested cell count using the same cell-measurement fallback
         // `main.rs`'s hard-coded 580×385 used for the 80×24 default — the
@@ -249,6 +281,19 @@ impl TerminalView {
             KeyBinding::new("shift-cmd-s", ExportSelectedTextAs, Some("Terminal")),
             KeyBinding::new("cmd-p", Print, Some("Terminal")),
             KeyBinding::new("alt-cmd-p", PrintSelection, Some("Terminal")),
+            KeyBinding::new("shift-cmd-\\", ShowAllTabs, Some("Terminal")),
+            KeyBinding::new("cmd-o", OpenShell, Some("Terminal")),
+            KeyBinding::new("escape", CancelOpenShell, Some("TerminalOpenShell")),
+            KeyBinding::new("alt-cmd-i", EditBackgroundColour, Some("Terminal")),
+            KeyBinding::new(
+                "escape",
+                CancelEditBackgroundColour,
+                Some("TerminalBackgroundColour"),
+            ),
+            // Application ▸ Quit and Keep Windows: no window-scoped
+            // context, like Settings… above, so it reaches the app-level
+            // handler even while a different element has focus.
+            KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, None),
         ]);
 
         // A close request from outside the window — the Dock's or the menu
@@ -335,10 +380,22 @@ impl TerminalView {
             menu_at: None,
             a11y_cache: None,
             window_generation: NEXT_WINDOW_GENERATION.fetch_add(1, AtomicOrdering::Relaxed),
+            automatically_mark_prompt_lines: profiles::load_automatically_mark_prompt_lines(),
+            show_marks: false,
+            show_all_tabs: false,
+            viewing_primary_while_alt_screen: false,
+            pending_open_shell: None,
+            pending_background_colour: None,
+            background_override: profiles::load_background_override(),
         };
         if window_active {
             view.start_cursor_blink(window, cx);
         }
+        if let Some(restore) = initial_restore {
+            let remaining = restore.tabs.get(1..).unwrap_or(&[]);
+            view.apply_additional_restored_tabs(remaining, window, cx);
+        }
+        register_open_view(cx.entity().downgrade());
         view
     }
 
@@ -419,6 +476,8 @@ impl TerminalView {
             || self.pending_new_command.is_some()
             || self.pending_remote_connection.is_some()
             || self.pending_edit_title.is_some()
+            || self.pending_open_shell.is_some()
+            || self.pending_background_colour.is_some()
     }
 }
 

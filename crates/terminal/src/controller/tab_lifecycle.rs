@@ -48,7 +48,7 @@ impl TerminalView {
         )
     }
 
-    fn apply_scrollback_limit(&mut self, limit: usize) -> Result<(), SessionWriteError> {
+    pub(super) fn apply_scrollback_limit(&mut self, limit: usize) -> Result<(), SessionWriteError> {
         // Acquire every authority before mutating any, so one poisoned session
         // cannot leave a partially applied cross-tab budget.
         {
@@ -70,7 +70,7 @@ impl TerminalView {
         Ok(())
     }
 
-    fn rebalance_scrollback(&mut self) -> Result<(), SessionWriteError> {
+    pub(super) fn rebalance_scrollback(&mut self) -> Result<(), SessionWriteError> {
         self.apply_scrollback_limit(scrollback_limit_for_tab_count(self.tabs.len()))
     }
 

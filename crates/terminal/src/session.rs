@@ -404,6 +404,10 @@ type ReaderTask = (
     ForegroundJobSource,
     Option<u32>,
     RedrawSender,
+    // Edit ▸ Marks ▸ Automatically Mark Prompt Lines, read once at
+    // `Session::spawn` like the other Settings-backed values this reader
+    // thread never re-reads.
+    bool,
 );
 type WaiterTask = (
     Box<dyn Child + Send + Sync>,
@@ -449,6 +453,7 @@ fn run_reader_worker(
         job_source,
         shell_pid,
         redraw,
+        auto_mark_prompts,
     ): ReaderTask,
 ) {
     let mut parser: Processor = Processor::new();
@@ -477,13 +482,13 @@ fn run_reader_worker(
                             &term,
                             scrollback_limit.load(Ordering::Acquire),
                         );
-                        shell.set_marker(&marker.payload, position);
+                        shell.set_marker(&marker.payload, position, auto_mark_prompts);
                         start = end;
                     }
                     advance_filtered_output(&mut parser, &mut *term, &filtered[start..]);
                 } else {
                     for marker in markers {
-                        shell.set_marker(&marker.payload, None);
+                        shell.set_marker(&marker.payload, None, auto_mark_prompts);
                     }
                 }
                 request_redraw(&redraw);
@@ -693,6 +698,7 @@ impl Session {
             ),
         )));
         let lifecycle = Arc::new(Mutex::new(SessionLifecycle::Running));
+        let auto_mark_prompts = crate::profiles::load_automatically_mark_prompt_lines();
         workers.activate(
             (
                 reader,
@@ -704,6 +710,7 @@ impl Session {
                 job_source,
                 shell_pid,
                 redraw.clone(),
+                auto_mark_prompts,
             ),
             (child, Arc::clone(&lifecycle), redraw),
             killer.as_mut(),
@@ -846,6 +853,39 @@ impl Session {
 
     pub(super) fn working_directory(&self) -> Option<PathBuf> {
         self.directory.live_local_path()
+    }
+
+    /// Application ▸ Quit and Keep Windows (TERM-22): this tab's whole
+    /// buffer (scrollback and screen), to capture before the window
+    /// closes. Like `TerminalView::buffer_text` (Shell ▸ Export Text
+    /// As…/Print…) but callable for any tab, not just the active one.
+    pub(super) fn buffer_text(&self, rows: usize, cols: usize) -> Option<String> {
+        let term = self.term.lock().ok()?;
+        Some(crate::ui_state::buffer_text(&term, rows, cols))
+    }
+
+    /// Application ▸ Quit and Keep Windows (TERM-22): print `text` — a
+    /// bounded, plain-text snapshot of the kept tab's own buffer, never
+    /// raw escape sequences — straight into the grid before anything else
+    /// writes to it, so a restored tab's scrollback starts with what was
+    /// there last time. This is the same `Processor::advance` path the
+    /// reader thread itself uses for real PTY bytes (see `Session::failed`
+    /// for the same trick with a startup-error message); it is not
+    /// reconnected to any process, just printed.
+    pub(super) fn inject_restored_scrollback(&self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let Ok(mut term) = self.term.lock() else {
+            return;
+        };
+        let mut parser: Processor = Processor::new();
+        // Each captured line started at column 0; a lone `\n` would only
+        // move down a row without returning there, so every line break
+        // gets its own carriage return.
+        let replayed = text.replace('\n', "\r\n");
+        parser.advance(&mut *term, replayed.as_bytes());
+        parser.advance(&mut *term, b"\r\n");
     }
 
     pub(super) fn status_message(&self) -> Option<String> {
@@ -1088,6 +1128,48 @@ impl Session {
         ) else {
             return Ok(false);
         };
+        if offset == grid.display_offset() {
+            return Ok(false);
+        }
+        term.scroll_display(Scroll::Bottom);
+        term.scroll_display(Scroll::Delta(i32::try_from(offset).unwrap_or(i32::MAX)));
+        Ok(true)
+    }
+
+    /// View ▸ Show Marks (TERM-23): whether this tab has anything a
+    /// gutter indicator could show.
+    pub(super) fn has_any_marks(&self) -> bool {
+        self.shell_state.has_any_marks()
+    }
+
+    /// View ▸ Show Marks (TERM-23): whether the given absolute line
+    /// (`history_size`-shifted, like `retained_marker_position`'s own
+    /// coordinates) is marked or bookmarked.
+    pub(super) fn has_mark_at_absolute_line(&self, line: usize) -> bool {
+        self.shell_state.has_mark_at(line)
+    }
+
+    /// Edit ▸ Bookmarks ▸: every bookmarked line in this tab, oldest first.
+    pub(super) fn bookmark_lines(&self) -> Vec<usize> {
+        let Ok(term) = self.term.lock() else {
+            return Vec::new();
+        };
+        self.shell_state.bookmark_lines(
+            term.grid().history_size(),
+            self.scrollback_limit.load(Ordering::Acquire),
+        )
+    }
+
+    /// Edit ▸ Bookmarks ▸ <a listed bookmark>: scroll straight to it,
+    /// unlike `scroll_to_bookmark`'s Previous/Next, which moves relative
+    /// to the viewport.
+    pub(super) fn scroll_to_bookmark_line(&self, line: usize) -> Result<bool, SessionWriteError> {
+        let mut term = self.term.lock().map_err(|_| SessionWriteError::State)?;
+        if term.mode().contains(TermMode::ALT_SCREEN) {
+            return Ok(false);
+        }
+        let grid = term.grid();
+        let offset = grid.history_size().saturating_sub(line);
         if offset == grid.display_offset() {
             return Ok(false);
         }

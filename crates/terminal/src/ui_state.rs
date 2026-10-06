@@ -120,6 +120,12 @@ pub(super) struct SessionUiState {
     /// primary pane's `Term::grid().display_offset()`. `None` means the
     /// tab is not split (View ▸ Close Split Pane, ⇧⌘D).
     pub(super) split_offset: Option<i32>,
+    /// Edit ▸ Find ▸ Select All/Select All in Selection (TERM-23): every
+    /// match selected at once, instead of the single range `selection`
+    /// holds. Cleared whenever a plain drag-selection starts or the query
+    /// changes, so it never lingers alongside (or instead of) a stale set
+    /// of matches.
+    pub(super) selected_matches: Vec<FindMatch>,
 }
 
 pub(super) fn bounded_search_query(value: &str) -> String {

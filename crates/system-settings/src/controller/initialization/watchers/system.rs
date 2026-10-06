@@ -16,7 +16,7 @@ impl Settings {
                 this.apply_system_snapshot(snapshot);
                 this.run_pending_system_info_refresh(cx);
                 this.run_pending_storage_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["General", "Displays"], cx);
             });
         })
         .detach();
@@ -40,7 +40,7 @@ impl Settings {
                     }
                 }
                 this.run_pending_storage_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&[], cx);
             });
         })
         .detach();
@@ -53,7 +53,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.screen_reader = capability;
                 this.screen_reader_loading = false;
-                cx.notify();
+                this.notify_if_showing(&["Accessibility"], cx);
             });
         })
         .detach();
@@ -83,7 +83,7 @@ impl Settings {
                                     );
                                 }
                             }
-                            cx.notify();
+                            this.notify_if_showing(&["General"], cx);
                         })
                         .is_err()
                     {
@@ -120,7 +120,7 @@ impl Settings {
                                     );
                                 }
                             }
-                            cx.notify();
+                            this.notify_if_showing(&[], cx);
                         })
                         .is_err()
                     {
@@ -145,7 +145,7 @@ impl Settings {
                 // says so quietly, so this path's error never reaches the
                 // window-wide Settings banner.
                 this.sharing_error = None;
-                cx.notify();
+                this.notify_if_showing(&["Sharing"], cx);
             });
         })
         .detach();
@@ -174,7 +174,7 @@ impl Settings {
                                 );
                             }
                         }
-                        cx.notify();
+                        this.notify_if_showing(&["Privacy & Security"], cx);
                     })
                     .is_err()
                 {
@@ -237,7 +237,7 @@ impl Settings {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
                                 this.queue_time_stream_refresh(cx);
-                                cx.notify();
+                                this.notify_if_showing(&["Date & Time"], cx);
                             })
                             .is_err()
                         {
@@ -253,7 +253,7 @@ impl Settings {
                                 this.time_stream_error = Some(
                                     "Live date and time updates are temporarily unavailable".into(),
                                 );
-                                cx.notify();
+                                this.notify_if_showing(&["Date & Time"], cx);
                             })
                             .is_err()
                         {

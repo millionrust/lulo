@@ -330,6 +330,37 @@ thread_local! {
     static FILE_DRAG_CLIENT: RefCell<Weak<RefCell<WaylandClientState>>> = RefCell::default();
 }
 
+/// rmac: unmap (`mapped == false`) or map again a layer-shell window without
+/// destroying its surface or swapchain (SPEED-03: Mission Control keeps its
+/// full-screen overlay between opens). An unmapped window takes no input,
+/// holds no keyboard focus, shows nothing and draws nothing until mapped
+/// again. Returns false when `window` is not a layer-shell window of this
+/// client.
+pub fn set_layer_window_mapped(window: AnyWindowHandle, mapped: bool) -> bool {
+    find_window(window).is_some_and(|found| found.set_mapped(mapped))
+}
+
+/// rmac: for a layer-shell window `set_layer_window_mapped` unmapped, ask
+/// the compositor now for the configure mapping it again needs, so that
+/// round trip overlaps the app's own work before it maps the window. The
+/// window stays unmapped and draws nothing until mapped. Returns false when
+/// `window` is not an unmapped layer-shell window of this client.
+pub fn request_layer_window_configure(window: AnyWindowHandle) -> bool {
+    find_window(window).is_some_and(|found| found.request_map_configure())
+}
+
+fn find_window(window: AnyWindowHandle) -> Option<WaylandWindowStatePtr> {
+    FILE_DRAG_CLIENT.with(|slot| {
+        let client = slot.borrow().upgrade()?;
+        let state = client.borrow();
+        state
+            .windows
+            .values()
+            .find(|candidate| candidate.handle() == window)
+            .cloned()
+    })
+}
+
 /// Stage an item drag while its button or touch contact is held. The normal
 /// GPUI drag continues inside the window; crossing its edge starts Wayland DnD.
 pub fn stage_external_file_drag(paths: Vec<PathBuf>) -> bool {

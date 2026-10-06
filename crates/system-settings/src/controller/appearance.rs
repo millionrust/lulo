@@ -97,7 +97,7 @@ impl Settings {
                     this.theme_refresh_pending = true;
                 }
                 this.run_pending_theme_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Appearance", "Accessibility"], cx);
             });
         })
         .detach();

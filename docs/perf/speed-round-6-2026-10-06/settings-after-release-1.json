@@ -1,0 +1,75 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 6.037779035978019,
+      "first_frame_ms": 264.5593860652298,
+      "first_frame_pass": true,
+      "icons_painted_ms": 420.7503860652298,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 5.771075957454741,
+          "first_frame_ms": 199.72852896898985,
+          "icons_painted_ms": 317.07552896898983,
+          "window_listed_ms": 298.43576496932656
+        },
+        {
+          "backend_init_ms": 6.003455026075244,
+          "first_frame_ms": 247.47083603870124,
+          "icons_painted_ms": 386.8948360387012,
+          "window_listed_ms": 382.04501499421895
+        },
+        {
+          "backend_init_ms": 6.083150045014918,
+          "first_frame_ms": 285.7724849600345,
+          "icons_painted_ms": 432.4244849600345,
+          "window_listed_ms": 552.4945700308308
+        },
+        {
+          "backend_init_ms": 6.037779035978019,
+          "first_frame_ms": 264.5593860652298,
+          "icons_painted_ms": 420.7503860652298,
+          "window_listed_ms": 413.45275298226625
+        },
+        {
+          "backend_init_ms": 12.50905403867364,
+          "first_frame_ms": 403.7928000325337,
+          "icons_painted_ms": 548.4928000325338,
+          "window_listed_ms": 625.2282849745825
+        }
+      ],
+      "window_listed_ms": 413.45275298226625
+    }
+  },
+  "captured_at": "2026-10-06T09:07:05Z",
+  "panels": {},
+  "profile": "release",
+  "repeat": 5,
+  "schema_version": 1,
+  "settings_panes": {
+    "switch_max_ms": 20.693,
+    "switch_ms": 12.777000000000001,
+    "switch_pass": true,
+    "switches": [
+      20.693,
+      15.958,
+      11.877,
+      12.722,
+      12.832,
+      10.198
+    ],
+    "titles": [
+      "General \u2014 Settings",
+      "Accessibility \u2014 Settings",
+      "Appearance \u2014 Settings",
+      "Desktop & Dock \u2014 Settings",
+      "Displays \u2014 Settings",
+      "Touchscreen \u2014 Settings",
+      "Menu Bar \u2014 Settings"
+    ]
+  },
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 7.25405802950263,
+      "first_frame_ms": 288.44809206202626,
+      "first_frame_pass": true,
+      "icons_painted_ms": 448.2449249852598,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 6.468180916272104,
+          "first_frame_ms": 168.20993891451508,
+          "icons_painted_ms": 317.3609389145151,
+          "window_listed_ms": 372.0666089793667
+        },
+        {
+          "backend_init_ms": 7.25405802950263,
+          "first_frame_ms": 264.2063159728423,
+          "icons_painted_ms": 416.3263159728423,
+          "window_listed_ms": 389.72685707267374
+        },
+        {
+          "backend_init_ms": 6.680454011075199,
+          "first_frame_ms": 308.61092498525977,
+          "icons_painted_ms": 448.2449249852598,
+          "window_listed_ms": 428.85369004216045
+        },
+        {
+          "backend_init_ms": 22.791394032537937,
+          "first_frame_ms": 382.01769010629505,
+          "icons_painted_ms": 686.1226901062951,
+          "window_listed_ms": 711.327956058085
+        },
+        {
+          "backend_init_ms": 11.273428099229932,
+          "first_frame_ms": 288.44809206202626,
+          "icons_painted_ms": 450.1920920620263,
+          "window_listed_ms": 398.9703160477802
+        }
+      ],
+      "window_listed_ms": 398.9703160477802
+    }
+  },
+  "captured_at": "2026-10-06T09:07:35Z",
+  "panels": {},
+  "profile": "release",
+  "repeat": 5,
+  "schema_version": 1,
+  "settings_panes": {
+    "switch_max_ms": 24.427,
+    "switch_ms": 13.873999999999999,
+    "switch_pass": true,
+    "switches": [
+      24.427,
+      16.475,
+      12.914,
+      14.834,
+      7.614,
+      10.256
+    ],
+    "titles": [
+      "General \u2014 Settings",
+      "Accessibility \u2014 Settings",
+      "Appearance \u2014 Settings",
+      "Desktop & Dock \u2014 Settings",
+      "Displays \u2014 Settings",
+      "Touchscreen \u2014 Settings",
+      "Menu Bar \u2014 Settings"
+    ]
+  },
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

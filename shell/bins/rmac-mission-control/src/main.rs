@@ -99,6 +99,10 @@ mod linux_wayland {
         compositor: rmac_compositor::State,
         catalog: Rc<Vec<rmac_apps::Application>>,
         overlay: Option<WindowHandle<Overlay>>,
+        /// The last overlay, unmapped but kept with its surface and
+        /// swapchain so the next open on the same output maps it again
+        /// instead of creating a full-screen surface (SPEED-03).
+        kept: Option<(WindowHandle<Overlay>, model::SurfaceKey)>,
         opening: bool,
         /// The + button was pressed while standing on niri's spare workspace;
         /// name the next spare one as soon as niri creates it.
@@ -128,6 +132,7 @@ mod linux_wayland {
                 compositor: rmac_compositor::State::default(),
                 catalog: Rc::new(Vec::new()),
                 overlay: None,
+                kept: None,
                 opening: false,
                 pending_add: None,
                 corners: HotCornerSettings::default(),
@@ -567,24 +572,30 @@ mod linux_wayland {
         selected: Option<usize>,
         hovered_space: Option<usize>,
         ticking: bool,
+        /// Bumped by every open, so a tick loop from an earlier open of
+        /// this kept surface stops instead of driving the new one.
+        epoch: u64,
         was_active: bool,
     }
 
+    /// What one open of the overlay shows.
+    struct Opening {
+        mode: Mode,
+        scene: Scene,
+        snapshot: Snapshot,
+        pictures: HashMap<WindowId, Arc<RenderImage>>,
+        space_pictures: HashMap<WorkspaceId, Arc<RenderImage>>,
+        items: HashMap<String, Item>,
+    }
+
     impl Overlay {
-        #[allow(clippy::too_many_arguments)]
         fn new(
             service: WeakEntity<Service>,
-            mode: Mode,
-            scene: Scene,
-            snapshot: Snapshot,
-            pictures: HashMap<WindowId, Arc<RenderImage>>,
-            space_pictures: HashMap<WorkspaceId, Arc<RenderImage>>,
-            items: HashMap<String, Item>,
+            opening: Opening,
             window: &mut Window,
             cx: &mut Context<Self>,
         ) -> Self {
             let focus = cx.focus_handle();
-            focus.focus(window, cx);
             cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() {
                     this.was_active = true;
@@ -594,16 +605,15 @@ mod linux_wayland {
                 }
             })
             .detach();
-            let spaces = model::spaces(&snapshot, &scene.output);
             let mut overlay = Self {
                 service,
-                mode,
-                scene,
-                snapshot,
-                spaces,
-                pictures,
-                space_pictures,
-                items,
+                mode: opening.mode,
+                scene: opening.scene,
+                snapshot: opening.snapshot,
+                spaces: Vec::new(),
+                pictures: opening.pictures,
+                space_pictures: opening.space_pictures,
+                items: opening.items,
                 focus,
                 opened: Instant::now(),
                 closing: None,
@@ -614,11 +624,41 @@ mod linux_wayland {
                 selected: None,
                 hovered_space: None,
                 ticking: false,
+                epoch: 0,
                 was_active: false,
             };
-            overlay.targets = overlay.layout();
-            overlay.ensure_ticking(window, cx);
+            overlay.start(window, cx);
             overlay
+        }
+
+        /// The next open of a kept surface.
+        fn reopen(&mut self, opening: Opening, window: &mut Window, cx: &mut Context<Self>) {
+            self.mode = opening.mode;
+            self.scene = opening.scene;
+            self.snapshot = opening.snapshot;
+            self.pictures = opening.pictures;
+            self.space_pictures = opening.space_pictures;
+            self.items = opening.items;
+            self.start(window, cx);
+        }
+
+        /// Fly in what `scene` holds, from its first frame.
+        fn start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.spaces = model::spaces(&self.snapshot, &self.scene.output);
+            self.opened = Instant::now();
+            self.closing = None;
+            self.expanded = false;
+            self.relayout = None;
+            self.hovered = None;
+            self.selected = None;
+            self.hovered_space = None;
+            self.ticking = false;
+            self.epoch = self.epoch.wrapping_add(1);
+            self.was_active = false;
+            self.targets = self.layout();
+            self.focus.focus(window, cx);
+            self.ensure_ticking(window, cx);
+            cx.notify();
         }
 
         fn bar_height(&self) -> f32 {
@@ -694,10 +734,13 @@ mod linux_wayland {
                 return;
             }
             self.ticking = true;
+            let epoch = self.epoch;
             cx.spawn_in(window, async move |this, cx| loop {
                 cx.background_executor().timer(FRAME).await;
                 let running = this
-                    .update_in(cx, |this, window, cx| this.tick(window, cx))
+                    .update_in(cx, |this, window, cx| {
+                        this.epoch == epoch && this.tick(window, cx)
+                    })
                     .unwrap_or(false);
                 if !running {
                     break;
@@ -759,8 +802,27 @@ mod linux_wayland {
                 from: 0.0,
                 exit: Exit::Nothing,
             });
-            window.remove_window();
-            let _ = self.service.update(cx, |service, _| service.overlay = None);
+            // Keep the surface for the next open, unmapped: it takes no input
+            // or focus and shows nothing. The pictures leave the GPU atlas
+            // now, as they did when the window was removed; the service
+            // keeps its own copies for occluded windows (MC-01).
+            for image in self.pictures.values().chain(self.space_pictures.values()) {
+                let _ = window.drop_image(image.clone());
+            }
+            self.pictures.clear();
+            self.space_pictures.clear();
+            let handle = window.window_handle();
+            let kept = gpui_linux::set_layer_window_mapped(handle, false)
+                .then(|| handle.downcast::<Self>())
+                .flatten();
+            if kept.is_none() {
+                window.remove_window();
+            }
+            let key = model::SurfaceKey::of(&self.scene);
+            let _ = self.service.update(cx, |service, _| {
+                service.overlay = None;
+                service.kept = kept.map(|handle| (handle, key));
+            });
             let action = match closing.exit {
                 Exit::Nothing => None,
                 Exit::Focus(window) => Some(Action::FocusWindow { window }),
@@ -1658,6 +1720,13 @@ mod linux_wayland {
             return;
         }
         service.update(cx, |service, _| service.opening = true);
+        // The kept overlay asks for its configure now, so that round trip
+        // overlaps the capture; it stays unmapped until `show_overlay`.
+        if let Some((handle, key)) = &service.read(cx).kept {
+            if *key == model::SurfaceKey::of(&scene) {
+                gpui_linux::request_layer_window_configure((*handle).into());
+            }
+        }
         let service = service.clone();
         cx.spawn(async move |cx: &mut AsyncApp| {
             // Read the screen before the overlay covers it.
@@ -1744,7 +1813,38 @@ mod linux_wayland {
                 .collect();
             (space_pictures, items, pictures)
         });
+        let opening = Opening {
+            mode,
+            scene,
+            snapshot,
+            pictures,
+            space_pictures,
+            items,
+        };
 
+        // Map the kept surface again when it sits where this scene needs it.
+        // The configure that mapping asks for is dispatched only after this
+        // returns, so the view is reset before its first frame.
+        let key = model::SurfaceKey::of(&opening.scene);
+        let mut opening = Some(opening);
+        if let Some((handle, kept_key)) = service.update(cx, |service, _| service.kept.take()) {
+            if kept_key == key && gpui_linux::set_layer_window_mapped(handle.into(), true) {
+                let reopened = handle.update(cx, |view, window, cx| {
+                    if let Some(opening) = opening.take() {
+                        view.reopen(opening, window, cx);
+                    }
+                });
+                if reopened.is_ok() {
+                    service.update(cx, |service, _| service.overlay = Some(handle));
+                    return;
+                }
+            }
+            let _ = handle.update(cx, |_, window, _| window.remove_window());
+        }
+        let Some(opening) = opening else {
+            return;
+        };
+        let scene = &opening.scene;
         let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
         let display = displays
             .get(&rmac_shell_layer::stable_output_uuid(&scene.output))
@@ -1777,19 +1877,7 @@ mod linux_wayland {
             ..Default::default()
         };
         match cx.open_window(options, move |window, cx| {
-            cx.new(|cx| {
-                Overlay::new(
-                    weak,
-                    mode,
-                    scene,
-                    snapshot,
-                    pictures,
-                    space_pictures,
-                    items,
-                    window,
-                    cx,
-                )
-            })
+            cx.new(|cx| Overlay::new(weak, opening, window, cx))
         }) {
             Ok(handle) => service.update(cx, |service, _| service.overlay = Some(handle)),
             Err(error) => eprintln!("could not open Mission Control: {error}"),

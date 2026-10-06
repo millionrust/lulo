@@ -19,7 +19,7 @@ impl Settings {
                 // error never reaches the window-wide Settings banner.
                 this.theme_error = None;
                 this.run_pending_theme_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Appearance", "Accessibility"], cx);
             });
         })
         .detach();
@@ -97,7 +97,7 @@ impl Settings {
                                 );
                             }
                         }
-                        cx.notify();
+                        this.notify_if_showing(&["Appearance", "Accessibility"], cx);
                     })
                     .is_err()
                 {
@@ -129,7 +129,7 @@ impl Settings {
                                 );
                             }
                         }
-                        cx.notify();
+                        this.notify_if_showing(&["Appearance", "Accessibility"], cx);
                     })
                     .is_err()
                 {

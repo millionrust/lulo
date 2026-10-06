@@ -161,6 +161,17 @@ pub struct WaylandWindowState {
     /// have throttled is armed (see `may_have_throttled`).
     last_frame_at: Option<Instant>,
     throttle_retry_armed: bool,
+    /// rmac: a layer-shell window the app hid with `set_mapped(false)`: its
+    /// surface is unmapped (a null buffer committed) but kept, with its
+    /// swapchain, for the next `set_mapped(true)`. While hidden it requests
+    /// no frame callbacks and draws nothing.
+    hidden: bool,
+    /// rmac: a configure arrived (and was acknowledged) while hidden, so
+    /// showing again needs no new configure before it draws.
+    configured_while_hidden: bool,
+    /// rmac: `request_map_configure` committed while hidden; its configure
+    /// has not arrived yet.
+    configure_requested: bool,
     in_progress_window_controls: Option<WindowControls>,
     window_controls: WindowControls,
     client_inset: Option<Pixels>,
@@ -197,35 +208,11 @@ impl WaylandSurfaceState {
                 surface.id(),
             );
 
-            let width = f32::from(params.bounds.size.width);
-            let height = f32::from(params.bounds.size.height);
-            layer_surface.set_size(width as u32, height as u32);
-
-            layer_surface.set_anchor(super::layer_shell::wayland_anchor(options.anchor));
-            layer_surface.set_keyboard_interactivity(
-                super::layer_shell::wayland_keyboard_interactivity(options.keyboard_interactivity),
-            );
-
-            if let Some(margin) = options.margin {
-                layer_surface.set_margin(
-                    f32::from(margin.0) as i32,
-                    f32::from(margin.1) as i32,
-                    f32::from(margin.2) as i32,
-                    f32::from(margin.3) as i32,
-                )
-            }
-
-            if let Some(exclusive_zone) = options.exclusive_zone {
-                layer_surface.set_exclusive_zone(f32::from(exclusive_zone) as i32);
-            }
-
-            if let Some(exclusive_edge) = options.exclusive_edge {
-                layer_surface
-                    .set_exclusive_edge(super::layer_shell::wayland_anchor(exclusive_edge));
-            }
+            apply_layer_options(&layer_surface, options, params.bounds.size);
 
             return Ok(WaylandSurfaceState::LayerShell(WaylandLayerSurfaceState {
                 layer_surface,
+                options: options.clone(),
             }));
         }
 
@@ -335,6 +322,40 @@ pub struct WaylandXdgSurfaceState {
 
 pub struct WaylandLayerSurfaceState {
     layer_surface: zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+    /// rmac: kept to set again when the surface maps after an unmap, which
+    /// discards every double-buffered layer-surface state (`set_mapped`).
+    options: gpui::layer_shell::LayerShellOptions,
+}
+
+/// The double-buffered layer-surface state `options` asks for, at `size`.
+fn apply_layer_options(
+    layer_surface: &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+    options: &gpui::layer_shell::LayerShellOptions,
+    size: Size<Pixels>,
+) {
+    layer_surface.set_size(f32::from(size.width) as u32, f32::from(size.height) as u32);
+
+    layer_surface.set_anchor(super::layer_shell::wayland_anchor(options.anchor));
+    layer_surface.set_keyboard_interactivity(super::layer_shell::wayland_keyboard_interactivity(
+        options.keyboard_interactivity,
+    ));
+
+    if let Some(margin) = options.margin {
+        layer_surface.set_margin(
+            f32::from(margin.0) as i32,
+            f32::from(margin.1) as i32,
+            f32::from(margin.2) as i32,
+            f32::from(margin.3) as i32,
+        )
+    }
+
+    if let Some(exclusive_zone) = options.exclusive_zone {
+        layer_surface.set_exclusive_zone(f32::from(exclusive_zone) as i32);
+    }
+
+    if let Some(exclusive_edge) = options.exclusive_edge {
+        layer_surface.set_exclusive_edge(super::layer_shell::wayland_anchor(exclusive_edge));
+    }
 }
 
 pub struct WaylandPopupSurfaceState {
@@ -507,7 +528,7 @@ impl WaylandSurfaceState {
                 toplevel.destroy();
                 xdg_surface.destroy();
             }
-            WaylandSurfaceState::LayerShell(WaylandLayerSurfaceState { layer_surface }) => {
+            WaylandSurfaceState::LayerShell(WaylandLayerSurfaceState { layer_surface, .. }) => {
                 layer_surface.destroy();
             }
             WaylandSurfaceState::Popup(WaylandPopupSurfaceState {
@@ -649,6 +670,9 @@ impl WaylandWindowState {
             idle_generation: 0,
             last_frame_at: None,
             throttle_retry_armed: false,
+            hidden: false,
+            configured_while_hidden: false,
+            configure_requested: false,
             client,
             appearance,
             handle,
@@ -973,6 +997,13 @@ impl WaylandWindowStatePtr {
         super::frame_trace::record("frame_callback");
         let started = Instant::now();
         let mut state = self.state.borrow_mut();
+        if state.hidden || !state.acknowledged_first_configure {
+            // A callback the compositor still delivers after an unmap, or
+            // one from before it that fires once mapped again but before the
+            // new configure: an unconfigured surface must not draw.
+            state.frame_requested = false;
+            return;
+        }
         let since_previous = state
             .last_frame_at
             .replace(started)
@@ -1087,6 +1118,92 @@ impl WaylandWindowStatePtr {
         });
     }
 
+    /// rmac: unmap (`false`) or map again (`true`) a layer-shell window
+    /// while keeping its surface and swapchain, so an overlay that opens
+    /// often does not pay for a new surface, swapchain and first configure
+    /// each time (SPEED-03). Unmapping commits a null buffer; mapping
+    /// commits without a buffer, as the layer-shell protocol asks, and
+    /// draws on the configure that follows (or at once if one arrived
+    /// while hidden, see `request_map_configure`). Returns false for any
+    /// other kind of window.
+    pub fn set_mapped(&self, mapped: bool) -> bool {
+        let mut state = self.state.borrow_mut();
+        if state.surface_state.layer_surface().is_none() {
+            return false;
+        }
+        if mapped != state.hidden {
+            return true;
+        }
+        // Either way the next frame must re-render everything, and any idle
+        // check queued for the old mapping is stale.
+        state.force_render_after_recovery = true;
+        state.idle_generation = state.idle_generation.wrapping_add(1);
+        state.frame_requested = false;
+        state.idle_streak = 0;
+        if !mapped {
+            state.surface.attach(None, 0, 0);
+            state.surface.commit();
+            // The unmap returned the layer surface to its state right after
+            // `get_layer_surface`, which the compositor may reset to
+            // defaults (smithay does): set it all again, layer included, so
+            // any later commit is valid and maps where it did before.
+            if let WaylandSurfaceState::LayerShell(layer) = &state.surface_state {
+                apply_layer_options(&layer.layer_surface, &layer.options, state.bounds.size);
+                if layer.layer_surface.version() >= zwlr_layer_surface_v1::REQ_SET_LAYER_SINCE {
+                    layer
+                        .layer_surface
+                        .set_layer(super::layer_shell::wayland_layer(layer.options.layer));
+                }
+            }
+            state.hidden = true;
+            state.configure_requested = false;
+            state.configured_while_hidden = false;
+            state.acknowledged_first_configure = false;
+            return true;
+        }
+        state.hidden = false;
+        if !std::mem::take(&mut state.configured_while_hidden) {
+            // The configure asked for here, or already by
+            // `request_map_configure`, draws the first frame.
+            if !std::mem::take(&mut state.configure_requested) {
+                state.surface.commit();
+            }
+            return true;
+        }
+        state.configure_requested = false;
+        state.acknowledged_first_configure = true;
+        // Draw from the event loop, not from inside the caller (usually a
+        // GPUI update of this very window).
+        let client = state.client.get_client();
+        drop(state);
+        let window = self.downgrade();
+        let loop_handle = client.borrow().loop_handle.clone();
+        let _ = loop_handle.insert_idle(move |_| {
+            if let Some(window) = window.upgrade() {
+                window.frame();
+            }
+        });
+        true
+    }
+
+    /// rmac: for a window `set_mapped(false)` hid, ask the compositor now
+    /// for the configure the next `set_mapped(true)` needs, so that round
+    /// trip overlaps the app's own work before it shows the window (Mission
+    /// Control's screen capture). The surface stays unmapped: nothing is
+    /// drawn or attached until `set_mapped(true)`. Returns whether the
+    /// window is a hidden layer-shell window.
+    pub fn request_map_configure(&self) -> bool {
+        let mut state = self.state.borrow_mut();
+        if !state.hidden {
+            return false;
+        }
+        if !state.configure_requested && !state.configured_while_hidden {
+            state.configure_requested = true;
+            state.surface.commit();
+        }
+        true
+    }
+
     fn update_ime_enabled(&self) {
         let mut state = self.state.borrow_mut();
         if !state.active {
@@ -1170,6 +1287,13 @@ impl WaylandWindowStatePtr {
                 window_geometry.size.height,
             );
 
+            if state.hidden {
+                // Configured while unmapped (`request_map_configure`, or any
+                // other commit such as a new input region asked for it):
+                // `set_mapped(true)` draws at once.
+                state.configured_while_hidden = true;
+                return;
+            }
             let request_frame_callback = !state.acknowledged_first_configure;
             if request_frame_callback {
                 super::frame_trace::record("first_configure");
@@ -1941,6 +2065,12 @@ impl PlatformWindow for WaylandWindow {
     fn draw(&self, scene: &Scene) {
         super::frame_trace::record("draw_start");
         let mut state = self.borrow_mut();
+        if state.hidden {
+            // Never attach a buffer to the unmapped surface: that would map
+            // it without a configure. Redraw the whole scene once shown.
+            state.force_render_after_recovery = true;
+            return;
+        }
 
         if state.renderer.device_lost() {
             let raw_window = RawWindow {
@@ -1998,7 +2128,7 @@ impl PlatformWindow for WaylandWindow {
 
         // Work around a bug in old versions of wlroots where committing without a buffer attached
         // can cause invalid synchronization that leads to graphical corruption.
-        if !state.renderer_presented && state.frame_requested {
+        if !state.renderer_presented && state.frame_requested && !state.hidden {
             state.surface.commit();
         }
 

@@ -1,0 +1,26 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-06T09:07:54Z",
+  "panels": {
+    "mission-control": {
+      "open_ms": 63.91790497582406,
+      "open_pass": true,
+      "opens": [
+        351.20782291051,
+        64.75156696978956,
+        63.91790497582406,
+        58.94772207830101,
+        57.294307043775916,
+        64.77214500773698,
+        59.543449082411826
+      ]
+    }
+  },
+  "profile": "release",
+  "repeat": 7,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

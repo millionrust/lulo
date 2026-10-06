@@ -61,7 +61,7 @@ impl Settings {
                     this.privacy_refresh_pending = true;
                 }
                 this.run_pending_privacy_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Privacy & Security"], cx);
             });
         })
         .detach();

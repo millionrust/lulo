@@ -43,6 +43,7 @@ mod storage;
 mod system_info;
 mod users;
 mod view_helpers;
+mod views;
 mod vpn;
 mod wallpaper;
 mod wifi;

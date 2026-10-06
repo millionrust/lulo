@@ -37,7 +37,7 @@ impl Settings {
                     this.finish_wifi_update(immediate);
                     this.wifi_error = None;
                 }
-                cx.notify();
+                this.notify_if_showing(&["Wi-Fi"], cx);
             });
 
             let result = blocking::unblock(|| {
@@ -60,7 +60,7 @@ impl Settings {
                 this.finish_wifi_update(result);
                 this.wifi_error = None;
                 if this.wifi_view_state() != before {
-                    cx.notify();
+                    this.notify_if_showing(&["Wi-Fi"], cx);
                 }
             });
         })
@@ -74,7 +74,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_network_update(result);
                 this.network_error = None;
-                cx.notify();
+                this.notify_if_showing(&["Network"], cx);
             });
         })
         .detach();
@@ -87,7 +87,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_vpn_update(result);
                 this.vpn_error = None;
-                cx.notify();
+                this.notify_if_showing(&["VPN", "Network"], cx);
             });
         })
         .detach();
@@ -100,7 +100,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.vpn_import_capabilities = capabilities;
                 this.vpn_import_loading = false;
-                cx.notify();
+                this.notify_if_showing(&["VPN", "Network"], cx);
             });
         })
         .detach();
@@ -113,7 +113,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_audio_update(result, cx);
                 this.audio_error = None;
-                cx.notify();
+                this.notify_if_showing(&["Sound"], cx);
             });
         })
         .detach();
@@ -126,7 +126,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_power_update(result, cx);
                 this.power_error = None;
-                cx.notify();
+                this.notify_if_showing(&["Battery"], cx);
             });
         })
         .detach();
@@ -140,7 +140,7 @@ impl Settings {
                 this.finish_display_update(result);
                 this.display_error = None;
                 this.flush_display_stream_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Displays"], cx);
             });
         })
         .detach();
@@ -158,7 +158,7 @@ impl Settings {
                     this.brightness = Some(value);
                     this.brightness_slider = Self::brightness_slider(cx, f32::from(value));
                 }
-                cx.notify();
+                this.notify_if_showing(&["Displays"], cx);
             });
         })
         .detach();
@@ -176,7 +176,17 @@ impl Settings {
                 this.finish_input_update(result, cx);
                 this.input_error = None;
                 this.flush_input_stream_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(
+                    &[
+                        "Keyboard",
+                        "Mouse",
+                        "Trackpad",
+                        "Touchscreen",
+                        "Language & Region",
+                        "Accessibility",
+                    ],
+                    cx,
+                );
             });
         })
         .detach();
@@ -187,7 +197,7 @@ impl Settings {
             let result = blocking::unblock(rmac_keyboard::status).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_mac_keyboard_update(result);
-                cx.notify();
+                this.notify_if_showing(&["Keyboard"], cx);
             });
         })
         .detach();
@@ -201,7 +211,7 @@ impl Settings {
                 this.finish_gtk_text_update(result);
                 this.gtk_text_error = None;
                 this.run_pending_gtk_text_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Accessibility", "Appearance"], cx);
             });
         })
         .detach();
@@ -232,7 +242,7 @@ impl Settings {
                                 );
                             }
                         }
-                        cx.notify();
+                        this.notify_if_showing(&["Accessibility", "Appearance"], cx);
                     })
                     .is_err()
                 {
@@ -251,7 +261,7 @@ impl Settings {
                 this.finish_screen_reader_toggle_update(result);
                 this.screen_reader_toggle_error = None;
                 this.run_pending_screen_reader_toggle_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Accessibility"], cx);
             });
         })
         .detach();
@@ -282,7 +292,7 @@ impl Settings {
                                 );
                             }
                         }
-                        cx.notify();
+                        this.notify_if_showing(&["Accessibility"], cx);
                     })
                     .is_err()
                 {
@@ -301,7 +311,7 @@ impl Settings {
                 this.finish_privacy_update(result);
                 this.privacy_error = None;
                 this.run_pending_privacy_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Privacy & Security"], cx);
             });
         })
         .detach();
@@ -314,7 +324,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.security_coverage = Some(snapshot);
                 this.security_coverage_loading = false;
-                cx.notify();
+                this.notify_if_showing(&["Privacy & Security"], cx);
             });
         })
         .detach();

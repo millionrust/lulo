@@ -19,7 +19,7 @@ impl Settings {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
                         if this.apply_notification_stream_update(update) {
-                            cx.notify();
+                            this.notify_if_showing(&["Notifications"], cx);
                         }
                     })
                     .is_err()
@@ -105,7 +105,7 @@ impl Settings {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
                         if this.apply_focus_stream_update(update) {
-                            cx.notify();
+                            this.notify_if_showing(&["Focus"], cx);
                         }
                     })
                     .is_err()

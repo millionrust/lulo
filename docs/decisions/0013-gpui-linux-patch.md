@@ -325,6 +325,25 @@ rmac-ui's outside-click catcher (`dev.rmac.OutsideClickCatcher`, kept in step
 with `crates/rmac-ui/src/runtime.rs`) gets a 1x1 buffer that its
 `wp_viewport` stretches over the display.
 
+### Unmapping and mapping layer-shell windows (amended 2026-10-06)
+
+Upstream GPUI can only remove a window. Mission Control opens often, and
+creating a new full-output layer surface and swapchain cost it about 40 ms
+of each open. `gpui_linux` therefore exports two functions
+(docs/perf/speed-round-6-mission-control-2026-10-06.md):
+
+- **`set_layer_window_mapped(window, mapped)`.** Unmapping commits a null
+  buffer and keeps the surface, swapchain and GPUI window. It then sets the
+  layer-surface state again (anchor, size, layer, keyboard interactivity,
+  margins, exclusive zone), because smithay resets it on unmap. While
+  unmapped, the window asks for no frame callbacks, ignores any that still
+  arrive, and never attaches a buffer. Mapping commits without a buffer and
+  draws on the following configure, or at once if that configure already
+  arrived.
+- **`request_layer_window_configure(window)`.** This lets the app ask for
+  that configure early, so the round trip overlaps its own work before it
+  maps the window.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and `gpui_wgpu` and

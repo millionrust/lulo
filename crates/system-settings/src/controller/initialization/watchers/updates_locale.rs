@@ -18,7 +18,7 @@ impl Settings {
                 this.finish_update_status(result);
                 this.updates_error = None;
                 this.run_pending_update_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Privacy & Security"], cx);
             });
         })
         .detach();
@@ -69,7 +69,7 @@ impl Settings {
                 this.finish_time_update(result);
                 this.time_error = None;
                 this.run_pending_time_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Date & Time"], cx);
             });
         })
         .detach();
@@ -83,7 +83,7 @@ impl Settings {
                 this.finish_locale_update(result);
                 this.locale_error = None;
                 this.run_pending_locale_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Language & Region", "Keyboard"], cx);
             });
         })
         .detach();
@@ -97,7 +97,7 @@ impl Settings {
                 this.finish_login_items_update(result);
                 this.login_items_error = None;
                 this.run_pending_login_items_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Login Items"], cx);
             });
         })
         .detach();

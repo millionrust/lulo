@@ -15,7 +15,16 @@ impl Settings {
                         if this.apply_shell_settings_stream_update(update, cx) {
                             this.refresh_wallpaper_preview(cx);
                         }
-                        cx.notify();
+                        this.notify_if_showing(
+                            &[
+                                "Wallpaper",
+                                "Desktop & Dock",
+                                "Menu Bar",
+                                "Spotlight",
+                                "Date & Time",
+                            ],
+                            cx,
+                        );
                     })
                     .is_err()
                 {
@@ -148,7 +157,7 @@ impl Settings {
             let result = blocking::unblock(rmac_shortcuts::backend_status).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_shortcut_status_update(result);
-                cx.notify();
+                this.notify_if_showing(&["Keyboard", "Spotlight"], cx);
             });
         })
         .detach();

@@ -649,6 +649,22 @@ python3 scripts/behavior/run_window_move.py --bin-dir $CARGO_TARGET_DIR/iterate 
   --geometry-only --keep
 ```
 
+Mission Control keeps its overlay surface unmapped between opens (SPEED-03).
+`run_mission_control_reopen.py` uses `run_speed_sweep.py`'s nested niri, opens
+and closes Mission Control over a Calculator window `--opens` times, and checks
+each round:
+
+- The open changes the screen.
+- After close, grim's capture matches the one taken before the open.
+- A typed digit and a click reach Calculator, and the hidden overlay gets no
+  input.
+- The hidden overlay presents nothing and the service stays idle.
+
+```sh
+python3 scripts/behavior/run_mission_control_reopen.py --bin-dir DIR_WITH_MISSION_CONTROL \
+  --bin-dir DIR_WITH_RMAC_CALCULATOR --json-output /tmp/mc-reopen.json --opens 5
+```
+
 `run_terminal_close.py` covers the red traffic light on a real `rmac-terminal`
 window (the owner's report: it did nothing). It runs the same nested-niri
 skeleton as `run_niri_minimize.py` so AT-SPI (`org.a11y.Bus`) and the shipped

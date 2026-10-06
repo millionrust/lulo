@@ -58,7 +58,7 @@ impl Settings {
                     this.locale_refresh_pending = true;
                 }
                 this.run_pending_locale_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Language & Region", "Keyboard"], cx);
             });
         })
         .detach();

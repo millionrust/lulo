@@ -32,11 +32,15 @@ impl Render for Settings {
             window.set_window_title(&native_window_title);
             self.native_window_title = native_window_title;
         }
-        let layout = crate::responsive_layout::responsive_layout(
-            f32::from(window.bounds().size.width),
-            self.compact_sidebar_open,
-        );
-        let settings_error = self.global_settings_error().map(|error| {
+        let layout = self.layout(window);
+        let entity = cx.entity();
+        let child_views = self
+            .views
+            .get_or_insert_with(|| views::SettingsViews::new(&entity, cx));
+        let (sidebar_view, pane_view) = (child_views.sidebar.clone(), child_views.pane.clone());
+        let cache_views = !window.is_a11y_active();
+        self.rendered_banner = self.global_settings_error().cloned();
+        let settings_error = self.rendered_banner.as_ref().map(|error| {
             rmac_ui::user_error_message(rmac_ui::ErrorSurface::Settings, error.as_ref(), false)
         });
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
@@ -377,7 +381,17 @@ impl Render for Settings {
             .bg(pane_bg())
             .text_color(label())
             .when(layout.sidebar_visible, |root| {
-                root.child(self.render_sidebar(layout, window, cx))
+                // The sidebar column's own size; its view fills it.
+                root.child(
+                    div()
+                        .h_full()
+                        .flex_shrink_0()
+                        .when(layout.compact, |column| column.flex_1())
+                        .when(!layout.compact, |column| {
+                            column.w(px(style::SIDEBAR_COLUMN_WIDTH))
+                        })
+                        .child(views::view_element(&sidebar_view, cache_views)),
+                )
             })
             .when(layout.detail_visible, |root| {
                 root.child(
@@ -451,7 +465,13 @@ impl Render for Settings {
                                 )),
                             )
                         })
-                        .child(self.render_detail(cx)),
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_h(px(0.0))
+                                .w_full()
+                                .child(views::view_element(&pane_view, cache_views)),
+                        ),
                 )
             })
             .when_some(wifi_password_dialog, |root, dialog| root.child(dialog))

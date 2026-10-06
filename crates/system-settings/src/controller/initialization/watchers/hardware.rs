@@ -57,7 +57,7 @@ impl Settings {
                 // (`!self.bluetooth_available`), so this path's error never
                 // reaches the window-wide Settings banner.
                 this.bluetooth_error = None;
-                cx.notify();
+                this.notify_if_showing(&["Bluetooth"], cx);
             });
         })
         .detach();
@@ -147,7 +147,7 @@ impl Settings {
                                 None
                             } else {
                                 this.audio_stream_error = None;
-                                cx.notify();
+                                this.notify_if_showing(&["Sound"], cx);
                                 Some(this.audio_generation)
                             }
                         }) {
@@ -170,7 +170,7 @@ impl Settings {
                                     this.audio_loading,
                                 ) {
                                     this.finish_audio_stream_update(result, cx);
-                                    cx.notify();
+                                    this.notify_if_showing(&["Sound"], cx);
                                 }
                             })
                             .is_err()
@@ -186,7 +186,7 @@ impl Settings {
                                 );
                                 this.audio_stream_error =
                                     Some("Sound output isn\u{2019}t available right now".into());
-                                cx.notify();
+                                this.notify_if_showing(&["Sound"], cx);
                             })
                             .is_err()
                         {

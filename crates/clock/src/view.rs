@@ -1808,10 +1808,13 @@ fn capsule(
         .items_center()
         .justify_center()
         .text_size(px(m::BUTTON_TEXT_SIZE))
-        .text_color(if enabled {
-            rgb(m::TEXT_PRIMARY).into()
-        } else {
-            rgb(m::BUTTON_DISABLED_TEXT).into()
+        .text_color({
+            let ink: Hsla = if enabled {
+                rgb(m::TEXT_PRIMARY).into()
+            } else {
+                rgb(m::BUTTON_DISABLED_TEXT).into()
+            };
+            ink
         })
         .when(enabled, |button| button.active(|style| style.opacity(0.75)))
         .child(label)

@@ -67,7 +67,6 @@ impl std::error::Error for WriterLeaseError {}
 pub struct WriterLease {
     root: PathBuf,
     key: PathBuf,
-    #[cfg(unix)]
     file: Option<File>,
 }
 
@@ -109,7 +108,6 @@ impl WriterLease {
             Ok(file) => Ok(Self {
                 root,
                 key,
-                #[cfg(unix)]
                 file: Some(file),
             }),
             Err(error) => {
@@ -129,7 +127,6 @@ impl WriterLease {
         Self {
             key: root.join(WRITER_LOCK_NAME),
             root,
-            #[cfg(unix)]
             file: None,
         }
     }
@@ -137,7 +134,6 @@ impl WriterLease {
 
 impl Drop for WriterLease {
     fn drop(&mut self) {
-        #[cfg(unix)]
         if let Some(file) = self.file.take() {
             unlock(&file);
             drop(file);
@@ -212,12 +208,44 @@ fn open_and_lock(path: &Path) -> Result<File, WriterLeaseError> {
     }
 }
 
+/// Windows: the same exclusive, non-blocking lock through `LockFileEx`
+/// (std's `File::try_lock`). The library root sits in the user's own
+/// profile, whose ACL already keeps other users out, so there is no owner
+/// or mode check; a link in place of the lock file is still refused.
 #[cfg(not(unix))]
-fn open_and_lock(_path: &Path) -> Result<File, WriterLeaseError> {
-    Err(WriterLeaseError::new(
-        WriterLeaseOperation::Lock,
-        WriterLeaseErrorKind::Unsupported,
-    ))
+fn open_and_lock(path: &Path) -> Result<File, WriterLeaseError> {
+    let invalid = || {
+        WriterLeaseError::new(
+            WriterLeaseOperation::OpenLockFile,
+            WriterLeaseErrorKind::Io(io::ErrorKind::InvalidData),
+        )
+    };
+    if std::fs::symlink_metadata(path).is_ok_and(|metadata| !metadata.file_type().is_file()) {
+        return Err(invalid());
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|error| WriterLeaseError::io(WriterLeaseOperation::OpenLockFile, error))?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| WriterLeaseError::io(WriterLeaseOperation::OpenLockFile, error))?;
+    if !metadata.is_file() {
+        return Err(invalid());
+    }
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(std::fs::TryLockError::WouldBlock) => Err(WriterLeaseError::new(
+            WriterLeaseOperation::Lock,
+            WriterLeaseErrorKind::Contended,
+        )),
+        Err(std::fs::TryLockError::Error(error)) => {
+            Err(WriterLeaseError::io(WriterLeaseOperation::Lock, error))
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -225,6 +253,11 @@ fn unlock(file: &File) {
     use std::os::fd::AsRawFd as _;
 
     let _ = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+}
+
+#[cfg(not(unix))]
+fn unlock(file: &File) {
+    let _ = file.unlock();
 }
 
 #[cfg(test)]
@@ -279,7 +312,6 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    #[cfg(unix)]
     #[test]
     fn kernel_lock_rejects_an_independent_descriptor() {
         let root = temp_root("kernel");

@@ -25,9 +25,9 @@ mod linux_wayland {
         canvas, div, layer_shell::*, point, prelude::*, px, rgba, svg, AnyElement, AnyWindowHandle,
         App, AssetSource, Bounds, BoxShadow, ClickEvent, Context, DisplayId, Entity, FocusHandle,
         FontWeight, KeyDownEvent, ModifiersChangedEvent, MouseButton, MouseDownEvent,
-        MouseMoveEvent, MouseUpEvent, PlatformDisplay, QuitMode, Role, SharedString, Size,
-        Subscription, Window, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind,
-        WindowOptions,
+        MouseMoveEvent, MouseUpEvent, PlatformDisplay, QuitMode, Role, ScrollWheelEvent,
+        SharedString, Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowHandle, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_quick_settings_system::{Backend as _, SystemBackend};
@@ -45,8 +45,8 @@ mod linux_wayland {
         bluetooth_menu_rows, focus_menu_rows, menu_item_icon, next_status_selection,
         quit_all_interrupted_copy, quit_all_progress, sound_menu_rows, split_shortcut,
         status_menu_height, status_menu_left, wifi_menu_rows, BadgeGlyph, BluetoothMenuInput,
-        IconColumn, LowBatteryWatch, QuitAllProgress, SoundMenuInput, StatusAction, StatusMenuKind,
-        StatusRow, WifiMenuInput, QUIT_ALL_CHECK,
+        IconColumn, LowBatteryWatch, MenuScroll, QuitAllProgress, SoundMenuInput, StatusAction,
+        StatusMenuKind, StatusRow, WifiMenuInput, QUIT_ALL_CHECK,
     };
 
     // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): the bar
@@ -56,9 +56,6 @@ mod linux_wayland {
     /// (scripts/test_shell_accessible_names.py keeps them in step).
     const LULO_MENU_LABEL: &str = "Lulo menu";
     const BAR_HEIGHT: f32 = 29.0;
-    /// Tall enough for the longest status menu (Option-click Wi-Fi with
-    /// Other Networks expanded); input regions keep the rest click-through.
-    const MENU_SURFACE_HEIGHT: f32 = 680.0;
     /// Panel edge width; layout offsets measured from the outer edge
     /// subtract it because GPUI lays children out inside the border.
     const EDGE: f32 = 1.0;
@@ -129,6 +126,7 @@ mod linux_wayland {
         "checkmark",
         "chevron-down",
         "chevron-right",
+        "chevron-up",
         "clipboard",
         "clock",
         "close",
@@ -691,6 +689,7 @@ mod linux_wayland {
         top: f32,
         width: f32,
         height: f32,
+        scroll: MenuScroll,
     }
 
     #[derive(Clone, Debug, PartialEq)]
@@ -731,6 +730,15 @@ mod linux_wayland {
         selected_shortcut: u32,
         app_tint: u32,
         status_tint: u32,
+        /// The drop shadow under every menu panel and its drop.
+        shadow: u32,
+        shadow_offset: f32,
+        /// Paint the shadows only outside the panel. A GPUI drop shadow
+        /// also fills the shape it is cast by, and the panel itself is
+        /// transparent over its blurred backdrop, so a shadow painted on
+        /// the panel darkens the whole material. Dark menus were measured
+        /// with that darkening in place; light menus must stay near-white.
+        shadow_outside: bool,
         /// The Help menu's search capsule and its placeholder.
         search_fill: u32,
         search_placeholder: u32,
@@ -763,6 +771,9 @@ mod linux_wayland {
                 app_tint,
                 // The status menus measure ≈ 20% darker than app menus.
                 status_tint: darken(app_tint, 0.8),
+                shadow: 0x00000059,
+                shadow_offset: 10.0,
+                shadow_outside: false,
                 search_fill: 0x2E2E2EFF,
                 search_placeholder: 0xFFFFFF8C,
             }
@@ -777,7 +788,9 @@ mod linux_wayland {
                 status_separator: tokens::separator(),
                 edge: 0x0000001A,
                 status_edge: 0x0000001A,
-                hairline: 0x00000026,
+                // design-lab/tokens.css `:root.light` --win-shadow:
+                // 0 12px 32px rgba(0,0,0,.18), 0 0 0 .5px rgba(0,0,0,.06).
+                hairline: 0x0000000F,
                 badge: 0x0000000F,
                 badge_on: accent,
                 switch_off: 0x00000017,
@@ -787,6 +800,9 @@ mod linux_wayland {
                 selected_shortcut: 0xFFFFFFB3,
                 app_tint,
                 status_tint: app_tint,
+                shadow: 0x0000002E,
+                shadow_offset: 12.0,
+                shadow_outside: true,
                 // S: the light Help search field is not measured.
                 search_fill: 0x0000000F,
                 search_placeholder: tokens::secondary_text(),
@@ -802,23 +818,94 @@ mod linux_wayland {
         channel(24) | channel(16) | channel(8) | (rgba_hex & 0xFF)
     }
 
-    fn menu_shadows(hairline: u32) -> Vec<BoxShadow> {
+    const MENU_SHADOW_BLUR: f32 = 32.0;
+    const MENU_HAIRLINE: f32 = 0.5;
+
+    fn drop_shadow(palette: &MenuPalette) -> BoxShadow {
+        BoxShadow {
+            color: rgba(palette.shadow).into(),
+            offset: point(px(0.0), px(palette.shadow_offset)),
+            blur_radius: px(MENU_SHADOW_BLUR),
+            spread_radius: px(0.0),
+            inset: false,
+        }
+    }
+
+    /// The shadows painted on a menu panel itself (dark appearance); light
+    /// panels get theirs from [`menu_shadow_frame`] instead.
+    fn menu_shadows(hairline: u32, palette: &MenuPalette) -> Vec<BoxShadow> {
+        if palette.shadow_outside {
+            return Vec::new();
+        }
         vec![
             BoxShadow {
                 color: rgba(hairline).into(),
                 offset: point(px(0.0), px(0.0)),
                 blur_radius: px(0.0),
-                spread_radius: px(0.5),
+                spread_radius: px(MENU_HAIRLINE),
                 inset: false,
             },
-            BoxShadow {
-                color: rgba(0x00000059).into(),
-                offset: point(px(0.0), px(10.0)),
-                blur_radius: px(32.0),
-                spread_radius: px(0.0),
-                inset: false,
-            },
+            drop_shadow(palette),
         ]
+    }
+
+    /// A light menu panel's hairline and drop shadow, painted only outside
+    /// its frame: the shadow is cast by a copy of the panel inside four
+    /// clipped bands around it, and the hairline is a half-point ring, so
+    /// nothing darkens the material under the rows. `None` in dark
+    /// appearance, where [`menu_shadows`] paints them on the panel.
+    fn menu_shadow_frame(
+        (left, top, width, height): (f32, f32, f32, f32),
+        radius: f32,
+        hairline: u32,
+        palette: &MenuPalette,
+    ) -> Option<gpui::Div> {
+        if !palette.shadow_outside {
+            return None;
+        }
+        // Past this the blur leaves nothing to see.
+        let reach = 3.0 * MENU_SHADOW_BLUR + palette.shadow_offset.abs();
+        let band = |x: f32, y: f32, w: f32, h: f32| {
+            div()
+                .absolute()
+                .left(px(x))
+                .top(px(y))
+                .w(px(w))
+                .h(px(h))
+                .overflow_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(left - x))
+                        .top(px(top - y))
+                        .w(px(width))
+                        .h(px(height))
+                        .rounded(px(radius))
+                        .shadow(vec![drop_shadow(palette)]),
+                )
+        };
+        let mut frame = div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .child(band(left - reach, top - reach, width + 2.0 * reach, reach))
+            .child(band(left - reach, top + height, width + 2.0 * reach, reach))
+            .child(band(left - reach, top, reach, height))
+            .child(band(left + width, top, reach, height));
+        if hairline & 0xFF != 0 {
+            frame = frame.child(
+                div()
+                    .absolute()
+                    .left(px(left - MENU_HAIRLINE))
+                    .top(px(top - MENU_HAIRLINE))
+                    .w(px(width + 2.0 * MENU_HAIRLINE))
+                    .h(px(height + 2.0 * MENU_HAIRLINE))
+                    .rounded(px(radius + MENU_HAIRLINE))
+                    .border(px(MENU_HAIRLINE))
+                    .border_color(rgba(hairline)),
+            );
+        }
+        Some(frame)
     }
 
     type MenuBackdropUpdate = (Uuid, Option<Vec<MenuBackdropPanel>>);
@@ -837,6 +924,16 @@ mod linux_wayland {
         /// Bumped on every hover, so a delayed submenu open or close only
         /// happens if the pointer is still where it was.
         hover_generation: u64,
+        /// Each open menu level's scroll (depth 0 is the menu under its
+        /// title), keyed by the path that opened it so a different submenu
+        /// starts at its top. Only menus taller than the screen scroll.
+        menu_scroll: BTreeMap<usize, (u64, MenuScroll)>,
+        /// The level whose highlighted row the keyboard just moved: the
+        /// next render scrolls it into view.
+        scroll_reveal: Option<usize>,
+        /// Bumped whenever the pointer enters or leaves a scroll arrow; the
+        /// arrow's scroll timer stops when it changes.
+        scroll_arrow_generation: u64,
         /// The focused app's windows, read from the compositor when a menu
         /// opens, for the Window menu.
         menu_windows: Vec<menu_model::MenuWindow>,
@@ -1009,6 +1106,9 @@ mod linux_wayland {
                 selected_item: NO_ITEM,
                 submenu_rows: Vec::new(),
                 hover_generation: 0,
+                menu_scroll: BTreeMap::new(),
+                scroll_reveal: None,
+                scroll_arrow_generation: 0,
                 menu_windows: Vec::new(),
                 menu_window: None,
                 help_query: String::new(),
@@ -1086,6 +1186,7 @@ mod linux_wayland {
                 self.confirmation_started_at = None;
                 self.selected_item = NO_ITEM;
                 self.submenu_rows.clear();
+                self.reset_menu_scroll();
                 self.hover_generation = self.hover_generation.saturating_add(1);
                 self.menu_window = None;
                 self.help_query.clear();
@@ -1215,6 +1316,7 @@ mod linux_wayland {
             self.revealed = true;
             self.selected_item = NO_ITEM;
             self.submenu_rows.clear();
+            self.reset_menu_scroll();
             self.hover_generation = self.hover_generation.saturating_add(1);
             self.help_query.clear();
             self.parking = rmac_compositor::ParkingStore::load_default();
@@ -1485,6 +1587,207 @@ mod linux_wayland {
             self.submenu_rows.truncate(depth);
             self.submenu_rows.push(select.unwrap_or(NO_ITEM));
             cx.notify();
+        }
+
+        fn reset_menu_scroll(&mut self) {
+            self.menu_scroll.clear();
+            self.scroll_reveal = None;
+            self.scroll_arrow_generation = self.scroll_arrow_generation.saturating_add(1);
+        }
+
+        /// The scroll of the menu level at `depth`, opened along `path`,
+        /// whose rows are `items`, `top` down a screen `screen_height` tall.
+        /// Keyboard moves (`scroll_reveal`) scroll the highlighted row into
+        /// view.
+        fn level_scroll(
+            &mut self,
+            depth: usize,
+            path: u64,
+            items: &[rmac_app_menu::Item],
+            top: f32,
+            screen_height: f32,
+        ) -> MenuScroll {
+            let previous = self
+                .menu_scroll
+                .get(&depth)
+                .filter(|(key, _)| *key == path)
+                .map_or(0.0, |(_, scroll)| scroll.offset);
+            let mut scroll = MenuScroll::new(app_menu_height(items), top, screen_height, previous);
+            if self.scroll_reveal == Some(depth) {
+                let row = if depth == 0 {
+                    self.selected_item
+                } else {
+                    self.submenu_rows.get(depth - 1).copied().unwrap_or(NO_ITEM)
+                };
+                if let Some((row_top, row_height)) = menu_model::app_menu_row_span(items, row) {
+                    scroll.offset = scroll.reveal(row_top, row_height);
+                }
+            }
+            self.menu_scroll.insert(depth, (path, scroll));
+            scroll
+        }
+
+        /// Scroll the menu level at `depth` by `delta` (positive shows rows
+        /// further down). Whether it moved.
+        fn scroll_menu(&mut self, depth: usize, delta: f32, cx: &mut Context<Self>) -> bool {
+            let Some((_, scroll)) = self.menu_scroll.get_mut(&depth) else {
+                return false;
+            };
+            let next = scroll.scrolled(delta);
+            if next == scroll.offset {
+                return false;
+            }
+            scroll.offset = next;
+            cx.notify();
+            true
+        }
+
+        /// The pointer entered (or left) a scroll arrow: while it rests
+        /// there the menu scrolls on a short timer, as AppKit's does. The
+        /// timer only exists while the pointer is on the arrow and the
+        /// menu can still move.
+        fn hover_scroll_arrow(
+            &mut self,
+            depth: usize,
+            up: bool,
+            hovered: bool,
+            cx: &mut Context<Self>,
+        ) {
+            self.scroll_arrow_generation = self.scroll_arrow_generation.saturating_add(1);
+            if !hovered {
+                return;
+            }
+            let generation = self.scroll_arrow_generation;
+            let step = if up {
+                -menu_model::SCROLL_ARROW_STEP
+            } else {
+                menu_model::SCROLL_ARROW_STEP
+            };
+            cx.spawn(async move |this, cx| loop {
+                cx.background_executor()
+                    .timer(menu_model::SCROLL_ARROW_TICK)
+                    .await;
+                let moved = this
+                    .update(cx, |this, cx| {
+                        this.scroll_arrow_generation == generation
+                            && this.open_menu.is_some()
+                            && this.scroll_menu(depth, step, cx)
+                    })
+                    .unwrap_or(false);
+                if !moved {
+                    break;
+                }
+            })
+            .detach();
+        }
+
+        /// One menu panel's rows. A panel that fits shows them all, padded
+        /// as measured on the Mac; a taller one is cut to the screen and
+        /// its rows scroll between chevron arrows (AppKit's scroll arrows).
+        #[allow(clippy::too_many_arguments)]
+        fn menu_panel_rows(
+            &self,
+            panel: gpui::Stateful<gpui::Div>,
+            items: &[rmac_app_menu::Item],
+            depth: usize,
+            scroll: MenuScroll,
+            menu_index: usize,
+            app_id: &str,
+            focused_window_id: Option<rmac_compositor::WindowId>,
+            palette: &MenuPalette,
+            cx: &Context<Self>,
+        ) -> gpui::Stateful<gpui::Div> {
+            let padding = menu_model::APP_MENU_PADDING - EDGE;
+            if !scroll.scrolls() {
+                return self.menu_rows(
+                    panel.pt(px(padding)).pb(px(padding)),
+                    items,
+                    depth,
+                    menu_index,
+                    app_id,
+                    focused_window_id,
+                    palette,
+                    cx,
+                );
+            }
+            let (view_top, view_height) = scroll.viewport();
+            // Absolute children sit inside the border, so outer-edge
+            // offsets subtract `EDGE`.
+            let rows = div()
+                .id(format!(
+                    "app-menu-rows-{}-{menu_index}-{depth}",
+                    self.display_id
+                ))
+                .absolute()
+                .left_0()
+                .right_0()
+                .top(px(EDGE - scroll.offset - view_top))
+                .pt(px(padding))
+                .pb(px(padding));
+            let rows = self.menu_rows(
+                rows,
+                items,
+                depth,
+                menu_index,
+                app_id,
+                focused_window_id,
+                palette,
+                cx,
+            );
+            let arrow_color = palette.text;
+            let arrow = |up: bool| {
+                div()
+                    .id(format!(
+                        "app-menu-scroll-{}-{menu_index}-{depth}-{}",
+                        self.display_id,
+                        if up { "up" } else { "down" }
+                    ))
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .h(px(menu_model::SCROLL_ARROW_HEIGHT - EDGE))
+                    .when(up, |arrow| arrow.top_0())
+                    .when(!up, |arrow| arrow.bottom_0())
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                        this.hover_scroll_arrow(depth, up, *hovered, cx);
+                    }))
+                    .child(
+                        svg()
+                            .w(px(menu_model::MENU_ICON_BOX))
+                            .h(px(menu_model::MENU_ICON_BOX))
+                            .path(menu_icon_path(if up {
+                                "chevron-up"
+                            } else {
+                                "chevron-down"
+                            }))
+                            .text_color(rgba(arrow_color)),
+                    )
+            };
+            panel
+                .h(px(scroll.visible))
+                .overflow_hidden()
+                .on_scroll_wheel(
+                    cx.listener(move |this, event: &ScrollWheelEvent, window, cx| {
+                        let delta = event.delta.pixel_delta(window.line_height()).y;
+                        this.scroll_menu(depth, -f32::from(delta), cx);
+                        cx.stop_propagation();
+                    }),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .top(px(view_top - EDGE))
+                        .h(px(view_height))
+                        .overflow_hidden()
+                        .child(rows),
+                )
+                .when(scroll.top_arrow(), |panel| panel.child(arrow(true)))
+                .when(scroll.bottom_arrow(), |panel| panel.child(arrow(false)))
         }
 
         /// The rows of one menu panel at `depth` (0 = the menu under its
@@ -2930,6 +3233,7 @@ mod linux_wayland {
                         menu_model::next_enabled_row(&items, from, event.keystroke.key == "down")
                     {
                         self.set_row(depth, next);
+                        self.scroll_reveal = Some(depth);
                     }
                     self.recent_submenu_open = false;
                     self.hover_generation = self.hover_generation.saturating_add(1);
@@ -2968,6 +3272,7 @@ mod linux_wayland {
                     self.open_menu = Some(next);
                     self.selected_item = NO_ITEM;
                     self.submenu_rows.clear();
+                    self.reset_menu_scroll();
                     self.help_query.clear();
                     self.recent_submenu_open = false;
                     if let Some(mode) = self.keyboard.as_mut() {
@@ -3167,6 +3472,7 @@ mod linux_wayland {
                 self.confirmation_started_at = None;
                 self.selected_item = NO_ITEM;
                 self.submenu_rows.clear();
+                self.reset_menu_scroll();
                 self.hover_generation = self.hover_generation.saturating_add(1);
                 self.menu_window = None;
                 self.help_query.clear();
@@ -3393,10 +3699,11 @@ mod linux_wayland {
                     .map(|menu| menu_panel_width(menu, window))
             };
             let screen_width = f32::from(window.bounds().size.width);
-            let screen_height = window
-                .display(cx)
-                .map(|display| f32::from(display.bounds().size.height))
-                .unwrap_or_else(|| f32::from(window.bounds().size.height));
+            // The bar's own surface: menus can only draw inside it. It is
+            // sized to the display's logical height (GPUI reads that from
+            // xdg-output, so fractional scales get the real height), and a
+            // menu taller than the room left scrolls instead of being cut.
+            let screen_height = f32::from(window.bounds().size.height);
             // A confirmation is a floating panel centred on screen, not a
             // dropdown anchored under the logo menu, as on the Mac.
             let menu_left = if let Some(confirmation) = &confirmation {
@@ -3418,10 +3725,28 @@ mod linux_wayland {
             let panel_top = if let Some(confirmation) = &confirmation {
                 ((screen_height - confirmation.height) / 2.0)
                     .max(menu_top)
-                    .min(MENU_SURFACE_HEIGHT - confirmation.height - 8.0)
+                    .min(screen_height - confirmation.height - 8.0)
             } else {
                 menu_top
             };
+            // The menu under its title: cut to the screen and scrolled when
+            // taller than the room below the bar. Confirmations never scroll.
+            let main_scroll = match (self.open_menu, &confirmation) {
+                (_, Some(confirmation)) => Some(MenuScroll::new(
+                    confirmation.height,
+                    0.0,
+                    f32::INFINITY,
+                    0.0,
+                )),
+                (Some(index), None) => menus.get(index).map(|menu| {
+                    self.level_scroll(0, index as u64, &menu.items, menu_top, screen_height)
+                }),
+                (None, None) => None,
+            };
+            if main_scroll.is_none() {
+                self.menu_scroll.clear();
+            }
+            let menu_height = main_scroll.map(|scroll| scroll.visible).or(menu_height);
             let recent_submenu_top = self.recent_submenu_open.then(|| {
                 menus
                     .first()
@@ -3450,7 +3775,10 @@ mod linux_wayland {
                     let (mut parent_left, mut parent_width, mut parent_top) =
                         (left, width, menu_top);
                     let mut parent_row = self.selected_item;
-                    for (level, &selected) in self.submenu_rows.iter().enumerate() {
+                    let mut parent_scroll = main_scroll.map_or(0.0, |scroll| scroll.offset);
+                    let mut path = self.open_menu.unwrap_or(0) as u64;
+                    let submenu_rows = self.submenu_rows.clone();
+                    for (level, &selected) in submenu_rows.iter().enumerate() {
                         let Some(parent) = parent_items
                             .get(parent_row)
                             .filter(|item| item.is_submenu())
@@ -3459,34 +3787,51 @@ mod linux_wayland {
                         };
                         let items = parent.children.clone();
                         let sub_width = items_panel_width(&items, window);
-                        let sub_height = app_menu_height(&items);
-                        let row_top = parent_top + app_menu_item_top(&parent_items, parent_row);
+                        path = path
+                            .wrapping_mul(1_000_003)
+                            .wrapping_add(parent_row as u64 + 1);
+                        // A submenu taller than the room under the bar
+                        // opens just below it and scrolls.
+                        let fit =
+                            MenuScroll::new(app_menu_height(&items), menu_top, screen_height, 0.0);
+                        let row_top = parent_top + app_menu_item_top(&parent_items, parent_row)
+                            - parent_scroll;
                         let (sub_left, sub_top) = menu_model::submenu_origin(
                             parent_left,
                             parent_width,
                             row_top,
-                            (sub_width, sub_height),
+                            (sub_width, fit.visible),
                             screen_width,
-                            MENU_SURFACE_HEIGHT - 8.0,
+                            screen_height - menu_model::MENU_SCREEN_MARGIN,
                         );
+                        let sub_top = sub_top.max(menu_top);
+                        let scroll =
+                            self.level_scroll(level + 1, path, &items, sub_top, screen_height);
                         panels.push(SubmenuPanel {
                             depth: level + 1,
                             items: items.clone(),
                             left: sub_left,
                             top: sub_top,
                             width: sub_width,
-                            height: sub_height,
+                            height: scroll.visible,
+                            scroll,
                         });
                         parent_items = items;
                         parent_left = sub_left;
                         parent_width = sub_width;
                         parent_top = sub_top;
                         parent_row = selected;
+                        parent_scroll = scroll.offset;
                     }
                     panels
                 }
                 _ => Vec::new(),
             };
+            // Forget the scroll of levels that closed, and the pending
+            // keyboard reveal now that it has been applied.
+            let open_levels = submenu_panels.len();
+            self.menu_scroll.retain(|depth, _| *depth <= open_levels);
+            self.scroll_reveal = None;
             // The Wi-Fi or Battery menu opens under its own status item.
             let status_panel = self.status_menu.map(|kind| {
                 let rows = self.status_rows(kind);
@@ -3499,7 +3844,7 @@ mod linux_wayland {
                         status_menu_left(slot_left, slot_right, width, screen_width)
                     })
                     .unwrap_or(screen_width - width - BAR_TRAIL);
-                let height = status_menu_height(&rows).min(MENU_SURFACE_HEIGHT - menu_top - 8.0);
+                let height = status_menu_height(&rows).min(screen_height - menu_top - 8.0);
                 (kind, rows, left, width, height)
             });
             let backdrop_panels = if visible {
@@ -3674,17 +4019,18 @@ mod linux_wayland {
                     .top(px(panel_top))
                     .left(px(left))
                     .w(px(width))
-                    .pt(px(menu_model::APP_MENU_PADDING - EDGE))
-                    .pb(px(menu_model::APP_MENU_PADDING - EDGE))
                     .rounded(px(menu_model::APP_MENU_RADIUS))
                     .bg(rgba(tokens::transparent()))
                     .text_size(px(MENU_TEXT_SIZE))
                     .text_color(rgba(palette.text))
                     .border(px(EDGE))
                     .border_color(rgba(palette.edge))
-                    .shadow(menu_shadows(palette.hairline))
+                    .shadow(menu_shadows(palette.hairline, &palette))
                     .occlude();
                 if let Some(action) = self.pending_system_action.clone() {
+                    panel = panel
+                        .pt(px(menu_model::APP_MENU_PADDING - EDGE))
+                        .pb(px(menu_model::APP_MENU_PADDING - EDGE));
                     let confirmation = menu_model::system_confirmation(&action);
                     let display_id = self.display_id;
                     let body_text = if confirmation.countdown {
@@ -3817,12 +4163,23 @@ mod linux_wayland {
                                 .children(buttons),
                         );
                     panel = panel.child(body);
-                    return Some(panel);
+                    return Some(
+                        div()
+                            .id(format!("menu-surfaces-{}-{menu_index}", self.display_id))
+                            .children(menu_shadow_frame(
+                                (left, panel_top, width, menu_height?),
+                                menu_model::APP_MENU_RADIUS,
+                                palette.hairline,
+                                &palette,
+                            ))
+                            .child(panel),
+                    );
                 }
-                let panel = self.menu_rows(
+                let panel = self.menu_panel_rows(
                     panel,
                     &menu.items,
                     0,
+                    main_scroll?,
                     menu_index,
                     &app_id,
                     focused_window_id,
@@ -3831,8 +4188,20 @@ mod linux_wayland {
                 );
                 let mut surfaces = div()
                     .id(format!("menu-surfaces-{}-{menu_index}", self.display_id))
+                    .children(menu_shadow_frame(
+                        (left, panel_top, width, menu_height?),
+                        menu_model::APP_MENU_RADIUS,
+                        palette.hairline,
+                        &palette,
+                    ))
                     .child(panel);
                 for submenu in &submenu_panels {
+                    surfaces = surfaces.children(menu_shadow_frame(
+                        (submenu.left, submenu.top, submenu.width, submenu.height),
+                        menu_model::APP_MENU_RADIUS,
+                        palette.hairline,
+                        &palette,
+                    ));
                     let panel = div()
                         .id(format!(
                             "app-submenu-panel-{}-{menu_index}-{}",
@@ -3843,20 +4212,19 @@ mod linux_wayland {
                         .top(px(submenu.top))
                         .left(px(submenu.left))
                         .w(px(submenu.width))
-                        .pt(px(menu_model::APP_MENU_PADDING - EDGE))
-                        .pb(px(menu_model::APP_MENU_PADDING - EDGE))
                         .rounded(px(menu_model::APP_MENU_RADIUS))
                         .bg(rgba(tokens::transparent()))
                         .text_size(px(MENU_TEXT_SIZE))
                         .text_color(rgba(palette.text))
                         .border(px(EDGE))
                         .border_color(rgba(palette.edge))
-                        .shadow(menu_shadows(palette.hairline))
+                        .shadow(menu_shadows(palette.hairline, &palette))
                         .occlude();
-                    surfaces = surfaces.child(self.menu_rows(
+                    surfaces = surfaces.child(self.menu_panel_rows(
                         panel,
                         &submenu.items,
                         submenu.depth,
+                        submenu.scroll,
                         menu_index,
                         &app_id,
                         focused_window_id,
@@ -3904,7 +4272,7 @@ mod linux_wayland {
                         .text_color(rgba(palette.text))
                         .border(px(EDGE))
                         .border_color(rgba(palette.edge))
-                        .shadow(menu_shadows(palette.hairline))
+                        .shadow(menu_shadows(palette.hairline, &palette))
                         .occlude()
                         .child(
                             div()
@@ -3978,7 +4346,19 @@ mod linux_wayland {
                                 .child("Clear Menu"),
                             );
                     }
-                    surfaces = surfaces.child(submenu);
+                    surfaces = surfaces
+                        .children(menu_shadow_frame(
+                            (
+                                left + width - 4.0,
+                                submenu_top,
+                                RECENT_MENU_WIDTH,
+                                recent_height,
+                            ),
+                            menu_model::APP_MENU_RADIUS,
+                            palette.hairline,
+                            &palette,
+                        ))
+                        .child(submenu);
                 }
                 Some(surfaces)
             });
@@ -4010,7 +4390,7 @@ mod linux_wayland {
                     .text_color(rgba(palette.status_text))
                     .border(px(EDGE))
                     .border_color(rgba(palette.status_edge))
-                    .shadow(menu_shadows(0))
+                    .shadow(menu_shadows(0, &palette))
                     .occlude()
                     // Clicks on headings and separators keep the menu open.
                     .on_click(|_, _, cx| cx.stop_propagation());
@@ -4018,7 +4398,15 @@ mod linux_wayland {
                     let selected = self.status_selected == Some(index);
                     panel = panel.child(self.render_status_row(index, row, selected, &palette, cx));
                 }
-                panel
+                div()
+                    .id(format!("status-menu-surfaces-{}", self.display_id))
+                    .children(menu_shadow_frame(
+                        (left, menu_top, width, height),
+                        menu_model::STATUS_MENU_RADIUS,
+                        0,
+                        &palette,
+                    ))
+                    .child(panel)
             });
 
             let bar = div()

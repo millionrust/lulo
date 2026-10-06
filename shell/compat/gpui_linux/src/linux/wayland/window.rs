@@ -141,6 +141,10 @@ pub struct WaylandWindowState {
     /// keyboard focus change or toplevel configure that says otherwise;
     /// while set, focus arriving is a no-op instead of a second full frame.
     active_presumed: bool,
+    /// rmac: the modifier state this window's GPUI handler last received.
+    /// The compositor repeats the unchanged state with every keyboard
+    /// enter; passing that on made GPUI redraw a newly focused window.
+    delivered_modifiers: (Modifiers, Capslock),
     hovered: bool,
     /// Set while the scene GPUI last drew is not on screen (a lost device,
     /// or a frame the renderer drew but could not present); the next frame
@@ -690,6 +694,7 @@ impl WaylandWindowState {
             handle,
             active: presume_active,
             active_presumed: presume_active,
+            delivered_modifiers: (Modifiers::default(), Capslock::default()),
             hovered: false,
             force_render_after_recovery: false,
             renderer_presented: false,
@@ -868,6 +873,11 @@ impl WaylandWindow {
 /// rmac: whether a keyboard focus event changes what the window shows.
 fn focus_change_needed(active: bool, focus: bool) -> bool {
     active != focus
+}
+
+/// rmac: whether a modifier event tells the window anything new.
+fn modifiers_change_needed(delivered: (Modifiers, Capslock), next: (Modifiers, Capslock)) -> bool {
+    delivered != next
 }
 
 /// rmac: `RMAC_GPUI_PRESUME_ACTIVE=0` keeps new toplevels inactive until
@@ -1720,6 +1730,14 @@ impl WaylandWindowStatePtr {
     }
 
     pub fn handle_input(&self, input: PlatformInput) {
+        if let PlatformInput::ModifiersChanged(event) = &input {
+            let mut state = self.state.borrow_mut();
+            let next = (event.modifiers, event.capslock);
+            if !modifiers_change_needed(state.delivered_modifiers, next) {
+                return;
+            }
+            state.delivered_modifiers = next;
+        }
         super::frame_trace::record("input");
         if self.is_blocked() {
             return;
@@ -2542,10 +2560,26 @@ mod rmac_frame_loop_tests {
     use super::{
         INACTIVE_FRAME_INTERVAL, THROTTLE_RETRY_DELAY, a11y_origin_inset, focus_change_needed,
         force_render_after_draw, frame_loop_parked, geometry_inside_frame, keeps_drawing,
-        may_have_throttled, parse_unpresented_draws,
+        may_have_throttled, modifiers_change_needed, parse_unpresented_draws,
     };
     use gpui::{Tiling, px, size};
     use std::time::Duration;
+
+    #[test]
+    fn repeated_modifier_state_is_not_delivered() {
+        use gpui::{Capslock, Modifiers};
+        let none = (Modifiers::default(), Capslock::default());
+        let shift = (
+            Modifiers {
+                shift: true,
+                ..Modifiers::default()
+            },
+            Capslock::default(),
+        );
+        assert!(!modifiers_change_needed(none, none));
+        assert!(modifiers_change_needed(none, shift));
+        assert!(modifiers_change_needed(shift, none));
+    }
 
     #[test]
     fn unchanged_focus_is_not_a_change() {

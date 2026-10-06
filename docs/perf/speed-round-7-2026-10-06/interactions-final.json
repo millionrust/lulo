@@ -1,0 +1,282 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-06T11:56:33Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 251.37088599149138,
+      "switches": [
+        746.6773249907419,
+        222.6994640659541,
+        251.37088599149138
+      ]
+    },
+    "files-icon-scroll": {
+      "frame_p50_ms": 5.993,
+      "frame_p95_ms": 7.114,
+      "frames": 62,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 12.364
+    },
+    "files-list-scroll": {
+      "frame_p50_ms": 12.464,
+      "frame_p95_ms": 14.977,
+      "frames": 57,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9824561403508771,
+      "worst_frame_ms": 25.672
+    },
+    "files-open-folder": {
+      "error": "Cmd-Down did not open Big (title 'SpeedFixtures \u2014 Files')"
+    },
+    "files-thumbnails": {
+      "frame_p50_ms": 5.095,
+      "frame_p95_ms": 9.818,
+      "frames": 2,
+      "pass": true,
+      "scroll": {
+        "frame_p50_ms": 4.967,
+        "frame_p95_ms": 6.753,
+        "frames": 52,
+        "pass": true,
+        "stalls": 0,
+        "within_16_7ms_share": 1.0,
+        "worst_frame_ms": 8.065
+      },
+      "settled_ms": 48.08,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 9.818
+    },
+    "mail-list-scroll": {
+      "frame_p50_ms": 12.342,
+      "frame_p95_ms": 15.981,
+      "frames": 64,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.953125,
+      "worst_frame_ms": 17.744
+    },
+    "minimise-restore": {
+      "minimise": [
+        198.72881600167602,
+        58.11438092496246,
+        60.86051801685244
+      ],
+      "minimise_ms": 60.86051801685244,
+      "pass": true,
+      "restore": [
+        47.276146011427045,
+        59.96006797067821,
+        58.733431971631944
+      ],
+      "restore_ms": 58.733431971631944
+    },
+    "mission-control-animation": {
+      "frame_p50_ms": 0.744,
+      "frame_p95_ms": 11.667,
+      "frames": 33,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9696969696969697,
+      "worst_frame_ms": 17.482
+    },
+    "notes-list-scroll": {
+      "frame_p50_ms": 6.444,
+      "frame_p95_ms": 10.71,
+      "frames": 70,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9857142857142858,
+      "worst_frame_ms": 19.462
+    },
+    "notes-typing": {
+      "echo_max_ms": 54.947,
+      "echo_p50_ms": 7.227,
+      "echo_p95_ms": 25.435,
+      "frame_p50_ms": 6.713,
+      "frame_p95_ms": 7.887,
+      "frames": 81,
+      "frames_pass": true,
+      "keys": 42,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 15.035
+    },
+    "quick-look": {
+      "open_ms": 24.265,
+      "opens": [
+        28.554,
+        24.265,
+        23.676
+      ],
+      "pass": true
+    },
+    "resize-drag": {
+      "final_size": [
+        699,
+        808
+      ],
+      "frame_p50_ms": 8.831,
+      "frame_p95_ms": 35.395,
+      "frames": 14,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.7857142857142857,
+      "worst_frame_ms": 35.395
+    },
+    "settings-pane-scroll": {
+      "frame_p50_ms": 1.049,
+      "frame_p95_ms": 13.797,
+      "frames": 137,
+      "panes": {
+        "accessibility": {
+          "frame_p50_ms": 0.883,
+          "frame_p95_ms": 14.107,
+          "frames": 46,
+          "pass": true,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 14.944
+        },
+        "keyboard": {
+          "frame_p50_ms": 1.153,
+          "frame_p95_ms": 9.68,
+          "frames": 47,
+          "pass": false,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9787234042553191,
+          "worst_frame_ms": 17.566
+        },
+        "privacy-security": {
+          "frame_p50_ms": 0.769,
+          "frame_p95_ms": 13.797,
+          "frames": 44,
+          "pass": true,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 15.799
+        }
+      },
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9927007299270073,
+      "worst_frame_ms": 17.566
+    },
+    "spotlight-typing": {
+      "echo_p95_ms": 34.97,
+      "pass": false,
+      "results_ms": 29.731,
+      "runs": [
+        {
+          "echo_max_ms": 34.97,
+          "echo_p50_ms": 1.069,
+          "echo_p95_ms": 34.97,
+          "frame_p50_ms": 1.517,
+          "frame_p95_ms": 4.986,
+          "frames": 23,
+          "frames_pass": false,
+          "keys": 10,
+          "pass": false,
+          "results_ms": 29.731,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9565217391304348,
+          "worst_frame_ms": 24.184
+        },
+        {
+          "echo_max_ms": 32.953,
+          "echo_p50_ms": 1.209,
+          "echo_p95_ms": 32.953,
+          "frame_p50_ms": 2.279,
+          "frame_p95_ms": 5.148,
+          "frames": 20,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 29.108,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.932
+        },
+        {
+          "echo_max_ms": 33.629,
+          "echo_p50_ms": 1.12,
+          "echo_p95_ms": 33.629,
+          "frame_p50_ms": 3.154,
+          "frame_p95_ms": 11.254,
+          "frames": 19,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 31.605,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.254
+        }
+      ]
+    },
+    "terminal-scrollback": {
+      "frame_p50_ms": 2.568,
+      "frame_p95_ms": 4.011,
+      "frames": 113,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 7.196
+    },
+    "terminal-typing": {
+      "echo_max_ms": 10.315,
+      "echo_p50_ms": 2.591,
+      "echo_p95_ms": 3.541,
+      "frame_p50_ms": 2.462,
+      "frame_p95_ms": 3.268,
+      "frames": 96,
+      "frames_pass": true,
+      "keys": 47,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 7.01
+    },
+    "text-editor-plain-typing": {
+      "echo_max_ms": 28.545,
+      "echo_p50_ms": 6.553,
+      "echo_p95_ms": 12.648,
+      "frame_p50_ms": 5.281,
+      "frame_p95_ms": 9.301,
+      "frames": 44,
+      "frames_pass": false,
+      "keys": 41,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9772727272727273,
+      "worst_frame_ms": 22.655
+    },
+    "text-editor-rich-typing": {
+      "echo_max_ms": 257.88,
+      "echo_p50_ms": 5.087,
+      "echo_p95_ms": 95.825,
+      "frame_p50_ms": 4.169,
+      "frame_p95_ms": 9.95,
+      "frames": 46,
+      "frames_pass": false,
+      "keys": 43,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9565217391304348,
+      "worst_frame_ms": 42.048
+    }
+  },
+  "panels": {},
+  "profile": "iterate (Settings release)",
+  "repeat": 3,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

@@ -1,0 +1,250 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-06T10:59:44Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 253.21882090065628,
+      "switches": [
+        768.8752070534974,
+        222.33220899943262,
+        253.21882090065628
+      ]
+    },
+    "files-icon-scroll": {
+      "frame_p50_ms": 0.698,
+      "frame_p95_ms": 116.291,
+      "frames": 34,
+      "pass": false,
+      "stalls": 10,
+      "within_16_7ms_share": 0.7058823529411765,
+      "worst_frame_ms": 116.342
+    },
+    "files-list-scroll": {
+      "frame_p50_ms": 12.578,
+      "frame_p95_ms": 16.507,
+      "frames": 55,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9636363636363636,
+      "worst_frame_ms": 31.546
+    },
+    "files-open-folder": {
+      "error": "Cmd-Down did not open Big (title 'SpeedFixtures \u2014 Files')"
+    },
+    "files-thumbnails": {
+      "frame_p50_ms": 10.89,
+      "frame_p95_ms": 36.241,
+      "frames": 2,
+      "pass": false,
+      "scroll": {
+        "frame_p50_ms": 0.873,
+        "frame_p95_ms": 11.236,
+        "frames": 48,
+        "pass": false,
+        "stalls": 0,
+        "within_16_7ms_share": 0.9791666666666666,
+        "worst_frame_ms": 17.452
+      },
+      "settled_ms": 82.612,
+      "stalls": 0,
+      "within_16_7ms_share": 0.5,
+      "worst_frame_ms": 36.241
+    },
+    "minimise-restore": {
+      "minimise": [
+        null,
+        null,
+        null
+      ],
+      "minimise_ms": null,
+      "pass": false,
+      "restore": [
+        null,
+        null,
+        null
+      ],
+      "restore_ms": null
+    },
+    "mission-control-animation": {
+      "frame_p50_ms": 0.783,
+      "frame_p95_ms": 13.011,
+      "frames": 33,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 15.609
+    },
+    "quick-look": {
+      "open_ms": 24.502,
+      "opens": [
+        20.694,
+        24.502,
+        27.666
+      ],
+      "pass": true
+    },
+    "resize-drag": {
+      "final_size": [
+        699,
+        808
+      ],
+      "frame_p50_ms": 13.785,
+      "frame_p95_ms": 32.238,
+      "frames": 13,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.5384615384615384,
+      "worst_frame_ms": 32.238
+    },
+    "settings-pane-scroll": {
+      "frame_p50_ms": 1.86,
+      "frame_p95_ms": 10.107,
+      "frames": 141,
+      "panes": {
+        "accessibility": {
+          "frame_p50_ms": 5.904,
+          "frame_p95_ms": 10.329,
+          "frames": 46,
+          "pass": true,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 14.694
+        },
+        "keyboard": {
+          "frame_p50_ms": 1.138,
+          "frame_p95_ms": 10.16,
+          "frames": 47,
+          "pass": false,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9787234042553191,
+          "worst_frame_ms": 48.822
+        },
+        "privacy-security": {
+          "frame_p50_ms": 0.955,
+          "frame_p95_ms": 5.165,
+          "frames": 48,
+          "pass": true,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 6.835
+        }
+      },
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9929078014184397,
+      "worst_frame_ms": 48.822
+    },
+    "spotlight-typing": {
+      "echo_p95_ms": 33.849,
+      "pass": false,
+      "results_ms": 807.969,
+      "runs": [
+        {
+          "echo_max_ms": 32.324,
+          "echo_p50_ms": 1.096,
+          "echo_p95_ms": 32.324,
+          "frame_p50_ms": 1.441,
+          "frame_p95_ms": 4.044,
+          "frames": 23,
+          "frames_pass": false,
+          "keys": 10,
+          "pass": false,
+          "results_ms": 807.971,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9565217391304348,
+          "worst_frame_ms": 24.307
+        },
+        {
+          "echo_max_ms": 33.699,
+          "echo_p50_ms": 1.145,
+          "echo_p95_ms": 33.699,
+          "frame_p50_ms": 2.217,
+          "frame_p95_ms": 4.968,
+          "frames": 20,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 807.897,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.96
+        },
+        {
+          "echo_max_ms": 33.849,
+          "echo_p50_ms": 1.118,
+          "echo_p95_ms": 33.849,
+          "frame_p50_ms": 2.682,
+          "frame_p95_ms": 11.248,
+          "frames": 19,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 807.969,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.248
+        }
+      ]
+    },
+    "terminal-scrollback": {
+      "frame_p50_ms": 2.542,
+      "frame_p95_ms": 2.991,
+      "frames": 115,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 3.882
+    },
+    "terminal-typing": {
+      "echo_max_ms": 10.752,
+      "echo_p50_ms": 2.525,
+      "echo_p95_ms": 3.688,
+      "frame_p50_ms": 2.448,
+      "frame_p95_ms": 3.603,
+      "frames": 96,
+      "frames_pass": true,
+      "keys": 48,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 7.272
+    },
+    "text-editor-plain-typing": {
+      "echo_max_ms": 29.55,
+      "echo_p50_ms": 6.94,
+      "echo_p95_ms": 13.192,
+      "frame_p50_ms": 5.777,
+      "frame_p95_ms": 9.132,
+      "frames": 44,
+      "frames_pass": false,
+      "keys": 43,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9772727272727273,
+      "worst_frame_ms": 23.532
+    },
+    "text-editor-rich-typing": {
+      "echo_max_ms": 508.075,
+      "echo_p50_ms": 56.841,
+      "echo_p95_ms": 177.368,
+      "frame_p50_ms": 4.605,
+      "frame_p95_ms": 8.833,
+      "frames": 46,
+      "frames_pass": false,
+      "keys": 44,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9565217391304348,
+      "worst_frame_ms": 42.445
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 3,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

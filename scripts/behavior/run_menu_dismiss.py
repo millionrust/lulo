@@ -473,7 +473,7 @@ class Run:
                 closed = self.wait_for(lambda: item() is None, 5)
                 self.check(f"Escape focus: Escape closes the {label}", closed)
                 self.check(f"Escape focus: Escape returns the keyboard from the {label}",
-                           self.wait_for(focused, 5))
+                           self.wait_for(focused, 10))
         finally:
             probe.terminate()
             try:

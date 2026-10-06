@@ -117,8 +117,12 @@ fn backdrop() -> impl IntoElement {
                 .absolute()
                 .top_0()
                 .bottom_0()
-                .left(px(index as f32 * strip))
-                .w(px(strip))
+                // Whole-point edges: strips meeting mid-pixel leave a
+                // visible antialiased seam.
+                .left(px((index as f32 * strip).round()))
+                .w(px(
+                    ((index + 1) as f32 * strip).round() - (index as f32 * strip).round()
+                ))
                 .bg(fade((index as f32 + 0.5) / FEATHER_STRIPS as f32))
         }))
 }

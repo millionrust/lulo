@@ -186,7 +186,6 @@ pub(in crate::controller) fn focus_urgent_row(
 }
 
 pub(in crate::controller) fn focus_allowed_app_row(
-    view: &Entity<Settings>,
     mode_id: &str,
     app_id: &str,
     display_name: &str,
@@ -197,7 +196,7 @@ pub(in crate::controller) fn focus_allowed_app_row(
 ) -> AnyElement {
     let mode_id = mode_id.to_owned();
     let application_id = app_id.to_owned();
-    let control_view = view.clone();
+    let control_view = cx.entity();
     let toggle = Toggle::new(ElementId::from(SharedString::from(format!(
         "focus-allowed-{mode_id}-{app_id}"
     ))))

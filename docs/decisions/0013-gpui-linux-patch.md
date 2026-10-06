@@ -291,8 +291,26 @@ child's children, the inner node is dropped, and focus moves to the proxy.
 Frames without a proxy aren't touched. The proxy handles `Focus` and
 `SetTextSelection` itself, since the dropped node can't receive actions.
 
+### GPU start-up (amended 2026-10-06)
+
+Every GPUI process creates its wgpu context with its first window, and the
+first frame waits for it. Upstream `gpui_wgpu` builds a Vulkan+GL instance,
+which initialises EGL and loads every installed Vulkan driver (lavapipe
+included) before picking an adapter. RMAC_FRAME_TRACE's startup marks put
+that step at about 115 ms of a 160 ms cold first frame on the reference
+laptop (Intel HD 5500); with EGL kept out of the process it took about 63 ms
+(docs/perf/speed-round-1-2026-10-06.md).
+
+`crates/gpui_wgpu` is therefore vendored too, into `shell/compat/gpui_wgpu`,
+the same way: one unmodified import commit (only `Cargo.toml` rewritten from
+Zed's workspace versions, and the unused `benches/` left out), then rmac's
+change on top. `WgpuRenderer::new` first tries a Vulkan-only instance with
+hardware adapters and falls back to upstream's full Vulkan+GL selection only
+when that finds nothing usable, so GL-only and software-only machines still
+get a renderer.
+
 ## Consequences
 
-- A GPUI bump now also means re-importing `gpui_linux` and re-applying the
-  rmac commits (see `git log -- shell/compat/gpui_linux`).
+- A GPUI bump now also means re-importing `gpui_linux` and `gpui_wgpu` and
+  re-applying the rmac commits (see `git log -- shell/compat`).
 - No GPL code is involved: GPUI is Apache-2.0.

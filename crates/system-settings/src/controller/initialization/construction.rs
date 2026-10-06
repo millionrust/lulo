@@ -214,6 +214,8 @@ impl Settings {
             general_cursor: 0,
             native_window_title: "Settings".into(),
             focused_once: false,
+            views: None,
+            rendered_banner: None,
             wifi_error: None,
             wifi_stream_error: None,
             bluetooth_error: None,

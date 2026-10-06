@@ -541,3 +541,14 @@ fn wallpaper_preview_alpha_compositing_does_not_overflow() {
         [20, 30, 40, 255]
     );
 }
+
+#[test]
+fn background_loads_repaint_only_a_pane_that_shows_them() {
+    use super::navigation_state::pane_shows_load;
+    assert!(pane_shows_load("Sound", &["Sound"], false, false));
+    assert!(!pane_shows_load("General", &["Sound"], false, false));
+    assert!(!pane_shows_load("General", &[], false, false));
+    // Subpages and search results show details from many sources.
+    assert!(pane_shows_load("General", &["Sound"], true, false));
+    assert!(pane_shows_load("General", &[], false, true));
+}

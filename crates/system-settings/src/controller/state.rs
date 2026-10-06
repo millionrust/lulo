@@ -184,6 +184,11 @@ pub(super) struct Settings {
     pub(super) general_cursor: usize,
     pub(super) native_window_title: String,
     pub(super) focused_once: bool,
+    /// The sidebar and detail-pane views, made on the first render (SPEED-02).
+    pub(super) views: Option<views::SettingsViews>,
+    /// The window-wide error banner the last frame drew, so a load that
+    /// repaints only when its pane is showing still adds or removes it.
+    pub(super) rendered_banner: Option<SharedString>,
     pub(super) wifi_error: Option<SharedString>,
     pub(super) wifi_stream_error: Option<SharedString>,
     pub(super) bluetooth_error: Option<SharedString>,

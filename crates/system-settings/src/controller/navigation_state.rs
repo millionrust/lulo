@@ -38,8 +38,10 @@ impl Settings {
         // to General just because one rescan raced a device that was still
         // settling (macOS never does this to an open pane either).
         let was_ready = self.hardware_ready;
+        let available_before = self.available_panes();
         self.hardware = hardware;
         self.hardware_ready = true;
+        let mut redirected = false;
         if !was_ready && !self.pane_available(self.current().name.as_ref()) {
             if let Some(position) = category_position(&self.sections, "General") {
                 self.selected = position;
@@ -47,10 +49,36 @@ impl Settings {
                 self.forward.clear();
                 self.pane_history.clear();
                 self.pane_forward.clear();
+                redirected = true;
             }
         }
         self.cancel_storage_scan_if_hidden();
-        cx.notify();
+        if redirected || self.available_panes() != available_before {
+            // The sidebar's rows (and the menu's Show items) changed.
+            cx.notify();
+        } else {
+            self.notify_if_showing(
+                &[
+                    "Displays",
+                    "Keyboard",
+                    "Mouse",
+                    "Trackpad",
+                    "Touchscreen",
+                    "Lock Screen",
+                    "Menu Bar",
+                ],
+                cx,
+            );
+        }
+    }
+
+    /// Which categories the sidebar lists, in order.
+    fn available_panes(&self) -> Vec<bool> {
+        self.sections
+            .iter()
+            .flatten()
+            .map(|category| self.pane_available(category.name.as_ref()))
+            .collect()
     }
 
     pub(super) fn current(&self) -> &Category {
@@ -61,7 +89,46 @@ impl Settings {
     /// showing that data needs a new frame when its stream reports an update.
     pub(super) fn notify_if_current_pane(&self, panes: &[&str], cx: &mut Context<Self>) {
         if panes.contains(&self.current().name.as_ref()) {
-            cx.notify();
+            self.notify_pane(cx);
+        }
+    }
+
+    /// The window's master/detail split for its current width.
+    pub(super) fn layout(&self, window: &Window) -> crate::responsive_layout::SettingsLayout {
+        crate::responsive_layout::responsive_layout(
+            f32::from(window.bounds().size.width),
+            self.compact_sidebar_open,
+        )
+    }
+
+    /// Repaint the detail pane, and the root shell around it (toolbar,
+    /// banner, sheets), but not the sidebar: for data no sidebar row reads.
+    pub(super) fn notify_pane(&self, cx: &mut Context<Self>) {
+        match &self.views {
+            Some(views) => views.pane.update(cx, |_, cx| cx.notify()),
+            None => cx.notify(),
+        }
+    }
+
+    /// Repaint for a background load only when the window can be showing
+    /// what it loaded: one of `panes` is open, or any subpage (they show
+    /// details of many sources), or a search; or the window-wide error
+    /// banner has to appear, change or go. Only the pane repaints (the
+    /// sidebar reads no loaded data). A hidden pane reads the latest values
+    /// when it is opened, since navigation repaints the whole window. At
+    /// launch this keeps a dozen snapshot loads landing over ~350 ms from
+    /// repainting the whole window for General (SPEED-02).
+    pub(super) fn notify_if_showing(&self, panes: &[&str], cx: &mut Context<Self>) {
+        if self.views.is_none()
+            || pane_shows_load(
+                self.current().name.as_ref(),
+                panes,
+                !self.nav.is_empty(),
+                !self.search.read(cx).value().trim().is_empty(),
+            )
+            || self.global_settings_error() != self.rendered_banner.as_ref()
+        {
+            self.notify_pane(cx);
         }
     }
 
@@ -457,4 +524,15 @@ impl Settings {
         cx.notify();
         true
     }
+}
+
+/// Whether a background load for `panes` can change what the detail pane
+/// shows: one of them is the open pane, or a subpage or a search is showing.
+pub(super) fn pane_shows_load(
+    current: &str,
+    panes: &[&str],
+    subpage: bool,
+    searching: bool,
+) -> bool {
+    subpage || searching || panes.contains(&current)
 }

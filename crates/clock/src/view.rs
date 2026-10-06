@@ -733,7 +733,7 @@ impl ClockView {
                 .items_center()
                 .justify_center()
                 .text_size(px(m::TAB_LABEL_SIZE))
-                .text_color(mac::text())
+                .text_color(rgb(m::TEXT_PRIMARY))
                 .child(*label)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.set_tab(tab, cx)))
         });
@@ -764,7 +764,7 @@ impl ClockView {
                     svg()
                         .path("icons/clock/plus.svg")
                         .size(px(m::ADD_GLYPH))
-                        .text_color(mac::text()),
+                        .text_color(rgb(m::TEXT_PRIMARY)),
                 )
                 .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.new_item(window, cx)))
         });
@@ -857,6 +857,11 @@ impl ClockView {
         let utc = (now / 1000) as i64;
         let local_offset = self.zone.offset_at(utc);
         let local_days = WallTime::at(utc, local_offset).days;
+        // UIA-11: the same subsolar point the map's own day/night shading
+        // uses (`ensure_map` above), so each card's analogue face can match
+        // the Mac's -- black at night, white in daylight -- instead of
+        // always white.
+        let sun = solar::subsolar(utc as f64);
         let cities = self.cities();
         let mut pins = Vec::new();
         let mut cards = Vec::new();
@@ -881,7 +886,10 @@ impl ClockView {
                 Daylight::PolarDay | Daylight::PolarNight => (None, None),
             };
             let lines = [
-                (format!("{}, {time}", city.name), mac::text()),
+                (
+                    format!("{}, {time}", city.name),
+                    rgb(m::TEXT_PRIMARY).into(),
+                ),
                 (
                     format!(
                         "{}, {}",
@@ -909,6 +917,7 @@ impl ClockView {
                         m::FACE_TOP + m::FACE_DIAMETER / 2.0,
                         m::FACE_DIAMETER,
                         wall,
+                        sun.is_day(city.latitude, city.longitude),
                     ))
                     .children(lines.into_iter().enumerate().map(|(line, (text, color))| {
                         div()
@@ -940,7 +949,7 @@ impl ClockView {
                             .items_center()
                             .justify_center()
                             .text_size(px(12.0))
-                            .text_color(mac::text())
+                            .text_color(rgb(m::TEXT_PRIMARY))
                             .child("×")
                             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                 this.change(Change::RemoveCity(name.clone()), cx);
@@ -1088,7 +1097,7 @@ impl ClockView {
                 ));
             }
             let color: Hsla = if enabled {
-                mac::text()
+                rgb(m::TEXT_PRIMARY).into()
             } else {
                 rgb(0x8A8A8A).into()
             };
@@ -1380,7 +1389,7 @@ impl ClockView {
         // or here, so the old per-row `top` offset left nothing to scroll.
         let rows = watch.rows(now).into_iter().map(|row| {
             let color: Hsla = match row.mark {
-                LapMark::Plain => mac::text(),
+                LapMark::Plain => rgb(m::TEXT_PRIMARY).into(),
                 LapMark::Fastest => rgb(m::LAP_FASTEST).into(),
                 LapMark::Slowest => rgb(m::LAP_SLOWEST).into(),
             };
@@ -1579,7 +1588,7 @@ impl ClockView {
                         .text_size(px(m::DIGITS_SIZE))
                         .line_height(px(m::DIGITS_LINE))
                         .font_weight(FontWeight::THIN)
-                        .text_color(mac::text())
+                        .text_color(rgb(m::TEXT_PRIMARY))
                         .children(groups),
                 )
                 .child(button_pair(
@@ -1640,7 +1649,7 @@ impl ClockView {
                                             m::RING_DIGITS_SIZE * diameter / m::RING_DIAMETER
                                         ))
                                         .font_weight(FontWeight::THIN)
-                                        .text_color(mac::text())
+                                        .text_color(rgb(m::TEXT_PRIMARY))
                                         .child(countdown::remaining_text(remaining)),
                                 )
                                 .when_some(end_text, |column, end| {
@@ -1775,7 +1784,7 @@ fn digits(top: f32, text: String) -> impl IntoElement {
         .text_size(px(m::DIGITS_SIZE))
         .line_height(px(m::DIGITS_LINE))
         .font_weight(FontWeight::THIN)
-        .text_color(mac::text())
+        .text_color(rgb(m::TEXT_PRIMARY))
         .child(text)
 }
 
@@ -1800,7 +1809,7 @@ fn capsule(
         .justify_center()
         .text_size(px(m::BUTTON_TEXT_SIZE))
         .text_color(if enabled {
-            mac::text()
+            rgb(m::TEXT_PRIMARY).into()
         } else {
             rgb(m::BUTTON_DISABLED_TEXT).into()
         })
@@ -1858,7 +1867,7 @@ fn pin(name: &'static str, time: &str, x: f32, y: f32) -> impl IntoElement {
                 .text_size(px(m::PIN_NAME_SIZE))
                 .line_height(px(15.0))
                 .font_weight(FontWeight::BOLD)
-                .text_color(mac::text())
+                .text_color(rgb(m::TEXT_PRIMARY))
                 .whitespace_nowrap()
                 .child(name),
         )
@@ -1869,7 +1878,7 @@ fn pin(name: &'static str, time: &str, x: f32, y: f32) -> impl IntoElement {
                 .top(px(10.5))
                 .text_size(px(m::PIN_TIME_SIZE))
                 .line_height(px(12.0))
-                .text_color(mac::text())
+                .text_color(rgb(m::TEXT_PRIMARY))
                 .whitespace_nowrap()
                 .child(time.to_owned()),
         )
@@ -1940,8 +1949,24 @@ fn stopwatch_face(width: f32, elapsed: u64) -> impl IntoElement {
 
 /// An analogue face: white disc, numerals, black hands and the orange
 /// second hand.
-fn clock_face(center_x: f32, center_y: f32, diameter: f32, time: WallTime) -> impl IntoElement {
+/// UIA-11: the Mac's card face is white with black ink by day, and black
+/// with white ink -- numerals and hands -- at night; this used to always
+/// paint a white face with black ink, so every city after dark showed a
+/// daytime face. `is_day` comes from the same `solar::subsolar` point the
+/// map's own shading uses.
+fn clock_face(
+    center_x: f32,
+    center_y: f32,
+    diameter: f32,
+    time: WallTime,
+    is_day: bool,
+) -> impl IntoElement {
     let radius = diameter / 2.0;
+    let (face, ink): (u32, u32) = if is_day {
+        (0xFFFFFF, 0x000000)
+    } else {
+        (0x000000, 0xFFFFFF)
+    };
     let numerals = (1..=12).map(move |hour| {
         let angle = hour as f32 * std::f32::consts::PI / 6.0;
         let distance = radius - 15.0;
@@ -1956,7 +1981,7 @@ fn clock_face(center_x: f32, center_y: f32, diameter: f32, time: WallTime) -> im
             .text_size(px(m::NUMERAL_SIZE))
             .line_height(px(16.0))
             .font_weight(FontWeight::MEDIUM)
-            .text_color(rgb(0x000000))
+            .text_color(rgb(ink))
             .child(hour.to_string())
     });
     let (hour, minute, second) = format::hand_angles(time);
@@ -1972,7 +1997,7 @@ fn clock_face(center_x: f32, center_y: f32, diameter: f32, time: WallTime) -> im
                 .top(px(center_y - radius))
                 .size(px(diameter))
                 .rounded_full()
-                .bg(rgb(0xFFFFFF)),
+                .bg(rgb(face)),
         )
         .children(numerals)
         .child(
@@ -1999,10 +2024,10 @@ fn clock_face(center_x: f32, center_y: f32, diameter: f32, time: WallTime) -> im
                             window.paint_path(path, color);
                         }
                     };
-                    let black: Hsla = rgb(0x000000).into();
+                    let ink: Hsla = rgb(ink).into();
                     let orange: Hsla = rgb(m::SECOND_HAND).into();
-                    hand(hour, radius * 0.5, 0.0, 3.0, black, window);
-                    hand(minute, radius * 0.8, 0.0, 2.5, black, window);
+                    hand(hour, radius * 0.5, 0.0, 3.0, ink, window);
+                    hand(minute, radius * 0.8, 0.0, 2.5, ink, window);
                     if SHOW_SECOND_HAND {
                         hand(second, radius * 0.88, 12.0, 1.0, orange, window);
                     }
@@ -2019,7 +2044,7 @@ fn clock_face(center_x: f32, center_y: f32, diameter: f32, time: WallTime) -> im
                     }
                     dot.close();
                     if let Ok(dot) = dot.build() {
-                        window.paint_path(dot, if SHOW_SECOND_HAND { orange } else { black });
+                        window.paint_path(dot, if SHOW_SECOND_HAND { orange } else { ink });
                     }
                 },
             )

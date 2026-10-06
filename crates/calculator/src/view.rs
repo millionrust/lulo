@@ -1474,12 +1474,14 @@ fn blend(base: u32, overlay: u32) -> u32 {
     channel(16) | channel(8) | channel(0)
 }
 
+/// UIA-12: the Mac's Calculator stays dark -- dark keys, orange operators
+/// -- in both appearances (confirmed against the Mac captures: `keypad::LIGHT`
+/// was speculative, "not yet measured from a light-mode capture" per its own
+/// doc comment, and following the system's Light appearance here was the
+/// bug). `keypad::DARK` is Calculator's one true palette now; `LIGHT` stays
+/// for its own `operator_key` parity test.
 fn palette() -> Palette {
-    if mac::window().l > 0.5 {
-        keypad::LIGHT
-    } else {
-        keypad::DARK
-    }
+    keypad::DARK
 }
 
 impl Render for CalculatorView {

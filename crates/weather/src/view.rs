@@ -1267,7 +1267,13 @@ impl Render for WeatherView {
                     .role(Role::Button)
                     .aria_label("Sidebar")
                     .absolute()
-                    .left(px(78.0))
+                    // UIA-15: the Mac's toggle straddles the sidebar's own
+                    // right edge (AX: local x 236-280 of a ~250 pt sidebar,
+                    // clear of the traffic lights at local x 18-54), not a
+                    // toolbar slot next to them -- 78 px landed on top of
+                    // the green zoom button (local x 28-54 by
+                    // `TRAFFIC_LIGHT_CENTER`/`traffic_light_hit_width`).
+                    .left(px(m::SIDEBAR_WIDTH - 16.0))
                     .top(px(10.0))
                     .size(px(32.0))
                     .rounded(px(mac::radius_menu_item()))

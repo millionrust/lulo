@@ -347,34 +347,283 @@ impl EditorView {
     /// paragraphs.
     pub(super) fn render_lists_dialog(&self, cx: &mut Context<Self>) -> AnyElement {
         let list = self.paragraph_style(cx).list;
-        sheet_card("lists-sheet", 260.0, 190.0)
+        // None, then every NSTextList marker (design-lab/
+        // text-editor-format-sheets.html).
+        let choices = std::iter::once(None).chain(rich::ListKind::ALL.into_iter().map(Some));
+        let mut grid = div()
+            .id("list-markers")
+            .role(Role::RadioGroup)
+            .aria_label("Bullet")
+            .flex()
+            .flex_wrap()
+            .gap(px(4.0));
+        for (index, choice) in choices.enumerate() {
+            let selected = list == choice;
+            let (label, accessible): (SharedString, SharedString) = match choice {
+                None => ("None".into(), "None".into()),
+                Some(kind) => (
+                    kind.marker(1).into(),
+                    super::super::format_extras::list_marker_name(kind).into(),
+                ),
+            };
+            grid = grid.child(
+                div()
+                    .id(("list-marker", index))
+                    .role(Role::RadioButton)
+                    .aria_label(accessible)
+                    .aria_selected(selected)
+                    .w(px(42.0))
+                    .h(px(26.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(mac::radius_control()))
+                    .bg(if selected {
+                        mac::accent()
+                    } else {
+                        mac::control_fill()
+                    })
+                    .text_color(if selected { mac::white() } else { mac::text() })
+                    .hover(|row| row.opacity(0.85))
+                    .child(label)
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_list(choice, cx))),
+            );
+        }
+        sheet_card("lists-sheet", 320.0, 250.0)
             .child(sheet_title("List"))
-            .child(radio_row(
-                "list-none",
-                "None",
-                list.is_none(),
-                |this, _, cx| this.set_list(None, cx),
-                cx,
-            ))
-            .child(radio_row(
-                "list-bullets",
-                "• Bullets",
-                list == Some(rich::ListKind::Bullet),
-                |this, _, cx| this.set_list(Some(rich::ListKind::Bullet), cx),
-                cx,
-            ))
-            .child(radio_row(
-                "list-numbers",
-                "1. 2. 3. Numbers",
-                list == Some(rich::ListKind::Numbered),
-                |this, _, cx| this.set_list(Some(rich::ListKind::Numbered), cx),
-                cx,
-            ))
+            .child(div().text_color(mac::text_secondary()).child("Bullet:"))
+            .child(grid)
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child("Press Tab at the start of an item to nest it, ⇧Tab to bring it out."),
+            )
             .child(
                 div().mt_auto().flex().justify_end().child(
                     rmac_ui::dialog_button("lists-done", "Done", DialogButtonKind::Primary)
                         .on_click(cx.listener(|this, _, window, cx| this.close_lists(window, cx))),
                 ),
+            )
+            .into_any_element()
+    }
+
+    /// File ▸ Show Properties (⌥⌘P): TextEdit's seven document properties
+    /// (design-lab/text-editor-format-sheets.html). OK keeps them in the
+    /// document (saved with rich text); Cancel and Esc leave it unchanged.
+    pub(super) fn render_properties_dialog(&self, cx: &mut Context<Self>) -> AnyElement {
+        let mut card = sheet_card("properties-sheet", 420.0, 330.0)
+            .gap(px(8.0))
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                match event.keystroke.key.as_str() {
+                    "escape" => {
+                        cx.stop_propagation();
+                        this.close_properties(window, cx);
+                    }
+                    "enter" => {
+                        cx.stop_propagation();
+                        this.commit_properties(window, cx);
+                    }
+                    _ => {}
+                }
+            }))
+            .child(sheet_title("Document Properties"));
+        for (index, (label, input)) in super::super::format_extras::PROPERTY_FIELDS
+            .iter()
+            .zip(&self.property_inputs)
+            .enumerate()
+        {
+            card = card.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(10.0))
+                    .child(
+                        div()
+                            .w(px(96.0))
+                            .flex()
+                            .justify_end()
+                            .text_color(mac::text_secondary())
+                            .child(*label),
+                    )
+                    .child(
+                        div()
+                            .id(("property-field", index))
+                            .flex_1()
+                            .role(Role::TextInput)
+                            .aria_label(label.trim_end_matches(':'))
+                            .accessible_text_input(input, cx)
+                            .child(TextField::new(input)),
+                    ),
+            );
+        }
+        card.child(
+            div()
+                .mt_auto()
+                .flex()
+                .justify_end()
+                .gap(px(8.0))
+                .child(
+                    rmac_ui::dialog_button("properties-cancel", "Cancel", DialogButtonKind::Normal)
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.close_properties(window, cx)),
+                        ),
+                )
+                .child(
+                    rmac_ui::dialog_button("properties-ok", "OK", DialogButtonKind::Primary)
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.commit_properties(window, cx)),
+                        ),
+                ),
+        )
+        .into_any_element()
+    }
+
+    /// Format ▸ Font ▸ Styles…: the document's styles one at a time, each
+    /// previewed in itself; Apply gives it to the selection.
+    pub(super) fn render_styles_dialog(&self, cx: &mut Context<Self>) -> AnyElement {
+        let styles = self.document_styles(cx);
+        let count = styles.len();
+        let index = self.styles_index.min(count.saturating_sub(1));
+        let preview = styles.get(index).map(|(style, ruler)| {
+            let description = super::super::format_extras::style_description(style, ruler);
+            let mut sample = div()
+                .id("styles-preview-text")
+                .role(Role::Label)
+                .aria_label(description.clone())
+                .text_size(px(style.size.clamp(9.0, 28.0)))
+                .text_color(
+                    style
+                        .color
+                        .map_or(mac::text(), |color| gpui::rgb(color.to_u32()).into()),
+                );
+            if let Some(family) = &style.family {
+                sample = sample.font_family(SharedString::from(family.to_string()));
+            }
+            if style.bold {
+                sample = sample.font_weight(mac::BOLD);
+            }
+            if style.italic {
+                sample = sample.italic();
+            }
+            if style.underline {
+                sample = sample.underline();
+            }
+            if style.strikethrough {
+                sample = sample.line_through();
+            }
+            if let Some(highlight) = style.highlight {
+                sample = sample.bg(gpui::Hsla::from(gpui::rgb(highlight.to_u32())));
+            }
+            sample.child(description)
+        });
+        sheet_card("styles-sheet", 380.0, 220.0)
+            .child(sheet_title("Styles"))
+            .child(
+                div()
+                    .text_color(mac::text_secondary())
+                    .child("Document styles"),
+            )
+            .child(
+                div()
+                    .id("styles-preview")
+                    .h(px(64.0))
+                    .p(px(8.0))
+                    .flex()
+                    .items_center()
+                    .overflow_hidden()
+                    .rounded(px(mac::radius_control()))
+                    .bg(mac::field_fill())
+                    .children(preview),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        Button::new("styles-previous", "‹")
+                            .small()
+                            .tooltip("Previous Style")
+                            .on_click(cx.listener(|this, _, _, cx| this.step_style(false, cx))),
+                    )
+                    .child(
+                        div()
+                            .text_color(mac::text_secondary())
+                            .child(format!("{} of {count}", index + 1)),
+                    )
+                    .child(
+                        Button::new("styles-next", "›")
+                            .small()
+                            .tooltip("Next Style")
+                            .on_click(cx.listener(|this, _, _, cx| this.step_style(true, cx))),
+                    ),
+            )
+            .child(
+                div()
+                    .mt_auto()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button("styles-apply", "Apply", DialogButtonKind::Normal)
+                            .on_click(cx.listener(|this, _, _, cx| this.apply_document_style(cx))),
+                    )
+                    .child(
+                        rmac_ui::dialog_button("styles-done", "Done", DialogButtonKind::Primary)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.close_styles(window, cx)),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// Edit ▸ Link… (⌘K): the selection's link destination; Remove Link
+    /// takes the link off, keeping the text.
+    pub(super) fn render_link_dialog(&self, cx: &mut Context<Self>) -> AnyElement {
+        sheet_card("link-sheet", 380.0, 150.0)
+            .child(sheet_title("Link"))
+            .child(
+                div()
+                    .id("link-destination")
+                    .role(Role::TextInput)
+                    .aria_label("Link destination")
+                    .accessible_text_input(&self.link_input, cx)
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        if event.keystroke.key == "escape" {
+                            cx.stop_propagation();
+                            this.close_link(window, cx);
+                        }
+                    }))
+                    .child(TextField::new(&self.link_input)),
+            )
+            .child(
+                div()
+                    .mt_auto()
+                    .flex()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "link-remove",
+                            "Remove Link",
+                            DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| this.remove_link(window, cx))),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        rmac_ui::dialog_button("link-cancel", "Cancel", DialogButtonKind::Normal)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.close_link(window, cx)),
+                            ),
+                    )
+                    .child(
+                        rmac_ui::dialog_button("link-ok", "OK", DialogButtonKind::Primary)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.commit_link(window, cx)),
+                            ),
+                    ),
             )
             .into_any_element()
     }

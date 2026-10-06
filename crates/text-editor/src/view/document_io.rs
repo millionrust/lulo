@@ -269,10 +269,12 @@ pub(super) fn print_lines(document: &rich::Document) -> Vec<rmac_print::RichLine
             highlight: run.highlight.map(|color| (color.r, color.g, color.b)),
         };
         if let Some(kind) = style.list {
-            let marker = match kind {
-                rich::ListKind::Bullet => "\u{2022}\t".to_owned(),
-                rich::ListKind::Numbered => format!("{}.\t", numbers[index]),
-            };
+            // Nested items sit one tab further in per level.
+            let marker = format!(
+                "{}{}\t",
+                "\t".repeat(usize::from(style.list_level)),
+                kind.marker(numbers[index].max(1))
+            );
             let mut marker_span = span(&marker, paragraph.style_of_char_at(0));
             marker_span.underline = false;
             marker_span.strikethrough = false;

@@ -2,26 +2,41 @@
 //!
 //! GPUI's `TextRun` carries no font size, so a paragraph that mixes sizes
 //! cannot be shaped as one wrapped line. Each paragraph is cut into atoms of
-//! one size (tabs are their own atoms), each atom is shaped once unwrapped
-//! to learn where every glyph falls, and lines are broken over those
-//! positions. Each line is then painted as one shaped piece per atom it
-//! holds, all on a common baseline. Caret and hit-testing math uses the
-//! same glyph positions, so what is painted and what is clicked agree.
+//! one size, baseline shift, outline and kerning (tabs are their own
+//! atoms), each atom is shaped once unwrapped to learn where every glyph
+//! falls, and lines are broken over those positions. Each line is then
+//! painted as one shaped piece per atom it holds, all on a common baseline
+//! (raised or lowered pieces sit above or below it). Caret and hit-testing
+//! math uses the same glyph positions, so what is painted and what is
+//! clicked agree.
+//!
+//! Kern ▸ Tighten / Loosen adds space after every character: such an atom
+//! is painted one character per piece, each at its spaced position. Kern ▸
+//! Use None, Ligatures and Character Shape are OpenType features of the run's
+//! font. Outline is the glyphs drawn in the text colour around a fill of the
+//! paper colour.
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use gpui::{
-    font, px, Font, Hsla, Pixels, ShapedLine, SharedString, StrikethroughStyle, TextRun,
-    UnderlineStyle, Window,
+    font, px, Font, FontFeatures, Hsla, Pixels, ShapedLine, SharedString, StrikethroughStyle,
+    TextRun, UnderlineStyle, Window,
 };
 
-use super::model::{Alignment, CharStyle, ListKind, Paragraph, Rgb};
+use super::model::{Alignment, CharStyle, Ligatures, Paragraph, Rgb};
 
 /// TextEdit's default tab stops: every 28 points.
 const TAB_INTERVAL: f32 = 28.0;
-/// A list item's text starts 36 points in, its marker 11 points in.
+/// A list item's text starts 36 points in per level, its marker 11 points
+/// in from its level's start.
 const LIST_INDENT: f32 = 36.0;
 const LIST_MARKER_X: f32 = 11.0;
+/// Allow Hyphenation: the shortest word split, and the shortest piece on
+/// either side of the hyphen.
+const HYPHEN_MIN_WORD: usize = 6;
+const HYPHEN_MIN_HEAD: usize = 2;
+const HYPHEN_MIN_TAIL: usize = 3;
 
 /// What a paragraph's layout depends on besides its own content.
 #[derive(Clone, Debug, PartialEq)]
@@ -32,10 +47,16 @@ pub(crate) struct LayoutParams {
     pub zoom: f32,
     /// Colour of text with no colour of its own.
     pub default_color: Hsla,
+    /// The paper behind the text (an outline's fill).
+    pub paper_color: Hsla,
+    /// Linked text's colour.
+    pub link_color: Hsla,
     /// Face for text with no family of its own (TextEdit's Helvetica).
     pub default_family: SharedString,
     /// Face standing in for the Mac's monospaced families.
     pub mono_family: SharedString,
+    /// Format ▸ Allow Hyphenation.
+    pub hyphenation: bool,
 }
 
 pub(crate) fn hsla(color: Rgb) -> Hsla {
@@ -71,6 +92,27 @@ fn family_for(style: &CharStyle, params: &LayoutParams) -> SharedString {
     }
 }
 
+/// The OpenType features Kern ▸ Use None, Ligatures and Character Shape
+/// ask for; empty for ordinary text.
+fn features_for(style: &CharStyle) -> Vec<(String, u32)> {
+    let mut features = Vec::new();
+    if style.kern == Some(0.0) {
+        features.push(("kern".to_owned(), 0));
+    }
+    match style.ligatures {
+        Ligatures::Default => {}
+        Ligatures::None => {
+            features.push(("liga".to_owned(), 0));
+            features.push(("clig".to_owned(), 0));
+        }
+        Ligatures::All => features.push(("dlig".to_owned(), 1)),
+    }
+    if style.traditional {
+        features.push(("trad".to_owned(), 1));
+    }
+    features
+}
+
 pub(crate) fn font_for(style: &CharStyle, params: &LayoutParams) -> Font {
     let mut face = font(family_for(style, params));
     if style.bold {
@@ -79,17 +121,26 @@ pub(crate) fn font_for(style: &CharStyle, params: &LayoutParams) -> Font {
     if style.italic {
         face = face.italic();
     }
+    let features = features_for(style);
+    if !features.is_empty() {
+        face.features = FontFeatures(Arc::new(features));
+    }
     face
 }
 
 pub(crate) fn text_run(style: &CharStyle, len: usize, params: &LayoutParams) -> TextRun {
     let thickness = px((params.zoom * style.size / 12.0).clamp(1.0, 4.0));
+    let color = if style.link.is_some() && style.color.is_none() {
+        params.link_color
+    } else {
+        style.color.map(hsla).unwrap_or(params.default_color)
+    };
     TextRun {
         len,
         font: font_for(style, params),
-        color: style.color.map(hsla).unwrap_or(params.default_color),
+        color,
         background_color: style.highlight.map(hsla),
-        underline: style.underline.then_some(UnderlineStyle {
+        underline: (style.underline || style.link.is_some()).then_some(UnderlineStyle {
             thickness,
             color: None,
             wavy: false,
@@ -101,14 +152,47 @@ pub(crate) fn text_run(style: &CharStyle, len: usize, params: &LayoutParams) -> 
     }
 }
 
+/// The run an outline is filled with: the same glyphs in the paper colour.
+fn fill_run(style: &CharStyle, len: usize, params: &LayoutParams) -> TextRun {
+    TextRun {
+        len,
+        font: font_for(style, params),
+        color: params.paper_color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    }
+}
+
 fn size_px(style: &CharStyle, params: &LayoutParams) -> Pixels {
     px(style.size * params.zoom)
+}
+
+/// Whether two styles can share one shaped atom.
+fn same_atom(left: &CharStyle, right: &CharStyle) -> bool {
+    left.size == right.size
+        && left.baseline_shift() == right.baseline_shift()
+        && left.outline == right.outline
+        && left.kern == right.kern
+}
+
+/// Kern ▸ Tighten / Loosen's extra space after each character.
+fn tracking(style: &CharStyle, params: &LayoutParams) -> Pixels {
+    match style.kern {
+        Some(kern) if kern != 0.0 => px(kern * params.zoom),
+        _ => px(0.0),
+    }
 }
 
 /// One shaped stretch of a line, in one size.
 pub(crate) struct Piece {
     pub x: Pixels,
+    /// How far the piece sits above the line's baseline (negative: below).
+    pub rise: Pixels,
     pub line: ShapedLine,
+    /// Outline: the same glyphs in the paper colour, painted over the text
+    /// colour drawn around them.
+    pub fill: Option<ShapedLine>,
 }
 
 pub(crate) struct LineBox {
@@ -181,10 +265,10 @@ fn atoms(paragraph: &Paragraph) -> Vec<Atom> {
                 style_ranges,
             }) = atoms.last_mut()
             {
-                let same_size = style_ranges
+                let joins = style_ranges
                     .last()
-                    .is_some_and(|(_, last_style)| last_style.size == style.size);
-                if same_size && last.end == sub.start {
+                    .is_some_and(|(_, last_style)| same_atom(last_style, style));
+                if joins && last.end == sub.start {
                     last.end = sub.end;
                     style_ranges.push((sub, style.clone()));
                     return;
@@ -216,13 +300,18 @@ fn atoms(paragraph: &Paragraph) -> Vec<Atom> {
     atoms
 }
 
-fn runs_for(paragraph: &Paragraph, range: &Range<usize>, params: &LayoutParams) -> Vec<TextRun> {
+fn runs_for(
+    paragraph: &Paragraph,
+    range: &Range<usize>,
+    params: &LayoutParams,
+    run: fn(&CharStyle, usize, &LayoutParams) -> TextRun,
+) -> Vec<TextRun> {
     paragraph
         .styled_ranges()
         .filter_map(|(run_range, style)| {
             let start = run_range.start.max(range.start);
             let end = run_range.end.min(range.end);
-            (start < end).then(|| text_run(style, end - start, params))
+            (start < end).then(|| run(style, end - start, params))
         })
         .collect()
 }
@@ -242,6 +331,57 @@ fn is_forced_break(character: char) -> bool {
     matches!(character, '\u{2028}' | '\u{000C}')
 }
 
+fn is_vowel(character: char) -> bool {
+    matches!(
+        character.to_ascii_lowercase(),
+        'a' | 'e' | 'i' | 'o' | 'u' | 'y'
+    )
+}
+
+/// Pairs of consonants a hyphen never separates.
+const DIGRAPHS: &[&str] = &[
+    "ch", "sh", "th", "ph", "wh", "ck", "ng", "qu", "gh", "kn", "wr",
+];
+
+/// Where Allow Hyphenation may split `word` (byte offsets inside it): the
+/// syllable rule (a consonant between two vowels starts the next syllable;
+/// two consonants between vowels split between them), never inside a
+/// digraph and never leaving fewer than two letters before the hyphen or
+/// three after it. Words with anything but letters are never split.
+pub(crate) fn hyphenation_points(word: &str) -> Vec<usize> {
+    let letters: Vec<(usize, char)> = word.char_indices().collect();
+    if letters.len() < HYPHEN_MIN_WORD || !letters.iter().all(|(_, c)| c.is_alphabetic()) {
+        return Vec::new();
+    }
+    let lower: Vec<char> = letters
+        .iter()
+        .map(|(_, c)| c.to_lowercase().next().unwrap_or(*c))
+        .collect();
+    let mut points = Vec::new();
+    for split in HYPHEN_MIN_HEAD..=letters.len() - HYPHEN_MIN_TAIL {
+        let before = lower[split - 1];
+        let after = lower[split];
+        let pair: String = [before, after].iter().collect();
+        if DIGRAPHS.contains(&pair.as_str()) {
+            continue;
+        }
+        let next = lower.get(split + 1).copied();
+        let previous = split.checked_sub(2).map(|index| lower[index]);
+        // V|CV: a single consonant between vowels goes with the next one.
+        let vowel_consonant_vowel =
+            is_vowel(before) && !is_vowel(after) && next.is_some_and(is_vowel);
+        // VC|CV: two consonants between vowels split between them.
+        let consonant_pair = !is_vowel(before)
+            && !is_vowel(after)
+            && previous.is_some_and(is_vowel)
+            && next.is_some_and(is_vowel);
+        if vowel_consonant_vowel || consonant_pair {
+            points.push(letters[split].0);
+        }
+    }
+    points
+}
+
 pub(crate) fn layout_paragraph(
     paragraph: &Paragraph,
     list_number: u32,
@@ -251,8 +391,9 @@ pub(crate) fn layout_paragraph(
     let text = paragraph.text();
     let style = paragraph.style();
     let zoom = params.zoom;
+    let level = f32::from(style.list_level);
     let indent = if style.list.is_some() {
-        px(LIST_INDENT * zoom)
+        px(LIST_INDENT * (level + 1.0) * zoom)
     } else {
         px(0.0)
     };
@@ -270,18 +411,25 @@ pub(crate) fn layout_paragraph(
                 range,
                 style_ranges,
             } => {
-                let size = size_px(&style_ranges[0].1, params);
+                let first = &style_ranges[0].1;
+                let size = size_px(first, params);
+                let extra = tracking(first, params);
                 let runs: Vec<TextRun> = style_ranges
                     .iter()
                     .map(|(sub, style)| text_run(style, sub.len(), params))
                     .collect();
                 let shaped = text_system.layout_line(&text[range.clone()], size, &runs, None);
+                let mut glyphs = 0_usize;
                 for run in &shaped.runs {
                     for glyph in &run.glyphs {
-                        stops.push((range.start + glyph.index, x + glyph.position.x));
+                        stops.push((
+                            range.start + glyph.index,
+                            x + glyph.position.x + extra * glyphs as f32,
+                        ));
+                        glyphs += 1;
                     }
                 }
-                x += shaped.width;
+                x += shaped.width + extra * glyphs as f32;
             }
             Atom::Tab { at } => {
                 stops.push((*at, x));
@@ -302,13 +450,28 @@ pub(crate) fn layout_paragraph(
         stops.get(index).map_or(x, |(_, x)| *x)
     };
 
-    // Break lines: at forced breaks, after the last space that fits, or
-    // inside a word longer than the line.
+    // The width a hyphen takes in the style of the character before `at`.
+    let hyphen_width = |at: usize| -> Pixels {
+        let style = paragraph.style_at(at);
+        text_system
+            .layout_line(
+                "-",
+                size_px(style, params),
+                &[text_run(style, 1, params)],
+                None,
+            )
+            .width
+    };
+
+    // Break lines: at forced breaks, after the last space that fits (or,
+    // with hyphenation, inside the word that does not), or inside a word
+    // longer than the line.
     struct Break {
         start: usize,
         content_end: usize,
         end: usize,
         hard: bool,
+        hyphen: bool,
     }
     let mut breaks: Vec<Break> = Vec::new();
     let mut start = 0;
@@ -322,6 +485,7 @@ pub(crate) fn layout_paragraph(
                 content_end: index,
                 end: next,
                 hard: true,
+                hyphen: false,
             });
             start = next;
             start_x = x_at(next);
@@ -333,15 +497,35 @@ pub(crate) fn layout_paragraph(
             continue;
         }
         if x_at(next) - start_x > available && index > start {
-            let at = match last_space {
+            let word_start = match last_space {
                 Some(space) if space > start => space,
-                _ => index,
+                _ => start,
+            };
+            let mut hyphen_at = None;
+            if params.hyphenation {
+                let word_end = text[word_start..]
+                    .find(|c: char| c.is_whitespace() || is_forced_break(c))
+                    .map_or(text.len(), |end| word_start + end);
+                let word = &text[word_start..word_end];
+                hyphen_at = hyphenation_points(word)
+                    .into_iter()
+                    .rev()
+                    .map(|point| word_start + point)
+                    .find(|at| {
+                        *at <= index && x_at(*at) - start_x + hyphen_width(*at) <= available
+                    });
+            }
+            let (at, hyphen) = match (hyphen_at, last_space) {
+                (Some(at), _) => (at, true),
+                (None, Some(space)) if space > start => (space, false),
+                _ => (index, false),
             };
             breaks.push(Break {
                 start,
                 content_end: at,
                 end: at,
                 hard: false,
+                hyphen,
             });
             start = at;
             start_x = x_at(at);
@@ -353,6 +537,7 @@ pub(crate) fn layout_paragraph(
         content_end: text.len(),
         end: text.len(),
         hard: true,
+        hyphen: false,
     });
 
     let mut lines = Vec::with_capacity(breaks.len());
@@ -361,7 +546,10 @@ pub(crate) fn layout_paragraph(
     for (line_index, line) in breaks.into_iter().enumerate() {
         let trimmed_end = line.start + text[line.start..line.content_end].trim_end().len();
         let base_x = x_at(line.start);
-        let width = x_at(trimmed_end) - base_x;
+        let hyphen = line
+            .hyphen
+            .then(|| (line.content_end, hyphen_width(line.content_end)));
+        let width = x_at(trimmed_end) - base_x + hyphen.map_or(px(0.0), |(_, width)| width);
         let free = (available - width).max(px(0.0));
         let justify = style.alignment == Alignment::Justified
             && line_index != last_break
@@ -390,14 +578,18 @@ pub(crate) fn layout_paragraph(
             free / gaps.len() as f32
         };
         let left = indent + offset;
+        let shift_at = |at: usize| gap_extra * gaps.iter().filter(|gap| **gap <= at).count() as f32;
 
         // Pieces: each text atom's share of the line, cut again at
-        // justification gaps so each word can move.
+        // justification gaps so each word can move, and at every character
+        // of a tracked (kerned) atom.
         let mut pieces = Vec::new();
-        let mut cuts: Vec<usize> = gaps.clone();
-        cuts.push(usize::MAX);
         for atom in &atoms {
-            let Atom::Text { range, .. } = atom else {
+            let Atom::Text {
+                range,
+                style_ranges,
+            } = atom
+            else {
                 continue;
             };
             let from = range.start.max(line.start);
@@ -405,6 +597,14 @@ pub(crate) fn layout_paragraph(
             if from >= to {
                 continue;
             }
+            let atom_style = &style_ranges[0].1;
+            let mut cuts: Vec<usize> = gaps.clone();
+            if tracking(atom_style, params) != px(0.0) {
+                cuts.extend(text[from..to].char_indices().map(|(at, _)| from + at));
+            }
+            cuts.sort_unstable();
+            cuts.push(usize::MAX);
+            let rise = px(atom_style.baseline_shift() * zoom);
             let mut piece_start = from;
             for &cut in &cuts {
                 if cut <= piece_start {
@@ -413,19 +613,27 @@ pub(crate) fn layout_paragraph(
                 let piece_end = cut.min(to);
                 if piece_start < piece_end {
                     let sub = piece_start..piece_end;
-                    let runs = runs_for(paragraph, &sub, params);
                     let size = size_px(paragraph.style_of_char_at(sub.start), params);
+                    let content = SharedString::from(text[sub.clone()].to_owned());
                     let shaped = text_system.shape_line(
-                        SharedString::from(text[sub.clone()].to_owned()),
+                        content.clone(),
                         size,
-                        &runs,
+                        &runs_for(paragraph, &sub, params, text_run),
                         None,
                     );
-                    let shift =
-                        gap_extra * gaps.iter().filter(|gap| **gap <= sub.start).count() as f32;
+                    let fill = atom_style.outline.then(|| {
+                        text_system.shape_line(
+                            content,
+                            size,
+                            &runs_for(paragraph, &sub, params, fill_run),
+                            None,
+                        )
+                    });
                     pieces.push(Piece {
-                        x: left + (x_at(sub.start) - base_x) + shift,
+                        x: left + (x_at(sub.start) - base_x) + shift_at(sub.start),
+                        rise,
                         line: shaped,
+                        fill,
                     });
                 }
                 piece_start = piece_end;
@@ -434,11 +642,25 @@ pub(crate) fn layout_paragraph(
                 }
             }
         }
+        if let Some((at, _)) = hyphen {
+            let style = paragraph.style_at(at);
+            pieces.push(Piece {
+                x: left + (x_at(at) - base_x) + shift_at(at),
+                rise: px(style.baseline_shift() * zoom),
+                line: text_system.shape_line(
+                    SharedString::from("-"),
+                    size_px(style, params),
+                    &[text_run(style, 1, params)],
+                    None,
+                ),
+                fill: None,
+            });
+        }
 
         let (mut ascent, mut descent) = (px(0.0), px(0.0));
         for piece in &pieces {
-            ascent = ascent.max(piece.line.ascent);
-            descent = descent.max(piece.line.descent);
+            ascent = ascent.max(piece.line.ascent + piece.rise);
+            descent = descent.max(piece.line.descent - piece.rise);
         }
         if pieces.is_empty() {
             (ascent, descent) = metrics(paragraph.style_at(line.start), params, window);
@@ -463,10 +685,7 @@ pub(crate) fn layout_paragraph(
     }
 
     let marker = style.list.map(|kind| {
-        let label = match kind {
-            ListKind::Bullet => "\u{2022}".to_owned(),
-            ListKind::Numbered => format!("{list_number}."),
-        };
+        let label = kind.marker(list_number.max(1));
         let marker_style = paragraph.style_of_char_at(0);
         let shaped = text_system.shape_line(
             SharedString::from(label.clone()),
@@ -475,7 +694,7 @@ pub(crate) fn layout_paragraph(
             None,
         );
         Marker {
-            x: px(LIST_MARKER_X * zoom),
+            x: px((LIST_MARKER_X + LIST_INDENT * level) * zoom),
             line: shaped,
         }
     });
@@ -563,6 +782,24 @@ impl ParagraphLayout {
         self.offset_for_x(line, x)
     }
 
+    /// The character under a point in paragraph coordinates (not the
+    /// nearest boundary): what a click on a link lands on.
+    pub fn char_at_point(&self, x: Pixels, y: Pixels) -> Option<usize> {
+        let last = self.lines.len() - 1;
+        let index = self
+            .lines
+            .iter()
+            .position(|line| y < line.top + line.height)
+            .unwrap_or(last);
+        let line = &self.lines[index];
+        let end = self.line_caret_end(index);
+        self.text[line.start..end]
+            .char_indices()
+            .map(|(at, character)| (line.start + at, line.start + at + character.len_utf8()))
+            .find(|(from, to)| x >= self.x_for(index, *from) && x < self.x_for(index, *to))
+            .map(|(from, _)| from)
+    }
+
     /// Caret rectangle `(x, top, height)` for `local`.
     pub fn caret(&self, local: usize) -> (Pixels, Pixels, Pixels) {
         let line_index = self.line_for_offset(local);
@@ -604,5 +841,54 @@ impl ParagraphLayout {
             }
         }
         rects
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hyphenation_splits_between_syllables_only_in_long_words() {
+        let points = hyphenation_points("hyphenation");
+        assert!(!points.is_empty());
+        for point in &points {
+            assert!(*point >= HYPHEN_MIN_HEAD);
+            assert!("hyphenation".len() - point >= HYPHEN_MIN_TAIL);
+        }
+        // "hy-phen-a-tion": never inside the "ph" digraph.
+        assert!(!points.contains(&3));
+        assert!(hyphenation_points("short").is_empty());
+        assert!(hyphenation_points("abc123def").is_empty());
+        assert!(hyphenation_points("").is_empty());
+    }
+
+    #[test]
+    fn hyphenation_points_land_on_char_boundaries() {
+        let word = "caf\u{e9}terias";
+        for point in hyphenation_points(word) {
+            assert!(word.is_char_boundary(point));
+        }
+    }
+
+    #[test]
+    fn only_non_default_styles_ask_for_font_features() {
+        assert!(features_for(&CharStyle::default()).is_empty());
+        let none = CharStyle {
+            kern: Some(0.0),
+            ligatures: Ligatures::None,
+            traditional: true,
+            ..CharStyle::default()
+        };
+        let features = features_for(&none);
+        assert!(features.contains(&("kern".to_owned(), 0)));
+        assert!(features.contains(&("liga".to_owned(), 0)));
+        assert!(features.contains(&("trad".to_owned(), 1)));
+        let tight = CharStyle {
+            kern: Some(-1.0),
+            ligatures: Ligatures::All,
+            ..CharStyle::default()
+        };
+        assert_eq!(features_for(&tight), [("dlig".to_owned(), 1)]);
     }
 }

@@ -6,6 +6,7 @@ mod document_io;
 mod document_state;
 mod editing;
 mod file_ops;
+mod format_extras;
 mod format_text;
 mod lifecycle;
 mod long_line_view;
@@ -260,6 +261,16 @@ struct EditorView {
     page_setup_before: Option<(bool, bool)>,
     // Format ▸ Text ▸ Spacing…
     spacing_open: bool,
+    // File ▸ Show Properties: the sheet and its seven fields, in
+    // `format_extras::PROPERTY_FIELDS` order.
+    properties_open: bool,
+    property_inputs: Vec<Entity<InputState>>,
+    // Format ▸ Font ▸ Styles…: the sheet and the document style shown.
+    styles_open: bool,
+    styles_index: usize,
+    // Edit ▸ Link…
+    link_open: bool,
+    link_input: Entity<InputState>,
 
     // Infra
     focus: FocusHandle,

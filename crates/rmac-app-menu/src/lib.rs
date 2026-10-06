@@ -593,7 +593,18 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 [item!("Last Saved", "text_editor::RevertToLastSaved", "")]
             ),
             item!("Export as PDF…", "text_editor::ExportPdf", "", separator),
-            item!("Page Setup…", "text_editor::OpenPageSetup", "⇧⌘P"),
+            item!(
+                "Show Properties",
+                "text_editor::ShowProperties",
+                "⌥⌘P",
+                separator
+            ),
+            item!(
+                "Page Setup…",
+                "text_editor::OpenPageSetup",
+                "⇧⌘P",
+                separator
+            ),
             item!("Print…", "text_editor::PrintFile", "⌘P"),
         ],
     },
@@ -622,6 +633,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
+            item!("Link…", "text_editor::EditLink", "⌘K"),
             submenu!(
                 "Find",
                 "text_editor::FindMenu",
@@ -668,6 +680,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                     item!("Bold", "text_editor::ToggleBold", "⌘B"),
                     item!("Italic", "text_editor::ToggleItalic", "⌘I"),
                     item!("Underline", "text_editor::ToggleUnderline", "⌘U"),
+                    item!("Outline", "text_editor::ToggleOutline", ""),
                     submenu!(
                         "Highlight",
                         "text_editor::HighlightMenu",
@@ -681,8 +694,49 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                             item!("Blue", "text_editor::HighlightBlue", ""),
                         ]
                     ),
+                    item!("Styles…", "text_editor::ShowStyles", ""),
                     item!("Bigger", "text_editor::IncreaseFont", "⌘+", separator),
                     item!("Smaller", "text_editor::DecreaseFont", "⌘-"),
+                    submenu!(
+                        "Kern",
+                        "text_editor::KernMenu",
+                        [
+                            item!("Use Default", "text_editor::KernDefault", ""),
+                            item!("Use None", "text_editor::KernNone", ""),
+                            item!("Tighten", "text_editor::KernTighten", "⌥⌘["),
+                            item!("Loosen", "text_editor::KernLoosen", "⌥⌘]"),
+                        ],
+                        separator
+                    ),
+                    submenu!(
+                        "Ligatures",
+                        "text_editor::LigaturesMenu",
+                        [
+                            item!("Use Default", "text_editor::LigaturesDefault", ""),
+                            item!("Use None", "text_editor::LigaturesNone", ""),
+                            item!("Use All", "text_editor::LigaturesAll", ""),
+                        ]
+                    ),
+                    submenu!(
+                        "Baseline",
+                        "text_editor::BaselineMenu",
+                        [
+                            item!("Use Default", "text_editor::BaselineDefault", ""),
+                            item!("Superscript", "text_editor::BaselineSuperscript", ""),
+                            item!("Subscript", "text_editor::BaselineSubscript", ""),
+                            item!("Raise", "text_editor::BaselineRaise", ""),
+                            item!("Lower", "text_editor::BaselineLower", ""),
+                        ]
+                    ),
+                    submenu!(
+                        "Character Shape",
+                        "text_editor::CharacterShapeMenu",
+                        [item!(
+                            "Traditional Form",
+                            "text_editor::ToggleTraditionalForm",
+                            ""
+                        )]
+                    ),
                     item!("Show Colours", "text_editor::ShowColours", "⇧⌘C", separator),
                     item!("Copy Style", "text_editor::CopyStyle", "⌥⌘C", separator),
                     item!("Paste Style", "text_editor::PasteStyle", "⌥⌘V"),
@@ -711,6 +765,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             ),
             item!("Prevent Editing", "text_editor::PreventEditing", ""),
             item!("Wrap to Page", "text_editor::ToggleWrapToPage", "⇧⌘W"),
+            item!("Allow Hyphenation", "text_editor::ToggleHyphenation", ""),
             item!("List…", "text_editor::ShowLists", "", separator),
         ],
     },

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Text Editor format sheets</title>
+<link rel="stylesheet" href="lab.css">
+<!-- Text Editor sheets for Format ▸ List…, File ▸ Show Properties and
+     Edit ▸ Link… (TE-14, TXT-MENU-001/004). The layouts follow the existing
+     Rename/Spacing sheet cards (sheet_card: 20 px padding, 15 px title, 8 px
+     button gap) and TextEdit's field order. The Mac inventory was recorded
+     with no document open, so these are layout adaptations, not new Mac
+     measurements. -->
+<style>
+.sample{width:680px;height:470px;margin:40px auto;position:relative;background:var(--window);border-radius:16px;overflow:hidden;box-shadow:0 12px 32px #0007}
+.titlebar{height:32px;background:var(--sidebar);display:flex;align-items:center;padding-left:82px;font-size:13px;font-weight:600;color:var(--label)}
+.dim{position:absolute;inset:32px 0 0;background:#0005}
+.sheet{box-sizing:border-box;position:absolute;top:32px;left:50%;transform:translateX(-50%);padding:20px;border-radius:0 0 12px 12px;background:var(--sheet);color:var(--label);box-shadow:0 12px 24px #0008;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.sheet h3{font-size:15px;margin:0 0 4px}
+.row{display:flex;align-items:center;gap:10px;height:24px}.row label{width:96px;text-align:right;color:var(--label-2)}
+.field{flex:1;border-radius:6px;background:var(--fill-control);padding:4px 8px;min-height:16px}
+.markers{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+.markers div{border-radius:6px;background:var(--fill-control);text-align:center;padding:5px 0}
+.markers .on{background:var(--accent);color:white}
+.hint{color:var(--label-2);font-size:12px}
+.actions{display:flex;gap:8px;justify-content:flex-end;margin-top:auto}
+.actions button{border:0;border-radius:7px;padding:5px 18px;background:var(--btn-secondary);color:inherit}
+.actions .primary{background:var(--accent);color:white}.actions .left{margin-right:auto}
+</style>
+
+<!-- Format ▸ List…: None plus the eleven NSTextList markers; Tab / ⇧Tab
+     at an item's start nest it. 320 × 250. -->
+<div class="sample"><div class="titlebar">Untitled — Edited</div><div class="dim"></div>
+<div class="sheet" style="width:320px;height:250px"><h3>List</h3>
+<div class="row"><label style="width:auto">Bullet:</label></div>
+<div class="markers"><div>None</div><div class="on">•</div><div>◦</div><div>▪</div><div>◆</div><div>⁃</div>
+<div>✓</div><div>1.</div><div>I.</div><div>i.</div><div>A.</div><div>a.</div></div>
+<div class="hint">Press Tab at the start of an item to nest it, ⇧Tab to bring it out.</div>
+<div class="actions"><button class="primary">Done</button></div></div></div>
+
+<!-- File ▸ Show Properties (⌥⌘P): TextEdit's seven properties, saved in
+     rich text only. 420 × 330. -->
+<div class="sample"><div class="titlebar">Report.rtf</div><div class="dim"></div>
+<div class="sheet" style="width:420px;height:330px"><h3>Document Properties</h3>
+<div class="row"><label>Author:</label><div class="field">Jacob Samas</div></div>
+<div class="row"><label>Organisation:</label><div class="field">Lulo</div></div>
+<div class="row"><label>Copyright:</label><div class="field">© 2026</div></div>
+<div class="row"><label>Title:</label><div class="field">Quarterly report</div></div>
+<div class="row"><label>Subject:</label><div class="field"></div></div>
+<div class="row"><label>Keywords:</label><div class="field">report, q3</div></div>
+<div class="row"><label>Comment:</label><div class="field"></div></div>
+<div class="actions"><button>Cancel</button><button class="primary">OK</button></div></div></div>
+
+<!-- Format ▸ Font ▸ Styles…: the document's styles one at a time, each
+     previewed in itself, with Apply. 380 × 220. -->
+<div class="sample"><div class="titlebar">Report.rtf</div><div class="dim"></div>
+<div class="sheet" style="width:380px;height:220px"><h3>Styles</h3>
+<div class="hint">Document styles</div>
+<div class="field" style="height:48px;display:flex;align-items:center;font-weight:700;font-size:14px">Helvetica 14 pt, Bold, Centred</div>
+<div class="row"><button>‹</button><span class="hint">2 of 5</span><button>›</button></div>
+<div class="actions"><button>Apply</button><button class="primary">Done</button></div></div></div>
+
+<!-- Edit ▸ Link… (⌘K): the destination of the selection's link.
+     380 × 150. -->
+<div class="sample"><div class="titlebar">Report.rtf — Edited</div><div class="dim"></div>
+<div class="sheet" style="width:380px;height:150px"><h3>Link</h3>
+<div class="row"><div class="field" style="box-shadow:0 0 0 2px var(--accent)">https://lulo.example/</div></div>
+<div class="actions"><button class="left">Remove Link</button><button>Cancel</button><button class="primary">OK</button></div></div></div>
+</html>

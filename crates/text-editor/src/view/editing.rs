@@ -633,6 +633,7 @@ impl EditorView {
             text_format_enabled && Self::style_copied(),
             cx,
         );
+        self.sync_format_extras_menu(text_format_enabled, cx);
         let (style, paragraph, highlight) = if self.rich_text {
             let editor = self.rich.read(cx);
             (

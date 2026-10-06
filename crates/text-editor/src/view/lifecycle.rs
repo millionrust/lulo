@@ -27,6 +27,20 @@ impl EditorView {
         let save_goto_input = cx.new(|cx| InputState::new(window, cx).placeholder("Go to Folder"));
         let rename_input = cx.new(|cx| InputState::new(window, cx).placeholder("Name"));
         let font_size_input = cx.new(|cx| InputState::new(window, cx).placeholder("Size"));
+        let property_inputs: Vec<Entity<InputState>> = super::format_extras::PROPERTY_FIELDS
+            .iter()
+            .map(|_| cx.new(|cx| InputState::new(window, cx)))
+            .collect();
+        let link_input = cx.new(|cx| InputState::new(window, cx).placeholder("https://"));
+        let sub_link = cx.subscribe_in(
+            &link_input,
+            window,
+            |this, _input, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    this.commit_link(window, cx);
+                }
+            },
+        );
         let sub_font_size = cx.subscribe_in(
             &font_size_input,
             window,
@@ -217,6 +231,10 @@ impl EditorView {
             KeyBinding::new("ctrl-cmd-v", PasteRuler, Some(CTX)),
             KeyBinding::new("shift-cmd-p", OpenPageSetup, Some(CTX)),
             KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, Some(CTX)),
+            KeyBinding::new("alt-cmd-[", crate::KernTighten, Some(CTX)),
+            KeyBinding::new("alt-cmd-]", crate::KernLoosen, Some(CTX)),
+            KeyBinding::new("alt-cmd-p", crate::ShowProperties, Some(CTX)),
+            KeyBinding::new("cmd-k", crate::EditLink, Some(CTX)),
         ]);
         #[cfg(target_os = "linux")]
         cx.bind_keys([KeyBinding::new(
@@ -437,6 +455,12 @@ impl EditorView {
             page_setup_landscape: false,
             page_setup_before: None,
             spacing_open: false,
+            properties_open: false,
+            property_inputs,
+            styles_open: false,
+            styles_index: 0,
+            link_open: false,
+            link_input,
             focus: cx.focus_handle(),
             native_window_title: "Text Editor".into(),
             recovery_directory,
@@ -467,6 +491,7 @@ impl EditorView {
                 sub_select_line,
                 sub_save_goto,
                 sub_rename,
+                sub_link,
             ],
         };
         rmac_ui::set_menu_checked(

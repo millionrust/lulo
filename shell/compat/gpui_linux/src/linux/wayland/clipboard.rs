@@ -24,6 +24,88 @@ pub(crate) const FILE_LIST_MIME_TYPE: &str = "text/uri-list";
 /// Text mime types that we'll accept from other programs.
 pub(crate) const ALLOWED_TEXT_MIME_TYPES: [&str; 2] = ["text/plain;charset=utf-8", "UTF8_STRING"];
 
+/// rmac: rich flavours ride in a string entry's metadata, framed as
+/// `crates/rmac-editor/src/rich/clipboard.rs` writes them. Each is offered
+/// under its own MIME type next to the plain text.
+const RICH_FORMATS_HEADER: &str = "x-lulo-clipboard-formats/1\n";
+/// The rich flavours offered and accepted, and the MIME names other apps
+/// also use for them.
+const RICH_MIME_ALIASES: [(&str, &[&str]); 2] = [
+    (
+        "text/rtf",
+        &["text/rtf", "application/rtf", "text/richtext"],
+    ),
+    ("text/html", &["text/html"]),
+];
+/// The largest rich flavour read from another app.
+const MAX_RICH_BYTES: usize = 16 * 1024 * 1024;
+
+/// The flavours framed in clipboard metadata (see [`RICH_FORMATS_HEADER`]).
+pub(crate) fn rich_formats(metadata: &str) -> Vec<(&str, &str)> {
+    let Some(mut rest) = metadata.strip_prefix(RICH_FORMATS_HEADER) else {
+        return Vec::new();
+    };
+    let mut formats = Vec::new();
+    while !rest.is_empty() {
+        let Some((mime, after)) = rest.split_once('\n') else {
+            break;
+        };
+        let Some((length, after)) = after.split_once('\n') else {
+            break;
+        };
+        let Ok(length) = length.parse::<usize>() else {
+            break;
+        };
+        if length > after.len() || !after.is_char_boundary(length) {
+            break;
+        }
+        formats.push((mime, &after[..length]));
+        rest = &after[length..];
+    }
+    formats
+}
+
+fn frame_rich_formats(formats: &[(&str, &str)]) -> String {
+    let mut out = String::from(RICH_FORMATS_HEADER);
+    for (mime, payload) in formats {
+        out.push_str(mime);
+        out.push('\n');
+        out.push_str(&payload.len().to_string());
+        out.push('\n');
+        out.push_str(payload);
+    }
+    out
+}
+
+/// Every MIME type `item`'s rich flavours are offered under.
+pub(crate) fn rich_mime_types(item: &ClipboardItem) -> Vec<&'static str> {
+    let Some(metadata) = item.metadata() else {
+        return Vec::new();
+    };
+    let mut types = Vec::new();
+    for (mime, _) in rich_formats(metadata) {
+        if let Some((_, aliases)) = RICH_MIME_ALIASES.iter().find(|(name, _)| *name == mime) {
+            types.extend_from_slice(aliases);
+        }
+    }
+    types
+}
+
+/// The bytes `item` sends for `mime_type`: a rich flavour when asked for
+/// one it has, the plain text otherwise.
+fn payload_for(item: &ClipboardItem, mime_type: &str) -> Option<Vec<u8>> {
+    let rich = item.metadata().and_then(|metadata| {
+        let (canonical, _) = RICH_MIME_ALIASES
+            .iter()
+            .find(|(_, aliases)| aliases.contains(&mime_type))?;
+        rich_formats(metadata)
+            .into_iter()
+            .find(|(mime, _)| mime == canonical)
+            .map(|(_, payload)| payload.as_bytes().to_owned())
+    });
+    rich.or_else(|| item.text().map(|text| text.into_bytes()))
+}
+
 pub(crate) struct Clipboard {
     connection: Connection,
     loop_handle: LoopHandle<'static, WaylandClientStatePtr>,
@@ -117,7 +199,22 @@ impl<T: ReceiveData> DataOffer<T> {
         // copying from eg: firefox inserts a lot of blank
         // lines, and that is super annoying.
         let result = text_content.replace("\r\n", "\n");
-        Some(ClipboardItem::new_string(result))
+        // rmac: another app's RTF flavour travels with the text, framed in
+        // the metadata, so a rich editor can paste it with its formatting.
+        let rtf = RICH_MIME_ALIASES[0]
+            .1
+            .iter()
+            .find(|alias| self.has_mime_type(alias))
+            .and_then(|alias| self.read_bytes(connection, alias))
+            .filter(|bytes| bytes.len() <= MAX_RICH_BYTES)
+            .and_then(|bytes| String::from_utf8(bytes).ok());
+        Some(match rtf {
+            Some(rtf) => ClipboardItem::new_string_with_metadata(
+                result,
+                frame_rich_formats(&[("text/rtf", rtf.as_str())]),
+            ),
+            None => ClipboardItem::new_string(result),
+        })
     }
 
     fn read_image(&self, connection: &Connection) -> Option<ClipboardItem> {
@@ -180,9 +277,13 @@ impl Clipboard {
         self.self_mime.clone()
     }
 
-    pub fn send(&self, _mime_type: String, fd: OwnedFd) {
-        if let Some(text) = self.contents.as_ref().and_then(|contents| contents.text()) {
-            self.send_internal(fd, text.as_bytes().to_owned());
+    pub fn send(&self, mime_type: String, fd: OwnedFd) {
+        if let Some(bytes) = self
+            .contents
+            .as_ref()
+            .and_then(|contents| payload_for(contents, &mime_type))
+        {
+            self.send_internal(fd, bytes);
         }
     }
 

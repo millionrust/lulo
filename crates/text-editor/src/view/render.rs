@@ -78,7 +78,8 @@ impl EditorView {
     /// window (Wrap to Page, View ▸ Zoom, Use Dark Background). Each setter
     /// only notifies on a real change.
     fn sync_rich_presentation(&mut self, page_column: f32, cx: &mut Context<Self>) {
-        let paper_dark = self.text_background().l < 0.5;
+        let paper = self.text_background();
+        let paper_dark = paper.l < 0.5;
         let default_color = if paper_dark {
             mac::white()
         } else {
@@ -93,6 +94,7 @@ impl EditorView {
             editor.set_editable(editable, cx);
             editor.set_column(px(TEXT_INSET_X), page_width, cx);
             editor.set_appearance(default_color, mac::text_selection(), mac::text_caret(), cx);
+            editor.set_paper_color(paper, cx);
         });
     }
 
@@ -424,6 +426,48 @@ impl Render for EditorView {
                 this.set_highlight(super::format_text::Highlight::Blue, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowLists, _, cx| this.open_lists(cx)))
+            .on_action(cx.listener(|this, _: &crate::ToggleOutline, _, cx| this.toggle_outline(cx)))
+            .on_action(cx.listener(|this, _: &crate::KernDefault, _, cx| this.kern_default(cx)))
+            .on_action(cx.listener(|this, _: &crate::KernNone, _, cx| this.kern_none(cx)))
+            .on_action(cx.listener(|this, _: &crate::KernTighten, _, cx| this.kern_tighten(cx)))
+            .on_action(cx.listener(|this, _: &crate::KernLoosen, _, cx| this.kern_loosen(cx)))
+            .on_action(cx.listener(|this, _: &crate::LigaturesDefault, _, cx| {
+                this.set_ligatures(rich::Ligatures::Default, cx)
+            }))
+            .on_action(cx.listener(|this, _: &crate::LigaturesNone, _, cx| {
+                this.set_ligatures(rich::Ligatures::None, cx)
+            }))
+            .on_action(cx.listener(|this, _: &crate::LigaturesAll, _, cx| {
+                this.set_ligatures(rich::Ligatures::All, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &crate::BaselineDefault, _, cx| this.baseline_default(cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::BaselineSuperscript, _, cx| this.superscript(1, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::BaselineSubscript, _, cx| this.superscript(-1, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::BaselineRaise, _, cx| this.raise_baseline(true, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::BaselineLower, _, cx| this.raise_baseline(false, cx)),
+            )
+            .on_action(cx.listener(|this, _: &crate::ToggleTraditionalForm, _, cx| {
+                this.toggle_traditional_form(cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &crate::ToggleHyphenation, _, cx| this.toggle_hyphenation(cx)),
+            )
+            .on_action(cx.listener(|this, _: &crate::ShowProperties, window, cx| {
+                this.show_properties(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &crate::EditLink, window, cx| this.edit_link(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &crate::ShowStyles, _, cx| this.show_styles(cx)))
             .on_action(cx.listener(|this, _: &ShowFonts, window, cx| this.show_fonts(window, cx)))
             .on_action(cx.listener(|this, _: &AlignLeft, _, cx| {
                 this.set_alignment(rich::Alignment::Left, cx)
@@ -744,6 +788,27 @@ impl Render for EditorView {
                 d.child(
                     rmac_ui::dialog("text-editor-spacing", self.render_spacing_dialog(cx))
                         .aria_label("Spacing")
+                        .attached(),
+                )
+            })
+            .when(self.properties_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-properties", self.render_properties_dialog(cx))
+                        .aria_label("Document Properties")
+                        .attached(),
+                )
+            })
+            .when(self.styles_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-styles", self.render_styles_dialog(cx))
+                        .aria_label("Styles")
+                        .attached(),
+                )
+            })
+            .when(self.link_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-link", self.render_link_dialog(cx))
+                        .aria_label("Link")
                         .attached(),
                 )
             })

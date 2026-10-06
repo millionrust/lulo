@@ -136,6 +136,33 @@ gpui::actions!(
         ShowLists,
         // Format ▸ Font ▸ Show Fonts (⌘T).
         ShowFonts,
+        // Format ▸ Font ▸ Outline.
+        ToggleOutline,
+        // Format ▸ Font ▸ Kern ▸ …
+        KernDefault,
+        KernNone,
+        KernTighten,
+        KernLoosen,
+        // Format ▸ Font ▸ Ligatures ▸ …
+        LigaturesDefault,
+        LigaturesNone,
+        LigaturesAll,
+        // Format ▸ Font ▸ Baseline ▸ …
+        BaselineDefault,
+        BaselineSuperscript,
+        BaselineSubscript,
+        BaselineRaise,
+        BaselineLower,
+        // Format ▸ Font ▸ Character Shape ▸ Traditional Form.
+        ToggleTraditionalForm,
+        // Format ▸ Allow Hyphenation.
+        ToggleHyphenation,
+        // File ▸ Show Properties (⌥⌘P).
+        ShowProperties,
+        // Edit ▸ Link… (⌘K).
+        EditLink,
+        // Format ▸ Font ▸ Styles….
+        ShowStyles,
     ]
 );
 

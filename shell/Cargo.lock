@@ -6483,6 +6483,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "gpui_linux",
  "gpui_platform",
  "libc",
  "rmac-app-menu",

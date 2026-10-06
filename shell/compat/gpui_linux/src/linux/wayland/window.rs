@@ -934,19 +934,21 @@ fn size_renderer(state: &mut WaylandWindowState) -> bool {
     }
     let device = device_size(state.bounds.size, state.scale);
     let can_crop = state.viewport.is_some();
-    let reserved = state.reserved_size.map(|size| device_size(size, state.scale));
+    let reserved = state
+        .reserved_size
+        .map(|size| device_size(size, state.scale));
     let mut oversized = false;
     if can_crop && (state.interactive_resize || reserved.is_some()) {
-        let outputs = state
-            .interactive_resize
-            .then(|| {
-                state.outputs.values().fold(device, |largest, output| Size {
-                    width: DevicePixels(largest.width.0.max(output.bounds.size.width.0)),
-                    height: DevicePixels(largest.height.0.max(output.bounds.size.height.0)),
-                })
-            });
+        let outputs = state.interactive_resize.then(|| {
+            state.outputs.values().fold(device, |largest, output| Size {
+                width: DevicePixels(largest.width.0.max(output.bounds.size.width.0)),
+                height: DevicePixels(largest.height.0.max(output.bounds.size.height.0)),
+            })
+        });
         let allocation = wanted_allocation(device, reserved, outputs);
-        let rebuilt = state.renderer.update_drawable_size_within(device, allocation);
+        let rebuilt = state
+            .renderer
+            .update_drawable_size_within(device, allocation);
         super::frame_trace::record(if rebuilt {
             "renderer_resized"
         } else {
@@ -1911,15 +1913,13 @@ impl WaylandWindowStatePtr {
         drop(state);
         let window = self.downgrade();
         let loop_handle = client.borrow().loop_handle.clone();
-        let _ = loop_handle.insert_source(
-            Timer::from_duration(SHRINK_AFTER_RESIZE),
-            move |_, _, _| {
+        let _ =
+            loop_handle.insert_source(Timer::from_duration(SHRINK_AFTER_RESIZE), move |_, _, _| {
                 if let Some(window) = window.upgrade() {
                     window.shrink_renderer(generation);
                 }
                 TimeoutAction::Drop
-            },
-        );
+            });
     }
 
     fn shrink_renderer(&self, generation: u64) {
@@ -1929,7 +1929,9 @@ impl WaylandWindowStatePtr {
                 return;
             }
             let device = device_size(state.bounds.size, state.scale);
-            let reserved = state.reserved_size.map(|size| device_size(size, state.scale));
+            let reserved = state
+                .reserved_size
+                .map(|size| device_size(size, state.scale));
             let wanted = wanted_allocation(device, reserved, None);
             let exact = if reserved.is_some() { wanted } else { device };
             if state.renderer.allocation_size() == exact {

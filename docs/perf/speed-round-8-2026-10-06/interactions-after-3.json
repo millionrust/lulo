@@ -1,0 +1,109 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-06T14:00:12Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 138.54760501999408,
+      "switcher_first_frame_ms": 42.914959019981325,
+      "switches": [
+        725.3103939583525,
+        138.54760501999408,
+        137.0819469448179
+      ]
+    },
+    "cmd-tab-hold": {
+      "commits": [
+        252.34385393559933,
+        53.556333063170314,
+        53.621851024217904
+      ],
+      "pass": false,
+      "release_to_switch_ms": 53.621851024217904,
+      "reveal_ms": 125.03121595364064,
+      "reveals": [
+        146.78879105485976,
+        123.94737708382308,
+        125.03121595364064
+      ]
+    },
+    "spotlight-typing": {
+      "echo_p95_ms": 34.724,
+      "pass": false,
+      "results_ms": 29.869,
+      "runs": [
+        {
+          "echo_after_frame_callback_p95_ms": 34.448,
+          "echo_max_ms": 34.724,
+          "echo_p50_ms": 1.098,
+          "echo_p95_ms": 34.724,
+          "first_keys_ms": [
+            2.127,
+            34.724,
+            1.211
+          ],
+          "frame_p50_ms": 1.337,
+          "frame_p95_ms": 4.31,
+          "frames": 22,
+          "frames_pass": false,
+          "keys": 10,
+          "pass": false,
+          "results_ms": 28.947,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9545454545454546,
+          "worst_frame_ms": 23.474
+        },
+        {
+          "echo_after_frame_callback_p95_ms": 33.021,
+          "echo_max_ms": 33.176,
+          "echo_p50_ms": 1.294,
+          "echo_p95_ms": 33.176,
+          "first_keys_ms": [
+            3.862,
+            33.176,
+            1.311
+          ],
+          "frame_p50_ms": 2.233,
+          "frame_p95_ms": 5.452,
+          "frames": 20,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 34.427,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.897
+        },
+        {
+          "echo_after_frame_callback_p95_ms": 33.926,
+          "echo_max_ms": 34.064,
+          "echo_p50_ms": 1.122,
+          "echo_p95_ms": 34.064,
+          "first_keys_ms": [
+            1.89,
+            34.064,
+            1.197
+          ],
+          "frame_p50_ms": 2.897,
+          "frame_p95_ms": 11.197,
+          "frames": 19,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 29.869,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.197
+        }
+      ]
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 3,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

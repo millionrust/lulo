@@ -262,12 +262,14 @@ jobs:
 
   windows:
     name: Windows apps (non-blocking)
-    # ADR 0023 phases 1-2: Calculator, Notes, Text Editor, Preview, Clock,
+    # ADR 0023 phases 1-2c: Calculator, Notes, Text Editor, Preview, Clock,
     # Weather and Terminal, with the shared crates they need (rmac-ui,
     # storage, editor, Notes' store, the print/portal/spelling/sound seams),
     # build, pass Clippy and their unit tests, and open a window on Windows;
-    # the launch check also opens each window's menu strip with Alt, presses
-    # Ctrl+N and, for Text Editor, hands a second launch to the running app.
+    # the launch check also opens each of the seven windows' menu strip
+    # with Alt, presses Ctrl+N and, for Text Editor, hands a second launch
+    # to the running app. Preview also opens a tiny fixture PDF and checks
+    # that Windows.Data.Pdf (`winpdf.rs`) rendered its page.
     # Non-blocking until it has run clean for a while; see docs/ci.md.
     runs-on: windows-latest
     timeout-minutes: 75

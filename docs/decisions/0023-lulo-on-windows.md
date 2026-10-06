@@ -2,8 +2,12 @@
 
 - **Status:** proposed 2026-10-06. Phase 1 (the app seam and a non-blocking CI job) is on
   branch `op/windows-plan`; phase 2's first slice (the gaps that blocked using the three
-  apps) is on `op/win-phase2a`. The rest of phases 2–5 needs owner approval and the hardware
-  and signing items under "What the owner must provide".
+  apps) is on `op/win-phase2a`; the second slice (Preview, Clock, Weather, Terminal build
+  and open) is on `op/win-phase2b`; the third slice (those four apps' own shortcuts move to
+  `rmac_ui::bind_keys`, single instance for Calculator/Clock/Weather/Preview, real PDF
+  rendering, and the CI proof for all of it) is on `op/win-phase2c`. The rest of phases 2–5
+  needs owner approval and the hardware and signing items under "What the owner must
+  provide".
 - **Scope:** every crate under `crates/` and `shell/`, the workspace `Cargo.toml`,
   `deny.toml`, `.github/workflows/ci.yml`, and a future `packaging/windows/`.
 - **Supersedes:** nothing. Builds on ADR 0006 (shell/app split), ADR 0007 (compositor
@@ -377,6 +381,88 @@ and behave honestly on Windows. The `windows` CI job's package list and
 Not done in this slice (tracked in docs/parity.md): real PDF rendering and Windows alarm/timer
 delivery. These four apps still bind their own shortcuts as `cmd-…`; moving them onto
 `rmac_ui::bind_keys` (phase 2a above) is the next step.
+
+## Phase 2c as built (branch `op/win-phase2c`)
+
+Branch `op/win-phase2c` closed the four gaps the phase 2b section above left open for
+Preview, Clock, Weather and Terminal, plus real PDF rendering:
+
+- **Shortcuts.** Preview, Clock and Weather move their own `fn bind_keys`/inline
+  `cx.bind_keys` calls onto `rmac_ui::bind_keys`, exactly as Calculator/Notes/Text Editor did
+  in phase 2a: every `cmd-…` binding gets a Ctrl-primary twin on Windows, with no change to
+  the Linux/macOS keystrokes they already had.
+
+  Terminal needed care rather than a plain swap: most of its shortcuts are `cmd-…` like any
+  other app's, but Copy (⌘C) and Paste (⌘V) are not — a Windows terminal's whole point is
+  that Ctrl+C still reaches the shell (the interrupt) and PSReadLine/console keeps its own
+  Ctrl+A/E/K/R/U/W and friends, none of which Terminal may capture as a GPUI key binding
+  (a bound key never reaches the PTY at all, regardless of context). The rule this branch
+  picked, matching Windows Terminal's own defaults: Copy and Paste move to Ctrl+Shift+C and
+  Ctrl+Shift+V there, and nothing binds bare Ctrl+C or Ctrl+V on Windows, so both always
+  reach the shell — a stronger and simpler guarantee than "only when there is no selection".
+  Paste Selection (⇧⌘V on the Mac) would land on the same `ctrl-shift-v` under the ordinary
+  mapping, so on Windows only it moves one chord over, to Ctrl+Alt+Shift+V. Every other
+  Terminal shortcut (Find, Select All, New Tab, Clear, …) takes the ordinary mapping like
+  any other app's, which is a deliberate, documented trade-off rather than a silent one:
+  several of those bare Ctrl+letter chords (Ctrl+F, Ctrl+R, Ctrl+A, Ctrl+K, …) coincide with
+  a PSReadLine/console binding of the same key, and Terminal's menu command wins while its
+  window is focused. A future pass could widen the Ctrl+Shift+ treatment further, but Copy,
+  Paste and the shell's own interrupt were the ones that had to be right for Terminal to be
+  usable at all. The right-click context menu's Copy/Paste hints follow the same rule
+  (`copy_shortcut`/`paste_shortcut` in `overlays.rs`); the in-window menu strip's Edit menu
+  still shows the Mac-derived "Ctrl+C"/"Ctrl+V" hint text, a known cosmetic mismatch left for
+  a later pass (it would need `rmac-app-menu`'s static per-app menu tables to carry a
+  platform-specific hint, which no app needs today).
+
+- **Single instance.** Calculator, Clock and Weather now hand off to a running instance the
+  same way Text Editor, Notes and Preview already did in phase 2a/2b (`hand_off_to_running_
+  instance` before GPUI starts, `install_app_instance` once it has): on Windows the named
+  pipe from phase 2a, unchanged on Linux's D-Bus hand-off. Unlike Preview (which opens a new
+  window per document) these three have exactly one window, so a successful hand-off also
+  calls a new `rmac_ui::focus_running_app`/`activate_app_window` pair — the launching process
+  asks the compositor (Linux) or the foreground-lock exception it already holds (Windows) to
+  bring the running window forward, since the long-running process does not hold the user's
+  own activation. Terminal already had this through `boot_app_instance`.
+
+- **Real PDF rendering.** Preview's Windows build renders PDFs for real instead of refusing
+  them: a new `winpdf.rs` module calls `Windows.Data.Pdf` (WinRT, through the `windows`
+  crate — already a workspace dependency for GPUI's own Windows backend and the phase 2a
+  named-pipe code, so this adds no new crate to review, only more of its features:
+  `Data_Pdf`, `Storage`, `Storage_Streams`, `Foundation`, `Win32_System_WinRT`) and feeds the
+  result into the exact same page pipeline poppler's Linux/macOS path already built:
+  `PdfInfo`/`PageBox` for the page list and layout, a BGRA `RgbaImage` per page for the
+  viewer. `render.rs`'s `load_pdf_info` and `render_page` now have a `#[cfg(windows)]` body
+  that calls `winpdf` and a `#[cfg(not(windows))]` body that is poppler's existing code,
+  unchanged. Every call blocks its thread on the WinRT async result, but `render.rs` only
+  ever calls these from a background thread already (`blocking::unblock`/
+  `cx.background_executor()`), never GPUI's render loop, so this is no UI-thread work, just
+  like the poppler subprocesses were. A thread-pool worker may never have touched WinRT
+  before, so `winpdf::ensure_winrt_apartment` initialises it (idempotent, never undone) before
+  every call. Rendering itself goes through a throwaway temp file rather than an in-memory
+  stream — `PdfPage::RenderToStreamWithOptionsAsync` only renders to a stream either way, and
+  reading the result back with a plain `std::fs::read` needed no further WinRT calls to get
+  wrong. `PdfPage::Size` already reflects the page's own `/Rotate` (unlike poppler's
+  `pdfinfo`, which reports the raw media box plus a separate rotation), so `winpdf` reports
+  `PageBox::rotation` as zero to avoid rotating an already-rotated page a second time; the
+  viewer's own manual rotation still applies on top in `render::render_page`, exactly as it
+  does for poppler's pages. `cargo-deny`'s Windows graph needed no changes: `windows` was
+  already an allowed dependency, and feature flags are not part of its policy surface.
+
+  Still not real on Windows: the search/selection text layer (`Windows.Data.Pdf` is a
+  renderer, not a text reader, so `extract_text` stays poppler-only and fails with an honest
+  "Preview can't search or select text in PDF documents on Windows yet."), password-protected
+  PDFs (no credential prompt), and printing (`rmac-print-linux` is Unix-only, already gated).
+
+- **CI proof.** `scripts/windows/launch_smoke.py` already opened every app's menu strip with
+  Alt — that was already true for all seven apps as of phase 2b, since the check runs
+  unconditionally for whichever apps the caller lists, and the `windows` job in `ci.yml`
+  already listed all seven. This branch's addition is Preview's PDF check: the script writes
+  a tiny one-page PDF itself (a red square, hand-built — no poppler or other tool involved,
+  so the check does not depend on anything the Windows runner lacks), launches Preview with
+  it on the command line, waits for `winpdf` to rasterise the page, and looks for the
+  fixture's colour anywhere in the captured window (`has_reddish_pixel`, loose on exact
+  values since WARP's software rasteriser and PNG recompression both shift them slightly).
+  The screenshot it saves (`rmac-preview-pdf.png`) is uploaded with the rest.
 
 ## Phase plan
 

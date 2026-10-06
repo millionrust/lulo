@@ -57,27 +57,37 @@ impl AssetSource for CombinedAssets {
 }
 
 fn main() {
+    // One process per app, as on the Mac: a later launch while Weather is
+    // already running brings its window forward instead of opening a
+    // second one.
+    if rmac_ui::hand_off_to_running_instance(WEATHER, &[Vec::new()]) {
+        rmac_ui::focus_running_app(WEATHER);
+        return;
+    }
     rmac_ui::application()
         .with_assets(CombinedAssets)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
             let context = Some("Weather");
-            cx.bind_keys([
-                KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, FindCity, context),
-                KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
-                KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, context),
-                KeyBinding::new("ctrl-cmd-s", ToggleSidebar, context),
-                KeyBinding::new("shift-cmd-l", AddLocationToList, context),
-                KeyBinding::new("cmd-,", ShowSettings, context),
-                KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, context),
-            ]);
+            rmac_ui::bind_keys(
+                cx,
+                [
+                    KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, FindCity, context),
+                    KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
+                    KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, context),
+                    KeyBinding::new("ctrl-cmd-s", ToggleSidebar, context),
+                    KeyBinding::new("shift-cmd-l", AddLocationToList, context),
+                    KeyBinding::new("cmd-,", ShowSettings, context),
+                    KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, context),
+                ],
+            );
             // Application ▸ Quit and Keep Windows (⌥⌘Q): Weather has no
             // per-window document state to restore (unlike Preview's
             // open-file list — its forecast locations are saved
             // continuously as settings, not on quit), so this is the same
             // quit as ⌘Q.
             cx.on_action(|_: &QuitAndKeepWindows, cx| cx.quit());
-            rmac_ui::install_app_menu(WEATHER, cx);
+            rmac_ui::install_app_instance(WEATHER, |_, cx| rmac_ui::activate_app_window(cx), cx);
             let (width, height) = metrics::WINDOW;
             let mut options = rmac_ui::window_options_for_app(WEATHER, width, height, cx);
             options.window_min_size =

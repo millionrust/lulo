@@ -86,20 +86,30 @@ impl AssetSource for CombinedAssets {
 
 fn bind_keys(cx: &mut App) {
     let context = Some("Clock");
-    cx.bind_keys([
-        KeyBinding::new("cmd-1", ShowWorldClock, context),
-        KeyBinding::new("cmd-2", ShowAlarms, context),
-        KeyBinding::new("cmd-3", ShowStopwatch, context),
-        KeyBinding::new("cmd-4", ShowTimers, context),
-        KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
-        KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, context),
-        KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, context),
-    ]);
+    rmac_ui::bind_keys(
+        cx,
+        [
+            KeyBinding::new("cmd-1", ShowWorldClock, context),
+            KeyBinding::new("cmd-2", ShowAlarms, context),
+            KeyBinding::new("cmd-3", ShowStopwatch, context),
+            KeyBinding::new("cmd-4", ShowTimers, context),
+            KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
+            KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, context),
+            KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, context),
+        ],
+    );
 }
 
 fn main() -> std::process::ExitCode {
     if std::env::args().any(|argument| argument == rmac_clock::schedule::RING_ARGUMENT) {
         return ring::run();
+    }
+    // One process per app, as on the Mac: a later launch while Clock is
+    // already running brings its window forward instead of opening a
+    // second one.
+    if rmac_ui::hand_off_to_running_instance(CLOCK, &[Vec::new()]) {
+        rmac_ui::focus_running_app(CLOCK);
+        return std::process::ExitCode::SUCCESS;
     }
     rmac_ui::application()
         .with_assets(CombinedAssets)
@@ -111,7 +121,7 @@ fn main() -> std::process::ExitCode {
             // (unlike Preview's open-file list), so this is the same quit
             // as ⌘Q.
             cx.on_action(|_: &QuitAndKeepWindows, cx| cx.quit());
-            rmac_ui::install_app_menu(CLOCK, cx);
+            rmac_ui::install_app_instance(CLOCK, |_, cx| rmac_ui::activate_app_window(cx), cx);
             let (width, height) = metrics::WINDOW;
             let mut options = rmac_ui::window_options_for_app(CLOCK, width, height, cx);
             options.window_min_size = Some(gpui::size(

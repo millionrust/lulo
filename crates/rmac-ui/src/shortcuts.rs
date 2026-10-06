@@ -27,7 +27,11 @@ pub struct Shortcut {
 }
 
 impl Shortcut {
-    const fn new(keystroke: &'static str, hint: &'static str) -> Self {
+    /// A custom shortcut outside this module's shared vocabulary — for an
+    /// app that needs a platform-specific hint of its own (Terminal's
+    /// Windows Copy/Paste, which bind a different key than `cmd-c`/`cmd-v`
+    /// so bare Ctrl+C/Ctrl+V keep reaching the shell; see ADR 0023).
+    pub const fn new(keystroke: &'static str, hint: &'static str) -> Self {
         Self { keystroke, hint }
     }
 

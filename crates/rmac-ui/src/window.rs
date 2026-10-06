@@ -1068,7 +1068,12 @@ pub fn boot_single_window_app_with_assets<A, V, F, H>(
 /// compositor, restoring it if it is minimised. The launch that handed off
 /// to the running app does this: it holds the user's activation, which the
 /// running process does not.
-fn focus_running_app(app_id: &'static str) {
+///
+/// For a single-window app (Calculator, Clock, Weather) booted outside the
+/// `boot_single_window_app_with_assets`/`boot_unified_single_window_app_with_assets`
+/// helpers, call this right after [`hand_off_to_running_instance`] returns
+/// true, before the process exits.
+pub fn focus_running_app(app_id: &'static str) {
     #[cfg(target_os = "linux")]
     async_io::block_on(async {
         let snapshot = match rmac_compositor_niri::snapshot().await {
@@ -1112,6 +1117,17 @@ fn focus_running_app(app_id: &'static str) {
     });
     #[cfg(not(target_os = "linux"))]
     let _ = app_id;
+}
+
+/// Bring this process's key window to the front — the
+/// [`install_app_instance`] callback for a single-window app (Calculator,
+/// Clock, Weather) that was not booted through
+/// [`boot_single_window_app_with_assets`]: a second launch's hand-off asks
+/// the running process to do this instead of opening another window.
+pub fn activate_app_window(cx: &mut App) {
+    if let Some((window, _)) = crate::menu_target::target(cx) {
+        let _ = window.update(cx, |_, window, _| window.activate_window());
+    }
 }
 
 fn boot_app_window<A, V, F>(

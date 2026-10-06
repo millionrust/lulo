@@ -15,6 +15,32 @@ pub(super) fn shell_owned_key_bindings() -> [KeyBinding; 2] {
     ]
 }
 
+/// Terminal's Copy and Paste keys, kept out of the ordinary cmd-to-ctrl
+/// mapping ([`rmac_ui::bind_keys`], used for every other Terminal shortcut
+/// below) so a bare Ctrl+<letter> never leaves the shell: Ctrl+C stays the
+/// shell's interrupt and PSReadLine keeps its own Ctrl+bindings (ADR 0023).
+/// On Windows, Copy and Paste move to Windows Terminal's own Ctrl+Shift+C
+/// and Ctrl+Shift+V. Paste Selection — the Mac's ⇧⌘V sibling of Paste —
+/// would then collide with Paste's new binding under the ordinary mapping
+/// (⇧⌘V already maps to Ctrl+Shift+V), so on Windows only it moves one
+/// chord over, to Ctrl+Alt+Shift+V.
+pub(super) fn copy_paste_key_bindings() -> [KeyBinding; 3] {
+    let context = Some("Terminal");
+    if rmac_ui::shortcuts::PRIMARY_IS_CONTROL {
+        [
+            KeyBinding::new("ctrl-shift-c", Copy, context),
+            KeyBinding::new("ctrl-shift-v", Paste, context),
+            KeyBinding::new("ctrl-alt-shift-v", PasteSelection, context),
+        ]
+    } else {
+        [
+            KeyBinding::new(rmac_ui::shortcuts::COPY.keystroke, Copy, context),
+            KeyBinding::new(rmac_ui::shortcuts::PASTE.keystroke, Paste, context),
+            KeyBinding::new("shift-cmd-v", PasteSelection, context),
+        ]
+    }
+}
+
 /// A selected manual topic becomes one shell argument, even if it contains
 /// spaces or quotes. Control characters are never sent as command input.
 pub(super) fn man_command(selection: &str, search_index: bool) -> Option<String> {

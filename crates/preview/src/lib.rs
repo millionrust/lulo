@@ -14,4 +14,6 @@ pub mod render;
 pub mod selection;
 pub mod settings_store;
 pub mod versions;
+#[cfg(windows)]
+pub mod winpdf;
 pub mod zoom;

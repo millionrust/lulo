@@ -1223,7 +1223,11 @@
       },
       {
         "type": "submenu",
-        "label": "label"
+        "label": "Tags…"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "<*name>"
       },
       {
         "type": "separator"
@@ -1314,7 +1318,11 @@
       },
       {
         "type": "submenu",
-        "label": "label"
+        "label": "Tags…"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "<*name>"
       },
       {
         "type": "separator"

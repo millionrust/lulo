@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_152 gaps across 8 apps; 225 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_158 gaps across 8 apps; 225 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Finder
 
@@ -27,6 +27,8 @@ _152 gaps across 8 apps; 225 Mac-only items were allowlisted (see `tests/invento
 | FIL-MENU-012 | missing menu item (has a shortcut) | Connect to Server… | Go ▸ Connect to Server… | ⌘K |  | missing from Lulo's menu bar |
 | FIL-MENU-010 | missing menu item (has a shortcut) | Network | Go ▸ Network | ⇧⌘K |  | missing from Lulo's menu bar |
 | FIL-MENU-013 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
+| FIL-CONTEXT-001 | missing context-menu item | label | context menu ▸ file |  |  | missing from Lulo's context menu |
+| FIL-CONTEXT-004 | missing context-menu item | label | context menu ▸ folder |  |  | missing from Lulo's context menu |
 | FIL-MENU-003 | missing menu item | Other… | File ▸ Always Open With ▸ Other… |  |  | missing from Lulo's menu bar |
 | FIL-MENU-005 | missing menu item | Manage Shared Folder… | File ▸ Manage Shared Folder… |  |  | missing from Lulo's menu bar |
 | FIL-MENU-001 | missing menu item | New Smart Folder | File ▸ New Smart Folder |  |  | missing from Lulo's menu bar |
@@ -34,6 +36,10 @@ _152 gaps across 8 apps; 225 Mac-only items were allowlisted (see `tests/invento
 | FIL-MENU-011 | missing menu item | Clear Menu | Go ▸ Recent Folders ▸ Clear Menu |  |  | missing from Lulo's menu bar |
 | FIL-MENU-008 | missing menu item | Customise Toolbar… | View ▸ Customise Toolbar… |  |  | missing from Lulo's menu bar |
 | FIL-MENU-009 | missing menu item | Show Preview Options | View ▸ Show Preview Options |  |  | missing from Lulo's menu bar |
+| FIL-CONTEXT-002 | Lulo-only (not on the Mac) | <*name> | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-003 | Lulo-only (not on the Mac) | Tags… | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-005 | Lulo-only (not on the Mac) | <*name> | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
+| FIL-CONTEXT-006 | Lulo-only (not on the Mac) | Tags… | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
 | FIL-MENU-014 | Lulo-only (not on the Mac) | Bin | Go ▸ Trash |  |  | present in Lulo but not found on the Mac |
 
 ## Notes

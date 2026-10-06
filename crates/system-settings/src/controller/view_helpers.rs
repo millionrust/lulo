@@ -235,10 +235,11 @@ pub(super) fn application_icon(
     icon: Option<&PathBuf>,
     fallback_icon: &'static str,
     fallback_color: Hsla,
+    scale_factor: f32,
     cx: &Context<Settings>,
 ) -> AnyElement {
     match icon {
-        Some(icon) => rmac_ui::svg_icon(icon.clone(), style::ROW_ICON, cx)
+        Some(icon) => rmac_ui::svg_icon(icon.clone(), style::ROW_ICON, scale_factor, cx)
             .w(px(style::ROW_ICON))
             .h(px(style::ROW_ICON))
             .flex_none()

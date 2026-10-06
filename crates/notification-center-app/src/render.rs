@@ -221,6 +221,7 @@ impl Render for NotificationCenterView {
             window.request_animation_frame();
         }
         self.a11y_active_last_frame = a11y_active;
+        self.scale_factor = window.scale_factor();
         let clock = Clock::now();
         let groups = self.groups();
         let has_records = !groups.is_empty();

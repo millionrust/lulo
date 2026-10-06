@@ -169,9 +169,9 @@ fn input_region(regions: &Regions) -> impl IntoElement {
     .inset_0()
 }
 
-fn app_icon(view: &CardView, cx: &mut Context<BannerSurface>) -> AnyElement {
+fn app_icon(view: &CardView, scale_factor: f32, cx: &mut Context<BannerSurface>) -> AnyElement {
     if let Some(icon) = &view.icon {
-        return rmac_ui::svg_icon(icon.clone(), card::ICON, cx)
+        return rmac_ui::svg_icon(icon.clone(), card::ICON, scale_factor, cx)
             .size(px(card::ICON))
             .flex_none()
             .into_any_element();
@@ -342,6 +342,7 @@ fn banner(
     view: CardView,
     host: &Entity<BannerHost>,
     regions: &Regions,
+    scale_factor: f32,
     cx: &mut Context<BannerSurface>,
 ) -> AnyElement {
     let id = view.id;
@@ -377,7 +378,7 @@ fn banner(
         .on_click(move |_, _, cx| {
             click_host.update(cx, |host, cx| host.click(id, cx));
         })
-        .child(app_icon(&view, cx))
+        .child(app_icon(&view, scale_factor, cx))
         .child(
             div()
                 .ml(px(card::ICON_GAP))
@@ -436,9 +437,10 @@ impl Render for BannerSurface {
             window.request_animation_frame();
         }
         let regions: Regions = Rc::new(RefCell::new(Vec::new()));
+        let scale_factor = window.scale_factor();
         let banners = views
             .into_iter()
-            .map(|view| banner(view, &self.host, &regions, cx))
+            .map(|view| banner(view, &self.host, &regions, scale_factor, cx))
             .collect::<Vec<_>>();
 
         // Sizes the surface to its banners after layout.

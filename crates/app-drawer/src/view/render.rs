@@ -20,6 +20,7 @@ impl Render for AppDrawer {
         let viewport_width = f32::from(window.viewport_size().width);
         let usable_width = (viewport_width - 48.0).max(TILE_W);
         self.cols = ((usable_width / (TILE_W + 8.0)).floor() as usize).max(1);
+        self.scale_factor = window.scale_factor();
 
         let visible = self.visible_indices(cx);
         let selected = self.selected.min(visible.len().saturating_sub(1));

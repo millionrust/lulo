@@ -531,6 +531,7 @@ pub(crate) mod linux_wayland {
             index: usize,
             app: &RunningApp,
             colors: &Colors,
+            scale_factor: f32,
             cx: &mut Context<Self>,
         ) -> AnyElement {
             let layout = self.layout;
@@ -567,7 +568,7 @@ pub(crate) mod linux_wayland {
                             )),
                     )
                 })
-                .child(icon(item, &app.app_id, layout.icon, cx))
+                .child(icon(item, &app.app_id, layout.icon, scale_factor, cx))
                 .when(selected, |tile| {
                     tile.child(
                         div()
@@ -631,10 +632,11 @@ pub(crate) mod linux_wayland {
         item: Option<&Item>,
         app_id: &str,
         size: f32,
+        scale_factor: f32,
         cx: &mut Context<SwitcherView>,
     ) -> AnyElement {
         if let Some(path) = item.and_then(|item| item.icon.clone()) {
-            return rmac_shell_ui::svg_icon(path, size, cx)
+            return rmac_shell_ui::svg_icon(path, size, scale_factor, cx)
                 .absolute()
                 .top_0()
                 .left_0()
@@ -669,9 +671,10 @@ pub(crate) mod linux_wayland {
     }
 
     impl Render for SwitcherView {
-        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let layout = self.layout;
             let colors = Colors::current();
+            let scale_factor = window.scale_factor();
             let selected_name = self
                 .session
                 .selected_app()
@@ -687,7 +690,7 @@ pub(crate) mod linux_wayland {
                 .apps
                 .iter()
                 .enumerate()
-                .map(|(index, app)| self.tile(index, app, &colors, cx))
+                .map(|(index, app)| self.tile(index, app, &colors, scale_factor, cx))
                 .collect::<Vec<_>>();
             div()
                 .id("app-switcher")

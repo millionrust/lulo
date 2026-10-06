@@ -115,9 +115,9 @@ impl AboutPanel {
 }
 
 impl Render for AboutPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let icon = match &self.icon {
-            Some(path) => crate::svg_icon(path.clone(), ICON_EDGE, cx)
+            Some(path) => crate::svg_icon(path.clone(), ICON_EDGE, window.scale_factor(), cx)
                 .size(px(ICON_EDGE))
                 .into_any_element(),
             None => div().size(px(ICON_EDGE)).into_any_element(),

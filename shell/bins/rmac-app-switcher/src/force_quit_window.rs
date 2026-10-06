@@ -247,6 +247,7 @@ impl ForceQuitView {
         index: usize,
         entry: &Entry,
         colors: &Colors,
+        scale_factor: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let selected = self.list.selected == Some(index);
@@ -285,7 +286,12 @@ impl ForceQuitView {
                     .left(px(layout::ICON_LEFT))
                     .top(px(layout::ICON_TOP))
                     .size(px(layout::ICON))
-                    .child(icon(self.icons.get(&entry.app_id), &entry.name, cx)),
+                    .child(icon(
+                        self.icons.get(&entry.app_id),
+                        &entry.name,
+                        scale_factor,
+                        cx,
+                    )),
             )
             .child(
                 div()
@@ -317,7 +323,13 @@ impl ForceQuitView {
             .into_any_element()
     }
 
-    fn render_sheet(&self, sheet: &Sheet, colors: &Colors, cx: &mut Context<Self>) -> AnyElement {
+    fn render_sheet(
+        &self,
+        sheet: &Sheet,
+        colors: &Colors,
+        scale_factor: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let metrics = tokens::current().metrics;
         let width = metrics.alert_width;
         let (title, message, confirm) = match sheet {
@@ -409,7 +421,7 @@ impl ForceQuitView {
                     .text_color(rgba(colors.text))
                     .when_some(icon_path, |sheet, path| {
                         sheet.child(
-                            rmac_shell_ui::svg_icon(path, metrics.alert_icon, cx)
+                            rmac_shell_ui::svg_icon(path, metrics.alert_icon, scale_factor, cx)
                                 .size(px(metrics.alert_icon)),
                         )
                     })
@@ -436,9 +448,14 @@ fn capitalized(text: &str) -> String {
 }
 
 /// The app's artwork, or a plain plate with the name's initial.
-fn icon(path: Option<&PathBuf>, name: &str, cx: &mut Context<ForceQuitView>) -> AnyElement {
+fn icon(
+    path: Option<&PathBuf>,
+    name: &str,
+    scale_factor: f32,
+    cx: &mut Context<ForceQuitView>,
+) -> AnyElement {
     if let Some(path) = path {
-        return rmac_shell_ui::svg_icon(path.clone(), layout::ICON, cx)
+        return rmac_shell_ui::svg_icon(path.clone(), layout::ICON, scale_factor, cx)
             .size(px(layout::ICON))
             .into_any_element();
     }
@@ -510,16 +527,17 @@ fn traffic_lights(active: bool, cx: &mut Context<ForceQuitView>) -> AnyElement {
 }
 
 impl Render for ForceQuitView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = Colors::current();
         let metrics = tokens::current().metrics;
+        let scale_factor = window.scale_factor();
         let rows = self
             .list
             .entries
             .clone()
             .iter()
             .enumerate()
-            .map(|(index, entry)| self.row(index, entry, &colors, cx))
+            .map(|(index, entry)| self.row(index, entry, &colors, scale_factor, cx))
             .collect::<Vec<_>>();
         let can_force_quit = self
             .list
@@ -528,7 +546,7 @@ impl Render for ForceQuitView {
         let sheet = self
             .sheet
             .clone()
-            .map(|sheet| self.render_sheet(&sheet, &colors, cx));
+            .map(|sheet| self.render_sheet(&sheet, &colors, scale_factor, cx));
         div()
             .id("force-quit")
             .track_focus(&self.focus)

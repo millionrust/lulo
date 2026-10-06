@@ -80,9 +80,14 @@ fn rule_line() -> gpui::Div {
 }
 
 impl LauncherView {
-    fn panel_icon(icon: &PanelIcon, size: f32, cx: &mut Context<Self>) -> AnyElement {
+    fn panel_icon(
+        icon: &PanelIcon,
+        size: f32,
+        scale_factor: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         match icon {
-            PanelIcon::Image(path) => rmac_ui::svg_icon(path.clone(), size, cx)
+            PanelIcon::Image(path) => rmac_ui::svg_icon(path.clone(), size, scale_factor, cx)
                 .size(px(size))
                 .rounded(px(size * 0.2))
                 .flex_none()
@@ -152,6 +157,7 @@ impl LauncherView {
                 header.child(div().flex_none().ml(px(8.0)).child(Self::panel_icon(
                     &row.icon,
                     metrics::TOP_HIT_ICON,
+                    self.scale_factor,
                     cx,
                 )))
             })
@@ -188,7 +194,7 @@ impl LauncherView {
                     .absolute()
                     .left(px(pm::ICON_LEFT - start))
                     .top(px((pm::ROW - pm::ICON) / 2.0))
-                    .child(Self::panel_icon(&row.icon, pm::ICON, cx)),
+                    .child(Self::panel_icon(&row.icon, pm::ICON, self.scale_factor, cx)),
             )
             .child(
                 div()

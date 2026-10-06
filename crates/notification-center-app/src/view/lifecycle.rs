@@ -154,6 +154,7 @@ impl NotificationCenterView {
             a11y_active_last_frame: false,
             widgets: Vec::new(),
             widget_data: rmac_desktop_widgets::WidgetData::default(),
+            scale_factor: window.scale_factor(),
         }
     }
 

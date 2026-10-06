@@ -78,6 +78,12 @@ pub(crate) struct AppDrawer {
     /// each time (crates/app-drawer/src/service.rs), so there is nothing to
     /// poll: reopening is what picks up new launches.
     recent_ids: Vec<String>,
+    /// `Window::scale_factor()`, refreshed every `render()` (same pattern
+    /// as `cols`) so `icon_element`'s `rmac_ui::svg_icon` calls rasterize
+    /// for the surface's real physical pixels — niri reports 1.25 on the
+    /// reference laptop — without threading it through every tile/row
+    /// helper as an extra parameter.
+    scale_factor: f32,
 }
 
 pub(crate) const RECENTS_ROW_COUNT: usize = 7;

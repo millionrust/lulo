@@ -2,6 +2,7 @@
 
 mod consumer;
 mod coordinator;
+mod entry_cache;
 pub mod icons;
 mod model;
 pub mod session;

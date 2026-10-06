@@ -5553,6 +5553,7 @@ name = "rmac-apps"
 version = "0.9.0-beta.1"
 dependencies = [
  "notify",
+ "serde",
 ]
 
 [[package]]
@@ -5742,6 +5743,8 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-storage",
  "rmac-theme",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6203,6 +6206,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "image",
+ "libc",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
@@ -6210,6 +6214,8 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-ui",
  "uuid",
+ "wayland-client",
+ "wayland-protocols-wlr",
 ]
 
 [[package]]

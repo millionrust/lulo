@@ -27,3 +27,8 @@ rmac-shell-layer.workspace = true
 rmac-shell-settings.workspace = true
 rmac-shell-ui.workspace = true
 uuid.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+wayland-client.workspace = true
+wayland-protocols-wlr.workspace = true

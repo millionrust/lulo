@@ -1,0 +1,66 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-06T07:11:13Z",
+  "panels": {
+    "mission-control": {
+      "open_ms": 67.75850197300315,
+      "open_pass": true,
+      "opens": [
+        128.85133491363376,
+        67.86191696301103,
+        64.0778481028974,
+        62.44734500069171,
+        67.75850197300315
+      ]
+    }
+  },
+  "profile": "release",
+  "repeat": 5,
+  "schema_version": 1,
+  "shell": {
+    "dock": {
+      "backend_init_ms": 6.5059729386121035,
+      "first_frame_ms": 132.9695190070197,
+      "first_frame_pass": true,
+      "icons_painted_ms": 177.2625190070197,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 5.800848011858761,
+          "first_frame_ms": 757.6935300603509,
+          "icons_painted_ms": 870.104530060351,
+          "window_listed_ms": null
+        },
+        {
+          "backend_init_ms": 5.747842020355165,
+          "first_frame_ms": 113.9812379842624,
+          "icons_painted_ms": 160.4202379842624,
+          "window_listed_ms": null
+        },
+        {
+          "backend_init_ms": 7.575017050839961,
+          "first_frame_ms": 122.2511320374906,
+          "icons_painted_ms": 166.5541320374906,
+          "window_listed_ms": null
+        },
+        {
+          "backend_init_ms": 6.569519056938589,
+          "first_frame_ms": 152.5855390354991,
+          "icons_painted_ms": 197.7055390354991,
+          "window_listed_ms": null
+        },
+        {
+          "backend_init_ms": 6.5059729386121035,
+          "first_frame_ms": 132.9695190070197,
+          "icons_painted_ms": 177.2625190070197,
+          "window_listed_ms": null
+        }
+      ],
+      "window_listed_ms": null
+    }
+  },
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Application {
     pub id: String,
     pub name: String,
@@ -20,7 +20,7 @@ pub struct Application {
     pub actions: Vec<DesktopAction>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DesktopAction {
     pub id: String,
     pub name: String,
@@ -159,7 +159,7 @@ pub fn source_inventory(applications: &[Application]) -> SourceInventory {
     inventory
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LaunchSpec {
     OpenPath(PathBuf),
     Command {

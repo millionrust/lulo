@@ -25,7 +25,8 @@ rmac-places-system.workspace = true
 rmac-shell-settings.workspace = true
 rmac-storage.workspace = true
 rmac-theme.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 image = { workspace = true, features = ["png"] }
-serde_json.workspace = true

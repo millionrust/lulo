@@ -31,7 +31,9 @@ pub(crate) struct BlinkCursor {
 impl BlinkCursor {
     pub fn new() -> Self {
         Self {
-            visible: false,
+            // rmac: a newly focused input shows its caret in the frame
+            // that focuses it; `start` then has nothing to repaint.
+            visible: true,
             paused: false,
             epoch: 0,
             last_interaction: Instant::now(),
@@ -42,8 +44,22 @@ impl BlinkCursor {
     /// Start the blinking
     pub fn start(&mut self, cx: &mut Context<Self>) {
         self.last_interaction = Instant::now();
-        self.visible = false;
-        self.blink(self.epoch, cx);
+        self.paused = false;
+        // rmac: show the caret now and blink from here. A caret that already
+        // shows needs no repaint: a window opening with a focused field
+        // (Settings' search) otherwise drew one more whole frame right
+        // after its first (SPEED-02).
+        if !self.visible {
+            self.visible = true;
+            cx.notify();
+        }
+        let epoch = self.next_epoch();
+        self._task = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(INTERVAL).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |this, cx| this.blink(epoch, cx));
+            }
+        });
     }
 
     pub fn stop(&mut self, cx: &mut Context<Self>) {

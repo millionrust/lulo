@@ -1,0 +1,183 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 5.842862999998033,
+      "first_frame_ms": 248.29526501707733,
+      "first_frame_pass": true,
+      "icons_painted_ms": 248.29526501707733,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 5.671687074936926,
+          "draw_skips": 0,
+          "first_frame_ms": 160.23015906102955,
+          "focus_after_first_frame_ms": 87.853,
+          "force_renders": 0,
+          "icons_painted_ms": 160.23015906102955,
+          "presents_after_focus": 0,
+          "window_listed_ms": 272.5435310276225
+        },
+        {
+          "backend_init_ms": 5.842862999998033,
+          "draw_skips": 0,
+          "first_frame_ms": 287.9870670149103,
+          "focus_after_first_frame_ms": 85.178,
+          "force_renders": 0,
+          "icons_painted_ms": 287.9870670149103,
+          "presents_after_focus": 0,
+          "window_listed_ms": 433.56324592605233
+        },
+        {
+          "backend_init_ms": 11.038140975870192,
+          "draw_skips": 0,
+          "first_frame_ms": 248.29526501707733,
+          "focus_after_first_frame_ms": 86.433,
+          "force_renders": 0,
+          "icons_painted_ms": 248.29526501707733,
+          "presents_after_focus": 0,
+          "window_listed_ms": 373.3009659918025
+        }
+      ],
+      "window_listed_ms": 373.3009659918025
+    }
+  },
+  "captured_at": "2026-10-06T15:06:51Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 149.96365294791758,
+      "switcher_first_frame_ms": 46.3984040543437,
+      "switches": [
+        182.48302896972746,
+        149.96365294791758,
+        140.3618260519579
+      ]
+    },
+    "cmd-tab-hold": {
+      "commits": [
+        280.56995500810444,
+        71.05606305412948,
+        58.28392703551799
+      ],
+      "pass": false,
+      "release_to_switch_ms": 71.05606305412948,
+      "reveal_ms": 128.8291810778901,
+      "reveals": [
+        175.0113080488518,
+        123.98092297371477,
+        128.8291810778901
+      ]
+    },
+    "resize-drag-long": {
+      "configures": 8,
+      "final_size": [
+        939,
+        808
+      ],
+      "frame_p50_ms": 13.857,
+      "frame_p95_ms": 37.306,
+      "frames": 12,
+      "pass": false,
+      "render_p50_ms": 9.755,
+      "render_p95_ms": 24.55,
+      "resizes": 8,
+      "stalls": 0,
+      "start_size": [
+        699,
+        808
+      ],
+      "submit_p50_ms": 6.332,
+      "submit_p95_ms": 19.021,
+      "within_16_7ms_share": 0.5833333333333334,
+      "worst_frame_ms": 37.306
+    },
+    "spotlight-typing": {
+      "echo_p95_ms": 34.28,
+      "pass": false,
+      "results_ms": 31.041,
+      "runs": [
+        {
+          "echo_after_frame_callback_p95_ms": 34.096,
+          "echo_max_ms": 34.28,
+          "echo_p50_ms": 1.138,
+          "echo_p95_ms": 34.28,
+          "first_keys_ms": [
+            1.924,
+            34.28,
+            1.252
+          ],
+          "frame_p50_ms": 1.399,
+          "frame_p95_ms": 4.156,
+          "frames": 23,
+          "frames_pass": false,
+          "keys": 10,
+          "pass": false,
+          "results_ms": 29.186,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9565217391304348,
+          "worst_frame_ms": 25.261
+        },
+        {
+          "echo_after_frame_callback_p95_ms": 32.669,
+          "echo_max_ms": 32.882,
+          "echo_p50_ms": 1.219,
+          "echo_p95_ms": 32.882,
+          "first_keys_ms": [
+            1.709,
+            32.882,
+            1.339
+          ],
+          "frame_p50_ms": 1.624,
+          "frame_p95_ms": 4.862,
+          "frames": 20,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 35.741,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 13.966
+        },
+        {
+          "echo_after_frame_callback_p95_ms": 33.235,
+          "echo_max_ms": 33.382,
+          "echo_p50_ms": 1.153,
+          "echo_p95_ms": 33.382,
+          "first_keys_ms": [
+            1.513,
+            33.382,
+            1.153
+          ],
+          "frame_p50_ms": 2.699,
+          "frame_p95_ms": 11.655,
+          "frames": 19,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 31.041,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.655
+        }
+      ]
+    }
+  },
+  "panels": {
+    "app-switcher": {
+      "open_ms": 75.94058103859425,
+      "open_pass": true,
+      "opens": [
+        75.94058103859425,
+        84.2520009027794,
+        34.89577700383961
+      ]
+    }
+  },
+  "profile": "iterate",
+  "repeat": 3,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

@@ -1702,6 +1702,7 @@ impl WaylandWindowStatePtr {
             if !state.input_only {
                 let device_bounds = state.bounds.to_device_pixels(state.scale);
                 state.renderer.update_drawable_size(device_bounds.size);
+                super::frame_trace::record("renderer_resized");
             }
             (state.bounds.size, state.scale)
         };
@@ -1719,6 +1720,44 @@ impl WaylandWindowStatePtr {
                     .set_destination(f32::from(size.width) as i32, f32::from(size.height) as i32);
             }
         }
+        self.draw_soon("draw_resized");
+    }
+
+    /// rmac: draw a new size as soon as the event loop is free, without
+    /// waiting for a frame callback. niri holds a window's frame callbacks
+    /// while it waits for the buffer that answers its resize configure, so
+    /// a window that had just drawn (a callback pending, nothing parked)
+    /// sat on the configure until niri's transaction timed out: about
+    /// 450 ms per step of an interactive resize (SPEED-12), and every
+    /// layer surface that grows (the App Switcher's reveal, Spotlight's
+    /// results) waited for its next frame callback too.
+    ///
+    /// A key press does the same (SPEED-10): its echo no longer waits for
+    /// the frame callback of the frame before it, which in a window that is
+    /// still drawing (Spotlight streaming results) cost up to one whole
+    /// compositor frame. Presenting early is fine with the mailbox present
+    /// mode; a window that has nothing new to draw draws nothing.
+    fn draw_soon(&self, reason: &str) {
+        let mut state = self.state.borrow_mut();
+        if !state.acknowledged_first_configure || state.hidden {
+            return;
+        }
+        state.idle_streak = 0;
+        state.idle_generation = state.idle_generation.wrapping_add(1);
+        let generation = state.idle_generation;
+        let client = state.client.get_client();
+        drop(state);
+        super::frame_trace::record(reason);
+        let window = self.downgrade();
+        let loop_handle = client.borrow().loop_handle.clone();
+        let _ = loop_handle.insert_idle(move |_| {
+            if let Some(window) = window.upgrade() {
+                let current = window.state.borrow().idle_generation == generation;
+                if current {
+                    window.frame();
+                }
+            }
+        });
     }
 
     pub fn resize(&self, size: Size<Pixels>) {
@@ -1763,7 +1802,11 @@ impl WaylandWindowStatePtr {
         if self.is_blocked() {
             return;
         }
-        self.wake_frame();
+        if matches!(input, PlatformInput::KeyDown(_)) {
+            self.draw_soon("draw_for_key");
+        } else {
+            self.wake_frame();
+        }
         let callback = self.callbacks.borrow_mut().input.take();
         if let Some(mut fun) = callback {
             let result = fun(input.clone());

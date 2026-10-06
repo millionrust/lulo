@@ -6049,6 +6049,7 @@ dependencies = [
  "async-channel",
  "blocking",
  "gpui",
+ "gpui_linux",
  "gpui_platform",
  "rmac-app-launch",
  "rmac-apps",

@@ -44,13 +44,18 @@ pub(crate) mod linux_wayland {
     /// state before treating "⌘ is up" as a release. niri sends it in the
     /// same flush as the keyboard enter, so it has always been dispatched
     /// well within one frame; the grace only covers a slow event loop. A
-    /// quick ⌘Tab tap pays it once (SPEED-11: it was 80 ms).
-    const RELEASE_GRACE: Duration = Duration::from_millis(16);
+    /// quick ⌘Tab tap pays it once (SPEED-11: it was 80 ms, then 16).
+    const RELEASE_GRACE: Duration = Duration::from_millis(4);
     /// Never keep an invisible exclusive surface that never got the keyboard.
     /// The surface took 750 ms to get the keyboard in the reference laptop's
     /// nested journey session and sometimes over 1 s, when ⌘Tab then did
     /// nothing at all. Leave a slow low-spec first frame room to arrive.
     const ACTIVATION_TIMEOUT: Duration = Duration::from_millis(3_000);
+    /// How long after a close the desktop-entry catalog is re-read.
+    const CATALOG_REFRESH_DELAY: Duration = Duration::from_millis(1_000);
+    /// How long after hiding the kept surface asks for the configure its
+    /// next map needs (after its resize back to 1 × 1 has been sent).
+    const KEPT_CONFIGURE_DELAY: Duration = Duration::from_millis(50);
     const QUIT_READBACK_TIMEOUT: Duration = Duration::from_millis(500);
     const QUIT_READBACK_INTERVAL: Duration = Duration::from_millis(25);
     const HIDDEN_SIZE: f32 = 1.0;
@@ -82,6 +87,10 @@ pub(crate) mod linux_wayland {
         recency: Recency,
         catalog: Rc<Vec<rmac_apps::Application>>,
         open: Option<WindowHandle<SwitcherView>>,
+        /// The last switcher surface, unmapped, and the display it is on:
+        /// the next ⌘Tab maps it again instead of creating a surface and a
+        /// swapchain (SPEED-11).
+        kept: Option<(WindowHandle<SwitcherView>, Option<gpui::DisplayId>)>,
         force_quit: Option<WindowHandle<ForceQuitView>>,
     }
 
@@ -92,6 +101,7 @@ pub(crate) mod linux_wayland {
                 recency: Recency::default(),
                 catalog: Rc::new(Vec::new()),
                 open: None,
+                kept: None,
                 force_quit: None,
             };
             service.refresh_catalog(cx);
@@ -132,7 +142,13 @@ pub(crate) mod linux_wayland {
 
         fn closed(&mut self, cx: &mut Context<Self>) {
             self.open = None;
-            self.refresh_catalog(cx);
+            // Re-read the catalog once the switch has landed: right after a
+            // commit it competed with the chosen app's first frame.
+            cx.spawn(async move |this, cx: &mut AsyncApp| {
+                cx.background_executor().timer(CATALOG_REFRESH_DELAY).await;
+                let _ = this.update(cx, |service, cx| service.refresh_catalog(cx));
+            })
+            .detach();
         }
 
         fn item(&self, app: &RunningApp) -> Item {
@@ -253,6 +269,10 @@ pub(crate) mod linux_wayland {
         was_active: bool,
         closing: bool,
         pending_quit: bool,
+        display_id: Option<gpui::DisplayId>,
+        /// Counts opens of this (kept) surface; timers of an earlier open
+        /// do nothing.
+        generation: u64,
     }
 
     impl SwitcherView {
@@ -283,22 +303,8 @@ pub(crate) mod linux_wayland {
                 }
             })
             .detach();
-            cx.spawn_in(window, async move |this, cx| {
-                cx.background_executor().timer(REVEAL_DELAY).await;
-                let _ = this.update_in(cx, |this, window, cx| this.reveal(window, cx));
-            })
-            .detach();
-            cx.spawn_in(window, async move |this, cx| {
-                cx.background_executor().timer(ACTIVATION_TIMEOUT).await;
-                let _ = this.update_in(cx, |this, window, cx| {
-                    if !this.was_active {
-                        this.close(window, cx);
-                    }
-                });
-            })
-            .detach();
             let layout = model::layout(session.apps.len(), display_width);
-            Self {
+            let mut view = Self {
                 service,
                 session,
                 items,
@@ -311,13 +317,70 @@ pub(crate) mod linux_wayland {
                 was_active: false,
                 closing: false,
                 pending_quit: false,
-            }
+                display_id: window.display(cx).map(|display| display.id()),
+                generation: 0,
+            };
+            view.start(window, cx);
+            view
+        }
+
+        /// The timers of one open: reveal after REVEAL_DELAY, and give up
+        /// if the surface never gets the keyboard.
+        fn start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.generation = self.generation.wrapping_add(1);
+            let generation = self.generation;
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor().timer(REVEAL_DELAY).await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if this.generation == generation {
+                        this.reveal(window, cx);
+                    }
+                });
+            })
+            .detach();
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor().timer(ACTIVATION_TIMEOUT).await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if this.generation == generation && !this.was_active {
+                        this.close(window, cx);
+                    }
+                });
+            })
+            .detach();
+        }
+
+        /// Open the kept surface again for a new ⌘Tab.
+        fn reopen(
+            &mut self,
+            session: Session,
+            items: BTreeMap<String, Item>,
+            display_width: f32,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            self.layout = model::layout(session.apps.len(), display_width);
+            self.session = session;
+            self.items = items;
+            self.display_width = display_width;
+            self.revealed = false;
+            self.armed = false;
+            self.saw_command = false;
+            self.was_active = false;
+            self.closing = false;
+            self.pending_quit = false;
+            self.focus.focus(window, cx);
+            self.start(window, cx);
+            cx.notify();
         }
 
         fn arm_after_grace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            let generation = self.generation;
             cx.spawn_in(window, async move |this, cx| {
                 cx.background_executor().timer(RELEASE_GRACE).await;
                 let _ = this.update_in(cx, |this, window, cx| {
+                    if this.generation != generation || this.closing {
+                        return;
+                    }
                     this.armed = true;
                     if !window.modifiers().platform {
                         // ⌘ was already up when the surface got the keyboard:
@@ -384,13 +447,50 @@ pub(crate) mod linux_wayland {
             }
             self.closing = true;
             let _ = self.service.update(cx, |service, cx| service.closed(cx));
-            window.remove_window();
+            // Keep the surface, unmapped, for the next ⌘Tab: it takes no
+            // input or focus and draws nothing until mapped again.
+            // Only a surface that stayed 1 × 1 is kept. Growing it back down
+            // after a reveal costs a swapchain rebuild and niri then took
+            // about 500 ms to give the re-mapped surface the keyboard; a
+            // revealed switcher closes as before and the next ⌘Tab opens a
+            // new one.
+            let handle = window.window_handle();
+            if self.revealed || !gpui_linux::set_layer_window_mapped(handle, false) {
+                window.remove_window();
+                return;
+            }
+            gpui_linux::trace_mark("switcher_hidden");
+            let kept = handle.downcast::<Self>();
+            let display_id = self.display_id;
+            let replaced = self
+                .service
+                .update(cx, |service, _| {
+                    std::mem::replace(&mut service.kept, kept.map(|kept| (kept, display_id)))
+                })
+                .ok()
+                .flatten();
+            if let Some((old, _)) = replaced {
+                // Only one surface is kept (a display change made a new one).
+                let _ = old.update(cx, |_, window, _| window.remove_window());
+            }
+            let generation = self.generation;
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor().timer(KEPT_CONFIGURE_DELAY).await;
+                let _ = this.update_in(cx, |this, window, _| {
+                    if this.generation == generation && this.closing {
+                        // Ask now for the configure the next map needs.
+                        gpui_linux::request_layer_window_configure(window.window_handle());
+                    }
+                });
+            })
+            .detach();
         }
 
         fn commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
             if self.closing {
                 return;
             }
+            gpui_linux::trace_mark("switcher_commit");
             let selected = self.session.selected_app().cloned();
             let snapshot = self
                 .service
@@ -749,6 +849,7 @@ pub(crate) mod linux_wayland {
                     eprintln!("app switcher could not activate {}: {error:?}", app.app_id);
                 }
             }
+            gpui_linux::trace_mark("switcher_activated");
             if !restored.is_empty() {
                 for window in restored {
                     store.forget(window);
@@ -843,6 +944,23 @@ pub(crate) mod linux_wayland {
         let display_width = display
             .as_ref()
             .map_or(1280.0, |display| f32::from(display.bounds().size.width));
+        let display_id = display.as_ref().map(|display| display.id());
+        let kept = service.update(cx, |service, _| service.kept.take());
+        if let Some((handle, kept_display)) = kept {
+            if kept_display == display_id
+                && gpui_linux::set_layer_window_mapped(handle.into(), true)
+            {
+                gpui_linux::trace_mark("switcher_reshown");
+                let reopened = handle.update(cx, |view, window, cx| {
+                    view.reopen(session.clone(), items.clone(), display_width, window, cx)
+                });
+                if reopened.is_ok() {
+                    service.update(cx, |service, _| service.open = Some(handle));
+                    return;
+                }
+            }
+            let _ = handle.update(cx, |_, window, _| window.remove_window());
+        }
         let weak = service.downgrade();
         let options = WindowOptions {
             titlebar: None,
@@ -852,7 +970,7 @@ pub(crate) mod linux_wayland {
                 origin: point(px(0.0), px(0.0)),
                 size: Size::new(px(HIDDEN_SIZE), px(HIDDEN_SIZE)),
             })),
-            display_id: display.as_ref().map(|display| display.id()),
+            display_id,
             app_id: Some("dev.rmac.AppSwitcher".to_owned()),
             window_background: WindowBackgroundAppearance::Transparent,
             // No anchor: the compositor centres the surface on the output,
@@ -871,7 +989,12 @@ pub(crate) mod linux_wayland {
         match cx.open_window(options, move |window, cx| {
             cx.new(|cx| SwitcherView::new(weak, session, items, display_width, window, cx))
         }) {
-            Ok(handle) => service.update(cx, |service, _| service.open = Some(handle)),
+            Ok(handle) => {
+                // Kept surfaces are matched on the display asked for here
+                // (the window may not know its output yet).
+                let _ = handle.update(cx, |view, _, _| view.display_id = display_id);
+                service.update(cx, |service, _| service.open = Some(handle));
+            }
             Err(error) => eprintln!("could not open the app switcher: {error}"),
         }
     }

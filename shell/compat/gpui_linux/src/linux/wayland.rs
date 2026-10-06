@@ -16,6 +16,13 @@ pub use client::{
     request_layer_window_configure, set_layer_window_mapped, stage_external_file_drag,
 };
 
+/// rmac: add an app-defined row to this process's `RMAC_FRAME_TRACE` (a
+/// no-op without it), so the speed sweep can time app steps on the same
+/// clock as the frames.
+pub fn trace_mark(event: &str) {
+    frame_trace::record(event);
+}
+
 use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
 
 use gpui::CursorStyle;

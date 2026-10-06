@@ -181,19 +181,8 @@ impl LauncherView {
                     value.is_empty() && this.browse_mode.is_none() && this.panel.is_none();
                 if this.compact != compact {
                     this.compact = compact;
-                    let (width, height) = if compact {
-                        (
-                            rmac_launcher::surface::LOGICAL_WIDTH as f32,
-                            rmac_launcher::surface::LOGICAL_HEIGHT as f32,
-                        )
-                    } else {
-                        (
-                            rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32,
-                            rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32,
-                        )
-                    };
                     let _ = cx.update_window(window_handle, |_, window, _| {
-                        window.resize(size(px(width), px(height)));
+                        set_compact(window, compact);
                     });
                 }
                 if let Some(request) = this.coordinator.set_query(value) {
@@ -226,12 +215,7 @@ impl LauncherView {
         };
         query.read(cx).focus_handle(cx).focus(window, cx);
         let compact = initial_browse_mode.is_none();
-        if !compact {
-            window.resize(size(
-                px(rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32),
-                px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32),
-            ));
-        }
+        set_compact(window, compact);
         let mut view = Self {
             token,
             query,
@@ -455,10 +439,7 @@ impl LauncherView {
         self.panel = None;
         self.application_options_open = false;
         self.compact = false;
-        window.resize(size(
-            px(rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32),
-            px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32),
-        ));
+        set_compact(window, false);
         self.ensure_browse_selection();
         cx.notify();
     }
@@ -573,18 +554,7 @@ impl LauncherView {
         let compact = text.is_empty() && self.browse_mode.is_none() && self.panel.is_none();
         if self.compact != compact {
             self.compact = compact;
-            let (width, height) = if compact {
-                (
-                    rmac_launcher::surface::LOGICAL_WIDTH as f32,
-                    rmac_launcher::surface::LOGICAL_HEIGHT as f32,
-                )
-            } else {
-                (
-                    rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32,
-                    rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32,
-                )
-            };
-            window.resize(size(px(width), px(height)));
+            set_compact(window, compact);
         }
         if let Some(request) = self.coordinator.set_query(text) {
             self.dispatch(request, cx);
@@ -640,6 +610,44 @@ impl LauncherView {
                 .detach();
             }
         }
+    }
+}
+
+/// Show the compact bar or the expanded panel (SPEED-10). On Linux the layer
+/// surface keeps its expanded size from the start: the space below the bar
+/// is transparent and outside the input region while the bar is compact, so
+/// presses there reach the outside-click catcher as before. Resizing the
+/// surface on the first typed key made that key wait 26–33 ms for niri's
+/// configure and next frame callback.
+pub(crate) fn set_compact(window: &mut gpui::Window, compact: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        if compact {
+            window.set_input_region(Some(&[gpui::Bounds::new(
+                gpui::point(px(0.0), px(0.0)),
+                size(
+                    px(rmac_launcher::surface::LOGICAL_WIDTH as f32),
+                    px(rmac_launcher::surface::LOGICAL_HEIGHT as f32),
+                ),
+            )]));
+        } else {
+            window.set_input_region(None);
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let (width, height) = if compact {
+            (
+                rmac_launcher::surface::LOGICAL_WIDTH as f32,
+                rmac_launcher::surface::LOGICAL_HEIGHT as f32,
+            )
+        } else {
+            (
+                rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32,
+                rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32,
+            )
+        };
+        window.resize(size(px(width), px(height)));
     }
 }
 

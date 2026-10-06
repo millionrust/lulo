@@ -99,10 +99,7 @@ impl LauncherView {
         self.panel = Some(Panel::new(mode));
         self.query
             .update(cx, |state, cx| state.set_value("", window, cx));
-        window.resize(gpui::size(
-            gpui::px(rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32),
-            gpui::px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32),
-        ));
+        super::set_compact(window, false);
         match mode {
             PanelMode::Actions => self.load_actions(cx),
             PanelMode::Clipboard => self.load_clipboard(cx),
@@ -116,10 +113,7 @@ impl LauncherView {
         self.compact = true;
         self.query
             .update(cx, |state, cx| state.set_value("", window, cx));
-        window.resize(gpui::size(
-            gpui::px(rmac_launcher::surface::LOGICAL_WIDTH as f32),
-            gpui::px(rmac_launcher::surface::LOGICAL_HEIGHT as f32),
-        ));
+        super::set_compact(window, true);
         cx.notify();
     }
 

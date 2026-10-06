@@ -373,13 +373,26 @@ pub(super) fn route_activation(
                 return;
             }
         };
+    // The surface opens at its expanded height and never resizes while
+    // typing (`view::set_compact`); the catcher still leaves only the
+    // compact bar's area to it.
+    let surface_bounds = Bounds::new(
+        bounds.origin,
+        size(
+            bounds.size.width,
+            px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32).max(bounds.size.height),
+        ),
+    );
     // Captured before Spotlight's own window opens and takes focus, so
     // Escape (or an outside click) can hand focus back to it, as on the
     // Mac. `None` whenever nothing was focused (e.g. an empty desktop).
     let previous_window = context.compositor().focus.window;
     open_launcher(
         event,
-        overlay_options(WindowBounds::Windowed(bounds), description.margin_top),
+        overlay_options(
+            WindowBounds::Windowed(surface_bounds),
+            description.margin_top,
+        ),
         Some(bounds),
         previous_window,
         cx,

@@ -128,8 +128,21 @@ KEY_GAP_US = 45_000
 
 
 def key_presses(events: Events) -> list[int]:
-    """The `input` rows that start a stroke (see the module docstring)."""
+    """The `input` rows that start a stroke (see the module docstring).
+    Builds that trace `draw_for_key` (written right after a key-down's
+    `input` row) name the key-downs exactly; the 45 ms gap rule misread a
+    key release that came late as the next press."""
 
+    if any(event == "draw_for_key" for event, _ in events):
+        exact: list[int] = []
+        last_input: Optional[int] = None
+        for event, micros in events:
+            if event == "input":
+                last_input = micros
+            elif event == "draw_for_key" and last_input is not None:
+                exact.append(last_input)
+                last_input = None
+        return exact
     presses: list[int] = []
     previous: Optional[int] = None
     for event, micros in events:
@@ -932,7 +945,9 @@ class InteractionScenarios:
 
     def scenario_resize_drag(self) -> dict[str, Any]:
         """A left-edge resize drag of the Settings window: every configure
-        re-lays the window out; scored on the frame budget."""
+        re-lays the window out; scored on the frame budget. (Few frames: the
+        press lands on the edge only part of the time; see
+        `resize-drag-long` for niri's own interactive resize.)"""
 
         binary = self.bin("rmac-system-settings")
         if binary is None:
@@ -952,6 +967,41 @@ class InteractionScenarios:
             self._settle(trace, 3.0)
             events = self._since(trace, mark)
             summary = {**frames_summary(events), **frame_split_ms(events)}
+            final = (self.window_by_app_id(SETTINGS_APP_ID) or {}).get("layout") or {}
+            summary["final_size"] = final.get("window_size")
+            return summary
+        finally:
+            self.stop(process)
+
+    def scenario_resize_drag_long(self) -> dict[str, Any]:
+        """niri's interactive resize (Mod + right-drag; Mod is Alt in the
+        nested session) of Settings: three seconds each way, wider then
+        narrower, so every step is a real configure. Scored on the frame
+        budget, with the configures and resizes counted (SPEED-12)."""
+
+        binary = self.bin("rmac-system-settings")
+        if binary is None:
+            raise RuntimeError("rmac-system-settings not found under --bin-dir")
+        process, trace, window = self._launch([str(binary)], "resize-long", SETTINGS_APP_ID)
+        try:
+            layout = window.get("layout") or {}
+            pos = layout.get("tile_pos_in_workspace_view") or [0, 0]
+            size = layout.get("window_size") or layout.get("tile_size") or [800, 600]
+            # The right half, mid-height: niri resizes the right edge.
+            x = float(pos[0]) + float(size[0]) * 0.8
+            y = float(pos[1]) + float(size[1]) * 0.5
+            start_size = list(size)
+            mark = self._mark(trace)
+            for offset in (240.0, -240.0):
+                self.input.drag((x, y), (x + offset, y), self.out_w, self.out_h, button="right",
+                                steps=180, step_delay=0.016, modifiers=["alt"])
+                time.sleep(0.3)
+            self._settle(trace, 3.0)
+            events = self._since(trace, mark)
+            summary = {**frames_summary(events), **frame_split_ms(events)}
+            summary["configures"] = sum(1 for event, _ in events if event == "configure")
+            summary["resizes"] = sum(1 for event, _ in events if event == "resize")
+            summary["start_size"] = start_size
             final = (self.window_by_app_id(SETTINGS_APP_ID) or {}).get("layout") or {}
             summary["final_size"] = final.get("window_size")
             return summary
@@ -1008,5 +1058,6 @@ SCENARIOS: dict[str, str] = {
     "cmd-tab-hold": "scenario_cmd_tab_hold",
     "minimise-restore": "scenario_minimise_restore",
     "resize-drag": "scenario_resize_drag",
+    "resize-drag-long": "scenario_resize_drag_long",
     "mission-control-animation": "scenario_mission_control_animation",
 }

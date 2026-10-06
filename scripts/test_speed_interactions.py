@@ -52,6 +52,12 @@ class KeyLatencyTests(unittest.TestCase):
         events = [("input", 0), ("input", 2000), ("input", 25000), ("input", 90000), ("input", 112000)]
         self.assertEqual(si.key_presses(events), [0, 90000])
 
+    def test_traced_key_downs_are_used_exactly(self) -> None:
+        # A late release (60 ms after its press) is not a press.
+        events = [("input", 0), ("draw_for_key", 10), ("input", 60000),
+                  ("input", 90000), ("draw_for_key", 90010), ("input", 110000)]
+        self.assertEqual(si.key_presses(events), [0, 90000])
+
     def test_settled_stops_at_the_first_quiet_gap(self) -> None:
         # Results land 10 and 40 ms after the key; a caret blink 600 ms
         # later is not content arriving.

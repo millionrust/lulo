@@ -359,7 +359,15 @@ pub(crate) fn run() {
                 // light.
                 KeyBinding::new("cmd-m", Minimize, Some("SystemSettings")),
             ]);
-            let settings = Settings::new(window, cx);
+            let mut settings = Settings::new(window, cx);
+            // The Mac's own System Settings opens with keyboard focus
+            // already on the search field. Focus it before the first frame:
+            // focusing it while rendering made GPUI refresh the whole
+            // window once more after that frame, which niri then drew when
+            // it activated the window (SPEED-02).
+            settings.focused_once = true;
+            let search_focus = settings.search.read(cx).focus_handle(cx);
+            window.focus(&search_focus, cx);
             // Menu-bar actions need the Settings root as their target even
             // while the search field or the top bar holds keyboard focus.
             rmac_ui::register_menu_target(window, &settings.focus, cx);

@@ -85,17 +85,7 @@ impl Settings {
                 ) {
                     this.finish_input_update(result, cx);
                     this.flush_input_stream_refresh(cx);
-                    this.notify_if_showing(
-                        &[
-                            "Keyboard",
-                            "Mouse",
-                            "Trackpad",
-                            "Touchscreen",
-                            "Language & Region",
-                            "Accessibility",
-                        ],
-                        cx,
-                    );
+                    cx.notify();
                 } else {
                     this.input_refresh_pending = true;
                 }

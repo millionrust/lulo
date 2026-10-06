@@ -57,7 +57,7 @@ impl Settings {
                 // (`!self.bluetooth_available`), so this path's error never
                 // reaches the window-wide Settings banner.
                 this.bluetooth_error = None;
-                this.notify_if_showing(&["Bluetooth"], cx);
+                cx.notify();
             });
         })
         .detach();

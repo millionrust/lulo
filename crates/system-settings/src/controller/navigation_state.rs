@@ -65,22 +65,6 @@ impl Settings {
         }
     }
 
-    /// Repaint for a background load only when the window can be showing
-    /// what it loaded: one of `panes` is open, or any subpage (they show
-    /// details of many sources), a search, or the window-wide error banner.
-    /// A hidden pane reads the latest values when it is opened, since opening
-    /// it repaints. At launch this keeps a dozen snapshot loads that land over
-    /// ~350 ms from repainting the whole window for General.
-    pub(super) fn notify_if_showing(&self, panes: &[&str], cx: &mut Context<Self>) {
-        if !self.nav.is_empty()
-            || panes.contains(&self.current().name.as_ref())
-            || self.global_settings_error().is_some()
-            || !self.search.read(cx).value().trim().is_empty()
-        {
-            cx.notify();
-        }
-    }
-
     pub(super) fn application_identity(&self, app_id: &str) -> Option<&rmac_apps::Application> {
         rmac_apps::find_desktop_entry(&self.app_catalog, app_id)
     }

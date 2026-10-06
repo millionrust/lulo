@@ -163,6 +163,15 @@ gpui::actions!(
         EditLink,
         // Format ▸ Font ▸ Styles….
         ShowStyles,
+        // The format bar's Style pop-up (UIA-07): Regular/Bold/Italic/Bold
+        // Italic, a fixed set distinct from the B/I toggle buttons beside it.
+        TypefaceRegular,
+        TypefaceBold,
+        TypefaceItalic,
+        TypefaceBoldItalic,
+        // The Save sheet's File Format pop-up for a rich document (UIA-08).
+        SheetFileFormatRtf,
+        SheetFileFormatPlainText,
     ]
 );
 

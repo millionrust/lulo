@@ -220,68 +220,61 @@ impl EditorView {
             .into_any_element()
     }
 
-    /// Format ▸ Text ▸ Show Ruler: a thin bar under the title bar with the
-    /// caret paragraph's alignment and list, shown only in rich-text mode
-    /// (TXT-MENU-071). Each button applies to the selected paragraphs.
-    pub(super) fn render_ruler_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let ruler = self.paragraph_style(cx);
-        let alignment = ruler.alignment;
-        let align_button = |id: &'static str,
-                            label: &'static str,
-                            accessible: &'static str,
-                            value: rich::Alignment,
-                            cx: &mut Context<Self>| {
-            Button::new(id, label)
-                .small()
-                .tooltip(accessible)
-                .selected(alignment == value)
-                .on_click(cx.listener(move |this, _, _, cx| this.set_alignment(value, cx)))
-        };
+    /// Format ▸ Text ▸ Show Ruler (TXT-MENU-071): the tab-stop ruler under
+    /// the format bar (UIA-07), shown only in rich-text mode. Ticks every 2
+    /// characters and a margin marker at each edge of the current page
+    /// column (Settings ▸ New Document ▸ Wrap to page, or the window's own
+    /// width with wrapping off) — a real readout of the column rich text
+    /// actually wraps at, not a decoration. Dragging individual tab stops
+    /// is not implemented: the rich-text model has no per-paragraph tab
+    /// stops to drag yet (docs/parity.md UIA-07).
+    pub(super) fn render_ruler(&self, _cx: &mut Context<Self>) -> impl IntoElement {
+        let size = self.font_size;
+        let column_px = f32::from(self.page_width_chars) * size * 0.596;
+        let tick_gap = size * 0.596 * 2.0;
+        let mut ticks = div().flex_1().h(px(16.0)).relative();
+        let mut x = 0.0_f32;
+        let mut index = 0_u32;
+        while x <= column_px + 1.0 {
+            let major = index.is_multiple_of(5);
+            ticks = ticks.child(
+                div()
+                    .absolute()
+                    .left(px(x))
+                    .bottom_0()
+                    .w(px(1.0))
+                    .h(px(if major { 10.0 } else { 6.0 }))
+                    .bg(mac::text_tertiary()),
+            );
+            x += tick_gap;
+            index += 1;
+        }
         div()
-            .id("ruler-bar")
+            .id("ruler")
             .flex_none()
-            .h(px(28.0))
+            .h(px(24.0))
             .flex()
             .items_center()
-            .gap_1()
-            .px_2()
+            .px(px(TEXT_INSET_X))
             .bg(mac::chrome())
             .border_b_1()
             .border_color(mac::separator())
-            .child(align_button(
-                "ruler-align-left",
-                "⟸",
-                "Align Left",
-                rich::Alignment::Left,
-                cx,
-            ))
-            .child(align_button(
-                "ruler-align-centre",
-                "≡",
-                "Centre",
-                rich::Alignment::Center,
-                cx,
-            ))
-            .child(align_button(
-                "ruler-align-justify",
-                "☰",
-                "Justify",
-                rich::Alignment::Justified,
-                cx,
-            ))
-            .child(align_button(
-                "ruler-align-right",
-                "⟹",
-                "Align Right",
-                rich::Alignment::Right,
-                cx,
-            ))
             .child(
-                Button::new("ruler-list", "• List")
-                    .small()
-                    .tooltip("List")
-                    .selected(ruler.list.is_some())
-                    .on_click(cx.listener(|this, _, _, cx| this.open_lists(cx))),
+                div()
+                    .flex_none()
+                    .w(px(0.0))
+                    .h(px(10.0))
+                    .border_l_2()
+                    .border_color(mac::system_blue()),
+            )
+            .child(ticks)
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(0.0))
+                    .h(px(10.0))
+                    .border_l_2()
+                    .border_color(mac::system_blue()),
             )
     }
 

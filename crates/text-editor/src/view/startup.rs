@@ -45,7 +45,16 @@ fn track_document(view: &Entity<EditorView>) {
 /// 32 pt title bar, 656 × 422 (measured, design-lab/apps.html).
 const MAX_STARTUP_DOCUMENTS: usize = 32;
 
-fn document_window_size() -> (f32, f32) {
+/// A rich document's own fixed default, 586 × 488 (measured, UIA-07):
+/// unlike plain text, TextEdit does not size a new rich window from
+/// Settings ▸ New Document ▸ Window Size at all — that field names plain
+/// text's own columns/lines, which rich text has neither of.
+const RICH_WINDOW_SIZE: (f32, f32) = (586.0, 488.0);
+
+fn document_window_size(rich: bool) -> (f32, f32) {
+    if rich {
+        return RICH_WINDOW_SIZE;
+    }
     let settings = crate::settings::current();
     (
         f32::from(settings.width_chars) * 6.56 + 26.0,
@@ -108,7 +117,14 @@ fn open_editor_window_with_picker(
     initial_path: Option<PathBuf>,
     show_picker: bool,
 ) -> Result<(), ()> {
-    let (width, height) = document_window_size();
+    // A brand-new document's size follows Settings ▸ New Document's own
+    // format default; an existing file's follows its own extension, not
+    // whatever a new document would open as today (UIA-07).
+    let rich = match &initial_path {
+        Some(path) => is_rich_text_path(path),
+        None => crate::settings::current().rich_text_default,
+    };
+    let (width, height) = document_window_size(rich);
     let options = rmac_ui::window_options_for_app(rmac_ui::app_id::TEXT_EDITOR, width, height, cx);
     cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
@@ -165,7 +181,10 @@ pub(super) fn open_duplicate_window(
     cx: &mut App,
     content: super::DuplicateContent,
 ) -> Result<(), ()> {
-    let (width, height) = document_window_size();
+    // A duplicate keeps its source's own format (TE's File ▸ Duplicate
+    // copies formatting exactly), so it sizes like that format, not
+    // whatever Settings ▸ New Document's default happens to be right now.
+    let (width, height) = document_window_size(content.rich.is_some());
     let options = rmac_ui::window_options_for_app(rmac_ui::app_id::TEXT_EDITOR, width, height, cx);
     cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);

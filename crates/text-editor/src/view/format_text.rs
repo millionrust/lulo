@@ -105,7 +105,7 @@ pub(super) enum Highlight {
 }
 
 impl Highlight {
-    fn color(self) -> Option<rich::Rgb> {
+    pub(super) fn color(self) -> Option<rich::Rgb> {
         let base = match self {
             Self::None => return None,
             Self::Accent | Self::Blue => rmac_ui::mac::system_blue(),
@@ -122,6 +122,19 @@ impl Highlight {
         } else {
             tint
         })
+    }
+
+    /// The format bar's highlight well label (UIA-07).
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::None => "Highlight",
+            Self::Accent => "Accent",
+            Self::Purple => "Purple",
+            Self::Pink => "Pink",
+            Self::Orange => "Orange",
+            Self::Mint => "Mint",
+            Self::Blue => "Blue",
+        }
     }
 }
 
@@ -225,6 +238,32 @@ impl EditorView {
         if self.text_format_editable() {
             self.rich
                 .update(cx, |editor, cx| editor.toggle_underline(cx));
+        }
+    }
+
+    /// The format bar's "S" button (UIA-07): the same character attribute
+    /// Format ▸ Font ▸ Styles… already shows and the RTF writer already
+    /// round-trips (`strikethrough`), just never offered a toggle before.
+    pub(super) fn toggle_strikethrough(&mut self, cx: &mut Context<Self>) {
+        if self.text_format_editable() {
+            self.rich
+                .update(cx, |editor, cx| editor.toggle_strikethrough(cx));
+        }
+    }
+
+    /// The format bar's Style pop-up (UIA-07): Regular/Bold/Italic/Bold
+    /// Italic, set as a pair so picking one never leaves the other toggle in
+    /// a state the label didn't ask for.
+    pub(super) fn set_typeface(&mut self, bold: bool, italic: bool, cx: &mut Context<Self>) {
+        if !self.text_format_editable() {
+            return;
+        }
+        let current = self.rich.read(cx).style_at_selection();
+        if current.bold != bold {
+            self.rich.update(cx, |editor, cx| editor.toggle_bold(cx));
+        }
+        if current.italic != italic {
+            self.rich.update(cx, |editor, cx| editor.toggle_italic(cx));
         }
     }
 

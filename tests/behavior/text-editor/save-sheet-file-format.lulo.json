@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "scenario": "text-editor/save-sheet-file-format",
+  "platform": "Lulo local contract",
+  "observations": {
+    "save-sheet": {
+      "dialog": {
+        "present": true,
+        "title": "Save",
+        "buttons": [
+          "Documents",
+          "Documents",
+          "Show More Options",
+          "Rich Text Document",
+          "Rich Text Document",
+          "Cancel",
+          "Save"
+        ]
+      }
+    }
+  }
+}

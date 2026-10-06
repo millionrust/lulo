@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Text Editor format bar</title>
+<link rel="stylesheet" href="lab.css">
+<style>
+/* Measured on macOS 26.2 TextEdit, a new rich-text document, 586×488 pt
+   (docs/parity.md UIA-07). Window-relative x of each control's left edge is
+   noted inline; all are 22 pt tall except the B/I/U/S and alignment
+   segments (20 pt) and the ruler (32 pt). */
+.sample{width:586px;margin:40px auto;position:relative;background:var(--window);border-radius:10px;overflow:hidden;box-shadow:0 12px 32px #0007}
+.titlebar{height:32px;background:var(--sidebar);display:flex;align-items:center;padding-left:82px;font-size:13px;font-weight:600;color:var(--label)}
+.bar{height:36px;background:var(--sidebar);border-bottom:1px solid var(--separator);display:flex;align-items:center;gap:8px;padding:0 8px}
+.seg{display:flex;gap:2px}
+.seg button{width:22px;height:20px;border:1px solid var(--separator);border-radius:5px;background:var(--btn-secondary);color:var(--label);font:12px var(--font)}
+.seg button.on{background:var(--fill-control)}
+.well{width:20px;height:20px;border-radius:5px;border:1px solid var(--separator)}
+.well.text{background:#111}
+.well.hi{background:var(--window)}
+.pop{height:22px;border:1px solid var(--separator);border-radius:6px;background:var(--btn-secondary);color:var(--label);font:12px var(--font);padding:0 8px;display:flex;align-items:center;gap:6px}
+.pop::after{content:"⌄";opacity:.6}
+.stepper{display:flex;align-items:center;gap:4px;font:12px var(--font);color:var(--label)}
+.stepper button{width:16px;height:16px;border:1px solid var(--separator);border-radius:4px;background:var(--btn-secondary);color:var(--label);font:11px var(--font);line-height:1}
+.ruler{height:24px;background:var(--sidebar);border-bottom:1px solid var(--separator);position:relative}
+.ruler .tick{position:absolute;bottom:0;width:1px;height:6px;background:var(--label-2)}
+.ruler .tick.major{height:10px}
+.ruler .margin{position:absolute;bottom:0;width:2px;height:10px;background:var(--accent)}
+.body{height:300px}
+</style>
+<div class="sample">
+<div class="titlebar">Untitled</div>
+<div class="bar">
+  <div class="seg"><!-- x8: B/I/U/S -->
+    <button>B</button><button>I</button><button>U</button><button>S</button>
+  </div>
+  <div class="well text"></div><!-- x95: text colour -->
+  <div class="well hi"></div><!-- x120: highlight colour -->
+  <div class="pop">Helvetica</div><!-- x145: font family -->
+  <div class="pop">Regular</div><!-- x230: style -->
+  <div class="stepper"><button>−</button><span>12</span><button>+</button></div><!-- x315: size -->
+  <div class="seg"><!-- x370: alignment -->
+    <button class="on">⟸</button><button>≡</button><button>⟹</button><button>☰</button>
+  </div>
+  <div class="pop">List</div><!-- x458: list -->
+  <div class="pop">1.0×</div><!-- x509: line spacing -->
+</div>
+<div class="ruler" id="ruler"></div>
+<div class="body"></div>
+</div>
+<script>
+// Ticks every 2 chars across the 96-char default column, matching
+// render_ruler's own spacing formula (font size 12 × 0.596 × 2).
+const ruler = document.getElementById('ruler');
+const gap = 12 * 0.596 * 2;
+for (let i = 0, x = 0; x <= 96 * 12 * 0.596; i++, x += gap) {
+  const t = document.createElement('div');
+  t.className = 'tick' + (i % 5 === 0 ? ' major' : '');
+  t.style.left = x + 'px';
+  ruler.appendChild(t);
+}
+const left = document.createElement('div'); left.className = 'margin'; left.style.left = '0px';
+const right = document.createElement('div'); right.className = 'margin'; right.style.left = (96 * 12 * 0.596) + 'px';
+ruler.append(left, right);
+</script>
+<!-- Family, list and line spacing open the existing Fonts/List/Spacing
+     sheets rather than duplicate those pickers inline (crates/text-editor/
+     src/view/render/format_bar.rs); style and the colour wells act at
+     once, like the Mac's own bar. Tab-stop dragging on the ruler is not
+     implemented — the rich-text model has no per-paragraph tab stops yet
+     (docs/parity.md UIA-07). -->
+</html>

@@ -5,8 +5,8 @@
   "launch": {},
   "steps": [
     {"key": "cmd-,", "settle": 2.0},
-    {"observe": "settings", "facts": ["windows"]},
+    {"observe": "settings", "facts": ["windows", "tabs"]},
     {"select": "Open and Save"},
-    {"observe": "open-and-save", "facts": ["windows"]}
+    {"observe": "open-and-save", "facts": ["windows", "tabs"]}
   ]
 }

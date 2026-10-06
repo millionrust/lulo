@@ -1,9 +1,9 @@
 //! Text Editor ▸ Settings…: defaults for new plain-text documents.
 
 use gpui::{
-    div, px, App, AppContext as _, Context, FocusHandle, FontWeight, InteractiveElement as _,
-    IntoElement, ParentElement as _, Render, Role, StatefulInteractiveElement as _, Styled as _,
-    Window, WindowHandle,
+    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
 use rmac_ui::{Button, Checkbox, Root, StyledExt as _};
 
@@ -28,7 +28,10 @@ pub(crate) fn show(cx: &mut App) {
             return;
         }
     }
-    let options = rmac_ui::window_options_for_app(rmac_ui::app_id::TEXT_EDITOR, WIDTH, HEIGHT, cx);
+    // Not `window_options_for_app`: Settings would then inherit whatever
+    // size a document window last saved under the same app_id (UIA-09).
+    let options =
+        rmac_ui::window_options_for_panel(rmac_ui::app_id::TEXT_EDITOR, WIDTH, HEIGHT, cx);
     match cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Settings");
@@ -383,16 +386,45 @@ impl Render for SettingsView {
             ))
             .child(
                 div()
+                    .id("settings-tabs")
+                    .role(Role::TabList)
                     .flex()
+                    .justify_center()
                     .gap_2()
                     .px_3()
                     .py_2()
                     .border_b_1()
                     .border_color(rmac_ui::mac::separator())
                     .children([Tab::NewDocument, Tab::OpenAndSave].into_iter().map(|tab| {
-                        Button::new(format!("settings-tab-{}", tab.label()), tab.label())
-                            .small()
-                            .selected(self.tab == tab)
+                        let selected = self.tab == tab;
+                        // A plain, directly-styled tab, not `rmac_ui::Button`'s
+                        // `.selected()` (the highlight stayed on New Document
+                        // after clicking Open and Save — UIA-09): fill and
+                        // text colour both read `selected` fresh every
+                        // render, the same proven div-based pattern this
+                        // window's own Format/encoding radio rows already use
+                        // below, rather than a second implementation of
+                        // toggle styling.
+                        div()
+                            .id(SharedString::from(format!("settings-tab-{}", tab.label())))
+                            .role(Role::Tab)
+                            .aria_label(tab.label())
+                            .aria_selected(selected)
+                            .cursor_pointer()
+                            .px_3()
+                            .py_1()
+                            .rounded(px(rmac_ui::mac::radius_control()))
+                            .when(selected, |button| {
+                                button
+                                    .bg(rmac_ui::mac::control_fill_hover())
+                                    .text_color(rmac_ui::mac::text())
+                            })
+                            .when(!selected, |button| {
+                                button
+                                    .text_color(rmac_ui::mac::text_secondary())
+                                    .hover(|hovered| hovered.bg(rmac_ui::mac::hover()))
+                            })
+                            .child(tab.label())
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.tab = tab;
                                 cx.notify();

@@ -121,9 +121,11 @@ impl EditorView {
             .and_then(|folder| folder.file_name())
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| self.save_location.label().to_owned());
-        let where_popup = PopUpButton::new("save-sheet-where", where_label)
-            .form()
-            .dropdown_menu(|menu, _, _| {
+        // A bordered pop-up with a trailing chevron, matching the Mac's own
+        // Where/File Format controls (UIA-08) — not the chromeless `.form()`
+        // variant System Settings-style forms use, which read as bare text.
+        let where_popup =
+            PopUpButton::new("save-sheet-where", where_label).dropdown_menu(|menu, _, _| {
                 menu.menu("Documents", Box::new(crate::SheetWhereDocuments))
                     .menu("Desktop", Box::new(crate::SheetWhereDesktop))
                     .menu("Home", Box::new(crate::SheetWhereHome))
@@ -151,7 +153,6 @@ impl EditorView {
             "save-sheet-encoding",
             encoding_label(self.text_format.encoding),
         )
-        .form()
         .dropdown_menu(|menu, _, _| {
             menu.menu("Unicode (UTF-8)", Box::new(crate::SheetEncodingUtf8))
                 .menu(
@@ -167,6 +168,19 @@ impl EditorView {
                     Box::new(crate::SheetEncodingUtf16Be),
                 )
         });
+        // File Format (UIA-08): shown instead of the encoding row while the
+        // document is rich text — Rich Text Document is the only reason
+        // this sheet is showing it (selecting it again is a no-op), and
+        // Plain Text performs the real Format ▸ Make Plain Text conversion,
+        // which is why RTFD/HTML/Word are not offered here: Text Editor
+        // cannot read any of them back as rich text yet (docs/parity.md
+        // UIA-08), and a format a Save sheet cannot reopen isn't a real
+        // option.
+        let file_format_popup = PopUpButton::new("save-sheet-file-format", "Rich Text Document")
+            .dropdown_menu(|menu, _, _| {
+                menu.menu("Rich Text Document", Box::new(crate::SheetFileFormatRtf))
+                    .menu("Plain Text", Box::new(crate::SheetFileFormatPlainText))
+            });
         let card = div()
             .id("save-sheet-card")
             .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
@@ -178,7 +192,10 @@ impl EditorView {
             .w(px(458.0))
             // ⌘S on an Untitled document opens a plain Save sheet (no heading
             // on the Mac); only closing it asks "Do you want to keep …?".
-            .h(px(if closing { 367.0 } else { 281.0 }))
+            // Sized to its three rows plus the button row, like the Mac's
+            // own 390×218 sheet, instead of a fixed height that left a 90 px
+            // empty band above Cancel/Save (UIA-08).
+            .h(px(if closing { 306.0 } else { 220.0 }))
             .px(px(26.0))
             .pt(px(30.0))
             .pb(px(20.0))
@@ -230,7 +247,11 @@ impl EditorView {
                     .child(div().flex_1().min_w(px(0.0)).child(where_popup))
                     .child(where_disclosure),
             ))
-            .child(row("Plain Text Encoding:", encoding_popup))
+            .child(if self.rich_text {
+                row("File Format:", file_format_popup).into_any_element()
+            } else {
+                row("Plain Text Encoding:", encoding_popup).into_any_element()
+            })
             .child(
                 div()
                     .mt_auto()

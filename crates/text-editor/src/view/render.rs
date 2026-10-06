@@ -2,6 +2,7 @@ mod alert;
 mod chrome;
 mod document_dialogs;
 mod find;
+mod format_bar;
 mod save_sheet;
 
 use gpui::prelude::FluentBuilder as _;
@@ -25,14 +26,15 @@ use crate::{
     OpenSpacing, PasteRuler, PasteStyle, PreventEditing, PrintFile, QuitAndKeepWindows,
     RenameDocument, RevertToLastSaved, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine,
     SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr,
-    SetLineEndingCrLf, SetLineEndingLf, ShowColours, ShowFonts, ShowLists, ShowRuler, ShowSettings,
-    ShowSpellingAndGrammar, ShowSubstitutions, StartSpeaking, StopSpeaking, ToggleBold,
-    ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
-    ToggleCorrectSpellingAutomatically, ToggleDarkBackground, ToggleDataDetectors, ToggleFind,
-    ToggleItalic, ToggleMono, ToggleReplace, ToggleRichText, ToggleSmartCopyPaste,
-    ToggleSmartDashes, ToggleSmartLinks, ToggleSmartQuotes, ToggleTextReplacement, ToggleUnderline,
-    ToggleWrapToPage, TransformCapitalise, TransformLowercase, TransformUppercase,
-    UseSelectionForFind, ZoomIn, ZoomOut,
+    SetLineEndingCrLf, SetLineEndingLf, SheetFileFormatPlainText, SheetFileFormatRtf, ShowColours,
+    ShowFonts, ShowLists, ShowRuler, ShowSettings, ShowSpellingAndGrammar, ShowSubstitutions,
+    StartSpeaking, StopSpeaking, ToggleBold, ToggleCheckGrammarWithSpelling,
+    ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleDarkBackground,
+    ToggleDataDetectors, ToggleFind, ToggleItalic, ToggleMono, ToggleReplace, ToggleRichText,
+    ToggleSmartCopyPaste, ToggleSmartDashes, ToggleSmartLinks, ToggleSmartQuotes,
+    ToggleTextReplacement, ToggleUnderline, ToggleWrapToPage, TransformCapitalise,
+    TransformLowercase, TransformUppercase, TypefaceBold, TypefaceBoldItalic, TypefaceItalic,
+    TypefaceRegular, UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use super::{
@@ -136,9 +138,11 @@ impl EditorView {
             .min_h(px(0.0))
             .v_flex()
             .bg(self.text_background())
-            .when(self.show_ruler, |body| {
-                body.child(self.render_ruler_bar(cx))
-            })
+            // The format bar (UIA-07) is always shown for a rich document,
+            // like TextEdit's own; only the ruler underneath it is the part
+            // Format ▸ Text ▸ Show Ruler toggles.
+            .child(self.render_format_bar(cx))
+            .when(self.show_ruler, |body| body.child(self.render_ruler(cx)))
             .child(div().flex_1().min_h(px(0.0)).child(self.rich.clone()))
             .when(editable, |body| {
                 body.on_a11y_action(
@@ -469,6 +473,18 @@ impl Render for EditorView {
             )
             .on_action(cx.listener(|this, _: &crate::ShowStyles, _, cx| this.show_styles(cx)))
             .on_action(cx.listener(|this, _: &ShowFonts, window, cx| this.show_fonts(window, cx)))
+            .on_action(cx.listener(|this, _: &TypefaceRegular, _, cx| {
+                this.set_typeface(false, false, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TypefaceBold, _, cx| {
+                this.set_typeface(true, false, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TypefaceItalic, _, cx| {
+                this.set_typeface(false, true, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TypefaceBoldItalic, _, cx| {
+                this.set_typeface(true, true, cx)
+            }))
             .on_action(cx.listener(|this, _: &AlignLeft, _, cx| {
                 this.set_alignment(rich::Alignment::Left, cx)
             }))
@@ -540,6 +556,16 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf8Bom, _, cx| { this.text_format.encoding = document::TextEncoding::Utf8Bom; this.refresh_dirty_state(cx); }))
             .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf16Le, _, cx| { this.text_format.encoding = document::TextEncoding::Utf16Le; this.refresh_dirty_state(cx); }))
             .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf16Be, _, cx| { this.text_format.encoding = document::TextEncoding::Utf16Be; this.refresh_dirty_state(cx); }))
+            // The Save sheet's File Format pop-up (UIA-08): Rich Text
+            // Document is the sheet's only reason to exist (it only shows
+            // while `rich_text` is already true), so picking it is a no-op;
+            // Plain Text performs the same real conversion Format ▸ Make
+            // Plain Text does, which the sheet then reflects by swapping to
+            // its Plain Text Encoding row.
+            .on_action(cx.listener(|_, _: &SheetFileFormatRtf, _, _| {}))
+            .on_action(cx.listener(|this, _: &SheetFileFormatPlainText, window, cx| {
+                this.perform_make_plain_text(window, cx);
+            }))
             // The custom red traffic light dispatches RequestClose — route it
             // through the same unsaved-changes guard so closes aren't silent.
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {

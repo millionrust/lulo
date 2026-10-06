@@ -139,6 +139,14 @@ fn is_control_or_directional(character: char) -> bool {
 mod tests {
     use super::*;
 
+    // `url::Url::to_file_path` only resolves a `file://` URI with an empty
+    // host on Windows when the path starts with a drive letter
+    // (`file:///C:/...`); a Unix-style `/home/...` path isn't a valid
+    // Windows path at all, so it returns `Err`, not a guessed drive. A
+    // real Windows shell's OSC 7 would report a `C:/...`-style path to
+    // begin with, so this uses one on Windows rather than skipping
+    // coverage.
+    #[cfg(unix)]
     #[test]
     fn local_osc_7_is_private_bounded_and_session_local() {
         let first = SessionDirectory::default();
@@ -153,6 +161,25 @@ mod tests {
         );
         assert_eq!(second.label(), None);
         assert!(!first_reader.set_uri("file:///home/jacob/Projects/rmac"));
+        assert!(!first_reader.set_uri(&format!("file:///{}", "a".repeat(MAX_URI_BYTES))));
+        assert_eq!(first.label().as_deref(), Some("rmac"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn local_osc_7_is_private_bounded_and_session_local() {
+        let first = SessionDirectory::default();
+        let first_reader = first.clone();
+        let second = SessionDirectory::default();
+
+        assert!(first_reader.set_uri("file:///C:/Users/jacob/Projects/rmac"));
+        assert_eq!(first.label().as_deref(), Some("rmac"));
+        assert_eq!(
+            first.value.lock().unwrap().as_ref().unwrap().local_path,
+            Some(PathBuf::from("C:\\Users\\jacob\\Projects\\rmac"))
+        );
+        assert_eq!(second.label(), None);
+        assert!(!first_reader.set_uri("file:///C:/Users/jacob/Projects/rmac"));
         assert!(!first_reader.set_uri(&format!("file:///{}", "a".repeat(MAX_URI_BYTES))));
         assert_eq!(first.label().as_deref(), Some("rmac"));
     }

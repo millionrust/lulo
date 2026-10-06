@@ -127,10 +127,12 @@ fn stop(child: &mut Child) {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn sh(script: &str) -> Vec<OsString> {
         vec!["-c".into(), script.into()]
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_quick_tool_returns_its_output_and_status() {
         let finished = run(
@@ -145,6 +147,26 @@ mod tests {
         assert_eq!(finished.status.code(), Some(3));
     }
 
+    // Windows has no `/bin/sh`; `bounded::run` itself is plain
+    // `std::process::Command`, portable already, so these use
+    // `powershell.exe`/`cmd.exe` to exercise the same properties instead
+    // of skipping Windows coverage entirely.
+    #[cfg(windows)]
+    #[test]
+    fn a_quick_tool_returns_its_output_and_status() {
+        let finished = run(
+            "cmd.exe",
+            vec!["/C".into(), "echo out&echo err 1>&2&exit 3".into()],
+            Duration::from_secs(10),
+            1024,
+        )
+        .unwrap();
+        assert!(finished.stdout.starts_with(b"out"), "{:?}", finished.stdout);
+        assert!(finished.stderr.starts_with(b"err"), "{:?}", finished.stderr);
+        assert_eq!(finished.status.code(), Some(3));
+    }
+
+    #[cfg(unix)]
     #[test]
     fn a_hung_tool_is_stopped_at_the_deadline() {
         let started = Instant::now();
@@ -158,6 +180,30 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(10));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn a_hung_tool_is_stopped_at_the_deadline() {
+        let started = Instant::now();
+        let result = run(
+            "powershell.exe",
+            vec![
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-Command".into(),
+                "Start-Sleep -Seconds 30".into(),
+            ],
+            Duration::from_secs(1),
+            1024,
+        );
+        assert!(matches!(result, Err(RunError::TimedOut)));
+        assert!(started.elapsed() < Duration::from_secs(25));
+    }
+
+    // Unix-only: there is no simple one-liner on Windows that detaches a
+    // process's own inherited stdout handle (what `exec >/dev/null` does
+    // here) while it keeps running, and the timeout/kill path this also
+    // exercises is already covered above.
+    #[cfg(unix)]
     #[test]
     fn a_tool_that_closes_stdout_and_hangs_is_stopped() {
         let result = run(
@@ -169,11 +215,29 @@ mod tests {
         assert!(matches!(result, Err(RunError::TimedOut)));
     }
 
+    #[cfg(unix)]
     #[test]
     fn output_past_the_cap_is_refused() {
         let result = run(
             "/bin/sh",
             sh("while :; do printf 0123456789; done"),
+            Duration::from_secs(10),
+            4096,
+        );
+        assert!(matches!(result, Err(RunError::TooLarge)));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn output_past_the_cap_is_refused() {
+        let result = run(
+            "powershell.exe",
+            vec![
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-Command".into(),
+                "while ($true) { [Console]::Out.Write('0123456789') }".into(),
+            ],
             Duration::from_secs(10),
             4096,
         );

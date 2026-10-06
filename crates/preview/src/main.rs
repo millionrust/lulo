@@ -805,6 +805,11 @@ mod tests {
         );
     }
 
+    // `std::path::absolute` resolves a leading '/' against the current
+    // drive on Windows (so `/home/user/x` becomes `D:\home\user\x`, not a
+    // bug — Unix-style absolute paths are not a thing there), so this test
+    // uses paths that are genuinely absolute on each platform.
+    #[cfg(unix)]
     #[test]
     fn a_second_launch_hands_its_documents_to_the_running_preview() {
         assert_eq!(hand_off_windows(&[]), Some(vec![Vec::new()]));
@@ -817,6 +822,24 @@ mod tests {
         assert_eq!(
             windows[1],
             ["/home/user/scan-8.png", "/home/user/scan-9.png"]
+        );
+        let relative = hand_off_windows(&[PathBuf::from("photo.jpg")]).unwrap();
+        assert!(std::path::Path::new(&relative[0][0]).is_absolute());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_second_launch_hands_its_documents_to_the_running_preview() {
+        assert_eq!(hand_off_windows(&[]), Some(vec![Vec::new()]));
+        let paths = (0..10)
+            .map(|index| PathBuf::from(format!("C:\\Users\\user\\scan-{index}.png")))
+            .collect::<Vec<_>>();
+        let windows = hand_off_windows(&paths).unwrap();
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0].len(), 8);
+        assert_eq!(
+            windows[1],
+            ["C:\\Users\\user\\scan-8.png", "C:\\Users\\user\\scan-9.png"]
         );
         let relative = hand_off_windows(&[PathBuf::from("photo.jpg")]).unwrap();
         assert!(std::path::Path::new(&relative[0][0]).is_absolute());

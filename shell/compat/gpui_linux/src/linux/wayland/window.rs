@@ -1719,6 +1719,38 @@ impl WaylandWindowStatePtr {
                     .set_destination(f32::from(size.width) as i32, f32::from(size.height) as i32);
             }
         }
+        self.draw_resized();
+    }
+
+    /// rmac: draw a new size as soon as the event loop is free, without
+    /// waiting for a frame callback. niri holds a window's frame callbacks
+    /// while it waits for the buffer that answers its resize configure, so
+    /// a window that had just drawn (a callback pending, nothing parked)
+    /// sat on the configure until niri's transaction timed out: about
+    /// 450 ms per step of an interactive resize (SPEED-12), and every
+    /// layer surface that grows (the App Switcher's reveal, Spotlight's
+    /// results) waited for its next frame callback too.
+    fn draw_resized(&self) {
+        let mut state = self.state.borrow_mut();
+        if !state.acknowledged_first_configure || state.hidden {
+            return;
+        }
+        state.idle_streak = 0;
+        state.idle_generation = state.idle_generation.wrapping_add(1);
+        let generation = state.idle_generation;
+        let client = state.client.get_client();
+        drop(state);
+        super::frame_trace::record("draw_resized");
+        let window = self.downgrade();
+        let loop_handle = client.borrow().loop_handle.clone();
+        let _ = loop_handle.insert_idle(move |_| {
+            if let Some(window) = window.upgrade() {
+                let current = window.state.borrow().idle_generation == generation;
+                if current {
+                    window.frame();
+                }
+            }
+        });
     }
 
     pub fn resize(&self, size: Size<Pixels>) {

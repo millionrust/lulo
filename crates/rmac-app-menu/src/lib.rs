@@ -694,6 +694,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                             item!("Blue", "text_editor::HighlightBlue", ""),
                         ]
                     ),
+                    item!("Styles…", "text_editor::ShowStyles", ""),
                     item!("Bigger", "text_editor::IncreaseFont", "⌘+", separator),
                     item!("Smaller", "text_editor::DecreaseFont", "⌘-"),
                     submenu!(

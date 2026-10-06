@@ -968,6 +968,31 @@ impl Document {
         }
     }
 
+    /// Format ▸ Font ▸ Styles…' document styles: each distinct pairing of
+    /// character and paragraph style the text uses, in reading order, at
+    /// most `limit` of them. A link is content, not style, so it is left
+    /// out.
+    pub fn styles_in_use(&self, limit: usize) -> Vec<(CharStyle, ParagraphStyle)> {
+        let mut styles: Vec<(CharStyle, ParagraphStyle)> = Vec::new();
+        for paragraph in &self.paragraphs {
+            for run in paragraph.runs() {
+                if run.len == 0 && !paragraph.is_empty() {
+                    continue;
+                }
+                let mut style = run.style.clone();
+                style.link = None;
+                let entry = (style, paragraph.style());
+                if !styles.contains(&entry) {
+                    if styles.len() == limit {
+                        return styles;
+                    }
+                    styles.push(entry);
+                }
+            }
+        }
+        styles
+    }
+
     /// The item number of each list paragraph (0 for every other
     /// paragraph). Consecutive items at one level count up; an item at a
     /// shallower level restarts the deeper levels' counts, and any
@@ -1300,6 +1325,20 @@ mod tests {
         document.update_paragraph_style(2..5, |style| style.list_level = 1);
         document.update_paragraph_style(8..8, |style| style.list_level = 1);
         assert_eq!(document.list_numbers(), [1, 1, 2, 2, 1, 3]);
+    }
+
+    #[test]
+    fn styles_in_use_are_distinct_and_ignore_links() {
+        let mut document = Document::from_plain_text("ab cd\nef", &CharStyle::default());
+        document.update_char_style(0..1, |style| style.bold = true);
+        document.update_char_style(3..4, |style| style.link = Some(Arc::from("https://x")));
+        document.update_paragraph_style(6..6, |style| style.alignment = Alignment::Center);
+        let styles = document.styles_in_use(16);
+        assert_eq!(styles.len(), 3);
+        assert!(styles[0].0.bold);
+        assert!(!styles[1].0.bold);
+        assert_eq!(styles[2].1.alignment, Alignment::Center);
+        assert_eq!(document.styles_in_use(1).len(), 1);
     }
 
     #[test]

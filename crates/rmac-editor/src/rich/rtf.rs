@@ -1092,7 +1092,9 @@ impl Written {
         if differs(|w| w.highlight as i64) {
             let _ = write!(controls, "\\cb{}", self.highlight);
         }
-        if differs(|w| i64::from(w.outline)) {
+        // The attributes below are written only once a document uses them,
+        // so a plain document reads exactly as before.
+        if differs(|w| i64::from(w.outline)) && (previous.is_some() || self.outline) {
             controls.push_str(if self.outline { "\\outl" } else { "\\outl0" });
         }
         // Only a document that kerns says anything about kerning, so a

@@ -161,6 +161,8 @@ gpui::actions!(
         ShowProperties,
         // Edit ▸ Link… (⌘K).
         EditLink,
+        // Format ▸ Font ▸ Styles….
+        ShowStyles,
     ]
 );
 

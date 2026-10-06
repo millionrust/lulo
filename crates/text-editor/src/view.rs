@@ -265,6 +265,9 @@ struct EditorView {
     // `format_extras::PROPERTY_FIELDS` order.
     properties_open: bool,
     property_inputs: Vec<Entity<InputState>>,
+    // Format ▸ Font ▸ Styles…: the sheet and the document style shown.
+    styles_open: bool,
+    styles_index: usize,
     // Edit ▸ Link…
     link_open: bool,
     link_input: Entity<InputState>,

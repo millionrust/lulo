@@ -49,6 +49,51 @@ pub(super) fn list_marker_name(kind: ListKind) -> &'static str {
     }
 }
 
+/// The most document styles Format ▸ Font ▸ Styles… pages through.
+pub(super) const MAX_DOCUMENT_STYLES: usize = 64;
+
+/// A document style's name in the Styles sheet: "Helvetica 12 pt, Bold,
+/// Centred", as the Mac describes a style.
+pub(super) fn style_description(style: &rich::CharStyle, ruler: &rich::ParagraphStyle) -> String {
+    let size = if style.size.fract() == 0.0 {
+        format!("{:.0}", style.size)
+    } else {
+        format!("{:.1}", style.size)
+    };
+    let mut parts = vec![format!(
+        "{} {size} pt",
+        style.family.as_deref().unwrap_or("Helvetica")
+    )];
+    for (on, name) in [
+        (style.bold, "Bold"),
+        (style.italic, "Italic"),
+        (style.underline, "Underline"),
+        (style.strikethrough, "Strikethrough"),
+        (style.outline, "Outline"),
+        (style.superscript > 0, "Superscript"),
+        (style.superscript < 0, "Subscript"),
+        (style.color.is_some(), "Colour"),
+        (style.highlight.is_some(), "Highlight"),
+    ] {
+        if on {
+            parts.push(name.to_owned());
+        }
+    }
+    match ruler.alignment {
+        rich::Alignment::Left => {}
+        rich::Alignment::Center => parts.push("Centred".to_owned()),
+        rich::Alignment::Right => parts.push("Right".to_owned()),
+        rich::Alignment::Justified => parts.push("Justified".to_owned()),
+    }
+    if let Some(kind) = ruler.list {
+        parts.push(format!("{} list", list_marker_name(kind)));
+    }
+    if ruler.line_spacing != 1.0 {
+        parts.push(format!("{}× spacing", ruler.line_spacing));
+    }
+    parts.join(", ")
+}
+
 /// What Edit ▸ Link… stores for a typed address: a bare domain becomes a
 /// web address, anything with a scheme stays as typed.
 pub(super) fn normalize_link(typed: &str) -> Option<String> {
@@ -197,6 +242,63 @@ impl EditorView {
         cx.notify();
     }
 
+    /// Format ▸ Font ▸ Styles…: page through the styles the document uses
+    /// and apply one to the selection, starting from the selection's own.
+    pub(super) fn show_styles(&mut self, cx: &mut Context<Self>) {
+        if !self.text_format_editable() {
+            return;
+        }
+        let editor = self.rich.read(cx);
+        let mut current = editor.style_at_selection();
+        current.link = None;
+        let ruler = editor.paragraph_style_at_selection();
+        self.styles_index = editor
+            .document()
+            .styles_in_use(MAX_DOCUMENT_STYLES)
+            .iter()
+            .position(|(style, paragraph)| *style == current && *paragraph == ruler)
+            .unwrap_or(0);
+        self.styles_open = true;
+        cx.notify();
+    }
+
+    pub(super) fn document_styles(&self, cx: &App) -> Vec<(rich::CharStyle, rich::ParagraphStyle)> {
+        self.rich
+            .read(cx)
+            .document()
+            .styles_in_use(MAX_DOCUMENT_STYLES)
+    }
+
+    pub(super) fn step_style(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let count = self.document_styles(cx).len().max(1);
+        self.styles_index = if forward {
+            (self.styles_index + 1) % count
+        } else {
+            (self.styles_index + count - 1) % count
+        };
+        cx.notify();
+    }
+
+    /// Apply: the shown style's character and paragraph attributes go to
+    /// the selection (the next typing, at an empty selection), as one
+    /// undo step each.
+    pub(super) fn apply_document_style(&mut self, cx: &mut Context<Self>) {
+        let Some((style, ruler)) = self.document_styles(cx).into_iter().nth(self.styles_index)
+        else {
+            return;
+        };
+        self.update_rich(cx, move |editor, cx| {
+            editor.apply_char_style(style, cx);
+            editor.apply_paragraph_style(ruler, cx);
+        });
+    }
+
+    pub(super) fn close_styles(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.styles_open = false;
+        self.focus_body(window, cx);
+        cx.notify();
+    }
+
     /// Edit ▸ Link… (⌘K): the selection's link destination.
     pub(super) fn edit_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.text_format_editable() {
@@ -247,6 +349,7 @@ impl EditorView {
             "text_editor::ToggleHyphenation",
             "text_editor::ShowProperties",
             "text_editor::EditLink",
+            "text_editor::ShowStyles",
         ] {
             rmac_ui::set_menu_enabled(action, text_format_enabled, cx);
         }
@@ -296,6 +399,28 @@ mod tests {
         assert_eq!(
             normalize_link("mailto:a@b.c").as_deref(),
             Some("mailto:a@b.c")
+        );
+    }
+
+    #[test]
+    fn style_descriptions_name_family_size_and_attributes() {
+        let style = rich::CharStyle {
+            bold: true,
+            superscript: 1,
+            ..rich::CharStyle::with_size(14.0)
+        };
+        let ruler = rich::ParagraphStyle {
+            alignment: rich::Alignment::Center,
+            list: Some(ListKind::Bullet),
+            ..rich::ParagraphStyle::default()
+        };
+        assert_eq!(
+            style_description(&style, &ruler),
+            "Helvetica 14 pt, Bold, Superscript, Centred, Bullet list"
+        );
+        assert_eq!(
+            style_description(&rich::CharStyle::with_size(10.5), &Default::default()),
+            "Helvetica 10.5 pt"
         );
     }
 

@@ -457,6 +457,8 @@ impl EditorView {
             spacing_open: false,
             properties_open: false,
             property_inputs,
+            styles_open: false,
+            styles_index: 0,
             link_open: false,
             link_input,
             focus: cx.focus_handle(),

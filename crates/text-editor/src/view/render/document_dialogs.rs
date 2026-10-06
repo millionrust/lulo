@@ -479,6 +479,106 @@ impl EditorView {
         .into_any_element()
     }
 
+    /// Format ▸ Font ▸ Styles…: the document's styles one at a time, each
+    /// previewed in itself; Apply gives it to the selection.
+    pub(super) fn render_styles_dialog(&self, cx: &mut Context<Self>) -> AnyElement {
+        let styles = self.document_styles(cx);
+        let count = styles.len();
+        let index = self.styles_index.min(count.saturating_sub(1));
+        let preview = styles.get(index).map(|(style, ruler)| {
+            let description = super::super::format_extras::style_description(style, ruler);
+            let mut sample = div()
+                .id("styles-preview-text")
+                .role(Role::Label)
+                .aria_label(description.clone())
+                .text_size(px(style.size.clamp(9.0, 28.0)))
+                .text_color(
+                    style
+                        .color
+                        .map_or(mac::text(), |color| gpui::rgb(color.to_u32()).into()),
+                );
+            if let Some(family) = &style.family {
+                sample = sample.font_family(SharedString::from(family.to_string()));
+            }
+            if style.bold {
+                sample = sample.font_weight(mac::BOLD);
+            }
+            if style.italic {
+                sample = sample.italic();
+            }
+            if style.underline {
+                sample = sample.underline();
+            }
+            if style.strikethrough {
+                sample = sample.line_through();
+            }
+            if let Some(highlight) = style.highlight {
+                sample = sample.bg(gpui::Hsla::from(gpui::rgb(highlight.to_u32())));
+            }
+            sample.child(description)
+        });
+        sheet_card("styles-sheet", 380.0, 220.0)
+            .child(sheet_title("Styles"))
+            .child(
+                div()
+                    .text_color(mac::text_secondary())
+                    .child("Document styles"),
+            )
+            .child(
+                div()
+                    .id("styles-preview")
+                    .h(px(64.0))
+                    .p(px(8.0))
+                    .flex()
+                    .items_center()
+                    .overflow_hidden()
+                    .rounded(px(mac::radius_control()))
+                    .bg(mac::field_fill())
+                    .children(preview),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        Button::new("styles-previous", "‹")
+                            .small()
+                            .tooltip("Previous Style")
+                            .on_click(cx.listener(|this, _, _, cx| this.step_style(false, cx))),
+                    )
+                    .child(
+                        div()
+                            .text_color(mac::text_secondary())
+                            .child(format!("{} of {count}", index + 1)),
+                    )
+                    .child(
+                        Button::new("styles-next", "›")
+                            .small()
+                            .tooltip("Next Style")
+                            .on_click(cx.listener(|this, _, _, cx| this.step_style(true, cx))),
+                    ),
+            )
+            .child(
+                div()
+                    .mt_auto()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button("styles-apply", "Apply", DialogButtonKind::Normal)
+                            .on_click(cx.listener(|this, _, _, cx| this.apply_document_style(cx))),
+                    )
+                    .child(
+                        rmac_ui::dialog_button("styles-done", "Done", DialogButtonKind::Primary)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.close_styles(window, cx)),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+
     /// Edit ▸ Link… (⌘K): the selection's link destination; Remove Link
     /// takes the link off, keeping the text.
     pub(super) fn render_link_dialog(&self, cx: &mut Context<Self>) -> AnyElement {

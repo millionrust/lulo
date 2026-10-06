@@ -1,0 +1,48 @@
+{
+  "title": "A rich document: Format ▸ Font ▸ Baseline ▸ Superscript and Outline on a selected character save to RTF",
+  "app": "text-editor",
+  "lulo_only": true,
+  "steps": [
+    {
+      "wait": 2
+    },
+    {
+      "type": "x2"
+    },
+    {
+      "key": "shift-left"
+    },
+    {
+      "menu_action": "text_editor::BaselineSuperscript",
+      "settle": 0.5
+    },
+    {
+      "menu_action": "text_editor::ToggleOutline",
+      "settle": 0.8
+    },
+    {
+      "observe": "styled",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-s",
+      "settle": 1.5
+    },
+    {
+      "type": "SuperCheck"
+    },
+    {
+      "key": "return",
+      "settle": 1.5
+    },
+    {
+      "observe": "saved",
+      "facts": [
+        "saved_documents"
+      ]
+    }
+  ],
+  "note": "TE-14: Superscript (\\super1) and Outline (\\outl) apply to the selected character and save as RTF; the expected file is the exact bytes rmac_editor::rich::rtf::write produces, and a document that never uses these attributes writes none of their controls (rich-text-bold-save)."
+}

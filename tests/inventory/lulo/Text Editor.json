@@ -167,10 +167,17 @@
           "children": []
         },
         {
+          "label": "Show Properties",
+          "action": "text_editor::ShowProperties",
+          "shortcut": "⌥⌘P",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Page Setup…",
           "action": "text_editor::OpenPageSetup",
           "shortcut": "⇧⌘P",
-          "separator_before": false,
+          "separator_before": true,
           "children": []
         },
         {
@@ -269,6 +276,13 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Link…",
+          "action": "text_editor::EditLink",
+          "shortcut": "⌘K",
+          "separator_before": false,
+          "children": []
         },
         {
           "label": "Find",
@@ -518,6 +532,13 @@
               "children": []
             },
             {
+              "label": "Outline",
+              "action": "text_editor::ToggleOutline",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Highlight",
               "action": "text_editor::HighlightMenu",
               "shortcut": "",
@@ -575,6 +596,13 @@
               ]
             },
             {
+              "label": "Styles…",
+              "action": "text_editor::ShowStyles",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Bigger",
               "action": "text_editor::IncreaseFont",
               "shortcut": "⌘+",
@@ -587,6 +615,129 @@
               "shortcut": "⌘-",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Kern",
+              "action": "text_editor::KernMenu",
+              "shortcut": "",
+              "separator_before": true,
+              "children": [
+                {
+                  "label": "Use Default",
+                  "action": "text_editor::KernDefault",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Use None",
+                  "action": "text_editor::KernNone",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Tighten",
+                  "action": "text_editor::KernTighten",
+                  "shortcut": "⌥⌘[",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Loosen",
+                  "action": "text_editor::KernLoosen",
+                  "shortcut": "⌥⌘]",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "label": "Ligatures",
+              "action": "text_editor::LigaturesMenu",
+              "shortcut": "",
+              "separator_before": false,
+              "children": [
+                {
+                  "label": "Use Default",
+                  "action": "text_editor::LigaturesDefault",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Use None",
+                  "action": "text_editor::LigaturesNone",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Use All",
+                  "action": "text_editor::LigaturesAll",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "label": "Baseline",
+              "action": "text_editor::BaselineMenu",
+              "shortcut": "",
+              "separator_before": false,
+              "children": [
+                {
+                  "label": "Use Default",
+                  "action": "text_editor::BaselineDefault",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Superscript",
+                  "action": "text_editor::BaselineSuperscript",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Subscript",
+                  "action": "text_editor::BaselineSubscript",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Raise",
+                  "action": "text_editor::BaselineRaise",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Lower",
+                  "action": "text_editor::BaselineLower",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "label": "Character Shape",
+              "action": "text_editor::CharacterShapeMenu",
+              "shortcut": "",
+              "separator_before": false,
+              "children": [
+                {
+                  "label": "Traditional Form",
+                  "action": "text_editor::ToggleTraditionalForm",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
             },
             {
               "label": "Show Colours",
@@ -693,6 +844,13 @@
           "label": "Wrap to Page",
           "action": "text_editor::ToggleWrapToPage",
           "shortcut": "⇧⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Allow Hyphenation",
+          "action": "text_editor::ToggleHyphenation",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },

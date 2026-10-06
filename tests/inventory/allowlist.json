@@ -39,6 +39,12 @@
     },
     {
       "app": "Text Editor",
+      "label": "Make Vertical Layout",
+      "match": "exact",
+      "reason": "Vertical layout sets CJK text in top-to-bottom columns through Core Text's vertical glyph forms; GPUI's text system only shapes horizontal lines, so Lulo keeps the row out of the menu rather than fake it (coordinator-approved for TE-14, 2026-10-06)."
+    },
+    {
+      "app": "Text Editor",
       "label": "No Document",
       "match": "exact",
       "reason": "AppKit inserts this disabled placeholder into the empty Revert To and Share submenus; it is not an action."

@@ -464,9 +464,15 @@ impl RichTextEditor {
         self.change_char_style(cx, move |style| style.highlight = color);
     }
 
-    /// Format ▸ Font ▸ Paste Style: the copied character style, whole.
+    /// Format ▸ Font ▸ Paste Style and Styles… ▸ Apply: the copied
+    /// character style, whole, except that each character keeps its own
+    /// link (a link is content, not style).
     pub fn apply_char_style(&mut self, copied: CharStyle, cx: &mut Context<Self>) {
-        self.change_char_style(cx, move |style| *style = copied.clone());
+        self.change_char_style(cx, move |style| {
+            let link = style.link.take();
+            *style = copied.clone();
+            style.link = link;
+        });
     }
 
     pub fn set_alignment(&mut self, alignment: Alignment, cx: &mut Context<Self>) {

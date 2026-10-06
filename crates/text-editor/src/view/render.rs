@@ -467,6 +467,7 @@ impl Render for EditorView {
             .on_action(
                 cx.listener(|this, _: &crate::EditLink, window, cx| this.edit_link(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &crate::ShowStyles, _, cx| this.show_styles(cx)))
             .on_action(cx.listener(|this, _: &ShowFonts, window, cx| this.show_fonts(window, cx)))
             .on_action(cx.listener(|this, _: &AlignLeft, _, cx| {
                 this.set_alignment(rich::Alignment::Left, cx)
@@ -794,6 +795,13 @@ impl Render for EditorView {
                 d.child(
                     rmac_ui::dialog("text-editor-properties", self.render_properties_dialog(cx))
                         .aria_label("Document Properties")
+                        .attached(),
+                )
+            })
+            .when(self.styles_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-styles", self.render_styles_dialog(cx))
+                        .aria_label("Styles")
                         .attached(),
                 )
             })

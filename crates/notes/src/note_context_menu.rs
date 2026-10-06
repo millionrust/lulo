@@ -78,7 +78,6 @@ impl NotesView {
                 self.select_search_result(note_id, window, cx);
             }
         }
-        window.focus(&self.focus, cx);
         self.context_menu_target = ContextMenuTarget::Note;
         self.context_menu = Some(rmac_ui::ContextMenuState::open(
             position,

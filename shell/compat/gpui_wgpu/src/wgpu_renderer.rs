@@ -1224,7 +1224,14 @@ impl WgpuRenderer {
         };
 
         // Now that we know the surface is healthy, ensure intermediate textures exist
-        self.ensure_intermediate_textures();
+        // rmac: only when the frame has a path that can show. Each path batch
+        // clears, rasterizes and resolves a window-sized multisampled texture;
+        // rmac's traffic-light glyphs are paths kept at opacity 0 until the
+        // lights are hovered, so every frame of every window paid that pass
+        // (and held ~5x a window's pixels in textures) for nothing.
+        if scene.paths.iter().any(|path| !path.color.is_transparent()) {
+            self.ensure_intermediate_textures();
+        }
 
         let frame_view = frame
             .texture
@@ -1316,7 +1323,7 @@ impl WgpuRenderer {
                         ),
                         PrimitiveBatch::Paths(range) => {
                             let paths = &scene.paths[range];
-                            if paths.is_empty() {
+                            if paths.iter().all(|path| path.color.is_transparent()) {
                                 continue;
                             }
 

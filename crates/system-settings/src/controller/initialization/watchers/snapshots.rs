@@ -53,9 +53,15 @@ impl Settings {
             })
             .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
+                // The scan lands ~0.8 s after launch. Repaint the whole
+                // window only when it changed something (most often it
+                // returns what the immediate read above already showed).
+                let before = this.wifi_view_state();
                 this.finish_wifi_update(result);
                 this.wifi_error = None;
-                cx.notify();
+                if this.wifi_view_state() != before {
+                    cx.notify();
+                }
             });
         })
         .detach();

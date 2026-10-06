@@ -8,6 +8,9 @@ impl FinderView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A right-click cancels the slow-click rename a preceding click on
+        // the selected item started, as on the Mac.
+        self.rename_click_generation = self.rename_click_generation.wrapping_add(1);
         match index {
             Some(index) if !self.selected.contains(&index) => self.select_single(index),
             Some(_) => {}

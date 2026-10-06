@@ -75,6 +75,18 @@ pub(crate) fn offset_for_client_inset(
     }
 }
 
+/// rmac: translate the whole tree by `(dx, dy)` physical pixels, e.g. a
+/// popup's nodes into its parent window's coordinates.
+pub(crate) fn offset_root(tree_update: &mut accesskit::TreeUpdate, dx: f64, dy: f64) {
+    if let Some((_, root)) = tree_update
+        .nodes
+        .iter_mut()
+        .find(|(id, _)| *id == ROOT_NODE_ID)
+    {
+        root.set_transform(accesskit::Affine::translate((dx, dy)));
+    }
+}
+
 /// Class name that `rmac_ui::accessibility` puts on a node publishing the
 /// text, caret and selection of the text field it contains.
 pub(crate) const TEXT_PROXY_CLASS: &str = "rmac-text-proxy";

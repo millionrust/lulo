@@ -186,6 +186,11 @@ pub struct WaylandWindowState {
     window_controls: WindowControls,
     client_inset: Option<Pixels>,
     accesskit_adapter: Option<accesskit_unix::Adapter>,
+    /// rmac: a popup's position relative to its parent's window geometry,
+    /// from its latest `xdg_popup.configure`. Its accessibility tree is
+    /// offset by it so AT-SPI window coordinates of a menu item match the
+    /// parent window's, as they would for an in-window menu.
+    popup_position: Point<Pixels>,
 }
 
 pub enum WaylandSurfaceState {
@@ -704,6 +709,7 @@ impl WaylandWindowState {
             window_controls: WindowControls::default(),
             client_inset: None,
             accesskit_adapter: None,
+            popup_position: Point::default(),
         })
     }
 
@@ -1005,6 +1011,49 @@ impl WaylandWindowStatePtr {
             state.inset(),
             state.tiling,
         )
+    }
+
+    /// rmac: whether this window is an `xdg_popup`.
+    pub fn is_popup(&self) -> bool {
+        matches!(
+            self.state.borrow().surface_state,
+            WaylandSurfaceState::Popup(_)
+        )
+    }
+
+    /// rmac: the toplevel (or layer surface) a popup chain hangs from; the
+    /// window itself when it is not a popup.
+    pub fn popup_root(&self) -> WaylandWindowStatePtr {
+        let mut window = self.clone();
+        loop {
+            let parent = {
+                let state = window.state.borrow();
+                match state.surface_state {
+                    WaylandSurfaceState::Popup(_) => state.parent.clone(),
+                    _ => None,
+                }
+            };
+            match parent {
+                Some(parent) => window = parent,
+                None => return window,
+            }
+        }
+    }
+
+    /// rmac: a popup's origin in its root window's geometry coordinates,
+    /// summed along the popup chain. Zero for every other window.
+    fn popup_origin(&self) -> Point<Pixels> {
+        let (position, parent) = {
+            let state = self.state.borrow();
+            match state.surface_state {
+                WaylandSurfaceState::Popup(_) => (state.popup_position, state.parent.clone()),
+                _ => return Point::default(),
+            }
+        };
+        position
+            + parent
+                .map(|parent| parent.popup_origin())
+                .unwrap_or_default()
     }
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
@@ -1560,7 +1609,13 @@ impl WaylandWindowStatePtr {
         match event {
             // Only the size is needed, the position is the compositor's. The following
             // xdg_surface.configure applies the change.
-            xdg_popup::Event::Configure { width, height, .. } => {
+            xdg_popup::Event::Configure {
+                x,
+                y,
+                width,
+                height,
+            } => {
+                self.state.borrow_mut().popup_position = Point::new(px(x as f32), px(y as f32));
                 let size = if width <= 0 || height <= 0 {
                     None
                 } else {
@@ -2388,14 +2443,24 @@ impl PlatformWindow for WaylandWindow {
 
     fn a11y_tree_update(&self, mut tree_update: accesskit::TreeUpdate) {
         crate::linux::a11y::prepare_tree_update(&mut tree_update);
+        // rmac: a popup's nodes are placed in its root window's coordinates.
+        let popup_origin = self.0.popup_origin();
         let mut state = self.borrow_mut();
         let (left, top) = a11y_origin_inset(state.inset(), state.tiling);
         let scale = f64::from(state.scale);
-        crate::linux::a11y::offset_for_client_inset(
-            &mut tree_update,
-            f64::from(f32::from(left)) * scale,
-            f64::from(f32::from(top)) * scale,
-        );
+        if popup_origin != Point::default() {
+            crate::linux::a11y::offset_root(
+                &mut tree_update,
+                f64::from(f32::from(popup_origin.x - left)) * scale,
+                f64::from(f32::from(popup_origin.y - top)) * scale,
+            );
+        } else {
+            crate::linux::a11y::offset_for_client_inset(
+                &mut tree_update,
+                f64::from(f32::from(left)) * scale,
+                f64::from(f32::from(top)) * scale,
+            );
+        }
         if let Some(adapter) = state.accesskit_adapter.as_mut() {
             adapter.update_if_active(|| tree_update);
         }

@@ -2198,6 +2198,12 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for WaylandClientStatePtr {
                     window.set_focused(false);
                 }
                 if let Some(window) = focused {
+                    // rmac: a menu popup takes the keyboard from its window,
+                    // which stays the active window while the menu is open,
+                    // as on macOS (the leave just before this one cleared it).
+                    if window.is_popup() {
+                        window.popup_root().set_focused(true);
+                    }
                     window.set_focused(true);
                 }
             }
@@ -2216,6 +2222,11 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for WaylandClientStatePtr {
                     state.pre_edit_text.take();
                     drop(state);
                     window.handle_ime(ImeInput::DeleteText);
+                    // rmac: the keyboard leaving a menu popup (to another
+                    // app, or back to its own window) leaves its window too.
+                    if window.is_popup() {
+                        window.popup_root().set_focused(false);
+                    }
                     window.set_focused(false);
                 }
             }

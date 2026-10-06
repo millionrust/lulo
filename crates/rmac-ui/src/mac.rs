@@ -61,6 +61,25 @@ pub fn menubar_text() -> Hsla {
 pub fn material() -> Hsla {
     crate::theme::current().materials.regular.hsla()
 }
+/// Opaque menu material for pop-up and context menus. macOS menus read as a
+/// solid, vibrant panel (≈ rgb(30,31,36) dark, near-white light; design-lab/
+/// menus.html): the menu tint at full opacity, so no window content bleeds
+/// through a separate pop-up surface that gets no compositor blur.
+pub fn menu_surface() -> Hsla {
+    let mut color = material();
+    color.a = 1.0;
+    color
+}
+/// The popover elevation shadow under a pop-up menu.
+pub fn menu_shadow() -> Vec<gpui::BoxShadow> {
+    let level = crate::theme::current().elevation.popover;
+    let mut shadow = black();
+    shadow.a = level.shadow_alpha;
+    vec![
+        gpui::BoxShadow::new(gpui::px(0.0), gpui::px(level.offset_y), shadow)
+            .blur_radius(gpui::px(level.blur)),
+    ]
+}
 /// Floating popover material measured independently from menus and the Dock.
 pub fn material_popover() -> Hsla {
     crate::theme::current().materials.popover.hsla()

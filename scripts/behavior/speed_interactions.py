@@ -169,6 +169,26 @@ def key_press_latencies_ms(events: Events) -> list[float]:
     return out
 
 
+def key_press_app_latencies_ms(events: Events) -> list[float]:
+    """Press-to-present minus any wait for the compositor's next frame
+    callback: from the first `frame_callback` at or after the press to the
+    present that follows. A window whose frame loop is parked draws at
+    once; one that just presented waits for the compositor's next frame,
+    about 33 ms in the nested test session (SPEED-10)."""
+
+    out: list[float] = []
+    for press in key_presses(events):
+        callback = next((micros for event, micros in events
+                         if event == "frame_callback" and micros >= press), None)
+        if callback is None:
+            continue
+        present = next((micros for event, micros in events
+                        if event == "present" and micros >= callback), None)
+        if present is not None:
+            out.append((present - callback) / 1000.0)
+    return out
+
+
 def percentile(values: list[float], pct: float) -> Optional[float]:
     if not values:
         return None
@@ -207,6 +227,7 @@ def typing_summary(events: Events, target_ms: float = TYPING_P95_TARGET_MS) -> d
         "echo_p50_ms": percentile(latencies, 0.5),
         "echo_p95_ms": p95,
         "echo_max_ms": max(latencies) if latencies else None,
+        "echo_after_frame_callback_p95_ms": percentile(key_press_app_latencies_ms(events), 0.95),
         # SPEED-13: the first keys after a document opens.
         "first_keys_ms": [round(latency, 3) for latency in latencies[:3]],
         "pass": p95 is not None and p95 <= target_ms,
@@ -833,12 +854,15 @@ class InteractionScenarios:
                     break
                 mark = self._mark(service_trace)
                 start = time.monotonic()
-                self.input.hold("alt-tab")
+                # niri's Mod is Alt in the nested session, but the switcher
+                # reads ⌘ (Super) as the held modifier, as in the real
+                # session: hold Super as well once the bind has fired.
+                self.input.hold("alt-tab", extra=("cmd",))
                 reveals.append(self._wait_reveal(service_trace, mark, start))
                 time.sleep(0.3)
                 baseline = self._presents(target[1])
                 start = time.monotonic()
-                self.input.release("alt-tab")
+                self.input.release("alt-tab", extra=("cmd",))
                 presented = self._wait_present(target[1], baseline, start)
                 focused = self.wait_for(lambda: self._focused_app_id() == target[2], timeout=3.0)
                 commits.append(presented if focused else None)

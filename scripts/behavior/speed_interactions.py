@@ -24,9 +24,13 @@ process:
     (`draw_skip`, or a callback with no draw before the next callback) is
     not a frame. This is the CPU+GPU work per frame against the budget.
   - key latency: a key press's `input` row to the first `present` after it.
-    The harness types lowercase letters only, so every stroke is exactly
-    two `input` rows (press, release) and the presses are the even rows of
-    the window's inputs (`key_press_latencies_ms`).
+    The harness types one lowercase key every 60-80 ms and holds each for
+    20 ms, so a press is an `input` row more than KEY_GAP_US after the
+    previous one; its release (and any modifier row) follows within that
+    gap (`key_press_latencies_ms`).
+  - settled: the last `present` of a burst that started after an input,
+    where a burst ends at the first quiet gap of `gap_ms` (so a caret that
+    starts blinking later is not counted as content arriving).
 
 Run with `run_speed_sweep.py --only <scenario>` (or `--interactions` for
 all of them); scenario names are the keys of `SCENARIOS`.
@@ -92,16 +96,44 @@ def frame_costs_ms(events: Events) -> list[float]:
     return out
 
 
+KEY_GAP_US = 45_000
+
+
+def key_presses(events: Events) -> list[int]:
+    """The `input` rows that start a stroke (see the module docstring)."""
+
+    presses: list[int] = []
+    previous: Optional[int] = None
+    for event, micros in events:
+        if event != "input":
+            continue
+        if previous is None or micros - previous > KEY_GAP_US:
+            presses.append(micros)
+        previous = micros
+    return presses
+
+
+def settled_after(events: Events, start: int, gap_ms: float = 250.0) -> Optional[int]:
+    """The last `present` of the burst that follows `start`."""
+
+    last: Optional[int] = None
+    for event, micros in events:
+        if event != "present" or micros < start:
+            continue
+        if last is not None and micros - last > gap_ms * 1000:
+            break
+        last = micros
+    return last
+
+
 def key_press_latencies_ms(events: Events) -> list[float]:
-    """Press-to-present for every stroke: inputs come in press/release
-    pairs, so the presses are inputs 0, 2, 4, ... A press with no later
-    present contributes nothing."""
+    """Press-to-present for every stroke. A press with no later present
+    contributes nothing."""
 
     presents = [micros for event, micros in events if event == "present"]
-    inputs = [micros for event, micros in events if event == "input"]
     out: list[float] = []
     cursor = 0
-    for press in inputs[0::2]:
+    for press in key_presses(events):
         while cursor < len(presents) and presents[cursor] < press:
             cursor += 1
         if cursor < len(presents):
@@ -265,8 +297,8 @@ class InteractionScenarios:
     def _since(self, trace: Path, mark: int) -> Events:
         return read_trace(trace)[mark:]
 
-    def _settle(self, trace: Path, timeout: float = 4.0) -> None:
-        """Wait until the trace records no new `present` for SETTLE_S."""
+    def _settle(self, trace: Path, timeout: float = 4.0, quiet: float = SETTLE_S) -> None:
+        """Wait until the trace records no new `present` for `quiet` s."""
 
         deadline = time.monotonic() + timeout
         last = -1
@@ -276,7 +308,7 @@ class InteractionScenarios:
             now = time.monotonic()
             if count != last:
                 last, changed = count, now
-            elif now - changed >= SETTLE_S:
+            elif now - changed >= quiet:
                 return
             time.sleep(0.03)
 
@@ -383,9 +415,11 @@ class InteractionScenarios:
             self.input.key("cmd-2")
             self._settle(trace, 3.0)
             runs: list[dict[str, Any]] = []
+            # "Big" sorts first; after Cmd-Up, Files selects the folder it
+            # came from, as the Mac does.
+            self.input.key("down")
+            self._settle(trace, 2.0)
             for _ in range(self.args.repeat):
-                self.input.type_text("big", delay=0.05)
-                self._settle(trace, 2.0)
                 mark = self._mark(trace)
                 self.input.key("cmd-down")
                 titled = self.wait_for(
@@ -394,9 +428,11 @@ class InteractionScenarios:
                 events = self._since(trace, mark)
                 inputs = [at for event, at in events if event == "input"]
                 if not titled or not inputs:
+                    if runs:
+                        break
                     raise RuntimeError(f"Cmd-Down did not open Big (title {window.get('title')!r})")
                 first = first_present_after(events, inputs[0])
-                last = last_present_after(events, inputs[0])
+                last = settled_after(events, inputs[0])
                 runs.append({
                     "first_frame_ms": None if first is None else (first - inputs[0]) / 1000.0,
                     "settled_ms": None if last is None else (last - inputs[0]) / 1000.0,
@@ -427,11 +463,11 @@ class InteractionScenarios:
             mark = self._mark(trace)
             self.input.key("cmd-1")
             time.sleep(0.5)
-            self._settle(trace, 10.0)
+            self._settle(trace, 15.0, quiet=1.5)
             events = self._since(trace, mark)
             summary = frames_summary(events)
             inputs = [at for event, at in events if event == "input"]
-            last = last_present_after(events, inputs[0]) if inputs else None
+            last = settled_after(events, inputs[0], gap_ms=1000.0) if inputs else None
             summary["settled_ms"] = None if last is None else (last - inputs[0]) / 1000.0
             # Then scroll through them all while they keep loading.
             summary["scroll"] = self._scroll(trace, self.window_by_app_id(FILES_APP_ID) or window, steps=30)
@@ -624,10 +660,9 @@ class InteractionScenarios:
                 self._settle(trace, 3.0)
                 events = self._since(trace, mark)
                 summary = typing_summary(events)
-                inputs = [at for event, at in events if event == "input"]
-                # The last key press (inputs end press, release).
-                press = inputs[-2] if len(inputs) >= 2 else None
-                last = last_present_after(events, press) if press is not None else None
+                presses = key_presses(events)
+                press = presses[-1] if presses else None
+                last = settled_after(events, press) if press is not None else None
                 summary["results_ms"] = None if last is None else (last - press) / 1000.0
                 runs.append(summary)
                 self.input.key("escape")
@@ -716,8 +751,12 @@ class InteractionScenarios:
         the app's next present."""
 
         binary = self.bin("rmac-calculator")
-        if binary is None:
-            raise RuntimeError("rmac-calculator not found under --bin-dir")
+        mission_control = self.bin("rmac-mission-control", "mission-control")
+        if binary is None or mission_control is None:
+            raise RuntimeError("rmac-calculator / rmac-mission-control not found under --bin-dir")
+        # `mission-control minimize` (Mod-M's spawn) asks the resident service.
+        service = self.spawn([str(mission_control), "--service"], "minimise-mc-service")
+        time.sleep(1.0)
         process, trace, window = self._launch([str(binary)], "minimise", "org.rmac.Calculator")
         try:
             workspace = window.get("workspace_id")
@@ -754,6 +793,7 @@ class InteractionScenarios:
             }
         finally:
             self.stop(process)
+            self.stop(service)
 
     def scenario_resize_drag(self) -> dict[str, Any]:
         """A left-edge resize drag of the Settings window: every configure

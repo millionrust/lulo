@@ -48,6 +48,16 @@ class KeyLatencyTests(unittest.TestCase):
                   ("input", 100000), ("present", 105000), ("input", 120000)]
         self.assertEqual(si.key_press_latencies_ms(events), [30.0, 5.0])
 
+    def test_presses_are_inputs_after_a_gap(self) -> None:
+        events = [("input", 0), ("input", 2000), ("input", 25000), ("input", 90000), ("input", 112000)]
+        self.assertEqual(si.key_presses(events), [0, 90000])
+
+    def test_settled_stops_at_the_first_quiet_gap(self) -> None:
+        # Results land 10 and 40 ms after the key; a caret blink 600 ms
+        # later is not content arriving.
+        events = [("input", 0), ("present", 10000), ("present", 40000), ("present", 640000)]
+        self.assertEqual(si.settled_after(events, 0), 40000)
+
     def test_typing_summary_judges_the_p95_echo(self) -> None:
         events = []
         for index in range(20):

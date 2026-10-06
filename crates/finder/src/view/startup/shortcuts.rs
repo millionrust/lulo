@@ -107,6 +107,8 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         ),
         KeyBinding::new("alt-cmd-y", Slideshow, Some("Finder")),
         KeyBinding::new(rmac_ui::shortcuts::INFO.keystroke, GetInfo, Some("Finder")),
+        KeyBinding::new("alt-cmd-i", ShowInspector, Some("Finder")),
+        KeyBinding::new("ctrl-cmd-i", GetSummaryInfo, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::NEW_TAB.keystroke,
             NewTab,

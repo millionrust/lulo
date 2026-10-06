@@ -623,6 +623,7 @@ impl FinderView {
             cx,
         );
         rmac_ui::set_menu_enabled("finder::QuickLook", has_selection, cx);
+        rmac_ui::set_menu_enabled("finder::GetSummaryInfo", selection.len() > 1, cx);
         rmac_ui::set_menu_enabled("finder::Slideshow", has_selection, cx);
         rmac_ui::set_menu_label(
             "finder::TogglePreview",

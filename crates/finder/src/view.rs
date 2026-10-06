@@ -19,6 +19,7 @@ mod finder_behaviour;
 mod finder_style;
 mod gallery_presentation;
 mod go_to_folder_controller;
+mod inspector_window;
 mod item_operations;
 mod lifecycle_controller;
 mod list_presentation;
@@ -162,6 +163,8 @@ actions!(
         Slideshow,
         Compress,
         GetInfo,
+        ShowInspector,
+        GetSummaryInfo,
         ViewAsIcons,
         ViewAsList,
         ViewAsColumns,
@@ -467,6 +470,8 @@ struct FinderView {
     sidebar_drop_index: Option<usize>,
     /// Separate Get Info windows opened from this Finder window.
     info_windows: Vec<gpui::WindowHandle<Root>>,
+    /// File ▸ Show Inspector's live panel for this Finder window, if open.
+    inspector_window: Option<gpui::WindowHandle<Root>>,
     /// Go ▸ Go to Folder…, while its sheet is open.
     go_to: Option<go_to_folder_controller::GoToSheet>,
     /// An item Go to Folder named, selected once its folder loads.

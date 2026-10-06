@@ -921,6 +921,8 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &Slideshow, _, cx| this.slideshow(cx)))
             .on_action(cx.listener(|this, _: &Compress, _, cx| this.compress_selection(cx)))
             .on_action(cx.listener(|this, _: &GetInfo, window, cx| this.get_info(window, cx)))
+            .on_action(cx.listener(|this, _: &ShowInspector, _, cx| this.show_inspector(cx)))
+            .on_action(cx.listener(|this, _: &GetSummaryInfo, _, cx| this.get_summary_info(cx)))
             .on_action(
                 cx.listener(|this, _: &ViewAsIcons, _, cx| {
                     this.select_view_mode(ViewMode::Icon, cx)

@@ -1340,6 +1340,8 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Close Window", "finder::CloseTab", "⌘W"),
             item!("Close All", "finder::CloseAll", "⌥⌘W"),
             item!("Get Info", "finder::GetInfo", "⌘I", separator),
+            item!("Show Inspector", "finder::ShowInspector", "⌥⌘I"),
+            item!("Get Summary Info", "finder::GetSummaryInfo", "⌃⌘I"),
             item!("Quick Look", "finder::QuickLook", "⌘Y"),
             item!("Slideshow", "finder::Slideshow", "⌥⌘Y"),
             item!("Rename", "finder::RenameItem", ""),

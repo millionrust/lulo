@@ -295,16 +295,16 @@ impl FinderView {
     }
 }
 
-const MAX_FOLDER_INFO_ENTRIES: usize = 100_000;
+pub(super) const MAX_FOLDER_INFO_ENTRIES: usize = 100_000;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct FolderSize {
-    bytes: u64,
-    items: usize,
-    incomplete: bool,
+pub(super) struct FolderSize {
+    pub(super) bytes: u64,
+    pub(super) items: usize,
+    pub(super) incomplete: bool,
 }
 
-fn info_details(entry: &Entry) -> Vec<(&'static str, String)> {
+pub(super) fn info_details(entry: &Entry) -> Vec<(&'static str, String)> {
     let mut details = file_info(entry);
     if entry.is_dir {
         details.insert(1, ("Size", "Calculating…".to_owned()));
@@ -314,7 +314,11 @@ fn info_details(entry: &Entry) -> Vec<(&'static str, String)> {
 
 /// Count one folder without following links or leaving its filesystem.
 /// Cancellation also stops a scan when its Info window closes or renames.
-fn scan_folder_size(root: &Path, cancel: &AtomicBool, max_entries: usize) -> Option<FolderSize> {
+pub(super) fn scan_folder_size(
+    root: &Path,
+    cancel: &AtomicBool,
+    max_entries: usize,
+) -> Option<FolderSize> {
     use std::os::unix::fs::MetadataExt as _;
 
     let device = std::fs::symlink_metadata(root).ok()?.dev();
@@ -366,7 +370,7 @@ fn scan_folder_size(root: &Path, cancel: &AtomicBool, max_entries: usize) -> Opt
     Some(size)
 }
 
-fn format_folder_size(size: FolderSize) -> String {
+pub(super) fn format_folder_size(size: FolderSize) -> String {
     let prefix = if size.incomplete { "At least " } else { "" };
     let suffix = if size.items == 1 { "item" } else { "items" };
     format!(
@@ -375,6 +379,215 @@ fn format_folder_size(size: FolderSize) -> String {
         size.bytes,
         size.items
     )
+}
+
+/// The label-and-value rows of one Info section, in `keys` order; a key
+/// with no detail is left out.
+pub(super) fn info_rows(
+    details: &[(&'static str, String)],
+    keys: &[&'static str],
+    label_width: f32,
+) -> Vec<Div> {
+    keys.iter()
+        .filter_map(|key| {
+            details
+                .iter()
+                .find(|(name, _)| name == key)
+                .map(|(_, value)| (*key, value.clone()))
+        })
+        .map(|(key, value)| {
+            div()
+                .flex()
+                .items_start()
+                .gap(px(INFO_LABEL_GAP))
+                .py(px((INFO_ROW_PITCH - INFO_ROW_LINE) / 2.0))
+                .text_size(rmac_ui::text_px(INFO_ROW_TEXT))
+                .line_height(px(INFO_ROW_LINE))
+                .text_color(label())
+                .child(
+                    div()
+                        .w(px(label_width))
+                        .whitespace_nowrap()
+                        .flex_none()
+                        .text_right()
+                        .child(format!("{key}:")),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .whitespace_normal()
+                        .child(value),
+                )
+        })
+        .collect::<Vec<_>>()
+}
+
+/// A disclosure heading such as "General:".
+pub(super) fn info_section(title: &'static str) -> Div {
+    div()
+        .h(px(INFO_SECTION_HEADER))
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .text_size(rmac_ui::text_px(INFO_SECTION_TEXT))
+        .text_color(label())
+        .child(icon("icons/chevron-down.svg", 10.0, secondary_text()))
+        .child(title)
+}
+
+/// One ruled section of an Info panel.
+pub(super) fn info_block() -> Div {
+    div()
+        .v_flex()
+        .px(px(INFO_SECTION_INSET))
+        .pb(px(8.0))
+        .border_t_1()
+        .border_color(header_divider())
+}
+
+/// The General section: kind, size, location and dates.
+pub(super) fn info_general(details: &[(&'static str, String)]) -> Div {
+    info_block()
+        .child(info_section("General:"))
+        .children(info_rows(
+            details,
+            &["Kind", "Size", "Where", "Created", "Modified"],
+            INFO_LABEL_RIGHT - INFO_SECTION_INSET,
+        ))
+}
+
+/// The Sharing & Permissions section.
+pub(super) fn info_permissions(details: &[(&'static str, String)]) -> Div {
+    info_block()
+        .child(info_section("Sharing & Permissions:"))
+        .children(info_rows(
+            details,
+            &["Owner", "Group", "Permissions"],
+            INFO_PERMISSIONS_LABEL,
+        ))
+}
+
+/// An item's thumbnail when one exists, otherwise its folder or document
+/// artwork, at the Info header's icon size.
+pub(super) fn info_artwork(entry: &Entry, thumbnail: Option<&PathBuf>) -> gpui::AnyElement {
+    match thumbnail {
+        Some(thumbnail) => div()
+            .size(px(INFO_HEADER_ICON))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                img(thumbnail.clone())
+                    .max_w(px(INFO_HEADER_ICON))
+                    .max_h(px(INFO_HEADER_ICON)),
+            )
+            .into_any_element(),
+        None => item_artwork(entry.is_dir, &entry.name, INFO_HEADER_ICON),
+    }
+}
+
+/// The artwork, bold name (with an optional size beside it) and a
+/// secondary line under it, as the top of a Get Info panel.
+pub(super) fn info_header(
+    artwork: gpui::AnyElement,
+    name: SharedString,
+    size: Option<SharedString>,
+    subtitle: String,
+) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(10.0))
+        .px(px(INFO_SECTION_INSET))
+        .pb(px(10.0))
+        .child(artwork)
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .v_flex()
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .font_weight(rmac_ui::mac::BOLD)
+                        .text_color(label())
+                        .child(div().flex_1().min_w(px(0.0)).truncate().child(name))
+                        .when_some(size, |line, size| line.child(div().flex_none().child(size))),
+                )
+                .child(
+                    div()
+                        .truncate()
+                        .text_size(rmac_ui::text_px(INFO_ROW_TEXT))
+                        .text_color(secondary_text())
+                        .child(subtitle),
+                ),
+        )
+}
+
+/// The panel's own title strip, with the close control at its left.
+pub(super) fn info_title_strip(title: &str) -> Div {
+    div()
+        .h(px(INFO_TITLE_HEIGHT))
+        .flex_none()
+        .relative()
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .id("info-close")
+                .role(Role::Button)
+                .aria_label("Close")
+                .absolute()
+                .left(px(INFO_CLOSE_CENTRE - INFO_CLOSE / 2.0))
+                .top(px((INFO_TITLE_HEIGHT - INFO_CLOSE) / 2.0))
+                .size(px(INFO_CLOSE))
+                .rounded_full()
+                .bg(gpui::rgb(0xff5f57))
+                .cursor_pointer()
+                .on_click(|_, window, _| window.remove_window()),
+        )
+        .child(
+            div()
+                .max_w(px(INFO_WIDTH - 2.0 * INFO_TITLE_TEXT_INSET))
+                .truncate()
+                .text_size(rmac_ui::text_px(13.0))
+                .font_weight(rmac_ui::mac::SEMIBOLD)
+                .text_color(secondary_text())
+                .child(title.to_owned()),
+        )
+}
+
+/// The rounded card that holds an Info panel's title strip and body.
+pub(super) fn info_card(title: &str, focus: &FocusHandle) -> Stateful<Div> {
+    div()
+        .id("info-panel")
+        .role(Role::Group)
+        .aria_label(title.to_owned())
+        .track_focus(focus)
+        .w(px(INFO_WIDTH))
+        .h_full()
+        .v_flex()
+        .overflow_hidden()
+        .rounded(px(rmac_ui::mac::radius_card()))
+        .bg(rmac_ui::mac::raised())
+        .border_1()
+        .border_color(sep())
+        .shadow_lg()
+}
+
+/// The scrolling body under an Info panel's title strip.
+pub(super) fn info_body() -> Stateful<Div> {
+    div()
+        .id("info-body")
+        .flex_1()
+        .min_h(px(0.0))
+        .overflow_y_scroll()
+        .v_flex()
 }
 
 struct InfoWindow {
@@ -505,163 +718,26 @@ impl InfoWindow {
     fn render_info(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let e = &self.entry;
         let details = &self.details;
-        let value_of = |key: &str| {
-            details
-                .iter()
-                .find(|(name, _)| *name == key)
-                .map(|(_, value)| value.clone())
-        };
-        let rows = |keys: &[&'static str], label_width: f32| {
-            keys.iter()
-                .filter_map(|key| value_of(key).map(|value| (*key, value)))
-                .map(|(key, value)| {
-                    div()
-                        .flex()
-                        .items_start()
-                        .gap(px(INFO_LABEL_GAP))
-                        .py(px((INFO_ROW_PITCH - INFO_ROW_LINE) / 2.0))
-                        .text_size(rmac_ui::text_px(INFO_ROW_TEXT))
-                        .line_height(px(INFO_ROW_LINE))
-                        .text_color(label())
-                        .child(
-                            div()
-                                .w(px(label_width))
-                                .whitespace_nowrap()
-                                .flex_none()
-                                .text_right()
-                                .child(format!("{key}:")),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .whitespace_normal()
-                                .child(value),
-                        )
-                })
-                .collect::<Vec<_>>()
-        };
-        let section = |title: &'static str| {
-            div()
-                .h(px(INFO_SECTION_HEADER))
-                .flex()
-                .items_center()
-                .gap(px(4.0))
-                .text_size(rmac_ui::text_px(INFO_SECTION_TEXT))
-                .text_color(label())
-                .child(icon("icons/chevron-down.svg", 10.0, secondary_text()))
-                .child(title)
-        };
-        let block = || {
-            div()
-                .v_flex()
-                .px(px(INFO_SECTION_INSET))
-                .pb(px(8.0))
-                .border_t_1()
-                .border_color(header_divider())
-        };
-
-        let header_artwork = match &self.thumbnail {
-            Some(thumbnail) => div()
-                .size(px(INFO_HEADER_ICON))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    img(thumbnail.clone())
-                        .max_w(px(INFO_HEADER_ICON))
-                        .max_h(px(INFO_HEADER_ICON)),
-                )
-                .into_any_element(),
-            None => item_artwork(e.is_dir, &e.name, INFO_HEADER_ICON),
-        };
-        let title_strip = div()
-            .h(px(INFO_TITLE_HEIGHT))
-            .flex_none()
-            .relative()
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(
-                div()
-                    .id("info-close")
-                    .role(Role::Button)
-                    .aria_label("Close")
-                    .absolute()
-                    .left(px(INFO_CLOSE_CENTRE - INFO_CLOSE / 2.0))
-                    .top(px((INFO_TITLE_HEIGHT - INFO_CLOSE) / 2.0))
-                    .size(px(INFO_CLOSE))
-                    .rounded_full()
-                    .bg(gpui::rgb(0xff5f57))
-                    .cursor_pointer()
-                    .on_click(|_, window, _| window.remove_window()),
-            )
-            .child(
-                div()
-                    .max_w(px(INFO_WIDTH - 2.0 * INFO_TITLE_TEXT_INSET))
-                    .truncate()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .font_weight(rmac_ui::mac::SEMIBOLD)
-                    .text_color(secondary_text())
-                    .child(format!("{} Info", e.name)),
-            );
-        let header = div()
-            .flex()
-            .items_center()
-            .gap(px(10.0))
-            .px(px(INFO_SECTION_INSET))
-            .pb(px(10.0))
-            .child(header_artwork)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .v_flex()
-                    .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .text_size(rmac_ui::text_px(13.0))
-                            .font_weight(rmac_ui::mac::BOLD)
-                            .text_color(label())
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w(px(0.0))
-                                    .truncate()
-                                    .child(e.name.clone()),
-                            )
-                            .when(!e.is_dir, |line| {
-                                line.child(div().flex_none().child(e.size.clone()))
-                            }),
-                    )
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(rmac_ui::text_px(INFO_ROW_TEXT))
-                            .text_color(secondary_text())
-                            .child(format!("Modified: {}", e.modified)),
-                    ),
-            );
-
-        let general = block().child(section("General:")).children(rows(
-            &["Kind", "Size", "Where", "Created", "Modified"],
-            INFO_LABEL_RIGHT - INFO_SECTION_INSET,
-        ));
+        let title = format!("{} Info", e.name);
+        let header = info_header(
+            info_artwork(e, self.thumbnail.as_ref()),
+            e.name.clone(),
+            (!e.is_dir).then(|| e.size.clone()),
+            format!("Modified: {}", e.modified),
+        );
 
         // Finder's Name & Extension field: edit and press Return to rename.
         let name_field = self.name_input.as_ref().map(|input| {
-            block()
+            info_block()
                 .id("info-name")
                 .role(Role::Group)
                 .aria_label("Name & Extension")
-                .child(section("Name & Extension:"))
+                .child(info_section("Name & Extension:"))
                 .child(TextField::new(input).small())
         });
 
         let preview = self.thumbnail.as_ref().map(|thumbnail| {
-            block().child(section("Preview:")).child(
+            info_block().child(info_section("Preview:")).child(
                 div()
                     .h(px(INFO_PREVIEW_HEIGHT))
                     .flex()
@@ -676,40 +752,15 @@ impl InfoWindow {
             )
         });
 
-        let permissions = block()
-            .child(section("Sharing & Permissions:"))
-            .children(rows(
-                &["Owner", "Group", "Permissions"],
-                INFO_PERMISSIONS_LABEL,
-            ));
-
-        let card = div()
-            .id("info-panel")
-            .role(Role::Group)
-            .aria_label(format!("{} Info", e.name))
-            .track_focus(&self.focus)
-            .w(px(INFO_WIDTH))
-            .h_full()
-            .v_flex()
-            .overflow_hidden()
-            .rounded(px(rmac_ui::mac::radius_card()))
-            .bg(rmac_ui::mac::raised())
-            .border_1()
-            .border_color(sep())
-            .shadow_lg()
-            .child(title_strip)
+        let card = info_card(&title, &self.focus)
+            .child(info_title_strip(&title))
             .child(
-                div()
-                    .id("info-body")
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .overflow_y_scroll()
-                    .v_flex()
+                info_body()
                     .child(header)
-                    .child(general)
+                    .child(info_general(details))
                     .children(name_field)
                     .children(preview)
-                    .child(permissions),
+                    .child(info_permissions(details)),
             );
 
         card.on_key_down(cx.listener(|_, event: &KeyDownEvent, window, cx| {

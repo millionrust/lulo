@@ -46,6 +46,13 @@
           "shortcut": "⌘Q",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "action": "activity_monitor::QuitAndKeepWindows",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -333,6 +340,13 @@
           "children": []
         },
         {
+          "label": "Sample Process",
+          "action": "activity_monitor::SampleProcess",
+          "shortcut": "⌥⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Show Deltas for Process",
           "action": "activity_monitor::ShowDeltasForProcess",
           "shortcut": "⌥⌘J",
@@ -343,6 +357,13 @@
           "label": "Quit Process",
           "action": "activity_monitor::QuitProcess",
           "shortcut": "⌥⌘Q",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Send Signal to Process…",
+          "action": "activity_monitor::SendSignalToProcess",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
@@ -589,6 +610,27 @@
           "action": "activity_monitor::ShowMainWindow",
           "shortcut": "⌘1",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "CPU Usage",
+          "action": "activity_monitor::ShowCpuUsageWindow",
+          "shortcut": "⌘2",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "CPU History",
+          "action": "activity_monitor::ShowCpuHistoryWindow",
+          "shortcut": "⌘3",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "GPU History",
+          "action": "activity_monitor::ShowGpuHistoryWindow",
+          "shortcut": "⌘4",
+          "separator_before": false,
           "children": []
         },
         {

@@ -119,6 +119,7 @@ actions!(
         RenameItem,
         RenameNextItem,
         Duplicate,
+        DuplicateExactly,
         Eject,
         MakeAlias,
         ShowOriginal,

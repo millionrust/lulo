@@ -35,6 +35,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             Duplicate,
             Some("Finder"),
         ),
+        KeyBinding::new("alt-shift-cmd-d", DuplicateExactly, Some("Finder")),
         KeyBinding::new("cmd-e", Eject, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::DELETE.keystroke,

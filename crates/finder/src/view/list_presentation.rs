@@ -783,6 +783,11 @@ impl FinderView {
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
+            // Duplicate already copies exactly: it keeps each item's
+            // permissions and never resolves links (`file_ops.rs`), and a
+            // user cannot give a copy someone else's owner, the only extra
+            // the Mac's Duplicate Exactly keeps.
+            .on_action(cx.listener(|this, _: &DuplicateExactly, _, cx| this.duplicate(cx)))
             .on_action(cx.listener(|this, _: &TogglePreview, _, cx| {
                 this.preview_visible = !this.preview_visible;
                 cx.notify();

@@ -1347,6 +1347,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Rename", "finder::RenameItem", ""),
             item!("Compress", "finder::Compress", ""),
             item!("Duplicate", "finder::Duplicate", "⌘D"),
+            item!("Duplicate Exactly", "finder::DuplicateExactly", "⌥⇧⌘D"),
             item!("Make Alias", "finder::MakeAlias", "⌘L"),
             item!("Show Original", "finder::ShowOriginal", "⌘R"),
             item!("Add to Sidebar", "finder::AddToSidebar", "⌃⌘T"),

@@ -89,6 +89,7 @@ import run_lulo  # noqa: E402
 import statistics  # noqa: E402
 import wlinput  # noqa: E402
 from run_frame_timing import read_trace  # noqa: E402
+from speed_interactions import SCENARIOS, InteractionScenarios  # noqa: E402
 
 OUTPUT_W, OUTPUT_H = run_lulo.OUTPUT_W, run_lulo.OUTPUT_H
 APP_FIRST_FRAME_TARGET_MS = 300.0
@@ -301,7 +302,7 @@ def outer(args: argparse.Namespace, argv: list[str], script: Optional[Path] = No
 # --------------------------------------------------------------------------
 
 
-class Run:
+class Run(InteractionScenarios):
     def __init__(self, args: argparse.Namespace, work: Path) -> None:
         self.args = args
         self.work = work
@@ -686,7 +687,11 @@ class Run:
         only = set(self.args.only or [])
 
         def wanted(name: str) -> bool:
-            return not only or name in only
+            # Interaction scenarios run only when asked for (--only NAME or
+            # --interactions); a bare sweep stays the launch/panel sweep.
+            if name in SCENARIOS:
+                return name in only or (self.args.interactions and not only)
+            return (not only or name in only) and not (self.args.interactions and not only)
 
         # A desktop like a fresh account's: one folder and one document.
         desktop = Path(self.env["HOME"]) / "Desktop"
@@ -729,6 +734,14 @@ class Run:
         if wanted("settings-panes"):
             print("settings pane switching...", flush=True)
             report["settings_panes"] = self.measure_settings_panes()
+        for name, method in SCENARIOS.items():
+            if not wanted(name):
+                continue
+            print(f"interaction: {name}...", flush=True)
+            try:
+                report.setdefault("interactions", {})[name] = getattr(self, method)()
+            except (StepFailed, RuntimeError, OSError, subprocess.SubprocessError) as error:
+                report.setdefault("interactions", {})[name] = {"error": str(error)}
         self.finish()
         return report
 
@@ -805,11 +818,40 @@ def render_markdown(report: dict[str, Any]) -> str:
                 f"over {len(panes.get('switches', []))} switches: {_fmt_pass(panes, 'switch_pass')}."
             )
         lines.append("")
+    interactions = report.get("interactions")
+    if interactions:
+        lines.extend(render_interactions(interactions))
     not_measured = report.get("not_measured", [])
     if not_measured:
         lines.append(f"Not measured: {', '.join(not_measured)}.")
         lines.append("")
     return "\n".join(lines)
+
+
+def render_interactions(interactions: dict[str, Any]) -> list[str]:
+    lines = ["## Interactions", ""]
+    lines.append("| Scenario | Frames | <=16.7 ms | p95 frame | Worst | Key echo p95 | Other | Pass |")
+    lines.append("|---|---:|---:|---:|---:|---:|---|---|")
+    for name, entry in interactions.items():
+        if entry.get("error"):
+            lines.append(f"| {name} | -- | -- | -- | -- | -- | error: {entry['error']} | -- |")
+            continue
+        share = entry.get("within_16_7ms_share")
+        share_cell = "--" if share is None else f"{share * 100:.1f}%"
+        other = []
+        for key in ("first_frame_ms", "settled_ms", "open_ms", "results_ms", "switch_ms",
+                    "minimise_ms", "restore_ms"):
+            if entry.get(key) is not None:
+                other.append(f"{key[:-3].replace('_', ' ')} {_fmt_ms(entry[key])}")
+        if entry.get("stalls"):
+            other.append(f"{entry['stalls']} stalls")
+        lines.append(
+            f"| {name} | {entry.get('frames', '--')} | {share_cell} | {_fmt_ms(entry.get('frame_p95_ms'))} | "
+            f"{_fmt_ms(entry.get('worst_frame_ms'))} | {_fmt_ms(entry.get('echo_p95_ms'))} | "
+            f"{'; '.join(other) or '--'} | {'PASS' if entry.get('pass') else 'FAIL'} |"
+        )
+    lines.append("")
+    return lines
 
 
 # --------------------------------------------------------------------------
@@ -833,6 +875,9 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
                         help="extra environment for every measured process (experiments)")
     parser.add_argument("--only", action="append", default=[],
                         help="measure only these items (app names, panel names, settings-panes)")
+    parser.add_argument("--interactions", action="store_true",
+                        help="run every interaction scenario (scrolling, typing, Files, window actions) "
+                             "instead of the launch/panel sweep")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args, unknown = parser.parse_known_args()
     return args, unknown

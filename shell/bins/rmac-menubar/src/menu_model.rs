@@ -2211,7 +2211,8 @@ mod tests {
         // Going back up, a row under the top arrow scrolls just below it,
         // and the first row scrolls all the way back.
         let end = MenuScroll::new(content, 25.0, 540.0, top.max_offset());
-        let (row, height) = app_menu_row_span(&items, 10).unwrap();
+        let (row, height) = app_menu_row_span(&items, 5).unwrap();
+        assert!(end.row_y(row) < SCROLL_ARROW_HEIGHT);
         let offset = end.reveal(row, height);
         let after = MenuScroll::new(content, 25.0, 540.0, offset);
         assert_eq!(after.row_y(row), SCROLL_ARROW_HEIGHT);

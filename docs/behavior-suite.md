@@ -304,6 +304,18 @@ python3 scripts/behavior/run_menu_dismiss.py \
   --niri /usr/bin/niri --bin-dir ~/rmac-wt/target/iterate
 ```
 
+## Tall menu-bar menus
+
+`scripts/behavior/run_menu_scroll.py` opens Files' File menu in private
+nested sessions at 1920x1080 and 1280x720, both at scale 1.25. It checks
+that a menu that fits is drawn whole with nothing under it, and that a
+taller one stops 5 pt above the screen bottom and scrolls with the keyboard,
+the wheel and its scroll arrows. See `tests/behavior/shell/menu-scroll.md`.
+
+```sh
+python3 scripts/behavior/run_menu_scroll.py --bin-dir ~/rmac-wt/target/iterate
+```
+
 ## Monkey testing
 
 `scripts/behavior/monkey.py` is a seeded random ("monkey") tester, not a

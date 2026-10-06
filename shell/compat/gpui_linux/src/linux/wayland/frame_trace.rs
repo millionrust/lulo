@@ -90,6 +90,12 @@ pub(crate) fn record(event: &str) {
     }
 }
 
+/// Whether rows are being recorded, for callers that build a row's text.
+#[inline]
+pub(crate) fn enabled() -> bool {
+    ENABLED.load(Ordering::Relaxed)
+}
+
 #[cold]
 fn record_enabled(event: &str) {
     let Some(start) = START.get() else { return };

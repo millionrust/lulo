@@ -1,0 +1,211 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 6.18339201901108,
+      "first_frame_ms": 236.61716596689075,
+      "first_frame_pass": true,
+      "icons_painted_ms": 288.46815101598946,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 11.154143023304641,
+          "draw_skips": 0,
+          "first_frame_ms": 179.85915101598948,
+          "focus_after_first_frame_ms": 84.588,
+          "force_renders": 0,
+          "icons_painted_ms": 288.46815101598946,
+          "presents_after_focus": 1,
+          "window_listed_ms": 274.40544101409614
+        },
+        {
+          "backend_init_ms": 5.83357794675976,
+          "draw_skips": 0,
+          "first_frame_ms": 236.61716596689075,
+          "focus_after_first_frame_ms": 84.888,
+          "force_renders": 0,
+          "icons_painted_ms": 236.61716596689075,
+          "presents_after_focus": 0,
+          "window_listed_ms": 366.81986099574715
+        },
+        {
+          "backend_init_ms": 11.085164966061711,
+          "draw_skips": 0,
+          "first_frame_ms": 231.93207301665097,
+          "focus_after_first_frame_ms": 83.218,
+          "force_renders": 0,
+          "icons_painted_ms": 356.117073016651,
+          "presents_after_focus": 1,
+          "window_listed_ms": 334.51066503766924
+        },
+        {
+          "backend_init_ms": 6.18339201901108,
+          "draw_skips": 0,
+          "first_frame_ms": 246.5470329625532,
+          "focus_after_first_frame_ms": 77.001,
+          "force_renders": 0,
+          "icons_painted_ms": 246.5470329625532,
+          "presents_after_focus": 0,
+          "window_listed_ms": 370.27878395747393
+        },
+        {
+          "backend_init_ms": 5.965980002656579,
+          "draw_skips": 0,
+          "first_frame_ms": 258.6942280177027,
+          "focus_after_first_frame_ms": 88.79,
+          "force_renders": 0,
+          "icons_painted_ms": 389.8232280177027,
+          "presents_after_focus": 1,
+          "window_listed_ms": 435.8133190544322
+        }
+      ],
+      "window_listed_ms": 366.81986099574715
+    }
+  },
+  "captured_at": "2026-10-06T15:53:49Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 103.94065000582486,
+      "switcher_first_frame_ms": 22.17711100820452,
+      "switches": [
+        161.67026793118566,
+        100.69023596588522,
+        105.85038899444044,
+        103.39744691736996,
+        103.94065000582486
+      ]
+    },
+    "cmd-tab-hold": {
+      "commits": [
+        224.7751490212977,
+        43.84376900270581,
+        53.953084046952426,
+        49.467974924482405,
+        51.423116005025804
+      ],
+      "pass": false,
+      "release_to_switch_ms": 51.423116005025804,
+      "reveal_ms": 128.21302993688732,
+      "reveals": [
+        159.86047801561654,
+        112.57603706326336,
+        128.39568895287812,
+        128.21302993688732,
+        125.42002194095403
+      ]
+    },
+    "resize-drag-long": {
+      "configures": 8,
+      "final_size": [
+        939,
+        808
+      ],
+      "frame_p50_ms": 22.813,
+      "frame_p95_ms": 68.647,
+      "frames": 12,
+      "pass": false,
+      "render_p50_ms": 6.894,
+      "render_p95_ms": 46.566,
+      "resizes": 8,
+      "stalls": 1,
+      "start_size": [
+        699,
+        808
+      ],
+      "submit_p50_ms": 10.113,
+      "submit_p95_ms": 22.081,
+      "within_16_7ms_share": 0.4166666666666667,
+      "worst_frame_ms": 68.647
+    },
+    "spotlight-typing": {
+      "echo_p95_ms": 7.06,
+      "pass": true,
+      "results_ms": 30.318,
+      "runs": [
+        {
+          "echo_after_frame_callback_p95_ms": 6.915,
+          "echo_max_ms": 7.06,
+          "echo_p50_ms": 1.046,
+          "echo_p95_ms": 7.06,
+          "first_keys_ms": [
+            3.529,
+            7.06,
+            1.185
+          ],
+          "frame_p50_ms": 1.256,
+          "frame_p95_ms": 6.915,
+          "frames": 24,
+          "frames_pass": true,
+          "keys": 10,
+          "pass": true,
+          "results_ms": 30.318,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 7.463
+        },
+        {
+          "echo_after_frame_callback_p95_ms": 4.234,
+          "echo_max_ms": 5.394,
+          "echo_p50_ms": 1.123,
+          "echo_p95_ms": 5.394,
+          "first_keys_ms": [
+            5.394,
+            1.923,
+            1.213
+          ],
+          "frame_p50_ms": 1.888,
+          "frame_p95_ms": 6.283,
+          "frames": 21,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 29.241,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 6.356
+        },
+        {
+          "echo_after_frame_callback_p95_ms": 4.051,
+          "echo_max_ms": 5.307,
+          "echo_p50_ms": 1.167,
+          "echo_p95_ms": 5.307,
+          "first_keys_ms": [
+            5.307,
+            1.404,
+            1.18
+          ],
+          "frame_p50_ms": 2.691,
+          "frame_p95_ms": 17.552,
+          "frames": 19,
+          "frames_pass": false,
+          "keys": 8,
+          "pass": false,
+          "results_ms": 31.438,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9473684210526315,
+          "worst_frame_ms": 17.552
+        }
+      ]
+    }
+  },
+  "panels": {
+    "app-switcher": {
+      "open_ms": 9.75991296581924,
+      "open_pass": true,
+      "opens": [
+        71.52057904750109,
+        18.2424959493801,
+        9.75991296581924,
+        8.99740296881646,
+        3.668650984764099
+      ]
+    }
+  },
+  "profile": "iterate",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

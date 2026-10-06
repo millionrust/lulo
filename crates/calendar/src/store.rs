@@ -298,6 +298,29 @@ fn no_home() -> io::Error {
     io::Error::new(io::ErrorKind::NotFound, "no home directory")
 }
 
+/// UIA-04: whether event and "now" times should read in 24-hour time, the
+/// same source the menu bar clock and System Settings ▸ Date & Time read
+/// (`rmac_shell_settings::ClockFormat`, with the system locale's own hour
+/// cycle deciding the `Locale` default -- `rmac-top-bar`'s
+/// `top_bar_hour_cycle`/`clock_label` do the same combination). Falls back
+/// to 12-hour, matching `ClockFormat`'s own `Locale` default, if either
+/// read fails (no shell-settings file yet, or the locale service is
+/// unavailable).
+pub fn twenty_four_hour_preference() -> bool {
+    let format = rmac_shell_settings::ShellSettingsStore::from_environment()
+        .and_then(|store| store.load())
+        .map(|snapshot| snapshot.settings.clock.format)
+        .unwrap_or_default();
+    match format {
+        rmac_shell_settings::ClockFormat::TwentyFourHour => true,
+        rmac_shell_settings::ClockFormat::TwelveHour => false,
+        rmac_shell_settings::ClockFormat::Locale => matches!(
+            rmac_locale_linux::hour_cycle(),
+            Ok(rmac_locale::HourCycle::TwentyFourHour)
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

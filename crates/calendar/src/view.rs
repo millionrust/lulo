@@ -1,4 +1,4 @@
-use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
 use gpui::{
     accesskit, div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, ClickEvent,
     Context, Entity, FocusHandle, Focusable as _, FontWeight, InteractiveElement as _, IntoElement,
@@ -82,6 +82,10 @@ pub struct CalendarView {
     base_calendars: Vec<Calendar>,
     /// CAL-6's saved prefs (`~/.config/lulo/calendar.json`).
     settings: store::Settings,
+    /// UIA-04: Settings ▸ Date & Time's 12/24-hour preference, read once at
+    /// startup the same way `settings` above is. Defaults to 12-hour (the
+    /// `Locale` default's own fallback) until that load completes.
+    twenty_four_hour: bool,
     /// Settings ▸ Accounts lists these (ADR 0022 §1: GOA is the only
     /// account store). Always empty until ACC-2/ACC-3 land.
     accounts: Vec<rmac_accounts::model::Account>,
@@ -146,6 +150,7 @@ impl CalendarView {
             snapshot: WeekSnapshot::empty(),
             base_calendars: Vec::new(),
             settings: store::Settings::default(),
+            twenty_four_hour: false,
             accounts: Vec::new(),
             menu_at: None,
             context_calendar: None,
@@ -175,8 +180,13 @@ impl CalendarView {
             // Saved prefs first, so the first EDS snapshot already renders
             // with the user's colours and visibility.
             let settings = blocking::unblock(|| store::load_settings().unwrap_or_default()).await;
+            // UIA-04: Settings ▸ Date & Time's 12/24-hour preference, off
+            // the UI thread like everything else `rmac_shell_settings`
+            // reads from disk.
+            let twenty_four_hour = blocking::unblock(store::twenty_four_hour_preference).await;
             let _ = this.update(cx, |this: &mut CalendarView, cx| {
                 this.settings = settings;
+                this.twenty_four_hour = twenty_four_hour;
                 this.apply_overlay();
                 cx.notify();
             });
@@ -309,6 +319,17 @@ impl CalendarView {
             .calendars
             .get(calendar)
             .is_some_and(|calendar| calendar.visible && !calendar.removed)
+    }
+
+    /// UIA-04: event and "now" times follow `self.twenty_four_hour`
+    /// (Settings ▸ Date & Time) instead of always reading 24-hour, the way
+    /// the Mac's Calendar follows the system clock format.
+    fn time_format_str(&self) -> &'static str {
+        if self.twenty_four_hour {
+            "%-H:%M"
+        } else {
+            "%-I:%M %p"
+        }
     }
 
     /// Where a new event goes: Settings' default calendar when it's
@@ -1103,6 +1124,25 @@ impl CalendarView {
         click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        self.control_sized(id, label, accessible, active, px(12.0), click, cx)
+    }
+
+    /// UIA-04: the Mac's toolbar draws its symbol glyphs (☷ ▢ + ⌕) at 16 pt
+    /// inside the 28 pt buttons; this crate's text labels ("Today", "All
+    /// Day", "Daily"…) share [`Self::control`]'s 12 pt, so the icon-only
+    /// buttons go through this sized variant instead of bumping every
+    /// label.
+    #[allow(clippy::too_many_arguments)]
+    fn control_sized(
+        &self,
+        id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+        accessible: &'static str,
+        active: bool,
+        text_size: gpui::Pixels,
+        click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let label: SharedString = label.into();
         div()
             .id(id.into())
@@ -1120,7 +1160,7 @@ impl CalendarView {
                 mac::material_clear()
             })
             .text_color(mac::text())
-            .text_size(px(12.0))
+            .text_size(text_size)
             .child(label)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| click(this, cx)))
             .into_any_element()
@@ -1139,11 +1179,12 @@ impl CalendarView {
             }))
             .pr(px(12.0))
             .gap(px(8.0));
-        bar = bar.child(self.control(
+        bar = bar.child(self.control_sized(
             "calendar-sidebar",
             "☷",
             "Sidebar",
             false,
+            px(16.0),
             |this, cx| {
                 this.sidebar_visible = !this.sidebar_visible;
                 this.sync_menu(cx);
@@ -1175,7 +1216,7 @@ impl CalendarView {
                     mac::material_clear()
                 })
                 .text_color(mac::text())
-                .text_size(px(12.0))
+                .text_size(px(16.0))
                 .child("▢")
                 .when(pending_count > 0, |control| {
                     control.child(
@@ -1203,7 +1244,7 @@ impl CalendarView {
                 .justify_center()
                 .bg(mac::material_clear())
                 .text_color(mac::text())
-                .text_size(px(12.0))
+                .text_size(px(16.0))
                 .child("+")
                 .on_click(
                     cx.listener(|this, _: &ClickEvent, window, cx| this.new_event(window, cx)),
@@ -1259,7 +1300,7 @@ impl CalendarView {
                     mac::material_clear()
                 })
                 .text_color(mac::text())
-                .text_size(px(12.0))
+                .text_size(px(16.0))
                 .child("⌕")
                 .on_click(
                     cx.listener(|this, _: &ClickEvent, window, cx| this.toggle_search(window, cx)),
@@ -1761,6 +1802,16 @@ impl CalendarView {
                     .bg(mac::separator()),
             );
             if hour > 8 {
+                // UIA-04: this always read "9:00" in 24-hour even with a
+                // 12-hour preference; the on-the-hour label now follows
+                // `self.twenty_four_hour` like the event times below.
+                let label = if self.twenty_four_hour {
+                    format!("{hour}:00")
+                } else {
+                    NaiveTime::from_hms_opt(hour as u32, 0, 0)
+                        .map(|time| time.format("%-I %p").to_string())
+                        .unwrap_or_else(|| format!("{hour}:00"))
+                };
                 week = week.child(
                     div()
                         .absolute()
@@ -1770,7 +1821,7 @@ impl CalendarView {
                         .text_right()
                         .text_size(px(10.0))
                         .text_color(mac::text_secondary())
-                        .child(format!("{hour}:00")),
+                        .child(label),
                 );
             }
         }
@@ -1793,12 +1844,16 @@ impl CalendarView {
             let color = Self::color(snapshot.calendars[event.calendar].color);
             let event_id = event.id.clone();
             let accessible_name = if event.location.is_empty() {
-                format!("{}, {}", event.title, event.start.format("%-H:%M"))
+                format!(
+                    "{}, {}",
+                    event.title,
+                    event.start.format(self.time_format_str())
+                )
             } else {
                 format!(
                     "{}, {}, {}",
                     event.title,
-                    event.start.format("%-H:%M"),
+                    event.start.format(self.time_format_str()),
                     event.location
                 )
             };
@@ -1834,7 +1889,7 @@ impl CalendarView {
                     )
                     .child(div().text_color(mac::text_secondary()).child(format!(
                         "{}{}",
-                        event.start.format("%-H:%M"),
+                        event.start.format(self.time_format_str()),
                         if event.location.is_empty() {
                             String::new()
                         } else {
@@ -1888,7 +1943,7 @@ impl CalendarView {
                         .text_color(mac::white())
                         .text_size(px(10.0))
                         .text_center()
-                        .child(now.format("%-H:%M").to_string()),
+                        .child(now.format(self.time_format_str()).to_string()),
                 );
             }
         }
@@ -1942,8 +1997,8 @@ impl CalendarView {
                 format!(
                     "{}, {}–{}, {}",
                     event.title,
-                    event.start.format("%-H:%M"),
-                    event.end.format("%-H:%M"),
+                    event.start.format(self.time_format_str()),
+                    event.end.format(self.time_format_str()),
                     snapshot.calendars[event.calendar].name
                 )
             };
@@ -1976,8 +2031,8 @@ impl CalendarView {
                             } else {
                                 format!(
                                     "{}–{} · {}",
-                                    event.start.format("%-H:%M"),
-                                    event.end.format("%-H:%M"),
+                                    event.start.format(self.time_format_str()),
+                                    event.end.format(self.time_format_str()),
                                     snapshot.calendars[event.calendar].name
                                 )
                             }),
@@ -2211,7 +2266,15 @@ impl CalendarView {
                 .top(px(8.0 + (month_index / 4) as f32 * (month_height + gap_y)))
                 .w(px(month_width))
                 .h(px(month_height))
-                .relative()
+                // UIA-03: a trailing `.relative()` here overwrote the
+                // `.absolute()` position set above (last call wins), so
+                // each card fell back into normal flow with its left/top
+                // added as a relative offset on top of that flow
+                // position -- a diagonal staircase that compounded with
+                // every month. `.absolute()` alone already gives this div's
+                // own absolute-positioned children (the weekday labels and
+                // day numbers below) a containing block, matching the
+                // month-view day cells above.
                 .child(
                     div()
                         .id(format!("calendar-year-month-{}", month_index + 1))
@@ -3110,7 +3173,12 @@ impl Render for CalendarView {
                     .id("calendar-error")
                     .absolute()
                     .left(px(side + 16.0))
-                    .top(px(TOOLBAR + 8.0))
+                    // UIA-04: this used to sit at `TOOLBAR + 8.0`, inside the
+                    // 44 px heading row (`self.heading` below, and
+                    // `content_height`'s own `- 44.0`), so the banner was
+                    // drawn over "October 2026" instead of under it, the
+                    // way the Mac's title stands alone above the grid.
+                    .top(px(TOOLBAR + 44.0 + 8.0))
                     .right(px(16.0))
                     .px(px(12.0))
                     .py(px(8.0))

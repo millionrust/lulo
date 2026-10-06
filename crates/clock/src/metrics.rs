@@ -11,6 +11,12 @@ pub const TOOLBAR_HEIGHT: f32 = 52.0;
 pub const TRAFFIC_LIGHT_CENTER: (f32, f32) = (26.0, 26.0);
 
 pub const WINDOW_FILL: u32 = 0x1E1E1E;
+/// UIA-10: Clock stays dark in both appearances (CLOCK-05), so its own
+/// primary label colour is pinned to the dark scheme's `label_primary`
+/// (`rmac-design`'s `0xf5f5f7`) instead of `mac::text()`, which used to
+/// follow the system appearance and went near-black-on-near-black (the tab
+/// labels, the + button and the map's city label) in Light.
+pub const TEXT_PRIMARY: u32 = 0xF5F5F7;
 
 /// Tab capsule: 396 × 38 at y 7, centred; segments 98 then 97 wide.
 pub const TABS_WIDTH: f32 = 396.0;

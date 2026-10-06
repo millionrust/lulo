@@ -494,7 +494,21 @@ impl WeatherView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(SearchField::new(&self.search))
+                    .child(
+                        // UIA-15: the empty state's sky is a fixed dark
+                        // backdrop (`summary::backdrop(Sky::Clear, false)`
+                        // above) regardless of system appearance, like the
+                        // title and subtitle around it (`mac::white()`,
+                        // a fixed `rgba(0xFFFF_FFCC)`) -- but the field's
+                        // default `appearance(true)` still filled it with
+                        // `mac::field_fill()`, the *system* appearance's
+                        // fill, which went light-grey-on-navy in Light
+                        // mode. `appearance(false)` plus the dark fill
+                        // directly fixes it to the sky, not the system.
+                        SearchField::new(&self.search)
+                            .appearance(false)
+                            .bg(rgb(0x181818)),
+                    )
                     .children(self.search_results(cx)),
             )
             .child(div().flex_1())
@@ -1267,7 +1281,13 @@ impl Render for WeatherView {
                     .role(Role::Button)
                     .aria_label("Sidebar")
                     .absolute()
-                    .left(px(78.0))
+                    // UIA-15: the Mac's toggle straddles the sidebar's own
+                    // right edge (AX: local x 236-280 of a ~250 pt sidebar,
+                    // clear of the traffic lights at local x 18-54), not a
+                    // toolbar slot next to them -- 78 px landed on top of
+                    // the green zoom button (local x 28-54 by
+                    // `TRAFFIC_LIGHT_CENTER`/`traffic_light_hit_width`).
+                    .left(px(m::SIDEBAR_WIDTH - 16.0))
                     .top(px(10.0))
                     .size(px(32.0))
                     .rounded(px(mac::radius_menu_item()))

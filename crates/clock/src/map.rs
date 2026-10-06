@@ -15,7 +15,12 @@ const POINTS_PER_LATITUDE: f32 = 3.02;
 
 /// Measured colours (0xRRGGBB).
 pub const OCEAN: u32 = 0x000000;
-pub const NIGHT_LAND: u32 = 0x191919;
+/// UIA-11: `0x191919` sat so close to `OCEAN` (contrast ratio ~1.2:1) that
+/// night-side land was indistinguishable from ocean -- "the map lacks
+/// daylight shading" was this, not a missing feature: the shading was
+/// there, just invisible. Lifted enough to read as land against black while
+/// staying clearly darker than `DAY_LAND`.
+pub const NIGHT_LAND: u32 = 0x2E2E2E;
 pub const DAY_LAND: u32 = 0x3F3F3F;
 pub const TERMINATOR: u32 = 0x8A8A8A;
 pub const MERIDIAN: u32 = 0x303030;

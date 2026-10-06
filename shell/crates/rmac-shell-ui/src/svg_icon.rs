@@ -152,16 +152,18 @@ fn long_side(image: &RenderImage) -> u32 {
 fn rasterize(renderer: &SvgRenderer, bytes: &[u8], target: u32) -> Option<Arc<RenderImage>> {
     let estimate = intrinsic_width(bytes).unwrap_or(1024.0);
     let mut scale = (target as f32 / estimate).max(0.001);
-    for _ in 0..3 {
-        let image = renderer.render_single_frame(bytes, scale).ok()?;
+    for _ in 0..4 {
+        // An estimate far too small rounds the pixmap down to zero pixels,
+        // which the renderer rejects: grow it and measure again.
+        let Ok(image) = renderer.render_single_frame(bytes, scale) else {
+            scale *= 16.0;
+            continue;
+        };
         let long = long_side(&image);
         if long >= target {
             return Some(image);
         }
-        if long == 0 {
-            return None;
-        }
-        scale *= (target + 1) as f32 / long as f32;
+        scale *= (target + 1) as f32 / long.max(1) as f32;
     }
     None
 }
@@ -323,8 +325,10 @@ mod tests {
     #[test]
     fn rasterize_corrects_sizes_it_cannot_read() {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="0.25in" height="0.25in" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="red"/></svg>"#;
-        let image = rasterize(&renderer(), svg, 96).expect("decodes");
-        assert!(long_side(&image) >= 96);
+        for target in [16, 96] {
+            let image = rasterize(&renderer(), svg, target).expect("decodes");
+            assert!(long_side(&image) >= target);
+        }
     }
 
     /// A bucketed raster target is never smaller than what was asked for

@@ -1,7 +1,7 @@
 use super::*;
 
 /// Finder's seven colour tags, in menu order.
-const TAG_NAMES: [&str; 7] = ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray"];
+const TAG_NAMES: [&str; 7] = ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Grey"];
 
 /// The action that toggles colour tag `index` on the selection.
 fn tag_action(index: usize) -> Box<dyn gpui::Action> {

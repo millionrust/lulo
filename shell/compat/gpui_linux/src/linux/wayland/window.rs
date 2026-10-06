@@ -895,7 +895,7 @@ const SHRINK_AFTER_RESIZE: Duration = Duration::from_millis(500);
 const ALLOCATION_STEP: i32 = 64;
 
 fn round_up_allocation(value: i32) -> i32 {
-    value.max(1).div_ceil(ALLOCATION_STEP) * ALLOCATION_STEP
+    (value.max(1) + ALLOCATION_STEP - 1) / ALLOCATION_STEP * ALLOCATION_STEP
 }
 
 fn device_size(size: Size<Pixels>, scale: f32) -> Size<DevicePixels> {

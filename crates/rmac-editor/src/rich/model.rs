@@ -61,6 +61,46 @@ pub struct CharStyle {
     pub color: Option<Rgb>,
     /// Highlight (background) colour.
     pub highlight: Option<Rgb>,
+    /// Format ▸ Font ▸ Outline: hollow glyphs drawn as their outline.
+    pub outline: bool,
+    /// Format ▸ Font ▸ Kern. `None` is the font's own pair kerning (Use
+    /// Default); `Some(0.0)` turns pair kerning off (Use None); any other
+    /// value is extra space after each character, in points (Tighten and
+    /// Loosen step it by [`KERN_STEP`]), as NSKernAttributeName holds it.
+    pub kern: Option<f32>,
+    /// Format ▸ Font ▸ Ligatures.
+    pub ligatures: Ligatures,
+    /// Format ▸ Font ▸ Baseline ▸ Superscript / Subscript: the level
+    /// (NSSuperscriptAttributeName); positive is up.
+    pub superscript: i8,
+    /// Format ▸ Font ▸ Baseline ▸ Raise / Lower: the baseline offset in
+    /// points (NSBaselineOffsetAttributeName); positive is up.
+    pub baseline_offset: f32,
+    /// Format ▸ Font ▸ Character Shape ▸ Traditional Form (the OpenType
+    /// `trad` feature).
+    pub traditional: bool,
+    /// Edit ▸ Link…: the address the text links to.
+    pub link: Option<Arc<str>>,
+}
+
+/// Format ▸ Font ▸ Kern ▸ Tighten / Loosen's step, in points.
+pub const KERN_STEP: f32 = 1.0;
+/// Format ▸ Font ▸ Baseline ▸ Raise / Lower's step, in points.
+pub const BASELINE_STEP: f32 = 1.0;
+/// How far one superscript level lifts the baseline, as a share of the
+/// font size (Helvetica's superscript offset). AppKit keeps the size.
+pub const SUPERSCRIPT_SHIFT: f32 = 0.33;
+
+/// Format ▸ Font ▸ Ligatures, as NSLigatureAttributeName's three values.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Ligatures {
+    /// The font's standard ligatures (value 1).
+    #[default]
+    Default,
+    /// No ligatures (value 0).
+    None,
+    /// Standard and discretionary ligatures (value 2).
+    All,
 }
 
 impl Default for CharStyle {
@@ -74,6 +114,13 @@ impl Default for CharStyle {
             strikethrough: false,
             color: None,
             highlight: None,
+            outline: false,
+            kern: None,
+            ligatures: Ligatures::Default,
+            superscript: 0,
+            baseline_offset: 0.0,
+            traditional: false,
+            link: None,
         }
     }
 }
@@ -84,6 +131,12 @@ impl CharStyle {
             size: clamp_size(size),
             ..Self::default()
         }
+    }
+
+    /// The baseline shift in points, positive up: the superscript level's
+    /// share of the size plus any Raise / Lower offset.
+    pub fn baseline_shift(&self) -> f32 {
+        f32::from(self.superscript) * self.size * SUPERSCRIPT_SHIFT + self.baseline_offset
     }
 }
 
@@ -104,19 +157,167 @@ pub enum Alignment {
     Justified,
 }
 
+/// A list's marker (Format ▸ List…'s Bullet pop-up), as NSTextList's
+/// marker formats name them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ListKind {
-    /// "•" markers.
+    /// "•" markers (`{disc}`).
     Bullet,
-    /// "1." "2." … markers.
+    /// "1." "2." … markers (`{decimal}`).
     Numbered,
+    /// "◦" (`{circle}`).
+    Circle,
+    /// "▪" (`{square}`).
+    Square,
+    /// "◆" (`{diamond}`).
+    Diamond,
+    /// "⁃" (`{hyphen}`).
+    Hyphen,
+    /// "✓" (`{check}`).
+    Check,
+    /// "I." "II." … (`{upper-roman}`).
+    UpperRoman,
+    /// "i." "ii." … (`{lower-roman}`).
+    LowerRoman,
+    /// "A." "B." … (`{upper-alpha}`).
+    UpperAlpha,
+    /// "a." "b." … (`{lower-alpha}`).
+    LowerAlpha,
 }
+
+impl ListKind {
+    /// Every marker, in the List sheet's order.
+    pub const ALL: [ListKind; 11] = [
+        ListKind::Bullet,
+        ListKind::Circle,
+        ListKind::Square,
+        ListKind::Diamond,
+        ListKind::Hyphen,
+        ListKind::Check,
+        ListKind::Numbered,
+        ListKind::UpperRoman,
+        ListKind::LowerRoman,
+        ListKind::UpperAlpha,
+        ListKind::LowerAlpha,
+    ];
+
+    /// The NSTextList marker format name, as RTF's `\levelmarker` holds it.
+    pub fn format_name(self) -> &'static str {
+        match self {
+            Self::Bullet => "disc",
+            Self::Numbered => "decimal",
+            Self::Circle => "circle",
+            Self::Square => "square",
+            Self::Diamond => "diamond",
+            Self::Hyphen => "hyphen",
+            Self::Check => "check",
+            Self::UpperRoman => "upper-roman",
+            Self::LowerRoman => "lower-roman",
+            Self::UpperAlpha => "upper-alpha",
+            Self::LowerAlpha => "lower-alpha",
+        }
+    }
+
+    pub fn from_format_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "disc" => Self::Bullet,
+            "decimal" => Self::Numbered,
+            "circle" => Self::Circle,
+            "square" | "box" => Self::Square,
+            "diamond" => Self::Diamond,
+            "hyphen" => Self::Hyphen,
+            "check" => Self::Check,
+            "upper-roman" => Self::UpperRoman,
+            "lower-roman" => Self::LowerRoman,
+            "upper-alpha" | "upper-latin" => Self::UpperAlpha,
+            "lower-alpha" | "lower-latin" => Self::LowerAlpha,
+            _ => return None,
+        })
+    }
+
+    /// Whether the marker counts its items.
+    pub fn is_ordered(self) -> bool {
+        matches!(
+            self,
+            Self::Numbered
+                | Self::UpperRoman
+                | Self::LowerRoman
+                | Self::UpperAlpha
+                | Self::LowerAlpha
+        )
+    }
+
+    /// The marker shown before item `number` (1-based).
+    pub fn marker(self, number: u32) -> String {
+        match self {
+            Self::Bullet => "\u{2022}".to_owned(),
+            Self::Circle => "\u{25E6}".to_owned(),
+            Self::Square => "\u{25AA}".to_owned(),
+            Self::Diamond => "\u{25C6}".to_owned(),
+            Self::Hyphen => "\u{2043}".to_owned(),
+            Self::Check => "\u{2713}".to_owned(),
+            Self::Numbered => format!("{number}."),
+            Self::UpperRoman => format!("{}.", roman(number)),
+            Self::LowerRoman => format!("{}.", roman(number).to_lowercase()),
+            Self::UpperAlpha => format!("{}.", alpha(number)),
+            Self::LowerAlpha => format!("{}.", alpha(number).to_lowercase()),
+        }
+    }
+}
+
+/// `number` in Roman numerals (1..=3999; others stay decimal).
+fn roman(mut number: u32) -> String {
+    if number == 0 || number >= 4000 {
+        return number.to_string();
+    }
+    const TABLE: [(u32, &str); 13] = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut text = String::new();
+    for (value, letters) in TABLE {
+        while number >= value {
+            text.push_str(letters);
+            number -= value;
+        }
+    }
+    text
+}
+
+/// `number` as list letters: A … Z, AA, AB, ….
+fn alpha(number: u32) -> String {
+    let mut number = number.max(1);
+    let mut letters = Vec::new();
+    while number > 0 {
+        number -= 1;
+        letters.push(char::from(b'A' + (number % 26) as u8));
+        number /= 26;
+    }
+    letters.iter().rev().collect()
+}
+
+/// Deepest list nesting level (NSTextList nests nine deep).
+pub const MAX_LIST_LEVEL: u8 = 8;
 
 /// Paragraph attributes: Format ▸ Text and Format ▸ List….
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ParagraphStyle {
     pub alignment: Alignment,
     pub list: Option<ListKind>,
+    /// A list item's nesting level (0 is outermost); Tab and ⇧Tab at an
+    /// item's start move it in and out.
+    pub list_level: u8,
     /// Line-height multiple (Format ▸ Text ▸ Spacing…).
     pub line_spacing: f32,
 }
@@ -126,9 +327,38 @@ impl Default for ParagraphStyle {
         Self {
             alignment: Alignment::Left,
             list: None,
+            list_level: 0,
             line_spacing: 1.0,
         }
     }
+}
+
+/// File ▸ Show Properties: the document's properties, kept in RTF's
+/// `\info` group (only rich text keeps them, as in TextEdit).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DocumentProperties {
+    pub author: String,
+    pub organisation: String,
+    pub copyright: String,
+    pub title: String,
+    pub subject: String,
+    /// Comma-separated, as the sheet shows them.
+    pub keywords: String,
+    pub comment: String,
+}
+
+impl DocumentProperties {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// What belongs to the whole document rather than to a paragraph.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DocumentAttributes {
+    /// Format ▸ Allow Hyphenation.
+    pub hyphenation: bool,
+    pub properties: DocumentProperties,
 }
 
 /// `len` UTF-8 bytes in `style`.
@@ -344,11 +574,14 @@ pub struct Document {
     paragraphs: Vec<Arc<Paragraph>>,
     /// Offset of each paragraph's first byte.
     starts: Vec<usize>,
+    /// Hyphenation and properties; shared like paragraphs.
+    attributes: Arc<DocumentAttributes>,
 }
 
 impl PartialEq for Document {
     fn eq(&self, other: &Self) -> bool {
-        self.paragraphs.len() == other.paragraphs.len()
+        (Arc::ptr_eq(&self.attributes, &other.attributes) || self.attributes == other.attributes)
+            && self.paragraphs.len() == other.paragraphs.len()
             && self
                 .paragraphs
                 .iter()
@@ -387,6 +620,7 @@ impl Document {
         let mut document = Self {
             paragraphs: paragraphs.into_iter().map(Arc::new).collect(),
             starts: Vec::new(),
+            attributes: Arc::default(),
         };
         if document.paragraphs.is_empty() {
             document.paragraphs.push(Arc::new(Paragraph::plain(
@@ -410,6 +644,23 @@ impl Document {
 
     pub fn paragraphs(&self) -> &[Arc<Paragraph>] {
         &self.paragraphs
+    }
+
+    /// Hyphenation and the document's properties.
+    pub fn attributes(&self) -> &DocumentAttributes {
+        &self.attributes
+    }
+
+    pub fn set_attributes(&mut self, attributes: DocumentAttributes) {
+        if *self.attributes != attributes {
+            self.attributes = Arc::new(attributes);
+        }
+    }
+
+    /// This document with `attributes`.
+    pub fn with_attributes(mut self, attributes: DocumentAttributes) -> Self {
+        self.set_attributes(attributes);
+        self
     }
 
     pub fn paragraph(&self, index: usize) -> &Paragraph {
@@ -717,17 +968,24 @@ impl Document {
         }
     }
 
-    /// The number shown before each paragraph of a numbered list (0 for
-    /// every other paragraph). Consecutive numbered paragraphs count up.
+    /// The item number of each list paragraph (0 for every other
+    /// paragraph). Consecutive items at one level count up; an item at a
+    /// shallower level restarts the deeper levels' counts, and any
+    /// paragraph outside a list ends it.
     pub fn list_numbers(&self) -> Vec<u32> {
         let mut numbers = Vec::with_capacity(self.paragraphs.len());
-        let mut counter = 0;
+        let mut counters = [0_u32; MAX_LIST_LEVEL as usize + 1];
         for paragraph in &self.paragraphs {
-            if paragraph.style().list == Some(ListKind::Numbered) {
-                counter += 1;
-                numbers.push(counter);
+            let style = paragraph.style();
+            if style.list.is_some() {
+                let level = usize::from(style.list_level.min(MAX_LIST_LEVEL));
+                for deeper in &mut counters[level + 1..] {
+                    *deeper = 0;
+                }
+                counters[level] += 1;
+                numbers.push(counters[level]);
             } else {
-                counter = 0;
+                counters = [0; MAX_LIST_LEVEL as usize + 1];
                 numbers.push(0);
             }
         }
@@ -1032,5 +1290,68 @@ mod tests {
         document.update_paragraph_style(0..3, |style| style.list = Some(ListKind::Numbered));
         document.update_paragraph_style(6..6, |style| style.list = Some(ListKind::Numbered));
         assert_eq!(document.list_numbers(), [1, 2, 0, 1]);
+    }
+
+    #[test]
+    fn nested_list_levels_count_on_their_own_and_restart_under_a_new_parent() {
+        let mut document = Document::from_plain_text("a\nb\nc\nd\ne\nf", &CharStyle::default());
+        document.update_paragraph_style(0..11, |style| style.list = Some(ListKind::Numbered));
+        // b, c nested under a; e nested under d.
+        document.update_paragraph_style(2..5, |style| style.list_level = 1);
+        document.update_paragraph_style(8..8, |style| style.list_level = 1);
+        assert_eq!(document.list_numbers(), [1, 1, 2, 2, 1, 3]);
+    }
+
+    #[test]
+    fn list_markers_follow_their_format() {
+        assert_eq!(ListKind::Bullet.marker(3), "\u{2022}");
+        assert_eq!(ListKind::Numbered.marker(3), "3.");
+        assert_eq!(ListKind::UpperRoman.marker(14), "XIV.");
+        assert_eq!(ListKind::LowerRoman.marker(4), "iv.");
+        assert_eq!(ListKind::UpperAlpha.marker(28), "AB.");
+        assert_eq!(ListKind::LowerAlpha.marker(1), "a.");
+        for kind in ListKind::ALL {
+            assert_eq!(ListKind::from_format_name(kind.format_name()), Some(kind));
+        }
+    }
+
+    #[test]
+    fn baseline_shift_adds_superscript_levels_and_raise_offsets() {
+        let style = CharStyle {
+            size: 12.0,
+            superscript: 1,
+            baseline_offset: -2.0,
+            ..CharStyle::default()
+        };
+        assert!((style.baseline_shift() - (12.0 * SUPERSCRIPT_SHIFT - 2.0)).abs() < 1e-4);
+        assert_eq!(CharStyle::default().baseline_shift(), 0.0);
+    }
+
+    #[test]
+    fn document_attributes_take_part_in_equality_and_survive_edits() {
+        let mut document = Document::from_plain_text("one", &CharStyle::default());
+        let saved = document.clone();
+        document.set_attributes(DocumentAttributes {
+            hyphenation: true,
+            ..DocumentAttributes::default()
+        });
+        assert_ne!(document, saved);
+        document.replace_text(0..0, "x", &CharStyle::default());
+        assert!(document.attributes().hyphenation);
+    }
+
+    #[test]
+    fn new_character_attributes_split_runs_like_any_other() {
+        let mut document = Document::from_plain_text("E=mc2", &CharStyle::default());
+        document.update_char_style(4..5, |style| style.superscript = 1);
+        document.update_char_style(0..1, |style| {
+            style.outline = true;
+            style.kern = Some(0.0);
+            style.ligatures = Ligatures::All;
+        });
+        assert_eq!(document.paragraph(0).runs().len(), 3);
+        assert_eq!(document.style_of_char_at(4).superscript, 1);
+        assert!(document.style_of_char_at(0).outline);
+        assert!(!document.style_of_char_at(1).outline);
     }
 }

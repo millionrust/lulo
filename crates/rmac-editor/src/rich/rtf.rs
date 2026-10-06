@@ -12,14 +12,23 @@
 //! The writer produces RTF TextEdit opens with the same formatting: one
 //! `\pard` per paragraph with its ruler, character attributes as control
 //! words, and lists in TextEdit's own `\ls`/`\listtext` form.
+//!
+//! Beyond that subset both sides know: outline (`\outl`), kerning
+//! (`\expnd`/`\expndtw`/`\kerning`), superscript and subscript levels
+//! (`\super`/`\sub`/`\nosupersub`), baseline offsets (`\up`/`\dn`), links
+//! (`HYPERLINK` fields), nested lists with any NSTextList marker (the list
+//! table's `\levelmarker`s and `\ilvl`), hyphenation (`\hyphauto`) and the
+//! document properties (`\info`). Ligatures and Traditional Form have no
+//! standard RTF control word, so they are written as `\luloligature` and
+//! `\lulotraditional`, which other readers ignore as RTF requires.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
 use super::model::{
-    clamp_size, Alignment, CharStyle, Document, ListKind, Paragraph, ParagraphStyle, Rgb,
-    StyledRun, DEFAULT_RICH_SIZE,
+    clamp_size, Alignment, CharStyle, Document, DocumentAttributes, DocumentProperties, Ligatures,
+    ListKind, Paragraph, ParagraphStyle, Rgb, StyledRun, DEFAULT_RICH_SIZE, MAX_LIST_LEVEL,
 };
 
 /// The family TextEdit's documents default to; read back as the document's
@@ -56,7 +65,6 @@ const SKIP_DESTINATIONS: &[&str] = &[
     "listtable",
     "listoverridetable",
     "rsidtbl",
-    "fldinst",
     "bkmkstart",
     "bkmkend",
     "atnid",
@@ -247,7 +255,274 @@ fn parse_font_table(bytes: &[u8]) -> HashMap<i32, String> {
     fonts
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// One RTF token, for the table pre-scans.
+#[derive(Debug, PartialEq)]
+enum Token<'a> {
+    Open,
+    Close,
+    Word(&'a str, Option<i32>),
+    /// A control symbol (`\{`, `\*`, `\~` …).
+    Symbol(u8),
+    /// `\'hh`.
+    Hex(u8),
+    Text(&'a [u8]),
+}
+
+/// A minimal RTF tokenizer over `bytes`, starting at `pos`.
+struct Lexer<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Lexer<'a> {
+    fn next_token(&mut self) -> Option<Token<'a>> {
+        let bytes = self.bytes;
+        loop {
+            let byte = *bytes.get(self.pos)?;
+            match byte {
+                b'{' => {
+                    self.pos += 1;
+                    return Some(Token::Open);
+                }
+                b'}' => {
+                    self.pos += 1;
+                    return Some(Token::Close);
+                }
+                b'\r' | b'\n' => self.pos += 1,
+                b'\\' => {
+                    self.pos += 1;
+                    let first = *bytes.get(self.pos)?;
+                    if !first.is_ascii_alphabetic() {
+                        self.pos += 1;
+                        if first == b'\'' {
+                            let hex = bytes
+                                .get(self.pos..self.pos + 2)
+                                .and_then(|hex| std::str::from_utf8(hex).ok())
+                                .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+                            if let Some(value) = hex {
+                                self.pos += 2;
+                                return Some(Token::Hex(value));
+                            }
+                            continue;
+                        }
+                        return Some(Token::Symbol(first));
+                    }
+                    let start = self.pos;
+                    while bytes.get(self.pos).is_some_and(u8::is_ascii_alphabetic) {
+                        self.pos += 1;
+                    }
+                    let word = std::str::from_utf8(&bytes[start..self.pos]).unwrap_or("");
+                    let negative = bytes.get(self.pos) == Some(&b'-');
+                    let digits = self.pos + usize::from(negative);
+                    let mut end = digits;
+                    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+                        end += 1;
+                    }
+                    let param = (end > digits)
+                        .then(|| std::str::from_utf8(&bytes[digits..end]).ok())
+                        .flatten()
+                        .and_then(|digits| digits.parse::<i32>().ok())
+                        .map(|value| if negative { -value } else { value });
+                    if end > digits {
+                        self.pos = end;
+                    }
+                    if bytes.get(self.pos) == Some(&b' ') {
+                        self.pos += 1;
+                    }
+                    return Some(Token::Word(word, param));
+                }
+                _ => {
+                    let start = self.pos;
+                    while bytes
+                        .get(self.pos)
+                        .is_some_and(|byte| !matches!(byte, b'{' | b'}' | b'\\' | b'\r' | b'\n'))
+                    {
+                        self.pos += 1;
+                    }
+                    return Some(Token::Text(&bytes[start..self.pos]));
+                }
+            }
+        }
+    }
+}
+
+/// A lexer positioned just after the first `needle` control word, inside
+/// its group, or `None` when the document has no such group.
+fn lexer_after(bytes: &[u8], needle: &[u8]) -> Option<Lexer<'_>> {
+    let mut from = 0;
+    while let Some(found) = bytes[from..]
+        .windows(needle.len())
+        .position(|window| window == needle)
+    {
+        let end = from + found + needle.len();
+        // A whole control word: not a prefix of a longer one.
+        if !bytes.get(end).is_some_and(u8::is_ascii_alphabetic) {
+            return Some(Lexer { bytes, pos: end });
+        }
+        from = end;
+    }
+    None
+}
+
+/// The list table: each `\ls` override's markers, one per level.
+fn parse_list_table(bytes: &[u8]) -> HashMap<i32, Vec<Option<ListKind>>> {
+    let mut lists: HashMap<i32, Vec<Option<ListKind>>> = HashMap::new();
+    if let Some(mut lexer) = lexer_after(bytes, b"\\listtable") {
+        let mut depth = 1_i32;
+        let mut levels: Vec<Option<ListKind>> = Vec::new();
+        let mut marker: Option<(i32, String)> = None;
+        while depth > 0 {
+            let Some(token) = lexer.next_token() else {
+                break;
+            };
+            match token {
+                Token::Open => depth += 1,
+                Token::Close => {
+                    if let Some((_, text)) = marker.take_if(|(at, _)| *at == depth) {
+                        let name = text
+                            .split_once('{')
+                            .and_then(|(_, rest)| rest.split_once('}'))
+                            .map_or("", |(name, _)| name);
+                        if let Some(level) = levels.last_mut() {
+                            *level = ListKind::from_format_name(name.trim());
+                        }
+                    }
+                    depth -= 1;
+                }
+                Token::Word("list", _) => levels.clear(),
+                Token::Word("listlevel", _) => levels.push(None),
+                Token::Word("levelmarker", _) => marker = Some((depth, String::new())),
+                Token::Word("listid", Some(id)) => {
+                    lists.insert(id, levels.clone());
+                }
+                Token::Symbol(symbol @ (b'{' | b'}')) => {
+                    if let Some((_, text)) = marker.as_mut() {
+                        text.push(char::from(symbol));
+                    }
+                }
+                Token::Text(text) => {
+                    if let Some((_, marker)) = marker.as_mut() {
+                        marker.push_str(&String::from_utf8_lossy(text));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut overrides = HashMap::new();
+    if let Some(mut lexer) = lexer_after(bytes, b"\\listoverridetable") {
+        let mut depth = 1_i32;
+        let mut list_id = None;
+        while depth > 0 {
+            match lexer.next_token() {
+                None => break,
+                Some(Token::Open) => depth += 1,
+                Some(Token::Close) => depth -= 1,
+                Some(Token::Word("listid", id)) => list_id = id,
+                Some(Token::Word("ls", Some(ls))) => {
+                    if let Some(levels) = list_id.and_then(|id| lists.get(&id)) {
+                        overrides.insert(ls, levels.clone());
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    overrides
+}
+
+/// The `\info` group's document properties.
+fn parse_info(bytes: &[u8]) -> DocumentProperties {
+    let mut properties = DocumentProperties::default();
+    let Some(mut lexer) = lexer_after(bytes, b"\\info") else {
+        return properties;
+    };
+    let mut depth = 1_i32;
+    // The property being read, the depth of its group, and its text.
+    let mut field: Option<(&str, i32, String)> = None;
+    let mut uc = 1_u32;
+    let mut skip = 0_u32;
+    while depth > 0 {
+        let Some(token) = lexer.next_token() else {
+            break;
+        };
+        match token {
+            Token::Open => depth += 1,
+            Token::Close => {
+                if let Some((name, _, text)) = field.take_if(|(_, at, _)| *at == depth) {
+                    let slot = match name {
+                        "title" => &mut properties.title,
+                        "subject" => &mut properties.subject,
+                        "author" => &mut properties.author,
+                        "company" => &mut properties.organisation,
+                        "copyright" => &mut properties.copyright,
+                        "keywords" => &mut properties.keywords,
+                        _ => &mut properties.comment,
+                    };
+                    *slot = text.trim().to_owned();
+                }
+                depth -= 1;
+            }
+            Token::Word(
+                name @ ("title" | "subject" | "author" | "company" | "copyright" | "keywords"
+                | "doccomm"),
+                _,
+            ) if field.is_none() => field = Some((name, depth, String::new())),
+            Token::Word("uc", value) => uc = value.map_or(1, |value| value.max(0) as u32),
+            Token::Word("u", Some(code)) => {
+                let code = if code < 0 { code + 0x1_0000 } else { code };
+                if let (Some((_, _, text)), Some(character)) = (
+                    field.as_mut(),
+                    u32::try_from(code).ok().and_then(char::from_u32),
+                ) {
+                    text.push(character);
+                }
+                skip = uc;
+            }
+            Token::Hex(byte) => {
+                if skip > 0 {
+                    skip -= 1;
+                } else if let Some((_, _, text)) = field.as_mut() {
+                    text.push(cp1252_to_char(byte));
+                }
+            }
+            Token::Symbol(symbol @ (b'{' | b'}' | b'\\')) => {
+                if let Some((_, _, text)) = field.as_mut() {
+                    text.push(char::from(symbol));
+                }
+            }
+            Token::Text(bytes) => {
+                let mut bytes = bytes;
+                while skip > 0 && !bytes.is_empty() {
+                    bytes = &bytes[1..];
+                    skip -= 1;
+                }
+                if let Some((_, _, text)) = field.as_mut() {
+                    text.extend(bytes.iter().map(|&byte| cp1252_to_char(byte)));
+                }
+            }
+            _ => {}
+        }
+    }
+    properties
+}
+
+/// The address a field instruction links to: `HYPERLINK "url"`.
+fn hyperlink_target(instruction: &str) -> Option<Arc<str>> {
+    let rest = instruction.trim_start();
+    let keyword = rest.get(..9)?;
+    if !keyword.eq_ignore_ascii_case("HYPERLINK") {
+        return None;
+    }
+    let rest = rest[9..].trim();
+    let target = match rest.strip_prefix('"') {
+        Some(quoted) => quoted.split('"').next().unwrap_or(""),
+        None => rest.split_whitespace().next().unwrap_or(""),
+    };
+    (!target.is_empty()).then(|| Arc::from(target))
+}
+
+#[derive(Clone, Debug, PartialEq)]
 struct RunState {
     font: Option<i32>,
     size: f32,
@@ -257,6 +532,17 @@ struct RunState {
     strikethrough: bool,
     color: usize,
     highlight: usize,
+    outline: bool,
+    /// `\expndtw` (or `\expnd` × 5): extra space, in twips.
+    expand_twips: i32,
+    /// `\kerning0` turns pair kerning off.
+    kerning_off: bool,
+    ligatures: Ligatures,
+    superscript: i8,
+    /// `\up` / `\dn`, in half-points (up is positive).
+    baseline_half_points: i32,
+    traditional: bool,
+    link: Option<Arc<str>>,
 }
 
 impl RunState {
@@ -270,6 +556,14 @@ impl RunState {
             strikethrough: false,
             color: 0,
             highlight: 0,
+            outline: false,
+            expand_twips: 0,
+            kerning_off: false,
+            ligatures: Ligatures::Default,
+            superscript: 0,
+            baseline_half_points: 0,
+            traditional: false,
+            link: None,
         }
     }
 }
@@ -278,6 +572,7 @@ impl RunState {
 struct ParagraphState {
     alignment: Alignment,
     list_override: i32,
+    list_level: u8,
     line_spacing_twips: i32,
     line_spacing_multiple: bool,
 }
@@ -287,6 +582,7 @@ impl Default for ParagraphState {
         Self {
             alignment: Alignment::Left,
             list_override: 0,
+            list_level: 0,
             line_spacing_twips: 0,
             line_spacing_multiple: false,
         }
@@ -299,10 +595,12 @@ enum Destination {
     /// A list marker (`\listtext`/`\pntext`): kept apart to learn the
     /// list's kind, never part of the text.
     ListText,
+    /// A field's instruction (`\fldinst`): read for a link's address.
+    FieldInstruction,
     Skip,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct GroupState {
     run: RunState,
     paragraph: ParagraphState,
@@ -315,6 +613,7 @@ struct Parser<'a> {
     pos: usize,
     colors: Vec<Option<Rgb>>,
     fonts: HashMap<i32, Arc<str>>,
+    lists: HashMap<i32, Vec<Option<ListKind>>>,
     default_font: Option<i32>,
     run: RunState,
     paragraph: ParagraphState,
@@ -326,6 +625,8 @@ struct Parser<'a> {
     text: String,
     runs: Vec<StyledRun>,
     list_text: String,
+    field_instruction: String,
+    hyphenation: bool,
     paragraphs: Vec<Paragraph>,
     finished: bool,
 }
@@ -341,6 +642,7 @@ impl<'a> Parser<'a> {
             pos: 0,
             colors: parse_color_table(bytes),
             fonts,
+            lists: parse_list_table(bytes),
             default_font: None,
             run: RunState::new(None),
             paragraph: ParagraphState::default(),
@@ -352,6 +654,8 @@ impl<'a> Parser<'a> {
             text: String::new(),
             runs: Vec::new(),
             list_text: String::new(),
+            field_instruction: String::new(),
+            hyphenation: false,
             paragraphs: Vec::new(),
             finished: false,
         }
@@ -365,6 +669,13 @@ impl<'a> Parser<'a> {
             .filter(|name| !name.eq_ignore_ascii_case(DEFAULT_FAMILY))
             .cloned();
         let color = |index: usize| self.colors.get(index).copied().flatten();
+        let kern = if self.run.expand_twips != 0 {
+            Some(self.run.expand_twips as f32 / 20.0)
+        } else if self.run.kerning_off {
+            Some(0.0)
+        } else {
+            None
+        };
         CharStyle {
             family,
             size: self.run.size,
@@ -382,6 +693,13 @@ impl<'a> Parser<'a> {
             } else {
                 color(self.run.highlight)
             },
+            outline: self.run.outline,
+            kern,
+            ligatures: self.run.ligatures,
+            superscript: self.run.superscript,
+            baseline_offset: self.run.baseline_half_points as f32 / 2.0,
+            traditional: self.run.traditional,
+            link: self.run.link.clone(),
         }
     }
 
@@ -392,6 +710,11 @@ impl<'a> Parser<'a> {
         match self.destination {
             Destination::Skip => {}
             Destination::ListText => self.list_text.push_str(text),
+            Destination::FieldInstruction => {
+                if self.field_instruction.len() < 4096 {
+                    self.field_instruction.push_str(text);
+                }
+            }
             Destination::Text => {
                 let style = self.char_style();
                 self.text.push_str(text);
@@ -426,12 +749,20 @@ impl<'a> Parser<'a> {
     }
 
     fn finish_paragraph(&mut self) {
+        let level = self.paragraph.list_level.min(MAX_LIST_LEVEL);
         let list = (self.paragraph.list_override > 0).then(|| {
-            if self.list_text.chars().any(|c| c.is_ascii_digit()) {
-                ListKind::Numbered
-            } else {
-                ListKind::Bullet
-            }
+            // The list table's marker for this level, else a guess from
+            // the marker text written before the item.
+            self.lists
+                .get(&self.paragraph.list_override)
+                .and_then(|levels| levels.get(usize::from(level)).copied().flatten())
+                .unwrap_or_else(|| {
+                    if self.list_text.chars().any(|c| c.is_ascii_digit()) {
+                        ListKind::Numbered
+                    } else {
+                        ListKind::Bullet
+                    }
+                })
         });
         let line_spacing =
             if self.paragraph.line_spacing_multiple && self.paragraph.line_spacing_twips > 0 {
@@ -442,6 +773,7 @@ impl<'a> Parser<'a> {
         let style = ParagraphStyle {
             alignment: self.paragraph.alignment,
             list,
+            list_level: if list.is_some() { level } else { 0 },
             line_spacing,
         };
         let mut runs = std::mem::take(&mut self.runs);
@@ -461,7 +793,7 @@ impl<'a> Parser<'a> {
             match self.bytes[self.pos] {
                 b'{' => {
                     self.stack.push(GroupState {
-                        run: self.run,
+                        run: self.run.clone(),
                         paragraph: self.paragraph,
                         destination: self.destination,
                         uc: self.uc,
@@ -563,6 +895,45 @@ impl<'a> Parser<'a> {
             "qr" => self.paragraph.alignment = Alignment::Right,
             "qj" => self.paragraph.alignment = Alignment::Justified,
             "ls" => self.paragraph.list_override = param.unwrap_or(0),
+            "ilvl" => {
+                self.paragraph.list_level =
+                    param.map_or(0, |level| level.clamp(0, i32::from(MAX_LIST_LEVEL)) as u8)
+            }
+            "hyphauto" => self.hyphenation = on,
+            "outl" => self.run.outline = on,
+            "expnd" => self.run.expand_twips = param.unwrap_or(0).saturating_mul(5),
+            "expndtw" => self.run.expand_twips = param.unwrap_or(0),
+            "kerning" => self.run.kerning_off = param == Some(0),
+            "luloligature" => {
+                self.run.ligatures = match param {
+                    Some(0) => Ligatures::None,
+                    Some(2) => Ligatures::All,
+                    _ => Ligatures::Default,
+                }
+            }
+            "lulotraditional" => self.run.traditional = on,
+            "super" => self.run.superscript = param.unwrap_or(1).clamp(0, 8) as i8,
+            "sub" => self.run.superscript = -(param.unwrap_or(1).clamp(0, 8) as i8),
+            "nosupersub" => self.run.superscript = 0,
+            "up" => self.run.baseline_half_points = param.unwrap_or(6).clamp(-2000, 2000),
+            "dn" => self.run.baseline_half_points = -param.unwrap_or(6).clamp(-2000, 2000),
+            "field" => self.field_instruction.clear(),
+            "fldinst" => {
+                // `{\*\fldinst …}` arrives marked ignorable; read it unless
+                // the whole field sits in a skipped destination.
+                let parent = self.stack.last().map(|group| group.destination);
+                if parent != Some(Destination::Skip) {
+                    self.destination = Destination::FieldInstruction;
+                    self.field_instruction.clear();
+                }
+            }
+            "fldrslt" => {
+                if self.destination == Destination::Text {
+                    if let Some(target) = hyperlink_target(&self.field_instruction) {
+                        self.run.link = Some(target);
+                    }
+                }
+            }
             "sl" => self.paragraph.line_spacing_twips = param.unwrap_or(0),
             "slmult" => self.paragraph.line_spacing_multiple = on,
             "listtext" | "pntext" => self.destination = Destination::ListText,
@@ -661,7 +1032,11 @@ pub fn parse(bytes: &[u8]) -> Option<Document> {
     if !parser.finished {
         parser.finish_paragraph();
     }
-    Some(Document::from_paragraphs(parser.paragraphs))
+    let attributes = DocumentAttributes {
+        hyphenation: parser.hyphenation,
+        properties: parse_info(&bytes[start..]),
+    };
+    Some(Document::from_paragraphs(parser.paragraphs).with_attributes(attributes))
 }
 
 /// Character state as written, to emit only what changes between runs.
@@ -675,6 +1050,14 @@ struct Written {
     strikethrough: bool,
     color: usize,
     highlight: usize,
+    outline: bool,
+    /// `None` is the font's kerning; otherwise extra space in twips (0
+    /// turns pair kerning off).
+    kern_twips: Option<i32>,
+    ligatures: Ligatures,
+    superscript: i8,
+    baseline_half_points: i32,
+    traditional: bool,
 }
 
 impl Written {
@@ -709,7 +1092,153 @@ impl Written {
         if differs(|w| w.highlight as i64) {
             let _ = write!(controls, "\\cb{}", self.highlight);
         }
+        if differs(|w| i64::from(w.outline)) {
+            controls.push_str(if self.outline { "\\outl" } else { "\\outl0" });
+        }
+        // Only a document that kerns says anything about kerning, so a
+        // plain document reads exactly as before.
+        let kern_key = |w: &Written| w.kern_twips.map_or(i64::MIN, i64::from);
+        if previous.map(|p| kern_key(&p)) != Some(kern_key(self))
+            && (previous.is_some() || self.kern_twips.is_some())
+        {
+            match self.kern_twips {
+                None => controls.push_str("\\expnd0\\expndtw0\\kerning1"),
+                Some(twips) => {
+                    let _ = write!(
+                        controls,
+                        "\\expnd{}\\expndtw{twips}\\kerning0",
+                        (f64::from(twips) / 5.0).round() as i32
+                    );
+                }
+            }
+        }
+        if differs(|w| w.ligatures as i64) {
+            let value = match self.ligatures {
+                Ligatures::None => 0,
+                Ligatures::Default => 1,
+                Ligatures::All => 2,
+            };
+            if previous.is_some() || value != 1 {
+                let _ = write!(controls, "\\luloligature{value}");
+            }
+        }
+        if differs(|w| i64::from(w.superscript)) && (previous.is_some() || self.superscript != 0) {
+            match self.superscript {
+                0 => controls.push_str("\\nosupersub"),
+                level if level > 0 => {
+                    let _ = write!(controls, "\\super{level}");
+                }
+                level => {
+                    let _ = write!(controls, "\\sub{}", -i32::from(level));
+                }
+            }
+        }
+        if differs(|w| i64::from(w.baseline_half_points))
+            && (previous.is_some() || self.baseline_half_points != 0)
+        {
+            if self.baseline_half_points >= 0 {
+                let _ = write!(controls, "\\up{}", self.baseline_half_points);
+            } else {
+                let _ = write!(controls, "\\dn{}", -self.baseline_half_points);
+            }
+        }
+        if differs(|w| i64::from(w.traditional)) && (previous.is_some() || self.traditional) {
+            controls.push_str(if self.traditional {
+                "\\lulotraditional"
+            } else {
+                "\\lulotraditional0"
+            });
+        }
         controls
+    }
+}
+
+/// The list table: one list per marker in use, with every level showing
+/// that marker, as TextEdit writes a list's levels.
+fn write_list_table(out: &mut String, kinds: &[ListKind]) {
+    out.push_str("{\\*\\listtable");
+    for (index, kind) in kinds.iter().enumerate() {
+        let id = index + 1;
+        let _ = write!(out, "{{\\list\\listtemplateid{id}\\listhybrid");
+        for level in 0..=MAX_LIST_LEVEL {
+            let nfc = match kind {
+                ListKind::Numbered => 0,
+                ListKind::UpperRoman => 1,
+                ListKind::LowerRoman => 2,
+                ListKind::UpperAlpha => 3,
+                ListKind::LowerAlpha => 4,
+                _ => 23,
+            };
+            let indent = 720 * (u32::from(level) + 1);
+            let template = id * 100 + usize::from(level) + 1;
+            let _ = write!(
+                out,
+                "{{\\listlevel\\levelnfc{nfc}\\levelnfcn{nfc}\\leveljc0\\leveljcn0\\levelfollow0\\levelstartat1\\levelspace360\\levelindent0{{\\*\\levelmarker \\{{{}\\}}{}}}",
+                kind.format_name(),
+                if kind.is_ordered() { "." } else { "" }
+            );
+            if kind.is_ordered() {
+                let _ = write!(
+                    out,
+                    "{{\\leveltext\\leveltemplateid{template}\\'02\\'{level:02x}.;}}{{\\levelnumbers\\'01;}}"
+                );
+            } else {
+                let _ = write!(out, "{{\\leveltext\\leveltemplateid{template}\\'01");
+                push_unicode(out, kind.marker(1).chars().next().unwrap_or('\u{2022}'));
+                out.push_str(";}{\\levelnumbers;}");
+            }
+            let _ = write!(out, "\\fi-360\\li{indent}\\lin{indent} }}");
+        }
+        let _ = write!(out, "{{\\listname ;}}\\listid{id}}}");
+    }
+    out.push_str("}\n{\\*\\listoverridetable");
+    for index in 0..kinds.len() {
+        let id = index + 1;
+        let _ = write!(
+            out,
+            "{{\\listoverride\\listid{id}\\listoverridecount0\\ls{id}}}"
+        );
+    }
+    out.push_str("}\n");
+}
+
+/// The `\info` group, as Cocoa writes NSDocumentAttributes.
+fn write_info(out: &mut String, properties: &DocumentProperties) {
+    if properties.is_empty() {
+        return;
+    }
+    out.push_str("{\\info");
+    for (word, value) in [
+        ("title", &properties.title),
+        ("subject", &properties.subject),
+        ("author", &properties.author),
+        ("*\\company", &properties.organisation),
+        ("*\\copyright", &properties.copyright),
+        ("keywords", &properties.keywords),
+        ("doccomm", &properties.comment),
+    ] {
+        if value.is_empty() {
+            continue;
+        }
+        let _ = write!(out, "\n{{\\{word} ");
+        push_escaped(out, value);
+        out.push('}');
+    }
+    out.push_str("}\n");
+}
+
+/// A link's address inside a field instruction's quotes.
+fn push_field_target(out: &mut String, target: &str) {
+    for character in target.chars() {
+        match character {
+            '"' => out.push_str("%22"),
+            '\\' => out.push_str("\\\\"),
+            '{' => out.push_str("\\{"),
+            '}' => out.push_str("\\}"),
+            c if c.is_ascii_control() => {}
+            c if c.is_ascii() => out.push(c),
+            c => push_unicode(out, c),
+        }
     }
 }
 
@@ -717,12 +1246,12 @@ impl Written {
 pub fn write(document: &Document) -> Vec<u8> {
     let mut fonts: Vec<Arc<str>> = vec![Arc::from(DEFAULT_FAMILY)];
     let mut colors: Vec<Rgb> = Vec::new();
-    let mut lists = (false, false);
+    let mut list_kinds: Vec<ListKind> = Vec::new();
     for paragraph in document.paragraphs() {
-        match paragraph.style().list {
-            Some(ListKind::Bullet) => lists.0 = true,
-            Some(ListKind::Numbered) => lists.1 = true,
-            None => {}
+        if let Some(kind) = paragraph.style().list {
+            if !list_kinds.contains(&kind) {
+                list_kinds.push(kind);
+            }
         }
         for run in paragraph.runs() {
             if let Some(family) = &run.style.family {
@@ -755,19 +1284,17 @@ pub fn write(document: &Document) -> Vec<u8> {
         out.push(';');
     }
     out.push_str("}\n");
-    if lists.0 || lists.1 {
-        out.push_str("{\\*\\listtable");
-        out.push_str(
-            "{\\list\\listtemplateid1\\listhybrid{\\listlevel\\levelnfc23\\levelnfcn23\\leveljc0\\leveljcn0\\levelfollow0\\levelstartat1\\levelspace360\\levelindent0{\\*\\levelmarker \\{disc\\}}{\\leveltext\\leveltemplateid1\\'01\\uc0\\u8226 ;}{\\levelnumbers;}\\fi-360\\li720\\lin720 }{\\listname ;}\\listid1}",
-        );
-        out.push_str(
-            "{\\list\\listtemplateid2\\listhybrid{\\listlevel\\levelnfc0\\levelnfcn0\\leveljc0\\leveljcn0\\levelfollow0\\levelstartat1\\levelspace360\\levelindent0{\\*\\levelmarker \\{decimal\\}.}{\\leveltext\\leveltemplateid101\\'02\\'00.;}{\\levelnumbers\\'01;}\\fi-360\\li720\\lin720 }{\\listname ;}\\listid2}}\n",
-        );
-        out.push_str("{\\*\\listoverridetable{\\listoverride\\listid1\\listoverridecount0\\ls1}{\\listoverride\\listid2\\listoverridecount0\\ls2}}\n");
+    if !list_kinds.is_empty() {
+        write_list_table(&mut out, &list_kinds);
     }
+    let attributes = document.attributes();
+    write_info(&mut out, &attributes.properties);
     out.push_str(
         "\\paperw11900\\paperh16840\\margl1440\\margr1440\\vieww11520\\viewh8400\\viewkind0\n",
     );
+    if attributes.hyphenation {
+        out.push_str("\\hyphauto1\\hyphfactor90\n");
+    }
 
     let font_index = |family: &Option<Arc<str>>| {
         family
@@ -789,7 +1316,14 @@ pub fn write(document: &Document) -> Vec<u8> {
         let style = paragraph.style();
         out.push_str("\\pard");
         if style.list.is_some() {
-            out.push_str("\\tx220\\tx720\\li720\\fi-720");
+            let level = u32::from(style.list_level);
+            let _ = write!(
+                out,
+                "\\tx{}\\tx{}\\li{}\\fi-720",
+                220 + 720 * level,
+                720 + 720 * level,
+                720 * (level + 1)
+            );
         }
         out.push_str("\\pardirnatural\\partightenfactor0");
         out.push_str(match style.alignment {
@@ -805,10 +1339,13 @@ pub fn write(document: &Document) -> Vec<u8> {
                 (style.line_spacing * 240.0).round() as i32
             );
         }
-        match style.list {
-            Some(ListKind::Bullet) => out.push_str("\\ls1\\ilvl0"),
-            Some(ListKind::Numbered) => out.push_str("\\ls2\\ilvl0"),
-            None => {}
+        if let Some(kind) = style.list {
+            let ls = list_kinds
+                .iter()
+                .position(|known| *known == kind)
+                .unwrap_or(0)
+                + 1;
+            let _ = write!(out, "\\ls{ls}\\ilvl{}", style.list_level);
         }
         out.push('\n');
         let mut marker_pending = style.list;
@@ -822,7 +1359,37 @@ pub fn write(document: &Document) -> Vec<u8> {
                 strikethrough: run.strikethrough,
                 color: color_index(run.color),
                 highlight: color_index(run.highlight),
+                outline: run.outline,
+                kern_twips: run.kern.map(|kern| (kern * 20.0).round() as i32),
+                ligatures: run.ligatures,
+                superscript: run.superscript,
+                baseline_half_points: (run.baseline_offset * 2.0).round() as i32,
+                traditional: run.traditional,
             };
+            if let Some(link) = &run.link {
+                // A link is a field; what is set inside its result group
+                // ends with the group, so the outer state stays as it was.
+                if let Some(kind) = marker_pending.take() {
+                    let controls = wanted.controls_from(state);
+                    state = Some(wanted);
+                    if !controls.is_empty() {
+                        out.push_str(&controls);
+                        out.push(' ');
+                    }
+                    push_list_text(&mut out, kind, numbers[index]);
+                }
+                out.push_str("{\\field{\\*\\fldinst{HYPERLINK \"");
+                push_field_target(&mut out, link);
+                out.push_str("\"}}{\\fldrslt ");
+                let controls = wanted.controls_from(state);
+                if !controls.is_empty() {
+                    out.push_str(&controls);
+                    out.push(' ');
+                }
+                push_escaped(&mut out, &paragraph.text()[range]);
+                out.push_str("}}");
+                continue;
+            }
             let controls = wanted.controls_from(state);
             state = Some(wanted);
             if !controls.is_empty() {
@@ -830,14 +1397,7 @@ pub fn write(document: &Document) -> Vec<u8> {
                 out.push(' ');
             }
             if let Some(kind) = marker_pending.take() {
-                out.push_str("{\\listtext\t");
-                match kind {
-                    ListKind::Bullet => out.push_str("\\uc0\\u8226 "),
-                    ListKind::Numbered => {
-                        let _ = write!(out, "{}.", numbers[index]);
-                    }
-                }
-                out.push_str("\t}");
+                push_list_text(&mut out, kind, numbers[index]);
             }
             push_escaped(&mut out, &paragraph.text()[range]);
         }
@@ -847,6 +1407,19 @@ pub fn write(document: &Document) -> Vec<u8> {
     }
     out.push('}');
     out.into_bytes()
+}
+
+/// TextEdit's `{\listtext\t<marker>\t}` before a list item's text.
+fn push_list_text(out: &mut String, kind: ListKind, number: u32) {
+    out.push_str("{\\listtext\t");
+    for character in kind.marker(number).chars() {
+        if character.is_ascii() {
+            out.push(character);
+        } else {
+            push_unicode(out, character);
+        }
+    }
+    out.push_str("\t}");
 }
 
 fn push_escaped_plain(out: &mut String, text: &str) {
@@ -895,6 +1468,7 @@ fn push_escaped(out: &mut String, text: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ops::Range;
 
     fn plain(text: &str) -> Document {
         Document::from_plain_text(text, &CharStyle::default())
@@ -1026,8 +1600,165 @@ mod tests {
         let mut document = plain("a\nb");
         document.update_paragraph_style(0..3, |style| style.list = Some(ListKind::Numbered));
         let text = String::from_utf8(write(&document)).unwrap();
-        assert!(text.contains("\\ls2\\ilvl0"));
+        assert!(text.contains("\\ls1\\ilvl0"));
         assert!(text.contains("{\\listtext\t1.\t}"));
         assert!(text.contains("{\\listtext\t2.\t}"));
+    }
+
+    fn assert_round_trips(document: &Document) -> Document {
+        let bytes = write(document);
+        assert!(bytes.is_ascii());
+        let read = parse(&bytes).expect("written RTF parses");
+        for index in 0..document.paragraph_count() {
+            assert_eq!(
+                read.paragraph(index),
+                document.paragraph(index),
+                "paragraph {index}"
+            );
+        }
+        assert_eq!(read.attributes(), document.attributes());
+        assert_eq!(&read, document);
+        read
+    }
+
+    #[test]
+    fn font_menu_attributes_round_trip() {
+        let mut document =
+            plain("outline kern none tight loose lig none lig all sup sub up down trad");
+        let set = |document: &mut Document, range: Range<usize>, change: fn(&mut CharStyle)| {
+            document.update_char_style(range, change)
+        };
+        set(&mut document, 0..7, |s| s.outline = true);
+        set(&mut document, 8..17, |s| s.kern = Some(0.0));
+        set(&mut document, 18..23, |s| s.kern = Some(-1.0));
+        set(&mut document, 24..29, |s| s.kern = Some(2.0));
+        set(&mut document, 30..38, |s| s.ligatures = Ligatures::None);
+        set(&mut document, 39..46, |s| s.ligatures = Ligatures::All);
+        set(&mut document, 47..50, |s| s.superscript = 1);
+        set(&mut document, 51..54, |s| s.superscript = -2);
+        set(&mut document, 55..57, |s| s.baseline_offset = 3.0);
+        set(&mut document, 58..62, |s| s.baseline_offset = -1.5);
+        set(&mut document, 63..67, |s| s.traditional = true);
+        let read = assert_round_trips(&document);
+        assert!(read.style_of_char_at(0).outline);
+        assert_eq!(read.style_of_char_at(8).kern, Some(0.0));
+        assert_eq!(read.style_of_char_at(24).kern, Some(2.0));
+        assert_eq!(read.style_of_char_at(47).superscript, 1);
+        assert_eq!(read.style_of_char_at(58).baseline_offset, -1.5);
+        assert_eq!(read.style_of_char_at(7).kern, None);
+    }
+
+    #[test]
+    fn reads_textedit_kerning_and_baseline_controls() {
+        let rtf = br"{\rtf1\ansi \expnd0\expndtw0\kerning0 none\expnd-4\expndtw-20 tight\expnd0\expndtw0\kerning1 \super sup\nosupersub\up6 up\up0 \sub sub}";
+        let document = parse(rtf).unwrap();
+        assert_eq!(document.text(), "nonetightsupupsub");
+        assert_eq!(document.style_of_char_at(0).kern, Some(0.0));
+        assert_eq!(document.style_of_char_at(4).kern, Some(-1.0));
+        assert_eq!(document.style_of_char_at(9).kern, None);
+        assert_eq!(document.style_of_char_at(9).superscript, 1);
+        assert_eq!(document.style_of_char_at(12).baseline_offset, 3.0);
+        assert_eq!(document.style_of_char_at(12).superscript, 0);
+        assert_eq!(document.style_of_char_at(14).superscript, -1);
+    }
+
+    #[test]
+    fn nested_lists_keep_their_markers_and_levels() {
+        let mut document = plain("one\ninner\ninner two\ntwo\nroman\nletter");
+        document.update_paragraph_style(0..30, |style| style.list = Some(ListKind::Numbered));
+        document.update_paragraph_style(4..19, |style| {
+            style.list = Some(ListKind::Circle);
+            style.list_level = 1;
+        });
+        let roman = document.paragraph_start(4);
+        document.update_paragraph_style(roman..roman, |style| {
+            style.list = Some(ListKind::UpperRoman)
+        });
+        let letter = document.paragraph_start(5);
+        document.update_paragraph_style(letter..letter, |style| {
+            style.list = Some(ListKind::LowerAlpha);
+            style.list_level = 2;
+        });
+        let read = assert_round_trips(&document);
+        assert_eq!(read.paragraph(1).style().list, Some(ListKind::Circle));
+        assert_eq!(read.paragraph(1).style().list_level, 1);
+        assert_eq!(read.paragraph(5).style().list_level, 2);
+        let text = String::from_utf8(write(&document)).unwrap();
+        assert!(text.contains("\\levelmarker \\{circle\\}"));
+        assert!(text.contains("\\levelmarker \\{upper-roman\\}."));
+        assert!(text.contains("\\ilvl1"));
+    }
+
+    #[test]
+    fn reads_a_textedit_list_table() {
+        let rtf = b"{\\rtf1\\ansi{\\*\\listtable{\\list\\listtemplateid1\\listhybrid{\\listlevel\\levelnfc23{\\*\\levelmarker \\{square\\}}{\\leveltext\\'01\\uc0\\u9642 ;}{\\levelnumbers;}\\fi-360\\li720\\lin720 }{\\listlevel\\levelnfc4{\\*\\levelmarker \\{lower-alpha\\}.}{\\leveltext\\'02\\'01.;}{\\levelnumbers\\'01;}\\fi-360\\li1440\\lin1440 }{\\listname ;}\\listid7}}\n{\\*\\listoverridetable{\\listoverride\\listid7\\listoverridecount0\\ls1}}\n\\pard\\ls1\\ilvl0 {\\listtext\t\\uc0\\u9642 \t}top\\\n\\ls1\\ilvl1 {\\listtext\ta.\t}under}";
+        let document = parse(rtf).unwrap();
+        assert_eq!(document.text(), "top\nunder");
+        assert_eq!(document.paragraph(0).style().list, Some(ListKind::Square));
+        assert_eq!(
+            document.paragraph(1).style().list,
+            Some(ListKind::LowerAlpha)
+        );
+        assert_eq!(document.paragraph(1).style().list_level, 1);
+    }
+
+    #[test]
+    fn links_round_trip_as_hyperlink_fields() {
+        let mut document = plain("see the site now");
+        document.update_char_style(4..12, |style| {
+            style.link = Some(Arc::from("https://example.com/a?b=\"c\""))
+        });
+        document.update_char_style(8..12, |style| style.bold = true);
+        let bytes = write(&document);
+        let text = String::from_utf8(bytes.clone()).unwrap();
+        assert!(
+            text.contains("{\\field{\\*\\fldinst{HYPERLINK \"https://example.com/a?b=%22c%22\"}}")
+        );
+        let read = parse(&bytes).unwrap();
+        assert_eq!(read.text(), "see the site now");
+        assert_eq!(
+            read.style_of_char_at(4).link.as_deref(),
+            Some("https://example.com/a?b=%22c%22")
+        );
+        assert!(read.style_of_char_at(9).bold);
+        assert_eq!(read.style_of_char_at(13).link, None);
+        assert!(!read.style_of_char_at(13).bold);
+    }
+
+    #[test]
+    fn hyphenation_and_properties_round_trip() {
+        let document = plain("text").with_attributes(DocumentAttributes {
+            hyphenation: true,
+            properties: DocumentProperties {
+                author: "Jo {Q} Smith".into(),
+                organisation: "Lulo".into(),
+                copyright: "\u{a9} 2026".into(),
+                title: "Caf\u{e9} notes".into(),
+                subject: "Tests".into(),
+                keywords: "one, two".into(),
+                comment: "back\\slash".into(),
+            },
+        });
+        let read = assert_round_trips(&document);
+        assert!(read.attributes().hyphenation);
+        assert_eq!(read.attributes().properties.title, "Caf\u{e9} notes");
+        assert_eq!(read.text(), "text");
+    }
+
+    #[test]
+    fn plain_documents_write_no_new_controls() {
+        let text = String::from_utf8(write(&plain("hello"))).unwrap();
+        for control in [
+            "\\expnd",
+            "\\luloligature",
+            "\\super",
+            "\\up",
+            "\\lulotraditional",
+            "\\hyphauto",
+            "\\info",
+            "\\outl",
+        ] {
+            assert!(!text.contains(control), "{control}");
+        }
     }
 }

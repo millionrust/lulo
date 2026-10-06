@@ -28,7 +28,8 @@ use rmac_ui::input_actions as input;
 
 use super::layout::{layout_paragraph, LayoutParams, ParagraphLayout};
 use super::model::{
-    clamp_size, normalize_newlines, Alignment, CharStyle, Document, ListKind, ParagraphStyle, Rgb,
+    clamp_size, normalize_newlines, Alignment, CharStyle, Document, DocumentAttributes, Ligatures,
+    ListKind, ParagraphStyle, Rgb, MAX_LIST_LEVEL,
 };
 
 /// Undo steps kept per editor.
@@ -116,6 +117,8 @@ pub struct RichTextEditor {
     caret_color: Hsla,
     default_family: SharedString,
     mono_family: SharedString,
+    paper_color: Hsla,
+    link_color: Hsla,
     padding_x: Pixels,
     page_width: Option<Pixels>,
 
@@ -130,6 +133,8 @@ pub struct RichTextEditor {
     reveal: bool,
     goal_x: Option<Pixels>,
     dragging: Option<(Granularity, Range<usize>)>,
+    /// A click that landed on a link: opened on release unless it drags.
+    pending_link: Option<std::sync::Arc<str>>,
     /// Caret blink: whether the caret shows this phase, which blink task is
     /// current, and when the caret last moved.
     caret_visible: bool,
@@ -173,6 +178,8 @@ impl RichTextEditor {
             caret_color: rmac_ui::mac::text_caret(),
             default_family: SharedString::from(rmac_ui::UI_FONT),
             mono_family: SharedString::from(rmac_ui::MONO_FONT),
+            paper_color: gpui::white(),
+            link_color: rmac_ui::mac::system_blue(),
             padding_x: px(10.0),
             page_width: None,
             scroll: rmac_ui::ScrollPosition::default(),
@@ -185,6 +192,7 @@ impl RichTextEditor {
             reveal: false,
             goal_x: None,
             dragging: None,
+            pending_link: None,
             caret_visible: true,
             blink_epoch: 0,
             last_activity: Instant::now(),
@@ -328,6 +336,15 @@ impl RichTextEditor {
         }
     }
 
+    /// The paper colour behind the text: what Format ▸ Font ▸ Outline
+    /// fills its glyphs with.
+    pub fn set_paper_color(&mut self, paper_color: Hsla, cx: &mut Context<Self>) {
+        if self.paper_color != paper_color {
+            self.paper_color = paper_color;
+            cx.notify();
+        }
+    }
+
     /// Left/right text inset, and Wrap to Page's column width.
     pub fn set_column(
         &mut self,
@@ -457,7 +474,7 @@ impl RichTextEditor {
     }
 
     pub fn set_list(&mut self, list: Option<ListKind>, cx: &mut Context<Self>) {
-        self.change_paragraph_style(cx, move |style| style.list = list);
+        self.set_list_marker(list, cx);
     }
 
     pub fn set_line_spacing(&mut self, spacing: f32, cx: &mut Context<Self>) {
@@ -468,6 +485,132 @@ impl RichTextEditor {
     /// Format ▸ Text ▸ Paste Ruler.
     pub fn apply_paragraph_style(&mut self, ruler: ParagraphStyle, cx: &mut Context<Self>) {
         self.change_paragraph_style(cx, move |style| *style = ruler);
+    }
+
+    /// Format ▸ Font ▸ Outline: on unless the selection is already
+    /// outlined.
+    pub fn toggle_outline(&mut self, cx: &mut Context<Self>) {
+        let on = !self.style_at_selection().outline;
+        self.change_char_style(cx, move |style| style.outline = on);
+    }
+
+    /// Format ▸ Font ▸ Kern ▸ Use Default (`None`) / Use None (`Some(0)`).
+    pub fn set_kern(&mut self, kern: Option<f32>, cx: &mut Context<Self>) {
+        self.change_char_style(cx, move |style| style.kern = kern);
+    }
+
+    /// Format ▸ Font ▸ Kern ▸ Tighten / Loosen: each character's own
+    /// spacing moves by `delta` points (NSTextView's tighten/loosenKerning).
+    pub fn adjust_kern(&mut self, delta: f32, cx: &mut Context<Self>) {
+        self.change_char_style(cx, move |style| {
+            let kern = (style.kern.unwrap_or(0.0) + delta).clamp(-20.0, 50.0);
+            style.kern = Some(kern);
+        });
+    }
+
+    /// Format ▸ Font ▸ Ligatures.
+    pub fn set_ligatures(&mut self, ligatures: Ligatures, cx: &mut Context<Self>) {
+        self.change_char_style(cx, move |style| style.ligatures = ligatures);
+    }
+
+    /// Format ▸ Font ▸ Baseline ▸ Use Default: no superscript and no
+    /// offset.
+    pub fn reset_baseline(&mut self, cx: &mut Context<Self>) {
+        self.change_char_style(cx, |style| {
+            style.superscript = 0;
+            style.baseline_offset = 0.0;
+        });
+    }
+
+    /// Format ▸ Font ▸ Baseline ▸ Superscript (+1) / Subscript (-1): each
+    /// character's level moves one step, as NSTextView's superscript: and
+    /// subscript: do.
+    pub fn adjust_superscript(&mut self, delta: i8, cx: &mut Context<Self>) {
+        self.change_char_style(cx, move |style| {
+            style.superscript = style.superscript.saturating_add(delta).clamp(-8, 8);
+        });
+    }
+
+    /// Format ▸ Font ▸ Baseline ▸ Raise / Lower: the offset moves by
+    /// `delta` points.
+    pub fn adjust_baseline(&mut self, delta: f32, cx: &mut Context<Self>) {
+        self.change_char_style(cx, move |style| {
+            style.baseline_offset = (style.baseline_offset + delta).clamp(-100.0, 100.0);
+        });
+    }
+
+    /// Format ▸ Font ▸ Character Shape ▸ Traditional Form.
+    pub fn toggle_traditional(&mut self, cx: &mut Context<Self>) {
+        let on = !self.style_at_selection().traditional;
+        self.change_char_style(cx, move |style| style.traditional = on);
+    }
+
+    /// Edit ▸ Link…: link the selection to `target`, or remove its link
+    /// (`None`). With nothing selected, the address is inserted as linked
+    /// text, as TextEdit does.
+    pub fn set_link(&mut self, target: Option<std::sync::Arc<str>>, cx: &mut Context<Self>) {
+        if !self.editable {
+            return;
+        }
+        if self.selection.is_empty() {
+            let Some(target) = target else {
+                return;
+            };
+            let mut style = self.style_at_selection();
+            style.link = Some(target.clone());
+            self.begin_edit(EditKind::Other);
+            let inserted = self
+                .document
+                .replace_text(self.selection.clone(), &target, &style);
+            self.selection = inserted.end..inserted.end;
+            self.reversed = false;
+            self.typing_style = None;
+            self.finish_edit(cx);
+            return;
+        }
+        self.change_char_style(cx, move |style| style.link = target.clone());
+    }
+
+    /// The link at the selection's start, for Edit ▸ Link…'s field.
+    pub fn link_at_selection(&self) -> Option<std::sync::Arc<str>> {
+        self.style_at_selection().link
+    }
+
+    /// Format ▸ List… with a level: the selected paragraphs' list marker,
+    /// keeping their levels (none ends the list and its nesting).
+    pub fn set_list_marker(&mut self, list: Option<ListKind>, cx: &mut Context<Self>) {
+        self.change_paragraph_style(cx, move |style| {
+            style.list = list;
+            if list.is_none() {
+                style.list_level = 0;
+            }
+        });
+    }
+
+    /// Tab / ⇧Tab at a list item's start: nest it one level deeper or
+    /// bring it out one level.
+    pub fn change_list_level(&mut self, delta: i8, cx: &mut Context<Self>) {
+        self.change_paragraph_style(cx, move |style| {
+            if style.list.is_some() {
+                style.list_level =
+                    (style.list_level as i8 + delta).clamp(0, MAX_LIST_LEVEL as i8) as u8;
+            }
+        });
+    }
+
+    /// Hyphenation and properties (Format ▸ Allow Hyphenation, File ▸ Show
+    /// Properties), as one undoable change.
+    pub fn set_document_attributes(
+        &mut self,
+        attributes: DocumentAttributes,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.editable || *self.document.attributes() == attributes {
+            return;
+        }
+        self.begin_edit(EditKind::Other);
+        self.document.set_attributes(attributes);
+        self.finish_edit(cx);
     }
 
     // ---- Edits -----------------------------------------------------------
@@ -534,7 +677,17 @@ impl RichTextEditor {
     ) -> Range<usize> {
         let style = self.typing_style.clone().unwrap_or_else(|| {
             if range.is_empty() {
-                self.document.style_at(range.start)
+                let mut style = self.document.style_at(range.start);
+                // Typing just after a link does not extend it.
+                let (index, local) = self.document.locate(range.start);
+                let paragraph = self.document.paragraph(index);
+                if style.link.is_some()
+                    && (local >= paragraph.len()
+                        || paragraph.style_of_char_at(local).link != style.link)
+                {
+                    style.link = None;
+                }
+                style
             } else {
                 self.document.style_of_char_at(range.start)
             }
@@ -689,6 +842,9 @@ impl RichTextEditor {
             default_color: self.default_color,
             default_family: self.default_family.clone(),
             mono_family: self.mono_family.clone(),
+            paper_color: self.paper_color,
+            link_color: self.link_color,
+            hyphenation: self.document.attributes().hyphenation,
         };
         if self.params.as_ref() != Some(&params) {
             self.layouts.clear();
@@ -1238,15 +1394,41 @@ impl RichTextEditor {
             let (index, _) = self.document.locate(self.head());
             let paragraph = self.document.paragraph(index);
             if paragraph.is_empty() && paragraph.style().list.is_some() {
-                self.set_list(None, cx);
+                // A nested empty item comes out a level first.
+                if paragraph.style().list_level > 0 {
+                    self.change_list_level(-1, cx);
+                } else {
+                    self.set_list(None, cx);
+                }
                 return;
             }
         }
         self.insert(self.selection.clone(), "\n", EditKind::Typing, cx);
     }
 
+    /// Whether Tab / ⇧Tab change list levels here: the caret at a list
+    /// item's start, or a selection across list items.
+    fn at_list_item_start(&self) -> bool {
+        let (index, local) = self.document.locate(self.selection.start);
+        let in_list = self.document.paragraph(index).style().list.is_some();
+        if self.selection.is_empty() {
+            in_list && local == 0
+        } else {
+            in_list
+                && self
+                    .document
+                    .paragraph_indices(self.selection.clone())
+                    .len()
+                    > 1
+        }
+    }
+
     fn tab(&mut self, _: &input::IndentInline, _: &mut Window, cx: &mut Context<Self>) {
         if !self.editable {
+            return;
+        }
+        if self.at_list_item_start() {
+            self.change_list_level(1, cx);
             return;
         }
         self.insert(self.selection.clone(), "\t", EditKind::Typing, cx);
@@ -1262,10 +1444,18 @@ impl RichTextEditor {
         }
         let text = self.document.slice(self.selection.clone());
         let fragment = self.document.fragment(self.selection.clone());
+        // Other apps paste the RTF or HTML flavour; rmac pastes the exact
+        // fragment kept here.
+        let rtf = String::from_utf8(super::rtf::write(&fragment)).unwrap_or_default();
+        let html = super::html::write(&fragment);
+        let metadata = super::clipboard::encode_formats(&[
+            (super::clipboard::RTF_MIME, &rtf),
+            (super::clipboard::HTML_MIME, &html),
+        ]);
         STYLED_CLIPBOARD.with(|clipboard| {
             *clipboard.borrow_mut() = Some((text.clone(), fragment));
         });
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(text, metadata));
     }
 
     fn cut(&mut self, _: &input::Cut, _: &mut Window, cx: &mut Context<Self>) {
@@ -1280,16 +1470,34 @@ impl RichTextEditor {
         if !self.editable {
             return;
         }
-        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+        let Some(item) = cx.read_from_clipboard() else {
             return;
         };
-        let styled = STYLED_CLIPBOARD.with(|clipboard| {
-            clipboard
-                .borrow()
-                .as_ref()
-                .filter(|(copied, _)| *copied == text)
-                .map(|(_, fragment)| fragment.clone())
-        });
+        let Some(text) = item.text() else {
+            return;
+        };
+        let styled = STYLED_CLIPBOARD
+            .with(|clipboard| {
+                clipboard
+                    .borrow()
+                    .as_ref()
+                    .filter(|(copied, _)| *copied == text)
+                    .map(|(_, fragment)| fragment.clone())
+            })
+            .or_else(|| {
+                // Another app's rich copy: its RTF flavour. Most writers
+                // end the last paragraph with `\par`, which the plain text
+                // does not have.
+                let rtf = super::clipboard::format(item.metadata()?, super::clipboard::RTF_MIME)?;
+                let document = super::rtf::parse(rtf.as_bytes())?;
+                let len = document.len();
+                let document = if document.text().ends_with('\n') && !text.ends_with('\n') {
+                    document.fragment(0..len - 1)
+                } else {
+                    document
+                };
+                (!document.is_empty()).then_some(document)
+            });
         match styled {
             Some(fragment) => {
                 let range = self.selection.clone();
@@ -1368,6 +1576,15 @@ impl RichTextEditor {
         window.focus(&self.focus, cx);
         let offset = self.offset_at(event.position);
         self.goal_x = None;
+        // A plain click on linked text opens the link on release, as in
+        // TextEdit (web and mail addresses only).
+        self.pending_link = None;
+        if event.click_count <= 1 && !event.modifiers.shift {
+            self.pending_link = self
+                .char_at(event.position)
+                .and_then(|at| self.document.style_of_char_at(at).link)
+                .filter(|link| is_openable_link(link));
+        }
         let (granularity, range) = match event.click_count {
             0 | 1 => (Granularity::Character, offset..offset),
             2 => (Granularity::Word, self.document.word_range_at(offset)),
@@ -1418,6 +1635,7 @@ impl RichTextEditor {
         self.selection = range;
         self.reversed = reversed && !self.selection.is_empty();
         if changed {
+            self.pending_link = None;
             self.typing_style = None;
             self.last_edit = None;
             cx.notify();
@@ -1448,13 +1666,34 @@ impl RichTextEditor {
             "right" => self.select_right(cx),
             "up" => self.select_up(window, cx),
             "down" => self.select_down(window, cx),
+            // ⇧Tab at a list item's start brings it out a level.
+            "tab" if self.editable && self.at_list_item_start() => self.change_list_level(-1, cx),
             _ => return,
         }
         cx.stop_propagation();
     }
 
-    fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
+    fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.dragging = None;
+        if let Some(link) = self.pending_link.take() {
+            cx.open_url(&link);
+        }
+    }
+
+    fn on_mouse_up_out(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
+        self.dragging = None;
+        self.pending_link = None;
+    }
+
+    /// The character under a window position, if any.
+    fn char_at(&self, position: Point<Pixels>) -> Option<usize> {
+        let target = self.placed.iter().find(|placed| {
+            position.y >= placed.origin.y && position.y < placed.origin.y + placed.layout.height
+        })?;
+        let local = target
+            .layout
+            .char_at_point(position.x - target.origin.x, position.y - target.origin.y)?;
+        Some(self.document.paragraph_start(target.index) + local)
     }
 
     fn on_scroll(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -1588,6 +1827,15 @@ impl EntityInputHandler for RichTextEditor {
 }
 
 /// UTF-16 offset inside `text` → UTF-8 offset.
+/// Links a click opens: web and mail addresses. Anything else in a
+/// document (a local file, a custom scheme) stays inert.
+fn is_openable_link(link: &str) -> bool {
+    let lower = link.trim_start().to_ascii_lowercase();
+    ["http://", "https://", "mailto:"]
+        .iter()
+        .any(|scheme| lower.starts_with(scheme))
+}
+
 fn utf8_offset_in(text: &str, utf16: usize) -> usize {
     let mut units = 0;
     for (index, character) in text.char_indices() {
@@ -1679,7 +1927,7 @@ impl Render for RichTextEditor {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up_out))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
             .on_key_down(cx.listener(Self::on_key_down))
             // Painted inside this (focused) node, so the shift-arrow
@@ -1786,7 +2034,9 @@ impl gpui::Element for RichTextElement {
                     for piece in &line.pieces {
                         let origin = point(
                             placed.origin.x + piece.x,
-                            placed.origin.y + line.top + line.ascent - piece.line.ascent,
+                            placed.origin.y + line.top + line.ascent
+                                - piece.line.ascent
+                                - piece.rise,
                         );
                         let line_height = piece.line.ascent + piece.line.descent;
                         let _ = piece.line.paint_background(
@@ -1825,10 +2075,41 @@ impl gpui::Element for RichTextElement {
                     for piece in &line.pieces {
                         let origin = point(
                             placed.origin.x + piece.x,
-                            placed.origin.y + line.top + line.ascent - piece.line.ascent,
+                            placed.origin.y + line.top + line.ascent
+                                - piece.line.ascent
+                                - piece.rise,
                         );
                         let line_height = piece.line.ascent + piece.line.descent;
-                        let _ = piece.line.paint(
+                        let Some(fill) = &piece.fill else {
+                            let _ = piece.line.paint(
+                                origin,
+                                line_height,
+                                gpui::TextAlign::Left,
+                                None,
+                                window,
+                                cx,
+                            );
+                            continue;
+                        };
+                        // Outline: the glyphs in the text colour, nudged
+                        // around their place, then filled with the paper.
+                        let stroke = px(0.75);
+                        for (dx, dy) in [
+                            (stroke, px(0.0)),
+                            (-stroke, px(0.0)),
+                            (px(0.0), stroke),
+                            (px(0.0), -stroke),
+                        ] {
+                            let _ = piece.line.paint(
+                                point(origin.x + dx, origin.y + dy),
+                                line_height,
+                                gpui::TextAlign::Left,
+                                None,
+                                window,
+                                cx,
+                            );
+                        }
+                        let _ = fill.paint(
                             origin,
                             line_height,
                             gpui::TextAlign::Left,

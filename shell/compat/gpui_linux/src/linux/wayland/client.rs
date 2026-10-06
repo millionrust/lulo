@@ -87,7 +87,7 @@ use crate::linux::{
     is_within_click_distance, keystroke_from_xkb, keystroke_underlying_dead_key,
     modifiers_from_xkb, open_uri_internal, read_fd_with_timeout, reveal_path_internal,
     wayland::{
-        clipboard::{Clipboard, DataOffer, FILE_LIST_MIME_TYPE, TEXT_MIME_TYPES},
+        clipboard::{Clipboard, DataOffer, FILE_LIST_MIME_TYPE, TEXT_MIME_TYPES, rich_mime_types},
         cursor::Cursor,
         serial::{SerialKind, SerialTracker},
         to_shape,
@@ -1611,10 +1611,15 @@ impl LinuxClient for WaylandClient {
             return;
         };
         if state.mouse_focused_window.is_some() || state.keyboard_focused_window.is_some() {
+            // rmac: a rich copy's RTF and HTML flavours are offered too.
+            let rich_mime_types = rich_mime_types(&item);
             state.clipboard.set(item);
             let serial = state.serial_tracker.get_latest();
             let data_source = data_device_manager.create_data_source(&state.globals.qh, ());
             for mime_type in TEXT_MIME_TYPES {
+                data_source.offer(mime_type.to_string());
+            }
+            for mime_type in rich_mime_types {
                 data_source.offer(mime_type.to_string());
             }
             data_source.offer(state.clipboard.self_mime());

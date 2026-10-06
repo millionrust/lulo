@@ -1,0 +1,73 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 5.8011539513245225,
+      "first_frame_ms": 240.1763569796458,
+      "first_frame_pass": true,
+      "icons_painted_ms": 349.78408202278615,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 5.747673101723194,
+          "draw_skips": 0,
+          "first_frame_ms": 167.21820004750043,
+          "focus_after_first_frame_ms": 72.161,
+          "force_renders": 0,
+          "icons_painted_ms": 259.67720004750043,
+          "presents_after_focus": 1,
+          "window_listed_ms": 311.069994000718
+        },
+        {
+          "backend_init_ms": 5.868920939974487,
+          "draw_skips": 0,
+          "first_frame_ms": 216.49608202278614,
+          "focus_after_first_frame_ms": 119.968,
+          "force_renders": 0,
+          "icons_painted_ms": 349.78408202278615,
+          "presents_after_focus": 1,
+          "window_listed_ms": 426.70463991817087
+        },
+        {
+          "backend_init_ms": 5.783949978649616,
+          "draw_skips": 0,
+          "first_frame_ms": 280.06234497297555,
+          "focus_after_first_frame_ms": 89.036,
+          "force_renders": 0,
+          "icons_painted_ms": 280.06234497297555,
+          "presents_after_focus": 0,
+          "window_listed_ms": 371.20536901056767
+        },
+        {
+          "backend_init_ms": 6.8659919779747725,
+          "draw_skips": 0,
+          "first_frame_ms": 240.1763569796458,
+          "focus_after_first_frame_ms": 86.543,
+          "force_renders": 0,
+          "icons_painted_ms": 372.10035697964577,
+          "presents_after_focus": 1,
+          "window_listed_ms": 383.62835405860096
+        },
+        {
+          "backend_init_ms": 5.8011539513245225,
+          "draw_skips": 0,
+          "first_frame_ms": 255.68373303394765,
+          "focus_after_first_frame_ms": 82.995,
+          "force_renders": 0,
+          "icons_painted_ms": 381.51373303394763,
+          "presents_after_focus": 1,
+          "window_listed_ms": 371.1674610385671
+        }
+      ],
+      "window_listed_ms": 371.20536901056767
+    }
+  },
+  "captured_at": "2026-10-06T14:16:15Z",
+  "panels": {},
+  "profile": "release",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

@@ -86,7 +86,7 @@ rows of `interactions-after-2.json`.
 | ⌘Tab held, Tab to full-size panel | < 50 ms | 165–166 ms | **124–131 ms** | better, not met |
 | ⌘Tab held, release ⌘ to new app's frame | — | 58 ms | 54–58 ms | |
 | Settings settled (iterate) | < 300 ms | 239–507 ms; 1 frame after focus in 4 of 6 | 246–375 ms; 1 frame after focus in 4 of 6 | see release row |
-| Settings settled (release) | < 300 ms | 374–448 ms (round 7) | see below | |
+| Settings settled (release, 5 launches) | < 300 ms | 374–448 ms (round 7) | 260, 280, 350, 372, 382 ms (median 350); 1 frame after focus in 4 of 5 | better, not met |
 | Settings edge-resize drag | ≥ 95 % | 25 % (8 frames) | 50–55 % (10–11 frames), render p50 7.7 ms, p95 32–39 ms | not met |
 | Text Editor rich 1 MB, echo p95 | < 16 ms | 13.9 ms; first keys 31, 7, 9 ms | **11.1–11.5 ms**; first keys 25, 7–9, 5–11 ms | met |
 
@@ -117,8 +117,8 @@ rows of `interactions-after-2.json`.
   frame still follows the activation configure in most launches. With no
   `appearance_changed` or `force_render` row in front of it, the remaining
   candidate is pointer and keyboard enter events (hover and focus refreshes
-  in GPUI). The iterate sweeps vary a lot (239–507 ms before), so treat the
-  release row as the result.
+  in GPUI). The iterate sweeps vary a lot (239–507 ms before), so the release row is the result: median 350 ms
+  (`settings-after-release.json`), down from 386–452 ms.
 - **Settings resize drag.** Every resize is a GPUI refresh, which re-renders
   cached views too, so each step lays out the whole Settings window: 32–39 ms
   at p95 with the iterate profile. During the drag the nested niri also held

@@ -761,7 +761,7 @@ impl TerminalView {
                     .child(
                         div()
                             .id("background-colour-swatch")
-                            .role(Role::Img)
+                            .role(Role::Image)
                             .aria_label("Preview")
                             .w(px(24.0))
                             .h(px(24.0))

@@ -719,12 +719,15 @@ emergency fix:
 
 ## Known gaps and risks (read before your first real run)
 
-- **None of this has run on GitHub yet.** The container build pattern, the
-  `rmac-source` vendoring, the offline rebuild, the publication job, and the
-  Pages deployment are exercised by tests and by local runs (a real APT
-  client accepting a staged, subkey-signed repository, including phasing,
-  was checked on the reference laptop), not by a real Actions run. Expect to
-  debug the first tag.
+- **First real run: `v0.9.0-beta.1`, 2026-10-05/06 (run 37374134089).**
+  Every build, the `rmac-source` vendoring, the offline rebuild and
+  `attach-release` succeeded. Fixes on the way: cargo for the non-root
+  build user, the cargo-deny pin, installing cargo-cyclonedx outside the
+  workspace, creating `target/`, vendoring into `vendor/crates-io`,
+  libpam0g-dev, downloading artifacts by name, and `ubuntu-latest` for
+  `attach-release` (an `ubuntu-24.04` runner was never acquired). Use the
+  `workflow_dispatch` dry run before tagging. The APT publication and Pages
+  jobs have still never run: they need the archive signing key.
 - **Disk.** `build-native-inputs.sh` refuses to start below 25 GiB free,
   both in `build-amd64` and inside `rmac-source-rebuild`; hosted runners may
   not have that. The publication jobs delete preinstalled toolchains to stay

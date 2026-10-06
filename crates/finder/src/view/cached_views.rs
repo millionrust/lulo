@@ -1,15 +1,16 @@
-//! The sidebar and the content area as their own GPUI views (SPEED-08).
+//! The sidebar, toolbar and content area as their own GPUI views
+//! (SPEED-08).
 //!
-//! `FinderView` stays the one model and the window's root view; these two
-//! thin views render the sidebar and the content area (list, icon grid,
-//! columns or gallery) from it, and the root draws them as cached views.
-//! A wheel scroll in the list or the icon grid notifies only the content
-//! view, so the frame re-renders the root shell (toolbar, sheets) and the
-//! rows on screen, and reuses the sidebar's last layout and paint. Before,
-//! the scroll notified `FinderView` and re-laid out the whole window at
-//! about 15 ms a frame.
+//! `FinderView` stays the one model and the window's root view; these thin
+//! views render the sidebar, the toolbar and the content area (list, icon
+//! grid, columns or gallery) from it, and the root draws them as cached
+//! views. A wheel scroll in the list or the icon grid notifies only the
+//! content view, so the frame re-renders the root shell (sheets, banners)
+//! and the rows on screen, and reuses the sidebar's and toolbar's last
+//! layout and paint. Before, the scroll notified `FinderView` and re-laid
+//! out the whole window at about 15 ms a frame.
 //!
-//! Both views observe `FinderView`, so every `cx.notify()` on it repaints
+//! All three views observe `FinderView`, so every `cx.notify()` on it repaints
 //! the whole window exactly as before, and window refreshes (focus,
 //! activation, resize, appearance) re-render cached views as well.
 
@@ -17,7 +18,12 @@ use super::*;
 
 pub(super) struct FinderViews {
     pub(super) sidebar: Entity<SidebarView>,
+    pub(super) toolbar: Entity<ToolbarView>,
     pub(super) content: Entity<ContentView>,
+}
+
+pub(super) struct ToolbarView {
+    finder: gpui::WeakEntity<FinderView>,
 }
 
 pub(super) struct SidebarView {
@@ -36,13 +42,23 @@ impl FinderViews {
                 finder: finder.downgrade(),
             }
         });
+        let toolbar = cx.new(|cx| {
+            cx.observe(finder, |_, _, cx| cx.notify()).detach();
+            ToolbarView {
+                finder: finder.downgrade(),
+            }
+        });
         let content = cx.new(|cx| {
             cx.observe(finder, |_, _, cx| cx.notify()).detach();
             ContentView {
                 finder: finder.downgrade(),
             }
         });
-        Self { sidebar, content }
+        Self {
+            sidebar,
+            toolbar,
+            content,
+        }
     }
 }
 
@@ -79,6 +95,23 @@ impl Render for SidebarView {
             })
         });
         div().size_full().flex().children(sidebar)
+    }
+}
+
+impl Render for ToolbarView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let window_width = f32::from(window.bounds().size.width);
+        let toolbar = self.finder.upgrade().map(|finder| {
+            finder.update(cx, |finder, cx| {
+                let layout = responsive_layout::responsive_layout(
+                    window_width,
+                    finder.sidebar_visible,
+                    finder.sidebar_width,
+                );
+                finder.render_toolbar(layout, cx).into_any_element()
+            })
+        });
+        div().size_full().flex().children(toolbar)
     }
 }
 

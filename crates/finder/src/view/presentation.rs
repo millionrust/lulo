@@ -30,7 +30,11 @@ impl Render for FinderView {
         let views = self
             .views
             .get_or_insert_with(|| cached_views::FinderViews::new(&entity, cx));
-        let (sidebar_view, content_view) = (views.sidebar.clone(), views.content.clone());
+        let (sidebar_view, toolbar_view, content_view) = (
+            views.sidebar.clone(),
+            views.toolbar.clone(),
+            views.content.clone(),
+        );
         let cache_views = !window.is_a11y_active();
         let multi = self.tabs.len() > 1;
         let menu_at = self.menu_at.clone();
@@ -319,7 +323,13 @@ impl Render for FinderView {
                     .h_full()
                     .v_flex()
                     .when(self.toolbar_visible, |el| {
-                        el.child(self.render_toolbar(layout, cx))
+                        el.child(
+                            div()
+                                .h(px(TOOLBAR_HEIGHT))
+                                .w_full()
+                                .flex_none()
+                                .child(cached_views::view_element(&toolbar_view, cache_views)),
+                        )
                     })
                     .when_some(operation_notice, |el, message| {
                         let checking = message.as_ref() == DIRECTORY_STALL_NOTICE;

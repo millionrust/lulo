@@ -449,17 +449,17 @@ pub(crate) mod linux_wayland {
             let _ = self.service.update(cx, |service, cx| service.closed(cx));
             // Keep the surface, unmapped, for the next ⌘Tab: it takes no
             // input or focus and draws nothing until mapped again.
+            // Only a surface that stayed 1 × 1 is kept. Growing it back down
+            // after a reveal costs a swapchain rebuild and niri then took
+            // about 500 ms to give the re-mapped surface the keyboard; a
+            // revealed switcher closes as before and the next ⌘Tab opens a
+            // new one.
             let handle = window.window_handle();
-            if !gpui_linux::set_layer_window_mapped(handle, false) {
+            if self.revealed || !gpui_linux::set_layer_window_mapped(handle, false) {
                 window.remove_window();
                 return;
             }
             gpui_linux::trace_mark("switcher_hidden");
-            if self.revealed {
-                // The next open starts at 1 × 1 again, so a quick tap never
-                // shows the panel.
-                window.resize(Size::new(px(HIDDEN_SIZE), px(HIDDEN_SIZE)));
-            }
             let kept = handle.downcast::<Self>();
             let display_id = self.display_id;
             let replaced = self

@@ -128,8 +128,21 @@ KEY_GAP_US = 45_000
 
 
 def key_presses(events: Events) -> list[int]:
-    """The `input` rows that start a stroke (see the module docstring)."""
+    """The `input` rows that start a stroke (see the module docstring).
+    Builds that trace `draw_for_key` (written right after a key-down's
+    `input` row) name the key-downs exactly; the 45 ms gap rule misread a
+    key release that came late as the next press."""
 
+    if any(event == "draw_for_key" for event, _ in events):
+        exact: list[int] = []
+        last_input: Optional[int] = None
+        for event, micros in events:
+            if event == "input":
+                last_input = micros
+            elif event == "draw_for_key" and last_input is not None:
+                exact.append(last_input)
+                last_input = None
+        return exact
     presses: list[int] = []
     previous: Optional[int] = None
     for event, micros in events:

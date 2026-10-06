@@ -278,10 +278,11 @@ CI job `windows` in `ci.yml` (non-blocking) proves it on `windows-latest`. It la
 app with a private profile through `scripts/windows/launch_smoke.py` and uploads a screenshot
 of each window.
 
-On Windows the three apps depend on 28 workspace crates, down from 43. `rmac-network`,
-`rmac-bluetooth`, `rmac-power`, `rmac-audio`, `rmac-dbus`, `rmac-focus-linux`,
-`rmac-compositor-niri`, `rmac-top-bar`, `rmac-dock` and `rmac-shell-status` are no longer
-built. The only D-Bus code left in the graph is `rmac-app-menu`'s transport (`zbus`
+On Windows the three apps and their dependencies are 28 workspace crates, down from 44.
+Sixteen are no longer built there: `rmac-network`, `rmac-bluetooth`, `rmac-power`,
+`rmac-audio`, `rmac-process`, `rmac-dbus`, `rmac-focus*` (four crates),
+`rmac-notifications`, `rmac-compositor-niri`, `rmac-top-bar`, `rmac-dock`, `rmac-places`
+and `rmac-shell-status`. The only D-Bus code left in the graph is `rmac-app-menu`'s transport (`zbus`
 compiles on Windows and is not called there).
 
 | Seam | Linux / macOS | Windows (phase 1) |

@@ -94,6 +94,7 @@ pub const SUBMENU_HOVER_DELAY: Duration = Duration::from_millis(100);
 
 /// The row shown in `item`'s slot: itself normally, or its ⌥ alternate while
 /// `option_held` is true and one exists.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn displayed_item(item: &Item, option_held: bool) -> &Item {
     item.effective(option_held)
 }
@@ -101,6 +102,7 @@ pub fn displayed_item(item: &Item, option_held: bool) -> &Item {
 /// `items`, each swapped for its ⌥ alternate while `option_held` is true —
 /// the menu bar's per-row source of truth once it wires up live Option-key
 /// tracking for an app's exported menu. Row order and count never change.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn displayed_items(items: &[Item], option_held: bool) -> Vec<&Item> {
     items
         .iter()

@@ -1661,7 +1661,8 @@ mod tests {
         );
         let plain_width = panel_width(&plain.items, &fixed_width);
         let checked_width = panel_width(&checked.items, &fixed_width);
-        assert_eq!(checked_width - plain_width, CHECK_COLUMN);
+        // Widths round up to whole points.
+        assert!((checked_width - plain_width - CHECK_COLUMN).abs() <= 1.0);
         assert_eq!(Columns::of(&checked.items).text_x(), 24.0);
         assert_eq!(Columns::of(&plain.items).text_x(), 16.5);
     }

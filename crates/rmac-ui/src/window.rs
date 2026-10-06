@@ -444,6 +444,28 @@ pub fn window_options_for_app(app_id: &str, width: f32, height: f32, cx: &App) -
     }
 }
 
+/// Identified window options for a fixed-size secondary window of `app_id`
+/// (a Settings panel, for instance) that must not read — or ever write — the
+/// main app window's persisted geometry. [`window_options_for_app`] keys
+/// `restored_window_bounds` by `app_id` alone, so a Settings window opened
+/// with the *same* `app_id` as its app's document windows (the usual way to
+/// keep it grouped under the app in the switcher/dock) inherited whatever
+/// size a document window last saved there instead of its own fixed size
+/// (docs/parity.md UIA-09). This centres at the given size every time,
+/// exactly as a fresh window does with no saved state, instead of restoring
+/// one.
+pub fn window_options_for_panel(app_id: &str, width: f32, height: f32, cx: &App) -> WindowOptions {
+    WindowOptions {
+        app_id: Some(app_id.to_owned()),
+        ..window_options_with_bounds(
+            width,
+            height,
+            centered_window_bounds(width, height, cx),
+            rmac_apps::identity::window_title(app_id).map(SharedString::from),
+        )
+    }
+}
+
 /// Identified window options with an explicit native title. This is useful for
 /// document windows whose compositor title is more specific than the stable
 /// application name.

@@ -47,7 +47,7 @@ fn places_report(downloads: &str, trash_count: usize) -> rmac_places_system::Rep
 }
 
 #[test]
-fn coordinator_waits_for_every_source_to_resolve() {
+fn coordinator_waits_for_every_source_but_appearance() {
     let mut coordinator = Coordinator::default();
     assert!(!coordinator.ready());
     coordinator.apply_settings(Ok(Default::default()));
@@ -58,9 +58,13 @@ fn coordinator_waits_for_every_source_to_resolve() {
     });
     assert!(!coordinator.ready());
     coordinator.apply_places(Err("places unavailable".into()));
-    assert!(!coordinator.ready());
-    coordinator.apply_appearance(Err("appearance unavailable".into()));
+    // Appearance only sets reduced motion; the Dock starts with the default
+    // and does not wait for the portal.
     assert!(coordinator.ready());
+    assert!(!coordinator.snapshot().reduced_motion);
+    coordinator.apply_appearance(Ok(true));
+    assert!(coordinator.ready());
+    assert!(coordinator.snapshot().reduced_motion);
 }
 
 #[test]

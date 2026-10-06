@@ -470,6 +470,11 @@ impl TerminalView {
                 .bg(hsla(active().bg))
                 .font_family(rmac_ui::MONO_FONT)
                 .text_size(px(self.font_size))
+                // See the matching comment in `render_terminal_body`
+                // (UIA-01): without this, text defaults to a taller
+                // line box than the row's fixed height, and descenders
+                // get painted over by the next row.
+                .line_height(px(self.line_h))
                 .pl(px(PAD_X))
                 .pr(px(PAD_X))
                 .pt(px(PAD_TOP))

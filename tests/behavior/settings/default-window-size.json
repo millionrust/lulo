@@ -1,0 +1,10 @@
+{
+  "title": "A fresh Settings window opens at the Mac's measured 723 pt width (UIA-26)",
+  "app": "settings",
+  "lulo_only": true,
+  "floating_app_id": "org.rmac.SystemSettings",
+  "steps": [
+    {"observe": "initial", "facts": ["window_size"]}
+  ],
+  "tolerance": {"initial.window_size": "within-2"}
+}

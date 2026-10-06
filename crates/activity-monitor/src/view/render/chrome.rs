@@ -371,7 +371,11 @@ impl MonitorView {
                                 .text_size(rmac_ui::text_px(13.0))
                                 .font_weight(mac::BOLD)
                                 .text_color(mac::text())
-                                .child("System Monitor"),
+                                // UIA-16: the Mac's own window title reads
+                                // "Activity Monitor" — the app's real name,
+                                // which `rmac_apps::identity::window_title`
+                                // and this window's own app menu already use.
+                                .child("Activity Monitor"),
                         )
                         .child(
                             div()

@@ -32,6 +32,14 @@ pub(crate) fn last_front_directory() -> Option<PathBuf> {
 struct DirectoryContext {
     label: String,
     local_path: Option<PathBuf>,
+    /// `true` only once the shell itself has reported this directory over
+    /// OSC 7 (`set_uri`) — never for the starting directory `from_local`
+    /// assumes before the shell has said anything. `Session::tab_title`
+    /// (UIA-02) uses this to tell "the shell just told us the real cwd" from
+    /// "this is only our pre-launch guess", so a session with no job and no
+    /// OSC 7 yet still defaults to the Mac's "user — shell" title instead of
+    /// the starting folder's name.
+    confirmed: bool,
 }
 
 #[derive(Clone, Default)]
@@ -42,7 +50,7 @@ pub(super) struct SessionDirectory {
 impl SessionDirectory {
     pub(super) fn from_local(path: &Path) -> Self {
         Self {
-            value: Arc::new(Mutex::new(local_context(path))),
+            value: Arc::new(Mutex::new(local_context(path, false))),
         }
     }
 
@@ -68,6 +76,18 @@ impl SessionDirectory {
             .lock()
             .ok()?
             .as_ref()
+            .map(|value| value.label.clone())
+    }
+
+    /// [`Self::label`], but only once the shell has actually reported this
+    /// directory over OSC 7 — never the unconfirmed starting guess
+    /// `from_local` sets before that (UIA-02; see `DirectoryContext::confirmed`).
+    pub(super) fn confirmed_label(&self) -> Option<String> {
+        self.value
+            .lock()
+            .ok()?
+            .as_ref()
+            .filter(|value| value.confirmed)
             .map(|value| value.label.clone())
     }
 
@@ -97,6 +117,7 @@ fn parse_uri(raw: &str) -> Option<DirectoryContext> {
         return Some(DirectoryContext {
             label: format!("Remote — {host}"),
             local_path: None,
+            confirmed: true,
         });
     }
 
@@ -105,10 +126,10 @@ fn parse_uri(raw: &str) -> Option<DirectoryContext> {
     if decoded.chars().any(is_control_or_directional) {
         return None;
     }
-    local_context(&path)
+    local_context(&path, true)
 }
 
-fn local_context(path: &Path) -> Option<DirectoryContext> {
+fn local_context(path: &Path, confirmed: bool) -> Option<DirectoryContext> {
     let label = path
         .file_name()
         .filter(|name| !name.is_empty())
@@ -120,6 +141,7 @@ fn local_context(path: &Path) -> Option<DirectoryContext> {
     Some(DirectoryContext {
         label,
         local_path: Some(path.to_path_buf()),
+        confirmed,
     })
 }
 
@@ -138,6 +160,23 @@ fn is_control_or_directional(character: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// UIA-02: `from_local` (the starting directory, assumed before the
+    /// shell has said anything) must never read as confirmed, or a fresh
+    /// session's default title would show the starting folder's name
+    /// instead of the Mac's "user — shell" — but a real OSC 7 report from
+    /// the shell (`set_uri`, a `cd`) must read as confirmed, or a plain `cd`
+    /// would stop updating the title at all.
+    #[test]
+    fn only_a_real_osc_7_report_confirms_the_directory() {
+        let directory = SessionDirectory::from_local(Path::new("/home/jake/repo"));
+        assert_eq!(directory.label().as_deref(), Some("repo"));
+        assert_eq!(directory.confirmed_label(), None);
+
+        assert!(directory.set_uri("file:///tmp"));
+        assert_eq!(directory.label().as_deref(), Some("tmp"));
+        assert_eq!(directory.confirmed_label().as_deref(), Some("tmp"));
+    }
 
     #[test]
     fn local_osc_7_is_private_bounded_and_session_local() {

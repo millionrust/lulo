@@ -1514,6 +1514,12 @@ mod linux_wayland {
             } else {
                 snapshot.focused.app_id.clone()
             };
+            // `app_display_name`/`top_bar_active_app_name` both resolve
+            // through `rmac_apps::identity::window_title`, which already
+            // names the System Monitor binary "Activity Monitor" (the Mac's
+            // own app name, used in its window, About panel and app menu —
+            // UIA-16) — so no extra override is needed here to make this
+            // app's bold app-menu label match the reference app.
             let active_app = if keep_menu_app {
                 active_app_id
                     .as_deref()
@@ -1522,15 +1528,6 @@ mod linux_wayland {
             } else {
                 top_bar_active_app_name(snapshot)
             };
-            // The System Monitor binary keeps its Lulo desktop identity,
-            // while its Mac-compatible application and Help menus use the
-            // Activity Monitor name shown by the reference app.
-            let active_app =
-                if active_app_id.as_deref() == Some(rmac_apps::identity::SYSTEM_MONITOR) {
-                    "Activity Monitor".to_owned()
-                } else {
-                    active_app
-                };
             let mut exported = status.menus.clone();
             let application_items = rmac_app_menu::take_application_items(&mut exported);
             let window_items = rmac_app_menu::take_window_items(&mut exported);

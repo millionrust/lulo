@@ -1,0 +1,11 @@
+{
+  "title": "A fresh Terminal window opens at the Mac's 80x24/580x385 size, with a user-dash-shell default title (UIA-01, UIA-02)",
+  "app": "terminal",
+  "lulo_only": true,
+  "floating_app_id": "org.rmac.Terminal",
+  "steps": [
+    {"observe": "initial", "facts": ["window_size", "windows"]}
+  ],
+  "tolerance": {"initial.window_size": "within-2"},
+  "omit": ["initial.windows.front", "initial.windows.titles"]
+}

@@ -57,7 +57,15 @@ pub fn window_title(app_id: &str) -> Option<&'static str> {
         TERMINAL => Some("Terminal"),
         NOTES => Some("Notes"),
         TEXT_EDITOR => Some("Text Editor"),
-        SYSTEM_MONITOR => Some("System Monitor"),
+        // The Mac's own app is "Activity Monitor" throughout — window
+        // title, About panel, Cmd-Tab, Spotlight, and its own app menu
+        // (UIA-16: this used to read "System Monitor" here while the menu
+        // bar special-cased the bold app-menu label to "Activity Monitor",
+        // so the window and its own menu disagreed). The Linux desktop
+        // entry stays "System Monitor" (`org.rmac.SystemMonitor.desktop`,
+        // metainfo, docs) — a separate, static identity this function does
+        // not touch.
+        SYSTEM_MONITOR => Some("Activity Monitor"),
         APP_DRAWER => Some("Apps"),
         SYSTEM_SETTINGS => Some("Settings"),
         CALCULATOR => Some("Calculator"),

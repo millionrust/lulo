@@ -92,12 +92,22 @@ impl TerminalView {
         // `resize_to` (called on the first render below) immediately
         // recomputes `cols`/`rows` from whatever size the window actually
         // becomes, exactly as it already does after the user's own resizes.
+        //
+        // `window.resize` sets GPUI's own window geometry, which still
+        // includes Root's client-side shadow/resize-hit margin on Linux
+        // (`rmac_ui::CLIENT_FRAME_INSET`) — the same margin `main.rs` already
+        // added via `outer_window_size` when it first opened this window.
+        // Passing the bare content size here (UIA-02) shrank that margin
+        // back out of the window on every launch, so a fresh 80×24 window
+        // lost two rows to the top/bottom inset alone (580×361 instead of
+        // 580×385, 80×22 instead of 80×24).
         {
             let cell_w = font_size * CELL_RATIO_FALLBACK;
             let line_h = font_size * (LINE_H / FONT_SIZE);
             let width = cols as f32 * cell_w + 2.0 * PAD_X;
             let height = rows as f32 * line_h + TITLE_BAR_HEIGHT + PAD_TOP + PAD_BOTTOM;
-            window.resize(gpui::size(px(width), px(height)));
+            let (outer_width, outer_height) = rmac_ui::outer_window_size(width, height);
+            window.resize(gpui::size(px(outer_width), px(outer_height)));
         }
 
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));

@@ -80,6 +80,7 @@ fn main() {
             options.window_min_size = Some(gpui::size(gpui::px(760.0), gpui::px(560.0)));
             let opened = cx.open_window(options, move |window, cx| {
                 rmac_ui::prepare_surface_window(window, cx);
+                rmac_ui::fit_to_display_after_first_frame(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(CALENDAR, window, cx);
                     CalendarView::new(window, cx, deep_link)

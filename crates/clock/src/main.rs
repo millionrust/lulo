@@ -120,6 +120,7 @@ fn main() -> std::process::ExitCode {
             ));
             let opened = cx.open_window(options, |window, cx| {
                 rmac_ui::prepare_surface_window(window, cx);
+                rmac_ui::fit_to_display_after_first_frame(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(CLOCK, window, cx);
                     ClockView::new(window, cx)

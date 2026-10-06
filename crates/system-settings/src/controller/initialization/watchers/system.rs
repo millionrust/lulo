@@ -16,7 +16,7 @@ impl Settings {
                 this.apply_system_snapshot(snapshot);
                 this.run_pending_system_info_refresh(cx);
                 this.run_pending_storage_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["General", "Displays"], cx);
             });
         })
         .detach();
@@ -40,7 +40,7 @@ impl Settings {
                     }
                 }
                 this.run_pending_storage_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&[], cx);
             });
         })
         .detach();
@@ -53,7 +53,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.screen_reader = capability;
                 this.screen_reader_loading = false;
-                cx.notify();
+                this.notify_if_showing(&["Accessibility"], cx);
             });
         })
         .detach();
@@ -145,7 +145,7 @@ impl Settings {
                 // says so quietly, so this path's error never reaches the
                 // window-wide Settings banner.
                 this.sharing_error = None;
-                cx.notify();
+                this.notify_if_showing(&["Sharing"], cx);
             });
         })
         .detach();

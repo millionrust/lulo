@@ -148,7 +148,7 @@ impl Settings {
             let result = blocking::unblock(rmac_shortcuts::backend_status).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_shortcut_status_update(result);
-                cx.notify();
+                this.notify_if_showing(&["Keyboard", "Spotlight"], cx);
             });
         })
         .detach();

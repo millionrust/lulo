@@ -30,10 +30,12 @@ released" on niri, and where does the switcher live?
    the surface too, so a compositor that forwards the key instead still works.
 3. **Races are closed explicitly.**
    - A quick ⌘Tab tap can release ⌘ before the surface gets focus. The enter event then reports
-     no modifiers and no change event fires. 80 ms after focus, the view checks
+     no modifiers and no change event fires. 16 ms after focus (niri sends the modifier state
+     in the same flush as the enter; this was 80 ms until SPEED-11), the view checks
      `window.modifiers()`, and if ⌘ is already up it switches immediately.
-   - A tap must not flash the panel. The surface maps at 1 × 1 and only grows to the panel size
-     after 120 ms.
+   - A tap must not flash the panel. The surface maps at 1 × 1 and grows to the panel size as
+     soon as the modifier state shows ⌘ still held when it gets the keyboard, as macOS shows
+     the switcher at once while ⌘ is held. Without modifier state it grows after 120 ms.
    - An invisible exclusive surface must never hold the keyboard. It closes if it has not gained
      focus within 1 s, and it cancels if it loses focus.
 4. **Order and activation are pure, tested model code** (`src/model.rs`):

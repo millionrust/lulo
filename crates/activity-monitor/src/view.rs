@@ -13,11 +13,13 @@ use crate::columns::{
     default_visible as default_visible_cols, load as load_visible_cols, save as save_visible_cols,
     ColKey,
 };
+use crate::floating_windows::MetricWindowKind;
 use crate::metrics::{Tab, REFRESH_SECS};
 use crate::process_table::{resync_selection, ProcessTableDelegate};
 use crate::sampling::Sampler;
+use crate::signal_picker::NamedSignal;
 use crate::view_filter::ViewFilter;
-use crate::{process_action, process_signal};
+use crate::{floating_windows, process_action, process_signal, quit_and_keep_windows};
 
 /// Overall host CPU usage as a 0.0..=1.0 fraction, from the sampler's
 /// (user%, system%, idle%) split — for the View ▸ Dock Icon CPU Usage tile.
@@ -63,6 +65,13 @@ pub(crate) struct MonitorView {
     pub(crate) filter_menu_open: bool,
     refresh_seconds: u64,
     refresh_wake: async_channel::Sender<()>,
+    /// View ▸ Send Signal to Process… (MON-10/14): the process the sheet
+    /// is open for, captured at open time the same way `pending_kill` is.
+    signal_sheet: Option<process_action::ProcessIdentity>,
+    signal_feedback: Option<process_action::Feedback>,
+    /// View ▸ Sample Process (MON-10/14): whether a sample is currently
+    /// being collected off the UI thread.
+    sample_in_progress: bool,
 }
 
 impl MonitorView {
@@ -125,6 +134,9 @@ impl MonitorView {
             filter_menu_open: false,
             refresh_seconds: REFRESH_SECS as u64,
             refresh_wake: wake.clone(),
+            signal_sheet: None,
+            signal_feedback: None,
+            sample_in_progress: false,
         };
         view.refresh(cx);
 
@@ -173,6 +185,22 @@ impl MonitorView {
             }
         })
         .detach();
+
+        // Application ▸ Quit and Keep Windows (MON-16): reopen exactly the
+        // floating metric windows that were open when that action last ran,
+        // once. Deferred (rather than opened here directly) since this
+        // constructor itself still runs inside `cx.new`'s entity-creation
+        // closure, matching how every other secondary-window `show` call in
+        // this codebase is invoked from `cx.defer`.
+        let restored = quit_and_keep_windows::take_saved();
+        if !restored.is_empty() {
+            let entity = cx.entity();
+            cx.defer(move |cx| {
+                for kind in restored {
+                    floating_windows::show(kind, entity.clone(), cx);
+                }
+            });
+        }
 
         view
     }
@@ -241,6 +269,8 @@ impl MonitorView {
         let has_selection = self.selected_proc(cx).is_some();
         rmac_ui::set_menu_enabled("activity_monitor::QuitProcess", has_selection, cx);
         rmac_ui::set_menu_enabled("activity_monitor::InspectProcess", has_selection, cx);
+        rmac_ui::set_menu_enabled("activity_monitor::SendSignalToProcess", has_selection, cx);
+        rmac_ui::set_menu_enabled("activity_monitor::SampleProcess", has_selection, cx);
         let has_matches = !self.search.read(cx).value().is_empty()
             && !self.table.read(cx).delegate().rows.is_empty();
         rmac_ui::set_menu_enabled("activity_monitor::FindNext", has_matches, cx);
@@ -433,6 +463,7 @@ impl MonitorView {
         let empty_search = self.search_open && self.search.read(cx).value().is_empty();
         if self.pending_kill.take().is_some()
             || self.inspect_pid.take().is_some()
+            || self.signal_sheet.take().is_some()
             || std::mem::take(&mut self.cols_menu_open)
             || std::mem::take(&mut self.filter_menu_open)
         {
@@ -635,5 +666,211 @@ impl MonitorView {
                 .map(|failure| failure.to_string().into());
         }
         cx.notify();
+    }
+
+    // -- Accessors for the floating metric windows (`floating_windows.rs`),
+    // which live outside this module's tree and so cannot reach private
+    // fields directly (see that module's doc comment on `bar_graph`). --
+
+    pub(crate) fn cpu_split(&self) -> Option<(f32, f32, f32)> {
+        self.sampler.cpu_split
+    }
+
+    pub(crate) fn cpu_history(&self) -> (&[f32], &[f32]) {
+        (
+            &self.sampler.history.cpu_user,
+            &self.sampler.history.cpu_system,
+        )
+    }
+
+    pub(crate) fn gpu_reading(&self) -> crate::gpu_stats::GpuReading {
+        self.sampler.gpu_reading
+    }
+
+    pub(crate) fn gpu_history(&self) -> &[f32] {
+        &self.sampler.history.gpu
+    }
+
+    /// Window ▸ CPU Usage / CPU History / GPU History.
+    pub(crate) fn open_metric_window(&mut self, kind: MetricWindowKind, cx: &mut Context<Self>) {
+        let view = cx.entity();
+        floating_windows::show(kind, view, cx);
+    }
+
+    /// Application ▸ Quit and Keep Windows (MON-16, MON-MENU-001): persist
+    /// which floating metric windows are open right now, then actually
+    /// quit. An ordinary Close/⌘Q never calls this, so an ordinary next
+    /// launch restores nothing — only this action opts in.
+    pub(crate) fn quit_and_keep_open_windows(&mut self, cx: &mut Context<Self>) {
+        let open = floating_windows::open_kinds(cx);
+        quit_and_keep_windows::save(&open);
+        cx.quit();
+    }
+
+    /// View ▸ Send Signal to Process… (MON-10/14, MON-MENU-032): opens the
+    /// sheet for whichever process is highlighted right now.
+    pub(crate) fn open_signal_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.table.update(cx, |state, _| {
+            if let Some(pid) = state
+                .selected_row()
+                .and_then(|ix| state.delegate().rows.get(ix))
+                .map(|r| r.pid)
+            {
+                state.delegate_mut().set_selected_pid(Some(pid));
+            }
+        });
+        if let Some(process) = self.selected_proc(cx) {
+            self.signal_sheet = Some(process);
+            self.signal_feedback = None;
+            self.pending_kill.take();
+            self.inspect_pid = None;
+            self.cols_menu_open = false;
+            window.focus(&self.focus, cx);
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn cancel_signal_sheet(&mut self, cx: &mut Context<Self>) {
+        if self.signal_sheet.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// Send `signal` to the process the sheet opened for, with the same
+    /// identity preflight Quit/Force Quit use. A permission failure for a
+    /// process owned by another user escalates once through `pkexec`
+    /// (MON-10/14: "polkit for other users' processes") rather than
+    /// failing closed outright.
+    pub(crate) fn send_named_signal(&mut self, signal: NamedSignal, cx: &mut Context<Self>) {
+        let Some(identity) = self.signal_sheet.take() else {
+            return;
+        };
+        self.signal_feedback = None;
+        let (outcome, owner) = self.table.update(cx, |state, cx| {
+            let delegate = state.delegate_mut();
+            let pid = Pid::from_u32(identity.pid);
+            delegate.system.refresh_processes_specifics(
+                ProcessesToUpdate::Some(&[pid]),
+                true,
+                ProcessRefreshKind::nothing(),
+            );
+            let observed =
+                delegate
+                    .system
+                    .process(pid)
+                    .map(|process| process_action::ProcessIdentity {
+                        pid: process.pid().as_u32(),
+                        start_time: process.start_time(),
+                        name: process.name().to_string_lossy().into_owned(),
+                    });
+            let owner = delegate
+                .rows
+                .iter()
+                .chain(delegate.all_rows.iter())
+                .find(|row| row.pid == identity.pid)
+                .map(|row| row.user.to_string());
+            let outcome = match process_action::identity_preflight(&identity, observed.as_ref()) {
+                process_action::Preflight::Missing => process_action::Outcome::Missing,
+                process_action::Preflight::Replaced => process_action::Outcome::Replaced,
+                process_action::Preflight::Current => {
+                    match process_signal::ProcessHandle::open(identity.pid) {
+                        Ok(handle) => process_signal_outcome(handle.send(
+                            process_signal::SignalKind::Named(signal),
+                            || {
+                                delegate
+                                    .system
+                                    .process(pid)
+                                    .and_then(|process| process.kill_with(signal.sysinfo_signal()))
+                            },
+                        )),
+                        Err(outcome) => process_signal_outcome(outcome),
+                    }
+                }
+            };
+            if matches!(
+                outcome,
+                process_action::Outcome::Missing | process_action::Outcome::Replaced
+            ) {
+                delegate.all_rows.retain(|row| row.pid != identity.pid);
+                delegate.apply_view();
+                delegate.selected_pid = None;
+                resync_selection(state, cx);
+                state.refresh(cx);
+            }
+            (outcome, owner)
+        });
+
+        let current_user = std::env::var("USER").ok();
+        let needs_escalation = outcome == process_action::Outcome::Rejected
+            && owner
+                .as_ref()
+                .is_some_and(|owner| current_user.as_deref() != Some(owner.as_str()));
+
+        if needs_escalation {
+            let owner = owner.unwrap_or_default();
+            self.signal_feedback = Some(process_action::Feedback {
+                success: false,
+                title: "Requesting administrator privileges…".into(),
+                detail: format!(
+                    "{} (PID {}) is owned by {owner}. Asking for permission to send {}.",
+                    identity.name,
+                    identity.pid,
+                    signal.label()
+                ),
+            });
+            cx.notify();
+            let pid = identity.pid;
+            let name = identity.name.clone();
+            let signal_number = signal.number();
+            let signal_label = signal.label();
+            cx.spawn(async move |this, cx| {
+                let outcome = cx
+                    .background_executor()
+                    .spawn(async move { crate::signal_escalation::escalate(pid, signal_number) })
+                    .await;
+                let feedback =
+                    process_action::signal_escalation_feedback(&name, pid, signal_label, outcome);
+                let _ = this.update(cx, |view, cx| {
+                    view.signal_feedback = Some(feedback);
+                    cx.notify();
+                });
+            })
+            .detach();
+        } else {
+            self.signal_feedback = Some(process_action::signal_feedback(
+                &identity,
+                signal.label(),
+                outcome,
+            ));
+            cx.notify();
+        }
+    }
+
+    /// View ▸ Sample Process (MON-10/14, MON-MENU-031): a real stack
+    /// sample of the highlighted process, collected off the UI thread and
+    /// shown in its own window (`sample_window.rs`) once ready.
+    pub(crate) fn sample_selected_process(&mut self, cx: &mut Context<Self>) {
+        if self.sample_in_progress {
+            return;
+        }
+        let Some(process) = self.selected_proc(cx) else {
+            return;
+        };
+        self.sample_in_progress = true;
+        cx.notify();
+        let pid = process.pid;
+        let name = process.name.clone();
+        cx.spawn(async move |this, cx| {
+            let report = cx
+                .background_executor()
+                .spawn(async move { crate::sampling_report::collect(pid, name) })
+                .await;
+            let _ = this.update(cx, |view, cx| {
+                view.sample_in_progress = false;
+                cx.notify();
+            });
+            let _ = cx.update(|cx| crate::sample_window::show(report, cx));
+        })
+        .detach();
     }
 }

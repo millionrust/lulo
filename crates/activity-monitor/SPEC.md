@@ -68,6 +68,30 @@ the application does not fabricate unavailable per-process data.
   Non-Linux development retains the identity-checked `sysinfo` signal path.
 - A targeted confirmation-time refresh cannot add a synthetic history sample or
   disturb the two-second delta cadence. History retains exactly 60 samples.
+- View ▸ Send Signal to Process… opens a sheet of named POSIX signals
+  (SIGHUP/SIGINT/SIGQUIT/SIGABRT/SIGKILL/SIGUSR1/SIGUSR2/SIGTERM/SIGCONT/
+  SIGSTOP) for the selected process, delivered through the same pidfd path
+  as Quit/Force Quit after the same identity preflight. A permission
+  failure against a process owned by a different user retries once
+  through `pkexec kill -s <signal> <pid>` (PolicyKit's own default
+  `org.freedesktop.policykit.pkexec.run-program` action — no bespoke
+  polkit rule installed), reporting plainly when `pkexec` itself is not
+  installed rather than claiming delivery.
+- View ▸ Sample Process collects a real sample of the selected process off
+  the UI thread: `eu-stack` (elfutils) when installed, otherwise each
+  thread's `/proc/<pid>/task/<tid>/wchan` kernel wait channel, labelled
+  honestly by whichever source actually produced it; a window shows the
+  exact report text.
+- Window ▸ CPU Usage / CPU History mirror the main window's own sampled
+  CPU split and 60-sample history in a small floating window. Window ▸ GPU
+  History reads `amdgpu`'s `gpu_busy_percent` sysfs file where present and
+  reports "unavailable" rather than a fabricated reading when no supported
+  GPU usage source exists (Intel/i915 has no equivalent single-file
+  reading; its per-process `fdinfo` accounting is not read).
+- Application ▸ Quit and Keep Windows persists which of the three floating
+  metric windows are open, then quits; the next launch reopens exactly
+  those once. An ordinary Close/⌘Q never persists this state, so an
+  ordinary next launch opens none of them.
 
 ## Keyboard map
 
@@ -76,6 +100,9 @@ the application does not fabricate unavailable per-process data.
 - `Shift-Cmd-Backspace`: request Force Quit for the selected process.
 - `Enter`: confirm an open process-action dialog.
 - `Escape`: cancel an open process-action dialog.
+- `Alt-Cmd-S`: sample the selected process.
+- `Cmd-2` / `Cmd-3` / `Cmd-4`: open the CPU Usage / CPU History / GPU
+  History floating windows.
 
 ## Visual and accessibility states
 

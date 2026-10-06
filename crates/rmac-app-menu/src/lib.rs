@@ -1467,12 +1467,29 @@ const FILES_MENUS: &[MenuSpec] = &[
 
 const MONITOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
-        label: WINDOW_MENU,
+        label: APPLICATION_MENU,
         items: &[item!(
-            "Activity Monitor",
-            "activity_monitor::ShowMainWindow",
-            "⌘1"
+            "Quit and Keep Windows",
+            "activity_monitor::QuitAndKeepWindows",
+            ""
         )],
+    },
+    MenuSpec {
+        label: WINDOW_MENU,
+        items: &[
+            item!("Activity Monitor", "activity_monitor::ShowMainWindow", "⌘1"),
+            item!("CPU Usage", "activity_monitor::ShowCpuUsageWindow", "⌘2"),
+            item!(
+                "CPU History",
+                "activity_monitor::ShowCpuHistoryWindow",
+                "⌘3"
+            ),
+            item!(
+                "GPU History",
+                "activity_monitor::ShowGpuHistoryWindow",
+                "⌘4"
+            ),
+        ],
     },
     MenuSpec {
         label: "File",
@@ -1600,12 +1617,18 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("Inspect Process", "activity_monitor::InspectProcess", "⌘I"),
+            item!("Sample Process", "activity_monitor::SampleProcess", "⌥⌘S"),
             item!(
                 "Show Deltas for Process",
                 "activity_monitor::ShowDeltasForProcess",
                 "⌥⌘J"
             ),
             item!("Quit Process", "activity_monitor::QuitProcess", "⌥⌘Q"),
+            item!(
+                "Send Signal to Process…",
+                "activity_monitor::SendSignalToProcess",
+                ""
+            ),
             item!(
                 "Clear CPU History",
                 "activity_monitor::ClearCpuHistory",

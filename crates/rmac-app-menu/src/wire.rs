@@ -322,7 +322,7 @@ fn decode_level(
     items: &mut Peekable<std::vec::IntoIter<WireItemV2>>,
     depth: u8,
 ) -> Result<Vec<Item>, Error> {
-    let mut level = Vec::new();
+    let mut level: Vec<Item> = Vec::new();
     while let Some(&(_, _, _, _, item_depth)) = items.peek() {
         if item_depth < depth {
             break;

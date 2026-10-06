@@ -21,6 +21,8 @@ use rmac_preview::layout::{self, Rect, Rotation, ThumbItem};
 use rmac_preview::markup::{self, Annotation, Markup, Tool};
 use rmac_preview::metrics::{self, dark, light};
 use rmac_preview::poppler::{self, Match, TextPage};
+use rmac_preview::redact;
+use rmac_preview::selection;
 use rmac_preview::versions;
 use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
@@ -29,15 +31,16 @@ use crate::{
     ActualSize, ActualSizeOnAll, AddBookmark, AdjustSize, AnnotateArrow, AnnotateHighlight,
     AnnotateLine, AnnotateLoupe, AnnotateMask, AnnotateNote, AnnotateOval, AnnotatePolygon,
     AnnotateRectangle, AnnotateSignature, AnnotateSpeechBubble, AnnotateStar,
-    AnnotateStrikeThrough, AnnotateText, AnnotateUnderline, Back, CheckDocumentNow, CloseAll,
-    CloseSelected, CloseWindow, ContactSheet, ContinuousScroll, Copy, Crop, CustomiseToolbar,
-    DeleteSelection, EnterFullScreen, ExportAs, ExportAsPdf, Find, FindNext, FindPrevious,
-    FlipHorizontal, FlipVertical, Forward, GoToPage, HideSidebar, JumpToSelection,
-    ManageSignatures, MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument,
-    PreviousItem, PrintDocument, RectangularSelection, RedoMarkup, RevertMarkup, RotateLeft,
-    RotateRight, SaveAs, SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes,
-    ShowImageBackground, ShowInspector, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents,
-    ShowThumbnails, SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
+    AnnotateStrikeThrough, AnnotateText, AnnotateUnderline, AutomaticSelection, Back,
+    BrowseSavedVersions, CheckDocumentNow, CloseAll, CloseSelected, CloseWindow, ContactSheet,
+    ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, EnterFullScreen, ExportAs,
+    ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal, FlipVertical, Forward, GoToPage,
+    HideSidebar, InvertSelection, JumpToSelection, ManageSignatures, MoveToTrash, NextDocument,
+    NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
+    RectangularSelection, Redact, RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs,
+    SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes, ShowImageBackground,
+    ShowInspector, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails,
+    SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
     TakeScreenshotSelection, TakeScreenshotWindow, ToggleCheckGrammarWithSpelling,
     ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleMarkup,
     ToggleToolbar, TwoPages, UndoMarkup, UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn,
@@ -88,7 +91,11 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::FlipHorizontal",
         "preview::FlipVertical",
         "preview::RectangularSelection",
+        "preview::AutomaticSelection",
+        "preview::InvertSelection",
         "preview::Crop",
+        "preview::Redact",
+        "preview::BrowseSavedVersions",
         "preview::AnnotateHighlight",
         "preview::AnnotateUnderline",
         "preview::AnnotateStrikeThrough",
@@ -141,6 +148,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
     }
     rmac_ui::set_menu_checked("preview::ToggleMarkup", false, cx);
     rmac_ui::set_menu_checked("preview::RectangularSelection", false, cx);
+    rmac_ui::set_menu_checked("preview::AutomaticSelection", false, cx);
     rmac_ui::set_menu_checked("preview::HideSidebar", false, cx);
     rmac_ui::set_menu_checked("preview::ShowThumbnails", false, cx);
     rmac_ui::set_menu_label("preview::EnterFullScreen", "Enter Full Screen", cx);
@@ -714,6 +722,17 @@ pub(crate) struct PreviewView {
     /// progress.
     selection_tool_active: bool,
     selection_drag: Option<(f32, f32)>,
+    /// Tools ▸ Automatic Selection (PRV-MENU-013): a flood fill on the
+    /// next click (`selection::flood_fill`), stored as its bounding box
+    /// in `Slot::selection`, mutually exclusive with
+    /// `selection_tool_active`.
+    automatic_selection_tool_active: bool,
+    /// File ▸ Revert To ▸ Browse Saved Versions… (PREV-04's leftover):
+    /// every kept version for the open document, newest first, while the
+    /// sheet is open.
+    versions_browser_open: bool,
+    versions_browser_entries: Vec<versions::VersionInfo>,
+    versions_browser_busy: bool,
     /// Tools ▸ Annotate ▸ Signature ▸ Manage Signatures… (PRV-MENU-065): a
     /// sheet listing the reusable signatures captured so far, each
     /// removable.
@@ -1661,6 +1680,85 @@ impl PreviewView {
         .detach();
     }
 
+    /// File ▸ Revert To ▸ Browse Saved Versions… (PREV-04's own leftover,
+    /// "judged not simple enough for this pass"): lists every version
+    /// `versions.rs` has kept for the open image, newest first, off the
+    /// UI thread (disk I/O).
+    fn open_versions_browser(&mut self, cx: &mut Context<Self>) {
+        let Some(slot) = self.slot() else { return };
+        if !matches!(slot.kind(), Some(Kind::Image(_))) {
+            return;
+        }
+        let source = slot.path.clone();
+        self.versions_browser_open = true;
+        self.versions_browser_busy = true;
+        self.versions_browser_entries.clear();
+        cx.spawn(async move |this, cx| {
+            let entries = blocking::unblock(move || versions::list(&source)).await;
+            let _ = this.update(cx, |this, cx| {
+                this.versions_browser_busy = false;
+                this.versions_browser_entries = entries;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn close_versions_browser(&mut self, cx: &mut Context<Self>) {
+        self.versions_browser_open = false;
+        self.versions_browser_entries.clear();
+        cx.notify();
+    }
+
+    /// Restores the kept version identified by `id` (one row of the
+    /// Browse Saved Versions sheet), the same reload path
+    /// `revert_image_to_last_opened` uses for the single newest version.
+    fn restore_version(&mut self, id: String, cx: &mut Context<Self>) {
+        let Some(slot) = self.slot() else { return };
+        if !matches!(slot.kind(), Some(Kind::Image(_))) {
+            return;
+        }
+        let source = slot.path.clone();
+        let slot_id = slot.id;
+        self.versions_browser_open = false;
+        self.versions_browser_entries.clear();
+        self.markup_save_busy = true;
+        cx.spawn(async move |this, cx| {
+            let result = blocking::unblock(move || versions::restore(&source, &id)).await;
+            let _ = this.update(cx, |this, cx| {
+                this.markup_save_busy = false;
+                match result {
+                    Ok(loaded) => {
+                        if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == slot_id) {
+                            let old_display = slot.display.take();
+                            let old_pages: Vec<_> =
+                                slot.pages.drain().map(|(_, bitmap)| bitmap.image).collect();
+                            let old_thumbs: Vec<_> =
+                                slot.thumbs.drain().map(|(_, (_, image))| image).collect();
+                            slot.state = SlotState::Ready(loaded);
+                            slot.rotation = Rotation::default();
+                            slot.saved_rotation = Rotation::default();
+                            slot.image_edits = ImageEdits::default();
+                            slot.selection = None;
+                            slot.pending.clear();
+                            if let Some((_, image)) = old_display {
+                                this.garbage.push(image);
+                            }
+                            this.garbage.extend(old_pages);
+                            this.garbage.extend(old_thumbs);
+                        }
+                        this.markup_selected = None;
+                    }
+                    Err(error) => {
+                        eprintln!("rmac-preview: could not restore that version: {error}");
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(crate) fn new(paths: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search_input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -1814,6 +1912,10 @@ impl PreviewView {
             adjust_size_height,
             selection_tool_active: false,
             selection_drag: None,
+            automatic_selection_tool_active: false,
+            versions_browser_open: false,
+            versions_browser_entries: Vec::new(),
+            versions_browser_busy: false,
             manage_signatures_open: false,
             export_as_busy: false,
         };
@@ -2602,12 +2704,118 @@ impl PreviewView {
     /// deselecting when a different tool takes over.
     fn toggle_selection_tool(&mut self, cx: &mut Context<Self>) {
         self.selection_tool_active = !self.selection_tool_active;
-        if !self.selection_tool_active {
+        if self.selection_tool_active {
+            self.automatic_selection_tool_active = false;
+        } else {
             self.selection_drag = None;
             if let Some(slot) = self.slot_mut() {
                 slot.selection = None;
             }
         }
+        cx.notify();
+    }
+
+    /// Tools ▸ Automatic Selection (PRV-MENU-013): toggles a click-to-
+    /// flood-fill tool, mutually exclusive with Rectangular Selection —
+    /// only one selection tool drives the next click at a time.
+    fn toggle_automatic_selection_tool(&mut self, cx: &mut Context<Self>) {
+        self.automatic_selection_tool_active = !self.automatic_selection_tool_active;
+        if self.automatic_selection_tool_active {
+            self.selection_tool_active = false;
+            self.selection_drag = None;
+        } else if let Some(slot) = self.slot_mut() {
+            slot.selection = None;
+        }
+        cx.notify();
+    }
+
+    /// A single click with Automatic Selection active: flood-fills from
+    /// the clicked pixel by colour similarity (`selection::flood_fill`)
+    /// and keeps the result's bounding box as the current selection —
+    /// the same rectangle-shaped storage Crop/Redact already understand,
+    /// since (like macOS Preview's own Crop) neither can act on an
+    /// arbitrary silhouette.
+    fn automatic_select_at(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(point) = self.screen_to_image_point(position) else {
+            return;
+        };
+        let Some((image_width, image_height)) = self.image_pixel_size() else {
+            return;
+        };
+        let Some(pixels) = self.slot().and_then(|slot| match &slot.loaded()?.content {
+            Content::Image(image) => Some(image.pixels.clone()),
+            Content::Pdf(_) => None,
+        }) else {
+            return;
+        };
+        window.focus(&self.page_focus, cx);
+        let seed = (
+            (point.0 * image_width as f32)
+                .round()
+                .clamp(0.0, (image_width.saturating_sub(1)) as f32) as u32,
+            (point.1 * image_height as f32)
+                .round()
+                .clamp(0.0, (image_height.saturating_sub(1)) as f32) as u32,
+        );
+        const TOLERANCE: u32 = 48;
+        let mask = selection::flood_fill(&pixels, seed, TOLERANCE);
+        let bounds = mask.bounding_box();
+        if let Some(slot) = self.slot_mut() {
+            slot.selection = bounds.map(|(x, y, w, h)| layout::UnitRect {
+                x0: x as f32 / image_width as f32,
+                y0: y as f32 / image_height as f32,
+                x1: (x + w) as f32 / image_width as f32,
+                y1: (y + h) as f32 / image_height as f32,
+            });
+        }
+        cx.notify();
+    }
+
+    /// Edit ▸ Invert Selection (PRV-27/PRV-MENU-008): a real mask invert
+    /// (`selection::Mask::invert`), collapsed to its bounding box for the
+    /// same reason as Automatic Selection above. For an interior
+    /// rectangle the complement's bounding box is the whole image —
+    /// matching that Crop, Automatic Selection's only other consumer,
+    /// can only ever act on a rectangle.
+    fn invert_selection(&mut self, cx: &mut Context<Self>) {
+        let Some((image_width, image_height)) = self.image_pixel_size() else {
+            return;
+        };
+        let Some(slot) = self.slot_mut() else {
+            return;
+        };
+        let Some(rect) = slot.selection else {
+            return;
+        };
+        let to_px = |value: f32, dimension: u32| {
+            (value * dimension as f32)
+                .round()
+                .clamp(0.0, dimension as f32) as u32
+        };
+        let x0 = to_px(rect.x0.min(rect.x1), image_width);
+        let y0 = to_px(rect.y0.min(rect.y1), image_height);
+        let x1 = to_px(rect.x0.max(rect.x1), image_width);
+        let y1 = to_px(rect.y0.max(rect.y1), image_height);
+        let mask = selection::Mask::from_rect(
+            image_width,
+            image_height,
+            x0,
+            y0,
+            x1.saturating_sub(x0),
+            y1.saturating_sub(y0),
+        )
+        .invert();
+        slot.selection = mask.bounding_box().map(|(x, y, w, h)| layout::UnitRect {
+            x0: x as f32 / image_width as f32,
+            y0: y as f32 / image_height as f32,
+            x1: (x + w) as f32 / image_width as f32,
+            y1: (y + h) as f32 / image_height as f32,
+        });
         cx.notify();
     }
 
@@ -2652,7 +2860,14 @@ impl PreviewView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.selection_tool_active || event.button != MouseButton::Left {
+        if event.button != MouseButton::Left {
+            return;
+        }
+        if self.automatic_selection_tool_active {
+            self.automatic_select_at(event.position, window, cx);
+            return;
+        }
+        if !self.selection_tool_active {
             return;
         }
         let Some(point) = self.screen_to_image_point(event.position) else {
@@ -2732,6 +2947,167 @@ impl PreviewView {
         }
         self.selection_tool_active = false;
         cx.notify();
+    }
+
+    /// Tools ▸ Redact (PRV-MENU-015): for an image, blackens the pixels
+    /// under the current Rectangular/Automatic Selection for real
+    /// (`redact::redact_image_region`, through the same `edit_image`
+    /// undo/dirty pipeline Crop uses). For a PDF, there is no drag
+    /// rectangle (Rectangular/Automatic Selection are image-only, like
+    /// Crop), so Redact reuses the existing PDF text-selection mechanism
+    /// Edit ▸ Copy/Find already have — select the text to remove, then
+    /// Redact rasterises that page with it burned out in black
+    /// (`redact::redact_pdf_page`).
+    fn redact_selection(&mut self, cx: &mut Context<Self>) {
+        let Some(kind) = self.slot().and_then(|slot| slot.kind()) else {
+            return;
+        };
+        match kind {
+            Kind::Image(_) => self.redact_image_selection(cx),
+            Kind::Pdf => self.redact_pdf_text_selection(cx),
+        }
+    }
+
+    fn redact_image_selection(&mut self, cx: &mut Context<Self>) {
+        let Some(selection) = self.slot().and_then(|slot| slot.selection) else {
+            return;
+        };
+        let Some((image_width, image_height)) = self.image_pixel_size() else {
+            return;
+        };
+        let (image_width, image_height) = (image_width as f32, image_height as f32);
+        let x = (selection.x0 * image_width).round().max(0.0) as u32;
+        let y = (selection.y0 * image_height).round().max(0.0) as u32;
+        let width = ((selection.x1 - selection.x0) * image_width)
+            .round()
+            .max(1.0) as u32;
+        let height = ((selection.y1 - selection.y0) * image_height)
+            .round()
+            .max(1.0) as u32;
+        self.edit_image(
+            |pixels| {
+                let mut edited = pixels.clone();
+                redact::redact_image_region(&mut edited, (x, y, width, height));
+                edited
+            },
+            cx,
+        );
+        if let Some(slot) = self.slot_mut() {
+            slot.selection = None;
+        }
+        self.selection_tool_active = false;
+        self.automatic_selection_tool_active = false;
+        cx.notify();
+    }
+
+    fn redact_pdf_text_selection(&mut self, cx: &mut Context<Self>) {
+        if self.markup_save_busy {
+            return;
+        }
+        let Some((anchor, focus)) = self.text_selection else {
+            return;
+        };
+        if anchor == focus {
+            return;
+        }
+        let (from, to) = ordered(anchor, focus);
+        if from.page != to.page {
+            eprintln!("rmac-preview: redact needs a selection within a single page");
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        let TextState::Ready(pages) = &slot.text else {
+            return;
+        };
+        let Some(text_page) = pages.get(from.page) else {
+            return;
+        };
+        let rects = poppler::selection_rects(
+            text_page,
+            Some((from.word, from.char)),
+            Some((to.word, to.char)),
+        );
+        let Some(bounds) = rects.into_iter().reduce(|a, b| layout::UnitRect {
+            x0: a.x0.min(b.x0),
+            y0: a.y0.min(b.y0),
+            x1: a.x1.max(b.x1),
+            y1: a.y1.max(b.y1),
+        }) else {
+            return;
+        };
+        let page_sizes = slot.page_sizes();
+        let Some(&page_size) = page_sizes.get(from.page) else {
+            return;
+        };
+        // `bounds` is top-down unit space (y0 at the top), like every
+        // other `layout::UnitRect` in this file; `redact::PdfRect` wants
+        // the PDF's own bottom-left-origin point space, the same flip
+        // `markup::write_pdf` applies to annotation rects.
+        let rect = redact::PdfRect {
+            x0: bounds.x0 * page_size.0,
+            x1: bounds.x1 * page_size.0,
+            y0: (1.0 - bounds.y1) * page_size.1,
+            y1: (1.0 - bounds.y0) * page_size.1,
+        };
+        let source = slot.path.clone();
+        let id = slot.id;
+        let page_index = from.page;
+        self.markup_save_busy = true;
+        cx.spawn(async move |this, cx| {
+            let redact_source = source.clone();
+            let redact_result = blocking::unblock(move || -> Result<(), String> {
+                // Best-effort backup so Browse Saved Versions/Revert To
+                // can still recover the pre-redaction bytes this
+                // session, even though the saved file itself never
+                // keeps the removed content recoverable.
+                let _ = versions::record(&redact_source);
+                let temporary = redact_source
+                    .with_extension(format!("lulo-redacting-{}.pdf", std::process::id()));
+                if let Err(error) =
+                    redact::redact_pdf_page(&redact_source, &temporary, page_index, rect)
+                {
+                    let _ = std::fs::remove_file(&temporary);
+                    return Err(error);
+                }
+                std::fs::rename(&temporary, &redact_source).map_err(|e| e.to_string())
+            })
+            .await;
+            let reload = match redact_result {
+                Ok(()) => {
+                    let reload_source = source.clone();
+                    Some(blocking::unblock(move || render::load(&reload_source)).await)
+                }
+                Err(error) => {
+                    eprintln!("rmac-preview: redact failed: {error}");
+                    None
+                }
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.markup_save_busy = false;
+                if let Some(Ok(loaded)) = reload {
+                    if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                        let old_display = slot.display.take();
+                        let old_pages: Vec<_> =
+                            slot.pages.drain().map(|(_, bitmap)| bitmap.image).collect();
+                        let old_thumbs: Vec<_> =
+                            slot.thumbs.drain().map(|(_, (_, image))| image).collect();
+                        slot.state = SlotState::Ready(loaded);
+                        slot.text = TextState::NotLoaded;
+                        slot.pending.clear();
+                        if let Some((_, image)) = old_display {
+                            this.garbage.push(image);
+                        }
+                        this.garbage.extend(old_pages);
+                        this.garbage.extend(old_thumbs);
+                    }
+                    this.text_selection = None;
+                } else if let Some(Err(error)) = reload {
+                    eprintln!("rmac-preview: redacted page could not be reloaded: {error}");
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     // ---- Tools ▸ Annotate ▸ Signature ▸ Manage Signatures… (PRV-MENU-065) --
@@ -3969,7 +4345,11 @@ impl PreviewView {
             cx.stop_propagation();
             return;
         }
-        if self.customise_toolbar_open || self.adjust_size_open || self.manage_signatures_open {
+        if self.customise_toolbar_open
+            || self.adjust_size_open
+            || self.manage_signatures_open
+            || self.versions_browser_open
+        {
             if event.keystroke.key == "escape" {
                 if self.customise_toolbar_open {
                     self.close_customise_toolbar(window, cx);
@@ -3979,6 +4359,9 @@ impl PreviewView {
                 }
                 if self.manage_signatures_open {
                     self.close_manage_signatures(window, cx);
+                }
+                if self.versions_browser_open {
+                    self.close_versions_browser(cx);
                 }
                 cx.stop_propagation();
             }
@@ -5627,6 +6010,115 @@ impl PreviewView {
             .into_any_element()
     }
 
+    /// File ▸ Revert To ▸ Browse Saved Versions…: every kept version for
+    /// the open image, newest first, each with its own Restore button —
+    /// unlike plain Revert To, which only ever reaches the newest one.
+    fn render_versions_browser(
+        &self,
+        palette: Palette,
+        width: f32,
+        height: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        fn age_label(saved_at: u64) -> String {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_secs())
+                .unwrap_or(saved_at);
+            let age = now.saturating_sub(saved_at);
+            if age < 60 {
+                "just now".to_owned()
+            } else if age < 3600 {
+                format!("{} min ago", age / 60)
+            } else if age < 86400 {
+                format!("{} hr ago", age / 3600)
+            } else {
+                format!("{} days ago", age / 86400)
+            }
+        }
+        div()
+            .id("preview-versions-browser")
+            .absolute()
+            .left(px((width - 300.0) / 2.0))
+            .top(px(height / 3.0))
+            .w(px(300.0))
+            .rounded(px(10.0))
+            .bg(rgb(palette.card))
+            .border_1()
+            .border_color(rgb(palette.card_separator))
+            .shadow_lg()
+            .p(px(10.0))
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.glyph))
+                    .child("Browse Saved Versions"),
+            )
+            .child(if self.versions_browser_busy {
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgb(palette.subtitle))
+                    .child("Loading…")
+                    .into_any_element()
+            } else if self.versions_browser_entries.is_empty() {
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgb(palette.subtitle))
+                    .child("No earlier versions are kept for this document.")
+                    .into_any_element()
+            } else {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .children(self.versions_browser_entries.iter().enumerate().map(
+                        |(index, info)| {
+                            let id = info.id.clone();
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .px_2()
+                                .py_1()
+                                .rounded(px(6.0))
+                                .bg(rgb(palette.control_fill))
+                                .child(format!(
+                                    "{} · {} KB",
+                                    age_label(info.saved_at),
+                                    info.size.div_ceil(1024)
+                                ))
+                                .child(
+                                    div()
+                                        .id(("preview-version-restore", index))
+                                        .role(Role::Button)
+                                        .aria_label("Restore")
+                                        .text_color(rgb(palette.subtitle))
+                                        .child("Restore")
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.restore_version(id.clone(), cx);
+                                        })),
+                                )
+                        },
+                    ))
+                    .into_any_element()
+            })
+            .child(
+                div()
+                    .id("preview-versions-browser-close")
+                    .role(Role::Button)
+                    .aria_label("Close")
+                    .text_size(px(12.0))
+                    .text_color(rgb(palette.subtitle))
+                    .child("Close")
+                    .on_click(cx.listener(|this, _, _, cx| this.close_versions_browser(cx))),
+            )
+            .into_any_element()
+    }
+
     /// View ▸ Customise Toolbar… (PRV-MENU-051): toggles for the built-in
     /// toolbar sections `render_toolbar` checks `hidden_toolbar_items`
     /// for. `Escape` closes and saves (`close_customise_toolbar`).
@@ -6441,9 +6933,26 @@ impl Render for PreviewView {
                 is_image && self.selection_tool_active,
                 cx,
             );
+            rmac_ui::set_menu_enabled("preview::AutomaticSelection", is_image, cx);
+            rmac_ui::set_menu_checked(
+                "preview::AutomaticSelection",
+                is_image && self.automatic_selection_tool_active,
+                cx,
+            );
+            let has_selection = self.slot().is_some_and(|slot| slot.selection.is_some());
+            rmac_ui::set_menu_enabled("preview::Crop", has_selection, cx);
+            rmac_ui::set_menu_enabled("preview::InvertSelection", has_selection, cx);
+            let has_text_selection = self
+                .text_selection
+                .is_some_and(|(anchor, focus)| anchor != focus);
             rmac_ui::set_menu_enabled(
-                "preview::Crop",
-                self.slot().is_some_and(|slot| slot.selection.is_some()),
+                "preview::Redact",
+                (is_image && has_selection) || (pdf && has_text_selection),
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
+                "preview::BrowseSavedVersions",
+                is_image && self.slot().is_some_and(|slot| slot.has_version),
                 cx,
             );
             rmac_ui::set_menu_enabled("preview::AdjustSize", is_image, cx);
@@ -6719,6 +7228,14 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &RectangularSelection, _, cx| {
                 this.toggle_selection_tool(cx);
             }))
+            .on_action(cx.listener(|this, _: &AutomaticSelection, _, cx| {
+                this.toggle_automatic_selection_tool(cx);
+            }))
+            .on_action(cx.listener(|this, _: &InvertSelection, _, cx| this.invert_selection(cx)))
+            .on_action(cx.listener(|this, _: &Redact, _, cx| this.redact_selection(cx)))
+            .on_action(cx.listener(|this, _: &BrowseSavedVersions, _, cx| {
+                this.open_versions_browser(cx);
+            }))
             .on_action(cx.listener(|this, _: &AdjustSize, window, cx| {
                 this.open_adjust_size(window, cx);
             }))
@@ -6823,6 +7340,9 @@ impl Render for PreviewView {
             })
             .when(self.manage_signatures_open, |root| {
                 root.child(self.render_manage_signatures(palette, width, height, cx))
+            })
+            .when(self.versions_browser_open, |root| {
+                root.child(self.render_versions_browser(palette, width, height, cx))
             })
             .when(self.customise_toolbar_open, |root| {
                 root.child(self.render_customise_toolbar(palette, width, height, cx))

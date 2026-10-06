@@ -186,6 +186,65 @@ pub fn has_version(document: &Path) -> bool {
     latest(document).is_some()
 }
 
+/// One entry File ▸ Revert To ▸ Browse Saved Versions… can show, newest
+/// first — unlike `latest`/`restore_latest`, which only ever reach the
+/// single newest one. `id` is opaque (the version's own stored file
+/// name, already unique per `record`'s sequence counter) rather than
+/// `saved_at`, because two versions recorded within the same second
+/// share a `saved_at` of whole seconds and would otherwise be
+/// indistinguishable to [`restore`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VersionInfo {
+    pub id: String,
+    pub saved_at: u64,
+    pub size: u64,
+}
+
+/// Every version kept for `document`, newest first.
+pub fn list(document: &Path) -> Vec<VersionInfo> {
+    list_under(&state_root(), document)
+}
+
+fn list_under(root: &Path, document: &Path) -> Vec<VersionInfo> {
+    let Some(store) = load(root, document) else {
+        return Vec::new();
+    };
+    let mut versions: Vec<VersionInfo> = store
+        .versions
+        .iter()
+        .map(|version| VersionInfo {
+            id: version.file.clone(),
+            saved_at: version.saved_at,
+            size: version.size,
+        })
+        .collect();
+    versions.sort_by_key(|version| std::cmp::Reverse(version.saved_at));
+    versions
+}
+
+/// File ▸ Revert To ▸ Browse Saved Versions…: overwrites `document` with
+/// the kept version identified by `id` (an opaque id from [`list`]), the
+/// same way [`restore_latest`] does for the newest one, then reloads it.
+/// Does not touch the version store, like `restore_latest`.
+pub fn restore(document: &Path, id: &str) -> Result<Loaded, String> {
+    restore_under(&state_root(), document, id)
+}
+
+fn restore_under(root: &Path, document: &Path, id: &str) -> Result<Loaded, String> {
+    let store =
+        load(root, document).ok_or_else(|| "no versions are kept for this image".to_owned())?;
+    let version = store
+        .versions
+        .iter()
+        .find(|version| version.file == id)
+        .ok_or_else(|| "that version is no longer kept".to_owned())?;
+    let path = store_dir(root, document).join(&version.file);
+    let bytes = rmac_storage::read_bounded_no_follow(&path, MAX_VERSION_BYTES as usize)
+        .map_err(|error| error.to_string())?;
+    rmac_storage::atomic_write(document, &bytes).map_err(|error| error.to_string())?;
+    render::load(document)
+}
+
 /// File ▸ Revert To ▸ Last Opened: overwrites `document` with its most
 /// recently recorded version, atomically, then reloads it so the caller
 /// can refresh the in-memory `Slot`. Does not touch the version store —
@@ -331,6 +390,61 @@ mod tests {
         // The restored version is still recorded (revert never discards
         // history), so a second revert is still possible.
         assert!(latest_under(&root, &document).is_some());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// File ▸ Revert To ▸ Browse Saved Versions…: record two versions
+    /// (even if both land in the same wall-clock second, which happens
+    /// routinely in a fast test run) and restore the *first* one
+    /// specifically, by its opaque id — proving `restore` reaches a
+    /// version `restore_latest` never would, and that two same-second
+    /// versions stay individually addressable.
+    #[test]
+    fn list_and_restore_reach_a_version_older_than_the_latest() {
+        let root = scratch("browse");
+        let _ = std::fs::remove_dir_all(&root);
+        let document = root.join("source").join("photo.png");
+        std::fs::create_dir_all(document.parent().unwrap()).unwrap();
+
+        let original = swatch();
+        render::save_image(&original, crate::document::ImageKind::Png, &document).unwrap();
+        record_under(&root, &document).unwrap();
+
+        let middle = render::flip_horizontal(&original);
+        render::save_image(&middle, crate::document::ImageKind::Png, &document).unwrap();
+        record_under(&root, &document).unwrap();
+
+        let listed = list_under(&root, &document);
+        assert_eq!(listed.len(), 2);
+        assert_ne!(listed[0].id, listed[1].id);
+
+        // Whichever entry holds the very first recorded version (the
+        // true "original" pixels, before `middle` ever overwrote it):
+        // find it by id and restore it specifically.
+        let first_recorded_id = list_under(&root, &document)
+            .iter()
+            .min_by_key(|info| info.saved_at)
+            .unwrap()
+            .id
+            .clone();
+        let restored = restore_under(&root, &document, &first_recorded_id).unwrap();
+        assert_eq!(*pixels_of(&restored), original);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn restore_an_unknown_id_fails_clearly() {
+        let root = scratch("browse-missing");
+        let _ = std::fs::remove_dir_all(&root);
+        let document = root.join("source").join("photo.png");
+        std::fs::create_dir_all(document.parent().unwrap()).unwrap();
+        render::save_image(&swatch(), crate::document::ImageKind::Png, &document).unwrap();
+        record_under(&root, &document).unwrap();
+
+        assert!(restore_under(&root, &document, "does-not-exist").is_err());
+        assert!(list_under(&root, &document).len() == 1);
 
         let _ = std::fs::remove_dir_all(&root);
     }

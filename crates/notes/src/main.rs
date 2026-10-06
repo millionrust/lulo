@@ -4,6 +4,7 @@
 //! writes the library directly. Stable IDs, accepted snapshots, recovery, and
 //! the single writer remain authoritative off the UI thread.
 
+mod audio_recorder;
 mod dialog_presentation;
 mod edit_recovery_controller;
 mod edit_text_assist_controller;
@@ -15,10 +16,12 @@ mod markdown_presentation;
 mod note_find_controller;
 mod note_format_controller;
 mod note_navigation;
+mod note_window;
 mod notes_style;
 mod presentation;
 mod preview_controller;
 mod print_controller;
+mod quick_note;
 mod recovery_presentation;
 mod root_presentation;
 mod runtime_controller;
@@ -44,6 +47,7 @@ use gpui::{
     AppContext as _, Context, Div, Entity, FocusHandle, Focusable as _, InteractiveElement as _,
     IntoElement, KeyBinding, KeyDownEvent, ObjectFit, ParentElement, Render, RenderImage, Role,
     SharedString, Stateful, StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
+    WindowHandle,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_editor::InputState;
@@ -227,7 +231,10 @@ actions!(
         RenameAttachment,
         PasteAndRetainStyle,
         ShowSmartFoldersHelp,
-        ShowTagsHelp
+        ShowTagsHelp,
+        RecordAudio,
+        OpenNoteInNewWindow,
+        QuickNote
     ]
 );
 
@@ -377,6 +384,20 @@ struct NotesView {
     /// rename dialog is open for that attachment.
     attachment_rename: Option<(AttachmentId, u64)>,
     attachment_rename_input: Entity<InputState>,
+    /// Edit ▸ Record Audio… (NOT-MENU-008): `Some` while `pw-record` is
+    /// capturing to a temp file, awaiting Stop.
+    recording: Option<audio_recorder::AudioRecording>,
+    /// Window ▸ Open Note in New Window (NOT-MENU-064): a second window
+    /// mirroring the shared editor fields (`title`/`body`), reused if
+    /// already open.
+    note_window: Option<WindowHandle<rmac_ui::Root>>,
+    /// Quick Note (NOT-025): the small floating note window, and the two
+    /// settings that govern it. Session-only, like every other Notes ▸
+    /// Settings… control (NOTES-13) — not yet persisted across relaunch.
+    quick_note_window: Option<WindowHandle<rmac_ui::Root>>,
+    quick_note_id: Option<NoteId>,
+    always_resume_quick_note: bool,
+    quick_note_hot_corner_resume: bool,
 }
 
 impl NotesView {
@@ -495,6 +516,12 @@ impl NotesView {
             notes_help: None,
             attachment_rename: None,
             attachment_rename_input: inputs.attachment_rename,
+            recording: None,
+            note_window: None,
+            quick_note_window: None,
+            quick_note_id: None,
+            always_resume_quick_note: false,
+            quick_note_hot_corner_resume: false,
         };
         rmac_ui::set_menu_checked(
             "notes::ToggleCheckSpellingWhileTyping",

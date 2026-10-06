@@ -658,7 +658,7 @@ impl NotesView {
         .detach();
     }
 
-    fn insert_file_attachment_chip(
+    pub(super) fn insert_file_attachment_chip(
         &mut self,
         path: std::path::PathBuf,
         window: &mut Window,

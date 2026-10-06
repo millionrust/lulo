@@ -551,6 +551,19 @@ impl NotesView {
                 cx.listener(|this, _: &CustomiseToolbar, _, cx| this.toggle_customise_toolbar(cx)),
             )
             .on_action(
+                cx.listener(|this, _: &RecordAudio, window, cx| {
+                    this.toggle_record_audio(window, cx)
+                }),
+            )
+            .on_action(cx.listener(|_, _: &OpenNoteInNewWindow, _, cx| {
+                let main = cx.entity();
+                cx.defer(move |cx| note_window::show(main, cx));
+            }))
+            .on_action(cx.listener(|_, _: &QuickNote, _, cx| {
+                let main = cx.entity();
+                cx.defer(move |cx| quick_note::show(main, cx));
+            }))
+            .on_action(
                 cx.listener(|this, _: &ToggleLockNote, window, cx| {
                     this.toggle_lock_note(window, cx)
                 }),

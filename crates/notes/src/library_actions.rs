@@ -103,6 +103,13 @@ impl NotesView {
         }
     }
 
+    /// The id of the note currently shown in the (single, shared) editor,
+    /// used by `quick_note.rs`/`note_window.rs` to decide whether a resume
+    /// landed on a real note.
+    pub(super) fn selected_note_id(&self) -> Option<NoteId> {
+        self.session.selected_note_id()
+    }
+
     pub(super) fn create_note(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;
@@ -894,6 +901,25 @@ impl NotesView {
         rmac_ui::set_menu_enabled(
             "notes::CloseAllLockedNotes",
             self.session.any_locked_note_open(),
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::OpenNoteInNewWindow",
+            ready && has_note && !locked && !deleted,
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "notes::RecordAudio",
+            ready && has_note && !locked && !deleted,
+            cx,
+        );
+        rmac_ui::set_menu_label(
+            "notes::RecordAudio",
+            if self.recording.is_some() {
+                "Stop Recording"
+            } else {
+                "Record Audio…"
+            },
             cx,
         );
         rmac_ui::set_menu_enabled("notes::CreateSmartFolder", ready, cx);

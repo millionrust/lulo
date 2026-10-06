@@ -143,6 +143,26 @@ impl SettingsView {
         cx.notify();
     }
 
+    /// NOT-SETTINGS-001: always resume the last Quick Note instead of
+    /// starting a fresh one.
+    fn set_always_resume_quick_note(&mut self, value: bool, cx: &mut Context<Self>) {
+        self.main.update(cx, |notes, cx| {
+            notes.always_resume_quick_note = value;
+            cx.notify();
+        });
+        cx.notify();
+    }
+
+    /// NOT-SETTINGS-003: when invoking Quick Note from a hot corner or
+    /// shortcut, resume the last Quick Note instead of creating a new one.
+    fn set_quick_note_hot_corner_resume(&mut self, value: bool, cx: &mut Context<Self>) {
+        self.main.update(cx, |notes, cx| {
+            notes.quick_note_hot_corner_resume = value;
+            cx.notify();
+        });
+        cx.notify();
+    }
+
     /// Notes ▸ Settings… ▸ Use dark backgrounds for note content: checked
     /// means dark, so `light_background_default` (true = light) is the
     /// checkbox's own inverse.
@@ -196,6 +216,8 @@ impl Render for SettingsView {
         let group_by_date = notes.group_notes_by_date;
         let auto_sort_ticked_items = notes.auto_sort_ticked_items;
         let dark_backgrounds = !notes.light_background_default;
+        let always_resume_quick_note = notes.always_resume_quick_note;
+        let quick_note_hot_corner_resume = notes.quick_note_hot_corner_resume;
         div()
             .track_focus(&self.focus)
             .key_context("Notes")
@@ -312,6 +334,27 @@ impl Render for SettingsView {
                             .on_change(cx.listener(|this, value: &bool, _, cx| {
                                 this.set_dark_backgrounds(*value, cx);
                             })),
+                    )
+                    .child(
+                        div()
+                            .v_flex()
+                            .gap_1()
+                            .child(
+                                Checkbox::new("settings-quick-note-resume")
+                                    .label("Always resume to last Quick Note")
+                                    .checked(always_resume_quick_note)
+                                    .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                        this.set_always_resume_quick_note(*value, cx);
+                                    })),
+                            )
+                            .child(
+                                Checkbox::new("settings-quick-note-hot-corner-resume")
+                                    .label("When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one.")
+                                    .checked(quick_note_hot_corner_resume)
+                                    .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                        this.set_quick_note_hot_corner_resume(*value, cx);
+                                    })),
+                            ),
                     )
                     .child(
                         div()

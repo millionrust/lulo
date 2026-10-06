@@ -1358,10 +1358,6 @@
       },
       {
         "kind": "control",
-        "label": "When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one."
-      },
-      {
-        "kind": "control",
         "label": "Enable the On My Mac account"
       },
       {
@@ -1383,6 +1379,10 @@
       {
         "kind": "control",
         "label": "Automatically move checklist items to the bottom of the list as they are ticked off."
+      },
+      {
+        "kind": "control",
+        "label": "When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one."
       },
       {
         "kind": "control",

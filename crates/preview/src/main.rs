@@ -425,6 +425,13 @@ pub(crate) fn open_window(paths: Vec<PathBuf>, cx: &mut App) {
         rmac_ui::fit_to_display_after_first_frame(window, cx);
         let view = cx.new(|cx| {
             rmac_ui::track_key_window(window, cx);
+            // Preview's windows are per-document, not one `app_id`-keyed
+            // saved geometry, so this calls `track_key_window` directly
+            // rather than `observe_window_state` — which left out the
+            // other half of what that does: giving the window a menu
+            // strip on Windows (ADR 0023). Without this, Alt opened
+            // nothing (found by the Windows CI job's launch check).
+            rmac_ui::register_menu_strip_window(window);
             PreviewView::new(paths, window, cx)
         });
         let focus = view.read(cx).focus.clone();

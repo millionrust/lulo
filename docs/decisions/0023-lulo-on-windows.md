@@ -387,6 +387,20 @@ delivery. These four apps still bind their own shortcuts as `cmd-…`; moving th
 Branch `op/win-phase2c` closed the four gaps the phase 2b section above left open for
 Preview, Clock, Weather and Terminal, plus real PDF rendering:
 
+- **Preview's missing menu strip.** CI on `integ` caught this before the shortcut work above
+  even landed: Preview's `open_window` opens its window with a bare `cx.open_window` (it has
+  one window per document, not Calculator/Clock/Weather's single `app_id`-keyed one), and
+  calls `rmac_ui::track_key_window` directly rather than the usual `rmac_ui::observe_window_
+  state`, which bundles that with giving the window a strip (`menu_strip::register_window`).
+  Preview's own call site never did the second half, so no window had a strip to open: Alt
+  did nothing, and the launch check's "choose About from the menu" step failed too, since
+  there was no menu to choose it from. A new `rmac_ui::register_menu_strip_window` exposes
+  just that half, and Preview's `open_window` now calls it next to `track_key_window`.
+  Clock, Weather and Terminal were not affected — they already go through `observe_window_
+  state` (Clock, Weather directly; Terminal through `rmac_ui::open_app_window`, which
+  `boot_app_instance` uses) — but this was still worth checking everywhere once Preview's
+  copy of the pattern turned out to have dropped half of it.
+
 - **Shortcuts.** Preview, Clock and Weather move their own `fn bind_keys`/inline
   `cx.bind_keys` calls onto `rmac_ui::bind_keys`, exactly as Calculator/Notes/Text Editor did
   in phase 2a: every `cmd-…` binding gets a Ctrl-primary twin on Windows, with no change to

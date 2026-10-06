@@ -554,16 +554,28 @@ pub(crate) fn window_options_for_app_with_bounds(
     }
 }
 
+/// Give `window` the in-window menu strip, when it is on (ADR 0023): the
+/// half of [`observe_window_state`] that is not window-geometry
+/// persistence, for an app whose windows do not share one `app_id`-keyed
+/// saved geometry (Preview, one per document) and so calls
+/// [`crate::track_key_window`] directly instead of `observe_window_state`.
+/// Every other app's windows get this through `observe_window_state`
+/// already; call it directly only when that is not also wanted.
+pub fn register_menu_strip_window(window: &Window) {
+    crate::menu_strip::register_window(window);
+}
+
 /// Observe one app window and durably save only its latest stable geometry.
 /// Resize bursts coalesce for a short quiet period, and persistence runs away
 /// from the render thread. Failure is deliberately non-fatal: geometry is a
 /// convenience and the next launch falls back to safe centered bounds.
 ///
 /// The window is also tracked as a key-window candidate for the menu bar
-/// ([`crate::track_key_window`]).
+/// ([`crate::track_key_window`]) and, when it is on, given the in-window
+/// menu strip ([`register_menu_strip_window`]).
 pub fn observe_window_state<V: 'static>(app_id: &str, window: &mut Window, cx: &Context<V>) {
     crate::menu_target::track_key_window(window, cx);
-    crate::menu_strip::register_window(window);
+    register_menu_strip_window(window);
     let Ok(store) = WindowStateStore::from_environment(app_id) else {
         return;
     };

@@ -1,0 +1,14 @@
+{
+  "title": "⌘S on a new rich document shows a File Format row, not Plain Text Encoding",
+  "app": "text-editor",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"wait": 2},
+    {"type": "Hello"},
+    {"key": "cmd-s", "settle": 1.2},
+    {"observe": "save-sheet", "facts": ["dialog"]},
+    {"key": "escape", "settle": 0.5}
+  ],
+  "note": "UIA-08: a new document is rich by default (TE-23), so its Save sheet offers File Format (Rich Text Document / Plain Text), not the Plain Text Encoding row a plain document shows."
+}

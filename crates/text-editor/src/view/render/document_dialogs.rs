@@ -236,7 +236,7 @@ impl EditorView {
         let mut x = 0.0_f32;
         let mut index = 0_u32;
         while x <= column_px + 1.0 {
-            let major = index % 5 == 0;
+            let major = index.is_multiple_of(5);
             ticks = ticks.child(
                 div()
                     .absolute()

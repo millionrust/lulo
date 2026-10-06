@@ -408,6 +408,7 @@ impl Render for SettingsView {
                         div()
                             .id(SharedString::from(format!("settings-tab-{}", tab.label())))
                             .role(Role::Tab)
+                            .aria_label(tab.label())
                             .aria_selected(selected)
                             .cursor_pointer()
                             .px_3()

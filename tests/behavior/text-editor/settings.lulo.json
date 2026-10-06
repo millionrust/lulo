@@ -4,10 +4,22 @@
   "platform": "Lulo local contract",
   "observations": {
     "settings": {
-      "windows": {"count": 2, "front": "Settings"}
+      "windows": {"count": 2, "front": "Settings"},
+      "tabs": {
+        "count": 2,
+        "titles": ["New Document", "Open and Save"],
+        "selected": ["New Document"],
+        "tab_bar_visible": true
+      }
     },
     "open-and-save": {
-      "windows": {"count": 2, "front": "Settings"}
+      "windows": {"count": 2, "front": "Settings"},
+      "tabs": {
+        "count": 2,
+        "titles": ["New Document", "Open and Save"],
+        "selected": ["Open and Save"],
+        "tab_bar_visible": true
+      }
     }
   }
 }

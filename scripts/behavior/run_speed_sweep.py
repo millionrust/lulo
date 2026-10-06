@@ -246,7 +246,9 @@ def settled_span_ms(events: list[tuple[str, int]]) -> Optional[float]:
 # --------------------------------------------------------------------------
 
 
-def outer(args: argparse.Namespace, argv: list[str]) -> int:
+def outer(args: argparse.Namespace, argv: list[str], script: Optional[Path] = None) -> int:
+    """Run `script` (this file by default) with `--inner` in the private
+    nested session, under the journey lock."""
     for tool in ("sway", "niri", "dbus-run-session"):
         if shutil.which(tool) is None:
             raise SystemExit(f"{tool} is required")
@@ -276,7 +278,7 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         (work / "logs").mkdir(exist_ok=True)
         command = [
             "dbus-run-session", f"--config-file={config}", "--", sys.executable,
-            str(Path(__file__).resolve()), "--inner", str(work), *argv,
+            str((script or Path(__file__)).resolve()), "--inner", str(work), *argv,
         ]
         with open(work / "logs" / "session.log", "w") as log:
             status = subprocess.call(command, env=env, close_fds=True, stderr=log)

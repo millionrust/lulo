@@ -1280,6 +1280,7 @@ impl WaylandWindowStatePtr {
                 let mut state = self.state.borrow_mut();
 
                 if let Some(mut configure) = state.in_progress_configure.take() {
+                    super::frame_trace::record("configure");
                     let got_unmaximized = state.maximized && !configure.maximized;
                     state.fullscreen = configure.fullscreen;
                     state.maximized = configure.maximized;
@@ -1672,6 +1673,7 @@ impl WaylandWindowStatePtr {
             {
                 return;
             }
+            super::frame_trace::record("resize");
             if let Some(size) = size {
                 state.bounds.size = size;
             }

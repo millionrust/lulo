@@ -1,5 +1,6 @@
 use crate::{
-    dialog::{Dialog, ANIMATION_DURATION},
+    ActiveTheme, ElementExt, Placement, StyledExt,
+    dialog::{ANIMATION_DURATION, Dialog},
     focus_trap::FocusTrapManager,
     input::{Copy, InputState},
     native_menu::FallbackMenuOverlay,
@@ -7,13 +8,13 @@ use crate::{
     sheet::Sheet,
     text::{SelectionScope, TextSelectionController, TextViewState, WindowTextSelection},
     tooltip::TooltipOverlay,
-    window_border, ActiveTheme, ElementExt, Placement, StyledExt,
+    window_border,
 };
 use gpui::{
-    actions, div, prelude::FluentBuilder as _, Anchor, AnyView, App, AppContext, Bounds,
-    ClipboardItem, Context, DefiniteLength, ElementId, Entity, EntityId, FocusHandle, Global,
-    Hitbox, InteractiveElement, IntoElement, KeyBinding, ParentElement as _, Pixels, Render,
-    StyleRefinement, Styled, WeakEntity, WeakFocusHandle, Window,
+    Anchor, AnyView, App, AppContext, Bounds, ClipboardItem, Context, DefiniteLength, ElementId,
+    Entity, EntityId, FocusHandle, Global, Hitbox, InteractiveElement, IntoElement, KeyBinding,
+    ParentElement as _, Pixels, Render, StyleRefinement, Styled, WeakEntity, WeakFocusHandle,
+    Window, actions, div, prelude::FluentBuilder as _,
 };
 use std::{any::TypeId, collections::HashMap, rc::Rc};
 

@@ -179,20 +179,25 @@ fn apply_component_theme(cx: &mut App) {
 
 /// Warn once if the declared UI font is absent. GPUI silently falls back to
 /// the system sans, so this keeps a missing `fonts-inter` package diagnosable
-/// without ever blocking startup.
+/// without ever blocking startup: listing font names waits for the system
+/// font scan, which now runs in the background (docs/decisions/0013), so the
+/// check runs off the UI thread too.
 fn warn_if_ui_font_missing(cx: &App) {
-    if cx
-        .text_system()
-        .all_font_names()
-        .iter()
-        .any(|name| name == crate::UI_FONT)
-    {
-        return;
-    }
-    eprintln!(
-        "rmac: UI font '{}' is not installed; using the system sans instead. Install the 'fonts-inter' package for the intended look.",
-        crate::UI_FONT
-    );
+    let text_system = cx.text_system().clone();
+    cx.background_spawn(async move {
+        if text_system
+            .all_font_names()
+            .iter()
+            .any(|name| name == crate::UI_FONT)
+        {
+            return;
+        }
+        eprintln!(
+            "rmac: UI font '{}' is not installed; using the system sans instead. Install the 'fonts-inter' package for the intended look.",
+            crate::UI_FONT
+        );
+    })
+    .detach();
 }
 
 /// Resolve the session's exported host scheme and any explicit rmac preference

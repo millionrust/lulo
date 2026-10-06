@@ -122,6 +122,13 @@ APPS: dict[str, tuple[list[str], str]] = {
 # spinner, a blinking caret) and so never looks "quiescent" -- their
 # icons_painted_ms is recorded as n/a rather than a misleading timeout.
 NO_QUIESCENCE = {"terminal"}
+# Shell surfaces the session starts at login (layer-shell, so never listed
+# in `niri msg windows`): cold start to first present and to settled, the
+# same way as the apps. app_id None skips the window listing.
+SHELL_SURFACES: dict[str, list[str]] = {
+    "desktop": ["rmac-wallpaper", "wallpaper"],
+    "dock": ["rmac-dock", "dock"],
+}
 
 # (argv, shortcut id for rmac-shortcut-dispatch) -- the panel registers
 # its own endpoint socket; the dispatcher's call is the "open" action a
@@ -421,7 +428,7 @@ class Run:
 
     # -- per-app cold launch ---------------------------------------------
 
-    def launch_once(self, name: str, binary: Path, app_id: str) -> dict[str, Any]:
+    def launch_once(self, name: str, binary: Path, app_id: Optional[str]) -> dict[str, Any]:
         start = time.monotonic()
         process, trace = self.traced([str(binary)], name)
         init_at = None
@@ -432,7 +439,7 @@ class Run:
                 break
             time.sleep(POLL_S)
         presented = wait_for_present(trace, 0, start + 20.0)
-        window = self.wait_for(lambda: self.window_by_app_id(app_id), timeout=10.0)
+        window = self.wait_for(lambda: self.window_by_app_id(app_id), timeout=10.0) if app_id else None
         listed_at = time.monotonic() if window else None
         icons_painted_ms = None
         if name not in NO_QUIESCENCE and presented is not None:
@@ -453,7 +460,7 @@ class Run:
             "icons_painted_ms": icons_painted_ms,
         }
 
-    def measure_app(self, name: str, binaries: list[str], app_id: str) -> dict[str, Any]:
+    def measure_app(self, name: str, binaries: list[str], app_id: Optional[str]) -> dict[str, Any]:
         binary = self.bin(*binaries)
         if binary is None:
             return {"error": f"none of {binaries} found under --bin-dir"}
@@ -679,6 +686,10 @@ class Run:
         def wanted(name: str) -> bool:
             return not only or name in only
 
+        # A desktop like a fresh account's: one folder and one document.
+        desktop = Path(self.env["HOME"]) / "Desktop"
+        (desktop / "Projects").mkdir(parents=True, exist_ok=True)
+        (desktop / "Notes.txt").write_text("Speed sweep fixture.\n")
         warm = self.bin("rmac-calculator")
         if warm is not None:
             process = self.spawn([str(warm)], "shader-cache-warmup")
@@ -702,6 +713,11 @@ class Run:
                 report["panels"][name] = self.measure_dispatch_panel(argv, shortcut_id)
             except StepFailed as error:
                 report["panels"][name] = {"error": str(error)}
+        for name, binaries in SHELL_SURFACES.items():
+            if not wanted(name):
+                continue
+            print(f"shell: {name}...", flush=True)
+            report.setdefault("shell", {})[name] = self.measure_app(name, binaries, None)
         if wanted("mission-control"):
             print("panel: mission-control...", flush=True)
             report["panels"]["mission-control"] = self.measure_mission_control()
@@ -758,6 +774,16 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"{icons_cell} | {icons_pass} |"
         )
     lines.append("")
+    if report.get("shell"):
+        lines.append("## Shell surfaces")
+        lines.append("")
+        lines.append("| Surface | First frame | Settled |")
+        lines.append("|---|---:|---:|")
+        for name, entry in report["shell"].items():
+            lines.append(
+                f"| {name} | {_fmt_ms(entry.get('first_frame_ms'))} | {_fmt_ms(entry.get('icons_painted_ms'))} |"
+            )
+        lines.append("")
     lines.append("## Panels")
     lines.append("")
     lines.append("| Panel | Open | Pass |")

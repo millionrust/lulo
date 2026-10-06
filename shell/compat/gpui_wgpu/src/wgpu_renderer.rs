@@ -81,6 +81,7 @@ pub struct WgpuSurfaceConfig {
     pub preferred_present_mode: Option<wgpu::PresentMode>,
 }
 
+#[derive(Clone)]
 struct WgpuPipelines {
     quads: wgpu::RenderPipeline,
     shadows: wgpu::RenderPipeline,
@@ -94,12 +95,25 @@ struct WgpuPipelines {
     surfaces: wgpu::RenderPipeline,
 }
 
+#[derive(Clone)]
 struct WgpuBindGroupLayouts {
     globals: wgpu::BindGroupLayout,
     instances: wgpu::BindGroupLayout,
     instances_with_texture: wgpu::BindGroupLayout,
     surfaces: wgpu::BindGroupLayout,
 }
+
+/// rmac: what a window's renderer needs that depends only on the device and
+/// the surface's format, not on the window. Upstream built all of it per
+/// window, so every panel open (Spotlight, Control Centre, …) compiled the
+/// full pipeline set again before its first frame.
+#[derive(Default)]
+pub(crate) struct PipelineCache {
+    layouts: Option<WgpuBindGroupLayouts>,
+    pipelines: Vec<(PipelineKey, WgpuPipelines)>,
+}
+
+type PipelineKey = (wgpu::TextureFormat, wgpu::CompositeAlphaMode, u32, bool);
 
 /// Shared GPU context reference, used to coordinate device recovery across multiple windows.
 pub type GpuContext = Rc<RefCell<Option<WgpuContext>>>;
@@ -220,8 +234,13 @@ impl WgpuRenderer {
                 // with hardware adapters first; only when that finds nothing
                 // usable fall back to upstream's full Vulkan+GL selection, so
                 // GL-only and software-only machines still get a renderer.
-                let hardware_vulkan =
-                    (|| -> anyhow::Result<(WgpuContext, wgpu::Surface<'static>)> {
+                let prewarmed = WgpuContext::take_prewarmed().and_then(|context| {
+                    let surface = create_surface(&context.instance, raw_window_handle).ok()?;
+                    context.check_compatible_with_surface(&surface).ok()?;
+                    Some((context, surface))
+                });
+                let hardware_vulkan = prewarmed.map(Ok).unwrap_or_else(
+                    || -> anyhow::Result<(WgpuContext, wgpu::Surface<'static>)> {
                         let instance = WgpuContext::vulkan_instance(Box::new(window.clone()));
                         let surface = create_surface(&instance, raw_window_handle)?;
                         let context = WgpuContext::new_rejecting_software(
@@ -230,7 +249,9 @@ impl WgpuRenderer {
                             compositor_gpu,
                         )?;
                         Ok((context, surface))
-                    })();
+                    },
+                );
+                crate::vulkan_drivers::release_vulkan_driver_restriction();
                 let (context, surface) = match hardware_vulkan {
                     Ok(found) => found,
                     Err(error) => {
@@ -371,10 +392,8 @@ impl WgpuRenderer {
         let dual_source_blending = context.supports_dual_source_blending();
 
         let rendering_params = RenderingParameters::new(&context.adapter, surface_format);
-        let bind_group_layouts = Self::create_bind_group_layouts(&device);
-        let pipelines = Self::create_pipelines(
-            &device,
-            &bind_group_layouts,
+        let (bind_group_layouts, pipelines) = Self::shared_pipelines(
+            context,
             surface_format,
             alpha_mode,
             rendering_params.path_sample_count,
@@ -509,6 +528,42 @@ impl WgpuRenderer {
             surface_configured: true,
             needs_redraw: false,
         })
+    }
+
+    /// The bind group layouts and pipelines for this surface configuration,
+    /// built once per device and configuration and then reused by every
+    /// window (rmac, docs/decisions/0013).
+    fn shared_pipelines(
+        context: &WgpuContext,
+        surface_format: wgpu::TextureFormat,
+        alpha_mode: wgpu::CompositeAlphaMode,
+        path_sample_count: u32,
+        dual_source_blending: bool,
+    ) -> (WgpuBindGroupLayouts, WgpuPipelines) {
+        let mut cache = context.pipeline_cache.borrow_mut();
+        let layouts = cache
+            .layouts
+            .get_or_insert_with(|| Self::create_bind_group_layouts(&context.device))
+            .clone();
+        let key = (
+            surface_format,
+            alpha_mode,
+            path_sample_count,
+            dual_source_blending,
+        );
+        if let Some((_, pipelines)) = cache.pipelines.iter().find(|(cached, _)| *cached == key) {
+            return (layouts, pipelines.clone());
+        }
+        let pipelines = Self::create_pipelines(
+            &context.device,
+            &layouts,
+            surface_format,
+            alpha_mode,
+            path_sample_count,
+            dual_source_blending,
+        );
+        cache.pipelines.push((key, pipelines.clone()));
+        (layouts, pipelines)
     }
 
     fn create_bind_group_layouts(device: &wgpu::Device) -> WgpuBindGroupLayouts {

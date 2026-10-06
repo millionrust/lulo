@@ -354,6 +354,26 @@ async fn watch_settings(
     }
 }
 
+/// The catalog entries of the Dock's pinned apps, or `None` when there are
+/// none to show early (no settings yet, nothing pinned, nothing found).
+fn pinned_entries() -> Option<Vec<rmac_apps::Application>> {
+    let store = rmac_shell_settings::ShellSettingsStore::from_environment().ok()?;
+    let pinned: Vec<String> = store
+        .load()
+        .ok()?
+        .settings
+        .pinned_apps
+        .into_iter()
+        .map(|app| app.0)
+        .collect();
+    if pinned.is_empty() {
+        return None;
+    }
+    rmac_apps::discover_entries(&pinned)
+        .ok()
+        .filter(|entries| !entries.is_empty())
+}
+
 async fn watch_catalog(
     sender: Sender<Result<Vec<rmac_apps::Application>, String>>,
 ) -> Result<(), Error> {
@@ -382,6 +402,15 @@ async fn watch_catalog(
         };
         let _watcher = watcher;
         let mut retry = true;
+        // The whole catalog takes ~250 ms to parse and resolve icons for on
+        // the reference laptop, and the Dock shows nothing until it has one.
+        // Publish just the pinned apps first (a few entries), then the full
+        // catalog, which reconciles anything running or recent.
+        if let Some(pinned) = blocking::unblock(pinned_entries).await {
+            if sender.send(Ok(pinned)).await.is_err() {
+                return Ok(());
+            }
+        }
         loop {
             if retry {
                 let result = blocking::unblock(rmac_apps::discover).await;

@@ -523,6 +523,14 @@ fn user_hidden_entry_suppresses_lower_priority_system_entry() {
 
     assert_eq!(applications.len(), 1);
     assert_eq!(applications[0].name, "Other");
+
+    // Only the asked-for entries are parsed, with the same precedence: the
+    // user's hidden `demo` still hides the system one.
+    let only = discover_linux_matching(&environment, |id| id == "demo.desktop").unwrap();
+    assert!(only.is_empty());
+    let only = discover_linux_matching(&environment, |id| id == "other.desktop").unwrap();
+    assert_eq!(only.len(), 1);
+    assert_eq!(only[0].name, "Other");
     std::fs::remove_dir_all(root).unwrap();
 }
 

@@ -139,6 +139,17 @@ impl Environment {
 
 #[cfg(any(not(target_os = "macos"), test))]
 pub(super) fn discover_linux(environment: &Environment) -> io::Result<Vec<Application>> {
+    discover_linux_matching(environment, |_| true)
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+/// [`discover_linux`], parsing only the entries whose ID `wanted` accepts.
+/// Precedence is unchanged: the first directory holding an ID owns it, even
+/// when that entry turns out hidden.
+pub(super) fn discover_linux_matching(
+    environment: &Environment,
+    wanted: impl Fn(&str) -> bool,
+) -> io::Result<Vec<Application>> {
     let mut seen = HashSet::new();
     let mut applications = Vec::new();
     for directory in environment.application_dirs() {
@@ -146,7 +157,7 @@ pub(super) fn discover_linux(environment: &Environment) -> io::Result<Vec<Applic
         collect_desktop_files(&directory, &directory, &mut files);
         files.sort();
         for (id, path) in files {
-            if !seen.insert(id.clone()) {
+            if !seen.insert(id.clone()) || !wanted(&id) {
                 continue;
             }
             let Ok(contents) = std::fs::read_to_string(&path) else {

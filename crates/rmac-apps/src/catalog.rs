@@ -53,6 +53,33 @@ pub fn discover() -> io::Result<Vec<Application>> {
     }
 }
 
+/// Only the named entries of [`discover`]'s catalog (exact desktop IDs, or
+/// the ID without its `.desktop` suffix), with the same precedence and
+/// filtering, without parsing or resolving icons for any other entry. For a
+/// surface that must show a few known applications before the whole catalog
+/// is ready, such as the Dock's pinned apps at login.
+pub fn discover_entries(ids: &[String]) -> io::Result<Vec<Application>> {
+    let wanted = |id: &str| {
+        ids.iter().any(|wanted| {
+            wanted == id
+                || id
+                    .strip_suffix(".desktop")
+                    .is_some_and(|stem| stem == wanted)
+        })
+    };
+    #[cfg(target_os = "macos")]
+    {
+        Ok(discover_macos()?
+            .into_iter()
+            .filter(|application| wanted(&application.id))
+            .collect())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        discover_linux_matching(&Environment::current(), wanted)
+    }
+}
+
 /// Resolve the shared-mime-info type, current default, and visible compatible
 /// applications for one local file.
 ///

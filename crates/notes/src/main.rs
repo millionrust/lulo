@@ -259,6 +259,8 @@ struct NotesView {
     tags: Entity<InputState>,
     body: Entity<InputState>,
     focus: FocusHandle,
+    /// The note list's scroll position, which picks the rows it builds.
+    note_list_scroll: gpui::ScrollHandle,
     applying_snapshot: bool,
     next_request_id: u64,
     next_edit_generation: u64,
@@ -422,6 +424,7 @@ impl NotesView {
             tags: inputs.tags,
             body: inputs.body,
             focus: inputs.focus,
+            note_list_scroll: gpui::ScrollHandle::new(),
             applying_snapshot: false,
             next_request_id: 1,
             next_edit_generation: 1,

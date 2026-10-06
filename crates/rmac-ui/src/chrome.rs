@@ -951,8 +951,8 @@ mod native {
             // Windows' own Zoom is Maximise; a second double-click on the
             // caption restores the window.
             WindowAction::Fill | WindowAction::Zoom => window.zoom_window(),
-            WindowAction::Tile(_) => {
-                eprintln!("tiling a window is not available on Windows yet");
+            WindowAction::Tile(region) => {
+                eprintln!("tiling a window to {region:?} is not available on Windows yet");
             }
         });
     }

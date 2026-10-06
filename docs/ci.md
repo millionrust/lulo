@@ -25,6 +25,7 @@ detail), `docs/journey-suite.md` (the package-scoped fixture runner).
 | `linux` | Formatting, the shared-control/gpui_component/no-mac-captures/design-token boundary scripts, wording, Clippy (`-D warnings`), `cargo test --workspace --all-features`, and the full `scripts/test_*.py` suite | See below |
 | `linux-2604` | `linux`'s formatting/Clippy/tests/Python-suite steps (not its repo-specific boundary scripts) on `ubuntu-26.04` instead of `ubuntu-24.04`. **Non-blocking** (`continue-on-error: true`) — see [Ubuntu 26.04](#ubuntu-2604) | Same `cargo`/`python3` commands as `linux`, below |
 | `macos` | Clippy, tests, and the Python suite on `macos-15` | Same commands as `linux`, minus the Linux-only boundary scripts |
+| `windows` | ADR 0023 phase 1 on `windows-latest`: Clippy (`-D warnings`, `--all-targets`) and unit tests for Calculator, Notes, Text Editor, `rmac-editor` and the `rmac-notes-*` crates, a debug build of the three apps, and `scripts/windows/launch_smoke.py`, which starts each app with a private profile and checks it opens a window (screenshots are uploaded). **Non-blocking** (`continue-on-error: true`) — see [Windows](#windows) | Windows only; see [Windows](#windows) |
 | `upstream-gpui-linux` | The separately locked `shell/` workspace: formatting, its own `cargo deny`, `cargo test --lib`, Clippy on the `wayland` feature, and a nested-Wayland smoke check | See `shell/` steps below |
 
 ## `runtime.yml` — every push and pull request
@@ -276,3 +277,27 @@ available locally), so `linux-2604` runs the same checks as `linux` on
 `ubuntu-26.04` but non-blocking. Once it has run clean for a while, it
 should replace `linux` outright and `upstream-gpui-linux` should move the
 same way.
+
+## Windows
+
+ADR 0023 plans Lulo on Windows. Phase 1 builds the apps that need no
+desktop services: Calculator, Notes and Text Editor, with the shared crates
+they use. Their Linux-only dependencies (niri IPC, the menu bar and Dock
+crates, PipeWire, D-Bus Focus state, xattrs) are `cfg(unix)` or
+`cfg(target_os = "linux")`; `deny.toml` lists `x86_64-pc-windows-msvc` so
+`cargo deny` covers the Windows dependency graph.
+
+The `windows` job saves one Cargo cache per lockfile even when a step fails,
+and runs every later step after a Clippy failure, so one run reports all
+Windows breakage. It stays non-blocking until it has run clean for a while.
+To reproduce it on a Windows PC with the Windows SDK installed:
+
+```sh
+cargo clippy --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
+  -p rmac-editor -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime \
+  --all-targets -- -D warnings
+cargo test --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
+  -p rmac-editor -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime
+cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor --bins
+python scripts/windows/launch_smoke.py target/debug rmac-calculator rmac-notes rmac-text-editor
+```

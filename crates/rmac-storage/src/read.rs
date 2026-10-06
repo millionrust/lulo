@@ -162,7 +162,7 @@ where
             std::fs::set_permissions(&temporary, permissions)?;
         }
         std::fs::rename(&temporary, path)?;
-        File::open(parent)?.sync_all()?;
+        crate::write::sync_directory(parent)?;
         let readback = fingerprint_bounded_regular_no_follow(path, output.byte_len)?;
         if readback != output {
             return Err(io::Error::new(

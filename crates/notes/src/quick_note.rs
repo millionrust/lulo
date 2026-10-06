@@ -36,7 +36,7 @@ pub(crate) fn show(main: Entity<NotesView>, cx: &mut gpui::App) {
     let resume_id = {
         let notes = main.read(cx);
         (notes.always_resume_quick_note || notes.quick_note_hot_corner_resume)
-            .then(|| notes.quick_note_id)
+            .then_some(notes.quick_note_id)
             .flatten()
     };
     let options = rmac_ui::window_options_for_app(rmac_ui::app_id::NOTES, WIDTH, HEIGHT, cx);

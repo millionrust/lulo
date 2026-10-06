@@ -157,7 +157,7 @@ fn cache() -> &'static Mutex<IconCache> {
 /// this never costs what the real icons did) and reused for every cache
 /// miss's single placeholder frame, instead of either a visible flash or
 /// falling back to GPUI's slow default decode of the real asset.
-fn blank<T: 'static>(cx: &mut Context<T>) -> Arc<RenderImage> {
+fn blank<T: 'static>(cx: &Context<T>) -> Arc<RenderImage> {
     static BLANK: OnceLock<Arc<RenderImage>> = OnceLock::new();
     BLANK
         .get_or_init(|| {
@@ -201,7 +201,7 @@ fn native_width(bytes: &[u8]) -> f32 {
 /// — see `desktop.rs`'s `warm_desktop_icons` — and never the UI thread);
 /// the caller gets a blank placeholder for that one frame, and the entity
 /// `cx` belongs to is notified to repaint once the bitmap lands.
-pub fn svg_icon<T: 'static>(source: impl Into<IconSource>, size: f32, cx: &mut Context<T>) -> Img {
+pub fn svg_icon<T: 'static>(source: impl Into<IconSource>, size: f32, cx: &Context<T>) -> Img {
     let source = source.into();
     if !source.is_svg() {
         return source.fallback_img();
@@ -214,7 +214,7 @@ pub fn svg_icon<T: 'static>(source: impl Into<IconSource>, size: f32, cx: &mut C
     img(blank(cx))
 }
 
-fn spawn_decode<T: 'static>(source: IconSource, key: CacheKey, cx: &mut Context<T>) {
+fn spawn_decode<T: 'static>(source: IconSource, key: CacheKey, cx: &Context<T>) {
     {
         let mut guard = cache().lock().unwrap();
         if guard.entries.contains_key(&key) || !guard.pending.insert(key.clone()) {

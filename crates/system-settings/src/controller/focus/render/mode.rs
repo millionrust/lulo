@@ -105,6 +105,7 @@ impl Settings {
                     identity.and_then(|identity| identity.icon.as_ref()),
                     mode.allowed_apps().contains(&app_id),
                     busy,
+                    cx,
                 ))
             })
             .collect::<Vec<_>>();

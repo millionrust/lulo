@@ -153,9 +153,6 @@ impl SettingsView {
         cx.notify();
     }
 
-    /// NOT-SETTINGS-003: when invoking Quick Note from a hot corner or
-    /// shortcut, resume the last Quick Note instead of creating a new one.
-
     /// Notes ▸ Settings… ▸ Use dark backgrounds for note content: checked
     /// means dark, so `light_background_default` (true = light) is the
     /// checkbox's own inverse.

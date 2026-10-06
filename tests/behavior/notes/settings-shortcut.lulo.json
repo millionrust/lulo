@@ -23,6 +23,7 @@
           "Group notes by date": true,
           "Automatically sort ticked items": false,
           "Use dark backgrounds for note content": true,
+          "Always resume to last Quick Note": false,
           "Enable the On My Mac account": true
         }
       }
@@ -33,6 +34,7 @@
           "Group notes by date": false,
           "Automatically sort ticked items": false,
           "Use dark backgrounds for note content": true,
+          "Always resume to last Quick Note": false,
           "Enable the On My Mac account": true
         }
       }
@@ -43,6 +45,7 @@
           "Group notes by date": true,
           "Automatically sort ticked items": false,
           "Use dark backgrounds for note content": true,
+          "Always resume to last Quick Note": false,
           "Enable the On My Mac account": true
         }
       }

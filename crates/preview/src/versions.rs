@@ -218,7 +218,7 @@ fn list_under(root: &Path, document: &Path) -> Vec<VersionInfo> {
             size: version.size,
         })
         .collect();
-    versions.sort_by(|a, b| b.saved_at.cmp(&a.saved_at));
+    versions.sort_by_key(|version| std::cmp::Reverse(version.saved_at));
     versions
 }
 

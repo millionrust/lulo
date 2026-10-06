@@ -156,7 +156,7 @@ pub fn flood_fill(pixels: &RgbaImage, seed: (u32, u32), tolerance: u32) -> Mask 
     let mut stack = vec![seed];
     mask.set(seed.0, seed.1, true);
     while let Some((x, y)) = stack.pop() {
-        let mut visit = |nx: i64, ny: i64, mask: &mut Mask, stack: &mut Vec<(u32, u32)>| {
+        let visit = |nx: i64, ny: i64, mask: &mut Mask, stack: &mut Vec<(u32, u32)>| {
             if nx < 0 || ny < 0 || nx >= i64::from(width) || ny >= i64::from(height) {
                 return;
             }

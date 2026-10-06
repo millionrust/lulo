@@ -869,7 +869,7 @@ impl MonitorView {
                 view.sample_in_progress = false;
                 cx.notify();
             });
-            let _ = cx.update(|cx| crate::sample_window::show(report, cx));
+            cx.update(|cx| crate::sample_window::show(report, cx));
         })
         .detach();
     }

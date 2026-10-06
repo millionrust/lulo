@@ -25,7 +25,7 @@ use wayland_protocols_wlr::screencopy::v1::client::{
     zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1,
 };
 
-use crate::capture::Picture;
+use crate::capture::{Layout, Picture};
 
 /// How long a caller waits for one capture before using `grim` instead.
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -218,7 +218,7 @@ impl Capturer {
         // Safety: the compositor finished writing (`ready`), and the mapping
         // stays valid while `buffer` lives.
         let pixels = unsafe { std::slice::from_raw_parts(buffer.memory, buffer.length) };
-        Ok(to_rgb(pixels, key, self.state.frame.y_invert))
+        Ok(to_picture(pixels, key, self.state.frame.y_invert))
     }
 
     fn allocate(
@@ -275,29 +275,32 @@ impl Capturer {
     }
 }
 
-/// Convert a 32-bit little-endian shm picture to `Picture`'s RGB rows,
-/// flipping it when the compositor wrote it bottom row first.
-fn to_rgb(pixels: &[u8], key: (wl_shm::Format, u32, u32, u32), y_invert: bool) -> Picture {
+/// Copy a 32-bit little-endian shm picture out of the shared buffer as is,
+/// top row first (flipped when the compositor wrote it bottom row first).
+fn to_picture(pixels: &[u8], key: (wl_shm::Format, u32, u32, u32), y_invert: bool) -> Picture {
     let (format, width, height, stride) = key;
-    // Memory order of the 32-bit little-endian formats.
-    let bgr = matches!(format, wl_shm::Format::Xrgb8888 | wl_shm::Format::Argb8888);
-    let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
-    for row in 0..height as usize {
-        let source = if y_invert {
-            height as usize - 1 - row
-        } else {
-            row
-        };
-        let start = source * stride as usize;
-        for pixel in pixels[start..start + width as usize * 4].chunks_exact(4) {
-            if bgr {
-                rgb.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
-            } else {
-                rgb.extend_from_slice(&[pixel[0], pixel[1], pixel[2]]);
-            }
+    let layout = if matches!(format, wl_shm::Format::Xrgb8888 | wl_shm::Format::Argb8888) {
+        Layout::Bgrx
+    } else {
+        Layout::Rgbx
+    };
+    let stride = stride as usize;
+    let data = if y_invert {
+        let mut data = Vec::with_capacity(stride * height as usize);
+        for row in (0..height as usize).rev() {
+            data.extend_from_slice(&pixels[row * stride..(row + 1) * stride]);
         }
+        data
+    } else {
+        pixels[..stride * height as usize].to_vec()
+    };
+    Picture {
+        width,
+        height,
+        stride,
+        layout,
+        data,
     }
-    Picture { width, height, rgb }
 }
 
 impl Dispatch<wl_registry::WlRegistry, ()> for State {
@@ -399,28 +402,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn converts_xrgb_rows_and_honours_y_invert() {
+    fn keeps_screencopy_pixels_and_honours_y_invert() {
         // 2x2, stride 12 (one pad pixel per row), XRGB8888 little-endian:
-        // memory order B, G, R, X.
+        // memory order B, G, R, X. Rows are (1,2,3) then (4,5,6) as RGB.
         let mut pixels = Vec::new();
         for row in [[1u8, 2, 3], [4, 5, 6]] {
             for _ in 0..2 {
-                pixels.extend_from_slice(&[row[2], row[1], row[0], 0xFF]);
+                pixels.extend_from_slice(&[row[2], row[1], row[0], 0]);
             }
-            pixels.extend_from_slice(&[0, 0, 0, 0]);
+            pixels.extend_from_slice(&[9, 9, 9, 9]);
         }
         let key = (wl_shm::Format::Xrgb8888, 2, 2, 12);
-        let upright = to_rgb(&pixels, key, false);
-        assert_eq!((upright.width, upright.height), (2, 2));
-        assert_eq!(upright.rgb, [1, 2, 3, 1, 2, 3, 4, 5, 6, 4, 5, 6]);
-        let flipped = to_rgb(&pixels, key, true);
-        assert_eq!(flipped.rgb, [4, 5, 6, 4, 5, 6, 1, 2, 3, 1, 2, 3]);
+        let full = crate::model::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 2.0,
+            height: 2.0,
+        };
+        let upright = to_picture(&pixels, key, false);
+        let (_, _, bgra) = crate::capture::crop_bgra(&upright, 2.0, full).unwrap();
+        assert_eq!(
+            bgra,
+            [3, 2, 1, 255, 3, 2, 1, 255, 6, 5, 4, 255, 6, 5, 4, 255]
+        );
+        let flipped = to_picture(&pixels, key, true);
+        let (_, _, bgra) = crate::capture::crop_bgra(&flipped, 2.0, full).unwrap();
+        assert_eq!(
+            bgra,
+            [6, 5, 4, 255, 6, 5, 4, 255, 3, 2, 1, 255, 3, 2, 1, 255]
+        );
     }
 
     #[test]
-    fn converts_xbgr_without_swapping() {
-        let pixels = [10u8, 20, 30, 0];
-        let picture = to_rgb(&pixels, (wl_shm::Format::Xbgr8888, 1, 1, 4), false);
-        assert_eq!(picture.rgb, [10, 20, 30]);
+    fn reads_xbgr_in_rgb_order() {
+        let picture = to_picture(
+            &[10u8, 20, 30, 0],
+            (wl_shm::Format::Xbgr8888, 1, 1, 4),
+            false,
+        );
+        let (_, _, bgra) = crate::capture::thumbnail_bgra(&picture, 1).unwrap();
+        assert_eq!(bgra, [30, 20, 10, 255]);
     }
 }

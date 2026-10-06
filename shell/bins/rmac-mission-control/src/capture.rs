@@ -12,11 +12,47 @@ use std::process::{Command, Stdio};
 
 use crate::model::Rect;
 
-/// An RGB picture of one output.
+/// How a picture's pixels are laid out in memory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layout {
+    /// 3 bytes per pixel, R G B (grim's PPM).
+    Rgb,
+    /// 4 bytes per pixel, B G R X (screencopy's XRGB/ARGB8888).
+    Bgrx,
+    /// 4 bytes per pixel, R G B X (screencopy's XBGR/ABGR8888).
+    Rgbx,
+}
+
+/// A picture of one output, top row first, in whichever layout its source
+/// produced (converting the whole output up front cost more than the
+/// window crops and the thumbnail that read it).
 pub struct Picture {
     pub width: u32,
     pub height: u32,
-    pub rgb: Vec<u8>,
+    /// Bytes per row.
+    pub stride: usize,
+    pub layout: Layout,
+    pub data: Vec<u8>,
+}
+
+impl Picture {
+    fn bytes_per_pixel(&self) -> usize {
+        match self.layout {
+            Layout::Rgb => 3,
+            Layout::Bgrx | Layout::Rgbx => 4,
+        }
+    }
+
+    /// The pixel at (`x`, `y`) as opaque BGRA.
+    #[inline]
+    fn bgra(&self, x: usize, y: usize) -> [u8; 4] {
+        let at = y * self.stride + x * self.bytes_per_pixel();
+        let p = &self.data[at..at + 3];
+        match self.layout {
+            Layout::Bgrx => [p[0], p[1], p[2], 0xFF],
+            Layout::Rgb | Layout::Rgbx => [p[2], p[1], p[0], 0xFF],
+        }
+    }
 }
 
 /// The output through the service's open wlr-screencopy connection
@@ -85,8 +121,14 @@ pub fn parse_ppm(bytes: &[u8]) -> Option<Picture> {
     let length = (width as usize)
         .checked_mul(height as usize)?
         .checked_mul(3)?;
-    let rgb = bytes.get(start..start.checked_add(length)?)?.to_vec();
-    Some(Picture { width, height, rgb })
+    let data = bytes.get(start..start.checked_add(length)?)?.to_vec();
+    Some(Picture {
+        width,
+        height,
+        stride: width as usize * 3,
+        layout: Layout::Rgb,
+        data,
+    })
 }
 
 /// Cut `rect` (output-local logical points) out of `picture`, whose pixels
@@ -105,10 +147,19 @@ pub fn crop_bgra(picture: &Picture, logical_width: f32, rect: Rect) -> Option<(u
     }
     let (width, height) = (right - left, bottom - top);
     let mut bgra = Vec::with_capacity(width as usize * height as usize * 4);
-    for y in top..bottom {
-        let row = (y as usize * picture.width as usize + left as usize) * 3;
-        for pixel in picture.rgb[row..row + width as usize * 3].chunks_exact(3) {
-            bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], 0xFF]);
+    for y in top as usize..bottom as usize {
+        if picture.layout == Layout::Bgrx {
+            // Already GPUI's layout: copy the row, make it opaque.
+            let row = y * picture.stride + left as usize * 4;
+            let start = bgra.len();
+            bgra.extend_from_slice(&picture.data[row..row + width as usize * 4]);
+            for alpha in bgra[start..].iter_mut().skip(3).step_by(4) {
+                *alpha = 0xFF;
+            }
+        } else {
+            for x in left as usize..right as usize {
+                bgra.extend_from_slice(&picture.bgra(x, y));
+            }
         }
     }
     Some((width, height, bgra))
@@ -128,9 +179,7 @@ pub fn thumbnail_bgra(picture: &Picture, target_width: u32) -> Option<(u32, u32,
         let source_y = (u64::from(y) * u64::from(picture.height) / u64::from(height)) as usize;
         for x in 0..width {
             let source_x = (u64::from(x) * u64::from(picture.width) / u64::from(width)) as usize;
-            let at = (source_y * picture.width as usize + source_x) * 3;
-            let pixel = &picture.rgb[at..at + 3];
-            bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], 0xFF]);
+            bgra.extend_from_slice(&picture.bgra(source_x, source_y));
         }
     }
     Some((width, height, bgra))
@@ -190,7 +239,7 @@ mod tests {
     fn reads_grim_ppm_and_rejects_anything_else() {
         let picture = parse_ppm(&ppm(4, 2)).unwrap();
         assert_eq!(
-            (picture.width, picture.height, picture.rgb.len()),
+            (picture.width, picture.height, picture.data.len()),
             (4, 2, 24)
         );
         assert!(parse_ppm(b"P3\n1 1\n255\n0 0 0").is_none());

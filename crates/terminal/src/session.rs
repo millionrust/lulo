@@ -1696,10 +1696,13 @@ mod tests {
     /// a real `cd` (a confirmed OSC 7 report) still outranks that default,
     /// exactly like the `terminal/title-follows-directory` behaviour
     /// scenario expects.
+    // `file:///tmp`-style OSC 7 reports only resolve on Unix; Windows needs
+    // a drive-letter URI (see `working_directory`'s tests).
+    #[cfg(unix)]
     #[test]
     fn tab_title_prefers_a_confirmed_directory_over_the_default_identity() {
         let size = TermSize { cols: 20, lines: 5 };
-        let directory = SessionDirectory::from_local(std::path::Path::new("/home/jake/repo"));
+        let directory = SessionDirectory::from_local(std::path::Path::new("/home/user/repo"));
         let session = Session {
             id: 1,
             term: Arc::new(Mutex::new(Term::new(

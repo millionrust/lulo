@@ -11,13 +11,14 @@ path = "src/main.rs"
 
 [features]
 default = []
-wayland = ["gpui_platform/wayland", "rmac-shell-layer/wayland"]
+wayland = ["dep:gpui_linux", "gpui_platform/wayland", "rmac-shell-layer/wayland"]
 x11 = ["gpui_platform/x11"]
 
 [dependencies]
 async-channel.workspace = true
 blocking.workspace = true
 gpui.workspace = true
+gpui_linux = { workspace = true, optional = true }
 gpui_platform.workspace = true
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true

@@ -36,6 +36,7 @@ pub(crate) use wayland::*;
 pub use wayland::{
     begin_external_file_drag, external_file_drag_active, file_drop_should_copy,
     request_layer_window_configure, set_layer_window_mapped, stage_external_file_drag,
+    trace_mark,
 };
 #[cfg(feature = "x11")]
 pub(crate) use x11::*;

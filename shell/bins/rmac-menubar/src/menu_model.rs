@@ -224,6 +224,7 @@ impl MenuScroll {
     }
 
     /// Panel-relative y of a row `content_top` down the rows.
+    #[cfg(test)]
     pub fn row_y(&self, content_top: f32) -> f32 {
         content_top - self.offset
     }

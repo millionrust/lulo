@@ -138,14 +138,20 @@ pub(crate) fn install(app_id: &'static str, cx: &mut App) {
             return;
         };
         trace(|| format!("Alt: strip found: {}", strip_for(window, cx).is_some()));
-        with_strip(window, cx, |strip, window, cx| strip.toggle(window, cx));
+        // The window is in the middle of dispatching this key, so it can
+        // only be updated once the dispatch is over.
+        cx.defer(move |cx| with_strip(window, cx, |strip, window, cx| strip.toggle(window, cx)));
     });
-    cx.on_action(
-        |command: &RunMenuStripCommand, cx| match cx.build_action(&command.name, None) {
+    cx.on_action(|command: &RunMenuStripCommand, cx| {
+        // Sent once the window has finished dispatching the choice, the
+        // way a menu-bar activation arrives.
+        let name = command.name.clone();
+        trace(|| format!("run {name}"));
+        cx.defer(move |cx| match cx.build_action(&name, None) {
             Ok(action) => crate::menu_target::dispatch_menu_action(action, cx),
             Err(error) => eprintln!("ignored unavailable menu command: {error}"),
-        },
-    );
+        });
+    });
     // Alt+letter opens the menu with that initial, as in Windows apps,
     // unless the app binds that chord itself.
     cx.observe_keystrokes(|event, window, cx| {
@@ -204,9 +210,14 @@ fn with_strip(
     let Some(strip) = strip_for(window, cx) else {
         return;
     };
-    let _ = window.update(cx, |_, window, cx| {
-        strip.update(cx, |strip, cx| f(strip, window, cx));
-    });
+    if window
+        .update(cx, |_, window, cx| {
+            strip.update(cx, |strip, cx| f(strip, window, cx));
+        })
+        .is_err()
+    {
+        trace(|| "the window is gone".into());
+    }
 }
 
 /// The menus as the strip shows them: the app menu under the app's name

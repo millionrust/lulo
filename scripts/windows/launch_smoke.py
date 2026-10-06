@@ -9,9 +9,11 @@ never reads or writes a real profile. For each app the check:
 2. taps Alt, which opens the first menu of the window's menu strip
    (ADR 0023 phase 2), and checks that the pixels below the strip changed
    (a menu panel appeared), then closes it with Esc;
-3. presses Ctrl+N, the Windows spelling of ⌘N, and checks the app answers:
+3. chooses App ▸ About with Alt, Down and Return and checks the About
+   panel opens (a menu command reaches the app);
+4. presses Ctrl+N, the Windows spelling of ⌘N, and checks the app answers:
    Text Editor opens a second window, the others stay running;
-4. for Text Editor, launches the app a second time with no arguments and
+5. for Text Editor, launches the app a second time with no arguments and
    checks that launch hands off to the running process (it exits and a
    window opens in the first one) instead of starting a second app.
 
@@ -44,6 +46,8 @@ MENU_PROBE = (12, STRIP_HEIGHT + 8, 180, STRIP_HEIGHT + 110)
 VK_MENU = 0x12
 VK_CONTROL = 0x11
 VK_ESCAPE = 0x1B
+VK_DOWN = 0x28
+VK_RETURN = 0x0D
 KEYEVENTF_KEYUP = 0x0002
 
 
@@ -188,6 +192,29 @@ def check_menu_strip(app: str, hwnd: int, screenshots: Path | None) -> str | Non
     return None
 
 
+def check_menu_command(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
+    """Choose App ▸ About from the keyboard: Alt, Down, Return.
+
+    The About panel is a window of its own, so the command reached the app
+    when the process gains a window. Ctrl+W closes it again."""
+    windows_before = len(visible_windows(process.pid))
+    tap(VK_MENU)
+    time.sleep(KEY_SETTLE_SECONDS)
+    tap(VK_DOWN)
+    time.sleep(0.3)
+    tap(VK_RETURN)
+    time.sleep(KEY_SETTLE_SECONDS * 2)
+    windows_after = len(visible_windows(process.pid))
+    print(f"{app}: Alt, Down, Return: {windows_before} -> {windows_after} windows")
+    if windows_after > windows_before:
+        chord(VK_CONTROL, "w")
+        time.sleep(KEY_SETTLE_SECONDS)
+    bring_forward(hwnd)
+    if windows_after <= windows_before:
+        return "choosing About from the menu strip opened no About panel"
+    return None
+
+
 def check_new_shortcut(
     app: str, process: subprocess.Popen, screenshots: Path | None
 ) -> str | None:
@@ -278,6 +305,7 @@ def launch(binary: Path, profile: Path, screenshots: Path | None) -> str | None:
             error
             for error in (
                 check_menu_strip(app, hwnd, screenshots),
+                check_menu_command(app, process, hwnd),
                 check_new_shortcut(app, process, screenshots),
             )
             if error

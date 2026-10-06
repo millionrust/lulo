@@ -13,7 +13,8 @@ pub mod layer_shell;
 pub(crate) use client::*;
 pub use client::{
     begin_external_file_drag, external_file_drag_active, file_drop_should_copy,
-    request_layer_window_configure, set_layer_window_mapped, stage_external_file_drag,
+    request_layer_window_configure, reserve_window_drawable, set_layer_window_mapped,
+    stage_external_file_drag,
 };
 
 /// rmac: add an app-defined row to this process's `RMAC_FRAME_TRACE` (a

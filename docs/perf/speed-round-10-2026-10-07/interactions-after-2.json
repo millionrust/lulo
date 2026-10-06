@@ -1,0 +1,87 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-06T19:24:27Z",
+  "interactions": {
+    "cmd-tab-hold": {
+      "commits": [
+        787.769669899717,
+        56.783927022479475,
+        60.68672507535666,
+        53.62040002364665,
+        64.50030498672277
+      ],
+      "pass": true,
+      "release_to_switch_ms": 60.68672507535666,
+      "reveal_ms": 44.15558103937656,
+      "reveals": [
+        257.6892100041732,
+        41.016772971488535,
+        42.46000200510025,
+        47.7287849644199,
+        44.15558103937656
+      ]
+    },
+    "resize-drag-edge": {
+      "configure_to_present_max_ms": 44.657,
+      "configure_to_present_p95_ms": 29.83,
+      "configures": 102,
+      "final_size": [
+        699,
+        808
+      ],
+      "frame_p50_ms": 11.657,
+      "frame_p95_ms": 30.147,
+      "frames": 106,
+      "pass": false,
+      "render_p50_ms": 9.039,
+      "render_p95_ms": 26.848,
+      "resizes": 99,
+      "stalls": 0,
+      "start_size": [
+        699,
+        808
+      ],
+      "submit_p50_ms": 0.709,
+      "submit_p95_ms": 3.85,
+      "swapchain_kept": 100,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.6981132075471698,
+      "worst_frame_ms": 43.021
+    },
+    "resize-drag-long": {
+      "configure_to_present_max_ms": 354.921,
+      "configure_to_present_p95_ms": 97.283,
+      "configures": 37,
+      "final_size": [
+        939,
+        808
+      ],
+      "frame_p50_ms": 14.334,
+      "frame_p95_ms": 41.087,
+      "frames": 44,
+      "pass": false,
+      "render_p50_ms": 12.365,
+      "render_p95_ms": 36.019,
+      "resizes": 36,
+      "stalls": 1,
+      "start_size": [
+        699,
+        808
+      ],
+      "submit_p50_ms": 0.815,
+      "submit_p95_ms": 9.794,
+      "swapchain_kept": 35,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.5227272727272727,
+      "worst_frame_ms": 58.766
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

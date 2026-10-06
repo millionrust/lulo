@@ -184,6 +184,18 @@ pub struct WaylandWindowState {
     configure_requested: bool,
     in_progress_window_controls: Option<WindowControls>,
     window_controls: WindowControls,
+    /// rmac: the last configure carried the resizing state (an interactive
+    /// resize is in progress): the swapchain is allocated large enough for
+    /// the whole drag and cropped with `wp_viewport` (SPEED-12).
+    interactive_resize: bool,
+    /// rmac: the app asked for the swapchain to be at least this size (see
+    /// `reserve_drawable`), so growing to it never rebuilds the swapchain.
+    reserved_size: Option<Size<Pixels>>,
+    /// rmac: a `wp_viewport` source rectangle is set (the swapchain is larger
+    /// than the window).
+    cropped: bool,
+    /// rmac: counts scheduled swapchain shrinks; a newer resize cancels one.
+    shrink_generation: u64,
     client_inset: Option<Pixels>,
     accesskit_adapter: Option<accesskit_unix::Adapter>,
     /// rmac: a popup's position relative to its parent's window geometry,
@@ -703,6 +715,10 @@ impl WaylandWindowState {
             hovered: false,
             force_render_after_recovery: false,
             renderer_presented: false,
+            interactive_resize: false,
+            reserved_size: None,
+            cropped: false,
+            shrink_generation: 0,
             presented_once: false,
             test_unpresented_left: test_unpresented_draws(),
             in_progress_window_controls: None,
@@ -874,6 +890,126 @@ impl WaylandWindow {
 
         Ok((this, surface.id()))
     }
+}
+
+/// rmac: how long after an interactive resize ends the swapchain shrinks back
+/// to the window (one rebuild, while the compositor is not waiting on it).
+const SHRINK_AFTER_RESIZE: Duration = Duration::from_millis(500);
+
+/// rmac: swapchain sizes during an interactive resize round up to this, so
+/// the buffer always divides by any integer buffer scale.
+const ALLOCATION_STEP: i32 = 64;
+
+fn round_up_allocation(value: i32) -> i32 {
+    (value.max(1) + ALLOCATION_STEP - 1) / ALLOCATION_STEP * ALLOCATION_STEP
+}
+
+fn device_size(size: Size<Pixels>, scale: f32) -> Size<DevicePixels> {
+    Size {
+        width: DevicePixels((f32::from(size.width) * scale).ceil() as i32),
+        height: DevicePixels((f32::from(size.height) * scale).ceil() as i32),
+    }
+}
+
+/// rmac: what the swapchain must hold for a window of `device` pixels: the
+/// app's reservation, and during an interactive resize the largest output
+/// (so the whole drag never rebuilds it).
+fn wanted_allocation(
+    device: Size<DevicePixels>,
+    reserved: Option<Size<DevicePixels>>,
+    resizing_within: Option<Size<DevicePixels>>,
+) -> Size<DevicePixels> {
+    let mut width = device.width.0;
+    let mut height = device.height.0;
+    for extra in [reserved, resizing_within].into_iter().flatten() {
+        width = width.max(extra.width.0);
+        height = height.max(extra.height.0);
+    }
+    Size {
+        width: DevicePixels(round_up_allocation(width)),
+        height: DevicePixels(round_up_allocation(height)),
+    }
+}
+
+/// rmac: size the swapchain for the window's bounds (SPEED-12). Returns
+/// whether the swapchain is now larger than it needs to be (an interactive
+/// resize just ended), so the caller schedules a shrink.
+fn size_renderer(state: &mut WaylandWindowState) -> bool {
+    if state.input_only {
+        return false;
+    }
+    let device = device_size(state.bounds.size, state.scale);
+    let can_crop = state.viewport.is_some();
+    let reserved = state
+        .reserved_size
+        .map(|size| device_size(size, state.scale));
+    let mut oversized = false;
+    if can_crop && (state.interactive_resize || reserved.is_some()) {
+        let outputs = state.interactive_resize.then(|| {
+            state.outputs.values().fold(device, |largest, output| Size {
+                width: DevicePixels(largest.width.0.max(output.bounds.size.width.0)),
+                height: DevicePixels(largest.height.0.max(output.bounds.size.height.0)),
+            })
+        });
+        let allocation = wanted_allocation(device, reserved, outputs);
+        // Grow to the whole allocation as soon as it is wanted (when the
+        // resize starts, or when the app reserves), not when the window
+        // first outgrows its swapchain in the middle of the drag.
+        let rebuilt = state
+            .renderer
+            .update_drawable_size_within(allocation, allocation);
+        super::frame_trace::record(if rebuilt {
+            "renderer_resized"
+        } else {
+            "renderer_kept"
+        });
+    } else if can_crop && state.cropped && {
+        let allocation = state.renderer.allocation_size();
+        device.width.0 <= allocation.width.0 && device.height.0 <= allocation.height.0
+    } {
+        // Just after an interactive resize: keep drawing into the large
+        // swapchain until it is shrunk once the resize has settled.
+        super::frame_trace::record("renderer_kept");
+        oversized = true;
+    } else {
+        state.renderer.update_drawable_size(device);
+        super::frame_trace::record("renderer_resized");
+    }
+    crop_to_window(state, device);
+    oversized
+}
+
+/// rmac: show only the window's part of a larger swapchain image.
+fn crop_to_window(state: &mut WaylandWindowState, device: Size<DevicePixels>) {
+    let Some(viewport) = &state.viewport else {
+        return;
+    };
+    let allocation = state.renderer.allocation_size();
+    if allocation == device {
+        if state.cropped {
+            viewport.set_source(-1.0, -1.0, -1.0, -1.0);
+            state.cropped = false;
+        }
+        return;
+    }
+    // The source rectangle is in buffer pixels divided by the buffer
+    // scale, which is 1 when the fractional-scale protocol scales instead.
+    let buffer_scale = if state.globals.fractional_scale_manager.is_some() {
+        1.0
+    } else {
+        f64::from(state.scale).max(1.0)
+    };
+    viewport.set_source(
+        0.0,
+        0.0,
+        f64::from(device.width.0) / buffer_scale,
+        f64::from(device.height.0) / buffer_scale,
+    );
+    viewport.set_destination(
+        f32::from(state.bounds.size.width) as i32,
+        f32::from(state.bounds.size.height) as i32,
+    );
+    state.cropped = true;
 }
 
 /// rmac: whether a keyboard focus event changes what the window shows.
@@ -1346,6 +1482,13 @@ impl WaylandWindowStatePtr {
                     state.fullscreen = configure.fullscreen;
                     state.maximized = configure.maximized;
                     state.tiling = configure.tiling;
+                    let resize_ended = state.interactive_resize && !configure.resizing;
+                    state.interactive_resize = configure.resizing;
+                    if resize_ended && state.cropped && state.reserved_size.is_none() {
+                        drop(state);
+                        self.schedule_shrink();
+                        state = self.state.borrow_mut();
+                    }
                     // Limit interactive resizes to once per vblank
                     if configure.resizing && state.resize_throttle {
                         state.surface_state.ack_configure(serial);
@@ -1740,7 +1883,7 @@ impl WaylandWindowStatePtr {
 
     pub fn set_size_and_scale(&self, size: Option<Size<Pixels>>, scale: Option<f32>) {
         self.wake_frame();
-        let (size, scale) = {
+        let (size, scale, oversized) = {
             let mut state = self.state.borrow_mut();
             if size.is_none_or(|size| size == state.bounds.size)
                 && scale.is_none_or(|scale| scale == state.scale)
@@ -1754,13 +1897,12 @@ impl WaylandWindowStatePtr {
             if let Some(scale) = scale {
                 state.scale = scale;
             }
-            if !state.input_only {
-                let device_bounds = state.bounds.to_device_pixels(state.scale);
-                state.renderer.update_drawable_size(device_bounds.size);
-                super::frame_trace::record("renderer_resized");
-            }
-            (state.bounds.size, state.scale)
+            let oversized = size_renderer(&mut state);
+            (state.bounds.size, state.scale, oversized)
         };
+        if oversized {
+            self.schedule_shrink();
+        }
 
         let callback = self.callbacks.borrow_mut().resize.take();
         if let Some(mut fun) = callback {
@@ -1817,6 +1959,65 @@ impl WaylandWindowStatePtr {
 
     pub fn resize(&self, size: Size<Pixels>) {
         self.set_size_and_scale(Some(size), None);
+    }
+
+    /// rmac: shrink a swapchain that an interactive resize left larger than
+    /// the window, once no resize has happened for `SHRINK_AFTER_RESIZE`.
+    fn schedule_shrink(&self) {
+        let mut state = self.state.borrow_mut();
+        state.shrink_generation = state.shrink_generation.wrapping_add(1);
+        let generation = state.shrink_generation;
+        let client = state.client.get_client();
+        drop(state);
+        let window = self.downgrade();
+        let loop_handle = client.borrow().loop_handle.clone();
+        let _ =
+            loop_handle.insert_source(Timer::from_duration(SHRINK_AFTER_RESIZE), move |_, _, _| {
+                if let Some(window) = window.upgrade() {
+                    window.shrink_renderer(generation);
+                }
+                TimeoutAction::Drop
+            });
+    }
+
+    fn shrink_renderer(&self, generation: u64) {
+        {
+            let mut state = self.state.borrow_mut();
+            if state.shrink_generation != generation || state.interactive_resize {
+                return;
+            }
+            let device = device_size(state.bounds.size, state.scale);
+            let reserved = state
+                .reserved_size
+                .map(|size| device_size(size, state.scale));
+            let wanted = wanted_allocation(device, reserved, None);
+            let exact = if reserved.is_some() { wanted } else { device };
+            if state.renderer.allocation_size() == exact {
+                return;
+            }
+            state.renderer.update_drawable_size(exact);
+            super::frame_trace::record("renderer_shrunk");
+            crop_to_window(&mut state, device);
+            // The new swapchain holds nothing yet.
+            state.force_render_after_recovery = true;
+        }
+        self.draw_soon("draw_resized");
+    }
+
+    /// rmac: make the swapchain at least `size` (logical) now, so the window
+    /// can later grow to it without a rebuild; until then it shows only its
+    /// own part through `wp_viewport` (the App Switcher opens 1 x 1 and
+    /// grows to its panel when ⌘ is held, SPEED-11). Returns false when the
+    /// window cannot crop (no viewporter).
+    pub fn reserve_drawable(&self, size: Size<Pixels>) -> bool {
+        let mut state = self.state.borrow_mut();
+        if state.viewport.is_none() || state.input_only {
+            return false;
+        }
+        state.reserved_size = Some(size);
+        size_renderer(&mut state);
+        state.force_render_after_recovery = true;
+        true
     }
 
     pub fn rescale(&self, scale: f32) {
@@ -2364,6 +2565,16 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn start_window_resize(&self, edge: gpui::ResizeEdge) {
+        // rmac: grow the swapchain for the whole drag now, before niri's
+        // first resize configure. Rebuilding it while niri waits for the
+        // answer to that configure blocked for 300–570 ms (SPEED-12); here
+        // nothing is waiting on this window yet. The configure that ends
+        // the drag schedules the shrink.
+        {
+            let mut state = self.borrow_mut();
+            state.interactive_resize = true;
+            size_renderer(&mut state);
+        }
         let state = self.borrow();
         if let Some(toplevel) = state.surface_state.toplevel() {
             toplevel.resize(
@@ -2837,5 +3048,43 @@ mod rmac_frame_loop_tests {
             false,
             Some(Duration::from_millis(500))
         ));
+    }
+}
+
+#[cfg(test)]
+mod rmac_allocation_tests {
+    use super::{device_size, round_up_allocation, wanted_allocation};
+    use gpui::{DevicePixels, Size, px, size};
+
+    fn device(width: i32, height: i32) -> Size<DevicePixels> {
+        Size {
+            width: DevicePixels(width),
+            height: DevicePixels(height),
+        }
+    }
+
+    #[test]
+    fn allocations_round_up_to_the_step() {
+        assert_eq!(round_up_allocation(1), 64);
+        assert_eq!(round_up_allocation(64), 64);
+        assert_eq!(round_up_allocation(699), 704);
+    }
+
+    #[test]
+    fn an_interactive_resize_allocates_the_largest_output() {
+        let wanted = wanted_allocation(device(699, 808), None, Some(device(1920, 1080)));
+        assert_eq!(wanted, device(1920, 1088));
+    }
+
+    #[test]
+    fn a_reservation_holds_the_panel_while_the_window_is_one_pixel() {
+        let wanted = wanted_allocation(device(1, 1), Some(device(1500, 176)), None);
+        assert_eq!(wanted, device(1536, 192));
+    }
+
+    #[test]
+    fn device_sizes_round_up() {
+        assert_eq!(device_size(size(px(10.5), px(3.0)), 2.0), device(21, 6));
+        assert_eq!(device_size(size(px(10.2), px(3.0)), 1.0), device(11, 3));
     }
 }

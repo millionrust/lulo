@@ -449,17 +449,18 @@ pub(crate) mod linux_wayland {
             let _ = self.service.update(cx, |service, cx| service.closed(cx));
             // Keep the surface, unmapped, for the next ⌘Tab: it takes no
             // input or focus and draws nothing until mapped again.
-            // Only a surface that stayed 1 × 1 is kept. Growing it back down
-            // after a reveal costs a swapchain rebuild and niri then took
-            // about 500 ms to give the re-mapped surface the keyboard; a
-            // revealed switcher closes as before and the next ⌘Tab opens a
-            // new one.
+            // Its swapchain was allocated at the panel's size when it opened
+            // (`reserve_window_drawable`), so shrinking a revealed panel back
+            // to 1 × 1 for the next ⌘Tab rebuilds nothing.
             let handle = window.window_handle();
-            if self.revealed || !gpui_linux::set_layer_window_mapped(handle, false) {
+            if !gpui_linux::set_layer_window_mapped(handle, false) {
                 window.remove_window();
                 return;
             }
             gpui_linux::trace_mark("switcher_hidden");
+            if self.revealed {
+                window.resize(Size::new(px(HIDDEN_SIZE), px(HIDDEN_SIZE)));
+            }
             let kept = handle.downcast::<Self>();
             let display_id = self.display_id;
             let replaced = self
@@ -990,6 +991,15 @@ pub(crate) mod linux_wayland {
             cx.new(|cx| SwitcherView::new(weak, session, items, display_width, window, cx))
         }) {
             Ok(handle) => {
+                // Allocate the swapchain at the widest panel this display can
+                // show now, while the surface is 1 × 1: revealing it then only
+                // changes the `wp_viewport` crop, in the same frame, instead
+                // of rebuilding the swapchain (SPEED-11).
+                let panel = model::layout(1, display_width);
+                gpui_linux::reserve_window_drawable(
+                    handle.into(),
+                    Size::new(px(display_width), px(panel.height)),
+                );
                 // Kept surfaces are matched on the display asked for here
                 // (the window may not know its output yet).
                 let _ = handle.update(cx, |view, _, _| view.display_id = display_id);

@@ -1,0 +1,160 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 7.992135011591017,
+      "first_frame_ms": 279.1444199392572,
+      "first_frame_pass": true,
+      "icons_painted_ms": 279.1444199392572,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 69.68189601320773,
+          "draw_skips": 0,
+          "first_frame_ms": 331.3266150653362,
+          "focus_after_first_frame_ms": 84.728,
+          "force_renders": 0,
+          "icons_painted_ms": 331.3266150653362,
+          "presents_after_focus": 0,
+          "window_listed_ms": 439.54429402947426
+        },
+        {
+          "backend_init_ms": 12.792082037776709,
+          "draw_skips": 0,
+          "first_frame_ms": 282.8585320385173,
+          "focus_after_first_frame_ms": 94.881,
+          "force_renders": 0,
+          "icons_painted_ms": 282.8585320385173,
+          "presents_after_focus": 0,
+          "window_listed_ms": 410.89943202678114
+        },
+        {
+          "backend_init_ms": 7.992135011591017,
+          "draw_skips": 0,
+          "first_frame_ms": 279.1444199392572,
+          "focus_after_first_frame_ms": 80.457,
+          "force_renders": 0,
+          "icons_painted_ms": 279.1444199392572,
+          "presents_after_focus": 0,
+          "window_listed_ms": 394.86161596141756
+        },
+        {
+          "backend_init_ms": 6.035633967258036,
+          "draw_skips": 0,
+          "first_frame_ms": 259.94547503069043,
+          "focus_after_first_frame_ms": 89.692,
+          "force_renders": 0,
+          "icons_painted_ms": 259.94547503069043,
+          "presents_after_focus": 0,
+          "window_listed_ms": 418.94802905153483
+        },
+        {
+          "backend_init_ms": 5.938988062553108,
+          "draw_skips": 0,
+          "first_frame_ms": 267.8013590630144,
+          "focus_after_first_frame_ms": 85.714,
+          "force_renders": 0,
+          "icons_painted_ms": 267.8013590630144,
+          "presents_after_focus": 0,
+          "window_listed_ms": 476.5492050210014
+        }
+      ],
+      "window_listed_ms": 418.94802905153483
+    }
+  },
+  "captured_at": "2026-10-06T18:53:13Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 103.33701292984188,
+      "switcher_first_frame_ms": 23.347717011347413,
+      "switches": [
+        1716.4800619939342,
+        103.33701292984188,
+        104.446433018893,
+        102.35209809616208,
+        103.24954998213798
+      ]
+    },
+    "cmd-tab-hold": {
+      "commits": [
+        49.53687801025808,
+        52.59067297447473,
+        57.614755001850426,
+        52.926954929716885,
+        59.33611991349608
+      ],
+      "pass": true,
+      "release_to_switch_ms": 52.926954929716885,
+      "reveal_ms": 43.71247300878167,
+      "reveals": [
+        180.46711606439203,
+        39.74837297573686,
+        49.372132983990014,
+        40.23285605944693,
+        43.71247300878167
+      ]
+    },
+    "resize-drag-edge": {
+      "configure_to_present_max_ms": 450.547,
+      "configure_to_present_p95_ms": 32.098,
+      "configures": 102,
+      "final_size": [
+        699,
+        808
+      ],
+      "frame_p50_ms": 11.661,
+      "frame_p95_ms": 26.11,
+      "frames": 106,
+      "pass": false,
+      "render_p50_ms": 8.676,
+      "render_p95_ms": 24.471,
+      "resizes": 99,
+      "stalls": 1,
+      "start_size": [
+        699,
+        808
+      ],
+      "submit_p50_ms": 0.702,
+      "submit_p95_ms": 4.787,
+      "swapchain_kept": 100,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.7641509433962265,
+      "worst_frame_ms": 56.996
+    },
+    "resize-drag-long": {
+      "configure_to_present_max_ms": 546.235,
+      "configure_to_present_p95_ms": 34.818,
+      "configures": 38,
+      "final_size": [
+        939,
+        808
+      ],
+      "frame_p50_ms": 14.573,
+      "frame_p95_ms": 34.74,
+      "frames": 43,
+      "pass": false,
+      "render_p50_ms": 12.67,
+      "render_p95_ms": 26.537,
+      "resizes": 38,
+      "stalls": 1,
+      "start_size": [
+        699,
+        808
+      ],
+      "submit_p50_ms": 0.737,
+      "submit_p95_ms": 9.091,
+      "swapchain_kept": 37,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.6046511627906976,
+      "worst_frame_ms": 110.276
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

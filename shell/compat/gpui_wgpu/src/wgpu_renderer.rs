@@ -1017,6 +1017,40 @@ impl WgpuRenderer {
         Some((texture, view))
     }
 
+    /// rmac: the swapchain's image size, which can be larger than the
+    /// window while it is drawn with `update_drawable_size_within`.
+    pub fn allocation_size(&self) -> Size<DevicePixels> {
+        Size {
+            width: DevicePixels(self.surface_config.width as i32),
+            height: DevicePixels(self.surface_config.height as i32),
+        }
+    }
+
+    /// rmac: draw a window of `size` without rebuilding the swapchain when
+    /// it fits the images already allocated; otherwise allocate `allocation`
+    /// (at least `size`). The scene is drawn 1:1 from the top-left corner of
+    /// the larger image (the projection uses the image size, so nothing is
+    /// stretched) and the platform crops the rest with `wp_viewport`.
+    /// Returns whether the swapchain was rebuilt. Rebuilding blocks while
+    /// the compositor still holds the old images: 300–470 ms per configure
+    /// of an interactive resize on the reference laptop (SPEED-12).
+    pub fn update_drawable_size_within(
+        &mut self,
+        size: Size<DevicePixels>,
+        allocation: Size<DevicePixels>,
+    ) -> bool {
+        let fits = size.width.0 as u32 <= self.surface_config.width
+            && size.height.0 as u32 <= self.surface_config.height;
+        if fits {
+            return false;
+        }
+        self.update_drawable_size(Size {
+            width: DevicePixels(allocation.width.0.max(size.width.0)),
+            height: DevicePixels(allocation.height.0.max(size.height.0)),
+        });
+        true
+    }
+
     pub fn update_drawable_size(&mut self, size: Size<DevicePixels>) {
         let width = size.width.0 as u32;
         let height = size.height.0 as u32;

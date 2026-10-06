@@ -3,6 +3,7 @@
 use super::*;
 impl Render for Settings {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        rmac_ui::trace_mark("settings_render");
         self.scale_factor = window.scale_factor();
         rmac_ui::set_menu_enabled("system_settings::GoBack", self.can_go_back(), cx);
         rmac_ui::set_menu_enabled("system_settings::GoForward", self.can_go_forward(), cx);

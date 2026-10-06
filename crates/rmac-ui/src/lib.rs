@@ -125,3 +125,13 @@ pub fn application() -> gpui::Application {
 
 #[cfg(test)]
 mod tests;
+
+/// Add an app-defined row to this process's `RMAC_FRAME_TRACE` (a no-op
+/// without it, and on hosts other than Linux), so the speed sweep can time
+/// app steps on the same clock as the frames.
+pub fn trace_mark(event: &str) {
+    #[cfg(target_os = "linux")]
+    gpui_linux::trace_mark(event);
+    #[cfg(not(target_os = "linux"))]
+    let _ = event;
+}

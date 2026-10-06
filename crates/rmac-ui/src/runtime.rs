@@ -204,9 +204,17 @@ fn warn_if_ui_font_missing(cx: &App) {
 /// before the first window is painted. The portal remains authoritative after
 /// startup, but it must not make dark sessions flash a light first frame.
 fn seed_initial_theme() {
-    let Some(host) = initial_host_appearance() else {
-        return;
-    };
+    // Without a scheme from the launcher, seed from the stored preferences
+    // alone (two small file reads; the host's own appearance arrives from
+    // the portal asynchronously). The first frame then already shows the
+    // user's accent, highlight and wallpaper tint; before, the default
+    // tokens were replaced 200 ms in and every window re-rendered whole
+    // (SPEED-02).
+    let host = initial_host_appearance().unwrap_or_else(|| {
+        rmac_appearance::Snapshot::unavailable(
+            "the Settings portal is read after the first frame".to_owned(),
+        )
+    });
     if let Ok(tokens) = load_tokens_with_host(host) {
         let _ = theme::set_current(tokens);
     }
@@ -695,6 +703,8 @@ fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {
         }
         gpui_component::theme::Theme::change(mode, None, app);
         apply_component_theme(app);
+        // SPEED-02: a whole-window repaint of every window.
+        crate::trace_mark("theme_refresh");
         app.refresh_windows();
     });
 }

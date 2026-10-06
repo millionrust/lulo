@@ -389,7 +389,46 @@ fn play_file(cue: Cue, volume: u8) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: the system's own sound for the cue's kind, from the user's
+/// sound scheme and at the system volume (Lulo's own cue files are not
+/// installed there yet). The alert is Windows' Default Beep, its NSBeep.
+/// Cues with no Windows counterpart stay silent.
+#[cfg(windows)]
+fn play_file(cue: Cue, _volume: u8) -> bool {
+    use windows::Win32::System::Diagnostics::Debug::MessageBeep;
+    use windows::Win32::UI::WindowsAndMessaging::{MB_ICONASTERISK, MB_ICONHAND, MB_OK};
+    let Some(sound) = windows_sound(cue) else {
+        return false;
+    };
+    let style = match sound {
+        WindowsSound::DefaultBeep => MB_OK,
+        WindowsSound::CriticalStop => MB_ICONHAND,
+        WindowsSound::Asterisk => MB_ICONASTERISK,
+    };
+    // SAFETY: a plain Win32 call; it queues the sound and returns at once.
+    unsafe { MessageBeep(style) }.is_ok()
+}
+
+/// Which Windows system sound stands in for a cue.
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowsSound {
+    DefaultBeep,
+    CriticalStop,
+    Asterisk,
+}
+
+#[cfg(any(windows, test))]
+fn windows_sound(cue: Cue) -> Option<WindowsSound> {
+    match cue {
+        Cue::Alert => Some(WindowsSound::DefaultBeep),
+        Cue::Error => Some(WindowsSound::CriticalStop),
+        Cue::Notification => Some(WindowsSound::Asterisk),
+        _ => None,
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn play_file(_cue: Cue, _volume: u8) -> bool {
     false
 }
@@ -397,6 +436,13 @@ fn play_file(_cue: Cue, _volume: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_plays_the_system_alert_and_error_sounds() {
+        assert_eq!(windows_sound(Cue::Alert), Some(WindowsSound::DefaultBeep));
+        assert_eq!(windows_sound(Cue::Error), Some(WindowsSound::CriticalStop));
+        assert_eq!(windows_sound(Cue::Trash), None);
+    }
 
     #[test]
     fn cue_inventory_is_exact_and_unique() {

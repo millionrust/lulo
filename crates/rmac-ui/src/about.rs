@@ -51,11 +51,14 @@ pub(crate) fn show(app_id: &'static str, cx: &mut App) {
         }
     }
     if !cx.has_global::<AboutKeysBound>() {
-        cx.bind_keys([KeyBinding::new(
-            crate::shortcuts::CLOSE.keystroke,
-            crate::RequestClose,
-            Some(CONTEXT),
-        )]);
+        crate::shortcuts::bind_keys(
+            cx,
+            [KeyBinding::new(
+                crate::shortcuts::CLOSE.keystroke,
+                crate::RequestClose,
+                Some(CONTEXT),
+            )],
+        );
         cx.set_global(AboutKeysBound);
     }
     let name = rmac_apps::identity::window_title(app_id).unwrap_or(app_id);

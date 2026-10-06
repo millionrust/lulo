@@ -48,16 +48,19 @@ pub(crate) fn init(cx: &mut App) {
     // app. niri hands ⌘-letter keys to the focused app, so each app answers
     // them; these context-free bindings are the fallback an app's own
     // binding for the same keys (System Settings' ⌘M and ⌘Q) still overrides.
-    cx.bind_keys([
-        KeyBinding::new(crate::shortcuts::QUIT.keystroke, QuitApplication, None),
-        KeyBinding::new(crate::shortcuts::MINIMIZE.keystroke, MinimizeWindow, None),
-        KeyBinding::new(crate::shortcuts::HIDE.keystroke, HideApplication, None),
-        KeyBinding::new(
-            crate::shortcuts::HIDE_OTHERS.keystroke,
-            HideOtherApplications,
-            None,
-        ),
-    ]);
+    crate::shortcuts::bind_keys(
+        cx,
+        [
+            KeyBinding::new(crate::shortcuts::QUIT.keystroke, QuitApplication, None),
+            KeyBinding::new(crate::shortcuts::MINIMIZE.keystroke, MinimizeWindow, None),
+            KeyBinding::new(crate::shortcuts::HIDE.keystroke, HideApplication, None),
+            KeyBinding::new(
+                crate::shortcuts::HIDE_OTHERS.keystroke,
+                HideOtherApplications,
+                None,
+            ),
+        ],
+    );
     cx.on_action(|_: &MinimizeWindow, cx| crate::chrome::minimize_focused_window(cx));
     cx.on_action(|_: &HideApplication, cx| crate::chrome::hide_application(false, cx));
     cx.on_action(|_: &HideOtherApplications, cx| crate::chrome::hide_application(true, cx));
@@ -573,6 +576,12 @@ impl ContextMenuState {
         }
     }
 
+    /// The handle the open menu holds focus with; focus leaving it means
+    /// the menu was chosen from or dismissed.
+    pub(crate) fn menu_focus(&self) -> &FocusHandle {
+        &self.menu_focus
+    }
+
     /// Cursor-relative position used to anchor the menu.
     pub fn position(&self) -> Point<Pixels> {
         self.position
@@ -682,6 +691,28 @@ impl ContextMenu {
             danger: true,
             enabled: true,
             checked: MenuCheck::None,
+            swatch: None,
+        });
+        self
+    }
+
+    /// Append a row with every attribute given, for menus built from an
+    /// `rmac_app_menu` table (the in-window menu strip).
+    pub(crate) fn entry(
+        mut self,
+        label: impl Into<SharedString>,
+        shortcut: Option<SharedString>,
+        action: Box<dyn Action>,
+        enabled: bool,
+        checked: MenuCheck,
+    ) -> Self {
+        self.items.push(MenuEntry::Item {
+            label: label.into(),
+            shortcut,
+            action,
+            danger: false,
+            enabled,
+            checked,
             swatch: None,
         });
         self
@@ -968,7 +999,9 @@ impl ContextMenu {
                                 div()
                                     .text_size(crate::text_px(12.0))
                                     .text_color(mac::text_tertiary())
-                                    .child(sc),
+                                    .child(SharedString::from(
+                                        crate::shortcuts::display_hint(&sc).into_owned(),
+                                    )),
                             )
                         });
                     let toggled = match checked {
@@ -1170,7 +1203,9 @@ fn render_submenu_entries(
                                 div()
                                     .text_size(crate::text_px(12.0))
                                     .text_color(mac::text_tertiary())
-                                    .child(sc),
+                                    .child(SharedString::from(
+                                        crate::shortcuts::display_hint(&sc).into_owned(),
+                                    )),
                             )
                         });
                     let toggled = match checked {

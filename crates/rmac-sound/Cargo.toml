@@ -14,10 +14,18 @@ rmac-storage.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-# Output mute state (PipeWire) and the Focus state (D-Bus). Windows plays no
-# cues yet (ADR 0023), so it needs neither.
+# Output mute state (PipeWire) and the Focus state (D-Bus). Windows plays
+# its own system sounds and needs neither (ADR 0023).
 [target.'cfg(unix)'.dependencies]
 rmac-audio.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rmac-focus-linux.workspace = true
+
+# Windows plays cues through the system's sound scheme (MessageBeep), with
+# the version and features GPUI's Windows backend already builds.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_System_Diagnostics_Debug",
+    "Win32_UI_WindowsAndMessaging",
+] }

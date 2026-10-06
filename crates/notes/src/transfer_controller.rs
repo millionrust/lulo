@@ -33,15 +33,16 @@ impl NotesView {
         self.attachment_chooser_open = true;
         self.message = None;
         cx.notify();
+        let choice = crate::file_choosers::open(crate::file_choosers::OpenKind::Image, cx);
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let choice = rmac_portal::choose_notes_image().await;
+            let choice = choice.await;
             let _ = this.update(cx, |this, cx| {
                 this.attachment_chooser_open = false;
                 match choice {
                     Ok(Some(path)) => this.queue_image_attachment(path, cx),
                     Ok(None) => cx.notify(),
                     Err(_) => {
-                        this.message = Some("Notes could not open the Linux image chooser".into());
+                        this.message = Some("Notes could not open the image chooser".into());
                         cx.notify();
                     }
                 }
@@ -106,15 +107,16 @@ impl NotesView {
         self.note_import_chooser_open = true;
         self.message = None;
         cx.notify();
+        let choice = crate::file_choosers::open(crate::file_choosers::OpenKind::TextNote, cx);
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let choice = rmac_portal::choose_notes_text().await;
+            let choice = choice.await;
             let _ = this.update(cx, |this, cx| {
                 this.note_import_chooser_open = false;
                 match choice {
                     Ok(Some(path)) => this.queue_text_note_import(path, cx),
                     Ok(None) => cx.notify(),
                     Err(_) => {
-                        this.message = Some("Notes could not open the Linux note importer".into());
+                        this.message = Some("Notes could not open the note importer".into());
                         cx.notify();
                     }
                 }
@@ -253,16 +255,16 @@ impl NotesView {
         self.bundle_chooser_open = true;
         self.message = None;
         cx.notify();
+        let choice = crate::file_choosers::open(crate::file_choosers::OpenKind::Bundle, cx);
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let choice = rmac_portal::choose_notes_bundle().await;
+            let choice = choice.await;
             let _ = this.update(cx, |this, cx| {
                 this.bundle_chooser_open = false;
                 match choice {
                     Ok(Some(path)) => this.queue_bundle_import_review(path, cx),
                     Ok(None) => cx.notify(),
                     Err(_) => {
-                        this.message =
-                            Some("Notes could not open the Linux bundle importer".into());
+                        this.message = Some("Notes could not open the bundle importer".into());
                         cx.notify();
                     }
                 }
@@ -523,26 +525,25 @@ impl NotesView {
             return;
         }
         let suggested_name = self.export_suggested_name(review.scope, format);
-        let portal_format = match format {
-            ExportFormat::Markdown => rmac_portal::NotesExportFormat::Markdown,
-            ExportFormat::RmacBundle => rmac_portal::NotesExportFormat::Bundle,
+        let kind = match format {
+            ExportFormat::Markdown => crate::file_choosers::ExportKind::Markdown,
+            ExportFormat::RmacBundle => crate::file_choosers::ExportKind::Bundle,
         };
         self.export_dialog = None;
         self.export_chooser_open = true;
         self.message = None;
         cx.notify();
+        let destination = crate::file_choosers::export_destination(kind, &suggested_name, cx);
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let destination =
-                rmac_portal::choose_notes_export_destination(portal_format, &suggested_name).await;
+            let destination = destination.await;
             let _ = this.update(cx, |this, cx| {
                 this.export_chooser_open = false;
                 match destination {
                     Ok(Some(path)) => this.queue_export(review.scope, format, path, cx),
                     Ok(None) => cx.notify(),
                     Err(_) => {
-                        this.message = Some(
-                            "Notes could not open the Linux export destination chooser".into(),
-                        );
+                        this.message =
+                            Some("Notes could not open the export destination chooser".into());
                         cx.notify();
                     }
                 }
@@ -641,8 +642,9 @@ impl NotesView {
         if !self.body_format_editable() {
             return;
         }
+        let choice = crate::file_choosers::attachments(cx);
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let choice = rmac_portal::choose_mail_attachments().await;
+            let choice = choice.await;
             let _ = this.update_in(cx, |this, window, cx| match choice {
                 Ok(paths) => {
                     for path in paths {
@@ -650,7 +652,7 @@ impl NotesView {
                     }
                 }
                 Err(_) => {
-                    this.message = Some("Notes could not open the Linux file chooser".into());
+                    this.message = Some("Notes could not open the file chooser".into());
                     cx.notify();
                 }
             });
@@ -693,11 +695,7 @@ impl NotesView {
     /// `attachment_chip_paths` still remembers: open the file with the
     /// desktop's default handler.
     pub(super) fn open_attachment_chip_path(path: std::path::PathBuf, cx: &mut Context<Self>) {
-        cx.spawn(async move |_this, _cx| {
-            let uri = format!("file://{}", path.display());
-            let _ = rmac_portal::open_uri(&uri).await;
-        })
-        .detach();
+        crate::file_choosers::open_with_default_app(path, cx);
     }
 
     /// Edit ▸ Rename Attachment… (NOT-MENU-009): the selected attachment in

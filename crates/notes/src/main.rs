@@ -9,6 +9,7 @@ mod dialog_presentation;
 mod edit_recovery_controller;
 mod edit_text_assist_controller;
 mod editor_presentation;
+mod file_choosers;
 mod glyphs;
 mod input_support;
 mod library_actions;

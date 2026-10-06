@@ -22,7 +22,8 @@
 //!   whole invalidation story: nothing is polled, and an app that clears its
 //!   Recents needs to publish nothing either.
 
-// The menu bar, and so this module's endpoint, exists only on Linux.
+// The menu bar, and so this module's endpoint, exists only on Linux. On
+// Windows the same model feeds each window's menu strip (`menu_strip`).
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -130,7 +131,7 @@ fn schedule_publish(cx: &mut App) {
 }
 
 /// The menus with every item's state as of now.
-fn current_menus(cx: &mut App) -> Vec<Menu> {
+pub(crate) fn current_menus(cx: &mut App) -> Vec<Menu> {
     let Some(model) = cx.try_global::<MenuModel>() else {
         return Vec::new();
     };
@@ -234,20 +235,31 @@ pub(crate) type OpenWindowRequest = Box<dyn Fn(Vec<String>, &mut App)>;
 /// Publish this app's menus, answer the menu bar's validation requests and
 /// route its activations into the app (see [`crate::register_menu_target`]).
 pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowRequest>, cx: &mut App) {
+    // Windows has no Lulo menu bar yet: a later launch reaches this process
+    // over a named pipe instead of D-Bus (ADR 0023).
+    #[cfg(windows)]
+    let open_window: Option<OpenWindowRequest> = {
+        if let Some(open_window) = open_window {
+            crate::instance_windows::serve(app_id, open_window, cx);
+        }
+        None
+    };
+    let Some(menus) = rmac_app_menu::definition(app_id, cx.all_action_names()) else {
+        return;
+    };
+    cx.on_action(move |_: &ShowAboutPanel, cx| crate::about::show(app_id, cx));
+    cx.set_global(MenuModel {
+        app_id,
+        definition: menus.clone(),
+        overrides: BTreeMap::new(),
+        dynamic_children: BTreeMap::new(),
+        publisher: None,
+        publish_scheduled: false,
+    });
+    // Without the Lulo menu bar, every window shows these menus itself.
+    crate::menu_strip::install(app_id, cx);
     #[cfg(target_os = "linux")]
     {
-        let Some(menus) = rmac_app_menu::definition(app_id, cx.all_action_names()) else {
-            return;
-        };
-        cx.on_action(move |_: &ShowAboutPanel, cx| crate::about::show(app_id, cx));
-        cx.set_global(MenuModel {
-            app_id,
-            definition: menus.clone(),
-            overrides: BTreeMap::new(),
-            dynamic_children: BTreeMap::new(),
-            publisher: None,
-            publish_scheduled: false,
-        });
         let (activation_tx, activation_rx) = rmac_app_menu::activation_channel();
         let (validation_tx, validation_rx) = rmac_app_menu::validation_channel();
         let windows = open_window.map(|open_window| {
@@ -301,5 +313,5 @@ pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowReques
         .detach();
     }
     #[cfg(not(target_os = "linux"))]
-    let _ = (app_id, open_window, cx);
+    let _ = (menus, open_window);
 }

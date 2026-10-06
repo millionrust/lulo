@@ -38,7 +38,10 @@ pub(crate) fn show(main: Entity<NotesView>, cx: &mut gpui::App) {
             return;
         }
     }
-    let options = rmac_ui::window_options_for_app(rmac_ui::app_id::NOTES, WIDTH, HEIGHT, cx);
+    // Not `window_options_for_app`: this window would then inherit
+    // whatever size the main Notes window last saved under the same
+    // app_id (the UIA-06/UIA-09 window-geometry-key bug).
+    let options = rmac_ui::window_options_for_panel(rmac_ui::app_id::NOTES, WIDTH, HEIGHT, cx);
     match cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Note");
@@ -63,7 +66,12 @@ struct NoteWindowView {
 
 impl NoteWindowView {
     fn new(main: Entity<NotesView>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        rmac_ui::observe_window_state(rmac_ui::app_id::NOTES, window, cx);
+        // `track_key_window` only: `observe_window_state` would also
+        // persist this window's geometry under `app_id::NOTES`, the same
+        // key the main window uses, letting this window's own size
+        // overwrite the main window's restored one on close (the
+        // UIA-06/UIA-09 bug).
+        rmac_ui::track_key_window(window, cx);
         cx.observe(&main, |_, _, cx| cx.notify()).detach();
         let focus = cx.focus_handle();
         window.focus(&focus, cx);

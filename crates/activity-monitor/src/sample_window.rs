@@ -14,8 +14,11 @@ const WIDTH: f32 = 520.0;
 const HEIGHT: f32 = 420.0;
 
 pub(crate) fn show(report: SampleReport, cx: &mut App) {
+    // Not `window_options_for_app`: this snapshot window would then inherit
+    // whatever size the main Activity Monitor window last saved under the
+    // same app_id (the UIA-06/UIA-09 window-geometry-key bug).
     let options =
-        rmac_ui::window_options_for_app(rmac_ui::app_id::SYSTEM_MONITOR, WIDTH, HEIGHT, cx);
+        rmac_ui::window_options_for_panel(rmac_ui::app_id::SYSTEM_MONITOR, WIDTH, HEIGHT, cx);
     let opened = cx.open_window(options, move |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| SampleView::new(report, window, cx));

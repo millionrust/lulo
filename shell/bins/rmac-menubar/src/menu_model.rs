@@ -88,21 +88,19 @@ pub const SUBMENU_HOVER_DELAY: Duration = Duration::from_millis(100);
 // the item right before it for as long as Option is held, same slot, same
 // row index, so a menu's row count and geometry (`app_menu_height`,
 // `app_menu_item_top`, …) stay correct either way without any change here.
-// This is the model half of the fix (`rmac_app_menu::Item::alternate`,
-// `resolve_items`); the renderer that actually watches the live ⌥ state and
-// calls these is out of scope for UIA-22.
+// `main.rs`'s `TopBar` renderer watches the live ⌥ state
+// (`on_modifiers_changed`, `TopBar::app_menu_option`) and swaps the open
+// menu's items through `displayed_items` before measuring or drawing it.
 
 /// The row shown in `item`'s slot: itself normally, or its ⌥ alternate while
 /// `option_held` is true and one exists.
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn displayed_item(item: &Item, option_held: bool) -> &Item {
     item.effective(option_held)
 }
 
 /// `items`, each swapped for its ⌥ alternate while `option_held` is true —
-/// the menu bar's per-row source of truth once it wires up live Option-key
-/// tracking for an app's exported menu. Row order and count never change.
-#[cfg_attr(not(test), allow(dead_code))]
+/// the menu bar's per-row source of truth while an app menu is open and ⌥
+/// is held. Row order and count never change.
 pub fn displayed_items(items: &[Item], option_held: bool) -> Vec<&Item> {
     items
         .iter()

@@ -54,7 +54,11 @@ pub(crate) fn show(cx: &mut App) {
             return;
         }
     }
-    let options = rmac_ui::window_options_for_app(rmac_ui::app_id::PREVIEW, WIDTH, HEIGHT, cx);
+    // Not `window_options_for_app`: Preview has no single main window, but
+    // any document window opened with the same `app_id::PREVIEW` identity
+    // could otherwise still collide with Settings' own persisted geometry
+    // key (the UIA-06/UIA-09 window-geometry-key bug).
+    let options = rmac_ui::window_options_for_panel(rmac_ui::app_id::PREVIEW, WIDTH, HEIGHT, cx);
     match cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Preview Settings");
@@ -86,7 +90,9 @@ struct SettingsView {
 
 impl SettingsView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        rmac_ui::observe_window_state(rmac_ui::app_id::PREVIEW, window, cx);
+        // `register_menu_target` below already tracks this as a key-window
+        // candidate; `observe_window_state` would additionally persist its
+        // geometry under `app_id::PREVIEW` (the UIA-06/UIA-09 bug).
         let focus = cx.focus_handle();
         rmac_ui::register_menu_target(window, &focus, cx);
         Self {

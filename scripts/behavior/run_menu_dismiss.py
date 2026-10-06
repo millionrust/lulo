@@ -29,6 +29,9 @@ Scenarios, each starting from a clean (all-closed) state:
   - Escape closes an open menu;
   - Escape hands the keyboard back to the window the menu opened over, so
     it stays key and its shortcuts keep working (UIA-14);
+  - holding ⌥ while Finder's Application menu is open swaps Empty Bin…
+    for its hidden alternate, Empty Bin, in the same row, reverting the
+    instant ⌥ is released (UIA-22);
   - opening Control Center alongside an open app menu, then clicking the
     wallpaper, closes both (checked with `grim` + a pixel-difference crop
     over Control Center's corner, since it is a layer-shell popover with no
@@ -532,6 +535,67 @@ class Run:
             self.check("Same title: a second click keeps the menu open",
                        self.find_menu_item("About") is not None)
 
+    def option_alternate_swaps_in_open_app_menu(self) -> None:
+        """UIA-22: Finder's Application menu shows "Empty Bin…"; AppKit
+        replaces it in place with its ⌥ alternate, "Empty Bin", for as
+        long as Option is held, reverting the instant it's released. No
+        Files window is open in this harness, so the top bar falls back to
+        Files' own static menu definition (`static_fallback_menus`), which
+        already carries the pair — `crates/rmac-app-menu/src/lib.rs`'s
+        `FILES_MENUS`. Exercises `TopBar::app_menu_option`
+        (`on_modifiers_changed`) and `menu_model::displayed_items`.
+        """
+
+        def exact(label: str):
+            return self.find_node(("menu item",), lambda name: name == label)
+
+        self.close_everything()
+        # Index 1, specifically: the active app's own bold title
+        # (`format!("{} menu", bar.active_app)`, `main.rs`), not any of the
+        # exported File/Edit/View/… titles beside it — those also end with
+        # " menu", so a generic suffix match (as
+        # `clicking_another_title_switches_menus` uses, where it genuinely
+        # doesn't matter which title it finds) can land on the wrong one.
+        # With nothing focused, the desktop default is Files
+        # (`static_fallback_menus`, `app_display_name(FILES)` == "Files"),
+        # whose Application menu — not File/Edit/etc. — carries Empty
+        # Bin…/Empty Bin.
+        title = self.wait_for(lambda: self.find_button("Files menu"), 10, 0.3)
+        self.check("⌥ alternate: the Files application title is present", title is not None)
+        if title is None:
+            return
+        opened = self.retry_until(
+            lambda: self.click_node(self.find_button("Files menu")),
+            lambda: exact("Empty Bin…") is not None,
+        )
+        self.check("⌥ alternate: the Application menu opens with Empty Bin…", opened)
+        if not opened:
+            return
+        # `.hold("alt-f5")`, not a bare modifier: F5 is tapped and released
+        # immediately (harmless — nothing in an open app menu binds it) so
+        # the modifier state change rides along with a real key event, the
+        # same proven path `.hold("cmd-tab")` already uses elsewhere.
+        self.keys.hold("alt-f5")
+        try:
+            swapped = self.wait_for(
+                lambda: exact("Empty Bin") is not None and exact("Empty Bin…") is None,
+                5,
+                0.2,
+            )
+            self.check(
+                "⌥ alternate: holding ⌥ swaps Empty Bin… to Empty Bin in the same slot",
+                swapped,
+            )
+        finally:
+            self.keys.release("alt-f5")
+        reverted = self.wait_for(
+            lambda: exact("Empty Bin…") is not None and exact("Empty Bin") is None,
+            5,
+            0.2,
+        )
+        self.check("⌥ alternate: releasing ⌥ reverts the row to Empty Bin…", reverted)
+        self.close_everything()
+
     def status_menu_dismissal(self, label: str) -> None:
         captures = {"Wi-Fi": "wifi", "Bluetooth": "bluetooth", "Sound": "sound"}
         for method in ("outside click", "Escape"):
@@ -935,6 +999,8 @@ class Run:
                 self.fake_hardware_shows_real_data()
             elif self.args.only == "focus-return":
                 self.escape_returns_focus_to_window()
+            elif self.args.only == "option-alternate":
+                self.option_alternate_swaps_in_open_app_menu()
             else:
                 namespaces = {
                     "quick-settings": "rmac-quick-settings",
@@ -944,6 +1010,13 @@ class Run:
                 }
                 self.layer_popover_dismissal(self.args.only, namespaces[self.args.only])
             return self.finish()
+        # Before `dock_click_closes_app_menu` below: it deliberately clicks
+        # a Dock tile to close a menu, which (correctly — clicking a Dock
+        # icon launches that app, as on the Mac) starts whatever app sits
+        # at the shelf's horizontal centre, so every later scenario here
+        # finds that app focused rather than the empty desktop Files' own
+        # static fallback menus (and so Empty Bin…) need.
+        self.option_alternate_swaps_in_open_app_menu()
         self.dock_click_closes_app_menu()
         self.wallpaper_click_inside_band_closes_app_menu()
         self.wallpaper_click_below_band_closes_status_menu()
@@ -1051,7 +1124,7 @@ def main() -> int:
     parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
                                            "launcher", "app-drawer", "notification-center",
                                            "combined", "control-centre-list", "fake-hardware",
-                                           "focus-return"))
+                                           "focus-return", "option-alternate"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

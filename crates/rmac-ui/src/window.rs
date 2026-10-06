@@ -483,6 +483,29 @@ pub fn window_options_for_panel(app_id: &str, width: f32, height: f32, cx: &App)
     }
 }
 
+/// [`window_options_for_panel`] with an explicit native title, for a fixed-
+/// size secondary window (an Info/Inspector or Progress window, say) whose
+/// title names its subject (a file, a job) rather than its app — the same
+/// restored-geometry collision `window_options_for_panel` documents, just
+/// for the `_with_title` family of callers.
+pub fn window_options_for_panel_with_title(
+    app_id: &str,
+    title: impl Into<SharedString>,
+    width: f32,
+    height: f32,
+    cx: &App,
+) -> WindowOptions {
+    WindowOptions {
+        app_id: Some(app_id.to_owned()),
+        ..window_options_with_bounds(
+            width,
+            height,
+            centered_window_bounds(width, height, cx),
+            Some(title.into()),
+        )
+    }
+}
+
 /// Identified window options with an explicit native title. This is useful for
 /// document windows whose compositor title is more specific than the stable
 /// application name.

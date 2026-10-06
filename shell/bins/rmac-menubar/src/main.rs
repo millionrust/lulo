@@ -916,6 +916,13 @@ mod linux_wayland {
         render_count: u64,
         status: Entity<ShellStatus>,
         open_menu: Option<usize>,
+        /// Live ⌥ state while `open_menu` is a dropdown: an item with an
+        /// alternate (`Item::alternate`, UIA-22 — Empty Bin…/Empty Bin)
+        /// shows that alternate in its own row/slot while this is true,
+        /// reverting the instant ⌥ is released, as on macOS. Tracked from
+        /// `on_modifiers_changed` and cleared whenever a menu opens or
+        /// closes so a later menu never opens already "option-held".
+        app_menu_option: bool,
         selected_item: usize,
         /// Open submenus, outermost first: the row highlighted in each
         /// (`NO_ITEM` for none). Submenu `k` opened from the row highlighted
@@ -1107,6 +1114,7 @@ mod linux_wayland {
                 render_count: 0,
                 status,
                 open_menu: None,
+                app_menu_option: false,
                 selected_item: NO_ITEM,
                 submenu_rows: Vec::new(),
                 hover_generation: 0,
@@ -1183,6 +1191,7 @@ mod linux_wayland {
                 cx.notify();
             }
             if self.open_menu.take().is_some() {
+                self.app_menu_option = false;
                 self.open_app_id = None;
                 self.recent_submenu_open = false;
                 self.recent_selected_item = 0;
@@ -1384,6 +1393,11 @@ mod linux_wayland {
             self.status_menu = None;
             self.status_selected = None;
             self.open_menu = Some(index);
+            // A freshly opened menu never starts already showing ⌥
+            // alternates (UIA-22); live tracking in `render`'s
+            // `on_modifiers_changed` sets this back to true the moment ⌥
+            // is actually held while this menu is open.
+            self.app_menu_option = false;
             self.hide_generation = self.hide_generation.saturating_add(1);
             self.revealed = true;
             self.selected_item = NO_ITEM;
@@ -3340,6 +3354,7 @@ mod linux_wayland {
                         menu_index.checked_sub(1).unwrap_or(menus.len() - 1)
                     };
                     self.open_menu = Some(next);
+                    self.app_menu_option = false;
                     self.selected_item = NO_ITEM;
                     self.submenu_rows.clear();
                     self.reset_menu_scroll();
@@ -3534,6 +3549,7 @@ mod linux_wayland {
                 self.status_generation = self.status_generation.saturating_add(1);
             }
             if self.open_menu.take().is_some() {
+                self.app_menu_option = false;
                 self.open_app_id = None;
                 self.recent_submenu_open = false;
                 self.recent_selected_item = 0;
@@ -3723,7 +3739,7 @@ mod linux_wayland {
                 self.submenu_rows.clear();
             }
             let BarMenus {
-                menus,
+                mut menus,
                 active_app,
                 active_app_id,
             } = self.bar_menus(cx);
@@ -3732,6 +3748,22 @@ mod linux_wayland {
                 self.open_app_id = None;
                 self.selected_item = NO_ITEM;
                 self.submenu_rows.clear();
+            }
+            // UIA-22: while ⌥ is held with this menu open, each item that
+            // carries an alternate (`Item::alternate` — Empty Bin…/Empty
+            // Bin) is replaced by that alternate in its own slot, before
+            // anything below measures or renders the menu, so width,
+            // height, the drawn row and the action a click dispatches all
+            // agree. Row count and order never change
+            // (`menu_model::displayed_items`), so every geometry
+            // calculation downstream stays correct either way.
+            if self.app_menu_option {
+                if let Some(menu) = self.open_menu.and_then(|index| menus.get_mut(index)) {
+                    menu.items = menu_model::displayed_items(&menu.items, true)
+                        .into_iter()
+                        .cloned()
+                        .collect();
+                }
             }
             let now = Local::now();
             let status = self.status.read(cx);
@@ -4742,14 +4774,31 @@ mod linux_wayland {
                     this.set_pointer_inside(*hovered, cx);
                 }))
                 .font_family("Inter")
-                .on_modifiers_changed(cx.listener(|this, event: &ModifiersChangedEvent, _, cx| {
-                    // Holding Option while the Wi-Fi menu is open reveals its
-                    // details, as on macOS.
-                    if this.status_menu.is_some() && event.modifiers.alt && !this.status_option {
-                        this.status_option = true;
-                        cx.notify();
-                    }
-                }))
+                .on_modifiers_changed(cx.listener(
+                    |this, event: &ModifiersChangedEvent, window, cx| {
+                        // Holding Option while the Wi-Fi menu is open reveals its
+                        // details, as on macOS.
+                        if this.status_menu.is_some() && event.modifiers.alt && !this.status_option
+                        {
+                            this.status_option = true;
+                            cx.notify();
+                        }
+                        // An open app menu swaps each alternate-bearing item
+                        // (Empty Bin…/Empty Bin, UIA-22) in place for as long as
+                        // ⌥ is held, reverting the instant it's released —
+                        // unlike `status_option` above, this tracks the live
+                        // key state both ways, not just a one-way reveal. A
+                        // bare modifier change is otherwise the only input
+                        // event in the whole gesture, so force a prompt
+                        // repaint instead of leaving it for whatever the next
+                        // frame happens to be.
+                        if this.open_menu.is_some() && this.app_menu_option != event.modifiers.alt {
+                            this.app_menu_option = event.modifiers.alt;
+                            cx.notify();
+                            window.refresh();
+                        }
+                    },
+                ))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     if this.open_menu.is_some() || this.status_menu.is_some() {
                         cx.stop_propagation();

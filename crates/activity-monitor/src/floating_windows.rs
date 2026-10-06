@@ -83,8 +83,11 @@ pub(crate) fn show(kind: MetricWindowKind, monitor: Entity<MonitorView>, cx: &mu
             return;
         }
     }
+    // Not `window_options_for_app`: this floating window would then inherit
+    // whatever size the main Activity Monitor window last saved under the
+    // same app_id (the UIA-06/UIA-09 window-geometry-key bug).
     let options =
-        rmac_ui::window_options_for_app(rmac_ui::app_id::SYSTEM_MONITOR, WIDTH, HEIGHT, cx);
+        rmac_ui::window_options_for_panel(rmac_ui::app_id::SYSTEM_MONITOR, WIDTH, HEIGHT, cx);
     match cx.open_window(options, move |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| MetricWindowView::new(kind, monitor, window, cx));

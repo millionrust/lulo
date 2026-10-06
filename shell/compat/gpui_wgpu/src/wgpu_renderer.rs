@@ -196,37 +196,57 @@ impl WgpuRenderer {
             .window_handle()
             .map_err(|e| anyhow::anyhow!("Failed to get window handle: {e}"))?;
 
-        let target = wgpu::SurfaceTargetUnsafe::RawHandle {
-            // Fall back to the display handle already provided via InstanceDescriptor::display.
-            raw_display_handle: None,
-            raw_window_handle: window_handle.as_raw(),
-        };
-
-        // Use the existing context's instance if available, otherwise create a new one.
-        // The surface must be created with the same instance that will be used for
-        // adapter selection, otherwise wgpu will panic.
-        let instance = gpu_context
-            .borrow()
-            .as_ref()
-            .map(|ctx| ctx.instance.clone())
-            .unwrap_or_else(|| WgpuContext::instance(Box::new(window.clone())));
-
-        // Safety: The caller guarantees that the window handle is valid for the
-        // lifetime of this renderer. In practice, the RawWindow struct is created
-        // from the native window handles and the surface is dropped before the window.
-        let surface = unsafe {
-            instance
-                .create_surface_unsafe(target)
-                .map_err(|e| anyhow::anyhow!("Failed to create surface: {e}"))?
-        };
-
+        let raw_window_handle = window_handle.as_raw();
+        // Safety (every `create_surface` below): the caller guarantees that the
+        // window handle is valid for the lifetime of this renderer. In practice,
+        // the RawWindow struct is created from the native window handles and the
+        // surface is dropped before the window. The surface must be created with
+        // the same instance that will be used for adapter selection, otherwise
+        // wgpu will panic.
         let mut ctx_ref = gpu_context.borrow_mut();
-        let context = match ctx_ref.as_mut() {
+        let (context, surface) = match ctx_ref.as_mut() {
             Some(context) => {
+                let surface = create_surface(&context.instance, raw_window_handle)
+                    .map_err(|e| anyhow::anyhow!("Failed to create surface: {e}"))?;
                 context.check_compatible_with_surface(&surface)?;
-                context
+                (context, surface)
             }
-            None => ctx_ref.insert(WgpuContext::new(instance, &surface, compositor_gpu)?),
+            None => {
+                // rmac: the process's first window creates the GPU context, and
+                // that sat on every app's first frame. A Vulkan+GL instance
+                // initialises EGL and every installed Vulkan driver (lavapipe
+                // included) before choosing one, about 70 ms of the ~115 ms this
+                // step took on the reference laptop. Try a Vulkan-only instance
+                // with hardware adapters first; only when that finds nothing
+                // usable fall back to upstream's full Vulkan+GL selection, so
+                // GL-only and software-only machines still get a renderer.
+                let hardware_vulkan =
+                    (|| -> anyhow::Result<(WgpuContext, wgpu::Surface<'static>)> {
+                        let instance = WgpuContext::vulkan_instance(Box::new(window.clone()));
+                        let surface = create_surface(&instance, raw_window_handle)?;
+                        let context = WgpuContext::new_rejecting_software(
+                            instance,
+                            &surface,
+                            compositor_gpu,
+                        )?;
+                        Ok((context, surface))
+                    })();
+                let (context, surface) = match hardware_vulkan {
+                    Ok(found) => found,
+                    Err(error) => {
+                        log::info!(
+                            "No hardware Vulkan adapter for this surface ({error}); \
+                             trying every backend"
+                        );
+                        let instance = WgpuContext::instance(Box::new(window.clone()));
+                        let surface = create_surface(&instance, raw_window_handle)
+                            .map_err(|e| anyhow::anyhow!("Failed to create surface: {e}"))?;
+                        let context = WgpuContext::new(instance, &surface, compositor_gpu)?;
+                        (context, surface)
+                    }
+                };
+                (ctx_ref.insert(context), surface)
+            }
         };
 
         let atlas = Arc::new(WgpuAtlas::from_context(context));

@@ -180,6 +180,19 @@ impl WgpuContext {
         ))
     }
 
+    /// rmac: a Vulkan-only instance, so creating it neither initialises EGL
+    /// nor probes GL; see `WgpuRenderer::new`.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn vulkan_instance(display: Box<dyn wgpu::wgt::WgpuHasDisplayHandle>) -> wgpu::Instance {
+        wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN,
+            flags: wgpu::InstanceFlags::default(),
+            backend_options: wgpu::BackendOptions::default(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            display: Some(display),
+        })
+    }
+
     #[cfg(not(target_family = "wasm"))]
     pub fn instance(display: Box<dyn wgpu::wgt::WgpuHasDisplayHandle>) -> wgpu::Instance {
         wgpu::Instance::new(wgpu::InstanceDescriptor {

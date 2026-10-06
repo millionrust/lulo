@@ -1019,6 +1019,9 @@ const NOTES_MENUS: &[MenuSpec] = &[
         label: "File",
         items: &[
             item!("New Note", "notes::ComposeNote", "⌘N"),
+            // NOT-025: a small floating note window, independent of the
+            // Mac's hot-corner/Control-Centre entry point (`quick_note.rs`).
+            item!("New Quick Note", "notes::QuickNote", ""),
             item!("New Folder", "notes::CreateFolder", "⇧⌘N"),
             // NOT-MENU-002: a session-only saved tag filter, not a real
             // `FolderRecord` (NOTES-11; `view_model::SmartFolder`).
@@ -1077,10 +1080,10 @@ const NOTES_MENUS: &[MenuSpec] = &[
             // opening it back up is a session-only convenience, since the
             // durable `AttachmentRecord` kind is image-only (docs/parity.md).
             item!("Attach File…", "notes::AttachFile", "⇧⌘A", separator),
-            // NOT-MENU-008 (Record Audio…) is left out: no microphone
-            // capture pipeline exists anywhere in rmac today (`rmac-audio`
-            // only controls playback/volume), so a menu item would have
-            // nothing real to do (docs/parity.md).
+            // NOT-MENU-008: shells out to PipeWire's `pw-record`
+            // (`audio_recorder.rs`); toggles Start/Stop and relabels via
+            // `publish_menu_state`.
+            item!("Record Audio…", "notes::RecordAudio", ""),
             item!("Rename Attachment…", "notes::RenameAttachment", ""),
             submenu!(
                 "Find",
@@ -1284,12 +1287,14 @@ const NOTES_MENUS: &[MenuSpec] = &[
     },
     MenuSpec {
         label: WINDOW_MENU,
-        items: &[item!("Notes", "notes::FocusMainWindow", "⌘0")],
-        // NOT-MENU-064 (Open Note in New Window) is left out: Notes is a
-        // single-window app (`rmac_ui::boot_single_window_app_with_assets`
-        // in main.rs); giving one note its own window is a real multi-
-        // window architecture change, beyond this pass's scope
-        // (docs/parity.md).
+        items: &[
+            item!("Notes", "notes::FocusMainWindow", "⌘0"),
+            // NOT-MENU-064: a second window mirroring the shared editor
+            // fields (`note_window.rs`); it follows the main window's
+            // current selection rather than staying pinned to the note it
+            // was opened for (docs/parity.md).
+            item!("Open Note in New Window", "notes::OpenNoteInNewWindow", ""),
+        ],
     },
     MenuSpec {
         label: "Help",
@@ -1917,7 +1922,15 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             submenu!(
                 "Revert To",
                 "preview::RevertToMenu",
-                [item!("No Document", "preview::RevertMarkup", "")],
+                [
+                    item!("No Document", "preview::RevertMarkup", ""),
+                    // PREV-04's own leftover ("judged not simple enough
+                    // for this pass"): lists every kept version
+                    // (`versions::list`), not just the newest, and
+                    // restores whichever one is chosen
+                    // (`versions::restore`).
+                    item!("Browse Saved Versions…", "preview::BrowseSavedVersions", ""),
+                ],
                 separator
             ),
             // PREV-15: the Mac's File menu also has Duplicate, Rename…,
@@ -1956,6 +1969,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Paste", "input::Paste", "⌘V"),
             item!("Delete", "preview::DeleteSelection", ""),
             item!("Select All", "preview::SelectAll", "⌘A"),
+            // PRV-27/PRV-MENU-008: a real mask-based invert
+            // (`rmac_preview::selection::Mask`), collapsed back to its
+            // bounding rectangle since every consumer (Crop, the overlay)
+            // only understands rectangles — the same simplification
+            // macOS Preview's own Crop applies to any selection shape.
+            item!("Invert Selection", "preview::InvertSelection", "⇧⌘I"),
             item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(
                 "Find",
@@ -2057,9 +2076,14 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Show Inspector", "preview::ShowInspector", "⌘I"),
             item!("Adjust Size…", "preview::AdjustSize", "", separator),
+            item!("Rectangular Selection", "preview::RectangularSelection", ""),
+            // PRV-MENU-013: a real 4-connected flood fill by colour
+            // similarity (`rmac_preview::selection::flood_fill`), stored
+            // as its bounding rectangle for the same reason as Invert
+            // Selection above.
             item!(
-                "Rectangular Selection",
-                "preview::RectangularSelection",
+                "Automatic Selection",
+                "preview::AutomaticSelection",
                 "",
                 separator
             ),
@@ -2102,6 +2126,11 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Flip Horizontal", "preview::FlipHorizontal", ""),
             item!("Flip Vertical", "preview::FlipVertical", ""),
             item!("Crop", "preview::Crop", "⌘K"),
+            // PRV-MENU-015: real content removal (`rmac_preview::redact`)
+            // — an image's selected pixels are overwritten black; a PDF
+            // page is rasterised with the area burned in black and its
+            // original text/vector content discarded, not covered.
+            item!("Redact", "preview::Redact", ""),
         ],
     },
 ];

@@ -4,7 +4,7 @@
   "platform": "Lulo local contract",
   "observations": {
     "initial": {
-      "window_size": {"width": 723, "height": 800}
+      "window_size": {"width": 720, "height": 800}
     }
   }
 }

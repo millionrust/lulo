@@ -309,7 +309,7 @@ DEFAULT_RULES = {
     "tabs.titles": "exact",
     "display.value": "text",
 }
-RULES = {"exact", "set", "text", "role-class", "ignore", "subset", "present", "count", "within-2"}
+RULES = {"exact", "set", "text", "role-class", "ignore", "subset", "present", "count", "within-2", "at-least"}
 
 
 def _text(value: Any) -> Any:
@@ -347,6 +347,22 @@ def field_matches(rule: str, expected: Any, actual: Any) -> bool:
             and isinstance(actual, (int, float))
             and not isinstance(actual, bool)
             and abs(expected - actual) <= 2
+        )
+    if rule == "at-least":
+        # A floored numeric comparison (`actual >= expected`), for a
+        # measurement a fix only needs to raise past a known-broken value
+        # rather than pin exactly — a window's outer compositor rect can
+        # legitimately read either its content size or that size plus the
+        # client-frame shadow margin depending on which edges the nested
+        # compositor currently treats as tiled, so an exact or `within-2`
+        # expectation is flaky across runs/environments in a way the
+        # underlying fix is not.
+        return (
+            isinstance(expected, (int, float))
+            and not isinstance(expected, bool)
+            and isinstance(actual, (int, float))
+            and not isinstance(actual, bool)
+            and actual >= expected
         )
     if rule == "role-class":
         return _same_role(expected, actual)

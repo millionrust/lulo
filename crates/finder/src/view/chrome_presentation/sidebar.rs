@@ -171,11 +171,13 @@ impl FinderView {
                 .map_or(0, |section| section.places.len());
             row = row
                 .when(
-                    self.sidebar_drop_index == Some(before),
+                    self.sidebar_drop_index == Some(before) && cx.has_active_drag(),
                     |el: Stateful<Div>| el.border_t_2().border_color(accent()),
                 )
                 .when(
-                    self.sidebar_drop_index == Some(after) && after == favourite_count,
+                    self.sidebar_drop_index == Some(after)
+                        && after == favourite_count
+                        && cx.has_active_drag(),
                     |el: Stateful<Div>| el.border_b_2().border_color(accent()),
                 )
                 .drag_over::<DraggedPaths>(|style, _, _, _| style)
@@ -511,19 +513,25 @@ impl FinderView {
             .px(px(SIDEBAR_ROW_INSET))
             .pb(px(SIDEBAR_ROW_INSET));
         let mut sidebar_index = 0;
+        // Tracks whether the previous section was Favourites: its trailing
+        // drop zone (below) already reserves the section gap, so the next
+        // header must not add a second one.
+        let mut previous_was_favourites = false;
         for section in &self.sections {
             if section.places.is_empty() && section.title.as_ref() != self.file_words.favourites() {
                 continue;
             }
+            let is_favourites = section.title.as_ref() == self.file_words.favourites();
             if !section.title.is_empty() {
-                let is_favourites = section.title.as_ref() == self.file_words.favourites();
                 let mut header = div()
                     .id(SharedString::from(format!("section-{}", section.title)))
                     .role(Role::Heading)
                     .aria_label(section.title.clone())
                     .aria_level(2)
                     .flex_none()
-                    .mt(px(SIDEBAR_SECTION_GAP))
+                    .when(!previous_was_favourites, |el: Stateful<Div>| {
+                        el.mt(px(SIDEBAR_SECTION_GAP))
+                    })
                     .h(px(SIDEBAR_SECTION_HEIGHT))
                     .pl(px(SIDEBAR_SECTION_TEXT_X))
                     .pt(px(2.0))
@@ -538,9 +546,10 @@ impl FinderView {
                 // items there), so the header is the add target.
                 if is_favourites {
                     header = header
-                        .when(self.sidebar_drop_index == Some(0), |el: Stateful<Div>| {
-                            el.border_b_2().border_color(accent())
-                        })
+                        .when(
+                            self.sidebar_drop_index == Some(0) && cx.has_active_drag(),
+                            |el: Stateful<Div>| el.border_b_2().border_color(accent()),
+                        )
                         .drag_over::<DraggedPaths>(|style, _, _, _| style.bg(sidebar_selection()))
                         .on_drop(cx.listener(|this, paths: &DraggedPaths, _, cx| {
                             this.sidebar_drop_index = None;
@@ -567,15 +576,72 @@ impl FinderView {
                 contents = contents.child(header);
             }
             for (index, p) in section.places.iter().enumerate() {
-                let is_favourite = section.title.as_ref() == self.file_words.favourites();
                 contents = contents.child(self.render_place(
                     p,
                     sidebar_index,
-                    is_favourite.then_some(index),
+                    is_favourites.then_some(index),
                     cx,
                 ));
                 sidebar_index += 1;
             }
+            if is_favourites {
+                // A drop anywhere below the last Favourite (including the
+                // empty gap before the next section) still appends it, as in
+                // Finder — rows alone only cover reordering between existing
+                // favourites. This also reuses the section-gap height so no
+                // extra space is added.
+                let favourite_count = section.places.len();
+                contents = contents.child(
+                    div()
+                        .id("favourites-drop-tail")
+                        .flex_none()
+                        .h(px(SIDEBAR_SECTION_GAP))
+                        .when(
+                            self.sidebar_drop_index == Some(favourite_count)
+                                && cx.has_active_drag(),
+                            |el: Stateful<Div>| el.border_t_2().border_color(accent()),
+                        )
+                        .drag_over::<DraggedPaths>(|style, _, _, _| style)
+                        .on_drag_move(cx.listener(
+                            move |this, _: &gpui::DragMoveEvent<DraggedPaths>, _, cx| {
+                                this.sidebar_drop_index = Some(favourite_count);
+                                cx.notify();
+                            },
+                        ))
+                        .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
+                            this.sidebar_drop_index = None;
+                            for path in paths.0.iter().cloned().rev() {
+                                this.insert_sidebar_favourite(path, favourite_count, cx);
+                            }
+                        }))
+                        .drag_over::<DraggedSidebarItem>(|style, _, _, _| style)
+                        .on_drag_move(cx.listener(
+                            move |this, _: &gpui::DragMoveEvent<DraggedSidebarItem>, _, cx| {
+                                this.sidebar_drop_index = Some(favourite_count);
+                                cx.notify();
+                            },
+                        ))
+                        .on_drop(cx.listener(move |this, item: &DraggedSidebarItem, _, cx| {
+                            cx.stop_propagation();
+                            this.sidebar_drop_index = None;
+                            this.insert_sidebar_favourite(item.0.clone(), favourite_count, cx);
+                        }))
+                        .drag_over::<ExternalPaths>(|style, _, _, _| style)
+                        .on_drag_move(cx.listener(
+                            move |this, _: &gpui::DragMoveEvent<ExternalPaths>, _, cx| {
+                                this.sidebar_drop_index = Some(favourite_count);
+                                cx.notify();
+                            },
+                        ))
+                        .on_drop(cx.listener(move |this, paths: &ExternalPaths, _, cx| {
+                            this.sidebar_drop_index = None;
+                            for path in paths.paths().iter().cloned().rev() {
+                                this.insert_sidebar_favourite(path, favourite_count, cx);
+                            }
+                        })),
+                );
+            }
+            previous_was_favourites = is_favourites;
         }
 
         // Traffic lights live inside the floating panel (window-relative

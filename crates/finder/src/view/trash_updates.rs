@@ -65,6 +65,18 @@ impl FinderView {
                             this.trash_items = items;
                             this.entries = entries;
                             this.free_bytes = None;
+                            // Trash just verified cleanly: a banner left over
+                            // from an earlier transient hiccup (the items
+                            // still arrived in Trash; only the housekeeping
+                            // check that ran afterwards failed) would
+                            // otherwise claim Trash "isn't available" forever,
+                            // even though this listing just proved it is.
+                            if should_clear_stale_trash_error(
+                                this.operation_error.as_deref(),
+                                this.trash_pending,
+                            ) {
+                                this.operation_error = None;
+                            }
                         }
                         Err(error) => {
                             this.entries.clear();
@@ -104,4 +116,48 @@ pub(super) fn deletion_label(raw: &str) -> String {
         .and_then(|local| local.and_local_timezone(chrono::Local).earliest())
         .map(|time| rmac_finder::listing::date_label(std::time::SystemTime::from(time)))
         .unwrap_or_else(|| raw.to_owned())
+}
+
+/// Whether a banner currently shown should be cleared because Trash just
+/// listed cleanly. `operation_error` is a single shared slot for unrelated
+/// failures too (sidebar favourites, applications…), so this only clears a
+/// message that actually mentions Trash — never something else that happens
+/// to be showing at the same time.
+#[cfg(any(target_os = "linux", test))]
+fn should_clear_stale_trash_error(current: Option<&str>, trash_pending: usize) -> bool {
+    trash_pending == 0 && current.is_some_and(|error| error.to_ascii_lowercase().contains("trash"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stale_trash_errors_clear_once_trash_verifies_cleanly() {
+        assert!(should_clear_stale_trash_error(
+            Some("Trash isn't available right now—try again."),
+            0,
+        ));
+        assert!(should_clear_stale_trash_error(
+            Some("Trash recovery data could not be verified; Trash actions are disabled"),
+            0,
+        ));
+    }
+
+    #[test]
+    fn unrelated_errors_are_left_alone() {
+        assert!(!should_clear_stale_trash_error(
+            Some("Could not load applications: permission denied"),
+            0,
+        ));
+        assert!(!should_clear_stale_trash_error(None, 0));
+    }
+
+    #[test]
+    fn a_genuinely_pending_review_is_not_cleared() {
+        assert!(!should_clear_stale_trash_error(
+            Some("Trash isn't available right now—try again."),
+            1,
+        ));
+    }
 }

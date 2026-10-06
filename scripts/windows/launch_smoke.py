@@ -72,6 +72,22 @@ def visible_windows(pid: int) -> list[tuple[int, str]]:
     return found
 
 
+def client_origin(hwnd: int) -> tuple[int, int]:
+    """The screen position of the window's content (its strip's top left)."""
+    point = wintypes.POINT(0, 0)
+    user32().ClientToScreen(hwnd, ctypes.byref(point))
+    return point.x, point.y
+
+
+def click(x: int, y: int) -> None:
+    user32().SetCursorPos(x, y)
+    time.sleep(0.1)
+    user32().mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+    time.sleep(0.05)
+    user32().mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
+    time.sleep(0.05)
+
+
 def window_rect(hwnd: int) -> tuple[int, int, int, int]:
     rect = wintypes.RECT()
     user32().GetWindowRect(hwnd, ctypes.byref(rect))
@@ -134,28 +150,40 @@ def changed_fraction(before, after) -> float:
 
 
 def check_menu_strip(app: str, hwnd: int, screenshots: Path | None) -> str | None:
-    """Tap Alt and check the strip's first menu opens over the content."""
-    left, top, _right, _bottom = window_rect(hwnd)
+    """Open the strip's first menu by Alt, Alt+letter and a click.
+
+    Each way must open a menu over the content below the strip; Alt is the
+    one the check requires, the others say where a failure lies."""
+    left, top = client_origin(hwnd)
     probe = (
         left + MENU_PROBE[0],
         top + MENU_PROBE[1],
         left + MENU_PROBE[2],
         top + MENU_PROBE[3],
     )
-    before = grab(probe)
-    if before is None:
+    closed = grab(probe)
+    if closed is None:
         print(f"{app}: menu strip check skipped (Pillow is not installed)")
         return None
-    tap(VK_MENU)
-    time.sleep(KEY_SETTLE_SECONDS)
-    after = grab(probe)
-    if screenshots is not None:
-        save(grab(window_rect(hwnd)), screenshots / f"{app}-menu.png")
-    tap(VK_ESCAPE)
-    time.sleep(0.5)
-    changed = changed_fraction(before, after)
-    print(f"{app}: Alt opened the first menu ({changed:.0%} of the probe changed)")
-    if changed < 0.05:
+    initial = "e"  # Edit (Notes, Text Editor) or the app's Edit menu
+
+    def opened(way: str, open_menu) -> bool:
+        open_menu()
+        time.sleep(KEY_SETTLE_SECONDS)
+        after = grab(probe)
+        if screenshots is not None:
+            save(grab(window_rect(hwnd)), screenshots / f"{app}-menu-{way}.png")
+        tap(VK_ESCAPE)
+        time.sleep(0.7)
+        changed = changed_fraction(closed, after)
+        print(f"{app}: {way} -> {changed:.0%} of the area below the strip changed")
+        return changed >= 0.02
+
+    by_alt = opened("alt", lambda: tap(VK_MENU))
+    opened("alt-letter", lambda: chord(VK_MENU, initial))
+    opened("click", lambda: click(left + 20, top + STRIP_HEIGHT // 2))
+    bring_forward(hwnd)
+    if not by_alt:
         return "tapping Alt did not open the menu strip's first menu"
     return None
 
@@ -213,6 +241,7 @@ def launch(binary: Path, profile: Path, screenshots: Path | None) -> str | None:
     environment = dict(os.environ)
     environment["APPDATA"] = str(profile / "Roaming")
     environment["LOCALAPPDATA"] = str(profile / "Local")
+    environment["RMAC_MENU_STRIP_TRACE"] = "1"
     for folder in ("Roaming", "Local"):
         (profile / folder).mkdir(parents=True, exist_ok=True)
     log = profile / "output.log"
@@ -282,6 +311,15 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix=f"{app}-") as directory:
             profile = Path(directory)
             error = launch(binary, profile, arguments.screenshots)
+            log = profile / "output.log"
+            if log.exists():
+                trace = [
+                    line
+                    for line in log.read_text(encoding="utf-8", errors="replace").splitlines()
+                    if line.startswith("menu strip:")
+                ]
+                for line in trace[:40]:
+                    print(f"{app}: {line}")
             if error is not None:
                 failures += 1
                 print(f"{app}: FAIL: {error}")

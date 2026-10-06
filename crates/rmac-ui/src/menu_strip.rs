@@ -62,6 +62,17 @@ pub fn enabled() -> bool {
     })
 }
 
+/// With `RMAC_MENU_STRIP_TRACE=1`, report what the strip does on stderr,
+/// for the Windows launch check (`scripts/windows/launch_smoke.py`).
+fn trace(message: impl FnOnce() -> String) {
+    static TRACE: OnceLock<bool> = OnceLock::new();
+    if *TRACE
+        .get_or_init(|| std::env::var_os("RMAC_MENU_STRIP_TRACE").is_some_and(|value| value == "1"))
+    {
+        eprintln!("menu strip: {}", message());
+    }
+}
+
 /// The height app windows add for the strip: [`MENU_STRIP_HEIGHT`] once the
 /// app's menus are installed with the strip on, otherwise nothing.
 pub fn height(cx: &App) -> f32 {
@@ -112,6 +123,7 @@ pub(crate) fn install(app_id: &'static str, cx: &mut App) {
                 return None;
             }
             let strip = cx.new(MenuStrip::new);
+            trace(|| format!("strip for window {id:?}"));
             let handle = window.window_handle();
             let strips = &mut cx.global_mut::<MenuStrips>().strips;
             strips.retain(|(_, strip)| strip.upgrade().is_some());
@@ -122,8 +134,10 @@ pub(crate) fn install(app_id: &'static str, cx: &mut App) {
     cx.bind_keys([KeyBinding::new("alt", ToggleMenuStrip, None)]);
     cx.on_action(|_: &ToggleMenuStrip, cx| {
         let Some(window) = cx.active_window() else {
+            trace(|| "Alt: no active window".into());
             return;
         };
+        trace(|| format!("Alt: strip found: {}", strip_for(window, cx).is_some()));
         with_strip(window, cx, |strip, window, cx| strip.toggle(window, cx));
     });
     cx.on_action(
@@ -137,6 +151,15 @@ pub(crate) fn install(app_id: &'static str, cx: &mut App) {
     cx.observe_keystrokes(|event, window, cx| {
         let keystroke = &event.keystroke;
         let modifiers = keystroke.modifiers;
+        if modifiers.alt || keystroke.key == "alt" {
+            trace(|| {
+                format!(
+                    "keystroke {} -> {:?}",
+                    keystroke.unparse(),
+                    event.action.as_ref().map(|action| action.name())
+                )
+            });
+        }
         if event.action.is_some()
             || !modifiers.alt
             || modifiers.control
@@ -359,6 +382,7 @@ impl MenuStrip {
     fn open_menu(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let menus = strip_menus(&self.app_name, crate::app_menu::current_menus(cx));
         let Some(menu) = menus.into_iter().nth(index) else {
+            trace(|| format!("no menu {index}"));
             return;
         };
         // Commands go back to whatever had focus before the strip opened,
@@ -379,6 +403,7 @@ impl MenuStrip {
         let position = anchor.map_or(point(px(0.0), px(MENU_STRIP_HEIGHT)), |bounds| {
             point(bounds.left(), bounds.bottom())
         });
+        trace(|| format!("open {} at {position:?}", menu.label));
         let state = ContextMenuState::open(position, &return_focus, window, cx);
         // Choosing a command moves focus back out of the menu: close then.
         let menu_focus = state.menu_focus().clone();
@@ -406,6 +431,7 @@ impl MenuStrip {
         let Some(open) = self.open.take() else {
             return;
         };
+        trace(|| format!("close menu {}", open.index));
         if restore_focus {
             window.focus(&open.return_focus, cx);
         }

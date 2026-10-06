@@ -32,7 +32,7 @@ pub(crate) struct NotificationCenterView {
     /// `Window::scale_factor()`, refreshed every `render()` so a card's
     /// app icon (`rmac_ui::svg_icon`) rasterizes for the surface's real
     /// physical pixels.
-    scale_factor: f32,
+    pub(crate) scale_factor: f32,
 }
 
 impl NotificationCenterView {

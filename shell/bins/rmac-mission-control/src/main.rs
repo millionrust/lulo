@@ -14,6 +14,8 @@ mod capture;
 #[cfg(unix)]
 mod ipc;
 mod model;
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+mod screencopy;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
@@ -1804,6 +1806,9 @@ mod linux_wayland {
     fn run_service() -> Result<(), String> {
         let listener = crate::ipc::Listener::bind()
             .map_err(|error| format!("could not bind the Mission Control socket: {error}"))?;
+        // Open the capture connection now, so the first open does not wait
+        // for it (SPEED-03).
+        crate::screencopy::start();
         let (command_tx, command_rx) = async_channel::bounded(32);
         std::thread::Builder::new()
             .name("rmac-mission-control-ipc".into())

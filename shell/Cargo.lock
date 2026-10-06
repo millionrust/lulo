@@ -6203,6 +6203,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "image",
+ "libc",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
@@ -6210,6 +6211,8 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-ui",
  "uuid",
+ "wayland-client",
+ "wayland-protocols-wlr",
 ]
 
 [[package]]

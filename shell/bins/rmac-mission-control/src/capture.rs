@@ -19,8 +19,15 @@ pub struct Picture {
     pub rgb: Vec<u8>,
 }
 
-/// `grim -t ppm -o OUTPUT -`.
+/// The output through the service's open wlr-screencopy connection
+/// (`screencopy`), else `grim -t ppm -o OUTPUT -`.
 pub fn grab_output(output: &str) -> io::Result<Picture> {
+    #[cfg(all(target_os = "linux", feature = "wayland"))]
+    match crate::screencopy::capture(output) {
+        Ok(picture) => return Ok(picture),
+        Err(error) if error.kind() == io::ErrorKind::Unsupported => {}
+        Err(error) => eprintln!("Mission Control screencopy failed, using grim: {error}"),
+    }
     let result = Command::new("grim")
         .args(["-t", "ppm", "-o", output, "-"])
         .stdin(Stdio::null())

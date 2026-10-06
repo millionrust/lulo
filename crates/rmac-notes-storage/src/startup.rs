@@ -255,6 +255,8 @@ mod tests {
         std::fs::write(paths.legacy_root().join(".sort"), b"title").unwrap();
     }
 
+    // Unix path literals: on Windows `/home/alex` is not absolute.
+    #[cfg(unix)]
     #[test]
     fn environment_paths_never_fall_back_to_the_working_directory() {
         let paths = NotesPaths::from_environment(None, Some(OsString::from("/home/alex"))).unwrap();
@@ -288,15 +290,13 @@ mod tests {
 
     #[test]
     fn overlapping_or_non_normal_roots_are_rejected() {
+        let base = std::env::temp_dir();
         assert_eq!(
-            NotesPaths::new(PathBuf::from("/tmp/a/data"), PathBuf::from("/tmp/a")),
+            NotesPaths::new(base.join("a").join("data"), base.join("a")),
             Err(NotesPathError::OverlappingRoots)
         );
         assert_eq!(
-            NotesPaths::new(
-                PathBuf::from("/tmp/a/../data"),
-                PathBuf::from("/tmp/legacy")
-            ),
+            NotesPaths::new(base.join("a").join("..").join("data"), base.join("legacy")),
             Err(NotesPathError::InvalidDataHome)
         );
     }

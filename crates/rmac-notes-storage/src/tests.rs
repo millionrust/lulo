@@ -12,6 +12,20 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+/// The fake backend's library root, absolute on every platform (a Windows
+/// path needs a drive to be absolute).
+fn virtual_library_root() -> PathBuf {
+    PathBuf::from(if cfg!(windows) {
+        "C:/virtual/library"
+    } else {
+        "/virtual/library"
+    })
+}
+
+fn virtual_library(relative: &str) -> PathBuf {
+    virtual_library_root().join(relative)
+}
+
 #[derive(Default)]
 struct FakeState {
     files: BTreeMap<PathBuf, Vec<u8>>,
@@ -161,7 +175,7 @@ fn purge_fixture() -> (LibrarySnapshot, PathBuf, Vec<u8>) {
             }],
             ..LibrarySnapshot::default()
         },
-        PathBuf::from("/virtual/library/attachments/00000000000000000001.bin"),
+        virtual_library("attachments/00000000000000000001.bin"),
         attachment_bytes,
     )
 }
@@ -225,7 +239,7 @@ fn orphan_fixture() -> (LibrarySnapshot, PathBuf, Vec<u8>) {
             }],
             ..LibrarySnapshot::default()
         },
-        PathBuf::from("/virtual/library/attachments/00000000000000000001.bin"),
+        virtual_library("attachments/00000000000000000001.bin"),
         attachment_bytes,
     )
 }
@@ -257,7 +271,7 @@ fn store() -> (NotesLibraryStore<FakeBackend>, FakeBackend) {
     (
         NotesLibraryStore::with_backend(
             backend.clone(),
-            WriterLease::for_fake_backend(PathBuf::from("/virtual/library")),
+            WriterLease::for_fake_backend(virtual_library_root()),
         ),
         backend,
     )
@@ -1025,33 +1039,29 @@ fn migration_preserves_every_source_before_metadata_and_is_idempotent() {
     assert!(!outcome.maintenance_pending);
     assert_eq!(outcome.library.snapshot(), &plan.snapshot);
     assert_eq!(
-        backend.get(&PathBuf::from(
-            "/virtual/library/legacy-recovery/notes/00000000000000000001.md"
+        backend.get(&virtual_library(
+            "legacy-recovery/notes/00000000000000000001.md"
         )),
         Some(input.notes[0].bytes.clone())
     );
     assert_eq!(
-        backend.get(&PathBuf::from(
-            "/virtual/library/legacy-recovery/files/00000000000000000000.bin"
+        backend.get(&virtual_library(
+            "legacy-recovery/files/00000000000000000000.bin"
         )),
         Some(input.attachments[0].bytes.clone())
     );
     assert_eq!(
-        backend.get(&PathBuf::from(
-            "/virtual/library/legacy-recovery/files/00000000000000000001.bin"
+        backend.get(&virtual_library(
+            "legacy-recovery/files/00000000000000000001.bin"
         )),
         Some(input.attachments[1].bytes.clone())
     );
     assert_eq!(
-        backend.get(&PathBuf::from(
-            "/virtual/library/attachments/00000000000000000001.bin"
-        )),
+        backend.get(&virtual_library("attachments/00000000000000000001.bin")),
         Some(input.attachments[0].bytes.clone())
     );
     assert!(backend
-        .get(&PathBuf::from(
-            "/virtual/library/legacy-recovery/receipt.bin",
-        ))
+        .get(&virtual_library("legacy-recovery/receipt.bin"))
         .unwrap()
         .starts_with(b"RMNMIG\0\0"));
 
@@ -1078,7 +1088,7 @@ fn changed_reread_or_conflicting_recovery_data_never_publishes_metadata() {
     assert_eq!(backend.get(&store.primary_path()), None);
 
     backend.set(
-        PathBuf::from("/virtual/library/legacy-recovery/notes/00000000000000000001.md"),
+        virtual_library("legacy-recovery/notes/00000000000000000001.md"),
         b"unrelated existing data".to_vec(),
     );
     let conflict = store
@@ -1109,14 +1119,10 @@ fn metadata_failure_leaves_verified_staging_for_a_safe_retry() {
         ))
     );
     assert!(backend
-        .get(&PathBuf::from(
-            "/virtual/library/legacy-recovery/receipt.bin",
-        ))
+        .get(&virtual_library("legacy-recovery/receipt.bin"))
         .is_some());
     assert!(backend
-        .get(&PathBuf::from(
-            "/virtual/library/attachments/00000000000000000001.bin"
-        ))
+        .get(&virtual_library("attachments/00000000000000000001.bin"))
         .is_some());
 
     let recovered = store.load().unwrap();
@@ -1143,9 +1149,7 @@ fn migration_refuses_to_stage_over_a_nonempty_library() {
 
     assert_eq!(error.kind, MigrationCommitErrorKind::NonEmptyLibrary);
     assert_eq!(
-        backend.get(&PathBuf::from(
-            "/virtual/library/legacy-recovery/receipt.bin"
-        )),
+        backend.get(&virtual_library("legacy-recovery/receipt.bin")),
         None
     );
     assert_eq!(store.load().unwrap().snapshot(), &existing);

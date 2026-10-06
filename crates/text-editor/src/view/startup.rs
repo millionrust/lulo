@@ -324,16 +324,19 @@ mod tests {
 
     #[test]
     fn a_second_launch_hands_its_documents_to_the_running_editor() {
+        // An absolute path on every platform (Windows needs a drive).
+        let one = if cfg!(windows) {
+            r"C:\home\user\one.txt"
+        } else {
+            "/home/user/one.txt"
+        };
         let request = StartupRequest {
             open_untitled: true,
-            paths: vec![
-                PathBuf::from("/home/user/one.txt"),
-                PathBuf::from("two.txt"),
-            ],
+            paths: vec![PathBuf::from(one), PathBuf::from("two.txt")],
         };
         let windows = hand_off_windows(&request).unwrap();
         assert_eq!(windows[0], ["--new-document"]);
-        assert_eq!(windows[1], ["--", "/home/user/one.txt"]);
+        assert_eq!(windows[1], ["--", one]);
         // Relative paths are resolved here, where they were typed.
         assert!(std::path::Path::new(&windows[2][1]).is_absolute());
         assert!(windows[2][1].ends_with("two.txt"));

@@ -14,6 +14,9 @@ pub struct WgpuContext {
     dual_source_blending: bool,
     color_texture_format: wgpu::TextureFormat,
     device_lost: Arc<AtomicBool>,
+    /// rmac: render pipelines and bind group layouts shared by every window
+    /// on this device (see `WgpuRenderer::shared_pipelines`).
+    pub(crate) pipeline_cache: std::cell::RefCell<crate::wgpu_renderer::PipelineCache>,
 }
 
 #[derive(Clone, Copy)]
@@ -96,6 +99,7 @@ impl WgpuContext {
             dual_source_blending,
             color_texture_format,
             device_lost,
+            pipeline_cache: Default::default(),
         })
     }
 
@@ -136,6 +140,7 @@ impl WgpuContext {
             dual_source_blending,
             color_texture_format,
             device_lost,
+            pipeline_cache: Default::default(),
         })
     }
 

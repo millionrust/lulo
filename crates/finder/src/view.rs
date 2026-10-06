@@ -32,6 +32,7 @@ mod permanent_delete_controller;
 mod presentation;
 mod presentation_persistence;
 mod presentation_support;
+mod progress_window;
 mod quick_look_controller;
 mod recovery_controller;
 mod rename_controller;
@@ -199,6 +200,7 @@ actions!(
         CloseAll,
         PreviousTab,
         NextTab,
+        ShowProgressWindow,
         ShowHelp,
         ToggleSidebar,
         TogglePathBar,

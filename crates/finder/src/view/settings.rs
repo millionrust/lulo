@@ -377,6 +377,13 @@ pub(super) fn register_window(weak: WeakEntity<FinderView>, handle: AnyWindowHan
     windows.push((weak, handle));
 }
 
+/// Every registered Files window; a closed one no longer upgrades.
+pub(super) fn finder_windows(cx: &App) -> Vec<WeakEntity<FinderView>> {
+    cx.try_global::<OpenFinderWindows>()
+        .map(|windows| windows.0.iter().map(|(weak, _)| weak.clone()).collect())
+        .unwrap_or_default()
+}
+
 /// Close each Finder window through its normal persistence path. The action
 /// is deferred until after the active window's event finishes dispatching.
 pub(super) fn close_all_windows(cx: &mut App) {

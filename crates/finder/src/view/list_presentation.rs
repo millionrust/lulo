@@ -1000,6 +1000,9 @@ impl FinderView {
             }))
             .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.select_adjacent_tab(-1, cx)))
             .on_action(cx.listener(|this, _: &NextTab, _, cx| this.select_adjacent_tab(1, cx)))
+            .on_action(
+                cx.listener(|this, _: &ShowProgressWindow, _, cx| this.show_progress_window(cx)),
+            )
             .on_action(cx.listener(|this, _: &ToggleTabBar, _, cx| this.toggle_tab_bar(cx)))
             .on_action(cx.listener(|this, _: &ToggleToolbar, _, cx| {
                 this.toolbar_visible = !this.toolbar_visible;

@@ -1457,7 +1457,8 @@ const FILES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Window",
         items: &[
-            item!("Show Previous Tab", "finder::PreviousTab", ""),
+            item!("Show Progress Window", "finder::ShowProgressWindow", ""),
+            item!("Show Previous Tab", "finder::PreviousTab", "", separator),
             item!("Show Next Tab", "finder::NextTab", ""),
         ],
     },

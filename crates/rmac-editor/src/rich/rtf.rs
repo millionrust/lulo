@@ -927,11 +927,9 @@ impl<'a> Parser<'a> {
                     self.field_instruction.clear();
                 }
             }
-            "fldrslt" => {
-                if self.destination == Destination::Text {
-                    if let Some(target) = hyperlink_target(&self.field_instruction) {
-                        self.run.link = Some(target);
-                    }
+            "fldrslt" if self.destination == Destination::Text => {
+                if let Some(target) = hyperlink_target(&self.field_instruction) {
+                    self.run.link = Some(target);
                 }
             }
             "sl" => self.paragraph.line_spacing_twips = param.unwrap_or(0),

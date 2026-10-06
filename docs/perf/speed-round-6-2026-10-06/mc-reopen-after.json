@@ -1,0 +1,67 @@
+{
+  "captured_at": "2026-10-06T09:09:50Z",
+  "failures": [],
+  "open_ms_median": 74.34044301044196,
+  "opens_ms": [
+    133.5024390136823,
+    72.21870799548924,
+    123.81014600396156,
+    66.83425698429346,
+    74.34044301044196
+  ],
+  "output": "1920x1080",
+  "passed": true,
+  "rounds": [
+    {
+      "hidden_cpu_ms": 0.0,
+      "hidden_diff": 0.0,
+      "hidden_presents": 0,
+      "input_rows_to_hidden_overlay": 0,
+      "keyboard_to_calculator": true,
+      "open_ms": 133.5024390136823,
+      "pointer_to_calculator": true,
+      "shown_diff": 0.058935345630646264
+    },
+    {
+      "hidden_cpu_ms": 0.0,
+      "hidden_diff": 0.0,
+      "hidden_presents": 0,
+      "input_rows_to_hidden_overlay": 0,
+      "keyboard_to_calculator": true,
+      "open_ms": 72.21870799548924,
+      "pointer_to_calculator": true,
+      "shown_diff": 0.1250327730264369
+    },
+    {
+      "hidden_cpu_ms": 0.0,
+      "hidden_diff": 0.0,
+      "hidden_presents": 0,
+      "input_rows_to_hidden_overlay": 0,
+      "keyboard_to_calculator": true,
+      "open_ms": 123.81014600396156,
+      "pointer_to_calculator": true,
+      "shown_diff": 0.1250327730264369
+    },
+    {
+      "hidden_cpu_ms": 0.0,
+      "hidden_diff": 0.0,
+      "hidden_presents": 0,
+      "input_rows_to_hidden_overlay": 0,
+      "keyboard_to_calculator": true,
+      "open_ms": 66.83425698429346,
+      "pointer_to_calculator": true,
+      "shown_diff": 0.1250327730264369
+    },
+    {
+      "hidden_cpu_ms": 0.0,
+      "hidden_diff": 0.0,
+      "hidden_presents": 0,
+      "input_rows_to_hidden_overlay": 0,
+      "keyboard_to_calculator": true,
+      "open_ms": 74.34044301044196,
+      "pointer_to_calculator": true,
+      "shown_diff": 0.1250327730264369
+    }
+  ],
+  "schema_version": 1
+}

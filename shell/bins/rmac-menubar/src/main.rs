@@ -1131,9 +1131,31 @@ mod linux_wayland {
             self.close_menu(window, cx);
             if let Some(window) = target {
                 cx.spawn(async move |_, _| {
-                    let action = rmac_compositor::Action::FocusWindow { window };
-                    if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
-                        eprintln!("could not return focus from the menu bar: {error:?}");
+                    // A click gave the bar niri's on-demand layer focus, which
+                    // `FocusWindow` alone leaves in place. Focusing the
+                    // window's own (already active) workspace releases it
+                    // without moving anything; then the window takes the
+                    // keyboard back.
+                    let workspace =
+                        rmac_compositor_niri::snapshot()
+                            .await
+                            .ok()
+                            .and_then(|snapshot| {
+                                snapshot
+                                    .windows
+                                    .iter()
+                                    .find(|candidate| candidate.id == window)
+                                    .and_then(|candidate| candidate.workspace)
+                            });
+                    let actions = workspace
+                        .map(|workspace| rmac_compositor::Action::FocusWorkspace { workspace })
+                        .into_iter()
+                        .chain([rmac_compositor::Action::FocusWindow { window }]);
+                    for action in actions {
+                        if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                            eprintln!("could not return focus from the menu bar: {error:?}");
+                            return;
+                        }
                     }
                 })
                 .detach();

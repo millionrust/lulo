@@ -126,13 +126,7 @@ impl EditorView {
 
     /// The recovery draft's content and whether it is RTF.
     fn recovery_content(&self, cx: &App) -> (String, bool) {
-        if self.rich_text {
-            let rtf = rich::rtf::write(self.rich.read(cx).document());
-            // The writer emits only ASCII.
-            (String::from_utf8_lossy(&rtf).into_owned(), true)
-        } else {
-            (self.document_text(cx), false)
-        }
+        recovery_content_of(self.save_content(cx))
     }
 
     /// Show `document` in the rich-text editor and switch the window to
@@ -323,15 +317,12 @@ impl EditorView {
                     this.recovery_clock
                         .should_write(generation, this.dirty)
                         .then(|| {
-                            let (content, rich_content) = this.recovery_content(cx);
+                            // A snapshot only (a rich document shares its
+                            // paragraphs): writing 1 MB of RTF here took a
+                            // whole frame mid-typing (SPEED-13).
                             (
                                 this.recovery_path.clone(),
-                                recovery::RecoveryRecord::for_document(
-                                    this.path.as_deref(),
-                                    this.text_format,
-                                    content,
-                                    rich_content,
-                                ),
+                                (this.path.clone(), this.text_format, this.save_content(cx)),
                                 this.recovery_cleanup_paths.clone(),
                                 this.document_generation,
                             )
@@ -346,6 +337,14 @@ impl EditorView {
                     let path = path.clone();
                     let writer = writer.clone();
                     async move {
+                        let (source, format, snapshot) = record;
+                        let (content, rich_content) = recovery_content_of(snapshot);
+                        let record = recovery::RecoveryRecord::for_document(
+                            source.as_deref(),
+                            format,
+                            content,
+                            rich_content,
+                        );
                         writer.save(&storage::RealStorage, &path, &record, content_generation)?;
                         storage::remove_recovery_paths(&storage::RealStorage, &cleanup_paths)
                     }
@@ -468,5 +467,17 @@ impl EditorView {
                 }
             })
             .detach();
+    }
+}
+
+/// A recovery draft's content and whether it is RTF.
+fn recovery_content_of(content: SaveContent) -> (String, bool) {
+    match content {
+        SaveContent::Rich(document) => {
+            let rtf = rich::rtf::write(&document);
+            // The writer emits only ASCII.
+            (String::from_utf8_lossy(&rtf).into_owned(), true)
+        }
+        SaveContent::Plain(text) => (text, false),
     }
 }

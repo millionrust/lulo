@@ -168,7 +168,7 @@ impl NotesView {
 
         for folder in self.session.folders() {
             let folder_id = folder.id;
-            rows = rows.child(folder_row(
+            let row = folder_row(
                 ("folder", folder_id.get()),
                 folder.name.clone(),
                 glyphs::FOLDER,
@@ -178,7 +178,15 @@ impl NotesView {
                 cx.listener(move |this, _, window, cx| {
                     this.select_folder(FolderSelection::Folder(folder_id), window, cx)
                 }),
-            ));
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                    cx.stop_propagation();
+                    this.open_folder_context_menu(folder_id, event.position, window, cx);
+                }),
+            );
+            rows = rows.child(row);
         }
 
         // File ▸ New Smart Folder / New Smart Folder with Tag Selection
@@ -824,6 +832,13 @@ impl NotesView {
                             this.select_note(note_id, window, cx)
                         }
                     }))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.open_note_context_menu(note_id, event.position, window, cx);
+                        }),
+                    )
                     .into_any_element(),
             );
         }

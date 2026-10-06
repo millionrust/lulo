@@ -91,6 +91,7 @@ impl NotesView {
         let attachment_rename_dialog = self.render_attachment_rename_dialog(cx);
         let notes_help_dialog = self.render_notes_help_dialog(cx);
         let customise_toolbar_dialog = self.render_customise_toolbar_dialog(cx);
+        let context_menu = self.render_context_menu(cx);
 
         div()
             .key_context("Notes")
@@ -592,6 +593,14 @@ impl NotesView {
                 }),
             )
             .on_action(cx.listener(|this, _: &ShowTagsHelp, _, cx| this.show_tags_help(cx)))
+            .on_action(cx.listener(|this, action: &MoveNoteToFolderAction, _, cx| {
+                this.move_selected_note_to(action.folder_id, cx)
+            }))
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
+                if rmac_ui::ContextMenuState::dismiss(&mut this.context_menu, window, cx) {
+                    cx.notify();
+                }
+            }))
             .size_full()
             .bg(mac::window())
             .text_color(mac::text())
@@ -617,6 +626,7 @@ impl NotesView {
             .when_some(customise_toolbar_dialog, |element, dialog| {
                 element.child(dialog)
             })
+            .when_some(context_menu, |element, menu| element.child(menu))
             .into_any_element()
     }
 }

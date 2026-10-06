@@ -97,7 +97,7 @@ impl Settings {
                 this.finish_login_items_update(result);
                 this.login_items_error = None;
                 this.run_pending_login_items_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&["Login Items"], cx);
             });
         })
         .detach();

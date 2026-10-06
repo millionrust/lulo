@@ -183,12 +183,21 @@ pub(super) fn query(tag: &str, options: Options<'_>) -> Result<Vec<PathBuf>, Err
         .collect())
 }
 
+#[cfg(unix)]
 fn read_tag(path: &Path) -> Result<String, ()> {
     let mut buffer = [0u8; 32];
     let length = rustix::fs::getxattr(path, XATTR_NAME, &mut buffer).map_err(|_| ())?;
     std::str::from_utf8(&buffer[..length])
         .map(str::to_lowercase)
         .map_err(|_| ())
+}
+
+/// Windows has no extended attributes; Files there will keep a tag in an
+/// NTFS alternate data stream instead (ADR 0023). Until it writes one, no
+/// file carries a tag.
+#[cfg(not(unix))]
+fn read_tag(_path: &Path) -> Result<String, ()> {
+    Err(())
 }
 
 #[cfg(test)]

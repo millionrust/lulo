@@ -14,6 +14,7 @@ mod feedback;
 pub mod gallery;
 pub mod mac;
 mod menu_target;
+mod platform;
 mod runtime;
 pub mod scroll;
 pub mod session;
@@ -114,8 +115,9 @@ pub const UI_FONT: &str = "Inter";
 pub const MONO_FONT: &str = "JetBrains Mono";
 
 /// Construct GPUI with the platform backend that owns native display and
-/// Wayland layer-shell integration.
+/// Wayland layer-shell integration (or, on Windows, Win32 and DirectX).
 pub fn application() -> gpui::Application {
+    platform::prepare_environment();
     gpui_platform::application()
 }
 

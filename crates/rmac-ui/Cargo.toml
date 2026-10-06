@@ -20,13 +20,16 @@ rmac-app-menu.workspace = true
 rmac-apps.workspace = true
 rmac-recent-documents.workspace = true
 rmac-compositor.workspace = true
-rmac-compositor-niri.workspace = true
 rmac-design.workspace = true
-rmac-dock.workspace = true
 rmac-shell-settings.workspace = true
 rmac-theme.workspace = true
-rmac-top-bar.workspace = true
 rmac-window-state.workspace = true
 
+# The Lulo desktop's window manager (niri), menu bar and Dock: windows are
+# placed and parked through them on Linux (and in macOS development builds).
+# Windows has its own window manager; see `window_manager` and ADR 0023.
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
+rmac-compositor-niri.workspace = true
+rmac-dock.workspace = true
+rmac-top-bar.workspace = true

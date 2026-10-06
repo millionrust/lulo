@@ -31,6 +31,7 @@ enum WindowAction {
 /// minimize, so all three are compositor actions on this process's focused
 /// window. Minimize parks the window on `rmac-parking` and records where it
 /// came from so the app menu's Show All can restore it (§2.2).
+#[cfg(unix)]
 fn send_window_action(action: WindowAction, _cx: &mut App) {
     if let Some(command) = mission_control_command(action) {
         // Fill, Zoom and Tile are a floating-frame change: niri applies it
@@ -55,6 +56,12 @@ fn send_window_action(action: WindowAction, _cx: &mut App) {
     });
 }
 
+/// Windows carries out the same request through GPUI (see [`native`]).
+#[cfg(not(unix))]
+fn send_window_action(action: WindowAction, cx: &mut App) {
+    native::perform(action, cx);
+}
+
 /// The command word Mission Control's resident service
 /// (`rmac-mission-control --service`) understands for a `WindowAction`, or
 /// `None` for the two actions this process still performs on itself
@@ -64,6 +71,7 @@ fn send_window_action(action: WindowAction, _cx: &mut App) {
 /// have no Mission Control command and no caller in this crate; they fall
 /// back to the (known-unreliable) self-targeted path rather than silently
 /// doing nothing.
+#[cfg(unix)]
 fn mission_control_command(action: WindowAction) -> Option<&'static str> {
     Some(match action {
         WindowAction::Fill => "fill",
@@ -83,6 +91,7 @@ fn mission_control_command(action: WindowAction) -> Option<&'static str> {
 /// niri binds and hot corners (`rmac-mission-control/src/ipc.rs`,
 /// `$XDG_RUNTIME_DIR/rmac/mission-control.sock`). If the service is not
 /// running, this is a silent no-op, the same as a niri bind would be.
+#[cfg(unix)]
 fn ask_mission_control(command: &'static str) {
     let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from) else {
         return;
@@ -99,6 +108,7 @@ fn ask_mission_control(command: &'static str) {
 /// Run disk and compositor work only when a user asks for it. GPUI's UI and
 /// background executors can be occupied by app services, so neither should
 /// hold a title-bar action until another input event wakes them.
+#[cfg(unix)]
 fn spawn_window_action(name: &'static str, work: impl FnOnce() + Send + 'static) {
     if let Err(error) = std::thread::Builder::new().name(name.into()).spawn(work) {
         eprintln!("could not start {name}: {error}");
@@ -110,6 +120,7 @@ fn spawn_window_action(name: &'static str, work: impl FnOnce() + Send + 'static)
 /// handler can resolve the saved
 /// [`rmac_shell_settings::DoubleClickTitleBarAction`] off the main thread
 /// first, then perform the same action the traffic lights use.
+#[cfg(unix)]
 async fn perform_window_action(action: WindowAction) {
     let pid = std::process::id() as i32;
     let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
@@ -150,6 +161,9 @@ async fn perform_window_action(action: WindowAction) {
 /// own drag region (System Settings' toolbar, Weather's and Clock's title
 /// areas) can bind the same double-click behaviour `client_bar` uses.
 pub fn double_click_title_bar_action(_cx: &mut App) {
+    // A title-bar drag region is the window's caption on Windows, so the
+    // system already zooms (maximises or restores) on a double-click.
+    #[cfg(unix)]
     spawn_window_action("rmac-title-bar-action", move || {
         let setting = load_double_click_title_bar_action();
         // niri forwards the release to the client before ending its pointer
@@ -169,6 +183,7 @@ pub fn double_click_title_bar_action(_cx: &mut App) {
 
 /// The saved double-click action, or the Mac's own default (Zoom) when the
 /// shell-settings store cannot be read.
+#[cfg(unix)]
 fn load_double_click_title_bar_action() -> rmac_shell_settings::DoubleClickTitleBarAction {
     rmac_shell_settings::ShellSettingsStore::from_environment()
         .and_then(|store| store.load())
@@ -188,6 +203,9 @@ pub fn minimize_focused_window(cx: &mut App) {
 /// way the menu bar's Hide does, so Show All, the Dock and ⌘Tab bring them
 /// back. With `others`, ⌥⌘H parks every other application's windows instead.
 pub fn hide_application(others: bool, cx: &mut App) {
+    #[cfg(not(unix))]
+    native::hide_application(others, cx);
+    #[cfg(unix)]
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
         let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
@@ -219,6 +237,9 @@ pub fn hide_application(others: bool, cx: &mut App) {
 /// therefore goes through its own close guard, so an edited document still
 /// asks Save / Don't Save / Cancel. Files, like Finder, never quits.
 pub fn quit_application(cx: &mut App) {
+    #[cfg(not(unix))]
+    native::quit_application(cx);
+    #[cfg(unix)]
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
         let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
@@ -247,6 +268,7 @@ pub fn quit_application(cx: &mut App) {
 
 /// Every window, hidden or not, that ⌘Q closes for the process `pid`, or
 /// `None` when the process is Files, which has no Quit.
+#[cfg(unix)]
 fn quit_windows(
     snapshot: &rmac_compositor::Snapshot,
     pid: i32,
@@ -267,6 +289,7 @@ fn quit_windows(
 
 /// The windows ⌘H (`others == false`) or ⌥⌘H (`others == true`) parks for
 /// the process `pid`: its own visible windows, or every other application's.
+#[cfg(unix)]
 fn hidden_windows(
     snapshot: &rmac_compositor::Snapshot,
     pid: i32,
@@ -910,7 +933,59 @@ pub fn toolbar_group(children: impl IntoElement) -> impl IntoElement {
         .child(children)
 }
 
-#[cfg(test)]
+/// Windows: GPUI's own window calls, which Windows' window manager carries
+/// out (ADR 0023). There is no Mission Control or parking workspace there yet.
+#[cfg(not(unix))]
+mod native {
+    use gpui::App;
+
+    use super::WindowAction;
+
+    pub(super) fn perform(action: WindowAction, cx: &mut App) {
+        let Some(handle) = cx.active_window() else {
+            return;
+        };
+        let _ = handle.update(cx, |_, window, _| match action {
+            WindowAction::Minimize => window.minimize_window(),
+            WindowAction::ToggleFullscreen => window.toggle_fullscreen(),
+            // Windows' own Zoom is Maximise; a second double-click on the
+            // caption restores the window.
+            WindowAction::Fill | WindowAction::Zoom => window.zoom_window(),
+            WindowAction::Tile(_) => {
+                eprintln!("tiling a window is not available on Windows yet");
+            }
+        });
+    }
+
+    /// ⌘H minimises this app's windows. ⌥⌘H needs other apps' windows,
+    /// which only a Win32 window backend can reach.
+    pub(super) fn hide_application(others: bool, cx: &mut App) {
+        if others {
+            eprintln!("hiding other applications is not available on Windows yet");
+            return;
+        }
+        for handle in cx.windows() {
+            let _ = handle.update(cx, |_, window, _| window.minimize_window());
+        }
+    }
+
+    /// ⌘Q closes each window through its own close guard, as on Linux, so
+    /// an edited document still asks Save / Don't Save / Cancel.
+    pub(super) fn quit_application(cx: &mut App) {
+        for handle in cx.windows() {
+            let _ = handle.update(cx, |_, window, cx| {
+                let close = crate::components::RequestClose;
+                if window.is_action_available(&close, cx) {
+                    window.dispatch_action(Box::new(close), cx);
+                } else {
+                    window.remove_window();
+                }
+            });
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use rmac_compositor::{Snapshot, WindowId, WindowLayout, Workspace, WorkspaceId};

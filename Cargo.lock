@@ -6013,6 +6013,7 @@ name = "rmac-apps"
 version = "0.9.0-beta.1"
 dependencies = [
  "notify",
+ "serde",
 ]
 
 [[package]]
@@ -6302,6 +6303,7 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-storage",
  "rmac-theme",
+ "serde",
  "serde_json",
 ]
 

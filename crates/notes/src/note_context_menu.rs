@@ -25,6 +25,7 @@ pub(super) enum ContextMenuTarget {
 /// real menu from the same three flags; this pure projection lets a test
 /// catch a relabelling or a dropped item without constructing a
 /// `ContextMenu`/`ContextMenuState` (which need a live `Window`/`App`).
+#[cfg(test)]
 pub(super) fn note_context_menu_labels(
     pinned: bool,
     locked: bool,
@@ -48,6 +49,7 @@ pub(super) fn note_context_menu_labels(
 /// The folder-sidebar context menu's item labels, in order. Unlike the note
 /// menu this has no state-dependent relabelling, but the test still pins
 /// the exact wording and order against drift.
+#[cfg(test)]
 pub(super) fn folder_context_menu_labels() -> Vec<&'static str> {
     vec![
         "New Folder",

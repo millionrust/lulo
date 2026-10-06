@@ -89,3 +89,4 @@ strip = false
 [patch."https://github.com/zed-industries/zed.git"]
 ztracing = { path = "compat/ztracing" }
 gpui_linux = { path = "compat/gpui_linux" }
+gpui_wgpu = { path = "compat/gpui_wgpu" }

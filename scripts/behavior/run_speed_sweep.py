@@ -325,7 +325,11 @@ class Run:
         self._trace_count += 1
         trace = self.logs / f"trace-{label}-{self._trace_count}.csv"
         trace.unlink(missing_ok=True)
-        process = self.spawn(argv, f"{label}-{self._trace_count}", {**(extra or {}), "RMAC_FRAME_TRACE": str(trace)})
+        app_env = dict(item.split("=", 1) for item in self.args.app_env)
+        process = self.spawn(
+            argv, f"{label}-{self._trace_count}",
+            {**app_env, **(extra or {}), "RMAC_FRAME_TRACE": str(trace)},
+        )
         return process, trace
 
     @staticmethod
@@ -795,6 +799,8 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--repeat", type=int, default=3,
                         help="launches/opens per item; the median is reported")
+    parser.add_argument("--app-env", action="append", default=[], metavar="KEY=VALUE",
+                        help="extra environment for every measured process (experiments)")
     parser.add_argument("--only", action="append", default=[],
                         help="measure only these items (app names, panel names, settings-panes)")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)

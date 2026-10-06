@@ -7041,6 +7041,7 @@ dependencies = [
  "serde",
  "serde_json",
  "trash",
+ "windows 0.61.3",
 ]
 
 [[package]]

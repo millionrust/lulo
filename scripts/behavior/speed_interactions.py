@@ -403,7 +403,7 @@ class InteractionScenarios:
 
     def scenario_files_open_folder(self) -> dict[str, Any]:
         """Open the 2,000-item folder from its parent (select it by typing
-        its name, then Cmd-Down) and time the key to the first frame that
+        it with a click, then Cmd-Down) and time the key to the first frame that
         shows its rows (the window title switches to the folder) and to
         the last frame before the window goes quiet."""
 
@@ -415,15 +415,19 @@ class InteractionScenarios:
             self.input.key("cmd-2")
             self._settle(trace, 3.0)
             runs: list[dict[str, Any]] = []
-            # "Big" sorts first; after Cmd-Up, Files selects the folder it
-            # came from, as the Mac does.
-            self.input.key("down")
-            self._settle(trace, 2.0)
             for _ in range(self.args.repeat):
+                # Click "Big", the first row (toolbar 52 + header 28 + 5 +
+                # half a row), then Cmd-Down opens it.
+                current = self.window_by_app_id(FILES_APP_ID) or window
+                x, _ = self._window_centre(current, 0.6, 0.0)
+                pos = (current.get("layout") or {}).get("tile_pos_in_workspace_view") or [0, 0]
+                self.input.click(x, float(pos[1]) + 97.0, self.out_w, self.out_h)
+                self._settle(trace, 2.0)
                 mark = self._mark(trace)
                 self.input.key("cmd-down")
                 titled = self.wait_for(
-                    lambda: (self.window_by_app_id(FILES_APP_ID) or {}).get("title") == "Big", timeout=5.0)
+                    lambda: (self.window_by_app_id(FILES_APP_ID) or {}).get("title", "").startswith("Big"),
+                    timeout=5.0)
                 self._settle(trace, 4.0)
                 events = self._since(trace, mark)
                 inputs = [at for event, at in events if event == "input"]
@@ -439,7 +443,7 @@ class InteractionScenarios:
                     "worst_frame_ms": max(frame_costs_ms(events), default=None),
                 })
                 self.input.key("cmd-up")
-                self.wait_for(lambda: (self.window_by_app_id(FILES_APP_ID) or {}).get("title") != "Big",
+                self.wait_for(lambda: not (self.window_by_app_id(FILES_APP_ID) or {}).get("title", "").startswith("Big"),
                               timeout=5.0)
                 self._settle(trace, 3.0)
             first_ms = statistics.median([r["first_frame_ms"] for r in runs if r["first_frame_ms"] is not None])

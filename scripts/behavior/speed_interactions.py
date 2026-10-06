@@ -96,6 +96,34 @@ def frame_costs_ms(events: Events) -> list[float]:
     return out
 
 
+def frame_split_ms(events: Events) -> dict[str, Any]:
+    """Where drawn frames spend their time: GPUI's render, layout, prepaint
+    and paint (`frame_callback` to `draw_start`) and the renderer's submit
+    and present (`draw_start` to `present`), as p50/p95."""
+
+    render: list[float] = []
+    submit: list[float] = []
+    started: Optional[int] = None
+    drawing: Optional[int] = None
+    for event, micros in events:
+        if event == "frame_callback":
+            started, drawing = micros, None
+        elif event == "draw_start" and started is not None:
+            drawing = micros
+        elif event == "present" and started is not None and drawing is not None:
+            render.append((drawing - started) / 1000.0)
+            submit.append((micros - drawing) / 1000.0)
+            started = drawing = None
+        elif event == "draw_skip":
+            started = drawing = None
+    return {
+        "render_p50_ms": percentile(render, 0.5),
+        "render_p95_ms": percentile(render, 0.95),
+        "submit_p50_ms": percentile(submit, 0.5),
+        "submit_p95_ms": percentile(submit, 0.95),
+    }
+
+
 KEY_GAP_US = 45_000
 
 
@@ -179,6 +207,8 @@ def typing_summary(events: Events, target_ms: float = TYPING_P95_TARGET_MS) -> d
         "echo_p50_ms": percentile(latencies, 0.5),
         "echo_p95_ms": p95,
         "echo_max_ms": max(latencies) if latencies else None,
+        # SPEED-13: the first keys after a document opens.
+        "first_keys_ms": [round(latency, 3) for latency in latencies[:3]],
         "pass": p95 is not None and p95 <= target_ms,
         **frames_summary(events),
         # frames_summary's own pass is the frame budget; typing is judged
@@ -330,7 +360,8 @@ class InteractionScenarios:
 
     def _scroll(self, trace: Path, window: dict[str, Any], steps: int = 40, amount: float = 5.0,
                 fx: float = 0.6, fy: float = 0.55, interval: float = 0.016) -> dict[str, Any]:
-        return frames_summary_from_costs(self._scroll_costs(trace, window, steps, amount, fx, fy, interval))
+        costs = self._scroll_costs(trace, window, steps, amount, fx, fy, interval)
+        return {**frames_summary_from_costs(costs), **frame_split_ms(self._last_scroll_events)}
 
     def _scroll_costs(self, trace: Path, window: dict[str, Any], steps: int = 40, amount: float = 5.0,
                       fx: float = 0.6, fy: float = 0.55, interval: float = 0.016) -> list[float]:
@@ -348,7 +379,8 @@ class InteractionScenarios:
                 time.sleep(interval)
         time.sleep(0.5)
         self._settle(trace, 3.0)
-        return frame_costs_ms(self._since(trace, mark))
+        self._last_scroll_events = self._since(trace, mark)
+        return frame_costs_ms(self._last_scroll_events)
 
     def _type(self, trace: Path, text: str, delay: float = 0.06) -> dict[str, Any]:
         self._settle(trace, 2.0)
@@ -706,14 +738,14 @@ class InteractionScenarios:
         focused = self.niri_msg("focused-window")
         return focused.get("app_id") if isinstance(focused, dict) else None
 
-    def scenario_cmd_tab(self) -> dict[str, Any]:
-        """Cmd-Tab (Mod is Alt in a nested niri) between two apps: from the
-        stroke to the newly focused app's first frame drawn active."""
+    def _switcher_session(self):
+        """The App Switcher service plus Calculator and Clock to switch
+        between: (service, service trace, [(process, trace, app_id)])."""
 
         switcher = self.bin("rmac-app-switcher", "app-switcher")
         if switcher is None:
             raise RuntimeError("rmac-app-switcher not found under --bin-dir")
-        service, _ = self.traced([str(switcher), "--service"], "switch-service")
+        service, service_trace = self.traced([str(switcher), "--service"], "switch-service")
         apps = []
         try:
             if not self.wait_for((self.runtime / "rmac" / "app-switcher.sock").exists, timeout=20.0):
@@ -724,25 +756,100 @@ class InteractionScenarios:
                     raise RuntimeError(f"{name} not found under --bin-dir")
                 process, trace, _window = self._launch([str(binary)], f"switch-{name}", app_id)
                 apps.append((process, trace, app_id))
+        except BaseException:
+            for process, _trace, _app in apps:
+                self.stop(process)
+            self.stop(service)
+            raise
+        return service, service_trace, apps
+
+    def _switch_target(self, apps):
+        before = self._focused_app_id()
+        return next((a for a in apps if a[2] != before), None)
+
+    def scenario_cmd_tab(self) -> dict[str, Any]:
+        """A quick Cmd-Tab tap (Mod is Alt in a nested niri) between two
+        apps: from the stroke to the newly focused app's first frame drawn
+        active. The switcher's own first frame is reported too."""
+
+        service, service_trace, apps = self._switcher_session()
+        try:
             switches: list[Optional[float]] = []
+            switcher_frames: list[Optional[float]] = []
             for _ in range(max(3, self.args.repeat)):
-                before = self._focused_app_id()
-                target = next((a for a in apps if a[2] != before), None)
+                target = self._switch_target(apps)
                 if target is None:
                     break
                 baseline = self._presents(target[1])
+                service_baseline = self._presents(service_trace)
                 start = time.monotonic()
                 self.input.key("alt-tab")
+                switcher_frames.append(self._wait_present(service_trace, service_baseline, start))
                 presented = self._wait_present(target[1], baseline, start)
                 focused = self.wait_for(lambda: self._focused_app_id() == target[2], timeout=3.0)
                 switches.append(presented if focused else None)
                 time.sleep(0.4)
                 self._settle(target[1], 2.0)
             done = [s for s in switches if s is not None]
+            frames = [f for f in switcher_frames if f is not None]
             switch_ms = statistics.median(done) if done else None
             return {"switches": switches, "switch_ms": switch_ms,
+                    "switcher_first_frame_ms": statistics.median(frames) if frames else None,
                     "pass": switch_ms is not None and switch_ms <= 100.0,
                     **({} if done else {"error": "Alt-Tab never switched apps"})}
+        finally:
+            for process, _trace, _app in apps:
+                self.stop(process)
+            self.stop(service)
+
+    def _wait_reveal(self, trace: Path, mark: int, start: float, timeout: float = 3.0) -> Optional[float]:
+        """Harness-clock ms from `start` until the switcher presents its
+        full-size panel: the first `present` after a `resize` row (the
+        surface opens at 1 x 1 and grows when it reveals)."""
+
+        deadline = start + timeout
+        while time.monotonic() < deadline:
+            resized = False
+            for event, _micros in read_trace(trace)[mark:]:
+                if event == "resize":
+                    resized = True
+                elif event == "present" and resized:
+                    return (time.monotonic() - start) * 1000.0
+            time.sleep(0.003)
+        return None
+
+    def scenario_cmd_tab_hold(self) -> dict[str, Any]:
+        """Cmd-Tab with Cmd held, as when browsing the switcher: from the
+        Tab stroke to the panel's first full-size frame (target < 50 ms),
+        then from releasing Cmd to the chosen app's next frame."""
+
+        service, service_trace, apps = self._switcher_session()
+        try:
+            reveals: list[Optional[float]] = []
+            commits: list[Optional[float]] = []
+            for _ in range(max(3, self.args.repeat)):
+                target = self._switch_target(apps)
+                if target is None:
+                    break
+                mark = self._mark(service_trace)
+                start = time.monotonic()
+                self.input.hold("alt-tab")
+                reveals.append(self._wait_reveal(service_trace, mark, start))
+                time.sleep(0.3)
+                baseline = self._presents(target[1])
+                start = time.monotonic()
+                self.input.release("alt-tab")
+                presented = self._wait_present(target[1], baseline, start)
+                focused = self.wait_for(lambda: self._focused_app_id() == target[2], timeout=3.0)
+                commits.append(presented if focused else None)
+                time.sleep(0.4)
+                self._settle(target[1], 2.0)
+            shown = [r for r in reveals if r is not None]
+            done = [c for c in commits if c is not None]
+            reveal_ms = statistics.median(shown) if shown else None
+            return {"reveals": reveals, "commits": commits, "reveal_ms": reveal_ms,
+                    "release_to_switch_ms": statistics.median(done) if done else None,
+                    "pass": reveal_ms is not None and reveal_ms <= 50.0 and bool(done)}
         finally:
             for process, _trace, _app in apps:
                 self.stop(process)
@@ -819,7 +926,8 @@ class InteractionScenarios:
                 layout = (self.window_by_app_id(SETTINGS_APP_ID) or window).get("layout") or {}
                 x = float((layout.get("tile_pos_in_workspace_view") or [x, 0])[0])
             self._settle(trace, 3.0)
-            summary = frames_summary(self._since(trace, mark))
+            events = self._since(trace, mark)
+            summary = {**frames_summary(events), **frame_split_ms(events)}
             final = (self.window_by_app_id(SETTINGS_APP_ID) or {}).get("layout") or {}
             summary["final_size"] = final.get("window_size")
             return summary
@@ -873,6 +981,7 @@ SCENARIOS: dict[str, str] = {
     "text-editor-plain-typing": "scenario_text_editor_plain_typing",
     "text-editor-rich-typing": "scenario_text_editor_rich_typing",
     "cmd-tab": "scenario_cmd_tab",
+    "cmd-tab-hold": "scenario_cmd_tab_hold",
     "minimise-restore": "scenario_minimise_restore",
     "resize-drag": "scenario_resize_drag",
     "mission-control-animation": "scenario_mission_control_animation",

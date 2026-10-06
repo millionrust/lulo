@@ -335,6 +335,35 @@ class Wayland:
         mods, code = parse_chord(chord)
         self.stroke(mods, code)
 
+    def hold(self, chord: str) -> None:
+        """Press the chord's modifiers, tap its key and keep the modifiers
+        down (⌘Tab held to browse the switcher); `release` lets them go."""
+
+        mods, code = parse_chord(chord)
+        mask = 0
+        for mod in mods:
+            key, bit = MODIFIER_KEYS[mod]
+            self._key(key, True)
+            mask |= bit
+            self._modifiers(mask)
+        self._key(code, True)
+        self.roundtrip()
+        time.sleep(0.02)
+        self._key(code, False)
+        self.roundtrip()
+
+    def release(self, chord: str) -> None:
+        mods, _code = parse_chord(chord)
+        mask = 0
+        for mod in mods:
+            mask |= MODIFIER_KEYS[mod][1]
+        for mod in reversed(mods):
+            key, bit = MODIFIER_KEYS[mod]
+            self._key(key, False)
+            mask &= ~bit
+            self._modifiers(mask)
+        self.roundtrip()
+
     def type_text(self, text: str, delay: float = 0.03) -> None:
         for mods, code in text_to_strokes(text):
             self.stroke(mods, code)

@@ -309,6 +309,15 @@ hardware adapters and falls back to upstream's full Vulkan+GL selection only
 when that finds nothing usable, so GL-only and software-only machines still
 get a renderer.
 
+Round 2 (docs/perf/speed-round-2-2026-10-06.md) added, in the same crates:
+a per-device cache of bind group layouts and pipelines shared by every
+window; `VK_DRIVER_FILES` limited to the present GPUs' driver manifests
+until the first instance exists (left alone for unknown vendors or an
+explicit choice); the system font scan on its own thread, waited for by the
+first text call; and, on single-GPU machines, the Vulkan device made on a
+thread as soon as the Wayland client connects, taken and surface-checked by
+the first window.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and `gpui_wgpu` and

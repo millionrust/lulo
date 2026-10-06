@@ -360,9 +360,22 @@ impl NotesView {
                 AccessibleAction::ReplaceSelectedText,
                 self.assistive_search_listener(cx),
             )
-            .w(px(search_width))
+            // UIA-17: a fixed `.w()` here (with the row's other items all
+            // `flex_none`) let the capsule's computed width — only a rough
+            // estimate of the format/more capsules' real width, which
+            // varies with how many optional toolbar items (Checklist,
+            // Table, Maths Results, Media, Move Note) are visible — run
+            // past the window's right edge whenever the estimate was a
+            // little short, instead of giving way. `flex_shrink` plus a
+            // `min_w` floor lets the search capsule itself absorb that
+            // error and any narrower window, down to the Mac's measured
+            // minimum, before anything clips.
+            .flex_shrink(1.0)
+            .flex_grow(0.0)
+            .flex_basis(px(search_width))
+            .min_w(px(SEARCH_MIN_WIDTH))
+            .max_w(px(SEARCH_MAX_WIDTH))
             .h(px(CAPSULE_HEIGHT))
-            .flex_none()
             .flex()
             .items_center()
             .gap(px(4.0))

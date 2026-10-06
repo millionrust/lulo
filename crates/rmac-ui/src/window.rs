@@ -223,7 +223,14 @@ fn fit_to_usable_area(
 /// integer scale, and briefly reports that integer scale), so ask the
 /// compositor for the focused output's logical size and shrink the new window
 /// if it reaches under the Dock.
-fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
+///
+/// Every `boot*` entry point calls this itself inside `cx.open_window`'s
+/// callback. An app that opens its own window directly with `cx.open_window`
+/// instead of a `boot*` helper (Clock, Preview, Mail, Weather, Calendar —
+/// UIA-13) must call this too, right after `prepare_surface_window`, or its
+/// default size/position is never checked against the Dock's exclusive zone
+/// and it can open with its bottom edge under the Dock.
+pub fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
     window
         .spawn(cx, async move |cx| {
             let pid = std::process::id() as i32;
@@ -592,8 +599,17 @@ where
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
-            let options = window_options_unified(width, height, cx);
+            // The caller names the visible window's size (the Mac's); the
+            // outer bounds add the client frame around it (UIA-26: without
+            // this, Root still reserves its 12 pt shadow margin out of
+            // whatever size the platform window is given, so a never-told
+            // `reserve_client_frame` below shrinks the usable content box
+            // by 2 × `CLIENT_FRAME_INSET` — a 723 pt-wide Settings window
+            // measured 699).
+            let (outer_width, outer_height) = outer_window_size(width, height);
+            let options = window_options_unified(outer_width, outer_height, cx);
             cx.open_window(options, move |window, cx| {
+                reserve_client_frame(window);
                 prepare_surface_window(window, cx);
                 fit_to_display_after_first_frame(window, cx);
                 let view = cx.new(|cx| build(window, cx));
@@ -621,8 +637,11 @@ pub fn boot_unified_app_with_assets<A, V, F>(
         .run(move |cx: &mut App| {
             init_application(cx);
             install_app_menu(app_id, cx);
-            let options = window_options_unified_for_app(app_id, width, height, cx);
+            // See the matching comment in `boot_unified_with_assets` (UIA-26).
+            let (outer_width, outer_height) = outer_window_size(width, height);
+            let options = window_options_unified_for_app(app_id, outer_width, outer_height, cx);
             cx.open_window(options, move |window, cx| {
+                reserve_client_frame(window);
                 prepare_surface_window(window, cx);
                 fit_to_display_after_first_frame(window, cx);
                 let view = cx.new(|cx| {
@@ -739,8 +758,11 @@ pub fn boot_unified_single_window_app_with_assets<A, V, F, H>(
                 },
                 cx,
             );
-            let options = window_options_unified_for_app(app_id, width, height, cx);
+            // See the matching comment in `boot_unified_with_assets` (UIA-26).
+            let (outer_width, outer_height) = outer_window_size(width, height);
+            let options = window_options_unified_for_app(app_id, outer_width, outer_height, cx);
             cx.open_window(options, move |window, cx| {
+                reserve_client_frame(window);
                 prepare_surface_window(window, cx);
                 fit_to_display_after_first_frame(window, cx);
                 let view = cx.new(|cx| {
@@ -875,8 +897,11 @@ where
     V: Render + 'static,
     F: Fn(&[String], &mut Window, &mut Context<V>) -> V + 'static,
 {
-    let options = window_options_unified_for_app(app_id, width, height, cx);
+    // See the matching comment in `boot_unified_with_assets` (UIA-26).
+    let (outer_width, outer_height) = outer_window_size(width, height);
+    let options = window_options_unified_for_app(app_id, outer_width, outer_height, cx);
     cx.open_window(options, move |window, cx| {
+        reserve_client_frame(window);
         prepare_surface_window(window, cx);
         fit_to_display_after_first_frame(window, cx);
         let view = cx.new(|cx| {

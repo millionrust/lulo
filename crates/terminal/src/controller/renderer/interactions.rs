@@ -529,6 +529,13 @@ impl TerminalView {
             .bg(hsla(active().bg))
             .font_family(rmac_ui::MONO_FONT)
             .text_size(px(self.font_size))
+            // Without an explicit line height, text defaults to GPUI's
+            // phi()-ratio line box (about 1.618 × font size), taller than a
+            // cell row's fixed 14 pt height (`self.line_h`). The excess sinks
+            // past the row's bottom edge, where the next row's opaque
+            // per-cell background then paints over it, clipping descenders
+            // (UIA-01: "jacob" reads "iacob", "repo" reads "reoo").
+            .line_height(px(self.line_h))
             .v_flex()
             .children(rows)
             .when_some(self.render_inactive_cursor(), |body, cursor| {

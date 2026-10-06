@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
+use std::path::Path;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -49,6 +50,29 @@ fn is_leader_thread_kind(thread_kind: Option<ThreadKind>) -> bool {
 /// table rows, which before this fix conflated "Threads" with "Processes".
 fn thread_group_size(other_tasks: Option<usize>) -> u32 {
     1 + other_tasks.unwrap_or(0) as u32
+}
+
+/// The process's full name, the way the Mac's Activity Monitor shows it —
+/// never `sysinfo`'s own `Process::name()`, whose Linux backend reads the
+/// kernel's `/proc/<pid>/stat` `comm` field, silently truncated to 15 bytes
+/// (UIA-16: "rmac-system-mon", "power-profiles-", "at-spi2-registr"). The
+/// executable's own basename (`/proc/<pid>/exe`) is untruncated and correct
+/// for almost every real process; `/proc/<pid>/cmdline`'s argv[0] covers the
+/// rest (a process whose exe was replaced or removed on disk). A kernel
+/// thread has neither, and keeps `comm` — already its whole name there
+/// (`[kworker/u8:3]`).
+fn full_process_name(process: &Process) -> SharedString {
+    if let Some(name) = process.exe().and_then(Path::file_name) {
+        return SharedString::from(name.to_string_lossy().into_owned());
+    }
+    if let Some(name) = process
+        .cmd()
+        .first()
+        .and_then(|argument| Path::new(argument).file_name())
+    {
+        return SharedString::from(name.to_string_lossy().into_owned());
+    }
+    process.name().to_string_lossy().into_owned().into()
 }
 
 /// One process-table snapshot. The command search text stays private because it
@@ -392,7 +416,7 @@ impl ProcessTableDelegate {
                     .unwrap_or_else(|| SharedString::from("—"));
                 ProcRow {
                     pid: process.pid().as_u32(),
-                    name: process.name().to_string_lossy().into_owned().into(),
+                    name: full_process_name(process),
                     cmd_search: cmd_search.into(),
                     cpu,
                     cpu_ready,
@@ -782,11 +806,41 @@ impl ProcessTableDelegate {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_leader_thread_kind, next_header_sort, selection_projection, thread_group_size, ColKey,
-        ProcRow,
+        full_process_name, is_leader_thread_kind, next_header_sort, selection_projection,
+        thread_group_size, ColKey, ProcRow,
     };
     use rmac_ui::ColumnSort;
     use sysinfo::ThreadKind;
+
+    /// UIA-16: `Process::name()`'s Linux backend truncates to the kernel's
+    /// 15-byte `comm` field, but this test binary's own executable name is
+    /// longer than that (cargo names test binaries
+    /// `<crate>-<16 hex digits>`) — so a full, untruncated match here would
+    /// not happen by accident if `full_process_name` fell back to `name()`
+    /// whenever `exe()` is available, the way the old code always did.
+    #[test]
+    fn full_process_name_prefers_the_untruncated_executable_basename() {
+        let mut system = sysinfo::System::new();
+        let pid = sysinfo::get_current_pid().expect("this process has a pid");
+        system.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::Some(&[pid]),
+            true,
+            sysinfo::ProcessRefreshKind::nothing().with_exe(sysinfo::UpdateKind::Always),
+        );
+        let process = system.process(pid).expect("this process is listed");
+        let expected = std::env::current_exe().ok().and_then(|exe| {
+            exe.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        });
+        if let Some(expected) = expected {
+            assert_eq!(full_process_name(process).as_ref(), expected);
+            assert!(
+                expected.len() > 15,
+                "this test binary's name ({expected:?}) is expected to be longer \
+                 than `comm`'s 15-byte limit, or this test proves nothing"
+            );
+        }
+    }
 
     #[test]
     fn header_sort_flips_direction_on_the_active_column() {

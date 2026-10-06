@@ -232,6 +232,7 @@ fn main() {
             let runtime_for_window = runtime.clone();
             let opened = cx.open_window(options, move |window, cx| {
                 rmac_ui::prepare_surface_window(window, cx);
+                rmac_ui::fit_to_display_after_first_frame(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(MAIL, window, cx);
                     MailView::new(initial_state, accounts, runtime_for_window, window, cx)

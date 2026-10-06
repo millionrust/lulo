@@ -104,6 +104,19 @@ fn shell_program(configured: Option<String>) -> String {
         .unwrap_or_else(|| "/bin/sh".to_string())
 }
 
+/// Terminal's own default title when nothing else claims it: "<user> —
+/// -<shell>", matching the Mac's "jake — -zsh" (Window ▸ Title uses: Shell,
+/// its default for a plain, idle window) — never the current directory's
+/// name, which `Session::tab_title` fell back to display instead (UIA-02).
+/// The leading "-" mirrors how a login shell's own argv[0] reads in `ps`.
+/// `user` is read from `$USER`/`$LOGNAME` by the caller, not here, so this
+/// stays a pure function the tests below can drive directly.
+fn default_shell_identity(user: Option<&str>, shell: &str) -> Option<String> {
+    let user = user.filter(|value| !value.trim().is_empty())?;
+    let shell_name = std::path::Path::new(shell).file_name()?.to_str()?;
+    (!shell_name.is_empty()).then(|| format!("{user} — -{shell_name}"))
+}
+
 /// What a session runs: the user's interactive shell, or (Shell ▸ New
 /// Window/Tab with Same Command, `-e PROGRAM ARGS…`) one program execed
 /// directly. Kept on `Session` so a later tab or window can repeat exactly
@@ -604,6 +617,12 @@ pub(super) struct Session {
     /// automatic OSC/job/directory title above it so a later shell title
     /// escape never silently replaces what the user typed.
     manual_title: SessionTitle,
+    /// Terminal's own default title — "<user> — -<shell>" — used below the
+    /// job/OSC title and above the working-directory fallback (UIA-02). Only
+    /// an interactive-shell session has one; a session execed directly
+    /// (`-e PROGRAM`) falls straight through to the directory label, as
+    /// before, once its foreground job finishes.
+    default_identity: Option<String>,
     directory: SessionDirectory,
     shell_state: SessionShellState,
     scrollback_limit: Arc<AtomicUsize>,
@@ -655,9 +674,14 @@ impl Session {
         let job_state = SessionJobState::default();
         let job_source = ForegroundJobSource::from_master(&*pair.master);
         let workers = ReservedSessionWorkers::reserve()?;
+        let mut default_identity = None;
         let mut command = match &program {
             InitialProgram::Shell => {
                 let shell = shell_program(std::env::var("SHELL").ok());
+                let user = std::env::var("USER")
+                    .or_else(|_| std::env::var("LOGNAME"))
+                    .ok();
+                default_identity = default_shell_identity(user.as_deref(), &shell);
                 let prompt_command =
                     bash_directory_prompt_command(&shell, std::env::var("PROMPT_COMMAND").ok());
                 let mut command = CommandBuilder::new(shell);
@@ -725,6 +749,7 @@ impl Session {
             write_failed,
             title,
             manual_title: SessionTitle::default(),
+            default_identity,
             directory,
             shell_state,
             scrollback_limit,
@@ -766,6 +791,7 @@ impl Session {
             write_failed: Arc::new(AtomicBool::new(false)),
             title: SessionTitle::default(),
             manual_title: SessionTitle::default(),
+            default_identity: None,
             directory: SessionDirectory::default(),
             shell_state: SessionShellState::default(),
             scrollback_limit: Arc::new(AtomicUsize::new(scrollback_lines)),
@@ -842,6 +868,7 @@ impl Session {
             None
         };
         job.or_else(|| self.title.current())
+            .or_else(|| self.default_identity.clone())
             .or_else(|| self.directory.label())
     }
 
@@ -1435,6 +1462,23 @@ mod tests {
         assert_eq!(shell_program(Some("/bin/fish".to_string())), "/bin/fish");
     }
 
+    /// UIA-02: a plain shell window's default title is "<user> — -<shell>",
+    /// matching the Mac's "jake — -zsh" — never blank just because no job
+    /// is running yet and no OSC title has arrived.
+    #[test]
+    fn default_shell_identity_matches_the_macs_user_dash_shell_format() {
+        assert_eq!(
+            default_shell_identity(Some("jake"), "/bin/zsh"),
+            Some("jake — -zsh".to_string())
+        );
+        assert_eq!(
+            default_shell_identity(Some("jake"), "/usr/bin/fish"),
+            Some("jake — -fish".to_string())
+        );
+        assert_eq!(default_shell_identity(None, "/bin/zsh"), None);
+        assert_eq!(default_shell_identity(Some("  "), "/bin/zsh"), None);
+    }
+
     #[test]
     fn foreground_job_close_review_fails_closed() {
         assert!(!foreground_job_requires_confirmation(
@@ -1603,6 +1647,7 @@ mod tests {
             write_failed: Arc::new(AtomicBool::new(false)),
             title: SessionTitle::default(),
             manual_title: SessionTitle::default(),
+            default_identity: None,
             directory: SessionDirectory::default(),
             shell_state: SessionShellState::default(),
             scrollback_limit: Arc::new(AtomicUsize::new(10)),

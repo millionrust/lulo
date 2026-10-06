@@ -51,7 +51,7 @@ fn identified_window_options_publish_stable_native_titles() {
         (app_id::TERMINAL, "Terminal"),
         (app_id::NOTES, "Notes"),
         (app_id::TEXT_EDITOR, "Text Editor"),
-        (app_id::SYSTEM_MONITOR, "System Monitor"),
+        (app_id::SYSTEM_MONITOR, "Activity Monitor"),
         (app_id::APP_DRAWER, "Apps"),
         (app_id::SYSTEM_SETTINGS, "Settings"),
         (app_id::CALCULATOR, "Calculator"),

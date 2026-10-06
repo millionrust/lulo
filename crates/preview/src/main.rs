@@ -419,6 +419,7 @@ pub(crate) fn open_window(paths: Vec<PathBuf>, cx: &mut App) {
     }
     let opened = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
+        rmac_ui::fit_to_display_after_first_frame(window, cx);
         let view = cx.new(|cx| {
             rmac_ui::track_key_window(window, cx);
             PreviewView::new(paths, window, cx)

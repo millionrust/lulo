@@ -1252,6 +1252,14 @@ class LuloRun:
         x, y = ox + box[0] + min(40, box[2] // 2), oy + box[1] + box[3] // 2
         self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button=button, count=count, modifiers=modifiers)
 
+    def item_selected(self, label: str) -> bool:
+        pyatspi = atspi()
+        frame = self.active_frame()
+        return any(
+            name(node) == label and has_state(node, pyatspi.STATE_SELECTED)
+            for node in (descendants(frame, limit=4000) if frame is not None else [])
+        )
+
     def context_background(self) -> None:
         """Right-click an empty point in the Files list viewport."""
         frame = self.active_frame()
@@ -1335,8 +1343,12 @@ class LuloRun:
                 if step["context"] == "background":
                     self.context_background()
                 else:
-                    self.click_item(step["context"], "left")
-                    time.sleep(0.3)
+                    # A click on an item that is already selected starts a
+                    # slow-click rename in Files when the right-click comes
+                    # late (slow nested renderer), so only select it first.
+                    if not self.item_selected(step["context"]):
+                        self.click_item(step["context"], "left")
+                        time.sleep(0.3)
                     self.click_item(step["context"], "right")
             elif "focus_desktop" in step:
                 self.nested.input.click(OUTPUT_W // 4, OUTPUT_H // 2, OUTPUT_W, OUTPUT_H)

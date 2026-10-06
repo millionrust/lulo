@@ -779,12 +779,14 @@ struct MenuPopup {
     /// An entry type-select chose before its row was drawn.
     pending_focus: Option<usize>,
     /// The focus handles of this render's selectable rows, by entry index.
-    rows: Vec<(usize, FocusHandle)>,
+    rows: Vec<PanelRow>,
     typed: String,
     typed_at: Option<Instant>,
     /// Set once this menu itself told the app to dismiss it, so closing the
     /// pop-up does not dismiss (and move focus) a second time.
     dismissed: Rc<Cell<bool>>,
+    /// Chooses a row's action: in the app's window, then closes this menu.
+    activate: ActivateHandler,
 }
 
 impl MenuPopup {
@@ -820,6 +822,17 @@ impl MenuPopup {
             })
             .detach();
         }
+        let activate: ActivateHandler = Rc::new({
+            let target = target.clone();
+            let dismissed = dismissed.clone();
+            move |action, window, cx| {
+                dismissed.set(true);
+                target.run(Some(action), cx);
+                // The app dropping its menu state closes the pop-up; take
+                // this one down now so it does not linger for a frame.
+                window.remove_window();
+            }
+        });
         Self {
             source,
             target,
@@ -833,6 +846,7 @@ impl MenuPopup {
             rows: Vec::new(),
             typed: String::new(),
             typed_at: None,
+            activate,
             dismissed,
         }
     }
@@ -972,8 +986,8 @@ impl MenuPopup {
     /// Highlight entry `index`, or as soon as its row is drawn: keys can
     /// arrive before a new pop-up's first frame.
     fn focus_entry(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        match self.rows.iter().find(|(row, _)| *row == index) {
-            Some((_, handle)) => window.focus(handle, cx),
+        match self.rows.iter().find(|row| row.index == index) {
+            Some(row) => window.focus(&row.handle, cx),
             None => {
                 self.pending_focus = Some(index);
                 cx.notify();
@@ -984,13 +998,27 @@ impl MenuPopup {
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
         let key = keystroke.key.as_str();
-        let focused_row = self
-            .rows
-            .iter()
-            .find(|(_, handle)| handle.is_focused(window))
-            .map(|(index, _)| *index);
+        let focused = self.rows.iter().find(|row| row.handle.is_focused(window));
+        let focused_row = focused.map(|row| row.index);
+        let focused_action = focused.and_then(|row| row.action.as_ref().map(|a| a.boxed_clone()));
         let entries = self.entries();
         match key {
+            // Return and Space choose the highlighted row here rather than
+            // through the row's own keyboard click, which needs the key's
+            // release too: keys a window passes on (see `init`) have none.
+            "enter" | "space" if !keystroke.modifiers.modified() => {
+                let Some(index) = focused_row else {
+                    return;
+                };
+                cx.stop_propagation();
+                match focused_action {
+                    Some(action) => {
+                        let activate = self.activate.clone();
+                        activate(action, window, cx);
+                    }
+                    None => self.open_child(index, true, window, cx),
+                }
+            }
             "down" | "up" | "tab" => {
                 cx.stop_propagation();
                 let forward = match key {
@@ -1071,23 +1099,13 @@ impl Render for MenuPopup {
                     });
                 }
             }),
-            activate: Rc::new({
-                let target = self.target.clone();
-                let dismissed = self.dismissed.clone();
-                move |action, window, cx| {
-                    dismissed.set(true);
-                    target.run(Some(action), cx);
-                    // The app dropping its menu state closes the pop-up; take
-                    // this one down now so it does not linger for a frame.
-                    window.remove_window();
-                }
-            }),
+            activate: self.activate.clone(),
         };
         let (panel, rows) = render_panel(&entries, self.panel.width, &ctx, window, cx);
         self.rows = rows;
         if let Some(index) = self.pending_focus.take() {
-            if let Some((_, handle)) = self.rows.iter().find(|(row, _)| *row == index) {
-                window.focus(handle, cx);
+            if let Some(row) = self.rows.iter().find(|row| row.index == index) {
+                window.focus(&row.handle, cx);
             }
         }
 
@@ -1118,6 +1136,14 @@ impl Render for MenuPopup {
 
 // ---- Panel ---------------------------------------------------------------------
 
+/// A selectable row of a drawn panel: its entry, focus, and the action it
+/// chooses (`None` for a submenu row).
+struct PanelRow {
+    index: usize,
+    handle: FocusHandle,
+    action: Option<Box<dyn Action>>,
+}
+
 type SubmenuHandler = Rc<dyn Fn(usize, bool, &mut Window, &mut App)>;
 type HoverHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 type ActivateHandler = Rc<dyn Fn(Box<dyn Action>, &mut Window, &mut App)>;
@@ -1143,7 +1169,7 @@ fn render_panel(
     ctx: &PanelContext,
     window: &mut Window,
     cx: &mut App,
-) -> (gpui::Stateful<gpui::Div>, Vec<(usize, FocusHandle)>) {
+) -> (gpui::Stateful<gpui::Div>, Vec<PanelRow>) {
     let columns = Columns::of(entries);
     let text_x = columns.text_x();
     let depth = ctx.depth;
@@ -1209,7 +1235,11 @@ fn render_panel(
                         .read(cx)
                         .clone();
                     let highlighted = handle.is_focused(window);
-                    rows.push((index, handle.clone()));
+                    rows.push(PanelRow {
+                        index,
+                        handle: handle.clone(),
+                        action: Some(tag.action.boxed_clone()),
+                    });
                     let action = tag.action.boxed_clone();
                     let activate = ctx.activate.clone();
                     let hover = ctx.on_hover_item.clone();
@@ -1269,7 +1299,11 @@ fn render_panel(
                     .use_keyed_state(id.clone(), cx, |_, cx| cx.focus_handle())
                     .read(cx)
                     .clone();
-                rows.push((index, handle.clone()));
+                rows.push(PanelRow {
+                    index,
+                    handle: handle.clone(),
+                    action: None,
+                });
                 let open = ctx.open_submenu == Some(index);
                 let highlighted = open || handle.is_focused(window);
                 let hover_handle = handle.clone();
@@ -1329,7 +1363,11 @@ fn render_panel(
                 let enabled = *enabled;
                 let highlighted = enabled && handle.is_focused(window);
                 if enabled {
-                    rows.push((index, handle.clone()));
+                    rows.push(PanelRow {
+                        index,
+                        handle: handle.clone(),
+                        action: Some(action.boxed_clone()),
+                    });
                 }
                 let color = if !enabled {
                     mac::text_tertiary()

@@ -291,7 +291,11 @@ class Run:
     def launch_desktop(self, focus_terminal: bool = True, extra: dict[str, str] | None = None) -> None:
         if focus_terminal:
             self.focus_terminal()
-        self.desktop = self.spawn([str(self.binary())], "wallpaper", {**self.desktop_env(), **(extra or {})})
+        trace = {}
+        if self.args.frame_trace_dir:
+            self.trace_count = getattr(self, "trace_count", 0) + 1
+            trace = {"RMAC_FRAME_TRACE": str(Path(self.args.frame_trace_dir) / f"wallpaper-{self.trace_count}.csv")}
+        self.desktop = self.spawn([str(self.binary())], "wallpaper", {**self.desktop_env(), **trace, **(extra or {})})
 
     def desktop_env(self) -> dict[str, str]:
         return {
@@ -680,6 +684,7 @@ def main() -> int:
     parser.add_argument("--fixture-dir", help="copy the owner's screenshots from here (read only)")
     parser.add_argument("--gpu", action="store_true",
                         help="use the machine's GPU for niri and GPUI instead of llvmpipe/lavapipe")
+    parser.add_argument("--frame-trace-dir", help="write each desktop launch's RMAC_FRAME_TRACE here")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

@@ -1,5 +1,9 @@
 # Speed round 6 — 2026-10-06
 
+Mission Control (SPEED-03, 64–69 → 43–47 ms) is recorded separately in
+[speed-round-6-mission-control-2026-10-06.md](speed-round-6-mission-control-2026-10-06.md).
+This page is Settings (SPEED-02).
+
 Branch `op/speed-6` on `integ` 9f60488b. Release profile (fat LTO) for the
 changed binary only (`rmac-system-settings`), before = integ and after =
 this branch, built back to back on the shared target. `run_speed_sweep.py

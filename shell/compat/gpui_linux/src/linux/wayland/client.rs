@@ -63,6 +63,7 @@ use wayland_protocols::xdg::shell::client::{
     xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base,
 };
 use wayland_protocols::xdg::system_bell::v1::client::xdg_system_bell_v1;
+use wayland_protocols::xdg::xdg_output::zv1::client::{zxdg_output_manager_v1, zxdg_output_v1};
 use wayland_protocols::{
     wp::cursor_shape::v1::client::{wp_cursor_shape_device_v1, wp_cursor_shape_manager_v1},
     xdg::dialog::v1::client::xdg_wm_dialog_v1::{self, XdgWmDialogV1},
@@ -142,6 +143,11 @@ pub struct Globals {
     pub fractional_scale_manager:
         Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
     pub decoration_manager: Option<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1>,
+    /// Logical output geometry. `wl_output` only carries the mode in device
+    /// pixels and an integer scale, which is rounded up for fractional
+    /// scales: 1920x1080 at 1.25 reports scale 2, so mode / scale gives
+    /// 960x540 instead of the real 1536x864 logical size.
+    pub xdg_output_manager: Option<zxdg_output_manager_v1::ZxdgOutputManagerV1>,
     pub layer_shell: Option<zwlr_layer_shell_v1::ZwlrLayerShellV1>,
     pub blur_manager: Option<org_kde_kwin_blur_manager::OrgKdeKwinBlurManager>,
     pub text_input_manager: Option<zwp_text_input_manager_v3::ZwpTextInputManagerV3>,
@@ -184,6 +190,7 @@ impl Globals {
             viewporter: globals.bind(&qh, 1..=1, ()).ok(),
             fractional_scale_manager: globals.bind(&qh, 1..=1, ()).ok(),
             decoration_manager: globals.bind(&qh, 1..=1, ()).ok(),
+            xdg_output_manager: globals.bind(&qh, 1..=3, ()).ok(),
             layer_shell: globals.bind(&qh, 1..=5, ()).ok(),
             blur_manager: globals.bind(&qh, 1..=1, ()).ok(),
             text_input_manager: globals.bind(&qh, 1..=1, ()).ok(),
@@ -259,6 +266,8 @@ pub(crate) struct WaylandClientState {
     outputs: HashMap<ObjectId, Output>,
     in_progress_outputs: HashMap<ObjectId, InProgressOutput>,
     wl_outputs: HashMap<ObjectId, wl_output::WlOutput>,
+    // wl_output id to its xdg_output logical size
+    output_logical_sizes: HashMap<ObjectId, Size<i32>>,
     keyboard_layout: LinuxKeyboardLayout,
     keymap_state: Option<xkb::State>,
     compose_state: Option<xkb::compose::State>,
@@ -1181,6 +1190,12 @@ impl WaylandClient {
             seat.clone(),
         );
 
+        if let Some(manager) = globals.xdg_output_manager.as_ref() {
+            for output in wl_outputs.values() {
+                manager.get_xdg_output(output, &qh, output.id());
+            }
+        }
+
         let data_device = globals
             .data_device_manager
             .as_ref()
@@ -1263,6 +1278,7 @@ impl WaylandClient {
             outputs: HashMap::default(),
             in_progress_outputs,
             wl_outputs,
+            output_logical_sizes: HashMap::default(),
             windows: HashMap::default(),
             common,
             keyboard_layout: LinuxKeyboardLayout::new(UNKNOWN_KEYBOARD_LAYOUT_NAME),
@@ -1343,34 +1359,31 @@ impl LinuxClient for WaylandClient {
     }
 
     fn displays(&self) -> Vec<Rc<dyn PlatformDisplay>> {
-        self.0
-            .borrow()
+        let state = self.0.borrow();
+        state
             .outputs
             .iter()
             .map(|(id, output)| {
                 Rc::new(WaylandDisplay {
                     id: id.clone(),
                     name: output.name.clone(),
-                    bounds: output.bounds.to_pixels(output.scale as f32),
+                    bounds: display_bounds(output, state.output_logical_sizes.get(id)),
                 }) as Rc<dyn PlatformDisplay>
             })
             .collect()
     }
 
     fn display(&self, id: DisplayId) -> Option<Rc<dyn PlatformDisplay>> {
-        self.0
-            .borrow()
-            .outputs
-            .iter()
-            .find_map(|(object_id, output)| {
-                (object_id.protocol_id() as u64 == u64::from(id)).then(|| {
-                    Rc::new(WaylandDisplay {
-                        id: object_id.clone(),
-                        name: output.name.clone(),
-                        bounds: output.bounds.to_pixels(output.scale as f32),
-                    }) as Rc<dyn PlatformDisplay>
-                })
+        let state = self.0.borrow();
+        state.outputs.iter().find_map(|(object_id, output)| {
+            (object_id.protocol_id() as u64 == u64::from(id)).then(|| {
+                Rc::new(WaylandDisplay {
+                    id: object_id.clone(),
+                    name: output.name.clone(),
+                    bounds: display_bounds(output, state.output_logical_sizes.get(object_id)),
+                }) as Rc<dyn PlatformDisplay>
             })
+        })
     }
 
     fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>> {
@@ -1781,6 +1794,9 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for WaylandClientStat
                     state
                         .in_progress_outputs
                         .insert(output.id(), InProgressOutput::default());
+                    if let Some(manager) = state.globals.xdg_output_manager.as_ref() {
+                        manager.get_xdg_output(&output, qh, output.id());
+                    }
                     state.wl_outputs.insert(output.id(), output);
                 }
                 _ => {}
@@ -1806,6 +1822,38 @@ delegate_noop!(WaylandClientStatePtr: ignore wl_buffer::WlBuffer);
 delegate_noop!(WaylandClientStatePtr: ignore wl_region::WlRegion);
 delegate_noop!(WaylandClientStatePtr: ignore wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1);
 delegate_noop!(WaylandClientStatePtr: ignore zxdg_decoration_manager_v1::ZxdgDecorationManagerV1);
+delegate_noop!(WaylandClientStatePtr: ignore zxdg_output_manager_v1::ZxdgOutputManagerV1);
+
+impl Dispatch<zxdg_output_v1::ZxdgOutputV1, ObjectId> for WaylandClientStatePtr {
+    fn event(
+        this: &mut Self,
+        _: &zxdg_output_v1::ZxdgOutputV1,
+        event: zxdg_output_v1::Event,
+        output_id: &ObjectId,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zxdg_output_v1::Event::LogicalSize { width, height } = event {
+            let client = this.get_client();
+            let mut state = client.borrow_mut();
+            if width > 0 && height > 0 {
+                state
+                    .output_logical_sizes
+                    .insert(output_id.clone(), size(width, height));
+            }
+        }
+    }
+}
+
+/// A display's bounds in logical pixels: the compositor's xdg_output logical
+/// size when it sent one, otherwise the mode divided by the integer scale.
+fn display_bounds(output: &Output, logical: Option<&Size<i32>>) -> Bounds<Pixels> {
+    let mut bounds = output.bounds.to_pixels(output.scale as f32);
+    if let Some(logical) = logical {
+        bounds.size = size(px(logical.width as f32), px(logical.height as f32));
+    }
+    bounds
+}
 delegate_noop!(WaylandClientStatePtr: ignore zwlr_layer_shell_v1::ZwlrLayerShellV1);
 delegate_noop!(WaylandClientStatePtr: ignore xdg_positioner::XdgPositioner);
 delegate_noop!(WaylandClientStatePtr: ignore org_kde_kwin_blur_manager::OrgKdeKwinBlurManager);
@@ -2198,6 +2246,12 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for WaylandClientStatePtr {
                     window.set_focused(false);
                 }
                 if let Some(window) = focused {
+                    // rmac: a menu popup takes the keyboard from its window,
+                    // which stays the active window while the menu is open,
+                    // as on macOS (the leave just before this one cleared it).
+                    if window.is_popup() {
+                        window.popup_root().set_focused(true);
+                    }
                     window.set_focused(true);
                 }
             }
@@ -2216,6 +2270,11 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for WaylandClientStatePtr {
                     state.pre_edit_text.take();
                     drop(state);
                     window.handle_ime(ImeInput::DeleteText);
+                    // rmac: the keyboard leaving a menu popup (to another
+                    // app, or back to its own window) leaves its window too.
+                    if window.is_popup() {
+                        window.popup_root().set_focused(false);
+                    }
                     window.set_focused(false);
                 }
             }

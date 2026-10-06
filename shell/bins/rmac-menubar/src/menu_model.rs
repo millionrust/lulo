@@ -144,6 +144,134 @@ pub fn submenu_origin(
     (left, top.max(0.0))
 }
 
+/// A menu stops this far above the screen's bottom edge, as on macOS.
+pub const MENU_SCREEN_MARGIN: f32 = 5.0;
+/// The band at a scrolled menu's top or bottom edge that shows a chevron
+/// while more rows are hidden that way.
+pub const SCROLL_ARROW_HEIGHT: f32 = 19.0;
+/// Resting the pointer on a scroll arrow moves the menu this far each tick.
+pub const SCROLL_ARROW_STEP: f32 = 6.0;
+/// The tick of that scroll. It only runs while the pointer is on an arrow.
+pub const SCROLL_ARROW_TICK: Duration = Duration::from_millis(16);
+/// Even on a tiny screen a scrolling menu keeps both arrows and a row.
+const MIN_SCROLL_HEIGHT: f32 = 2.0 * SCROLL_ARROW_HEIGHT + APP_ROW_HEIGHT + 2.0 * APP_MENU_PADDING;
+
+/// The visible frame of a menu panel whose rows (`content` tall, padding
+/// included) may not fit between its top edge and the screen's bottom: the
+/// panel stops [`MENU_SCREEN_MARGIN`] above `screen_bottom` and its rows
+/// scroll under it by `offset`, as AppKit's menus do.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MenuScroll {
+    pub content: f32,
+    pub visible: f32,
+    pub offset: f32,
+}
+
+impl MenuScroll {
+    pub fn new(content: f32, top: f32, screen_bottom: f32, offset: f32) -> Self {
+        let room = (screen_bottom - MENU_SCREEN_MARGIN - top).max(MIN_SCROLL_HEIGHT);
+        let visible = content.min(room).max(0.0);
+        let mut scroll = Self {
+            content,
+            visible,
+            offset: 0.0,
+        };
+        scroll.offset = scroll.clamp(offset);
+        scroll
+    }
+
+    /// The furthest the rows can scroll: the last row's bottom padding
+    /// meets the panel's bottom edge.
+    pub fn max_offset(&self) -> f32 {
+        (self.content - self.visible).max(0.0)
+    }
+
+    pub fn scrolls(&self) -> bool {
+        self.max_offset() > 0.0
+    }
+
+    pub fn clamp(&self, offset: f32) -> f32 {
+        if offset.is_finite() {
+            offset.clamp(0.0, self.max_offset())
+        } else {
+            0.0
+        }
+    }
+
+    /// Rows are hidden above: the top arrow shows.
+    pub fn top_arrow(&self) -> bool {
+        self.offset > 0.0
+    }
+
+    /// Rows are hidden below: the bottom arrow shows.
+    pub fn bottom_arrow(&self) -> bool {
+        self.offset < self.max_offset()
+    }
+
+    /// Where rows show inside the panel (top, height): between the arrows.
+    pub fn viewport(&self) -> (f32, f32) {
+        let top = if self.top_arrow() {
+            SCROLL_ARROW_HEIGHT
+        } else {
+            0.0
+        };
+        let bottom = if self.bottom_arrow() {
+            SCROLL_ARROW_HEIGHT
+        } else {
+            0.0
+        };
+        (top, (self.visible - top - bottom).max(0.0))
+    }
+
+    /// Panel-relative y of a row `content_top` down the rows.
+    #[cfg(test)]
+    pub fn row_y(&self, content_top: f32) -> f32 {
+        content_top - self.offset
+    }
+
+    /// The offset after scrolling the rows by `delta` (positive moves
+    /// toward the bottom of the menu).
+    pub fn scrolled(&self, delta: f32) -> f32 {
+        self.clamp(self.offset + delta)
+    }
+
+    /// The nearest offset that shows the whole row (`top`, `height` in
+    /// row coordinates) clear of both arrows: keyboard selection scrolls
+    /// the menu only as far as it has to.
+    pub fn reveal(&self, top: f32, height: f32) -> f32 {
+        if !self.scrolls() {
+            return 0.0;
+        }
+        let (view_top, view_height) = self.viewport();
+        if top < self.offset + view_top {
+            // Scrolling up: at 0 the top arrow goes away, so the first
+            // rows need no room for it.
+            let wanted = top - SCROLL_ARROW_HEIGHT;
+            return if wanted <= 0.0 {
+                0.0
+            } else {
+                self.clamp(wanted)
+            };
+        }
+        if top + height > self.offset + view_top + view_height {
+            let wanted = top + height + SCROLL_ARROW_HEIGHT - self.visible;
+            // Within an arrow of the end, the end shows it all.
+            return if wanted + SCROLL_ARROW_HEIGHT >= self.max_offset() {
+                self.max_offset()
+            } else {
+                self.clamp(wanted)
+            };
+        }
+        self.offset
+    }
+}
+
+/// Row geometry of `items[index]` for [`MenuScroll::reveal`].
+pub fn app_menu_row_span(items: &[Item], index: usize) -> Option<(f32, f32)> {
+    let item = items.get(index)?;
+    Some((app_menu_item_top(items, index), row_height(item)))
+}
+
 /// The next enabled row after (or before) `from`, wrapping around, skipping
 /// the Help menu's search field. `None` when no row is enabled.
 pub fn next_enabled_row(items: &[Item], from: Option<usize>, forward: bool) -> Option<usize> {
@@ -2009,6 +2137,92 @@ mod tests {
             submenu_origin(100.0, 200.0, 640.0, (180.0, 100.0), 1536.0, 680.0).1,
             580.0
         );
+    }
+
+    #[test]
+    fn a_menu_that_fits_is_drawn_whole_without_arrows() {
+        // Finder's File menu on a 1536 x 864 screen, 25 down.
+        let scroll = MenuScroll::new(620.0, 25.0, 864.0, 40.0);
+        assert_eq!(scroll.visible, 620.0);
+        assert!(!scroll.scrolls());
+        assert_eq!(scroll.offset, 0.0);
+        assert!(!scroll.top_arrow() && !scroll.bottom_arrow());
+        assert_eq!(scroll.viewport(), (0.0, 620.0));
+    }
+
+    #[test]
+    fn a_tall_menu_stops_five_points_above_the_screen_bottom() {
+        let scroll = MenuScroll::new(620.0, 25.0, 540.0, 0.0);
+        assert_eq!(scroll.visible, 540.0 - 5.0 - 25.0);
+        assert_eq!(scroll.max_offset(), 620.0 - 510.0);
+        assert!(scroll.scrolls());
+        // At the top only the bottom arrow shows.
+        assert!(!scroll.top_arrow() && scroll.bottom_arrow());
+        assert_eq!(scroll.viewport(), (0.0, 510.0 - SCROLL_ARROW_HEIGHT));
+        // Midway both show.
+        let mid = MenuScroll::new(620.0, 25.0, 540.0, 50.0);
+        assert!(mid.top_arrow() && mid.bottom_arrow());
+        assert_eq!(mid.viewport(), (SCROLL_ARROW_HEIGHT, 510.0 - 38.0));
+        // At the end only the top arrow shows and the offset is clamped.
+        let end = MenuScroll::new(620.0, 25.0, 540.0, 1e6);
+        assert_eq!(end.offset, 110.0);
+        assert!(end.top_arrow() && !end.bottom_arrow());
+        assert_eq!(MenuScroll::new(620.0, 25.0, 540.0, -3.0).offset, 0.0);
+        assert_eq!(MenuScroll::new(620.0, 25.0, 540.0, f32::NAN).offset, 0.0);
+    }
+
+    #[test]
+    fn a_tiny_screen_still_shows_both_arrows_and_a_row() {
+        let scroll = MenuScroll::new(620.0, 25.0, 60.0, 0.0);
+        assert_eq!(scroll.visible, MIN_SCROLL_HEIGHT);
+        assert!(scroll.visible >= 2.0 * SCROLL_ARROW_HEIGHT + APP_ROW_HEIGHT);
+    }
+
+    #[test]
+    fn wheel_scrolling_clamps_to_the_rows() {
+        let scroll = MenuScroll::new(620.0, 25.0, 540.0, 0.0);
+        assert_eq!(scroll.scrolled(-30.0), 0.0);
+        assert_eq!(scroll.scrolled(30.0), 30.0);
+        assert_eq!(scroll.scrolled(500.0), 110.0);
+        assert_eq!(scroll.row_y(100.0), 100.0);
+        let moved = MenuScroll::new(620.0, 25.0, 540.0, 30.0);
+        assert_eq!(moved.row_y(100.0), 70.0);
+    }
+
+    #[test]
+    fn keyboard_selection_scrolls_only_as_far_as_it_must() {
+        let items: Vec<Item> = (0..30)
+            .map(|i| item(&format!("Row {i}"), "", false))
+            .collect();
+        let content = app_menu_height(&items);
+        assert_eq!(content, 730.0);
+        let top = MenuScroll::new(content, 25.0, 540.0, 0.0);
+        // A visible row keeps the offset.
+        let (row, height) = app_menu_row_span(&items, 3).unwrap();
+        assert_eq!(top.reveal(row, height), 0.0);
+        // The first hidden row scrolls just clear of the bottom arrow.
+        let (row, height) = app_menu_row_span(&items, 20).unwrap();
+        let offset = top.reveal(row, height);
+        let after = MenuScroll::new(content, 25.0, 540.0, offset);
+        let (view_top, view_height) = after.viewport();
+        assert_eq!(after.row_y(row) + height, view_top + view_height);
+        // The last row scrolls to the very end (no bottom arrow).
+        let (row, height) = app_menu_row_span(&items, 29).unwrap();
+        assert_eq!(top.reveal(row, height), top.max_offset());
+        // Going back up, a row under the top arrow scrolls just below it,
+        // and the first row scrolls all the way back.
+        let end = MenuScroll::new(content, 25.0, 540.0, top.max_offset());
+        let (row, height) = app_menu_row_span(&items, 5).unwrap();
+        assert!(end.row_y(row) < SCROLL_ARROW_HEIGHT);
+        let offset = end.reveal(row, height);
+        let after = MenuScroll::new(content, 25.0, 540.0, offset);
+        assert_eq!(after.row_y(row), SCROLL_ARROW_HEIGHT);
+        let (row, height) = app_menu_row_span(&items, 0).unwrap();
+        assert_eq!(end.reveal(row, height), 0.0);
+        // Not scrolling: always 0.
+        let fits = MenuScroll::new(content, 25.0, 900.0, 0.0);
+        assert_eq!(fits.reveal(row, height), 0.0);
+        assert_eq!(app_menu_row_span(&items, 30), None);
     }
 
     #[test]

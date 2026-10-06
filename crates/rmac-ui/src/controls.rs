@@ -2243,7 +2243,6 @@ pub struct ListRow {
     // `ContextMenu` override these to become a tree item or a menu item.
     role: Role,
     aria_label: Option<SharedString>,
-    aria_toggled: Option<Toggled>,
     aria_expanded: Option<bool>,
     aria_level: Option<usize>,
 }
@@ -2261,7 +2260,6 @@ impl ListRow {
             style: StyleRefinement::default(),
             role: Role::ListItem,
             aria_label: None,
-            aria_toggled: None,
             aria_expanded: None,
             aria_level: None,
         }
@@ -2321,11 +2319,6 @@ impl ListRow {
         self
     }
 
-    pub(crate) fn aria_toggled(mut self, toggled: Toggled) -> Self {
-        self.aria_toggled = Some(toggled);
-        self
-    }
-
     pub(crate) fn aria_expanded(mut self, expanded: bool) -> Self {
         self.aria_expanded = Some(expanded);
         self
@@ -2369,7 +2362,6 @@ impl RenderOnce for ListRow {
                 el.aria_active_descendant()
             })
             .when_some(self.aria_label, |el, label| el.aria_label(label))
-            .when_some(self.aria_toggled, |el, toggled| el.aria_toggled(toggled))
             .when_some(self.aria_expanded, |el, expanded| {
                 el.aria_expanded(expanded)
             })

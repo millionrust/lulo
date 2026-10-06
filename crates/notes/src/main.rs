@@ -13,6 +13,7 @@ mod glyphs;
 mod input_support;
 mod library_actions;
 mod markdown_presentation;
+mod note_context_menu;
 mod note_find_controller;
 mod note_format_controller;
 mod note_navigation;
@@ -45,9 +46,9 @@ use std::thread;
 use gpui::{
     accesskit, actions, div, img, prelude::FluentBuilder as _, px, AccessibleAction, AnyElement,
     AppContext as _, Context, Div, Entity, FocusHandle, Focusable as _, InteractiveElement as _,
-    IntoElement, KeyBinding, KeyDownEvent, ObjectFit, ParentElement, Render, RenderImage, Role,
-    SharedString, Stateful, StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
-    WindowHandle,
+    IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent, ObjectFit, ParentElement,
+    Pixels, Point, Render, RenderImage, Role, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, StyledImage as _, Window, WindowHandle,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_editor::InputState;
@@ -238,6 +239,16 @@ actions!(
     ]
 );
 
+/// The note-list context menu's "Move to" submenu row for one destination
+/// (`None` is "All Notes"). A payload action, like Files'
+/// `GoToTitlePathAction`, since the plain `actions!` macro above only makes
+/// zero-field markers.
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = notes, no_json)]
+struct MoveNoteToFolderAction {
+    folder_id: Option<FolderId>,
+}
+
 struct NotesView {
     worker: Option<NotesWorkerClient>,
     search_worker: Option<NotesSearchWorkerClient>,
@@ -399,6 +410,13 @@ struct NotesView {
     quick_note_window: Option<WindowHandle<rmac_ui::Root>>,
     quick_note_id: Option<NoteId>,
     always_resume_quick_note: bool,
+    /// The note-list / folder-sidebar right-click menu (NOTES-xx: right-
+    /// clicking a note or folder did nothing). Opened on right mouse-down,
+    /// closed by `rmac_ui::DismissMenu` (Escape or a click outside).
+    /// `context_menu_target` says which content `render_context_menu`
+    /// builds for it.
+    context_menu: Option<rmac_ui::ContextMenuState>,
+    context_menu_target: note_context_menu::ContextMenuTarget,
 }
 
 impl NotesView {
@@ -523,6 +541,8 @@ impl NotesView {
             quick_note_window: None,
             quick_note_id: None,
             always_resume_quick_note: false,
+            context_menu: None,
+            context_menu_target: note_context_menu::ContextMenuTarget::Note,
         };
         rmac_ui::set_menu_checked(
             "notes::ToggleCheckSpellingWhileTyping",

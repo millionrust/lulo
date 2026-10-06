@@ -1,5 +1,21 @@
 use super::*;
 
+/// Finder's seven colour tags, in menu order.
+const TAG_NAMES: [&str; 7] = ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray"];
+
+/// The action that toggles colour tag `index` on the selection.
+fn tag_action(index: usize) -> Box<dyn gpui::Action> {
+    match index {
+        0 => Box::new(TagRed),
+        1 => Box::new(TagOrange),
+        2 => Box::new(TagYellow),
+        3 => Box::new(TagGreen),
+        4 => Box::new(TagBlue),
+        5 => Box::new(TagPurple),
+        _ => Box::new(TagGray),
+    }
+}
+
 impl FinderView {
     pub(in crate::view) fn build_title_path_menu(
         &self,
@@ -238,46 +254,35 @@ impl FinderView {
                 )
                 .item("Share…", Box::new(ShareItems))
                 .separator()
-                .submenu(
+                // Finder's tag row: the seven colour dots (the Mac names the
+                // row "label" for assistive technology), then "Tags…", which
+                // lists the same tags by name.
+                .tag_row(
                     "label",
-                    rmac_ui::ContextMenu::new(pos)
-                        .checked_item_with_swatch("Red", tag_checks[0], swatch(0), Box::new(TagRed))
-                        .checked_item_with_swatch(
-                            "Orange",
-                            tag_checks[1],
-                            swatch(1),
-                            Box::new(TagOrange),
-                        )
-                        .checked_item_with_swatch(
-                            "Yellow",
-                            tag_checks[2],
-                            swatch(2),
-                            Box::new(TagYellow),
-                        )
-                        .checked_item_with_swatch(
-                            "Green",
-                            tag_checks[3],
-                            swatch(3),
-                            Box::new(TagGreen),
-                        )
-                        .checked_item_with_swatch(
-                            "Blue",
-                            tag_checks[4],
-                            swatch(4),
-                            Box::new(TagBlue),
-                        )
-                        .checked_item_with_swatch(
-                            "Purple",
-                            tag_checks[5],
-                            swatch(5),
-                            Box::new(TagPurple),
-                        )
-                        .checked_item_with_swatch(
-                            "Gray",
-                            tag_checks[6],
-                            swatch(6),
-                            Box::new(TagGray),
-                        ),
+                    TAG_NAMES
+                        .iter()
+                        .enumerate()
+                        .map(|(index, name)| rmac_ui::MenuTag {
+                            label: (*name).into(),
+                            color: swatch(index),
+                            checked: tag_checks[index] != rmac_ui::MenuCheck::None,
+                            action: tag_action(index),
+                        })
+                        .collect(),
+                )
+                .submenu(
+                    "Tags…",
+                    TAG_NAMES.iter().enumerate().fold(
+                        rmac_ui::ContextMenu::new(pos),
+                        |menu, (index, name)| {
+                            menu.checked_item_with_swatch(
+                                *name,
+                                tag_checks[index],
+                                swatch(index),
+                                tag_action(index),
+                            )
+                        },
+                    ),
                 )
                 .separator()
                 .item("Quick Actions", Box::new(QuickActions));

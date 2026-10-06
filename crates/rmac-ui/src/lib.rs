@@ -9,6 +9,7 @@ mod app_menu;
 mod assets;
 mod chrome;
 mod components;
+mod context_menu;
 mod controls;
 mod feedback;
 pub mod gallery;
@@ -40,10 +41,10 @@ pub use chrome::{
     TrafficLights,
 };
 pub use components::{
-    alert, alert_cancel_default, alert_with_icon, dialog, dialog_button, type_select_match,
-    ContextMenu, ContextMenuState, Dialog, DialogButtonKind, DismissMenu, MenuCheck,
-    PasteAndMatchStyle, RequestClose,
+    alert, alert_cancel_default, alert_with_icon, dialog, dialog_button, Dialog, DialogButtonKind,
+    DismissMenu, PasteAndMatchStyle, RequestClose,
 };
+pub use context_menu::{type_select_match, ContextMenu, ContextMenuState, MenuCheck, MenuTag};
 pub use controls::{
     overlay_scrollbar, slider_bulge_lerp, uniform_list_scrollbar, Button, ButtonRole, Checkbox,
     CollectionState, DocumentTitleMenu, InputEvent, InputState, KeyboardAction, List, ListRow,

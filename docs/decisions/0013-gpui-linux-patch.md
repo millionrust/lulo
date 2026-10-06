@@ -344,6 +344,17 @@ of each open. `gpui_linux` therefore exports two functions
   that configure early, so the round trip overlaps its own work before it
   maps the window.
 
+### Logical display size at fractional scales (amended 2026-10-06)
+
+Upstream sizes a display as its `wl_output` mode divided by the output's
+integer scale. niri rounds a fractional scale up for `wl_output`, so a
+1920x1080 panel at 1.25 reported 960x540 instead of 1536x864. The menu bar
+creates its full-screen layer surface at the display's size, so tall menus
+were cut off at logical y 540. GPUI now binds `zxdg_output_manager_v1` and
+uses each output's `logical_size` for `PlatformDisplay::bounds`, falling
+back to the old division when the compositor has no xdg-output. Integer
+scales give the same size as before.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and `gpui_wgpu` and

@@ -5,7 +5,7 @@
   "launch": {"reveal": "report.txt"},
   "steps": [
     {"key": "cmd-2"},
-    {"context": "report.txt", "settle": 1.0},
+    {"context": "report.txt", "settle": 2.0},
     {"observe": "menu", "facts": ["menu"]},
     {"key": "escape"}
   ],

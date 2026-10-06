@@ -192,7 +192,7 @@ fn with_strip(
 fn strip_menus(app_name: &str, menus: Vec<Menu>) -> Vec<Menu> {
     let mut exported = menus;
     let mut application = rmac_app_menu::take_application_items(&mut exported);
-    let window_items = rmac_app_menu::take_window_items(&mut exported);
+    let mut window_items = rmac_app_menu::take_window_items(&mut exported);
     let help_items = rmac_app_menu::take_help_items(&mut exported);
 
     let about = application
@@ -225,12 +225,10 @@ fn strip_menus(app_name: &str, menus: Vec<Menu>) -> Vec<Menu> {
     }];
     strip.extend(exported);
     let mut window = vec![Item::new("Minimize", "rmac_ui::MinimizeWindow", "⌘M")];
-    if let Some(first) = window_items.first() {
-        let mut first = first.clone();
+    if let Some(first) = window_items.first_mut() {
         first.separator_before = true;
-        window.push(first);
-        window.extend(window_items.into_iter().skip(1));
     }
+    window.extend(window_items);
     strip.push(Menu {
         label: rmac_app_menu::WINDOW_MENU.to_owned(),
         items: window,

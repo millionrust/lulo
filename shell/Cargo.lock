@@ -5743,6 +5743,8 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-storage",
  "rmac-theme",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

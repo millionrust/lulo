@@ -1,0 +1,282 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-06T11:17:19Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 257.57703196723014,
+      "switches": [
+        791.536902077496,
+        219.3054350791499,
+        257.57703196723014
+      ]
+    },
+    "files-icon-scroll": {
+      "frame_p50_ms": 5.857,
+      "frame_p95_ms": 6.887,
+      "frames": 62,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9838709677419355,
+      "worst_frame_ms": 16.87
+    },
+    "files-list-scroll": {
+      "frame_p50_ms": 12.324,
+      "frame_p95_ms": 17.631,
+      "frames": 57,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9122807017543859,
+      "worst_frame_ms": 22.323
+    },
+    "files-open-folder": {
+      "error": "Cmd-Down did not open Big (title 'SpeedFixtures \u2014 Files')"
+    },
+    "files-thumbnails": {
+      "frame_p50_ms": 5.667,
+      "frame_p95_ms": 11.297,
+      "frames": 2,
+      "pass": true,
+      "scroll": {
+        "frame_p50_ms": 0.746,
+        "frame_p95_ms": 6.184,
+        "frames": 54,
+        "pass": true,
+        "stalls": 0,
+        "within_16_7ms_share": 1.0,
+        "worst_frame_ms": 8.513
+      },
+      "settled_ms": 53.879,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 11.297
+    },
+    "mail-list-scroll": {
+      "frame_p50_ms": 12.466,
+      "frame_p95_ms": 15.572,
+      "frames": 64,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.96875,
+      "worst_frame_ms": 21.964
+    },
+    "minimise-restore": {
+      "minimise": [
+        212.75108901318163,
+        61.78006099071354,
+        59.57825598306954
+      ],
+      "minimise_ms": 61.78006099071354,
+      "pass": true,
+      "restore": [
+        46.919557033106685,
+        63.13685397617519,
+        44.266000972129405
+      ],
+      "restore_ms": 46.919557033106685
+    },
+    "mission-control-animation": {
+      "frame_p50_ms": 0.738,
+      "frame_p95_ms": 11.706,
+      "frames": 33,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 15.699
+    },
+    "notes-list-scroll": {
+      "frame_p50_ms": 0.827,
+      "frame_p95_ms": 83.827,
+      "frames": 42,
+      "pass": false,
+      "stalls": 13,
+      "within_16_7ms_share": 0.6904761904761905,
+      "worst_frame_ms": 84.179
+    },
+    "notes-typing": {
+      "echo_max_ms": 615.012,
+      "echo_p50_ms": 250.365,
+      "echo_p95_ms": 592.137,
+      "frame_p50_ms": 82.488,
+      "frame_p95_ms": 88.317,
+      "frames": 9,
+      "frames_pass": false,
+      "keys": 37,
+      "pass": false,
+      "stalls": 5,
+      "within_16_7ms_share": 0.4444444444444444,
+      "worst_frame_ms": 88.317
+    },
+    "quick-look": {
+      "open_ms": 24.93,
+      "opens": [
+        24.93,
+        26.436,
+        23.991
+      ],
+      "pass": true
+    },
+    "resize-drag": {
+      "final_size": [
+        699,
+        808
+      ],
+      "frame_p50_ms": 14.6,
+      "frame_p95_ms": 46.758,
+      "frames": 13,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.6153846153846154,
+      "worst_frame_ms": 46.758
+    },
+    "settings-pane-scroll": {
+      "frame_p50_ms": 5.579,
+      "frame_p95_ms": 9.233,
+      "frames": 132,
+      "panes": {
+        "accessibility": {
+          "frame_p50_ms": 6.655,
+          "frame_p95_ms": 8.253,
+          "frames": 41,
+          "pass": true,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 13.213
+        },
+        "keyboard": {
+          "frame_p50_ms": 0.985,
+          "frame_p95_ms": 9.33,
+          "frames": 48,
+          "pass": true,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 9.864
+        },
+        "privacy-security": {
+          "frame_p50_ms": 5.424,
+          "frame_p95_ms": 7.524,
+          "frames": 43,
+          "pass": true,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.688
+        }
+      },
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 13.213
+    },
+    "spotlight-typing": {
+      "echo_p95_ms": 33.891,
+      "pass": false,
+      "results_ms": 29.893,
+      "runs": [
+        {
+          "echo_max_ms": 33.891,
+          "echo_p50_ms": 1.036,
+          "echo_p95_ms": 33.891,
+          "frame_p50_ms": 1.373,
+          "frame_p95_ms": 4.743,
+          "frames": 23,
+          "frames_pass": false,
+          "keys": 10,
+          "pass": false,
+          "results_ms": 28.633,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9565217391304348,
+          "worst_frame_ms": 24.405
+        },
+        {
+          "echo_max_ms": 33.047,
+          "echo_p50_ms": 1.142,
+          "echo_p95_ms": 33.047,
+          "frame_p50_ms": 1.798,
+          "frame_p95_ms": 3.734,
+          "frames": 21,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 29.893,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.773
+        },
+        {
+          "echo_max_ms": 33.798,
+          "echo_p50_ms": 1.138,
+          "echo_p95_ms": 33.798,
+          "frame_p50_ms": 2.68,
+          "frame_p95_ms": 11.448,
+          "frames": 19,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 29.986,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.448
+        }
+      ]
+    },
+    "terminal-scrollback": {
+      "frame_p50_ms": 2.571,
+      "frame_p95_ms": 2.969,
+      "frames": 116,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 3.164
+    },
+    "terminal-typing": {
+      "echo_max_ms": 5.853,
+      "echo_p50_ms": 2.754,
+      "echo_p95_ms": 3.895,
+      "frame_p50_ms": 2.547,
+      "frame_p95_ms": 3.707,
+      "frames": 96,
+      "frames_pass": true,
+      "keys": 47,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 4.119
+    },
+    "text-editor-plain-typing": {
+      "echo_max_ms": 22.482,
+      "echo_p50_ms": 6.722,
+      "echo_p95_ms": 9.24,
+      "frame_p50_ms": 5.79,
+      "frame_p95_ms": 7.122,
+      "frames": 44,
+      "frames_pass": false,
+      "keys": 42,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9772727272727273,
+      "worst_frame_ms": 17.205
+    },
+    "text-editor-rich-typing": {
+      "echo_max_ms": 262.44,
+      "echo_p50_ms": 5.542,
+      "echo_p95_ms": 100.987,
+      "frame_p50_ms": 4.612,
+      "frame_p95_ms": 8.724,
+      "frames": 46,
+      "frames_pass": false,
+      "keys": 42,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9565217391304348,
+      "worst_frame_ms": 45.417
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 3,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

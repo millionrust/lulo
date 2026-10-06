@@ -1,0 +1,114 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-06T12:22:12Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 275.3382090013474,
+      "switches": [
+        723.0283779790625,
+        218.61185203306377,
+        275.3382090013474
+      ]
+    },
+    "files-open-folder": {
+      "first_frame_ms": 5.091,
+      "pass": false,
+      "runs": [
+        {
+          "first_frame_ms": 5.091,
+          "settled_ms": 139.071,
+          "worst_frame_ms": 20.581
+        }
+      ],
+      "settled_ms": 139.071
+    },
+    "resize-drag": {
+      "final_size": [
+        699,
+        808
+      ],
+      "frame_p50_ms": 14.694,
+      "frame_p95_ms": 41.553,
+      "frames": 11,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.6363636363636364,
+      "worst_frame_ms": 41.553
+    },
+    "spotlight-typing": {
+      "echo_p95_ms": 35.111,
+      "pass": false,
+      "results_ms": 29.334,
+      "runs": [
+        {
+          "echo_max_ms": 32.8,
+          "echo_p50_ms": 1.075,
+          "echo_p95_ms": 32.8,
+          "frame_p50_ms": 1.375,
+          "frame_p95_ms": 3.851,
+          "frames": 23,
+          "frames_pass": false,
+          "keys": 10,
+          "pass": false,
+          "results_ms": 29.334,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9565217391304348,
+          "worst_frame_ms": 24.514
+        },
+        {
+          "echo_max_ms": 33.333,
+          "echo_p50_ms": 1.119,
+          "echo_p95_ms": 33.333,
+          "frame_p50_ms": 2.128,
+          "frame_p95_ms": 4.939,
+          "frames": 20,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 28.656,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.814
+        },
+        {
+          "echo_max_ms": 35.111,
+          "echo_p50_ms": 1.158,
+          "echo_p95_ms": 35.111,
+          "frame_p50_ms": 2.715,
+          "frame_p95_ms": 11.057,
+          "frames": 19,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 30.732,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.057
+        }
+      ]
+    },
+    "text-editor-rich-typing": {
+      "echo_max_ms": 24.028,
+      "echo_p50_ms": 6.873,
+      "echo_p95_ms": 9.401,
+      "frame_p50_ms": 5.965,
+      "frame_p95_ms": 7.849,
+      "frames": 44,
+      "frames_pass": true,
+      "keys": 40,
+      "pass": true,
+      "stalls": 0,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 15.311
+    }
+  },
+  "panels": {},
+  "profile": "iterate (Settings release)",
+  "repeat": 3,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

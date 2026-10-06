@@ -437,6 +437,42 @@ impl NotesView {
             .is_some_and(|snapshot| snapshot.sort_order == SortOrder::Created);
         let mut current_section: Option<SharedString> = None;
         let mut items = Vec::<AnyElement>::new();
+        // A plain list (no search, no gallery, no tag rows) has fixed row
+        // heights, so it builds only the rows in and around the viewport;
+        // building all of a 500-note library's rows cost every frame of a
+        // scroll or a keystroke about 80 ms on the reference laptop.
+        let window_rows = !gallery
+            && !search_active
+            && notes
+                .iter()
+                .all(|(note, _)| note.tags.is_empty() || note.lock.is_some());
+        let list_window = window_rows.then(|| {
+            let measured = f32::from(self.note_list_scroll.bounds().size.height);
+            let viewport = if measured > 0.0 { measured } else { 2000.0 };
+            let top = -f32::from(self.note_list_scroll.offset().y) - LIST_TOP_PADDING;
+            let overscan = 4.0 * NOTE_ROW_HEIGHT;
+            (top - overscan)..(top + viewport + overscan)
+        });
+        let mut list_y = 0.0_f32;
+        let mut skipped_height = 0.0_f32;
+        // Whether an item spanning `height` from the list's running `y`
+        // is built; a skipped one only adds its height to the next spacer.
+        let mut place = |height: f32, items: &mut Vec<AnyElement>| -> bool {
+            let top = list_y;
+            list_y += height;
+            if list_window
+                .as_ref()
+                .is_some_and(|window| top + height < window.start || top > window.end)
+            {
+                skipped_height += height;
+                return false;
+            }
+            if skipped_height > 0.0 {
+                items.push(div().h(px(skipped_height)).flex_none().into_any_element());
+                skipped_height = 0.0;
+            }
+            true
+        };
         let section_of = |note: &NoteRecord| -> Option<SharedString> {
             sectioned.then(|| {
                 if note.pinned {
@@ -463,6 +499,10 @@ impl NotesView {
                 .get(index + 1)
                 .is_none_or(|next| *next != sections[index]);
             if let Some(section) = sections[index].clone() {
+                if current_section.as_ref() != Some(&section) && !place(SECTION_HEIGHT, &mut items)
+                {
+                    current_section = Some(section.clone());
+                }
                 if current_section.as_ref() != Some(&section) {
                     let is_collapsed = self.collapsed_sections.contains(section.as_ref());
                     let section_name = section.to_string();
@@ -521,6 +561,9 @@ impl NotesView {
                 .as_ref()
                 .is_some_and(|section| self.collapsed_sections.contains(section.as_ref()))
             {
+                continue;
+            }
+            if !place(NOTE_ROW_HEIGHT, &mut items) {
                 continue;
             }
             let note_id = note.id;
@@ -784,6 +827,9 @@ impl NotesView {
                     .into_any_element(),
             );
         }
+        if skipped_height > 0.0 {
+            items.push(div().h(px(skipped_height)).flex_none().into_any_element());
+        }
         if items.is_empty() {
             let empty_message: SharedString = if search_active {
                 match self.search.state() {
@@ -864,6 +910,7 @@ impl NotesView {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
+                    .track_scroll(&self.note_list_scroll)
                     .when(gallery, |element| element.flex().flex_wrap())
                     .pt(px(LIST_TOP_PADDING))
                     .pb(px(8.0))

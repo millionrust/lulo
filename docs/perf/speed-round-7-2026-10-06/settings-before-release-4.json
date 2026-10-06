@@ -1,0 +1,63 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 7.185089052654803,
+      "first_frame_ms": 287.833150010556,
+      "first_frame_pass": true,
+      "icons_painted_ms": 431.11015001055597,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 5.654862965457141,
+          "first_frame_ms": 175.7520749233663,
+          "focus_after_first_frame_ms": 101.425,
+          "icons_painted_ms": 311.2980749233663,
+          "presents_after_focus": 1,
+          "window_listed_ms": 346.7301819473505
+        },
+        {
+          "backend_init_ms": 6.9587110774591565,
+          "first_frame_ms": 287.833150010556,
+          "focus_after_first_frame_ms": 115.593,
+          "icons_painted_ms": 431.11015001055597,
+          "presents_after_focus": 1,
+          "window_listed_ms": 407.212813035585
+        },
+        {
+          "backend_init_ms": 7.185089052654803,
+          "first_frame_ms": 234.6933080116287,
+          "focus_after_first_frame_ms": 97.81,
+          "icons_painted_ms": 359.3103080116287,
+          "presents_after_focus": 1,
+          "window_listed_ms": 339.37628101557493
+        },
+        {
+          "backend_init_ms": 12.480644974857569,
+          "first_frame_ms": 301.91008700057864,
+          "focus_after_first_frame_ms": 90.769,
+          "icons_painted_ms": 442.2020870005787,
+          "presents_after_focus": 1,
+          "window_listed_ms": 455.10371099226177
+        },
+        {
+          "backend_init_ms": 12.061788002029061,
+          "first_frame_ms": 345.8522690925747,
+          "focus_after_first_frame_ms": 94.72,
+          "icons_painted_ms": 489.1942690925747,
+          "presents_after_focus": 1,
+          "window_listed_ms": 505.07935404311866
+        }
+      ],
+      "window_listed_ms": 407.212813035585
+    }
+  },
+  "captured_at": "2026-10-06T12:21:51Z",
+  "panels": {},
+  "profile": "release",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

@@ -485,6 +485,34 @@ impl MailState {
         }
     }
 
+    /// The fixture plus `extra` generated inbox messages, for the speed
+    /// sweep's long-list scrolling (`RMAC_MAIL_FIXTURE_MESSAGES`).
+    pub fn fixture_with_extra(extra: usize) -> Self {
+        let mut state = Self::fixture();
+        let inbox = state
+            .mailboxes
+            .iter()
+            .find(|mailbox| matches!(mailbox, Mailbox::Real(real) if real.special_use == Some(SpecialUse::Inbox)))
+            .cloned()
+            .unwrap_or(Mailbox::AllInboxes);
+        state.messages.extend((0..extra).map(|index| {
+            let id = format!("bulk-{index}");
+            fixture_message(
+                &id,
+                inbox.clone(),
+                "Speed Sweep",
+                "SS",
+                "Last week",
+                &format!("Generated message {index}"),
+                "A generated message for scrolling a long list.",
+                index % 3 == 0,
+                index % 7 == 0,
+                &id,
+            )
+        }));
+        state
+    }
+
     /// Swaps in a freshly loaded mailbox/message list after a sync snapshot
     /// or new-mail event, keeping the person's current selection, mailbox
     /// filter and search exactly as they were — a background refresh must

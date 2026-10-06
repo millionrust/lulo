@@ -1,0 +1,63 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 11.239507002756,
+      "first_frame_ms": 257.2897579520941,
+      "first_frame_pass": true,
+      "icons_painted_ms": 432.522573972106,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 6.329496041871607,
+          "first_frame_ms": 176.64215003605932,
+          "focus_after_first_frame_ms": 136.454,
+          "icons_painted_ms": 346.6671500360593,
+          "presents_after_focus": 1,
+          "window_listed_ms": 315.1933599729091
+        },
+        {
+          "backend_init_ms": 11.239507002756,
+          "first_frame_ms": 277.556573972106,
+          "focus_after_first_frame_ms": 100.837,
+          "icons_painted_ms": 432.522573972106,
+          "presents_after_focus": 1,
+          "window_listed_ms": 469.53645697794855
+        },
+        {
+          "backend_init_ms": 11.2460219534114,
+          "first_frame_ms": 306.6776240011677,
+          "focus_after_first_frame_ms": 212.1,
+          "icons_painted_ms": 543.7506240011677,
+          "presents_after_focus": 1,
+          "window_listed_ms": 520.6473290454596
+        },
+        {
+          "backend_init_ms": 5.80932607408613,
+          "first_frame_ms": 237.00573400128633,
+          "focus_after_first_frame_ms": 114.861,
+          "icons_painted_ms": 372.5937340012863,
+          "presents_after_focus": 1,
+          "window_listed_ms": 466.0808329936117
+        },
+        {
+          "backend_init_ms": 13.2044549100101,
+          "first_frame_ms": 257.2897579520941,
+          "focus_after_first_frame_ms": 97.933,
+          "icons_painted_ms": 455.7987579520941,
+          "presents_after_focus": 1,
+          "window_listed_ms": 458.2430539885536
+        }
+      ],
+      "window_listed_ms": 466.0808329936117
+    }
+  },
+  "captured_at": "2026-10-06T11:56:10Z",
+  "panels": {},
+  "profile": "release",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

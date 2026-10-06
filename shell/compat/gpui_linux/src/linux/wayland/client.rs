@@ -2183,8 +2183,21 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for WaylandClientStatePtr {
                 state.keyboard_focused_window = get_window(&mut state, &surface.id());
                 state.enter_token = Some(());
 
-                if let Some(window) = state.keyboard_focused_window.clone() {
-                    drop(state);
+                // rmac: another of this app's windows that was presumed
+                // active when it opened did not get the focus after all.
+                let focused_id = surface.id();
+                let unconfirmed: Vec<_> = state
+                    .windows
+                    .iter()
+                    .filter(|(id, window)| **id != focused_id && window.active_presumed())
+                    .map(|(_, window)| window.clone())
+                    .collect();
+                let focused = state.keyboard_focused_window.clone();
+                drop(state);
+                for window in unconfirmed {
+                    window.set_focused(false);
+                }
+                if let Some(window) = focused {
                     window.set_focused(true);
                 }
             }

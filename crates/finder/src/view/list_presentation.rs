@@ -353,14 +353,40 @@ impl FinderView {
 
         // Icon-grid tiles. Gallery owns a distinct preview + filmstrip tree.
         let mut tiles: Vec<gpui::AnyElement> = Vec::new();
+        // Ungrouped icon grids build only the rows in (and just around) the
+        // viewport, like the list's rows: a 2,000-item folder otherwise laid
+        // out and painted 2,000 tiles on every frame of a scroll.
+        let mut icon_window: Option<IconWindow> = None;
         if show_icons {
             let icon_size = self.icon_size;
             let (tile_width, tile_height) = self.icon_cell();
             let label_width = ICON_LABEL_MAX_WIDTH.min(tile_width - 16.0);
+            if options.group_by == view_options::GroupBy::None && self.view == ViewMode::Icon {
+                let measured = f32::from(self.icon_scroll.bounds().size.height);
+                let viewport = if measured > 0.0 {
+                    measured
+                } else {
+                    window_height
+                };
+                icon_window = Some(icon_window_for(
+                    visible_count,
+                    icon_columns,
+                    tile_height,
+                    -f32::from(self.icon_scroll.offset().y),
+                    viewport,
+                ));
+            }
             let mut position = 0usize;
             let mut previous_icon_group: Option<String> = None;
             for (ix, e) in self.entries.iter().enumerate() {
                 if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
+                    continue;
+                }
+                if icon_window
+                    .as_ref()
+                    .is_some_and(|window| !window.items.contains(&position))
+                {
+                    position += 1;
                     continue;
                 }
                 if let Some(group) = view_options::group_title(e, options.group_by) {
@@ -662,6 +688,12 @@ impl FinderView {
                         .min_h(px(0.0))
                         .overflow_y_scroll()
                         .track_scroll(&self.icon_scroll)
+                        // The windowed grid re-picks its rows as it scrolls.
+                        .when(icon_window.is_some(), |grid| {
+                            grid.on_scroll_wheel(
+                                cx.listener(|_, _: &gpui::ScrollWheelEvent, _, cx| cx.notify()),
+                            )
+                        })
                         .when(
                             options.background == view_options::Background::Colour,
                             |grid| grid.bg(rmac_ui::mac::accent_subtle()),
@@ -684,7 +716,13 @@ impl FinderView {
                                     },
                                     |grid, picture| grid.child(img(picture).absolute().size_full()),
                                 )
+                                .when_some(icon_window.as_ref(), |grid, window| {
+                                    grid.child(div().w_full().h(px(window.above)).flex_none())
+                                })
                                 .children(tiles)
+                                .when_some(icon_window.as_ref(), |grid, window| {
+                                    grid.child(div().w_full().h(px(window.below)).flex_none())
+                                })
                                 .when_some(marquee, |grid, bounds| {
                                     grid.child(
                                         div()
@@ -1643,5 +1681,78 @@ impl FinderView {
                     }))
             },
         )
+    }
+}
+
+/// The slice of an ungrouped icon grid worth building: the item positions
+/// of the rows in the viewport plus two rows either side, and the heights
+/// of the rows left out above and below, so the grid's scroll height and
+/// every tile's place stay what they would be with all rows built.
+pub(super) struct IconWindow {
+    pub(super) items: std::ops::Range<usize>,
+    pub(super) above: f32,
+    pub(super) below: f32,
+}
+
+pub(super) fn icon_window_for(
+    count: usize,
+    columns: usize,
+    row_height: f32,
+    scroll_top: f32,
+    viewport: f32,
+) -> IconWindow {
+    const OVERSCAN_ROWS: usize = 2;
+    let columns = columns.max(1);
+    let rows = count.div_ceil(columns);
+    if row_height <= 0.0 || !row_height.is_finite() || !viewport.is_finite() {
+        return IconWindow {
+            items: 0..count,
+            above: 0.0,
+            below: 0.0,
+        };
+    }
+    let top = (scroll_top - ICON_GRID_TOP).max(0.0);
+    let first_row = ((top / row_height).floor() as usize)
+        .saturating_sub(OVERSCAN_ROWS)
+        .min(rows);
+    let last_row = (((top + viewport.max(0.0)) / row_height).ceil() as usize + OVERSCAN_ROWS)
+        .clamp(first_row, rows);
+    IconWindow {
+        items: (first_row * columns)..(last_row * columns).min(count),
+        above: first_row as f32 * row_height,
+        below: (rows - last_row) as f32 * row_height,
+    }
+}
+
+#[cfg(test)]
+mod icon_window_tests {
+    use super::{icon_window_for, ICON_GRID_TOP};
+
+    #[test]
+    fn builds_only_the_rows_around_the_viewport() {
+        // 2,000 items, 8 per row, 100 pt rows, a 600 pt viewport.
+        let window = icon_window_for(2000, 8, 100.0, 0.0, 600.0);
+        assert_eq!(window.items, 0..64);
+        assert_eq!(window.above, 0.0);
+        assert_eq!(window.below, (250 - 8) as f32 * 100.0);
+
+        let window = icon_window_for(2000, 8, 100.0, ICON_GRID_TOP + 1000.0, 600.0);
+        assert_eq!(window.items, 64..144);
+        assert_eq!(window.above, 800.0);
+        // Rows above + built rows + rows below = every row.
+        assert_eq!(window.above + 10.0 * 100.0 + window.below, 250.0 * 100.0);
+    }
+
+    #[test]
+    fn the_last_row_may_be_partial() {
+        let window = icon_window_for(10, 4, 100.0, 10_000.0, 600.0);
+        assert_eq!(window.items.end, 10);
+        assert_eq!(window.below, 0.0);
+    }
+
+    #[test]
+    fn unmeasured_rows_build_everything() {
+        let window = icon_window_for(30, 4, 0.0, 0.0, 600.0);
+        assert_eq!(window.items, 0..30);
     }
 }

@@ -1,5 +1,12 @@
 # Speed round 4 — 2026-10-06
 
+> **Reverted after merge** (branch `op/speed-4-fix`): changes 2 (`d11e0965`,
+> reverted by `2204d98d`) and 3 (`ea2e5573`, reverted by `8518a3c2`) broke
+> two private runtime checks in integ-check31 ("Dock focus: Files tile has
+> bounds": reduced motion also sets the Dock's thickness, so its surfaces
+> resized after login; "Settings first-frame has no wallpaper inset"). Both
+> measured no gain below, so they were reverted rather than reworked.
+
 Branch `op/speed-4` on `integ` d7fa75c9 (rounds 1–3 merged). This round's
 table is the **release profile** (fat LTO), for the two packages that
 changed: `rmac-system-settings` and the Dock. Both sides were built back to

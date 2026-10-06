@@ -100,7 +100,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.vpn_import_capabilities = capabilities;
                 this.vpn_import_loading = false;
-                this.notify_if_showing(&["Network", "VPN"], cx);
+                cx.notify();
             });
         })
         .detach();
@@ -113,7 +113,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_audio_update(result, cx);
                 this.audio_error = None;
-                this.notify_if_showing(&["Sound"], cx);
+                cx.notify();
             });
         })
         .detach();
@@ -140,7 +140,7 @@ impl Settings {
                 this.finish_display_update(result);
                 this.display_error = None;
                 this.flush_display_stream_refresh(cx);
-                this.notify_if_showing(&["Displays"], cx);
+                cx.notify();
             });
         })
         .detach();
@@ -176,17 +176,7 @@ impl Settings {
                 this.finish_input_update(result, cx);
                 this.input_error = None;
                 this.flush_input_stream_refresh(cx);
-                this.notify_if_showing(
-                    &[
-                        "Keyboard",
-                        "Mouse",
-                        "Trackpad",
-                        "Touchscreen",
-                        "Language & Region",
-                        "Accessibility",
-                    ],
-                    cx,
-                );
+                cx.notify();
             });
         })
         .detach();
@@ -211,7 +201,7 @@ impl Settings {
                 this.finish_gtk_text_update(result);
                 this.gtk_text_error = None;
                 this.run_pending_gtk_text_refresh(cx);
-                this.notify_if_showing(&["Accessibility", "Appearance"], cx);
+                cx.notify();
             });
         })
         .detach();
@@ -261,7 +251,7 @@ impl Settings {
                 this.finish_screen_reader_toggle_update(result);
                 this.screen_reader_toggle_error = None;
                 this.run_pending_screen_reader_toggle_refresh(cx);
-                this.notify_if_showing(&["Accessibility"], cx);
+                cx.notify();
             });
         })
         .detach();

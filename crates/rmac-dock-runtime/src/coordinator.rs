@@ -104,15 +104,12 @@ impl Coordinator {
         std::mem::take(&mut self.recents_dirty).then(|| self.recents.clone())
     }
 
-    /// Whether the first snapshot can be published. The appearance source is
-    /// not waited for: it only decides reduced motion, which starts at the
-    /// default (full motion) and is reconciled when the portal answers, so the
-    /// Dock is not held back ~80 ms at login by the portal round trip.
     pub fn ready(&self) -> bool {
         !matches!(self.health.compositor, SourceHealth::Starting)
             && !matches!(self.health.settings, SourceHealth::Starting)
             && !matches!(self.health.catalog, SourceHealth::Starting)
             && !matches!(self.health.places, SourceHealth::Starting)
+            && !matches!(self.health.appearance, SourceHealth::Starting)
             && (!matches!(
                 self.settings.dock.outputs,
                 rmac_shell_settings::OutputScope::Primary

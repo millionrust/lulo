@@ -40,7 +40,7 @@ impl Settings {
                     }
                 }
                 this.run_pending_storage_refresh(cx);
-                this.notify_if_showing(&[], cx);
+                cx.notify();
             });
         })
         .detach();
@@ -53,7 +53,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.screen_reader = capability;
                 this.screen_reader_loading = false;
-                this.notify_if_showing(&["Accessibility"], cx);
+                cx.notify();
             });
         })
         .detach();

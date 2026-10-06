@@ -868,6 +868,13 @@ impl Session {
             None
         };
         job.or_else(|| self.title.current())
+            // A directory the shell has actually reported over OSC 7 (a
+            // real `cd`) outranks the static default identity below, but
+            // the unconfirmed starting guess `from_local` set before the
+            // shell said anything does not — that guess is exactly the
+            // "repo" directory-name title UIA-02 found Lulo showing by
+            // default instead of the Mac's "user — shell".
+            .or_else(|| self.directory.confirmed_label())
             .or_else(|| self.default_identity.clone())
             .or_else(|| self.directory.label())
     }
@@ -1668,6 +1675,52 @@ mod tests {
             Some("Terminal can no longer send input to this session. Existing output is readable.")
         );
         assert_eq!(session.write(b"retry"), Err(SessionWriteError::Write));
+    }
+
+    /// UIA-02: `tab_title`'s priority end to end — a fresh shell session
+    /// defaults to "user — -shell", not the starting directory's name, but
+    /// a real `cd` (a confirmed OSC 7 report) still outranks that default,
+    /// exactly like the `terminal/title-follows-directory` behaviour
+    /// scenario expects.
+    #[test]
+    fn tab_title_prefers_a_confirmed_directory_over_the_default_identity() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let directory = SessionDirectory::from_local(std::path::Path::new("/home/jake/repo"));
+        let session = Session {
+            id: 1,
+            term: Arc::new(Mutex::new(Term::new(
+                terminal_config(10),
+                &size,
+                EventProxy::default(),
+            ))),
+            ui: SessionUiState::default(),
+            accepted_size: size,
+            transport: SessionTransportState::default(),
+            writer: Arc::new(Mutex::new(
+                Box::new(std::io::sink()) as Box<dyn Write + Send>
+            )),
+            write_failed: Arc::new(AtomicBool::new(false)),
+            title: SessionTitle::default(),
+            manual_title: SessionTitle::default(),
+            default_identity: Some("jake — -zsh".to_string()),
+            directory: directory.clone(),
+            shell_state: SessionShellState::default(),
+            scrollback_limit: Arc::new(AtomicUsize::new(10)),
+            job_state: SessionJobState::default(),
+            master: None,
+            shell_pid: None,
+            killer: None,
+            lifecycle: Arc::new(Mutex::new(SessionLifecycle::Running)),
+            origin: InitialProgram::default(),
+        };
+
+        // A fresh window: no job, no OSC title, and the directory is only
+        // the unconfirmed starting guess — the default identity wins.
+        assert_eq!(session.tab_title().as_deref(), Some("jake — -zsh"));
+
+        // A real `cd` confirms the directory over OSC 7 — it now wins.
+        assert!(directory.set_uri("file:///tmp"));
+        assert_eq!(session.tab_title().as_deref(), Some("tmp"));
     }
 
     #[test]

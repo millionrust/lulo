@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "settings/default-window-size",
+  "platform": "Lulo local contract",
+  "observations": {
+    "initial": {
+      "window_size": {"width": 747, "height": 800}
+    }
+  }
+}

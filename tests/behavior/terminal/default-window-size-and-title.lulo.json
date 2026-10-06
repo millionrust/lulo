@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "scenario": "terminal/default-window-size-and-title",
+  "platform": "Lulo local contract",
+  "observations": {
+    "initial": {
+      "window_size": {"width": 604, "height": 409},
+      "windows": {"count": 1, "front": "jacob — -bash — Terminal", "titles": ["jacob — -bash — Terminal"], "fullscreen": false}
+    }
+  }
+}

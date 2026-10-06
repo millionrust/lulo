@@ -231,6 +231,7 @@ impl WgpuRenderer {
                         )?;
                         Ok((context, surface))
                     })();
+                crate::vulkan_drivers::release_vulkan_driver_restriction();
                 let (context, surface) = match hardware_vulkan {
                     Ok(found) => found,
                     Err(error) => {

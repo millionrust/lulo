@@ -1029,6 +1029,8 @@ const RMAC_NO_COMPOSITOR_EXIT_CODE: i32 = 69;
 impl WaylandClient {
     pub(crate) fn new() -> Self {
         super::frame_trace::init();
+        // rmac: before any thread or Vulkan instance exists (docs/decisions/0013).
+        gpui_wgpu::restrict_vulkan_drivers_to_present_gpus();
         let startup_activation_token = take_startup_activation_token_from_environment();
         // rmac: connecting can fail for a completely ordinary reason -- this
         // process respawning in the brief window after the compositor exits

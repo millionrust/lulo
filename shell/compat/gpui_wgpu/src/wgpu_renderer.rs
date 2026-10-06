@@ -234,8 +234,13 @@ impl WgpuRenderer {
                 // with hardware adapters first; only when that finds nothing
                 // usable fall back to upstream's full Vulkan+GL selection, so
                 // GL-only and software-only machines still get a renderer.
-                let hardware_vulkan =
-                    (|| -> anyhow::Result<(WgpuContext, wgpu::Surface<'static>)> {
+                let prewarmed = WgpuContext::take_prewarmed().and_then(|context| {
+                    let surface = create_surface(&context.instance, raw_window_handle).ok()?;
+                    context.check_compatible_with_surface(&surface).ok()?;
+                    Some((context, surface))
+                });
+                let hardware_vulkan = prewarmed.map(Ok).unwrap_or_else(
+                    || -> anyhow::Result<(WgpuContext, wgpu::Surface<'static>)> {
                         let instance = WgpuContext::vulkan_instance(Box::new(window.clone()));
                         let surface = create_surface(&instance, raw_window_handle)?;
                         let context = WgpuContext::new_rejecting_software(
@@ -244,7 +249,8 @@ impl WgpuRenderer {
                             compositor_gpu,
                         )?;
                         Ok((context, surface))
-                    })();
+                    },
+                );
                 crate::vulkan_drivers::release_vulkan_driver_restriction();
                 let (context, surface) = match hardware_vulkan {
                     Ok(found) => found,

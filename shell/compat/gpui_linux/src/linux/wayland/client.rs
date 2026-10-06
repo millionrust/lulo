@@ -1026,6 +1026,27 @@ fn wl_output_version(version: u32) -> u32 {
 // re-arm for, and OnFailure handling can tell the two apart.
 const RMAC_NO_COMPOSITOR_EXIT_CODE: i32 = 69;
 
+/// The process's `wl_display`, for `WgpuContext::prewarm`'s Vulkan instance.
+#[derive(Debug)]
+struct PrewarmDisplay(*mut std::ffi::c_void);
+
+// Safety: libwayland's wl_display is thread-safe, and the connection it
+// belongs to lives for the rest of the process (the WaylandClient is never
+// dropped before exit).
+unsafe impl Send for PrewarmDisplay {}
+unsafe impl Sync for PrewarmDisplay {}
+
+impl raw_window_handle::HasDisplayHandle for PrewarmDisplay {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        let display =
+            std::ptr::NonNull::new(self.0).ok_or(raw_window_handle::HandleError::Unavailable)?;
+        let handle = raw_window_handle::WaylandDisplayHandle::new(display);
+        Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(handle.into()) })
+    }
+}
+
 impl WaylandClient {
     pub(crate) fn new() -> Self {
         super::frame_trace::init();
@@ -1044,6 +1065,11 @@ impl WaylandClient {
             std::process::exit(RMAC_NO_COMPOSITOR_EXIT_CODE);
         });
 
+        // rmac: make the GPU context while the rest of the platform and the
+        // app start up, not when the first window needs it (docs/decisions/0013).
+        gpui_wgpu::WgpuContext::prewarm(Box::new(PrewarmDisplay(
+            conn.backend().display_ptr().cast::<std::ffi::c_void>(),
+        )));
         let (globals, event_queue) = registry_queue_init::<WaylandClientStatePtr>(&conn).unwrap();
         let qh = event_queue.handle();
 

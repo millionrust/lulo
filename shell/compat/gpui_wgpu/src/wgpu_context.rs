@@ -19,6 +19,11 @@ pub struct WgpuContext {
     pub(crate) pipeline_cache: std::cell::RefCell<crate::wgpu_renderer::PipelineCache>,
 }
 
+/// rmac: the GPU context `WgpuContext::prewarm` is making (one per process).
+#[cfg(not(target_family = "wasm"))]
+static PREWARMED: std::sync::Mutex<Option<std::thread::JoinHandle<Option<WgpuContext>>>> =
+    std::sync::Mutex::new(None);
+
 #[derive(Clone, Copy)]
 pub struct CompositorGpuHint {
     pub vendor_id: u32,
@@ -183,6 +188,93 @@ impl WgpuContext {
             dual_source_blending,
             color_atlas_texture_format,
         ))
+    }
+
+    /// rmac: start creating this process's GPU context on a background
+    /// thread as soon as the platform connects, instead of when the first
+    /// window asks for it. A resident panel (Spotlight, Control Centre, …)
+    /// otherwise paid the whole device start-up on its first open, and an
+    /// app's first window waited for it after its own start-up. Only the
+    /// common single-GPU case is pre-warmed: with several hardware adapters
+    /// the choice depends on the compositor's GPU and the window's surface,
+    /// so the first window makes it as before. `WgpuRenderer::new` takes the
+    /// result and still checks it against the window's surface.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn prewarm(display: Box<dyn wgpu::wgt::WgpuHasDisplayHandle>) {
+        let spawned = std::thread::Builder::new()
+            .name("gpu-prewarm".into())
+            .spawn(move || {
+                let instance = Self::vulkan_instance(display);
+                crate::vulkan_drivers::release_vulkan_driver_restriction();
+                if std::env::var_os("ZED_DEVICE_ID").is_some() {
+                    return None;
+                }
+                let mut hardware: Vec<_> =
+                    gpui::block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN))
+                        .into_iter()
+                        .filter(|adapter| adapter.get_info().device_type != wgpu::DeviceType::Cpu)
+                        .collect();
+                if hardware.len() != 1 {
+                    return None;
+                }
+                let adapter = hardware.pop()?;
+                let (device, queue, dual_source_blending, color_texture_format) =
+                    gpui::block_on(Self::create_device(&adapter)).ok()?;
+                Some(Self::assemble(
+                    instance,
+                    adapter,
+                    device,
+                    queue,
+                    dual_source_blending,
+                    color_texture_format,
+                ))
+            });
+        if let Ok(handle) = spawned {
+            *PREWARMED.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+        }
+    }
+
+    /// The pre-warmed context, waiting for it if it is still being made.
+    #[cfg(not(target_family = "wasm"))]
+    pub(crate) fn take_prewarmed() -> Option<Self> {
+        let handle = PREWARMED.lock().unwrap_or_else(|e| e.into_inner()).take()?;
+        handle.join().ok().flatten()
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn assemble(
+        instance: wgpu::Instance,
+        adapter: wgpu::Adapter,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        dual_source_blending: bool,
+        color_texture_format: TextureFormat,
+    ) -> Self {
+        let device_lost = Arc::new(AtomicBool::new(false));
+        device.set_device_lost_callback({
+            let device_lost = Arc::clone(&device_lost);
+            move |reason, message| {
+                log::error!("wgpu device lost: reason={reason:?}, message={message}");
+                if reason != wgpu::DeviceLostReason::Destroyed {
+                    device_lost.store(true, Ordering::Relaxed);
+                }
+            }
+        });
+        log::info!(
+            "Pre-warmed GPU adapter: {:?} ({:?})",
+            adapter.get_info().name,
+            adapter.get_info().backend
+        );
+        Self {
+            instance,
+            adapter,
+            device: Arc::new(device),
+            queue: Arc::new(queue),
+            dual_source_blending,
+            color_texture_format,
+            device_lost,
+            pipeline_cache: Default::default(),
+        }
     }
 
     /// rmac: a Vulkan-only instance, so creating it neither initialises EGL

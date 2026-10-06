@@ -82,6 +82,34 @@ pub const SUBMENU_OVERLAP: f32 = 4.0;
 /// waits a moment so a pointer passing over rows does not flash menus.
 pub const SUBMENU_HOVER_DELAY: Duration = Duration::from_millis(100);
 
+// ---- Alternate items (⌥, UIA-22) ------------------------------------------
+//
+// AppKit never draws an `isAlternate` item as a row of its own: it replaces
+// the item right before it for as long as Option is held, same slot, same
+// row index, so a menu's row count and geometry (`app_menu_height`,
+// `app_menu_item_top`, …) stay correct either way without any change here.
+// This is the model half of the fix (`rmac_app_menu::Item::alternate`,
+// `resolve_items`); the renderer that actually watches the live ⌥ state and
+// calls these is out of scope for UIA-22.
+
+/// The row shown in `item`'s slot: itself normally, or its ⌥ alternate while
+/// `option_held` is true and one exists.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn displayed_item(item: &Item, option_held: bool) -> &Item {
+    item.effective(option_held)
+}
+
+/// `items`, each swapped for its ⌥ alternate while `option_held` is true —
+/// the menu bar's per-row source of truth once it wires up live Option-key
+/// tracking for an app's exported menu. Row order and count never change.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn displayed_items(items: &[Item], option_held: bool) -> Vec<&Item> {
+    items
+        .iter()
+        .map(|item| displayed_item(item, option_held))
+        .collect()
+}
+
 fn row_height(item: &Item) -> f32 {
     if item.action == HELP_SEARCH_ACTION {
         HELP_SEARCH_ROW_HEIGHT
@@ -2080,6 +2108,32 @@ mod tests {
             separator_before,
             ..Item::new(label, format!("test::{label}"), shortcut)
         }
+    }
+
+    #[test]
+    fn an_alternate_replaces_its_item_only_while_option_is_held() {
+        // UIA-22: Empty Trash…/Empty Trash must occupy one row, swapping in
+        // place while ⌥ is held, the way AppKit shows an isAlternate item.
+        let primary =
+            item("Empty Trash…", "⇧⌘⌫", false).with_alternate(item("Empty Trash", "⌥⇧⌘⌫", false));
+        assert_eq!(displayed_item(&primary, false).label, "Empty Trash…");
+        assert_eq!(displayed_item(&primary, true).label, "Empty Trash");
+        // A row count of one either way: the alternate never becomes a
+        // sibling row of its own.
+        let items = vec![primary];
+        assert_eq!(displayed_items(&items, false).len(), 1);
+        assert_eq!(displayed_items(&items, true).len(), 1);
+        assert_eq!(
+            app_menu_height(&items),
+            APP_ROW_HEIGHT + 2.0 * APP_MENU_PADDING
+        );
+    }
+
+    #[test]
+    fn an_item_with_no_alternate_is_unaffected_by_option() {
+        let plain = item("Get Info", "⌘I", false);
+        assert_eq!(displayed_item(&plain, false).label, "Get Info");
+        assert_eq!(displayed_item(&plain, true).label, "Get Info");
     }
 
     #[test]

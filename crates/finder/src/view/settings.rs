@@ -139,6 +139,14 @@ pub(super) struct TagSetting {
 
 impl TagSetting {
     pub(super) fn display_name(&self) -> String {
+        // The stored name is the lowercase xattr value ("gray"), unchanged
+        // for compatibility with files already tagged by it. macOS 26 in
+        // en-GB spells the colour "Grey" in the Finder sidebar and Finder
+        // Settings ▸ Tags (UIA-25), so that one display form is overridden
+        // here rather than in the stored value.
+        if self.name.eq_ignore_ascii_case("gray") {
+            return "Grey".to_owned();
+        }
         let mut chars = self.name.chars();
         match chars.next() {
             Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
@@ -505,5 +513,18 @@ mod tests {
             show_in_sidebar: true,
         };
         assert_eq!(tag.display_name(), "Blue");
+    }
+
+    #[test]
+    fn gray_tag_displays_as_grey_in_en_gb() {
+        // UIA-25: the stored xattr value stays "gray" for compatibility,
+        // but macOS 26 en-GB shows "Grey" in the sidebar and Finder
+        // Settings ▸ Tags.
+        let tag = TagSetting {
+            name: "gray".to_owned(),
+            color: 0,
+            show_in_sidebar: true,
+        };
+        assert_eq!(tag.display_name(), "Grey");
     }
 }

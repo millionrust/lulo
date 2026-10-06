@@ -104,6 +104,12 @@ pub struct Item {
     /// update". Drawn by the shell's own menus only; never sent over the
     /// menu wire.
     pub badge: String,
+    /// The row AppKit swaps in while ⌥ is held — an `NSMenuItem` with
+    /// `isAlternate = true` and `keyEquivalentModifierMask` including
+    /// `.option`, occupying the same row as the item it replaces rather
+    /// than a sibling row of its own (Finder's Empty Bin…/Empty Bin,
+    /// UIA-22). `None` for an ordinary item with no ⌥ alternate.
+    pub alternate: Option<Box<Item>>,
 }
 
 impl Item {
@@ -158,6 +164,24 @@ impl Item {
     pub fn is_submenu(&self) -> bool {
         !self.children.is_empty()
     }
+
+    /// Set `item` as the row AppKit shows in this item's place while ⌥ is
+    /// held (`isAlternate`, UIA-22).
+    pub fn with_alternate(mut self, item: Item) -> Self {
+        self.alternate = Some(Box::new(item));
+        self
+    }
+
+    /// The row to show: this item normally, or its ⌥ alternate while
+    /// `option_held` is true and one exists — the same swap AppKit performs
+    /// for an `isAlternate` menu item (UIA-22).
+    pub fn effective(&self, option_held: bool) -> &Item {
+        if option_held {
+            self.alternate.as_deref().unwrap_or(self)
+        } else {
+            self
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -178,6 +202,9 @@ impl Menu {
             for item in items {
                 if item.children.is_empty() {
                     out.push((path.clone(), item));
+                    if let Some(alternate) = item.alternate.as_deref() {
+                        out.push((path.clone(), alternate));
+                    }
                 } else {
                     path.push(item.label.as_str());
                     walk(&item.children, path, out);
@@ -213,6 +240,12 @@ pub fn apply_state(menus: &[Menu], state: impl Fn(&Item) -> Option<ItemState>) -
                     next.children = apply(&item.children, state);
                     next.enabled = next.children.iter().any(|child| child.enabled);
                 }
+                if let Some(alternate) = item.alternate.as_deref() {
+                    next.alternate = apply(std::slice::from_ref(alternate), state)
+                        .into_iter()
+                        .next()
+                        .map(Box::new);
+                }
                 if let Some(update) = state(item) {
                     if let Some(enabled) = update.enabled {
                         next.enabled = enabled;
@@ -245,6 +278,11 @@ struct ItemSpec {
     separator_before: bool,
     /// Non-empty for a submenu, whose `action` then only names it.
     children: &'static [ItemSpec],
+    /// This row is the ⌥ alternate of the item immediately before it: it
+    /// never becomes a sibling row (`resolve_items` folds it into that
+    /// item's [`Item::alternate`] instead), matching how an AppKit
+    /// `isAlternate` item hides under the row it replaces (UIA-22).
+    alternate: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -261,6 +299,7 @@ macro_rules! item {
             shortcut: $shortcut,
             separator_before: false,
             children: &[],
+            alternate: false,
         }
     };
     ($label:literal, $action:expr, $shortcut:literal, separator) => {
@@ -270,6 +309,17 @@ macro_rules! item {
             shortcut: $shortcut,
             separator_before: true,
             children: &[],
+            alternate: false,
+        }
+    };
+    ($label:literal, $action:expr, $shortcut:literal, alternate) => {
+        ItemSpec {
+            label: $label,
+            action: $action,
+            shortcut: $shortcut,
+            separator_before: false,
+            children: &[],
+            alternate: true,
         }
     };
 }
@@ -284,6 +334,7 @@ macro_rules! submenu {
             shortcut: "",
             separator_before: false,
             children: &[$($child),*],
+            alternate: false,
         }
     };
     ($label:literal, $action:expr, [$($child:expr),* $(,)?], separator) => {
@@ -293,6 +344,7 @@ macro_rules! submenu {
             shortcut: "",
             separator_before: true,
             children: &[$($child),*],
+            alternate: false,
         }
     };
 }
@@ -1422,7 +1474,14 @@ const FILES_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Settings…", "finder::ShowSettings", "⌘,", separator),
             item!("Empty Trash…", "finder::EmptyTrash", "⇧⌘⌫"),
-            item!("Empty Trash", "finder::EmptyTrashImmediately", "⌥⇧⌘⌫"),
+            // The Mac shows this as Empty Trash…'s hidden ⌥ alternate, not
+            // a second visible row (UIA-22).
+            item!(
+                "Empty Trash",
+                "finder::EmptyTrashImmediately",
+                "⌥⇧⌘⌫",
+                alternate
+            ),
         ],
     },
     MenuSpec {
@@ -2574,7 +2633,7 @@ fn resolve_items(
             }
             children
         };
-        items.push(Item {
+        let resolved = Item {
             label: match spec.action {
                 "finder::MoveToTrash" => format!("Move to {}", file_words.bin()),
                 "finder::GoTrash" => file_words.bin().to_owned(),
@@ -2589,7 +2648,20 @@ fn resolve_items(
             checked: CheckState::Off,
             children,
             badge: String::new(),
-        });
+            alternate: None,
+        };
+        // An ⌥ alternate folds into the item right before it (UIA-22)
+        // instead of becoming its own row; a leading alternate with
+        // nothing to attach to (should not happen in a real spec) still
+        // shows rather than silently dropping the command.
+        if spec.alternate {
+            if let Some(previous) = items.last_mut() {
+                previous.alternate = Some(Box::new(resolved));
+                separate = false;
+                continue;
+            }
+        }
+        items.push(resolved);
         separate = false;
     }
     items
@@ -4059,14 +4131,30 @@ mod tests {
             rmac_locale::FileVocabulary::for_locale("en_GB.UTF-8"),
         )
         .unwrap();
-        let labels = menus
+        let items = menus
             .iter()
             .flat_map(|menu| &menu.items)
+            .collect::<Vec<_>>();
+        let labels = items
+            .iter()
             .map(|item| item.label.as_str())
             .collect::<Vec<_>>();
-        for label in ["Move to Bin", "Bin", "Empty Bin…", "Empty Bin"] {
+        for label in ["Move to Bin", "Bin", "Empty Bin…"] {
             assert!(labels.contains(&label), "missing {label}: {labels:?}");
         }
+        // UIA-22: "Empty Bin" is Empty Bin…'s ⌥ alternate, not its own row.
+        assert!(
+            !labels.contains(&"Empty Bin"),
+            "Empty Bin should not be a separate row: {labels:?}"
+        );
+        let empty_bin = items
+            .iter()
+            .find(|item| item.label == "Empty Bin…")
+            .expect("Empty Bin… row");
+        let alternate = empty_bin.alternate.as_deref().expect("⌥ alternate");
+        assert_eq!(alternate.label, "Empty Bin");
+        assert_eq!(alternate.action, "finder::EmptyTrashImmediately");
+        assert_eq!(alternate.shortcut, "⌥⇧⌘⌫");
     }
 
     #[test]

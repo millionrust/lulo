@@ -38,6 +38,10 @@ pub mod flags {
     pub const MIXED: u32 = 1 << 3;
     /// The item opens a submenu; its children follow at `depth + 1`.
     pub const SUBMENU: u32 = 1 << 4;
+    /// This row is the previous row's ⌥ alternate (UIA-22): it sits at the
+    /// same depth, immediately after the item it replaces while Option is
+    /// held, and never carries [`SUBMENU`] of its own.
+    pub const ALTERNATE: u32 = 1 << 5;
 }
 
 /// Size limits a reader enforces before it accepts menus.
@@ -86,7 +90,13 @@ pub(crate) fn validate(menus: &[Menu], limits: Limits) -> Result<(), Error> {
 fn count_items(items: &[Item]) -> usize {
     items
         .iter()
-        .map(|item| 1 + count_items(&item.children))
+        .map(|item| {
+            1 + count_items(&item.children)
+                + item
+                    .alternate
+                    .as_deref()
+                    .map_or(0, |alternate| count_items(std::slice::from_ref(alternate)))
+        })
         .sum()
 }
 
@@ -110,6 +120,14 @@ fn validate_items<'a>(
                 return Err(Error::Protocol);
             }
             validate_items(&item.children, depth + 1, limits, actions)?;
+        }
+        if let Some(alternate) = item.alternate.as_deref() {
+            // An alternate never opens its own submenu: AppKit's isAlternate
+            // items are plain commands.
+            if !alternate.children.is_empty() {
+                return Err(Error::Protocol);
+            }
+            validate_items(std::slice::from_ref(alternate), depth, limits, actions)?;
         }
     }
     Ok(())
@@ -194,9 +212,21 @@ fn flatten_items(items: &[Item], out: &mut Vec<Item>) {
             out.push(Item {
                 separator_before: item.separator_before || separate_next,
                 checked: CheckState::Off,
+                alternate: None,
                 ..item.clone()
             });
             separate_next = false;
+            // A version 1 reader has no alternate-item concept, so the
+            // ⌥ alternate keeps its pre-UIA-22 behaviour: its own plain
+            // row right after the item it replaces.
+            if let Some(alternate) = item.alternate.as_deref() {
+                out.push(Item {
+                    separator_before: false,
+                    checked: CheckState::Off,
+                    alternate: None,
+                    ..alternate.clone()
+                });
+            }
         } else {
             let start = out.len();
             flatten_items(&item.children, out);
@@ -244,6 +274,27 @@ fn encode_items(items: &[Item], depth: u8, out: &mut Vec<WireItemV2>) {
             depth,
         ));
         encode_items(&item.children, depth.saturating_add(1), out);
+        // The ⌥ alternate follows at the same depth, flagged so a version 2
+        // reader folds it back under this item instead of showing it as its
+        // own row (UIA-22).
+        if let Some(alternate) = item.alternate.as_deref() {
+            let mut alt_bits = flags::ALTERNATE;
+            if alternate.enabled {
+                alt_bits |= flags::ENABLED;
+            }
+            match alternate.checked {
+                CheckState::Off => {}
+                CheckState::On => alt_bits |= flags::CHECKED,
+                CheckState::Mixed => alt_bits |= flags::CHECKED | flags::MIXED,
+            }
+            out.push((
+                alternate.label.clone(),
+                alternate.action.clone(),
+                alternate.shortcut.clone(),
+                alt_bits,
+                depth,
+            ));
+        }
     }
 }
 
@@ -271,7 +322,7 @@ fn decode_level(
     items: &mut Peekable<std::vec::IntoIter<WireItemV2>>,
     depth: u8,
 ) -> Result<Vec<Item>, Error> {
-    let mut level = Vec::new();
+    let mut level: Vec<Item> = Vec::new();
     while let Some(&(_, _, _, _, item_depth)) = items.peek() {
         if item_depth < depth {
             break;
@@ -288,6 +339,31 @@ fn decode_level(
             (true, false) => CheckState::On,
             (true, true) => CheckState::Mixed,
         };
+        if bits & flags::ALTERNATE != 0 {
+            // A row an isAlternate item is never itself: it has no
+            // submenu and nothing to fold it under on its own.
+            if bits & flags::SUBMENU != 0 {
+                return Err(Error::Protocol);
+            }
+            let Some(previous) = level.last_mut() else {
+                return Err(Error::Protocol);
+            };
+            if previous.alternate.is_some() {
+                return Err(Error::Protocol);
+            }
+            previous.alternate = Some(Box::new(Item {
+                label,
+                action,
+                shortcut,
+                enabled: bits & flags::ENABLED != 0,
+                separator_before: false,
+                checked,
+                children: Vec::new(),
+                badge: String::new(),
+                alternate: None,
+            }));
+            continue;
+        }
         let children = if bits & flags::SUBMENU != 0 {
             if usize::from(depth) + 1 >= V2_LIMITS.depth {
                 return Err(Error::Protocol);
@@ -309,6 +385,7 @@ fn decode_level(
             checked,
             children,
             badge: String::new(),
+            alternate: None,
         });
     }
     Ok(level)
@@ -363,6 +440,64 @@ mod tests {
             decode_v2(encode_v2(&menus)).unwrap()[0].items[0].checked,
             CheckState::Mixed
         );
+    }
+
+    #[test]
+    fn an_alternate_round_trips_as_one_row_over_version_2() {
+        // UIA-22: Empty Trash…'s ⌥ alternate must stay nested under it, not
+        // become a second sibling row, once it crosses the wire.
+        let menus = vec![Menu {
+            label: crate::APPLICATION_MENU.into(),
+            items: vec![leaf("Empty Trash…", "finder::EmptyTrash")
+                .with_alternate(leaf("Empty Trash", "finder::EmptyTrashImmediately"))],
+        }];
+        let wire = encode_v2(&menus);
+        // One wire row per side of the alternate, both at the same depth.
+        assert_eq!(wire[0].1.len(), 2);
+        assert_eq!(wire[0].1[0].4, 0);
+        assert_eq!(wire[0].1[1].4, 0);
+        assert_ne!(wire[0].1[1].3 & flags::ALTERNATE, 0);
+        let decoded = decode_v2(wire).unwrap();
+        assert_eq!(decoded, menus);
+        assert_eq!(decoded[0].items.len(), 1);
+        assert_eq!(
+            decoded[0].items[0].alternate.as_deref().unwrap().label,
+            "Empty Trash"
+        );
+    }
+
+    #[test]
+    fn version_2_rejects_an_alternate_with_no_row_to_follow() {
+        let orphan = vec![(
+            crate::APPLICATION_MENU.to_owned(),
+            vec![(
+                "Empty Trash".to_owned(),
+                "finder::EmptyTrashImmediately".to_owned(),
+                String::new(),
+                flags::ALTERNATE,
+                0,
+            )],
+        )];
+        assert_eq!(decode_v2(orphan), Err(Error::Protocol));
+    }
+
+    #[test]
+    fn a_version_1_reader_still_sees_both_sides_of_an_alternate() {
+        // Without the alternate concept, a version 1 menu bar keeps the
+        // pre-UIA-22 behaviour: both rows, in order.
+        let menus = vec![Menu {
+            label: crate::APPLICATION_MENU.into(),
+            items: vec![leaf("Empty Trash…", "finder::EmptyTrash")
+                .with_alternate(leaf("Empty Trash", "finder::EmptyTrashImmediately"))],
+        }];
+        let flat = flatten_for_v1(&menus);
+        let labels = flat[0]
+            .items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(labels, ["Empty Trash…", "Empty Trash"]);
+        assert!(flat[0].items.iter().all(|item| item.alternate.is_none()));
     }
 
     #[test]

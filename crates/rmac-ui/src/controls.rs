@@ -42,8 +42,11 @@ pub use gpui_component::input::{
     SelectToStart as InputSelectToStart, SelectToStartOfLine as InputSelectToStartOfLine,
     ShowCharacterPalette as InputShowCharacterPalette, Undo as InputUndo,
 };
-pub use gpui_component::slider::{SliderEvent, SliderState};
-pub use gpui_component::table::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
+pub use gpui_component::{
+    menu::PopupMenuItem,
+    slider::{SliderEvent, SliderState},
+    table::{Column, ColumnSort, TableDelegate, TableEvent, TableState},
+};
 
 use crate::mac;
 
@@ -1284,6 +1287,8 @@ impl RenderOnce for Checkbox {
             .flex()
             .items_center()
             .gap_2()
+            .text_size(crate::text_px(13.0))
+            .line_height(px(16.0))
             .text_color(label_color)
             .child(box_)
             .when_some(self.label.clone(), |content, label| content.child(label));
@@ -1394,6 +1399,8 @@ impl RenderOnce for Radio {
             .flex()
             .items_center()
             .gap_2()
+            .text_size(crate::text_px(13.0))
+            .line_height(px(16.0))
             .text_color(label_color)
             .child(circle)
             .when_some(self.label.clone(), |content, label| content.child(label));

@@ -946,9 +946,12 @@ fn size_renderer(state: &mut WaylandWindowState) -> bool {
             })
         });
         let allocation = wanted_allocation(device, reserved, outputs);
+        // Grow to the whole allocation as soon as it is wanted (when the
+        // resize starts, or when the app reserves), not when the window
+        // first outgrows its swapchain in the middle of the drag.
         let rebuilt = state
             .renderer
-            .update_drawable_size_within(device, allocation);
+            .update_drawable_size_within(allocation, allocation);
         super::frame_trace::record(if rebuilt {
             "renderer_resized"
         } else {

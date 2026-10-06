@@ -61,6 +61,13 @@ pub(crate) struct Callbacks {
 
 type ResizeCallback = Box<dyn FnMut(Size<Pixels>, f32)>;
 
+/// rmac: the app id of rmac-ui's outside-click catcher, a transparent,
+/// display-sized layer surface that only takes input. Such a window gets a
+/// 1x1 buffer that `wp_viewport` stretches to its size, instead of a
+/// display-sized swapchain it clears to transparent on every open
+/// (docs/decisions/0013).
+const INPUT_ONLY_APP_ID: &str = "dev.rmac.OutsideClickCatcher";
+
 #[derive(Debug, Clone, Copy)]
 struct RawWindow {
     window: *mut c_void,
@@ -109,6 +116,9 @@ pub struct WaylandWindowState {
     appearance: WindowAppearance,
     blur: Option<org_kde_kwin_blur::OrgKdeKwinBlur>,
     viewport: Option<wp_viewport::WpViewport>,
+    /// A transparent input-only surface drawn into a 1x1 buffer scaled by
+    /// `viewport` (see `INPUT_ONLY_APP_ID`).
+    input_only: bool,
     outputs: HashMap<ObjectId, Output>,
     display: Option<(ObjectId, Output)>,
     globals: Globals,
@@ -554,6 +564,13 @@ impl WaylandWindowState {
         options: WindowParams,
         parent: Option<WaylandWindowStatePtr>,
     ) -> anyhow::Result<Self> {
+        let input_only = viewport.is_some() && options.app_id.as_deref() == Some(INPUT_ONLY_APP_ID);
+        if input_only && let Some(viewport) = &viewport {
+            viewport.set_destination(
+                f32::from(options.bounds.size.width) as i32,
+                f32::from(options.bounds.size.height) as i32,
+            );
+        }
         let renderer = {
             let raw_window = RawWindow {
                 window: surface.id().as_ptr().cast::<c_void>(),
@@ -565,9 +582,16 @@ impl WaylandWindowState {
                     .cast::<c_void>(),
             };
             let config = WgpuSurfaceConfig {
-                size: Size {
-                    width: DevicePixels(f32::from(options.bounds.size.width) as i32),
-                    height: DevicePixels(f32::from(options.bounds.size.height) as i32),
+                size: if input_only {
+                    Size {
+                        width: DevicePixels(1),
+                        height: DevicePixels(1),
+                    }
+                } else {
+                    Size {
+                        width: DevicePixels(f32::from(options.bounds.size.width) as i32),
+                        height: DevicePixels(f32::from(options.bounds.size.height) as i32),
+                    }
                 },
                 transparent: true,
                 // Prefer Mailbox to avoid blocking. Falls back to FIFO if Mailbox is unsupported.
@@ -603,6 +627,7 @@ impl WaylandWindowState {
             app_id: options.app_id,
             blur: None,
             viewport,
+            input_only,
             globals,
             outputs: HashMap::default(),
             display: None,
@@ -1391,7 +1416,10 @@ impl WaylandWindowStatePtr {
 
                 // We use `PreferredBufferScale` instead to set the scale if it's available
                 if state.surface.version() < wl_surface::EVT_PREFERRED_BUFFER_SCALE_SINCE {
-                    state.surface.set_buffer_scale(scale);
+                    // A 1x1 buffer must keep buffer scale 1; the viewport sizes it.
+                    if !state.input_only {
+                        state.surface.set_buffer_scale(scale);
+                    }
                     drop(state);
                     self.rescale(scale as f32);
                 }
@@ -1404,7 +1432,10 @@ impl WaylandWindowStatePtr {
 
                 // We use `PreferredBufferScale` instead to set the scale if it's available
                 if state.surface.version() < wl_surface::EVT_PREFERRED_BUFFER_SCALE_SINCE {
-                    state.surface.set_buffer_scale(scale);
+                    // A 1x1 buffer must keep buffer scale 1; the viewport sizes it.
+                    if !state.input_only {
+                        state.surface.set_buffer_scale(scale);
+                    }
                     drop(state);
                     self.rescale(scale as f32);
                 }
@@ -1413,7 +1444,9 @@ impl WaylandWindowStatePtr {
                 if state.globals.fractional_scale_manager.is_none() =>
             {
                 // We use `WpFractionalScale` instead to set the scale if it's available.
-                state.surface.set_buffer_scale(factor);
+                if !state.input_only {
+                    state.surface.set_buffer_scale(factor);
+                }
                 drop(state);
                 self.rescale(factor as f32);
             }
@@ -1474,8 +1507,10 @@ impl WaylandWindowStatePtr {
             if let Some(scale) = scale {
                 state.scale = scale;
             }
-            let device_bounds = state.bounds.to_device_pixels(state.scale);
-            state.renderer.update_drawable_size(device_bounds.size);
+            if !state.input_only {
+                let device_bounds = state.bounds.to_device_pixels(state.scale);
+                state.renderer.update_drawable_size(device_bounds.size);
+            }
             (state.bounds.size, state.scale)
         };
 

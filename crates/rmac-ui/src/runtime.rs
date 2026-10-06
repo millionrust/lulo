@@ -408,6 +408,8 @@ fn open_outside_click_catcher_impl(
         focus: false,
         show: true,
         display_id: Some(display.id()),
+        // gpui_linux gives this app id a 1x1 buffer stretched by wp_viewport
+        // (docs/decisions/0013): keep the two in step.
         app_id: Some("dev.rmac.OutsideClickCatcher".to_owned()),
         window_background: WindowBackgroundAppearance::Transparent,
         kind: WindowKind::LayerShell(LayerShellOptions {

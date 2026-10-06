@@ -426,6 +426,27 @@ pub struct Scene {
     pub windows: Vec<SceneWindow>,
 }
 
+/// Where the overlay surface for a scene sits: its output and size. The
+/// service keeps the last overlay surface unmapped between opens (SPEED-03)
+/// and maps it again only for a scene with the same key; any other output
+/// or size gets a new surface.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SurfaceKey {
+    pub output: OutputId,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl SurfaceKey {
+    pub fn of(scene: &Scene) -> Self {
+        Self {
+            output: scene.output.clone(),
+            width: scene.width,
+            height: scene.height,
+        }
+    }
+}
+
 fn stamp(timestamp: Option<Timestamp>) -> (u64, u32) {
     timestamp.map_or((0, 0), |time| (time.seconds, time.nanoseconds))
 }
@@ -795,6 +816,25 @@ pub fn step_selection(rects: &[Rect], from: Option<usize>, dx: f32, dy: f32) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kept_overlay_surface_is_reused_only_for_the_same_output_and_size() {
+        let scene = |output: &str, width: f32, height: f32| Scene {
+            output: OutputId::from(output),
+            origin: (0.0, 0.0),
+            width,
+            height,
+            workspace: WorkspaceId(1),
+            windows: Vec::new(),
+        };
+        let kept = SurfaceKey::of(&scene("eDP-1", 1920.0, 1080.0));
+        // Windows and workspace do not matter, only where the surface sits.
+        let mut other_space = scene("eDP-1", 1920.0, 1080.0);
+        other_space.workspace = WorkspaceId(2);
+        assert_eq!(SurfaceKey::of(&other_space), kept);
+        assert_ne!(SurfaceKey::of(&scene("HDMI-A-1", 1920.0, 1080.0)), kept);
+        assert_ne!(SurfaceKey::of(&scene("eDP-1", 1280.0, 800.0)), kept);
+    }
     use rmac_compositor::{
         FocusState, LogicalOutput, LogicalPoint, LogicalSize, Output, OutputMode, PhysicalSize,
         WindowLayout,

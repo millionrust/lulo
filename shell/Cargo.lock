@@ -6204,6 +6204,7 @@ dependencies = [
  "async-channel",
  "blocking",
  "gpui",
+ "gpui_linux",
  "gpui_platform",
  "image",
  "libc",

@@ -102,7 +102,7 @@ impl NotesView {
                 self.message = Some("Recording audio… choose Record Audio again to stop.".into());
             }
             Err(error) => {
-                self.message = Some(format!("Notes could not start pw-record: {error}"));
+                self.message = Some(format!("Notes could not start pw-record: {error}").into());
             }
         }
         cx.notify();

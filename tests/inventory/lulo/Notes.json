@@ -81,6 +81,13 @@
           "children": []
         },
         {
+          "label": "New Quick Note",
+          "action": "notes::QuickNote",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "New Folder",
           "action": "notes::CreateFolder",
           "shortcut": "⇧⌘N",
@@ -274,6 +281,13 @@
           "action": "notes::AttachFile",
           "shortcut": "⇧⌘A",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Record Audio…",
+          "action": "notes::RecordAudio",
+          "shortcut": "",
+          "separator_before": false,
           "children": []
         },
         {
@@ -1253,6 +1267,13 @@
           "children": []
         },
         {
+          "label": "Open Note in New Window",
+          "action": "notes::OpenNoteInNewWindow",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Bring All to Front",
           "action": "window::bring-all-to-front",
           "shortcut": "",
@@ -1330,6 +1351,14 @@
       {
         "kind": "control",
         "label": "Use dark backgrounds for note content"
+      },
+      {
+        "kind": "control",
+        "label": "Always resume to last Quick Note"
+      },
+      {
+        "kind": "control",
+        "label": "When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one."
       },
       {
         "kind": "control",

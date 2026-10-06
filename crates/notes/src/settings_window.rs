@@ -349,11 +349,7 @@ impl Render for SettingsView {
                             )
                             .child(
                                 Checkbox::new("settings-quick-note-hot-corner-resume")
-                                    .label(
-                                        "When invoking Quick Note using a hot corner or keyboard \
-                                         shortcut, resume to last Quick Note instead of creating \
-                                         a new one.",
-                                    )
+                                    .label("When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one.")
                                     .checked(quick_note_hot_corner_resume)
                                     .on_change(cx.listener(|this, value: &bool, _, cx| {
                                         this.set_quick_note_hot_corner_resume(*value, cx);

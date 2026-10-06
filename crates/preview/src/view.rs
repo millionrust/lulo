@@ -3012,8 +3012,7 @@ impl PreviewView {
         }
         let (from, to) = ordered(anchor, focus);
         if from.page != to.page {
-            self.message = Some("Select text on a single page to redact.".into());
-            cx.notify();
+            eprintln!("rmac-preview: redact needs a selection within a single page");
             return;
         }
         let Some(slot) = self.slot() else { return };
@@ -3102,11 +3101,8 @@ impl PreviewView {
                         this.garbage.extend(old_thumbs);
                     }
                     this.text_selection = None;
-                    this.message = Some("Redacted the selected text.".into());
-                } else if reload.is_some() {
-                    this.message = Some("Redact saved, but the page could not be reloaded.".into());
-                } else {
-                    this.message = Some("Could not redact that selection.".into());
+                } else if let Some(Err(error)) = reload {
+                    eprintln!("rmac-preview: redacted page could not be reloaded: {error}");
                 }
                 cx.notify();
             });

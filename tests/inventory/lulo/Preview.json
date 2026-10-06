@@ -142,6 +142,13 @@
               "shortcut": "",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Browse Saved Versions…",
+              "action": "preview::BrowseSavedVersions",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
         },
@@ -246,6 +253,13 @@
           "label": "Select All",
           "action": "preview::SelectAll",
           "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Invert Selection",
+          "action": "preview::InvertSelection",
+          "shortcut": "⇧⌘I",
           "separator_before": false,
           "children": []
         },
@@ -649,6 +663,13 @@
           "label": "Rectangular Selection",
           "action": "preview::RectangularSelection",
           "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Automatic Selection",
+          "action": "preview::AutomaticSelection",
+          "shortcut": "",
           "separator_before": true,
           "children": []
         },
@@ -819,6 +840,13 @@
           "label": "Crop",
           "action": "preview::Crop",
           "shortcut": "⌘K",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redact",
+          "action": "preview::Redact",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         }

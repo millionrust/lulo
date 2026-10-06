@@ -351,21 +351,6 @@ pub(crate) fn save_background_override(colour: u32) -> Result<(), storage::Failu
     )
 }
 
-pub(crate) fn clear_background_override() -> Result<(), storage::Failure> {
-    let path = setting_path("background-colour.txt")?;
-    // Removing the file is enough; `load_background_override` already
-    // treats "missing" as "no override" via `load_optional`'s `Ok(None)`.
-    match std::fs::remove_file(&path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(storage::Failure::from_io(
-            storage::Operation::SaveSetting,
-            &path,
-            error,
-        )),
-    }
-}
-
 /// Edit ▸ Marks ▸ Automatically Mark Prompt Lines: on by default, like the
 /// Mac. Turning it off stops `shell_integration`'s OSC 133 handler from
 /// recording a prompt mark for Edit ▸ Navigate's Jump/Select to

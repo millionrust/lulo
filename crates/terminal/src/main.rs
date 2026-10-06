@@ -89,7 +89,7 @@ fn kept_window_launch_arguments() -> Option<Vec<Vec<String>>> {
     let arguments: Vec<Vec<String>> = windows
         .iter()
         .filter(|window| !window.is_empty())
-        .filter_map(|window| cli::restore_flag(window))
+        .filter_map(cli::restore_flag)
         .map(|flag| vec![flag])
         .collect();
     (!arguments.is_empty()).then_some(arguments)

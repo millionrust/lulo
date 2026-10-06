@@ -20,6 +20,25 @@ impl LauncherView {
                 .flex_none()
                 .into_any_element();
         }
+        if row.category == Category::Settings {
+            if let Some((glyph, tint)) = settings_pane_icon(&row.id.local) {
+                return div()
+                    .size(px(size))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(size * 0.22))
+                    .bg(tint)
+                    .child(
+                        svg()
+                            .path(glyph)
+                            .size(px(size * 0.6))
+                            .text_color(mac::on_accent()),
+                    )
+                    .into_any_element();
+            }
+        }
         if let Some(asset) = category_icon(row.category) {
             return rmac_ui::svg_icon(asset, size, scale_factor, cx)
                 .size(px(size))
@@ -296,6 +315,45 @@ pub(super) fn category_icon(category: Category) -> Option<&'static str> {
         Category::SearchIn => Some("spotlight/apps/org.rmac.Files.svg"),
         _ => None,
     }
+}
+
+/// Each System Settings pane's own sidebar icon and tint (the same glyphs
+/// and colours as `system-settings`' sidebar), so a Settings result shows
+/// the pane's icon as macOS does rather than one generic gear (UIA-21).
+pub(super) fn settings_pane_icon(pane_id: &str) -> Option<(&'static str, Hsla)> {
+    let blue = mac::system_blue;
+    let gray = mac::system_gray;
+    let (glyph, tint): (&'static str, fn() -> Hsla) = match pane_id {
+        "wifi" => ("icons/wifi.svg", blue),
+        "bluetooth" => ("icons/bluetooth.svg", blue),
+        "network" | "internet-accounts" | "sharing" => ("icons/globe.svg", blue),
+        "vpn" => ("icons/key.svg", blue),
+        "battery" => ("icons/battery-charging.svg", mac::system_green),
+        "general" => ("icons/settings.svg", gray),
+        "date-time" => ("icons/clock.svg", blue),
+        "language-region" => ("icons/languages.svg", blue),
+        "login-items" => ("icons/app-window.svg", blue),
+        "accessibility" => ("icons/accessibility.svg", blue),
+        "appearance" => ("icons/palette.svg", mac::black),
+        "desktop-dock" => ("icons/app-window.svg", mac::black),
+        "displays" | "touchscreen" => ("icons/monitor.svg", blue),
+        "menu-bar" => ("icons/panel-top.svg", gray),
+        "spotlight" => ("icons/search.svg", blue),
+        "wallpaper" => ("icons/image.svg", mac::system_teal),
+        "notifications" => ("icons/bell.svg", mac::system_red),
+        "sound" => ("icons/volume-2.svg", mac::system_pink),
+        "focus" => ("icons/moon.svg", mac::system_indigo),
+        "lock-screen" => ("icons/lock.svg", mac::black),
+        "privacy-security" => ("icons/shield.svg", blue),
+        "login-password" => ("icons/key.svg", mac::system_red),
+        "users-groups" => ("icons/users.svg", blue),
+        "keyboard" => ("icons/keyboard.svg", gray),
+        "mouse" => ("icons/mouse.svg", gray),
+        "trackpad" => ("icons/touchpad.svg", gray),
+        "printers-scanners" => ("icons/printer.svg", gray),
+        _ => return None,
+    };
+    Some((glyph, tint()))
 }
 
 /// Section header: 11 pt semibold label tertiary, set on the row inset.

@@ -120,7 +120,7 @@ impl QuickSettingsView {
                 BADGE / 2.0,
                 width,
                 height,
-                if pill.on { pill.on_glyph } else { mac::white() },
+                if pill.on { pill.on_glyph } else { ink() },
             ));
         let label = div()
             .id(SharedString::from(format!("{}-label", pill.id)))
@@ -325,7 +325,7 @@ impl QuickSettingsView {
                         CELL / 2.0,
                         width,
                         height,
-                        if on { mac::black() } else { mac::white() },
+                        if on { mac::black() } else { ink() },
                     )),
             )
             .into_any_element()
@@ -455,7 +455,7 @@ impl QuickSettingsView {
                     15.0,
                     width,
                     height,
-                    if supported { mac::white() } else { dim_glyph() },
+                    if supported { ink() } else { dim_glyph() },
                 ))
                 .into_any_element()
         })

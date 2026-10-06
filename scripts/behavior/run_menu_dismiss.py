@@ -27,6 +27,8 @@ Scenarios, each starting from a clean (all-closed) state:
     the other instead of just closing (macOS behaviour, `TopBar::open_menu`'s
     existing `stop_propagation`);
   - Escape closes an open menu;
+  - Escape hands the keyboard back to the window the menu opened over, so
+    it stays key and its shortcuts keep working (UIA-14);
   - opening Control Center alongside an open app menu, then clicking the
     wallpaper, closes both (checked with `grim` + a pixel-difference crop
     over Control Center's corner, since it is a layer-shell popover with no
@@ -431,6 +433,57 @@ class Run:
         self.keys.key("escape")
         closed = self.wait_for(lambda: self.find_menu_item("About") is None, 10)
         self.check("Escape: closes the open Lulo menu", closed)
+
+    def escape_returns_focus_to_window(self) -> None:
+        """UIA-14: macOS keeps the app window key while a menu is open and
+        after Esc closes it. The bar's layer surface takes the keyboard
+        while a menu is open; Esc must give it back to the window."""
+
+        foot = shutil.which("foot", path=self.env.get("PATH"))
+        if foot is None:
+            self.check("Escape focus: probe window available", False, "foot is required")
+            return
+        probe_id = "org.rmac.MenuFocusProbe"
+        probe = self.spawn([foot, f"--app-id={probe_id}", "sleep", "60"], "menu-focus-probe")
+        focused = lambda: any(
+            item.get("app_id") == probe_id and item.get("is_focused")
+            for item in self.niri("windows") or []
+        )
+        try:
+            frontmost = self.wait_for(focused, 10)
+            self.check("Escape focus: probe window is focused first", frontmost)
+            if not frontmost:
+                return
+            self.close_everything()
+            for label, opener, item in (
+                ("Lulo menu", self.open_system_menu, lambda: self.find_menu_item("About")),
+                ("Wi-Fi menu",
+                 lambda: (lambda node: node is not None and self.click_node(node))(
+                     self.find_node(("push button", "button"),
+                                    lambda name: name.startswith("Wi-Fi"))),
+                 lambda: self.find_menu("Wi-Fi")),
+            ):
+                opened = self.retry_until(opener, lambda: item() is not None)
+                self.check(f"Escape focus: the {label} opens", opened)
+                if not opened:
+                    continue
+                took = self.wait_for(lambda: not focused(), 5)
+                self.check(f"Escape focus: the {label} holds the keyboard while open", took)
+                self.keys.key("escape")
+                closed = self.wait_for(lambda: item() is None, 5)
+                self.check(f"Escape focus: Escape closes the {label}", closed)
+                self.check(f"Escape focus: Escape returns the keyboard from the {label}",
+                           self.wait_for(focused, 5))
+        finally:
+            probe.terminate()
+            try:
+                probe.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                probe.kill()
+                probe.wait(timeout=3)
+            self.wait_for(lambda: not any(
+                item.get("app_id") == probe_id for item in self.niri("windows") or []
+            ), 10)
 
     def clicking_another_title_switches_menus(self) -> None:
         """macOS: clicking a different top-bar title while one menu is open
@@ -880,6 +933,8 @@ class Run:
                 self.control_centre_detail_escape()
             elif self.args.only == "fake-hardware":
                 self.fake_hardware_shows_real_data()
+            elif self.args.only == "focus-return":
+                self.escape_returns_focus_to_window()
             else:
                 namespaces = {
                     "quick-settings": "rmac-quick-settings",
@@ -893,6 +948,7 @@ class Run:
         self.wallpaper_click_inside_band_closes_app_menu()
         self.wallpaper_click_below_band_closes_status_menu()
         self.escape_closes_app_menu()
+        self.escape_returns_focus_to_window()
         self.other_window_click_closes_app_menu()
         self.clicking_another_title_switches_menus()
         self.clicking_same_title_keeps_menu()
@@ -994,7 +1050,8 @@ def main() -> int:
     )
     parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
                                            "launcher", "app-drawer", "notification-center",
-                                           "combined", "control-centre-list", "fake-hardware"))
+                                           "combined", "control-centre-list", "fake-hardware",
+                                           "focus-return"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

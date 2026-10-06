@@ -843,6 +843,10 @@ mod linux_wayland {
         /// The window the menus act on: the app's focused window when the
         /// menu opened (the bar holds the keyboard while a menu is open).
         menu_window: Option<rmac_compositor::WindowId>,
+        /// The window that had the keyboard before the first menu or status
+        /// menu of this session opened. Esc hands the keyboard back to it,
+        /// so the app stays key and its ⌘ shortcuts keep working (UIA-14).
+        focus_return: Option<rmac_compositor::WindowId>,
         /// What is typed in the Help menu's search field.
         help_query: String,
         open_app_id: Option<String>,
@@ -1011,6 +1015,7 @@ mod linux_wayland {
                 hover_generation: 0,
                 menu_windows: Vec::new(),
                 menu_window: None,
+                focus_return: None,
                 help_query: String::new(),
                 open_app_id: None,
                 recent_items: Vec::new(),
@@ -1092,8 +1097,46 @@ mod linux_wayland {
                 window.refresh();
                 cx.notify();
             }
+            self.focus_return = None;
             if self.fullscreen && !self.pointer_inside {
                 self.schedule_fullscreen_hide(cx);
+            }
+        }
+
+        /// Remember the window that has the keyboard as the first menu of a
+        /// session opens; switching between menus keeps the first answer.
+        fn remember_focus_return(&mut self, cx: &Context<Self>) {
+            if self.open_menu.is_some() || self.status_menu.is_some() || self.keyboard.is_some() {
+                return;
+            }
+            self.focus_return = self
+                .status
+                .read(cx)
+                .update
+                .snapshot
+                .status
+                .focused
+                .window_id;
+        }
+
+        /// Esc on an open menu: close it and give the keyboard back to the
+        /// window it was opened over, as macOS keeps that window key. ⌃F2
+        /// keyboard mode restores focus itself (`leave_menu_keyboard`).
+        fn close_menu_returning_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            let target = if self.keyboard.is_none() {
+                self.focus_return.or(self.menu_window)
+            } else {
+                None
+            };
+            self.close_menu(window, cx);
+            if let Some(window) = target {
+                cx.spawn(async move |_, _| {
+                    let action = rmac_compositor::Action::FocusWindow { window };
+                    if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                        eprintln!("could not return focus from the menu bar: {error:?}");
+                    }
+                })
+                .detach();
             }
         }
 
@@ -1207,6 +1250,7 @@ mod linux_wayland {
         /// way `handle_key`'s own Left/Right between titles never re-opens
         /// through a fresh `window.focus` either.
         fn open_menu_content(&mut self, index: usize, app_id: String, cx: &mut Context<Self>) {
+            self.remember_focus_return(cx);
             let first_open = self.open_menu.is_none();
             self.status_menu = None;
             self.status_selected = None;
@@ -1771,6 +1815,7 @@ mod linux_wayland {
             window: &mut Window,
             cx: &mut Context<Self>,
         ) {
+            self.remember_focus_return(cx);
             self.open_menu = None;
             self.open_app_id = None;
             self.selected_item = NO_ITEM;
@@ -2304,7 +2349,7 @@ mod linux_wayland {
         ) {
             let rows = self.status_rows(kind);
             match event.keystroke.key.as_str() {
-                "escape" => self.close_menu(window, cx),
+                "escape" => self.close_menu_returning_focus(window, cx),
                 "down" | "up" => {
                     self.status_selected = next_status_selection(
                         &rows,
@@ -2923,7 +2968,7 @@ mod linux_wayland {
                     self.submenu_rows.pop();
                     cx.notify();
                 }
-                "escape" => self.close_menu(window, cx),
+                "escape" => self.close_menu_returning_focus(window, cx),
                 "down" | "up" => {
                     let from = (row != NO_ITEM).then_some(row);
                     if let Some(next) =

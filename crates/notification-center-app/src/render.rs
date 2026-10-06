@@ -49,15 +49,52 @@ const EDIT_HEIGHT: f32 = 23.0;
 const EDIT_FILL: u32 = 0xFFFFFF25;
 const EDIT_BORDER: u32 = 0xFFFFFF45;
 const EDIT_TEXT: u32 = 0xFFFFFF94;
+/// Light appearance: the same pill drawn in black over the light wallpaper,
+/// so it and the title stay readable (UIA-18).
+const EDIT_FILL_LIGHT: u32 = 0x0000_0012;
+const EDIT_BORDER_LIGHT: u32 = 0x0000_0024;
+const EDIT_TEXT_LIGHT: u32 = 0x0000_0099;
+
+/// The empty-state title: measured light grey in Dark, the secondary label
+/// colour in Light, where white would vanish into the wallpaper.
+fn empty_title_colour() -> gpui::Hsla {
+    if mac::is_dark() {
+        rgba(EMPTY_TITLE_COLOUR).into()
+    } else {
+        mac::text_secondary()
+    }
+}
+
+fn edit_colours() -> (u32, u32, u32) {
+    if mac::is_dark() {
+        (EDIT_FILL, EDIT_BORDER, EDIT_TEXT)
+    } else {
+        (EDIT_FILL_LIGHT, EDIT_BORDER_LIGHT, EDIT_TEXT_LIGHT)
+    }
+}
+
+/// Vertical strips across the left feather. Each strip's strength is the
+/// feather's at its centre, so the dim fades in both directions at once
+/// instead of leaving a hard-edged rectangle where two separate gradients
+/// met (UIA-18). Twelve steps of about 1 % opacity are not visible.
+const FEATHER_STRIPS: usize = 12;
+
+/// `DIM` scaled to `strength` (0–1), as an rgba value.
+fn dim_at(strength: f32) -> u32 {
+    let alpha = ((DIM & 0xFF) as f32 * strength.clamp(0.0, 1.0)).round() as u32;
+    (DIM & 0xFFFF_FF00) | alpha
+}
 
 fn backdrop() -> impl IntoElement {
-    let fade = |top: f32| {
+    // Full strength for the first `DIM_FULL` points, gone at `DIM_HEIGHT`.
+    let fade = |strength: f32| {
         linear_gradient(
             180.0,
-            linear_color_stop(rgba(DIM), top),
-            linear_color_stop(rgba(DIM & 0xFFFF_FF00), 1.0),
+            linear_color_stop(rgba(dim_at(strength)), DIM_FULL / DIM_HEIGHT),
+            linear_color_stop(rgba(dim_at(0.0)), 1.0),
         )
     };
+    let strip = DIM_FEATHER / FEATHER_STRIPS as f32;
     div()
         .absolute()
         .top_0()
@@ -72,22 +109,18 @@ fn backdrop() -> impl IntoElement {
                 .right_0()
                 .left(px(DIM_FEATHER))
                 .bottom_0()
-                .bg(fade(DIM_FULL / DIM_HEIGHT)),
+                .bg(fade(1.0)),
         )
-        // Left feather, fading in horizontally.
-        .child(
+        // Left feather, fading in horizontally as well as vertically.
+        .children((0..FEATHER_STRIPS).map(move |index| {
             div()
                 .absolute()
                 .top_0()
-                .left_0()
-                .w(px(DIM_FEATHER))
-                .h(px(DIM_FULL * 2.0))
-                .bg(linear_gradient(
-                    90.0,
-                    linear_color_stop(rgba(DIM & 0xFFFF_FF00), 0.0),
-                    linear_color_stop(rgba(DIM), 1.0),
-                )),
-        )
+                .bottom_0()
+                .left(px(index as f32 * strip))
+                .w(px(strip))
+                .bg(fade((index as f32 + 0.5) / FEATHER_STRIPS as f32))
+        }))
 }
 
 /// "Edit Widgets" asks the wallpaper process for the widget gallery, with
@@ -112,6 +145,7 @@ fn edit_widgets_action(view: &Entity<NotificationCenterView>, window: &mut Windo
 
 fn edit_pill(view: Entity<NotificationCenterView>) -> gpui::Stateful<gpui::Div> {
     let a11y_view = view.clone();
+    let (fill, border, text) = edit_colours();
     div()
         .id("notification-center-edit-widgets")
         .role(Role::Button)
@@ -127,11 +161,11 @@ fn edit_pill(view: Entity<NotificationCenterView>) -> gpui::Stateful<gpui::Div> 
         .items_center()
         .justify_center()
         .rounded_full()
-        .bg(rgba(EDIT_FILL))
+        .bg(rgba(fill))
         .border_1()
-        .border_color(rgba(EDIT_BORDER))
+        .border_color(rgba(border))
         .text_size(rmac_ui::text_px(12.0))
-        .text_color(rgba(EDIT_TEXT))
+        .text_color(rgba(text))
         .on_mouse_down(MouseButton::Left, edit_widgets(view))
         .child(EDIT_WIDGETS_LABEL)
 }
@@ -160,7 +194,7 @@ fn empty_state(
                 .text_size(rmac_ui::text_px(15.0))
                 .line_height(px(20.0))
                 .font_weight(mac::SEMIBOLD)
-                .text_color(rgba(EMPTY_TITLE_COLOUR))
+                .text_color(empty_title_colour())
                 .child(title),
         )
         .when_some(edit, |state, view| {

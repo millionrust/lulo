@@ -608,7 +608,10 @@ fn sync_popup(
     let fingerprint = signature(&entries);
     let changed = fingerprint != link.signature.get();
     let font_family = window.text_style().font_family;
-    let panel = measure(&entries, &font_family, window);
+    // Only a pop-up about to open needs its size here; an open one measures
+    // its own rows when they change.
+    let panel = (link.window.get().is_none() && !link.opening.get())
+        .then(|| measure(&entries, &font_family, window));
     if changed {
         link.signature.set(fingerprint);
         *link.entries.borrow_mut() = Rc::new(entries);
@@ -621,9 +624,10 @@ fn sync_popup(
         }
         return;
     }
-    if link.opening.replace(true) {
+    let Some(panel) = panel else {
         return;
-    }
+    };
+    link.opening.set(true);
     let parent = window.window_handle();
     let weak = Rc::downgrade(&link);
     cx.defer(move |cx| {
@@ -751,6 +755,8 @@ struct MenuPopup {
     panel: Size<Pixels>,
     /// The open submenu: its row and pop-up window.
     child: Option<(usize, AnyWindowHandle)>,
+    /// A submenu whose pop-up is being opened.
+    opening_child: Option<usize>,
     /// The focus handles of this render's selectable rows, by entry index.
     rows: Vec<(usize, FocusHandle)>,
     typed: String,
@@ -795,6 +801,7 @@ impl MenuPopup {
             focus,
             panel,
             child: None,
+            opening_child: None,
             rows: Vec::new(),
             typed: String::new(),
             typed_at: None,
@@ -825,6 +832,15 @@ impl MenuPopup {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A submenu closed from its own keyboard (Left, Escape) is gone.
+        if let Some((_, handle)) = self.child {
+            if handle.update(cx, |_, _, _| ()).is_err() {
+                self.child = None;
+            }
+        }
+        if self.opening_child == Some(index) {
+            return;
+        }
         if self.child.is_some_and(|(open, _)| open == index) {
             if keyboard {
                 if let Some((_, handle)) = self.child {
@@ -867,10 +883,11 @@ impl MenuPopup {
         let font_family = self.font_family.clone();
         let depth = self.depth + 1;
         let this = cx.entity().downgrade();
+        self.opening_child = Some(index);
         // Opening a window from inside this one's event handler is deferred
         // until the handler returns.
         cx.defer(move |cx| {
-            let Some(handle) = open_popup(
+            let opened = open_popup(
                 options,
                 panel,
                 Source::Child(items),
@@ -878,7 +895,9 @@ impl MenuPopup {
                 font_family,
                 depth,
                 cx,
-            ) else {
+            );
+            let _ = this.update(cx, |this, _| this.opening_child = None);
+            let Some(handle) = opened else {
                 return;
             };
             if keyboard {

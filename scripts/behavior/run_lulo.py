@@ -1449,10 +1449,13 @@ def check_files_context_submenus(nested: Nested, bins: list[Path], settle: float
 
         def visible_menu_items() -> dict[str, Any]:
             pyatspi = atspi()
-            frame = run.active_frame()
+            # Context menus are pop-up windows of their own: search every
+            # frame, not just the active one (Sway keeps the keyboard, and
+            # so the active frame, on the window that opened the menu).
             return {
                 name(node): node
-                for node in (descendants(frame, limit=4000) if frame is not None else [])
+                for frame in run.frames()
+                for node in descendants(frame, limit=4000)
                 if role(node) in {"menu item", "check menu item"}
                 and has_state(node, pyatspi.STATE_SHOWING)
             }
@@ -1585,10 +1588,13 @@ def check_files_tag_swatches(nested: Nested, bins: list[Path], settle: float) ->
 
         def visible_items() -> dict[str, Any]:
             pyatspi = atspi()
-            frame = run.active_frame()
+            # Context menus are pop-up windows of their own: search every
+            # frame, not just the active one (Sway keeps the keyboard, and
+            # so the active frame, on the window that opened the menu).
             return {
                 name(node): node
-                for node in (descendants(frame, limit=5000) if frame is not None else [])
+                for frame in run.frames()
+                for node in descendants(frame, limit=5000)
                 if role(node) in {"menu item", "check menu item"}
                 and has_state(node, pyatspi.STATE_SHOWING)
             }

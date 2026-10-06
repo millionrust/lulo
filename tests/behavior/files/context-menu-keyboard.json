@@ -3,7 +3,7 @@
   "app": "files",
   "lulo_only": true,
   "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
-  "launch": {"reveal": "report.txt"},
+  "launch": {"folder": "."},
   "steps": [
     {"key": "cmd-2"},
     {"context": "report.txt", "settle": 2.0},

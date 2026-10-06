@@ -44,8 +44,8 @@ pub(crate) mod linux_wayland {
     /// state before treating "⌘ is up" as a release. niri sends it in the
     /// same flush as the keyboard enter, so it has always been dispatched
     /// well within one frame; the grace only covers a slow event loop. A
-    /// quick ⌘Tab tap pays it once (SPEED-11: it was 80 ms).
-    const RELEASE_GRACE: Duration = Duration::from_millis(16);
+    /// quick ⌘Tab tap pays it once (SPEED-11: it was 80 ms, then 16).
+    const RELEASE_GRACE: Duration = Duration::from_millis(4);
     /// Never keep an invisible exclusive surface that never got the keyboard.
     /// The surface took 750 ms to get the keyboard in the reference laptop's
     /// nested journey session and sometimes over 1 s, when ⌘Tab then did
@@ -989,7 +989,12 @@ pub(crate) mod linux_wayland {
         match cx.open_window(options, move |window, cx| {
             cx.new(|cx| SwitcherView::new(weak, session, items, display_width, window, cx))
         }) {
-            Ok(handle) => service.update(cx, |service, _| service.open = Some(handle)),
+            Ok(handle) => {
+                // Kept surfaces are matched on the display asked for here
+                // (the window may not know its output yet).
+                let _ = handle.update(cx, |view, _, _| view.display_id = display_id);
+                service.update(cx, |service, _| service.open = Some(handle));
+            }
             Err(error) => eprintln!("could not open the app switcher: {error}"),
         }
     }

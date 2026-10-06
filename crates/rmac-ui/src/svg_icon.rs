@@ -120,8 +120,11 @@ impl IconSource {
     }
 }
 
-/// `(source, rounded display size in logical px)`: the two things that
-/// determine the decoded bitmap.
+/// `(source, bucketed raster size in physical px)`: the two things that
+/// determine the decoded bitmap. The raster size is `size` (the caller's
+/// logical basis — the maximum display size, for anything animated or
+/// magnified) times the window's scale factor, rounded up to
+/// `RASTER_BUCKET` — see `bucket_up`.
 type CacheKey = (SharedString, u32);
 
 struct IconCache {
@@ -141,6 +144,20 @@ struct IconCache {
 /// Generous relative to the actual working set (~100 icons × a handful of
 /// sizes each), so eviction is a safety bound, not a normal occurrence.
 const CACHE_CAPACITY: usize = 512;
+
+/// Raster sizes are rounded up to the nearest multiple of this many
+/// physical px before becoming a cache key, so the handful of distinct
+/// logical sizes each icon is actually shown at (never a continuum here —
+/// `rmac_shell_ui::svg_icon`'s doc comment covers the Dock's
+/// continuously-animated case) collapse onto a small, bounded set of
+/// bitmaps. Always rounds *up*, so GPUI only ever downsamples this art,
+/// never upsamples it.
+const RASTER_BUCKET: u32 = 8;
+
+fn bucket_up(physical_px: f32) -> u32 {
+    let exact = physical_px.max(1.0).ceil() as u32;
+    exact.div_ceil(RASTER_BUCKET) * RASTER_BUCKET
+}
 
 fn cache() -> &'static Mutex<IconCache> {
     static CACHE: OnceLock<Mutex<IconCache>> = OnceLock::new();
@@ -190,23 +207,43 @@ fn native_width(bytes: &[u8]) -> f32 {
         .unwrap_or(1024.0)
 }
 
-/// Draws `source` at exactly `size` logical px — a drop-in replacement for
-/// `img(source)` in a chain (`.w()`, `.h()`, `.rounded()`, `.object_fit()`,
-/// `.absolute()`, … all still apply to the returned builder the same way),
-/// except the bitmap is rasterized at `size`, not GPUI's default (native
-/// size × 2) regardless of how the icon is shown.
+/// Draws `source` at a logical size the caller sets afterwards with
+/// `.w()`/`.h()`/`.size()`/`.object_fit()` — a drop-in replacement for
+/// `img(source)` in a chain (those, plus `.rounded()`, `.absolute()`, …
+/// all still apply to the returned builder the same way), except the
+/// bitmap is rasterized directly at the display's physical size instead of
+/// GPUI's default (native size × 2) regardless of how the icon is shown.
 ///
-/// Cached process-wide per `(source, size)`. On a cache miss, the decode
-/// runs on the blocking-task pool (never GPUI's small `background_executor`
-/// — see `desktop.rs`'s `warm_desktop_icons` — and never the UI thread);
-/// the caller gets a blank placeholder for that one frame, and the entity
-/// `cx` belongs to is notified to repaint once the bitmap lands.
-pub fn svg_icon<T: 'static>(source: impl Into<IconSource>, size: f32, cx: &Context<T>) -> Img {
+/// `size` is the logical-px basis for rasterization — for a fixed-size
+/// icon, its one display size; for anything whose display size varies
+/// (magnified or animated), the maximum it can ever reach, so one decode
+/// covers the whole range and every smaller size downsamples rather than
+/// upsamples. `scale_factor` is the window's `Window::scale_factor()`; the
+/// actual raster target is `size * scale_factor`, bucketed (see
+/// `bucket_up`) and used as the cache key, so a HiDPI/fractional-scale
+/// surface gets a bitmap sized for its physical pixels and a scale change
+/// naturally misses the cache and re-rasterizes.
+///
+/// Cached process-wide per `(source, bucketed raster px)`. On a cache
+/// miss, the decode runs on the blocking-task pool (never GPUI's small
+/// `background_executor` — see `desktop.rs`'s `warm_desktop_icons` — and
+/// never the UI thread); the caller gets a blank placeholder for that one
+/// frame, and the entity `cx` belongs to is notified to repaint once the
+/// bitmap lands.
+pub fn svg_icon<T: 'static>(
+    source: impl Into<IconSource>,
+    size: f32,
+    scale_factor: f32,
+    cx: &Context<T>,
+) -> Img {
     let source = source.into();
     if !source.is_svg() {
         return source.fallback_img();
     }
-    let key: CacheKey = (source.cache_key(), size.max(1.0).round() as u32);
+    let key: CacheKey = (
+        source.cache_key(),
+        bucket_up(size.max(1.0) * scale_factor.max(1.0)),
+    );
     if let Some(image) = cache().lock().unwrap().entries.get(&key).cloned() {
         return img(image);
     }
@@ -247,4 +284,42 @@ fn spawn_decode<T: 'static>(source: IconSource, key: CacheKey, cx: &Context<T>) 
         let _ = this.update(cx, |_, cx| cx.notify());
     })
     .detach();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bucket_up;
+
+    /// A bucketed raster target is never smaller than what was asked for
+    /// — GPUI must only ever downsample this art, never upsample it.
+    #[test]
+    fn bucket_up_never_rounds_down() {
+        for px in [1.0_f32, 7.0, 8.0, 8.5, 20.0, 64.3, 127.999, 200.0] {
+            assert!(bucket_up(px) as f32 >= px, "bucket_up({px}) rounded down");
+        }
+    }
+
+    /// Niri's 1.25 scale factor on a 54 pt icon row (SET's `style::ROW_ICON`
+    /// convention) should land on a physical-pixel bucket at least as large
+    /// as the exact product, not the pre-scale logical size.
+    #[test]
+    fn bucket_up_accounts_for_fractional_scale() {
+        let logical = 54.0_f32;
+        let scale = 1.25_f32;
+        let bucketed = bucket_up(logical * scale);
+        assert!(bucketed as f32 >= logical * scale);
+        // And strictly bigger than just rasterizing at the logical size —
+        // the bug this module exists to fix.
+        assert!(bucketed > logical.ceil() as u32);
+    }
+
+    /// Buckets collapse nearby sizes so a continuously varying display
+    /// size (Dock magnification) does not mint a fresh cache entry, and
+    /// hence a fresh decode, on almost every frame.
+    #[test]
+    fn bucket_up_collapses_nearby_sizes() {
+        assert_eq!(bucket_up(57.0), bucket_up(60.0));
+        assert_eq!(bucket_up(57.0), bucket_up(64.0));
+        assert_ne!(bucket_up(57.0), bucket_up(65.0));
+    }
 }

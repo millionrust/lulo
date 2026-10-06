@@ -486,6 +486,7 @@ impl LauncherView {
             pill.child(div().flex_none().ml(px(8.0)).child(Self::result_icon(
                 row,
                 metrics::TOP_HIT_ICON,
+                self.scale_factor,
                 cx,
             )))
         });
@@ -739,7 +740,8 @@ impl LauncherView {
 }
 
 impl Render for LauncherView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.scale_factor = window.scale_factor();
         let snapshot = self.coordinator.snapshot();
         let phase_message: SharedString = visible_phase_label(&snapshot).into();
         let activating = snapshot.phase == Phase::Activating;

@@ -185,6 +185,7 @@ pub(in crate::controller) fn focus_urgent_row(
         .into_any_element()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(in crate::controller) fn focus_allowed_app_row(
     mode_id: &str,
     app_id: &str,
@@ -192,6 +193,7 @@ pub(in crate::controller) fn focus_allowed_app_row(
     icon: Option<&PathBuf>,
     checked: bool,
     disabled: bool,
+    scale_factor: f32,
     cx: &Context<Settings>,
 ) -> AnyElement {
     let mode_id = mode_id.to_owned();
@@ -212,6 +214,7 @@ pub(in crate::controller) fn focus_allowed_app_row(
             icon,
             "icons/app-window.svg",
             secondary(),
+            scale_factor,
             cx,
         ))
         .child(text_block(display_name.to_owned().into(), None))

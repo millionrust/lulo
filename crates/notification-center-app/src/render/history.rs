@@ -83,10 +83,14 @@ fn close_glyph(size: f32) -> impl IntoElement {
 }
 
 impl NotificationCenterView {
-    fn app_icon(identity: &ApplicationIdentity, cx: &mut Context<Self>) -> AnyElement {
+    fn app_icon(
+        identity: &ApplicationIdentity,
+        scale_factor: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let size = card::ICON;
         if let Some(icon) = &identity.icon {
-            return rmac_ui::svg_icon(icon.clone(), size, cx)
+            return rmac_ui::svg_icon(icon.clone(), size, scale_factor, cx)
                 .size(px(size))
                 .flex_none()
                 .into_any_element();
@@ -287,7 +291,7 @@ impl NotificationCenterView {
                     });
                 }
             })
-            .child(Self::app_icon(identity, cx))
+            .child(Self::app_icon(identity, self.scale_factor, cx))
             .child(
                 div()
                     .flex_1()

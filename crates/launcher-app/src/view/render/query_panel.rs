@@ -265,6 +265,7 @@ impl LauncherView {
                 header.child(div().flex_none().ml(px(8.0)).child(Self::result_icon(
                     row,
                     metrics::TOP_HIT_ICON,
+                    self.scale_factor,
                     cx,
                 )))
             })
@@ -344,7 +345,7 @@ impl LauncherView {
                     .absolute()
                     .left(px(qm::ICON_LEFT - qm::PLATE_INSET))
                     .top(px((qm::ROW - qm::ICON) / 2.0))
-                    .child(Self::result_icon(row, qm::ICON, cx)),
+                    .child(Self::result_icon(row, qm::ICON, self.scale_factor, cx)),
             )
             .child(text)
             .on_click(cx.listener(move |this, _, window, cx| {
@@ -426,7 +427,7 @@ impl LauncherView {
                         .absolute()
                         .left(px(qm::CARD_INSET - 1.0))
                         .top(px((height - qm::ICON) / 2.0 - 1.0))
-                        .child(Self::result_icon(row, qm::ICON, cx)),
+                        .child(Self::result_icon(row, qm::ICON, self.scale_factor, cx)),
                 )
                 .child(
                     div()
@@ -486,7 +487,7 @@ impl LauncherView {
                         .absolute()
                         .left(px(qm::CARD_INSET - 1.0))
                         .top(px((height - qm::ICON) / 2.0 - 1.0))
-                        .child(Self::result_icon(row, qm::ICON, cx)),
+                        .child(Self::result_icon(row, qm::ICON, self.scale_factor, cx)),
                 )
                 .child(
                     div()

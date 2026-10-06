@@ -58,6 +58,10 @@ pub(crate) struct LauncherView {
     /// as on the Mac. `None` on a result activation: the launched app takes
     /// focus itself.
     previous_window: Option<rmac_compositor::WindowId>,
+    /// `Window::scale_factor()`, refreshed every `render()` so result-row
+    /// and panel icons (`rmac_ui::svg_icon`) rasterize for the surface's
+    /// real physical pixels instead of a fixed-assumption bitmap.
+    scale_factor: f32,
 }
 
 struct InputProbe {
@@ -255,6 +259,7 @@ impl LauncherView {
                 }
             }),
             previous_window,
+            scale_factor: window.scale_factor(),
         };
         view.ensure_browse_selection();
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);

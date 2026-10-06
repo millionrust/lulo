@@ -23,8 +23,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use gpui::{img, Context, Img, RenderImage, SharedString};
 
-/// `(path, rounded display size in logical px)`: the two things that
-/// determine the decoded bitmap.
+/// `(path, bucketed raster size in physical px)`: the two things that
+/// determine the decoded bitmap. The raster size is `size` (the caller's
+/// logical basis, which for an animated/magnified element like a Dock tile
+/// should be the *maximum* it ever reaches, not its instantaneous value)
+/// times the window's scale factor, rounded up to `RASTER_BUCKET` — see
+/// `bucket_up`.
 type CacheKey = (SharedString, u32);
 
 struct IconCache {
@@ -38,6 +42,21 @@ struct IconCache {
 }
 
 const CACHE_CAPACITY: usize = 512;
+
+/// Raster sizes are rounded up to the nearest multiple of this many
+/// physical px before becoming a cache key. Without it, a continuously
+/// changing display size (e.g. a Dock tile mid-magnification-animation)
+/// would mint a fresh decode almost every frame; callers that already pass
+/// a stable maximum (as the Dock now does) get one cache entry for that
+/// whole size class instead. Always rounds *up*, so the rasterized bitmap
+/// is never smaller than what is actually needed — GPUI only ever
+/// downsamples this art, never upsamples it.
+const RASTER_BUCKET: u32 = 8;
+
+fn bucket_up(physical_px: f32) -> u32 {
+    let exact = physical_px.max(1.0).ceil() as u32;
+    exact.div_ceil(RASTER_BUCKET) * RASTER_BUCKET
+}
 
 fn cache() -> &'static Mutex<IconCache> {
     static CACHE: OnceLock<Mutex<IconCache>> = OnceLock::new();
@@ -84,16 +103,34 @@ fn native_width(bytes: &[u8]) -> f32 {
         .unwrap_or(1024.0)
 }
 
-/// Draws the SVG at `path` at exactly `size` logical px — a drop-in
-/// replacement for `img(path)` in a chain (`.w()`, `.h()`, `.rounded()`,
-/// `.absolute()`, … all still apply to the returned builder), except the
-/// bitmap is rasterized at `size`, not GPUI's default (native size × 2).
+/// Draws the SVG at `path` at a logical size the *caller* sets afterwards
+/// with `.w()`/`.h()`/`.size()` — a drop-in replacement for `img(path)` in
+/// a chain (those, plus `.rounded()`, `.absolute()`, … all still apply to
+/// the returned builder), except the bitmap is rasterized directly at the
+/// display's physical size instead of GPUI's default (native size × 2).
 ///
-/// Cached process-wide per `(path, size)`. On a cache miss, the decode runs
-/// on the blocking-task pool (never the UI thread); the caller gets a
-/// blank placeholder for that one frame, and the entity `cx` belongs to is
-/// notified to repaint once the bitmap lands.
-pub fn svg_icon<T: 'static>(path: impl AsRef<Path>, size: f32, cx: &mut Context<T>) -> Img {
+/// `size` is the logical-px basis for rasterization: for an element whose
+/// displayed size never changes, pass that size; for one that is
+/// magnified or animated (a Dock tile under pointer magnification), pass
+/// the *maximum* size it can ever reach, so the bitmap is decoded once at
+/// full quality and every smaller instantaneous display size downsamples
+/// from it — never upsamples. `scale_factor` is the window's
+/// `Window::scale_factor()`; the actual raster target is
+/// `size * scale_factor`, bucketed (see `bucket_up`) and used as the cache
+/// key, so a HiDPI/fractional-scale surface (e.g. niri at 1.25) gets a
+/// bitmap sized for its physical pixels, and a scale change (monitor swap,
+/// settings change) naturally misses the cache and re-rasterizes.
+///
+/// Cached process-wide per `(path, bucketed raster px)`. On a cache miss,
+/// the decode runs on the blocking-task pool (never the UI thread); the
+/// caller gets a blank placeholder for that one frame, and the entity `cx`
+/// belongs to is notified to repaint once the bitmap lands.
+pub fn svg_icon<T: 'static>(
+    path: impl AsRef<Path>,
+    size: f32,
+    scale_factor: f32,
+    cx: &mut Context<T>,
+) -> Img {
     let path = path.as_ref();
     // A `.desktop` entry's `Icon=` (first-party XDG icon paths included) is
     // format-agnostic: it may resolve to a PNG the icon theme shipped
@@ -110,7 +147,7 @@ pub fn svg_icon<T: 'static>(path: impl AsRef<Path>, size: f32, cx: &mut Context<
     }
     let key: CacheKey = (
         SharedString::from(path.to_string_lossy().into_owned()),
-        size.max(1.0).round() as u32,
+        bucket_up(size.max(1.0) * scale_factor.max(1.0)),
     );
     if let Some(image) = cache().lock().unwrap().entries.get(&key).cloned() {
         return img(image);
@@ -151,4 +188,40 @@ fn spawn_decode<T: 'static>(path: std::path::PathBuf, key: CacheKey, cx: &mut Co
         let _ = this.update(cx, |_, cx| cx.notify());
     })
     .detach();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bucket_up;
+
+    /// A bucketed raster target is never smaller than what was asked for
+    /// — GPUI must only ever downsample this art, never upsample it.
+    #[test]
+    fn bucket_up_never_rounds_down() {
+        for px in [1.0_f32, 7.0, 8.0, 8.5, 20.0, 64.3, 127.999, 200.0] {
+            assert!(bucket_up(px) as f32 >= px, "bucket_up({px}) rounded down");
+        }
+    }
+
+    /// Niri's 1.25 scale factor on a magnified Dock icon should land on a
+    /// physical-pixel bucket at least as large as the exact product, not
+    /// the pre-scale logical size — this is the owner's "blurry Dock" bug.
+    #[test]
+    fn bucket_up_accounts_for_fractional_scale() {
+        let logical_max = 80.0_f32; // a magnified Dock tile's art edge
+        let scale = 1.25_f32;
+        let bucketed = bucket_up(logical_max * scale);
+        assert!(bucketed as f32 >= logical_max * scale);
+        assert!(bucketed > logical_max.ceil() as u32);
+    }
+
+    /// Buckets collapse nearby sizes so the Dock's continuous
+    /// magnification animation does not mint a fresh cache entry, and
+    /// hence a fresh decode, on almost every frame.
+    #[test]
+    fn bucket_up_collapses_nearby_sizes() {
+        assert_eq!(bucket_up(57.0), bucket_up(60.0));
+        assert_eq!(bucket_up(57.0), bucket_up(64.0));
+        assert_ne!(bucket_up(57.0), bucket_up(65.0));
+    }
 }

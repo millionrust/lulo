@@ -26,10 +26,11 @@ pub(in crate::controller) fn app_icon(
     fallback: &'static str,
     color: Hsla,
     size: f32,
+    scale_factor: f32,
     cx: &Context<Settings>,
 ) -> AnyElement {
     match icon {
-        Some(icon) => rmac_ui::svg_icon(icon.clone(), size, cx)
+        Some(icon) => rmac_ui::svg_icon(icon.clone(), size, scale_factor, cx)
             .w(px(size))
             .h(px(size))
             .flex_none()

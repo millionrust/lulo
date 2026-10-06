@@ -7,16 +7,21 @@ impl LauncherView {
     /// via `rmac_ui::svg_icon`, instead of GPUI's default `img(path)`,
     /// which decodes every master SVG at its native 1024×1024 size no
     /// matter how small Spotlight shows it.
-    pub(super) fn result_icon(row: &Row, size: f32, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn result_icon(
+        row: &Row,
+        size: f32,
+        scale_factor: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         if let Some(icon) = row.icon.clone() {
-            return rmac_ui::svg_icon(icon, size, cx)
+            return rmac_ui::svg_icon(icon, size, scale_factor, cx)
                 .size(px(size))
                 .rounded(px(size * 0.2))
                 .flex_none()
                 .into_any_element();
         }
         if let Some(asset) = category_icon(row.category) {
-            return rmac_ui::svg_icon(asset, size, cx)
+            return rmac_ui::svg_icon(asset, size, scale_factor, cx)
                 .size(px(size))
                 .flex_none()
                 .into_any_element();
@@ -64,7 +69,7 @@ impl LauncherView {
             .when(!row.selected, |tile| {
                 tile.hover(|hover| hover.bg(mac::hover()))
             })
-            .child(Self::result_icon(row, 54.0, cx))
+            .child(Self::result_icon(row, 54.0, self.scale_factor, cx))
             .child(
                 div()
                     .w_full()
@@ -117,7 +122,12 @@ impl LauncherView {
             .text_size(rmac_ui::text_px(metrics::ROW_TEXT))
             .when(selected, |item| item.bg(mac::accent()))
             .when(!selected, |item| item.hover(|hover| hover.bg(mac::hover())))
-            .child(Self::result_icon(row, metrics::ROW_ICON, cx))
+            .child(Self::result_icon(
+                row,
+                metrics::ROW_ICON,
+                self.scale_factor,
+                cx,
+            ))
             .child(
                 div()
                     .flex_1()

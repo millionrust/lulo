@@ -417,4 +417,10 @@ pub(super) struct Settings {
     pub(super) mac_keyboard: Option<rmac_keyboard::Status>,
     pub(super) mac_keyboard_busy: bool,
     pub(super) mac_keyboard_error: Option<SharedString>,
+
+    /// `Window::scale_factor()`, refreshed every `render()` so a row's
+    /// application icon (`rmac_ui::svg_icon`, via `view_helpers::app_icon`
+    /// / `application_icon`) rasterizes for the surface's real physical
+    /// pixels instead of a fixed-assumption bitmap.
+    pub(super) scale_factor: f32,
 }

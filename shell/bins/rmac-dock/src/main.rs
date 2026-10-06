@@ -2423,6 +2423,13 @@ mod linux_wayland {
             // previews a different size on top of it without touching this.
             self.tile_size = dock_settings.tile_size;
             let metrics = self.metrics();
+            // The surface's scale factor (niri reports 1.25 on the
+            // reference laptop) and the magnification peak together set
+            // how large a bitmap an icon needs; re-read every frame so a
+            // monitor swap or a live settings change re-rasterizes instead
+            // of leaving a stale, now-too-small bitmap to upsample.
+            let scale_factor = window.scale_factor();
+            let max_icon_art = max_magnified_icon_size(&dock_settings) * ICON_ART_SCALE;
             // Launch and attention bounces follow the authoritative model:
             // a window appearing ends a launch, urgency asks for attention.
             let now = self.now_ms();
@@ -2970,7 +2977,7 @@ mod linux_wayland {
                     };
                     visual = match main_icon {
                         Some(path) => visual.child(
-                            rmac_shell_ui::svg_icon(path, visual_size * ICON_ART_SCALE, cx)
+                            rmac_shell_ui::svg_icon(path, max_icon_art, scale_factor, cx)
                                 .w(px(visual_size * ICON_ART_SCALE))
                                 .h(px(visual_size * ICON_ART_SCALE))
                                 .rounded(px(tokens::dock_tile_radius(visual_size))),
@@ -2993,7 +3000,7 @@ mod linux_wayland {
                     tile = tile.child(visual);
                     if let Some(path) = badge_overlay {
                         tile = tile.child(
-                            rmac_shell_ui::svg_icon(path, 20.0, cx)
+                            rmac_shell_ui::svg_icon(path, 20.0, scale_factor, cx)
                                 .absolute()
                                 .bottom(px(-2.0))
                                 .right(px(-2.0))
@@ -3116,7 +3123,7 @@ mod linux_wayland {
                     };
                     if let Some(path) = icon_path {
                         visual = visual.child(
-                            rmac_shell_ui::svg_icon(path, visual_size * ICON_ART_SCALE, cx)
+                            rmac_shell_ui::svg_icon(path, max_icon_art, scale_factor, cx)
                                 .w(px(visual_size * ICON_ART_SCALE))
                                 .h(px(visual_size * ICON_ART_SCALE))
                                 .rounded(px(tokens::dock_tile_radius(visual_size))),
@@ -3351,7 +3358,7 @@ mod linux_wayland {
                         let squircle = visual_size * ICON_SQUIRCLE;
                         if let Some(path) = icon_path {
                             visual = visual.child(
-                                rmac_shell_ui::svg_icon(path, visual_size * ICON_ART_SCALE, cx)
+                                rmac_shell_ui::svg_icon(path, max_icon_art, scale_factor, cx)
                                     .w(px(visual_size * ICON_ART_SCALE))
                                     .h(px(visual_size * ICON_ART_SCALE))
                                     .rounded(px(tokens::dock_tile_radius(visual_size))),
@@ -3655,18 +3662,21 @@ mod linux_wayland {
                             let art = visual_size * ICON_ART_SCALE;
                             let inset = (visual_size - art) / 2.0;
                             // Darkened while its menu is open, like a tile.
-                            let image = rmac_shell_ui::svg_icon(path, art, cx)
-                                .absolute()
-                                .w(px(art))
-                                .h(px(art))
-                                .when(
-                                    menu_anchor == Some(trash_center)
-                                        || keyboard_focus_id.as_ref()
-                                            == Some(&rmac_dock::presentation::EntryId::Special(
-                                                rmac_dock::SpecialItemKind::Trash,
-                                            )),
-                                    |image| image.opacity(0.47),
-                                );
+                            let image =
+                                rmac_shell_ui::svg_icon(path, max_icon_art, scale_factor, cx)
+                                    .absolute()
+                                    .w(px(art))
+                                    .h(px(art))
+                                    .when(
+                                        menu_anchor == Some(trash_center)
+                                            || keyboard_focus_id.as_ref()
+                                                == Some(
+                                                    &rmac_dock::presentation::EntryId::Special(
+                                                        rmac_dock::SpecialItemKind::Trash,
+                                                    ),
+                                                ),
+                                        |image| image.opacity(0.47),
+                                    );
                             let image = match self.placement {
                                 rmac_shell_settings::DockPlacement::Bottom => {
                                     image.left(px(visual_offset + inset)).bottom(px(inset))
@@ -3700,7 +3710,7 @@ mod linux_wayland {
                             .w(px(metrics.icon_size))
                             .h(px(metrics.icon_size))
                             .children(ui.icon.clone().map(|path| {
-                                rmac_shell_ui::svg_icon(path, art, cx)
+                                rmac_shell_ui::svg_icon(path, art, scale_factor, cx)
                                     .absolute()
                                     .left(px(inset))
                                     .top(px(inset))
@@ -3746,11 +3756,11 @@ mod linux_wayland {
                     .w(px(art))
                     .h(px(art))
                     .opacity(fade)
-                    .children(
-                        removed.icon.clone().map(|path| {
-                            rmac_shell_ui::svg_icon(path, art, cx).w(px(art)).h(px(art))
-                        }),
-                    )
+                    .children(removed.icon.clone().map(|path| {
+                        rmac_shell_ui::svg_icon(path, art, scale_factor, cx)
+                            .w(px(art))
+                            .h(px(art))
+                    }))
             }))
             .children(self.trash_review.as_ref().map(|review| {
                 render_empty_trash_alert(
@@ -3758,6 +3768,7 @@ mod linux_wayland {
                     surface_width,
                     surface_height,
                     self.display_id,
+                    scale_factor,
                     cx,
                 )
             }))
@@ -3778,6 +3789,7 @@ mod linux_wayland {
                 metrics,
                 shelf_start,
                 self.display_id,
+                scale_factor,
                 cx,
             ))
             .children(render_separator_menu(
@@ -4223,6 +4235,7 @@ mod linux_wayland {
         metrics: TileMetrics,
         shelf_start: f32,
         display_id: u64,
+        scale_factor: f32,
         cx: &mut Context<Dock>,
     ) -> Vec<gpui::AnyElement> {
         let Some(popover) = popover else {
@@ -4292,11 +4305,11 @@ mod linux_wayland {
             )
         } else if grid {
             panel.child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(6.0))
-                    .children(shown.iter().map(|item| stack_popover_item(item, false, cx))),
+                div().flex().flex_wrap().gap(px(6.0)).children(
+                    shown
+                        .iter()
+                        .map(|item| stack_popover_item(item, false, scale_factor, cx)),
+                ),
             )
         } else {
             panel.child(
@@ -4305,12 +4318,9 @@ mod linux_wayland {
                     .items_end()
                     .gap(px(6.0))
                     .overflow_hidden()
-                    .children(
-                        shown
-                            .iter()
-                            .enumerate()
-                            .map(|(index, item)| stack_popover_item(item, index == 0, cx)),
-                    ),
+                    .children(shown.iter().enumerate().map(|(index, item)| {
+                        stack_popover_item(item, index == 0, scale_factor, cx)
+                    })),
             )
         };
         if total > shown.len() {
@@ -4358,6 +4368,7 @@ mod linux_wayland {
     fn stack_popover_item(
         item: &rmac_desktop::Item,
         emphasize: bool,
+        scale_factor: f32,
         cx: &mut Context<Dock>,
     ) -> gpui::AnyElement {
         let size = if emphasize {
@@ -4379,7 +4390,7 @@ mod linux_wayland {
             .cursor_pointer()
             .rounded(px(tokens::menu_item_radius()))
             .children(stack_popover_item_icon_path(item).map(|icon_path| {
-                rmac_shell_ui::svg_icon(icon_path, size, cx)
+                rmac_shell_ui::svg_icon(icon_path, size, scale_factor, cx)
                     .w(px(size))
                     .h(px(size))
             }))
@@ -4643,6 +4654,7 @@ mod linux_wayland {
         surface_width: f32,
         surface_height: f32,
         display_id: u64,
+        scale_factor: f32,
         cx: &mut Context<Dock>,
     ) -> gpui::AnyElement {
         const WIDTH: f32 = 260.0;
@@ -4688,7 +4700,7 @@ mod linux_wayland {
             .text_color(rgba(tokens::primary_text()))
             .occlude()
             .children(trash_icon_path(true).map(|path| {
-                rmac_shell_ui::svg_icon(path, 64.0, cx)
+                rmac_shell_ui::svg_icon(path, 64.0, scale_factor, cx)
                     .w(px(64.0))
                     .h(px(64.0))
             }))
@@ -4848,6 +4860,25 @@ mod linux_wayland {
             .ok()
             .and_then(|layout| layout.items.first().map(|item| item.size))
             .unwrap_or(metrics.icon_size)
+    }
+
+    /// The largest size a tile's icon can ever be drawn at: the resting
+    /// size with magnification off, or the full peak of the magnification
+    /// curve (`MagnificationConfig`'s pointer-centered peak is exactly
+    /// `icon_size * maximum_scale` — see `rmac_dock::motion`'s tests) with
+    /// it on. `magnified_icon_size` tracks the pointer and changes every
+    /// frame during the hover animation; this is the stable ceiling above
+    /// it, used as `rmac_shell_ui::svg_icon`'s rasterization basis so the
+    /// Dock decodes an icon once per (tile size, magnification) setting
+    /// pair instead of once per animation frame, and the bitmap is always
+    /// big enough that magnifying never upsamples it.
+    fn max_magnified_icon_size(settings: &rmac_shell_settings::DockSettings) -> f32 {
+        let metrics = TileMetrics::new(settings.tile_size);
+        if settings.magnification {
+            metrics.icon_size * settings.magnification_scale
+        } else {
+            metrics.icon_size
+        }
     }
 
     /// A stack's "Sort by" setting, mapped onto `rmac_desktop::SortOrder`

@@ -70,11 +70,13 @@ impl AppDrawer {
         if app.first_party {
             return frame
                 .child(match &app.icon {
-                    Some(path) => rmac_ui::svg_icon(path.clone(), plate_edge, cx)
-                        .w(px(plate_edge))
-                        .h(px(plate_edge))
-                        .object_fit(ObjectFit::Contain)
-                        .into_any_element(),
+                    Some(path) => {
+                        rmac_ui::svg_icon(path.clone(), plate_edge, self.scale_factor, cx)
+                            .w(px(plate_edge))
+                            .h(px(plate_edge))
+                            .object_fit(ObjectFit::Contain)
+                            .into_any_element()
+                    }
                     None => fallback_icon(app, plate_edge, size),
                 })
                 .into_any_element();
@@ -82,7 +84,7 @@ impl AppDrawer {
 
         let art_edge = third_party_art_edge(size);
         let content = match &app.icon {
-            Some(path) => rmac_ui::svg_icon(path.clone(), art_edge, cx)
+            Some(path) => rmac_ui::svg_icon(path.clone(), art_edge, self.scale_factor, cx)
                 .w(px(art_edge))
                 .h(px(art_edge))
                 .object_fit(ObjectFit::Contain)

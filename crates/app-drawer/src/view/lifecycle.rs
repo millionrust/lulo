@@ -152,6 +152,7 @@ impl AppDrawer {
             _catalog_watcher: None,
             dock_drag: None,
             recent_ids: Vec::new(),
+            scale_factor: window.scale_factor(),
         }
     }
 

@@ -119,6 +119,7 @@ impl Settings {
                 "icons/app-window.svg",
                 secondary(),
                 style::ROW_ICON,
+                self.scale_factor,
                 cx,
             );
             let busy = self

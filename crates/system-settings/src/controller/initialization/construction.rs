@@ -408,6 +408,8 @@ impl Settings {
             mac_keyboard: None,
             mac_keyboard_busy: false,
             mac_keyboard_error: None,
+
+            scale_factor: window.scale_factor(),
         };
         settings.sync_catalog_for_pane(false);
         match settings.current().name.as_ref() {

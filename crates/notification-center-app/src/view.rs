@@ -29,6 +29,10 @@ pub(crate) struct NotificationCenterView {
     /// Widgets added to Notification Centre from the Edit Widgets gallery.
     pub(crate) widgets: Vec<rmac_desktop::widgets::Widget>,
     pub(crate) widget_data: rmac_desktop_widgets::WidgetData,
+    /// `Window::scale_factor()`, refreshed every `render()` so a card's
+    /// app icon (`rmac_ui::svg_icon`) rasterizes for the surface's real
+    /// physical pixels.
+    pub(crate) scale_factor: f32,
 }
 
 impl NotificationCenterView {

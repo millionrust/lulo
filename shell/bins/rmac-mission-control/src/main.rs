@@ -1012,7 +1012,10 @@ mod linux_wayland {
                         .items_center()
                         .justify_center();
                     if let Some(path) = item.and_then(|item| item.icon.clone()) {
-                        card = card.child(rmac_shell_ui::svg_icon(path, icon, cx).size(px(icon)));
+                        card = card.child(
+                            rmac_shell_ui::svg_icon(path, icon, window.scale_factor(), cx)
+                                .size(px(icon)),
+                        );
                     }
                     element.child(card)
                 }

@@ -575,6 +575,7 @@ impl WaylandWindowState {
             };
             WgpuRenderer::new(gpu_context, &raw_window, config, compositor_gpu)?
         };
+        super::frame_trace::record("renderer_ready");
 
         if let WaylandSurfaceState::Xdg(ref xdg_state) = surface_state {
             if let Some(title) = options.titlebar.and_then(|titlebar| titlebar.title) {
@@ -1146,6 +1147,7 @@ impl WaylandWindowStatePtr {
 
             let request_frame_callback = !state.acknowledged_first_configure;
             if request_frame_callback {
+                super::frame_trace::record("first_configure");
                 state.acknowledged_first_configure = true;
                 drop(state);
                 self.frame();

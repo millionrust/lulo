@@ -20,31 +20,50 @@ every traced process. See that script's docstring for the GPU-path caveat
 (the outer compositing layer is forced to software; the traced apps
 themselves use the laptop's real Vulkan driver).
 
-Two measurements per app, both wall-clock from the moment this script spawns
-the process:
+Measurements per app, all wall-clock from the moment this script spawns
+the process (the median of --repeat launches is reported):
 
-  - first_frame_ms: the app's window appears in `niri msg windows`. niri
-    only lists a window once its client has committed a buffer, so this is
-    close to -- but not provably exactly -- the first present; treat it as
-    the "window is now showing something" latency the owner actually sees.
-  - icons_painted_ms: the app's RMAC_FRAME_TRACE stops growing (no new
-    `present` line) for SETTLE_S. Icon decodes land asynchronously and each
-    one calls `cx.notify()` on completion (see rmac_ui::svg_icon,
-    shell/bins/rmac-wallpaper's warm_desktop_icons for the pattern this
-    generalizes), which repaints -- so the trace keeps growing while any
-    icon is still decoding and goes quiet once they all have. This is a
-    proxy, not a per-icon signal: a window that keeps animating for other
-    reasons (a spinner, a cursor blink) would never look quiescent, which
-    is why apps with those are noted rather than scored on this metric.
+  - backend_init_ms: RMAC_FRAME_TRACE's file appears, i.e. GPUI's Wayland
+    backend initialised. Time before this is the app's own `main` work
+    before it hands control to GPUI (anything synchronous there delays the
+    first frame one-for-one).
+  - first_frame_ms: the first `present` row in the app's frame trace -- the
+    first swapchain image the window ever showed. The trace file is polled
+    every 5 ms (a stat, not a process spawn), so this is the real first
+    frame to within that resolution.
+  - window_listed_ms: the window appears in `niri msg windows` (polled only
+    after the first present, so the polling never competes with startup).
+  - icons_painted_ms: the last `present` before the app's trace records no
+    new `present` for SETTLE_S, i.e. first_frame_ms plus the trace-clock gap
+    between the first and that last present (frame_callback rows, which
+    GPUI records even when it draws nothing, are ignored). Icon decodes
+    and asynchronously loaded content land with `cx.notify()`, which
+    repaints -- so presents keep coming while content is still arriving
+    and stop once it all has. This is a proxy, not a per-icon signal: a
+    window that keeps animating for other reasons (a spinner, a cursor
+    blink) would never look quiescent, which is why apps with those are
+    noted rather than scored on this metric.
+
+Before the first app, one throwaway Calculator launch warms the private
+HOME's Mesa shader cache: the real session's Dock and menu bar have always
+done that long before the owner opens an app, and without it whichever app
+happens to be measured first pays a one-off pipeline compile (~0.6 s on
+the reference laptop).
 
 One measurement per panel (Spotlight, Control Centre, Notification Centre,
 Launchpad, Mission Control, App Switcher): open_ms, wall-clock from the
-triggering input (a shortcut-endpoint dispatch, or a real niri keybind for
-the two that are resident services) to that process's next `present`.
+triggering input (a shortcut-endpoint dispatch, a real niri keybind, or the
+App Switcher's own `next` client command) to the first `present` that
+process records after it. Every panel runs as its resident service, the way
+the session runs it (Launchpad is `rmac-app-drawer --service`; the App
+Switcher is `rmac-app-switcher --service` with two app windows open so it
+has something to show).
 
-Settings pane switching is NOT measured here: it needs simulated clicks on
-the sidebar's measured row coordinates, which this pass did not build: see
-docs/perf/speed-sweep-2026-10-05.md.
+Settings pane switching: Settings is launched, Tab moves keyboard focus to
+the sidebar, then each Down arrow selects the next pane. The latency is the
+Settings process's own trace: from the key's `input` row to the next
+`present` row (one clock, so no cross-process skew), and every switch is
+confirmed by the window title changing in `niri msg windows`.
 """
 
 from __future__ import annotations
@@ -67,6 +86,7 @@ REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 
 import run_lulo  # noqa: E402
+import statistics  # noqa: E402
 import wlinput  # noqa: E402
 from run_frame_timing import read_trace  # noqa: E402
 
@@ -103,15 +123,19 @@ APPS: dict[str, tuple[list[str], str]] = {
 # icons_painted_ms is recorded as n/a rather than a misleading timeout.
 NO_QUIESCENCE = {"terminal"}
 
-# (binary, shortcut id for rmac-shortcut-dispatch) -- the panel registers
+# (argv, shortcut id for rmac-shortcut-dispatch) -- the panel registers
 # its own endpoint socket; the dispatcher's call is the "open" action a
-# real shortcut or menu click would send.
-DISPATCH_PANELS: dict[str, tuple[str, str]] = {
-    "spotlight": ("rmac-launcher", "launcher"),
-    "control-centre": ("rmac-quick-settings", "quick-settings"),
-    "notification-centre": ("rmac-notification-center-panel", "notification-center"),
-    "launchpad": ("rmac-app-drawer", "app-drawer"),
+# real shortcut or menu click would send. argv mirrors the packaged
+# systemd user units' ExecStart.
+DISPATCH_PANELS: dict[str, tuple[list[str], str]] = {
+    "spotlight": (["rmac-launcher"], "launcher"),
+    "control-centre": (["rmac-quick-settings"], "quick-settings"),
+    "notification-centre": (["rmac-notification-center-panel"], "notification-center"),
+    "launchpad": (["rmac-app-drawer", "--service"], "app-drawer"),
 }
+SETTINGS_APP_ID = "org.rmac.SystemSettings"
+SETTINGS_PANE_SWITCHES = 6
+POLL_S = 0.005
 
 
 class StepFailed(RuntimeError):
@@ -130,14 +154,59 @@ def first_present_micros(events: list[tuple[str, int]]) -> Optional[int]:
     return None
 
 
-def quiescence_wait(trace_path: Path, deadline: float) -> Optional[float]:
-    """Wall-clock `time.monotonic()` once `trace_path` has at least one
-    `present` row and has not grown for SETTLE_S, or None if that never
-    happens before `deadline`."""
+def present_count(events: list[tuple[str, int]]) -> int:
+    return sum(1 for event, _ in events if event == "present")
+
+
+def input_to_next_present_ms(events: list[tuple[str, int]], after_index: int) -> Optional[float]:
+    """Latency from the first `input` row at or after `after_index` to the
+    first `present` that follows it, in one process's own trace clock."""
+
+    for index in range(after_index, len(events)):
+        event, micros = events[index]
+        if event != "input":
+            continue
+        for later_event, later in events[index + 1:]:
+            if later_event == "present":
+                return (later - micros) / 1000.0
+        return None
+    return None
+
+
+def median(values: list[Optional[float]]) -> Optional[float]:
+    present = [value for value in values if value is not None]
+    return statistics.median(present) if present else None
+
+
+def wait_for_present(trace_path: Path, baseline: int, deadline: float) -> Optional[float]:
+    """`time.monotonic()` once `trace_path` has more than `baseline`
+    `present` rows, polled every POLL_S (a stat plus a read only when the
+    file grew), or None at `deadline`."""
 
     last_size = -1
+    while time.monotonic() < deadline:
+        try:
+            size = trace_path.stat().st_size
+        except OSError:
+            size = -1
+        if size != last_size and size > 0:
+            now = time.monotonic()
+            last_size = size
+            if present_count(read_trace(trace_path)) > baseline:
+                return now
+        time.sleep(POLL_S)
+    return None
+
+
+def quiescence_wait(trace_path: Path, deadline: float) -> Optional[float]:
+    """Wall-clock `time.monotonic()` once `trace_path` has at least one
+    `present` row and has recorded no new `present` for SETTLE_S, or None
+    if that never happens before `deadline`. Other rows (GPUI records
+    `frame_callback` even for frames it does not draw) do not count."""
+
+    last_size = -1
+    presents = 0
     last_change = time.monotonic()
-    seen_present = False
     while time.monotonic() < deadline:
         try:
             size = trace_path.stat().st_size
@@ -146,13 +215,23 @@ def quiescence_wait(trace_path: Path, deadline: float) -> Optional[float]:
         now = time.monotonic()
         if size != last_size:
             last_size = size
-            last_change = now
-            if not seen_present and size > 0:
-                seen_present = "present" in trace_path.read_text(errors="replace")
-        elif seen_present and (now - last_change) >= SETTLE_S:
+            count = present_count(read_trace(trace_path))
+            if count != presents:
+                presents = count
+                last_change = now
+        if presents and (now - last_change) >= SETTLE_S:
             return now
         time.sleep(0.02)
     return None
+
+
+def settled_span_ms(events: list[tuple[str, int]]) -> Optional[float]:
+    """Trace-clock milliseconds from the first `present` to the last one."""
+
+    presents = [micros for event, micros in events if event == "present"]
+    if not presents:
+        return None
+    return (presents[-1] - presents[0]) / 1000.0
 
 
 # --------------------------------------------------------------------------
@@ -338,67 +417,150 @@ class Run:
 
     # -- per-app cold launch ---------------------------------------------
 
+    def launch_once(self, name: str, binary: Path, app_id: str) -> dict[str, Any]:
+        start = time.monotonic()
+        process, trace = self.traced([str(binary)], name)
+        init_at = None
+        deadline = start + 20.0
+        while time.monotonic() < deadline and process.poll() is None:
+            if trace.exists():
+                init_at = time.monotonic()
+                break
+            time.sleep(POLL_S)
+        presented = wait_for_present(trace, 0, start + 20.0)
+        window = self.wait_for(lambda: self.window_by_app_id(app_id), timeout=10.0)
+        listed_at = time.monotonic() if window else None
+        icons_painted_ms = None
+        if name not in NO_QUIESCENCE and presented is not None:
+            settled = quiescence_wait(trace, deadline=start + QUIESCENCE_TIMEOUT_S)
+            span = settled_span_ms(read_trace(trace))
+            if settled is not None and span is not None:
+                icons_painted_ms = (presented - start) * 1000.0 + span
+        self.stop(process)
+        time.sleep(0.5)  # let the compositor unmap before the next launch
+
+        def since(at: Optional[float]) -> Optional[float]:
+            return None if at is None else (at - start) * 1000.0
+
+        return {
+            "backend_init_ms": since(init_at),
+            "first_frame_ms": since(presented),
+            "window_listed_ms": since(listed_at),
+            "icons_painted_ms": icons_painted_ms,
+        }
+
     def measure_app(self, name: str, binaries: list[str], app_id: str) -> dict[str, Any]:
         binary = self.bin(*binaries)
         if binary is None:
             return {"error": f"none of {binaries} found under --bin-dir"}
-        start = time.monotonic()
-        process, trace = self.traced([str(binary)], name)
-        window = self.wait_for(lambda: self.window_by_app_id(app_id), timeout=20.0)
-        first_frame_ms = (time.monotonic() - start) * 1000.0 if window else None
-        icons_painted_ms = None
-        if name not in NO_QUIESCENCE:
-            settled = quiescence_wait(trace, deadline=start + QUIESCENCE_TIMEOUT_S)
-            if settled is not None:
-                icons_painted_ms = (settled - start) * 1000.0
-        self.stop(process)
+        runs = [self.launch_once(name, binary, app_id) for _ in range(self.args.repeat)]
+        first_frame_ms = median([run["first_frame_ms"] for run in runs])
         result: dict[str, Any] = {
+            "runs": runs,
+            "backend_init_ms": median([run["backend_init_ms"] for run in runs]),
             "first_frame_ms": first_frame_ms,
+            "window_listed_ms": median([run["window_listed_ms"] for run in runs]),
             "first_frame_pass": first_frame_ms is not None and first_frame_ms <= APP_FIRST_FRAME_TARGET_MS,
         }
         if name in NO_QUIESCENCE:
             result["icons_painted_ms"] = None
             result["icons_painted_note"] = "animates continuously (not scored)"
         else:
+            icons_painted_ms = median([run["icons_painted_ms"] for run in runs])
             result["icons_painted_ms"] = icons_painted_ms
             result["icons_painted_pass"] = (
                 icons_painted_ms is not None and icons_painted_ms <= APP_FIRST_FRAME_TARGET_MS
             )
-        if window is None:
-            result["error"] = "window never appeared in `niri msg windows`"
+        if first_frame_ms is None:
+            result["error"] = "no present recorded"
         return result
+
+    # -- Settings pane switching -------------------------------------------
+
+    def measure_settings_panes(self) -> dict[str, Any]:
+        binary = self.bin("rmac-system-settings")
+        if binary is None:
+            return {"error": "rmac-system-settings not found under --bin-dir"}
+        process, trace = self.traced([str(binary)], "settings-panes")
+        try:
+            window = self.wait_for(lambda: self.window_by_app_id(SETTINGS_APP_ID), timeout=20.0)
+            if window is None:
+                return {"error": "Settings window never appeared"}
+            if quiescence_wait(trace, deadline=time.monotonic() + 8.0) is None:
+                return {"error": "Settings never settled after launch"}
+            self.input.key("tab")
+            quiescence_wait(trace, deadline=time.monotonic() + 3.0)
+            latencies: list[float] = []
+            titles: list[str] = [window.get("title") or ""]
+            for _ in range(SETTINGS_PANE_SWITCHES):
+                before = len(read_trace(trace))
+                previous = titles[-1]
+
+                def switched(previous: str = previous) -> Optional[dict[str, Any]]:
+                    current = self.window_by_app_id(SETTINGS_APP_ID)
+                    if current and (current.get("title") or "") != previous:
+                        return current
+                    return None
+
+                self.input.key("down")
+                changed = self.wait_for(switched, timeout=3.0)
+                quiescence_wait(trace, deadline=time.monotonic() + 3.0)
+                if not changed:
+                    return {"error": f"Down did not switch panes (title stayed {previous!r})",
+                            "titles": titles}
+                titles.append(changed.get("title") or "")
+                latency = input_to_next_present_ms(read_trace(trace), before)
+                if latency is not None:
+                    latencies.append(latency)
+            if not latencies:
+                return {"error": "no input/present pair recorded", "titles": titles}
+            switch_ms = statistics.median(latencies)
+            return {
+                "switch_ms": switch_ms,
+                "switch_max_ms": max(latencies),
+                "switches": latencies,
+                "titles": titles,
+                "switch_pass": switch_ms <= PANEL_OPEN_TARGET_MS,
+            }
+        finally:
+            self.stop(process)
 
     # -- panels ------------------------------------------------------------
 
-    def measure_dispatch_panel(self, binary_name: str, shortcut_id: str) -> dict[str, Any]:
-        binary = self.bin(binary_name)
+    def measure_dispatch_panel(self, argv: list[str], shortcut_id: str) -> dict[str, Any]:
+        binary = self.bin(argv[0])
         if binary is None:
-            return {"error": f"{binary_name} not found under --bin-dir"}
+            return {"error": f"{argv[0]} not found under --bin-dir"}
         dispatcher = self.bin("rmac-shortcut-dispatch")
         if dispatcher is None:
             return {"error": "rmac-shortcut-dispatch not found under --bin-dir"}
-        process, trace = self.traced([str(binary)], shortcut_id)
+        process, trace = self.traced([str(binary), *argv[1:]], shortcut_id)
         endpoint = self.runtime / "rmac" / f"shortcut-{shortcut_id}.sock"
         if not self.wait_for(endpoint.exists, timeout=20.0):
             self.stop(process)
-            return {"error": f"{binary_name} did not register its shortcut endpoint"}
-        time.sleep(0.3)  # let the resident process's own startup settle first
-        start = time.monotonic()
-        result = subprocess.run(
-            [str(dispatcher), shortcut_id], env=self.env, capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode != 0:
-            self.stop(process)
-            return {"error": f"rmac-shortcut-dispatch {shortcut_id} failed: {result.stderr[:200]}"}
-        settled = self.wait_for(
-            lambda: len(read_trace(trace)) > 0 and _has_present_after(trace, start), timeout=5.0,
-        )
-        open_ms = (time.monotonic() - start) * 1000.0 if settled else None
-        self.input.key("escape")
-        time.sleep(0.3)
+            return {"error": f"{argv[0]} did not register its shortcut endpoint"}
+        time.sleep(1.0)  # let the resident process's own startup settle first
+        opens: list[Optional[float]] = []
+        for _ in range(self.args.repeat):
+            baseline = present_count(read_trace(trace))
+            start = time.monotonic()
+            result = subprocess.run(
+                [str(dispatcher), shortcut_id], env=self.env, capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                self.stop(process)
+                return {"error": f"rmac-shortcut-dispatch {shortcut_id} failed: {result.stderr[:200]}"}
+            presented = wait_for_present(trace, baseline, start + 5.0)
+            opens.append(None if presented is None else (presented - start) * 1000.0)
+            quiescence_wait(trace, deadline=time.monotonic() + 2.0)
+            self.input.key("escape")
+            quiescence_wait(trace, deadline=time.monotonic() + 2.0)
+            time.sleep(0.3)
         self.stop(process)
+        open_ms = median(opens)
         return {
             "open_ms": open_ms,
+            "opens": opens,
             "open_pass": open_ms is not None and open_ms <= PANEL_OPEN_TARGET_MS,
             **({"error": "no present recorded after dispatch"} if open_ms is None else {}),
         }
@@ -410,37 +572,73 @@ class Run:
         process, trace = self.traced([str(mission_control), "--service"], "mission-control")
         self.wait_for(lambda: trace.exists(), timeout=20.0)
         time.sleep(1.0)  # let the resident service's own startup settle first
-        start = time.monotonic()
-        self.input.key("ctrl-up")
-        settled = self.wait_for(lambda: _has_present_after(trace, start), timeout=5.0)
-        open_ms = (time.monotonic() - start) * 1000.0 if settled else None
-        self.input.key("escape")
-        time.sleep(0.3)
+        opens: list[Optional[float]] = []
+        for _ in range(self.args.repeat):
+            baseline = present_count(read_trace(trace))
+            start = time.monotonic()
+            self.input.key("ctrl-up")
+            presented = wait_for_present(trace, baseline, start + 5.0)
+            opens.append(None if presented is None else (presented - start) * 1000.0)
+            quiescence_wait(trace, deadline=time.monotonic() + 2.0)
+            self.input.key("escape")
+            quiescence_wait(trace, deadline=time.monotonic() + 2.0)
+            time.sleep(0.3)
         self.stop(process)
+        open_ms = median(opens)
         return {
             "open_ms": open_ms,
+            "opens": opens,
             "open_pass": open_ms is not None and open_ms <= PANEL_OPEN_TARGET_MS,
             **({"error": "no present recorded after Ctrl+Up"} if open_ms is None else {}),
         }
 
     def measure_app_switcher(self) -> dict[str, Any]:
-        # Unlike Mission Control, App Switcher is a fresh spawn per Mod+Tab
-        # (packaging/rmac-session/shell.kdl), so its "open" latency is a
-        # cold process start to first present, measured directly rather
-        # than through a resident service's key bind.
+        # The session runs `rmac-app-switcher --service`; Mod+Tab spawns the
+        # short-lived `rmac-app-switcher next` client, which only sends one
+        # datagram. Two app windows are opened first so the switcher has
+        # something to show (it shows nothing with no apps).
         app_switcher = self.bin("rmac-app-switcher", "app-switcher")
         if app_switcher is None:
             return {"error": "rmac-app-switcher not found under --bin-dir"}
-        start = time.monotonic()
-        process, trace = self.traced([str(app_switcher), "next"], "app-switcher")
-        settled = self.wait_for(lambda: _has_present_after(trace, start), timeout=10.0)
-        open_ms = (time.monotonic() - start) * 1000.0 if settled else None
-        self.stop(process)
-        return {
-            "open_ms": open_ms,
-            "open_pass": open_ms is not None and open_ms <= PANEL_OPEN_TARGET_MS,
-            **({"error": "no present recorded"} if open_ms is None else {}),
-        }
+        helpers: list[subprocess.Popen] = []
+        for name in ("calculator", "clock"):
+            binaries, app_id = APPS[name]
+            helper_binary = self.bin(*binaries)
+            if helper_binary is not None:
+                helpers.append(self.spawn([str(helper_binary)], f"switcher-helper-{name}"))
+                self.wait_for(lambda app_id=app_id: self.window_by_app_id(app_id), timeout=20.0)
+        process, trace = self.traced([str(app_switcher), "--service"], "app-switcher")
+        socket = self.runtime / "rmac" / "app-switcher.sock"
+        try:
+            if not self.wait_for(socket.exists, timeout=20.0):
+                return {"error": "rmac-app-switcher --service did not bind its socket"}
+            time.sleep(1.0)
+            opens: list[Optional[float]] = []
+            for _ in range(self.args.repeat):
+                baseline = present_count(read_trace(trace))
+                start = time.monotonic()
+                client = subprocess.run(
+                    [str(app_switcher), "next"], env=self.env, capture_output=True, text=True, timeout=10,
+                )
+                if client.returncode != 0:
+                    return {"error": f"rmac-app-switcher next failed: {client.stderr[:200]}"}
+                presented = wait_for_present(trace, baseline, start + 5.0)
+                opens.append(None if presented is None else (presented - start) * 1000.0)
+                quiescence_wait(trace, deadline=time.monotonic() + 2.0)
+                self.input.key("escape")
+                quiescence_wait(trace, deadline=time.monotonic() + 2.0)
+                time.sleep(0.3)
+            open_ms = median(opens)
+            return {
+                "open_ms": open_ms,
+                "opens": opens,
+                "open_pass": open_ms is not None and open_ms <= PANEL_OPEN_TARGET_MS,
+                **({"error": "no present recorded"} if open_ms is None else {}),
+            }
+        finally:
+            self.stop(process)
+            for helper in helpers:
+                self.stop(helper)
 
     # -- lifecycle -------------------------------------------------------
 
@@ -468,37 +666,49 @@ class Run:
                 "app_first_frame_ms": APP_FIRST_FRAME_TARGET_MS,
                 "panel_open_ms": PANEL_OPEN_TARGET_MS,
             },
+            "repeat": self.args.repeat,
             "apps": {},
             "panels": {},
-            "not_measured": ["settings-pane-switching"],
         }
+        only = set(self.args.only or [])
+
+        def wanted(name: str) -> bool:
+            return not only or name in only
+
+        warm = self.bin("rmac-calculator")
+        if warm is not None:
+            process = self.spawn([str(warm)], "shader-cache-warmup")
+            self.wait_for(lambda: self.window_by_app_id(APPS["calculator"][1]), timeout=20.0)
+            time.sleep(1.0)
+            self.stop(process)
+            time.sleep(0.5)
         for name, (binaries, app_id) in APPS.items():
+            if not wanted(name):
+                continue
             print(f"app: {name}...", flush=True)
             try:
                 report["apps"][name] = self.measure_app(name, binaries, app_id)
             except StepFailed as error:
                 report["apps"][name] = {"error": str(error)}
-        for name, (binary, shortcut_id) in DISPATCH_PANELS.items():
+        for name, (argv, shortcut_id) in DISPATCH_PANELS.items():
+            if not wanted(name):
+                continue
             print(f"panel: {name}...", flush=True)
             try:
-                report["panels"][name] = self.measure_dispatch_panel(binary, shortcut_id)
+                report["panels"][name] = self.measure_dispatch_panel(argv, shortcut_id)
             except StepFailed as error:
                 report["panels"][name] = {"error": str(error)}
-        print("panel: mission-control...", flush=True)
-        report["panels"]["mission-control"] = self.measure_mission_control()
-        print("panel: app-switcher...", flush=True)
-        report["panels"]["app-switcher"] = self.measure_app_switcher()
+        if wanted("mission-control"):
+            print("panel: mission-control...", flush=True)
+            report["panels"]["mission-control"] = self.measure_mission_control()
+        if wanted("app-switcher"):
+            print("panel: app-switcher...", flush=True)
+            report["panels"]["app-switcher"] = self.measure_app_switcher()
+        if wanted("settings-panes"):
+            print("settings pane switching...", flush=True)
+            report["settings_panes"] = self.measure_settings_panes()
         self.finish()
         return report
-
-
-def _has_present_after(trace: Path, start: float) -> bool:
-    """Whether `trace` already has a `present` row, polled after `start`
-    (wall clock) -- the trace's own timestamps are relative to that
-    process's `init()`, not comparable across processes, so this only
-    checks presence, and the caller's own wall clock supplies the latency."""
-
-    return any(event == "present" for event, _ in read_trace(trace))
 
 
 # --------------------------------------------------------------------------
@@ -530,17 +740,18 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Apps")
     lines.append("")
-    lines.append("| App | First frame | Pass | Icons painted | Pass |")
-    lines.append("|---|---:|---|---:|---|")
+    lines.append("| App | Backend init | First frame | Pass | Window listed | Icons painted | Pass |")
+    lines.append("|---|---:|---:|---|---:|---:|---|")
     for name, entry in report.get("apps", {}).items():
         if "error" in entry and entry.get("first_frame_ms") is None:
-            lines.append(f"| {name} | -- | error: {entry['error']} | -- | -- |")
+            lines.append(f"| {name} | -- | -- | error: {entry['error']} | -- | -- | -- |")
             continue
         icons_cell = entry.get("icons_painted_note", _fmt_ms(entry.get("icons_painted_ms")))
         icons_pass = "--" if "icons_painted_note" in entry else _fmt_pass(entry, "icons_painted_pass")
         lines.append(
-            f"| {name} | {_fmt_ms(entry.get('first_frame_ms'))} | "
-            f"{_fmt_pass(entry, 'first_frame_pass')} | {icons_cell} | {icons_pass} |"
+            f"| {name} | {_fmt_ms(entry.get('backend_init_ms'))} | {_fmt_ms(entry.get('first_frame_ms'))} | "
+            f"{_fmt_pass(entry, 'first_frame_pass')} | {_fmt_ms(entry.get('window_listed_ms'))} | "
+            f"{icons_cell} | {icons_pass} |"
         )
     lines.append("")
     lines.append("## Panels")
@@ -550,6 +761,18 @@ def render_markdown(report: dict[str, Any]) -> str:
     for name, entry in report.get("panels", {}).items():
         lines.append(f"| {name} | {_fmt_ms(entry.get('open_ms'))} | {_fmt_pass(entry, 'open_pass')} |")
     lines.append("")
+    panes = report.get("settings_panes")
+    if panes is not None:
+        lines.append("## Settings pane switching")
+        lines.append("")
+        if panes.get("error"):
+            lines.append(f"error: {panes['error']}")
+        else:
+            lines.append(
+                f"Median {_fmt_ms(panes.get('switch_ms'))} (max {_fmt_ms(panes.get('switch_max_ms'))}) "
+                f"over {len(panes.get('switches', []))} switches: {_fmt_pass(panes, 'switch_pass')}."
+            )
+        lines.append("")
     not_measured = report.get("not_measured", [])
     if not_measured:
         lines.append(f"Not measured: {', '.join(not_measured)}.")
@@ -570,6 +793,10 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--json-output", type=Path, required=True)
     parser.add_argument("--markdown-output", type=Path, default=None)
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--repeat", type=int, default=3,
+                        help="launches/opens per item; the median is reported")
+    parser.add_argument("--only", action="append", default=[],
+                        help="measure only these items (app names, panel names, settings-panes)")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args, unknown = parser.parse_known_args()
     return args, unknown

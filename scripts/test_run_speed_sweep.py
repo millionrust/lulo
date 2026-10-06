@@ -73,7 +73,7 @@ class MarkdownRenderingTests(unittest.TestCase):
             "not_measured": ["settings-pane-switching"],
         }
         markdown = sweep.render_markdown(report)
-        self.assertIn("| files | 250 ms | PASS | 310 ms | FAIL |", markdown)
+        self.assertIn("| files | n/a | 250 ms | PASS | n/a | 310 ms | FAIL |", markdown)
         self.assertIn("animates continuously (not scored)", markdown)
         self.assertIn("| spotlight | 85 ms | PASS |", markdown)
         self.assertIn("settings-pane-switching", markdown)

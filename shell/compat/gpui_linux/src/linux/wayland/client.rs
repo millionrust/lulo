@@ -1078,7 +1078,9 @@ impl WaylandClient {
 
         let event_loop = EventLoop::<WaylandClientStatePtr>::try_new().unwrap();
 
+        super::frame_trace::record("common_start");
         let (common, main_receiver, wake_receiver) = LinuxCommon::new(event_loop.get_signal());
+        super::frame_trace::record("common_ready");
 
         let handle = event_loop.handle();
         handle
@@ -1339,6 +1341,7 @@ impl LinuxClient for WaylandClient {
         handle: AnyWindowHandle,
         params: WindowParams,
     ) -> anyhow::Result<Box<dyn PlatformWindow>> {
+        super::frame_trace::record("open_window");
         let mut state = self.0.borrow_mut();
 
         // Popups name their parent explicitly. Other kinds are parented to the focused window.

@@ -10,6 +10,14 @@
 //     on whether it actually presented a swapchain image;
 // and, for every input event GPUI's window receives:
 //   - `input`: the start of `WaylandWindow::handle_input`.
+// and, once each, the startup phases before the first frame (for
+// scripts/behavior/run_speed_sweep.py's cold-launch breakdown):
+//   - `common_start` / `common_ready`: around `LinuxCommon::new`, which
+//     builds the text system (the system font database scan);
+//   - `open_window`: the app asked for its first (or a later) window;
+//   - `renderer_ready`: that window's wgpu renderer exists (the GPU device
+//     is created lazily with the first window);
+//   - `first_configure`: the compositor's first configure was acknowledged.
 //
 // scripts/behavior/run_frame_timing.py correlates `input` timestamps with
 // the next `present` to compute input-to-present latency, and uses

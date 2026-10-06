@@ -1132,6 +1132,7 @@ impl CalendarView {
     /// Day", "Daily"…) share [`Self::control`]'s 12 pt, so the icon-only
     /// buttons go through this sized variant instead of bumping every
     /// label.
+    #[allow(clippy::too_many_arguments)]
     fn control_sized(
         &self,
         id: impl Into<SharedString>,

@@ -885,7 +885,7 @@ impl ClockView {
                 Daylight::Times { sunrise, sunset } => (Some(sunrise), Some(sunset)),
                 Daylight::PolarDay | Daylight::PolarNight => (None, None),
             };
-            let lines = [
+            let lines: [(String, Hsla); 4] = [
                 (
                     format!("{}, {time}", city.name),
                     rgb(m::TEXT_PRIMARY).into(),

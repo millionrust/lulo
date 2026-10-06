@@ -17,17 +17,34 @@
 //! opening Find (MENU-10).
 
 use gpui::{App, KeyBinding};
+use gpui_component::input::*;
 
 pub(crate) fn init(cx: &mut App) {
-    // macOS already receives these from gpui-component.
-    if cfg!(not(target_os = "macos")) {
+    // macOS already receives these from gpui-component, and on Windows its
+    // PC set is the platform's own (Ctrl+C, Ctrl+←, Home); see
+    // `windows_bindings`.
+    if cfg!(windows) {
+        cx.bind_keys(windows_bindings());
+    } else if cfg!(not(target_os = "macos")) {
         cx.bind_keys(bindings());
     }
 }
 
-fn bindings() -> Vec<KeyBinding> {
-    use gpui_component::input::*;
+/// On Windows, gpui-component's PC bindings already edit the way Windows
+/// text fields do, with Ctrl as the primary modifier. Three changes keep
+/// them in line with the Mac rules above: Ctrl+F must reach the app's Find
+/// (MENU-10), Ctrl+Shift+Z redoes as ⇧⌘Z does (Ctrl+Y still works), and
+/// Paste and Match Style keeps its chord.
+fn windows_bindings() -> Vec<KeyBinding> {
+    const CONTEXT: Option<&str> = Some("Input");
+    vec![
+        KeyBinding::new("ctrl-f", gpui::Unbind("input::Search".into()), CONTEXT),
+        KeyBinding::new("ctrl-shift-z", Redo, CONTEXT),
+        KeyBinding::new("ctrl-alt-shift-v", Paste, CONTEXT),
+    ]
+}
 
+fn bindings() -> Vec<KeyBinding> {
     const CONTEXT: Option<&str> = Some("Input");
     vec![
         KeyBinding::new("cmd-backspace", DeleteToBeginningOfLine, CONTEXT),
@@ -85,5 +102,15 @@ mod tests {
         assert!(bindings
             .iter()
             .all(|binding| binding.action().name() != "input::Search"));
+    }
+
+    #[test]
+    fn windows_text_fields_give_ctrl_f_back_to_find() {
+        let bindings = super::windows_bindings();
+        let unbind = bindings
+            .iter()
+            .find(|binding| binding.action().name() == "zed::Unbind")
+            .expect("Ctrl+F is unbound from the field's search");
+        assert_eq!(unbind.keystrokes()[0].inner().unparse(), "ctrl-f");
     }
 }

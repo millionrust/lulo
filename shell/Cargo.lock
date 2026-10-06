@@ -6432,6 +6432,7 @@ dependencies = [
  "rmac-storage",
  "serde",
  "serde_json",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6500,6 +6501,7 @@ dependencies = [
  "rmac-top-bar",
  "rmac-window-state",
  "unicode-segmentation",
+ "windows 0.61.3",
 ]
 
 [[package]]

@@ -399,6 +399,12 @@ impl ContextMenuState {
         }
     }
 
+    /// The handle the open menu holds focus with; focus leaving it means
+    /// the menu was chosen from or dismissed.
+    pub(crate) fn menu_focus(&self) -> &FocusHandle {
+        &self.menu_focus
+    }
+
     /// Cursor-relative position used to anchor the menu.
     pub fn position(&self) -> Point<Pixels> {
         self.position
@@ -451,6 +457,12 @@ impl ContextMenu {
         checked: MenuCheck,
         swatch: Option<Hsla>,
     ) -> Self {
+        // Shown in this platform's form ("Ctrl+Shift+S" on Windows); the
+        // stored text also drives the panel width.
+        let shortcut = shortcut.map(|sc| match crate::shortcuts::display_hint(&sc) {
+            std::borrow::Cow::Borrowed(_) => sc,
+            std::borrow::Cow::Owned(hint) => SharedString::from(hint),
+        });
         self.items.push(MenuEntry::Item {
             label: label.into(),
             shortcut,
@@ -507,6 +519,19 @@ impl ContextMenu {
             MenuCheck::None,
             None,
         )
+    }
+
+    /// Append a row with every attribute given, for menus built from an
+    /// `rmac_app_menu` table (the in-window menu strip).
+    pub(crate) fn entry(
+        self,
+        label: impl Into<SharedString>,
+        shortcut: Option<SharedString>,
+        action: Box<dyn Action>,
+        enabled: bool,
+        checked: MenuCheck,
+    ) -> Self {
+        self.push_item(label, shortcut, action, false, enabled, checked, None)
     }
 
     /// Append a thin divider.

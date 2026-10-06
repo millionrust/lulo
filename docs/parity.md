@@ -775,6 +775,23 @@ similar — no plan, not tracked as rows here).
 
 ---
 
+## Windows (ADR 0023)
+
+Lulo's apps running directly on Windows 10/11, without Lulo OS. Mac reference as above; "Windows" means the behaviour a Windows user expects where the Mac's cannot apply. IDs are `WIN-OS-*` (`WIN-*` without `OS` are window-management rows above). Verified only on GitHub's `windows-latest` runner (`ci.yml` job `windows`, `scripts/windows/launch_smoke.py`) until a Windows test PC exists.
+
+| ID | Sev | Size | Status | Gap | Where |
+|---|---|---|---|---|---|
+| WIN-OS-01 | P0 | M | Fixed `37635c94` | Mac: ⌘ is the command key. / Windows reads `cmd-…` as the Windows key, which it reserves, so no shortcut worked. `rmac_ui::bind_keys` now binds Ctrl as the primary modifier on Windows (`cmd-s` → `ctrl-s`); ⌃-letter Emacs keys are dropped there and text fields keep Windows' own editing keys. Menus show "Ctrl+S". Calculator, Notes, Text Editor and rmac-ui use it; other apps switch from `cx.bind_keys` as they are ported. | `crates/rmac-ui/src/shortcuts.rs`, `crates/rmac-ui/src/text_keys.rs` |
+| WIN-OS-02 | P2 | S | Partial | Mac: ⌃⌘ chords (Calculator ⌃⌘S Show History, Text Editor ⌃⌘C/⌃⌘V ruler, Notes ⌃⌘↑/↓) are free. / Windows: they become Win+Ctrl chords, several of which Windows keeps for virtual desktops (Win+Ctrl+←/→/D) until the phase 3 keyboard hook. ⌘H (Hide) minimises the app's windows; ⌥⌘H (Hide Others) is not available. | `crates/rmac-ui/src/shortcuts.rs`, `crates/rmac-ui/src/chrome.rs` |
+| WIN-OS-03 | P0 | M | Fixed `37635c94` (menu-strip only) | Mac: every app's menus are in the menu bar. / Windows had no menus at all (the menu model goes only to the Lulo menu bar). Each window now draws a Mac-style menu strip along its top edge from the same tables and live state, with Alt, Alt+letter, arrows and Esc. Remaining until the phase 3 menu bar: menus are per window rather than at the top of the screen; a submenu inside a submenu is not shown; Help has no search field; Services is absent. | `crates/rmac-ui/src/menu_strip.rs`, `vendor/gpui-component/crates/ui/src/root.rs` |
+| WIN-OS-04 | P1 | S | Partial `37635c94` | Mac: an app keeps running with no windows. / Windows: without a menu bar a windowless app is unreachable, so closing an app's last window quits it while the strip is in use. | `crates/rmac-ui/src/menu_strip.rs` |
+| WIN-OS-05 | P1 | S | Fixed `37635c94` (Text Editor, Notes) | Mac: opening a document reaches the running app. / Windows started a second process. The running app now serves a per-user named pipe and a later launch (Explorer's Open, a second Start click) hands its windows to it. Calculator still starts a second process. | `crates/rmac-ui/src/instance_windows.rs`, `crates/rmac-ui/src/window.rs` |
+| WIN-OS-06 | P1 | S | Fixed `37635c94` | Mac: Notes' Import, Export and Attach use the system panels. / Windows: they went through the XDG portal and failed. They now use Windows' own Open and Save As dialogs (GPUI prompts); Export starts in Documents. Text Editor's Open and Save already did. The Mac-style Lulo panel on Windows is phase 2 work. | `crates/notes/src/file_choosers.rs` |
+| WIN-OS-07 | P2 | S | Partial `37635c94` | Mac: alerts play the chosen alert sound. / Windows played nothing. The alert now plays Windows' Default Beep, errors Critical Stop and notifications Asterisk, from the user's sound scheme; Lulo's own cues and the Sound settings' volume are not used until the cue files ship in the package. | `crates/rmac-sound/src/lib.rs` |
+| WIN-OS-08 | P2 | S | Missing | Mac: a title-bar double-click follows Desktop & Dock. / Windows maximises or restores. | `crates/rmac-ui/src/chrome.rs` |
+| WIN-OS-09 | P1 | M | Missing | Mac: spelling is checked as you type. / Windows has no hunspell dictionaries, so nothing is underlined; phase 2 uses `ISpellChecker`. | `crates/rmac-spelling` |
+| WIN-OS-10 | P1 | M | Missing | Mac: File ▸ Print. / Windows: printing is unavailable (`rmac-print-linux`); Export as PDF works. | `crates/rmac-print` |
+
 ## Other
 
 | ID | Sev | Size | Status | Gap | Where |

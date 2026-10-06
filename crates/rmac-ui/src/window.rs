@@ -11,7 +11,7 @@ use gpui::{
 // point — an app's own auxiliary window — can wrap its view without another
 // file needing its own `gpui_component` import (ADR 0015 keeps that boundary
 // at exactly the files that already cross it).
-pub use gpui_component::Root;
+pub use gpui_component::{Root, RootHeader};
 use rmac_window_state::{DisplayBounds, Store as WindowStateStore, WindowMode, WindowState};
 
 use crate::{init_application, install_app_menu, prepare_surface_window};
@@ -431,6 +431,7 @@ fn window_options_with_bounds(
 /// canonical position, transparent titlebar so our chrome draws through, and
 /// first-launch placement centered on the active primary display.
 pub fn window_options(width: f32, height: f32, cx: &App) -> WindowOptions {
+    let height = height + crate::menu_strip::height(cx);
     window_options_with_bounds(
         width,
         height,
@@ -441,6 +442,7 @@ pub fn window_options(width: f32, height: f32, cx: &App) -> WindowOptions {
 
 /// Standard window options with a stable Linux desktop identity.
 pub fn window_options_for_app(app_id: &str, width: f32, height: f32, cx: &App) -> WindowOptions {
+    let height = height + crate::menu_strip::height(cx);
     WindowOptions {
         app_id: Some(app_id.to_owned()),
         ..window_options_with_bounds(
@@ -484,6 +486,7 @@ pub fn window_options_for_app_with_title(
     height: f32,
     cx: &App,
 ) -> WindowOptions {
+    let height = height + crate::menu_strip::height(cx);
     WindowOptions {
         app_id: Some(app_id.to_owned()),
         ..window_options_with_bounds(
@@ -498,6 +501,7 @@ pub fn window_options_for_app_with_title(
 /// Window options for an app with a **unified 52pt toolbar** (Finder-style):
 /// our own traffic lights are drawn by the app's toolbar.
 pub fn window_options_unified(width: f32, height: f32, cx: &App) -> WindowOptions {
+    let height = height + crate::menu_strip::height(cx);
     window_options_with_bounds(
         width,
         height,
@@ -513,6 +517,7 @@ pub fn window_options_unified_for_app(
     height: f32,
     cx: &App,
 ) -> WindowOptions {
+    let height = height + crate::menu_strip::height(cx);
     WindowOptions {
         app_id: Some(app_id.to_owned()),
         ..window_options_with_bounds(
@@ -551,6 +556,7 @@ pub(crate) fn window_options_for_app_with_bounds(
 /// ([`crate::track_key_window`]).
 pub fn observe_window_state<V: 'static>(app_id: &str, window: &mut Window, cx: &Context<V>) {
     crate::menu_target::track_key_window(window, cx);
+    crate::menu_strip::register_window(window);
     let Ok(store) = WindowStateStore::from_environment(app_id) else {
         return;
     };
@@ -863,7 +869,11 @@ pub fn hand_off_to_running_instance(app_id: &'static str, windows: &[Vec<String>
             }
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        crate::instance_windows::hand_off(app_id, windows)
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = (app_id, windows);
         false

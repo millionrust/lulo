@@ -13,7 +13,10 @@ mod context_menu;
 mod controls;
 mod feedback;
 pub mod gallery;
+#[cfg(windows)]
+mod instance_windows;
 pub mod mac;
+mod menu_strip;
 mod menu_target;
 mod platform;
 mod runtime;
@@ -59,6 +62,7 @@ pub use feedback::{
     ToastKind, Tooltip,
 };
 pub use gpui_component::{ActiveTheme, StyledExt};
+pub use menu_strip::{height as menu_strip_height, MENU_STRIP_HEIGHT};
 pub use menu_target::{register_menu_target, track_key_window};
 pub use rmac_app_menu::Item as MenuItem;
 #[cfg(target_os = "linux")]
@@ -72,6 +76,7 @@ pub use runtime::{
     install_surface_idle_exit, mark_content_ready, prepare_surface_window, shell_surface_root,
     text_px,
 };
+pub use shortcuts::bind_keys;
 pub use speech::{speak, start_speaking, stop_speaking};
 pub use svg_icon::{svg_icon, IconSource};
 pub use text_assist::EditableText;

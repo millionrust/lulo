@@ -197,6 +197,9 @@ uuid = { version = "1", features = ["v4"] }
 walkdir = "2"
 wayland-client = "=0.31.14"
 wayland-protocols = { version = "=0.32.13", features = ["client", "staging"] }
+# Windows-only Win32 bindings (ADR 0023), at the version GPUI's Windows
+# backend already builds; each crate names the features it uses.
+windows = "0.61"
 xkbcommon = { version = "=0.8.0", default-features = false, features = ["wayland"] }
 zbus = { version = "5.16.0", features = ["blocking-api"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls-no-provider", "platform-verifier", "json"] }

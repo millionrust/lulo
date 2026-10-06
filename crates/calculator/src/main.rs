@@ -81,28 +81,31 @@ fn main() {
         .with_assets(CombinedAssets)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
-            cx.bind_keys([
-                KeyBinding::new(rmac_ui::shortcuts::COPY.keystroke, Copy, Some("Calculator")),
-                KeyBinding::new(
-                    rmac_ui::shortcuts::PASTE.keystroke,
-                    Paste,
-                    Some("Calculator"),
-                ),
-                KeyBinding::new("cmd-1", ShowBasic, Some("Calculator")),
-                KeyBinding::new("cmd-2", ShowScientific, Some("Calculator")),
-                KeyBinding::new("cmd-3", ShowProgrammer, Some("Calculator")),
-                KeyBinding::new("alt-cmd-c", ShowConvert, Some("Calculator")),
-                KeyBinding::new("cmd-r", ToggleRpnMode, Some("Calculator")),
-                KeyBinding::new("alt-cmd-m", ShowMathsNotes, Some("Calculator")),
-                KeyBinding::new("ctrl-cmd-s", ShowHistory, Some("Calculator")),
-                KeyBinding::new(
-                    rmac_ui::shortcuts::CLOSE.keystroke,
-                    CloseWindow,
-                    Some("Calculator"),
-                ),
-                KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Calculator")),
-                KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, Some("Calculator")),
-            ]);
+            rmac_ui::bind_keys(
+                cx,
+                [
+                    KeyBinding::new(rmac_ui::shortcuts::COPY.keystroke, Copy, Some("Calculator")),
+                    KeyBinding::new(
+                        rmac_ui::shortcuts::PASTE.keystroke,
+                        Paste,
+                        Some("Calculator"),
+                    ),
+                    KeyBinding::new("cmd-1", ShowBasic, Some("Calculator")),
+                    KeyBinding::new("cmd-2", ShowScientific, Some("Calculator")),
+                    KeyBinding::new("cmd-3", ShowProgrammer, Some("Calculator")),
+                    KeyBinding::new("alt-cmd-c", ShowConvert, Some("Calculator")),
+                    KeyBinding::new("cmd-r", ToggleRpnMode, Some("Calculator")),
+                    KeyBinding::new("alt-cmd-m", ShowMathsNotes, Some("Calculator")),
+                    KeyBinding::new("ctrl-cmd-s", ShowHistory, Some("Calculator")),
+                    KeyBinding::new(
+                        rmac_ui::shortcuts::CLOSE.keystroke,
+                        CloseWindow,
+                        Some("Calculator"),
+                    ),
+                    KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Calculator")),
+                    KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, Some("Calculator")),
+                ],
+            );
             // Application ▸ Quit and Keep Windows (⌥⌘Q): Calculator has a
             // single window and no document state to restore (unlike
             // Preview's open-file list), so this is the same quit as ⌘Q.
@@ -121,7 +124,12 @@ fn main() {
 
             // Calculator is fixed-size like on macOS: keep a restored position
             // but never a restored size.
-            let fixed = size(px(WINDOW_WIDTH), px(WINDOW_HEIGHT));
+            // On Windows the window also holds its menu strip above the
+            // calculator (ADR 0023); elsewhere that height is zero.
+            let fixed = size(
+                px(WINDOW_WIDTH),
+                px(WINDOW_HEIGHT + rmac_ui::menu_strip_height(cx)),
+            );
             // A fixed-size calculator has no resize edge. Its own rounded
             // surface fills the exact compositor bounds, without the 12 pt
             // client shadow frame used by resizable app windows.

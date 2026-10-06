@@ -262,10 +262,12 @@ jobs:
 
   windows:
     name: Windows apps (non-blocking)
-    # ADR 0023 phase 1: Calculator, Notes and Text Editor, with the shared
-    # crates they use (rmac-ui, storage, editor, Notes' store), build, pass
-    # Clippy and their unit tests, and open a window on Windows. Non-blocking until it has run clean for a while;
-    # see docs/ci.md.
+    # ADR 0023 phases 1-2: Calculator, Notes and Text Editor, with the shared
+    # crates they use (rmac-ui, storage, editor, Notes' store, sound), build,
+    # pass Clippy and their unit tests, and open a window on Windows; the
+    # launch check also opens each window's menu strip with Alt, presses
+    # Ctrl+N and, for Text Editor, hands a second launch to the running app.
+    # Non-blocking until it has run clean for a while; see docs/ci.md.
     runs-on: windows-latest
     timeout-minutes: 75
     continue-on-error: true
@@ -273,7 +275,7 @@ jobs:
       RMAC_WINDOWS_PACKAGES: >-
         -p rmac-calculator -p rmac-notes -p rmac-text-editor -p rmac-editor
         -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime
-        -p rmac-ui -p rmac-storage -p rmac-recent-documents
+        -p rmac-ui -p rmac-storage -p rmac-recent-documents -p rmac-sound
     defaults:
       run:
         shell: bash

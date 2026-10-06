@@ -1,8 +1,9 @@
 # ADR 0023 — Lulo on Windows: apps first, then a Mac-style shell that runs alongside Explorer
 
 - **Status:** proposed 2026-10-06. Phase 1 (the app seam and a non-blocking CI job) is on
-  branch `op/windows-plan`. Phases 2–5 need owner approval and the hardware and signing
-  items under "What the owner must provide".
+  branch `op/windows-plan`; phase 2's first slice (the gaps that blocked using the three
+  apps) is on `op/win-phase2a`. The rest of phases 2–5 needs owner approval and the hardware
+  and signing items under "What the owner must provide".
 - **Scope:** every crate under `crates/` and `shell/`, the workspace `Cargo.toml`,
   `deny.toml`, `.github/workflows/ci.yml`, and a future `packaging/windows/`.
 - **Supersedes:** nothing. Builds on ADR 0006 (shell/app split), ADR 0007 (compositor
@@ -317,6 +318,28 @@ Known gaps that phase 2 must close before anyone downloads the apps:
 - Single instance: a second launch opens a second process (the D-Bus hand-off is Linux-only).
   Phase 2 uses a named pipe.
 
+## Phase 2 first slice as built (branch `op/win-phase2a`)
+
+The five gaps above that block anyone from using the three apps are closed, in the shared
+crates, so every app that moves to Windows gets them:
+
+| Gap | Linux / macOS | Windows (phase 2a) |
+|---|---|---|
+| Shortcuts (`rmac-ui` `shortcuts.rs`, `text_keys.rs`) | Bindings are written `cmd-…`; keyd makes the ⌘-position key send Super (ADR 0017) | `rmac_ui::bind_keys` installs each binding with Ctrl as the primary modifier: `cmd-s` becomes `ctrl-s`, `alt-cmd-c` becomes `ctrl-alt-c`. ⌃⌘ chords keep both modifiers (Win+Ctrl), and Cocoa's ⌃-letter Emacs keys are dropped, because Ctrl+letter is now a command. Text fields keep gpui-component's PC set (Ctrl+←, Home, Ctrl+Y), with Ctrl+F handed back to the app's Find, Ctrl+Shift+Z as Redo and Ctrl+Alt+Shift+V as Paste and Match Style. Menus show "Ctrl+Shift+S" for "⇧⌘S" (`shortcuts::display_hint`). Calculator, Notes, Text Editor and `rmac-ui`'s own bindings go through it. |
+| Menus (`rmac-ui` `menu_strip.rs`, vendored `gpui-component` `RootHeader`) | The Lulo menu bar shows them over D-Bus | Each app window draws a 24 pt Mac-style menu strip along its top edge, where Windows' own title bar would be (Lulo's title bars are part of each app's content, so a strip below them would need every app's layout to change): the bold app name (About, the app's items, Hide, Quit), the app's menus from the same `rmac-app-menu` table with the same live state, then Window (Minimize plus the app's items) and Help. Menus open with the shared `ContextMenu` renderer and send commands the way the menu bar does (`menu_target::dispatch_menu_action`). Alt alone opens the first menu, Alt+letter the menu with that initial, ←/→ move between menus while one is open, and Esc closes. Hovering another title while a menu is open switches to it. The empty part of the strip drags the window. Windows grow by the strip's height, so content keeps its size. The strip is off where the Lulo menu bar runs (`LULO_MENU_BAR`, for phase 3); `RMAC_IN_WINDOW_MENUS=1` turns it on elsewhere for development. Without a menu bar a windowless app would be unreachable, so closing an app's last window quits it. |
+| Single instance (`rmac-ui` `instance_windows.rs`) | D-Bus hand-off (`org.rmac.AppInstance1`) | The running app serves `\\.\pipe\lulo-<app id>-<user>` (first instance only, no remote clients, the default same-user security). A later launch writes one line per window (arguments separated by NUL), allows the running process to take the foreground, and exits; the running app opens the windows. Text Editor and Notes use it; a document opened from Explorer reaches the running Text Editor. |
+| Choosers (`notes` `file_choosers.rs`) | The XDG portal | Notes' Attach Photo, Attach File, Import and Export use GPUI's prompts, which are Windows' own Open and Save As dialogs; Export starts in Documents. Attachment chips open with the default app (`open_with_system`). Text Editor's Open and Save already used GPUI's prompts. |
+| Alert sounds (`rmac-sound`) | `pw-play` with Lulo's own cues | The alert is Windows' Default Beep (`MessageBeep(MB_OK)`), the error is Critical Stop and a notification is Asterisk, from the user's sound scheme at the system volume. Other cues stay silent until Lulo's cue files ship in the package. |
+
+CI (`windows` job): `launch_smoke.py` now also taps Alt in each app and checks that the first
+menu opens below the strip (a screenshot of it is uploaded), presses Ctrl+N (Text Editor must
+open a second window), and launches Text Editor a second time to check the hand-off.
+
+Still open from phase 2's list: `ISpellChecker` spelling, printing through the Windows PDF
+path, the Mac-style Open and Save panel, toasts, the remaining app crates, MSIX packaging and
+signing, and the UI Automation behaviour subset. The `WIN-OS-*` rows in `docs/parity.md` track
+the Windows gaps.
+
 ## Phase plan
 
 The goal is "usable on Windows without Linux". Phases are ordered by how much value they
@@ -327,7 +350,7 @@ Windows test PC from phase 2.
 | Phase | What the user gets | Main work | Agent-days | Calendar |
 |---|---|---|---|---|
 | **1. Seam + CI** (this branch) | Nothing to download yet. Calculator, Notes and TextEdit build and launch on Windows in CI. | cfg seam, Windows CI job, cargo-deny target, this ADR | 1–2 | 1 week |
-| **2. The Lulo apps on Windows** | Download one signed installer and get Mac-feel Notes, TextEdit, Calculator, Preview, Clock, Weather, Terminal (ConPTY), Activity Monitor, then Calendar and Mail, in Start, with auto-update. **The first release that is valuable on its own.** | First the phase 1 gaps: `ctrl-` twins for every `cmd-` shortcut, an in-window menu strip, `PlaySound` cues, `ISpellChecker` spelling, Import/Export through GPUI prompts, a named-pipe single instance. Then port the remaining app crates; storage, locking and paths on Windows; open/save panels; printing through the Windows PDF path; toasts for Lulo apps; Credential Manager + loopback OAuth; MSIX packaging, signing and `.appinstaller` in CI; a "Lulo apps" behaviour subset under UI Automation | 15–25 | 4–6 weeks |
+| **2. The Lulo apps on Windows** (first slice built: shortcuts, menu strip, single instance, choosers, alert sound) | Download one signed installer and get Mac-feel Notes, TextEdit, Calculator, Preview, Clock, Weather, Terminal (ConPTY), Activity Monitor, then Calendar and Mail, in Start, with auto-update. **The first release that is valuable on its own.** | First the phase 1 gaps: `ctrl-` twins for every `cmd-` shortcut, an in-window menu strip, `PlaySound` cues, `ISpellChecker` spelling, Import/Export through GPUI prompts, a named-pipe single instance. Then port the remaining app crates; storage, locking and paths on Windows; open/save panels; printing through the Windows PDF path; toasts for Lulo apps; Credential Manager + loopback OAuth; MSIX packaging, signing and `.appinstaller` in CI; a "Lulo apps" behaviour subset under UI Automation | 15–25 | 4–6 weeks |
 | **3. The shell alongside Explorer** | The menu bar, Dock, Spotlight, ⌘Tab, Control Centre and Notification Centre on top of Windows, with the taskbar auto-hidden; uninstall restores it | `lulo-session` supervisor + watchdog; AppBar host for the bar and Dock; `rmac-compositor-win32` (EnumWindows, WinEvent hooks, activation); low-level keyboard hook for ⌘ shortcuts and ⌘Tab; Spotlight on Windows Search + Start-menu apps; Control Centre on WlanApi, Bluetooth, Core Audio, power and brightness; Notification Centre on `UserNotificationListener`; Now Playing on GSMTC; the menu bar shows Lulo apps' menus over Lulo's IPC (they already export menus through `rmac-app-menu`, whose D-Bus transport (`zbus`) needs a named-pipe backend), and an App/Window menu for other apps built from UI Automation | 30–45 | 8–12 weeks |
 | **4. Mission Control and the rest** | Mission Control and window previews, Dock minimise into tiles, Quick Look, Files (Finder) on Windows Shell APIs, screenshots, System Settings panes that make sense on Windows | DWM thumbnails, `Windows.Graphics.Capture`, the Finder backend on `IShellItem`, `IThumbnailCache` and NTFS tags; the System Settings pane set mapped to Windows Settings deep links | 25–40 | 6–10 weeks |
 | **5. Optional "Lulo only" mode** | Lulo replaces Explorer as the shell, for kiosks and enthusiasts | `Winlogon\Shell` per user, recovery key, an Explorer fallback watchdog, our own tray host | 10–15 | 3–4 weeks |

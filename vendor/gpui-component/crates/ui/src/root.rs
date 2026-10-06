@@ -12,7 +12,7 @@ use crate::{
 };
 use gpui::{
     Anchor, AnyView, App, AppContext, Bounds, ClipboardItem, Context, DefiniteLength, ElementId,
-    Entity, EntityId, FocusHandle, Hitbox, InteractiveElement, IntoElement, KeyBinding,
+    Entity, EntityId, FocusHandle, Global, Hitbox, InteractiveElement, IntoElement, KeyBinding,
     ParentElement as _, Pixels, Render, StyleRefinement, Styled, WeakEntity, WeakFocusHandle,
     Window, actions, div, prelude::FluentBuilder as _,
 };
@@ -32,12 +32,23 @@ pub(crate) fn init(cx: &mut App) {
     ]);
 }
 
+/// A view the embedding app places above a window's content, such as rmac's
+/// in-window menu strip on Windows (ADR 0023). Set it as a global before
+/// windows open; `Root::new` asks it once per window, and `None` leaves the
+/// window as it was.
+#[derive(Clone)]
+pub struct RootHeader(pub Rc<dyn Fn(&mut Window, &mut App) -> Option<AnyView>>);
+
+impl Global for RootHeader {}
+
 /// Root is a view for the App window for as the top level view (Must be the first view in the window).
 ///
 /// It is used to manage the Sheet, Dialog, and Notification.
 pub struct Root {
     style: StyleRefinement,
     view: AnyView,
+    /// See [`RootHeader`].
+    header: Option<AnyView>,
     pub(crate) active_sheet: Option<ActiveSheet>,
     pub(crate) active_dialogs: Vec<ActiveDialog>,
     pub(super) focused_input: Option<Entity<InputState>>,
@@ -97,9 +108,14 @@ impl Root {
         #[cfg(all(target_os = "macos", not(test)))]
         crate::macos_accessibility::install_window_hit_test_forwarder(window);
 
+        let header = cx
+            .try_global::<RootHeader>()
+            .cloned()
+            .and_then(|header| (header.0)(window, cx));
         Self {
             style: StyleRefinement::default(),
             view: view.into(),
+            header,
             active_sheet: None,
             active_dialogs: Vec::new(),
             focused_input: None,
@@ -567,7 +583,19 @@ impl Render for Root {
             .text_color(cx.theme().foreground)
             .refine_style(&self.style)
             .child(TextSelectionController)
-            .child(self.view.clone())
+            .map(|this| match self.header.clone() {
+                None => this.child(self.view.clone()),
+                // The header paints after the content (column-reverse), so
+                // a menu it opens over the content is on top of it.
+                Some(header) => this.child(
+                    div()
+                        .size_full()
+                        .flex()
+                        .flex_col_reverse()
+                        .child(div().w_full().flex_1().min_h_0().child(self.view.clone()))
+                        .child(header),
+                ),
+            })
             .child(self.tooltip_overlay.clone())
             .child(self.native_menu_overlay.clone());
 

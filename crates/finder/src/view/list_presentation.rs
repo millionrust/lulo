@@ -644,9 +644,9 @@ impl FinderView {
                     .min_h(px(0.0))
                     .overflow_y_scroll()
                     .track_scroll(&self.list_scroll)
-                    .on_scroll_wheel(
-                        cx.listener(|_, _: &gpui::ScrollWheelEvent, _, cx| cx.notify()),
-                    )
+                    .on_scroll_wheel(cx.listener(|this, _: &gpui::ScrollWheelEvent, _, cx| {
+                        this.notify_content(cx)
+                    }))
                     .child(
                         div()
                             .min_h(gpui::relative(1.0))
@@ -690,9 +690,9 @@ impl FinderView {
                         .track_scroll(&self.icon_scroll)
                         // The windowed grid re-picks its rows as it scrolls.
                         .when(icon_window.is_some(), |grid| {
-                            grid.on_scroll_wheel(
-                                cx.listener(|_, _: &gpui::ScrollWheelEvent, _, cx| cx.notify()),
-                            )
+                            grid.on_scroll_wheel(cx.listener(
+                                |this, _: &gpui::ScrollWheelEvent, _, cx| this.notify_content(cx),
+                            ))
                         })
                         .when(
                             options.background == view_options::Background::Colour,

@@ -979,6 +979,16 @@ class InteractionScenarios:
         narrower, so every step is a real configure. Scored on the frame
         budget, with the configures and resizes counted (SPEED-12)."""
 
+        return self._resize_drag_long(edge=False)
+
+    def scenario_resize_drag_edge(self) -> dict[str, Any]:
+        """The same drag from Settings' own right edge (a press just outside
+        the window's geometry, in its client-side resize border), which is
+        how people resize windows: the client starts niri's resize."""
+
+        return self._resize_drag_long(edge=True)
+
+    def _resize_drag_long(self, edge: bool) -> dict[str, Any]:
         binary = self.bin("rmac-system-settings")
         if binary is None:
             raise RuntimeError("rmac-system-settings not found under --bin-dir")
@@ -993,8 +1003,16 @@ class InteractionScenarios:
             start_size = list(size)
             mark = self._mark(trace)
             for offset in (240.0, -240.0):
-                self.input.drag((x, y), (x + offset, y), self.out_w, self.out_h, button="right",
-                                steps=180, step_delay=0.016, modifiers=["alt"])
+                if edge:
+                    layout = (self.window_by_app_id(SETTINGS_APP_ID) or window).get("layout") or {}
+                    pos = layout.get("tile_pos_in_workspace_view") or pos
+                    size = layout.get("window_size") or size
+                    x = float(pos[0]) + float(size[0]) + 3.0
+                    self.input.drag((x, y), (x + offset, y), self.out_w, self.out_h,
+                                    steps=180, step_delay=0.016)
+                else:
+                    self.input.drag((x, y), (x + offset, y), self.out_w, self.out_h, button="right",
+                                    steps=180, step_delay=0.016, modifiers=["alt"])
                 time.sleep(0.3)
             self._settle(trace, 3.0)
             events = self._since(trace, mark)
@@ -1072,5 +1090,6 @@ SCENARIOS: dict[str, str] = {
     "minimise-restore": "scenario_minimise_restore",
     "resize-drag": "scenario_resize_drag",
     "resize-drag-long": "scenario_resize_drag_long",
+    "resize-drag-edge": "scenario_resize_drag_edge",
     "mission-control-animation": "scenario_mission_control_animation",
 }

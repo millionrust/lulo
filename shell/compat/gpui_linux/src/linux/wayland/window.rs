@@ -2507,6 +2507,16 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn start_window_resize(&self, edge: gpui::ResizeEdge) {
+        // rmac: grow the swapchain for the whole drag now, before niri's
+        // first resize configure. Rebuilding it while niri waits for the
+        // answer to that configure blocked for 300–570 ms (SPEED-12); here
+        // nothing is waiting on this window yet. The configure that ends
+        // the drag schedules the shrink.
+        {
+            let mut state = self.borrow_mut();
+            state.interactive_resize = true;
+            size_renderer(&mut state);
+        }
         let state = self.borrow();
         if let Some(toplevel) = state.surface_state.toplevel() {
             toplevel.resize(

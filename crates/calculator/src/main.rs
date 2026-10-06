@@ -117,11 +117,7 @@ fn main() {
             // single window and no document state to restore (unlike
             // Preview's open-file list), so this is the same quit as ⌘Q.
             cx.on_action(|_: &QuitAndKeepWindows, cx| cx.quit());
-            rmac_ui::install_app_instance(
-                CALCULATOR,
-                |_, cx| rmac_ui::activate_app_window(cx),
-                cx,
-            );
+            rmac_ui::install_app_instance(CALCULATOR, |_, cx| rmac_ui::activate_app_window(cx), cx);
             // Basic is the starting mode, so View ▸ Basic is the ticked one.
             rmac_ui::set_menu_checked("calculator::ShowBasic", true, cx);
             rmac_ui::set_menu_checked("calculator::DecimalPlaces8", true, cx);

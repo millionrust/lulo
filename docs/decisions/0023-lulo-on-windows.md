@@ -453,7 +453,7 @@ Preview, Clock, Weather and Terminal, plus real PDF rendering:
   like the poppler subprocesses were. A thread-pool worker may never have touched WinRT
   before, so `winpdf::ensure_winrt_apartment` initialises it (idempotent, never undone) before
   every call. Rendering itself goes through a throwaway temp file rather than an in-memory
-  stream — `PdfPage::RenderToStreamWithOptionsAsync` only renders to a stream either way, and
+  stream — `PdfPage::RenderWithOptionsToStreamAsync` only renders to a stream either way, and
   reading the result back with a plain `std::fs::read` needed no further WinRT calls to get
   wrong. `PdfPage::Size` already reflects the page's own `/Rotate` (unlike poppler's
   `pdfinfo`, which reports the raw media box plus a separate rotation), so `winpdf` reports

@@ -115,7 +115,7 @@ pub fn render_page(
     let width = ((page_size.0 * scale).round().max(1.0)) as u32;
     let height = ((page_size.1 * scale).round().max(1.0)) as u32;
 
-    // `RenderToStreamWithOptionsAsync` only renders to a stream, and a
+    // `RenderWithOptionsToStreamAsync` only renders to a stream, and a
     // plain file read-back afterwards needs no further WinRT calls — one
     // less place for a mismatched API to fail silently.
     let temp = std::env::temp_dir().join(format!(
@@ -123,9 +123,8 @@ pub fn render_page(
         std::process::id()
     ));
     let rendered = render_to_file(&page, &temp, width, height);
-    let bytes = rendered.and_then(|()| {
-        std::fs::read(&temp).map_err(|error| open_error(path, &error.to_string()))
-    });
+    let bytes = rendered
+        .and_then(|()| std::fs::read(&temp).map_err(|error| open_error(path, &error.to_string())));
     let _ = std::fs::remove_file(&temp);
     let bytes = bytes?;
 
@@ -153,7 +152,7 @@ fn render_to_file(page: &PdfPage, temp: &Path, width: u32, height: u32) -> Resul
     let options = PdfPageRenderOptions::new().map_err(fail)?;
     options.SetDestinationWidth(width).map_err(fail)?;
     options.SetDestinationHeight(height).map_err(fail)?;
-    page.RenderToStreamWithOptionsAsync(&stream, &options)
+    page.RenderWithOptionsToStreamAsync(&stream, &options)
         .map_err(fail)?
         .get()
         .map_err(fail)?;
@@ -169,10 +168,8 @@ mod tests {
     /// kind rather than a panic — the same contract poppler's path keeps.
     #[test]
     fn load_pdf_info_reports_an_error_for_a_missing_file() {
-        let error = load_pdf_info(Path::new(
-            r"C:\does\not\exist\rmac-preview-winpdf-test.pdf",
-        ))
-        .unwrap_err();
+        let error = load_pdf_info(Path::new(r"C:\does\not\exist\rmac-preview-winpdf-test.pdf"))
+            .unwrap_err();
         assert!(error.contains("couldn’t be opened"), "{error}");
     }
 }

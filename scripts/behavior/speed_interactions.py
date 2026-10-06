@@ -45,7 +45,7 @@ import subprocess
 import time
 import zlib
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from run_frame_timing import read_trace
 

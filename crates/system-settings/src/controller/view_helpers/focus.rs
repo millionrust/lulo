@@ -185,6 +185,7 @@ pub(in crate::controller) fn focus_urgent_row(
         .into_any_element()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(in crate::controller) fn focus_allowed_app_row(
     mode_id: &str,
     app_id: &str,

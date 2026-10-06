@@ -486,6 +486,7 @@ impl LauncherView {
             pill.child(div().flex_none().ml(px(8.0)).child(Self::result_icon(
                 row,
                 metrics::TOP_HIT_ICON,
+                self.scale_factor,
                 cx,
             )))
         });

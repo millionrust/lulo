@@ -40,7 +40,7 @@ impl Settings {
                     && this.display_confirmation.is_none()
                 {
                     this.finish_display_update(result);
-                    cx.notify();
+                    this.notify_if_showing(&["Displays"], cx);
                 } else {
                     this.display_refresh_pending = true;
                 }

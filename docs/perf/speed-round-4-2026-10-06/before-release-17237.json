@@ -1,0 +1,117 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 5.854071001522243,
+      "first_frame_ms": 277.5078930426389,
+      "first_frame_pass": true,
+      "icons_painted_ms": 686.7948930426389,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 5.6278189877048135,
+          "first_frame_ms": 976.1157800676301,
+          "icons_painted_ms": 1839.7117800676301,
+          "window_listed_ms": 1620.3576039988548
+        },
+        {
+          "backend_init_ms": 5.734328064136207,
+          "first_frame_ms": 203.03197402972728,
+          "icons_painted_ms": 507.60497402972726,
+          "window_listed_ms": 359.0323469834402
+        },
+        {
+          "backend_init_ms": 21.425594110041857,
+          "first_frame_ms": 295.7454411080107,
+          "icons_painted_ms": 647.5554411080107,
+          "window_listed_ms": 494.6113360347226
+        },
+        {
+          "backend_init_ms": 5.854071001522243,
+          "first_frame_ms": 277.5078930426389,
+          "icons_painted_ms": 686.7948930426389,
+          "window_listed_ms": 410.2392001077533
+        },
+        {
+          "backend_init_ms": 6.354011013172567,
+          "first_frame_ms": 256.1327030416578,
+          "icons_painted_ms": 953.9767030416579,
+          "window_listed_ms": 425.5775820929557
+        }
+      ],
+      "window_listed_ms": 425.5775820929557
+    }
+  },
+  "captured_at": "2026-10-06T05:50:41Z",
+  "panels": {},
+  "profile": "release",
+  "repeat": 5,
+  "schema_version": 1,
+  "settings_panes": {
+    "switch_max_ms": 33.232,
+    "switch_ms": 15.939499999999999,
+    "switch_pass": true,
+    "switches": [
+      16.229,
+      33.232,
+      22.646,
+      15.65,
+      9.411,
+      13.829
+    ],
+    "titles": [
+      "General \u2014 Settings",
+      "Accessibility \u2014 Settings",
+      "Appearance \u2014 Settings",
+      "Desktop & Dock \u2014 Settings",
+      "Displays \u2014 Settings",
+      "Touchscreen \u2014 Settings",
+      "Menu Bar \u2014 Settings"
+    ]
+  },
+  "shell": {
+    "dock": {
+      "backend_init_ms": 5.768320988863707,
+      "first_frame_ms": 212.4616310466081,
+      "first_frame_pass": true,
+      "icons_painted_ms": 260.8346310466081,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 5.958187975920737,
+          "first_frame_ms": 317.631988087669,
+          "icons_painted_ms": 442.39498808766905,
+          "window_listed_ms": null
+        },
+        {
+          "backend_init_ms": 5.768320988863707,
+          "first_frame_ms": 226.56047402415425,
+          "icons_painted_ms": 271.35747402415427,
+          "window_listed_ms": null
+        },
+        {
+          "backend_init_ms": 5.76848303899169,
+          "first_frame_ms": 207.68882508855313,
+          "icons_painted_ms": 250.91882508855312,
+          "window_listed_ms": null
+        },
+        {
+          "backend_init_ms": 5.719213047996163,
+          "first_frame_ms": 212.4616310466081,
+          "icons_painted_ms": 260.8346310466081,
+          "window_listed_ms": null
+        },
+        {
+          "backend_init_ms": 5.767936003394425,
+          "first_frame_ms": 203.72281305026263,
+          "icons_painted_ms": 248.31181305026263,
+          "window_listed_ms": null
+        }
+      ],
+      "window_listed_ms": null
+    }
+  },
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

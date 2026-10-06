@@ -373,7 +373,7 @@ class Run:
         sway_conf = self.logs / "sway.conf"
         sway_conf.write_text(
             "xwayland disable\ndefault_border none\ndefault_floating_border none\n"
-            f"output HEADLESS-1 mode {OUTPUT_W}x{OUTPUT_H} position 0 0\n"
+            f"output HEADLESS-1 mode {self.args.output} position 0 0\n"
             "seat seat0 fallback true\nfocus_follows_mouse no\n"
         )
         self.spawn(
@@ -823,6 +823,8 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--json-output", type=Path, required=True)
     parser.add_argument("--markdown-output", type=Path, default=None)
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--output", default="1920x1080",
+                        help="nested output size; the default is the reference laptop's 1080p panel")
     parser.add_argument("--repeat", type=int, default=3,
                         help="launches/opens per item; the median is reported")
     parser.add_argument("--app-env", action="append", default=[], metavar="KEY=VALUE",

@@ -18,15 +18,15 @@ Rules for agents: read only your surface's `##` section; when you fix a gap, set
 
 ### Speed on low-spec PCs
 
-Measured with `scripts/behavior/run_speed_sweep.py`; see docs/perf/speed-round-{1,2,3}-2026-10-06.md.
+Measured with `scripts/behavior/run_speed_sweep.py`; see docs/perf/speed-round-{1,2,3,4}-2026-10-06.md.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
 | SPEED-01 | P1 | M | Fixed `e8f89c51` | Every GPUI process's first window built a Vulkan+GL wgpu instance (EGL plus every Vulkan driver) before its first frame: ~113 ms of a ~160 ms cold first frame. Now Vulkan-first with a full fallback; every app's first frame is 40–65 ms faster (115–267 ms) and a resident panel's first open went from 214–232 ms to 117–131 ms. | `shell/compat/gpui_wgpu/src/wgpu_renderer.rs` |
-| SPEED-02 | P1 | M | Partial (`0fa7b709`, `7f93aada`) | Mac: Settings is complete at first paint. / Lulo: first frame 294 → 205 ms and per-frame GPU 15–60 → 4–20 ms after round 3 (transparent traffic-light paths no longer run a window-sized MSAA pass; the launch Wi-Fi scan repaints only on change), but it still settles at 0.85–1.0 s as data loads keep repainting the window. See docs/perf/speed-round-3-2026-10-06.md. | `crates/system-settings/src/controller` |
-| SPEED-03 | P2 | M | Partial (`552c4b9a`, `e8e4c815`, `877dbeec`) | Panels' repeat opens were 80–116 ms. Shared pipelines, a background GPU context and a 1x1 outside-click catcher bring Spotlight, Control Centre, Notification Centre, Launchpad and App Switcher to 24–31 ms. Left: Mission Control 58 ms. | `shell/compat/gpui_wgpu/src`, `shell/compat/gpui_linux/src/linux/wayland/window.rs`, `shell/bins/rmac-mission-control` |
+| SPEED-02 | P1 | M | Partial (`0fa7b709`, `7f93aada`, `ea2e5573`) | Mac: Settings is complete at first paint. / Lulo: first frame ~205–300 ms; still settles at ~550–690 ms (release, 1080p). Launch loads for hidden panes no longer repaint (`notify_if_showing`), but loads in other closure shapes (system data, hardware, theme) still repaint the whole window, and each frame costs 30–50 ms of layout. See docs/perf/speed-round-4-2026-10-06.md. | `crates/system-settings/src/controller` |
+| SPEED-03 | P2 | M | Partial (`552c4b9a`, `e8e4c815`, `877dbeec`) | Panels' repeat opens were 80–116 ms; Spotlight, Control Centre, Notification Centre, Launchpad and App Switcher are now 24–31 ms. Left: Mission Control 58 ms, dominated by spawning `grim` to capture the output before each open; needs an in-process wlr-screencopy capture. | `shell/bins/rmac-mission-control/src/capture.rs` |
 | SPEED-04 | P2 | S | Fixed `d6a8a341` | Every process loaded all installed Vulkan drivers (~23 ms) and scanned the font database synchronously (~15 ms) before its first window. Now only the present GPUs' drivers load and the font scan runs on its own thread. | `shell/compat/gpui_wgpu/src/{vulkan_drivers,cosmic_text_system}.rs` |
-| SPEED-05 | P2 | M | Partial (`b310522a`) | Mac: the Dock is there at login. / Lulo: was 348 ms to first frame, ~250 ms of it parsing the whole app catalog; the pinned apps are now published first, so 217 ms. Left: it still waits for the appearance portal (~80 ms) before opening a surface. | `crates/rmac-dock-runtime/src/coordinator.rs` (`ready`) |
+| SPEED-05 | P2 | M | Partial (`b310522a`, `d11e0965`) | Mac: the Dock is there at login. / Lulo: 348 → ~210 ms to first frame. It no longer waits for the whole app catalog or the appearance portal; it still waits ~130 ms for the pinned apps' entries (settings, a scan of the application directories, icon resolution) and then sets up two surfaces (~85 ms). | `crates/rmac-dock-runtime/src/sources.rs` |
 
 ### Touch input
 

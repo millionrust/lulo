@@ -47,7 +47,7 @@ impl Settings {
                     this.storage_refresh_pending = true;
                 }
                 this.run_pending_storage_refresh(cx);
-                cx.notify();
+                this.notify_if_showing(&[], cx);
             });
         })
         .detach();

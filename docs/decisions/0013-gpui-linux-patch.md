@@ -318,6 +318,13 @@ first text call; and, on single-GPU machines, the Vulkan device made on a
 thread as soon as the Wayland client connects, taken and surface-checked by
 the first window.
 
+Round 3 (docs/perf/speed-round-3-2026-10-06.md): the renderer skips path
+batches whose paths are all fully transparent and only creates the path
+textures when a frame has a visible path; and a window whose app id is
+rmac-ui's outside-click catcher (`dev.rmac.OutsideClickCatcher`, kept in step
+with `crates/rmac-ui/src/runtime.rs`) gets a 1x1 buffer that its
+`wp_viewport` stretches over the display.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and `gpui_wgpu` and

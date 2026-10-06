@@ -15,7 +15,16 @@ impl Settings {
                         if this.apply_shell_settings_stream_update(update, cx) {
                             this.refresh_wallpaper_preview(cx);
                         }
-                        cx.notify();
+                        this.notify_if_showing(
+                            &[
+                                "Wallpaper",
+                                "Desktop & Dock",
+                                "Menu Bar",
+                                "Spotlight",
+                                "Date & Time",
+                            ],
+                            cx,
+                        );
                     })
                     .is_err()
                 {

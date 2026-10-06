@@ -83,7 +83,7 @@ impl Settings {
                                     );
                                 }
                             }
-                            cx.notify();
+                            this.notify_if_showing(&["General"], cx);
                         })
                         .is_err()
                     {
@@ -120,7 +120,7 @@ impl Settings {
                                     );
                                 }
                             }
-                            cx.notify();
+                            this.notify_if_showing(&[], cx);
                         })
                         .is_err()
                     {
@@ -174,7 +174,7 @@ impl Settings {
                                 );
                             }
                         }
-                        cx.notify();
+                        this.notify_if_showing(&["Privacy & Security"], cx);
                     })
                     .is_err()
                 {
@@ -237,7 +237,7 @@ impl Settings {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
                                 this.queue_time_stream_refresh(cx);
-                                cx.notify();
+                                this.notify_if_showing(&["Date & Time"], cx);
                             })
                             .is_err()
                         {
@@ -253,7 +253,7 @@ impl Settings {
                                 this.time_stream_error = Some(
                                     "Live date and time updates are temporarily unavailable".into(),
                                 );
-                                cx.notify();
+                                this.notify_if_showing(&["Date & Time"], cx);
                             })
                             .is_err()
                         {

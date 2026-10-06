@@ -242,7 +242,7 @@ impl Settings {
                                 );
                             }
                         }
-                        cx.notify();
+                        this.notify_if_showing(&["Accessibility", "Appearance"], cx);
                     })
                     .is_err()
                 {
@@ -292,7 +292,7 @@ impl Settings {
                                 );
                             }
                         }
-                        cx.notify();
+                        this.notify_if_showing(&["Accessibility"], cx);
                     })
                     .is_err()
                 {

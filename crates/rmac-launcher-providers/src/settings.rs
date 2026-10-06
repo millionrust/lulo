@@ -42,7 +42,7 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "network",
             "Network",
-            "Ethernet, DNS, and proxy settings",
+            "Ethernet, DNS and proxy settings",
             &["ethernet", "dns", "proxy", "connection"],
         ),
         (
@@ -54,13 +54,13 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "battery",
             "Battery",
-            "Energy use and power behavior",
+            "Energy use and power behaviour",
             &["power", "energy", "charging"],
         ),
         (
             "general",
             "General",
-            "System information, updates, and storage",
+            "System information, updates and storage",
             &["about", "update", "storage", "system information", "backup"],
         ),
         (
@@ -72,7 +72,7 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "language-region",
             "Language & Region",
-            "Language, formats, and keyboard layouts",
+            "Language, formats and keyboard layouts",
             &["locale", "formats", "region", "xkb", "input source"],
         ),
         (
@@ -90,7 +90,7 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "accessibility",
             "Accessibility",
-            "Vision, hearing, motor, and speech support",
+            "Vision, hearing, motor and speech support",
             &[
                 "screen reader",
                 "zoom",
@@ -102,25 +102,25 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "appearance",
             "Appearance",
-            "Light, dark, accent, and interface style",
+            "Light, dark, accent and interface style",
             &["theme", "dark mode", "light mode", "accent", "color"],
         ),
         (
             "desktop-dock",
             "Desktop & Dock",
-            "Dock, windows, workspaces, and desktop behavior",
+            "Dock, windows, workspaces and desktop behaviour",
             &["dock", "windows", "workspace", "autohide", "magnification"],
         ),
         (
             "displays",
             "Displays",
-            "Resolution, scale, arrangement, and brightness",
+            "Resolution, scale, arrangement and brightness",
             &["monitor", "screen", "resolution", "scaling", "brightness"],
         ),
         (
             "menu-bar",
             "Menu Bar",
-            "Status items, battery percentage, and clock seconds",
+            "Status items, battery percentage and clock seconds",
             &[
                 "menu bar",
                 "status bar",
@@ -132,7 +132,7 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "spotlight",
             "Spotlight",
-            "Search providers, privacy, exclusions, and shortcut",
+            "Search providers, privacy, exclusions and shortcut",
             &[
                 "search", "launcher", "indexing", "privacy", "exclude", "shortcut",
             ],
@@ -146,31 +146,31 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "notifications",
             "Notifications",
-            "Alerts, banners, and application policy",
+            "Alerts, banners and application policy",
             &["alerts", "banners", "notification center"],
         ),
         (
             "sound",
             "Sound",
-            "Output, input, effects, and volume",
+            "Output, input, effects and volume",
             &["volume", "speaker", "microphone", "audio", "mute"],
         ),
         (
             "keyboard",
             "Keyboard",
-            "Key repeat, input, and shortcuts",
+            "Key repeat, input and shortcuts",
             &["keys", "repeat", "input source", "shortcut"],
         ),
         (
             "mouse",
             "Mouse",
-            "Pointer, scrolling, acceleration, and buttons",
+            "Pointer, scrolling, acceleration and buttons",
             &["pointer", "scroll", "click", "acceleration"],
         ),
         (
             "trackpad",
             "Trackpad",
-            "Tracking, tapping, scrolling, and gestures",
+            "Tracking, tapping, scrolling and gestures",
             &["touchpad", "gesture", "tap", "scroll"],
         ),
         (
@@ -182,13 +182,13 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "lock-screen",
             "Lock Screen",
-            "Lock, login, and idle timeout behavior",
+            "Lock, login and idle timeout behaviour",
             &["lock", "login", "password", "timeout", "idle"],
         ),
         (
             "privacy-security",
             "Privacy & Security",
-            "Permissions, firewall, and system security",
+            "Permissions, firewall and system security",
             &[
                 "permissions",
                 "firewall",
@@ -206,13 +206,13 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "users-groups",
             "Users & Groups",
-            "Users, pictures, and automatic login",
+            "Users, pictures and automatic login",
             &["users", "accounts", "add user", "automatic login", "admin"],
         ),
         (
             "printers-scanners",
             "Printers & Scanners",
-            "Printers, print queues, and paper size",
+            "Printers, print queues and paper size",
             &["printer", "print", "cups", "paper size", "airprint"],
         ),
     ]

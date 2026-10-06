@@ -1965,10 +1965,6 @@ const MAIL_MENUS: &[MenuSpec] = &[
         items: &[item!("Settings…", "mail::ShowSettings", "⌘,")],
     },
     MenuSpec {
-        label: "Edit",
-        items: &[item!("Undo", "mail::Undo", "⌘Z")],
-    },
-    MenuSpec {
         label: "File",
         items: &[
             item!("New Message", "mail::NewMessage", "⌘N"),
@@ -1977,14 +1973,15 @@ const MAIL_MENUS: &[MenuSpec] = &[
         ],
     },
     MenuSpec {
-        label: "Message",
+        label: "Edit",
+        items: &[item!("Undo", "mail::Undo", "⌘Z")],
+    },
+    MenuSpec {
+        label: "View",
         items: &[
-            item!("Send", "mail::SendMessage", "⇧⌘D"),
-            item!("Reply", "mail::Reply", "⌘R", separator),
-            item!("Reply All", "mail::ReplyAll", "⇧⌘R"),
-            item!("Forward", "mail::Forward", "⇧⌘F", separator),
-            item!("Mark as Read or Unread", "mail::ToggleRead", "⇧⌘U"),
-            item!("Flag", "mail::Flag", "⇧⌘L", separator),
+            item!("Organize by Conversation", "mail::ToggleThreads", ""),
+            item!("Filter Unread", "mail::ToggleUnreadFilter", ""),
+            item!("Search", "mail::Search", "⌘F"),
         ],
     },
     MenuSpec {
@@ -1998,11 +1995,39 @@ const MAIL_MENUS: &[MenuSpec] = &[
         ],
     },
     MenuSpec {
-        label: "View",
+        label: "Message",
         items: &[
-            item!("Organize by Conversation", "mail::ToggleThreads", ""),
-            item!("Filter Unread", "mail::ToggleUnreadFilter", ""),
-            item!("Search", "mail::Search", "⌘F"),
+            item!("Send", "mail::SendMessage", "⇧⌘D"),
+            item!("Reply", "mail::Reply", "⌘R", separator),
+            item!("Reply All", "mail::ReplyAll", "⇧⌘R"),
+            item!("Forward", "mail::Forward", "⇧⌘F", separator),
+            item!("Mark as Read or Unread", "mail::ToggleRead", "⇧⌘U"),
+            item!("Flag", "mail::Flag", "⇧⌘L", separator),
+        ],
+    },
+    // Mail composes plain text, so Format offers what plain text supports:
+    // Mac Mail's Indentation and Quote Level submenus. Fonts, Colours,
+    // Lists, Style and Alignment need a rich-text body and stay out until
+    // the composer has one.
+    MenuSpec {
+        label: "Format",
+        items: &[
+            submenu!(
+                "Indentation",
+                "mail::IndentationMenu",
+                [
+                    item!("Increase", "mail::IncreaseIndentation", "⌘]"),
+                    item!("Decrease", "mail::DecreaseIndentation", "⌘["),
+                ]
+            ),
+            submenu!(
+                "Quote Level",
+                "mail::QuoteLevelMenu",
+                [
+                    item!("Increase", "mail::IncreaseQuoteLevel", "⌘'"),
+                    item!("Decrease", "mail::DecreaseQuoteLevel", "⌥⌘'"),
+                ]
+            ),
         ],
     },
     MenuSpec {
@@ -4057,6 +4082,20 @@ mod tests {
             .items
             .iter()
             .any(|item| { item.action == "mail::ToggleThreads" })));
+        // UIA-24: the Mac's menu order, with Format before Window.
+        assert_eq!(
+            MAIL_MENUS.iter().map(|menu| menu.label).collect::<Vec<_>>(),
+            [
+                APPLICATION_MENU,
+                "File",
+                "Edit",
+                "View",
+                "Mailbox",
+                "Message",
+                "Format",
+                WINDOW_MENU
+            ]
+        );
     }
 
     #[test]

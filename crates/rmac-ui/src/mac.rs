@@ -341,6 +341,12 @@ fn dark_scheme() -> bool {
     crate::theme::current().color_scheme == rmac_appearance::ResolvedColorScheme::Dark
 }
 
+/// Whether the resolved appearance is Dark, for surfaces whose measured
+/// Light and Dark materials are not (yet) theme tokens.
+pub fn is_dark() -> bool {
+    dark_scheme()
+}
+
 /// A title-bar window's title (TextEdit, Terminal): #9F9EAB in the key
 /// window and #64636F behind it, measured on the tinted dark bar
 /// (design-lab/chrome.html, design-lab/apps.html). Light is S.

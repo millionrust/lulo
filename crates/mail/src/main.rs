@@ -37,7 +37,11 @@ gpui::actions!(
         Search,
         SendMessage,
         AttachFile,
-        ShowSettings
+        ShowSettings,
+        IncreaseIndentation,
+        DecreaseIndentation,
+        IncreaseQuoteLevel,
+        DecreaseQuoteLevel
     ]
 );
 
@@ -193,6 +197,10 @@ fn main() {
                 KeyBinding::new("cmd-shift-f", Forward, Some("Mail")),
                 KeyBinding::new("cmd-shift-d", SendMessage, Some("MailCompose")),
                 KeyBinding::new("cmd-shift-a", AttachFile, Some("MailCompose")),
+                KeyBinding::new("cmd-]", IncreaseIndentation, Some("MailCompose")),
+                KeyBinding::new("cmd-[", DecreaseIndentation, Some("MailCompose")),
+                KeyBinding::new("cmd-'", IncreaseQuoteLevel, Some("MailCompose")),
+                KeyBinding::new("alt-cmd-'", DecreaseQuoteLevel, Some("MailCompose")),
                 KeyBinding::new("down", NextMessage, Some("Mail")),
                 KeyBinding::new("up", PreviousMessage, Some("Mail")),
                 KeyBinding::new("cmd-w", CloseWindow, Some("Mail")),

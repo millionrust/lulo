@@ -283,7 +283,18 @@ impl LauncherView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let primary_id = row.id.clone();
-        let subtitle = row.subtitle.clone().filter(|subtitle| !subtitle.is_empty());
+        // macOS shows an app result as its name alone (UIA-21); the generic
+        // name ("Calculator / Calculator") would only repeat it.
+        let subtitle = row
+            .subtitle
+            .clone()
+            .filter(|subtitle| !subtitle.is_empty())
+            .filter(|_| row.category != Category::Applications);
+        let accessible_label = match (&subtitle, row.category) {
+            (Some(subtitle), _) => format!("{}, {subtitle}", row.title),
+            (None, Category::Applications) => format!("{}, Application", row.title),
+            (None, _) => row.title.clone(),
+        };
         let detail_color = if state == RowState::Keyboard {
             keyboard_subtitle()
         } else {
@@ -323,10 +334,7 @@ impl LauncherView {
         div()
             .id(SharedString::from(format!("spotlight-result-{index}")))
             .role(Role::Button)
-            .aria_label(match &row.subtitle {
-                Some(subtitle) => format!("{}, {subtitle}", row.title),
-                None => row.title.clone(),
-            })
+            .aria_label(accessible_label)
             .aria_selected(row.selected)
             .relative()
             .flex_none()

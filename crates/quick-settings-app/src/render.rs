@@ -34,43 +34,54 @@ fn color(value: u32) -> Hsla {
     rgba(value).into()
 }
 
-/// Everything behind the modules is darkened ≈ 38 % on the Mac.
+/// The measured Dark value, or its Light counterpart: in Light, Control
+/// Centre is light frosted glass with dark labels (UIA-19).
+fn scheme(dark: u32, light: u32) -> Hsla {
+    color(if mac::is_dark() { dark } else { light })
+}
+
+/// Everything behind the modules is darkened ≈ 38 % on the Mac in Dark;
+/// Light frosts it white instead.
 fn backdrop() -> Hsla {
-    color(0x0000_0061)
+    scheme(0x0000_0061, 0xf6f6_f6a6)
 }
 /// Module glass: white 15.8 % over the darkened backdrop.
 fn module_fill() -> Hsla {
-    color(0xffff_ff28)
+    scheme(0xffff_ff28, 0xffff_ff8c)
 }
 /// 1 pt module rim, white ≈ 34 %.
 fn module_rim() -> Hsla {
-    color(0xffff_ff57)
+    scheme(0xffff_ff57, 0xffff_ffcc)
 }
-/// Off icon circles and accessory circles: white 24.5 %.
+/// Off icon circles and accessory circles: white 24.5 % (black 8 % in Light).
 fn circle_off() -> Hsla {
-    color(0xffff_ff3e)
+    scheme(0xffff_ff3e, 0x0000_0014)
+}
+/// Glyphs and labels on the glass: white in Dark, near-black in Light.
+fn ink() -> Hsla {
+    scheme(0xffff_ffff, 0x1d1d_1fff)
 }
 /// On icon circles are white with a system-blue glyph.
 fn glyph_on() -> Hsla {
     color(0x007a_ffff)
 }
 fn title_text() -> Hsla {
-    color(0xffff_ffe6)
+    scheme(0xffff_ffe6, 0x0000_00d9)
 }
 fn subtitle_text() -> Hsla {
-    color(0xffff_ffb3)
+    scheme(0xffff_ffb3, 0x0000_0080)
 }
 /// Unavailable transport glyphs, white ≈ 40 %.
 fn dim_glyph() -> Hsla {
-    color(0xffff_ff66)
+    scheme(0xffff_ff66, 0x0000_0040)
 }
-/// Slider track, black 43 %.
+/// Slider track, black 43 % (black 20 % under Light's white fill).
 fn slider_track() -> Hsla {
-    color(0x0000_006e)
+    scheme(0x0000_006e, 0x0000_0033)
 }
 /// Now Playing artwork placeholder, white 13.5 %.
 fn artwork_fill() -> Hsla {
-    color(0xffff_ff22)
+    scheme(0xffff_ff22, 0x0000_0012)
 }
 
 /// A text line placed so its baseline lands `baseline` below the parent's
@@ -249,7 +260,7 @@ impl Render for QuickSettingsView {
             .overflow_hidden()
             .rounded(px(layout::SURFACE_RADIUS as f32))
             .bg(backdrop())
-            .text_color(mac::white())
+            .text_color(ink())
             .font_family(rmac_ui::UI_FONT)
             .child(
                 div()

@@ -20,6 +20,14 @@ struct SpotlightAssets;
 #[include = "org.rmac.Files.svg"]
 struct AppIcons;
 
+/// System Settings' own sidebar glyphs, so a Settings result shows its
+/// pane's icon (UIA-21). The same files the Settings app embeds.
+#[derive(rust_embed::RustEmbed)]
+#[folder = "../system-settings/assets/icons"]
+#[prefix = "spotlight/settings/"]
+#[include = "*.svg"]
+struct PaneIcons;
+
 pub(crate) struct Assets;
 
 impl AssetSource for Assets {
@@ -28,6 +36,9 @@ impl AssetSource for Assets {
             return Ok(Some(asset.data));
         }
         if let Some(asset) = AppIcons::get(path) {
+            return Ok(Some(asset.data));
+        }
+        if let Some(asset) = PaneIcons::get(path) {
             return Ok(Some(asset.data));
         }
         // Quick Look (⌘Y) opens from this process and draws its own glyphs.
@@ -40,6 +51,7 @@ impl AssetSource for Assets {
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         let mut assets = SpotlightAssets::iter()
             .chain(AppIcons::iter())
+            .chain(PaneIcons::iter())
             .filter(|asset| asset.starts_with(path))
             .map(|asset| SharedString::from(asset.to_string()))
             .collect::<Vec<_>>();

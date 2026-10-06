@@ -20,6 +20,25 @@ impl LauncherView {
                 .flex_none()
                 .into_any_element();
         }
+        if row.category == Category::Settings {
+            if let Some((glyph, tint)) = settings_pane_icon(&row.id.local) {
+                return div()
+                    .size(px(size))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(size * 0.22))
+                    .bg(tint)
+                    .child(
+                        svg()
+                            .path(glyph)
+                            .size(px(size * 0.6))
+                            .text_color(mac::on_accent()),
+                    )
+                    .into_any_element();
+            }
+        }
         if let Some(asset) = category_icon(row.category) {
             return rmac_ui::svg_icon(asset, size, scale_factor, cx)
                 .size(px(size))
@@ -298,6 +317,45 @@ pub(super) fn category_icon(category: Category) -> Option<&'static str> {
     }
 }
 
+/// Each System Settings pane's own sidebar icon and tint (the same glyphs
+/// and colours as `system-settings`' sidebar), so a Settings result shows
+/// the pane's icon as macOS does rather than one generic gear (UIA-21).
+pub(super) fn settings_pane_icon(pane_id: &str) -> Option<(&'static str, Hsla)> {
+    let blue = mac::system_blue;
+    let gray = mac::system_gray;
+    let (glyph, tint): (&'static str, fn() -> Hsla) = match pane_id {
+        "wifi" => ("spotlight/settings/wifi.svg", blue),
+        "bluetooth" => ("spotlight/settings/bluetooth.svg", blue),
+        "network" | "internet-accounts" | "sharing" => ("spotlight/settings/globe.svg", blue),
+        "vpn" => ("spotlight/settings/key.svg", blue),
+        "battery" => ("spotlight/settings/battery-charging.svg", mac::system_green),
+        "general" => ("spotlight/settings/settings.svg", gray),
+        "date-time" => ("spotlight/settings/clock.svg", blue),
+        "language-region" => ("spotlight/settings/languages.svg", blue),
+        "login-items" => ("spotlight/settings/app-window.svg", blue),
+        "accessibility" => ("spotlight/settings/accessibility.svg", blue),
+        "appearance" => ("spotlight/settings/palette.svg", mac::black),
+        "desktop-dock" => ("spotlight/settings/app-window.svg", mac::black),
+        "displays" | "touchscreen" => ("spotlight/settings/monitor.svg", blue),
+        "menu-bar" => ("spotlight/settings/panel-top.svg", gray),
+        "spotlight" => ("spotlight/settings/search.svg", blue),
+        "wallpaper" => ("spotlight/settings/image.svg", mac::system_teal),
+        "notifications" => ("spotlight/settings/bell.svg", mac::system_red),
+        "sound" => ("spotlight/settings/volume-2.svg", mac::system_pink),
+        "focus" => ("spotlight/settings/moon.svg", mac::system_indigo),
+        "lock-screen" => ("spotlight/settings/lock.svg", mac::black),
+        "privacy-security" => ("spotlight/settings/shield.svg", blue),
+        "login-password" => ("spotlight/settings/key.svg", mac::system_red),
+        "users-groups" => ("spotlight/settings/users.svg", blue),
+        "keyboard" => ("spotlight/settings/keyboard.svg", gray),
+        "mouse" => ("spotlight/settings/mouse.svg", gray),
+        "trackpad" => ("spotlight/settings/touchpad.svg", gray),
+        "printers-scanners" => ("spotlight/settings/printer.svg", gray),
+        _ => return None,
+    };
+    Some((glyph, tint()))
+}
+
 /// Section header: 11 pt semibold label tertiary, set on the row inset.
 fn section_label(label: impl Into<SharedString>) -> impl IntoElement {
     div()
@@ -311,4 +369,22 @@ fn section_label(label: impl Into<SharedString>) -> impl IntoElement {
         .font_weight(mac::SEMIBOLD)
         .text_color(mac::text_tertiary())
         .child(label.into())
+}
+
+#[cfg(test)]
+mod pane_icon_tests {
+    use gpui::AssetSource as _;
+
+    /// Every pane Spotlight can return has its own embedded glyph.
+    #[test]
+    fn every_settings_result_has_its_pane_glyph() {
+        for entry in rmac_launcher_providers::system_settings_entries() {
+            let (glyph, _) = super::settings_pane_icon(&entry.pane_id)
+                .unwrap_or_else(|| panic!("no icon for {}", entry.pane_id));
+            assert!(
+                crate::assets::Assets.load(glyph).unwrap().is_some(),
+                "{glyph}"
+            );
+        }
+    }
 }

@@ -173,10 +173,10 @@ impl QuickSettingsView {
                 ACCESSORY / 2.0,
                 accessory_width,
                 accessory_height,
-                mac::white(),
+                ink(),
             ));
         let glyph = |(path, centre, width, height): (&'static str, f32, f32, f32)| {
-            glyph_at(path, centre, TRACK_CENTRE, width, height, mac::white())
+            glyph_at(path, centre, TRACK_CENTRE, width, height, ink())
         };
         module(0.0, y, GRID_WIDTH, CELL, layout::MODULE_RADIUS as f32)
             .when(ring, |module| module.shadow(mac::focus_ring_shadow()))

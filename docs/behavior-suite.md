@@ -292,7 +292,9 @@ warm-up. It exercises outside-click and Escape dismissal for the Lulo menu,
 Wi-Fi, Bluetooth, Sound, the Dock context menu, Spotlight, Apps, Control
 Center, and Notification Center. It also checks title re-click and switching,
 wallpaper clicks on both sides of the top bar's surface boundary, a click on
-another window, and a Dock click. See
+another window, and a Dock click. `--only focus-return` checks that Esc on
+the Lulo menu and on the Wi-Fi menu hands the keyboard back to the window
+the menu opened over (UIA-14). See
 `tests/behavior/shell/menu-dismissal.md` for the scenario. Control Center's
 appearance is checked with a screenshot crop; the other layer popovers are
 checked through niri's layer list. `--bin-dir` must hold `top-bar`, `dock`,

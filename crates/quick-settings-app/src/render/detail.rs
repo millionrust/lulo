@@ -20,19 +20,19 @@ const TRACK_HEIGHT_BULGED: f32 = 8.0;
 
 /// Separators read #48494D over the #383A3F panel: white ≈ 8 %.
 fn separator() -> Hsla {
-    color(0xffff_ff14)
+    scheme(0xffff_ff14, 0x0000_0014)
 }
 /// Section headings, white ≈ 80 %.
 fn heading_text() -> Hsla {
-    color(0xffff_ffcc)
+    scheme(0xffff_ffcc, 0x0000_00b3)
 }
 /// Row names, white ≈ 92 %.
 fn row_text() -> Hsla {
-    color(0xffff_ffeb)
+    scheme(0xffff_ffeb, 0x0000_00d9)
 }
 /// Pointer-over row fill (S).
 fn row_hover() -> Hsla {
-    color(0xffff_ff1a)
+    scheme(0xffff_ff1a, 0x0000_000f)
 }
 
 /// One line of text in a box `height` tall, vertically centred.
@@ -114,7 +114,7 @@ impl QuickSettingsView {
                         g::CIRCLE / 2.0,
                         width,
                         height,
-                        if row.on { glyph_on() } else { mac::white() },
+                        if row.on { glyph_on() } else { ink() },
                     )),
             )
             .child(
@@ -267,21 +267,14 @@ impl QuickSettingsView {
         let increment_view = cx.entity().downgrade();
         let decrement_view = cx.entity().downgrade();
         layer()
-            .child(glyph_at(
-                "cc/speaker.svg",
-                20.0,
-                centre,
-                8.5,
-                12.5,
-                mac::white(),
-            ))
+            .child(glyph_at("cc/speaker.svg", 20.0, centre, 8.5, 12.5, ink()))
             .child(glyph_at(
                 "cc/speaker-wave.svg",
                 g::SLIDER_LEFT + g::SLIDER_WIDTH + 16.0,
                 centre,
                 20.0,
                 14.5,
-                mac::white(),
+                ink(),
             ))
             .child(
                 div()

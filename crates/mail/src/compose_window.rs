@@ -5,12 +5,13 @@ use std::time::Duration;
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, ClickEvent, Context, Entity,
-    FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, ParentElement as _, Render,
-    Role, StatefulInteractiveElement as _, Styled as _, Window,
+    EntityInputHandler as _, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, Role, StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_editor::InputState;
 use rmac_mail::compose::{
-    addresses, apply_completion, complete, completion_query, initial_draft, ComposeKind, Recipient,
+    addresses, apply_completion, complete, completion_query, format_lines, initial_draft,
+    ComposeKind, LineFormat, Recipient,
 };
 use rmac_mail::Message;
 use rmac_mail_mime::Draft;
@@ -18,7 +19,8 @@ use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, Root, TextField};
 
 use crate::{
     delivery::{ComposeAccount, DeliveryResult, DraftLocation, PendingAttachment},
-    AttachFile, CloseWindow, SendMessage,
+    AttachFile, CloseWindow, DecreaseIndentation, DecreaseQuoteLevel, IncreaseIndentation,
+    IncreaseQuoteLevel, SendMessage,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -425,6 +427,22 @@ impl ComposeView {
         .detach();
     }
 
+    /// Format ▸ Indentation and Quote Level: reformat every line the body's
+    /// selection touches, keep those lines selected, and record one undo step.
+    fn format_body(&mut self, format: LineFormat, window: &mut Window, cx: &mut Context<Self>) {
+        self.body.update(cx, |state, cx| {
+            let text = state.value().to_string();
+            let Some((range, replaced)) = format_lines(&text, state.selected_range(), format)
+            else {
+                return;
+            };
+            let start = range.start;
+            state.set_selected_range(range, cx);
+            state.replace_text_in_range(None, &replaced, window, cx);
+            state.set_selected_range(start..start + replaced.len(), cx);
+        });
+    }
+
     fn remove_attachment(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.attachments.len() {
             self.attachments.remove(index);
@@ -642,6 +660,18 @@ impl Render for ComposeView {
             .key_context("MailCompose")
             .on_action(cx.listener(|this, _: &SendMessage, _, cx| this.send(cx)))
             .on_action(cx.listener(|this, _: &AttachFile, _, cx| this.attach_files(cx)))
+            .on_action(cx.listener(|this, _: &IncreaseIndentation, window, cx| {
+                this.format_body(LineFormat::IncreaseIndent, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DecreaseIndentation, window, cx| {
+                this.format_body(LineFormat::DecreaseIndent, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &IncreaseQuoteLevel, window, cx| {
+                this.format_body(LineFormat::IncreaseQuote, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DecreaseQuoteLevel, window, cx| {
+                this.format_body(LineFormat::DecreaseQuote, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| this.close(window, cx)))
             .on_action(
                 cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| this.close(window, cx)),

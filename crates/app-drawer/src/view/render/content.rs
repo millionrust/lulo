@@ -43,6 +43,27 @@ fn icon_plate_edge(size: f32) -> f32 {
     (size - ICON_INSET).max(0.0)
 }
 
+/// The generic application icon the Dock draws for an app that ships no
+/// artwork (or names a theme icon the icon theme lacks), as the Mac does.
+/// Installed with the session package; debug builds also find the source
+/// copy.
+fn generic_application_icon() -> Option<&'static std::path::Path> {
+    static ICON: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    ICON.get_or_init(|| {
+        let installed = std::path::PathBuf::from("/usr/share/rmac/dock/icons/application.svg");
+        #[cfg(debug_assertions)]
+        let candidates = [
+            installed,
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../rmac-dock/assets/icons/application.svg"),
+        ];
+        #[cfg(not(debug_assertions))]
+        let candidates = [installed];
+        candidates.into_iter().find(|path| path.is_file())
+    })
+    .as_deref()
+}
+
 fn third_party_art_edge(size: f32) -> f32 {
     let scale = rmac_icon::third_party_plate(rmac_icon::IconShape::Other).unwrap_or(1.0);
     icon_plate_edge(size) * scale
@@ -66,6 +87,19 @@ impl AppDrawer {
             .flex()
             .items_center()
             .justify_center();
+
+        if app.icon.is_none() {
+            if let Some(path) = generic_application_icon() {
+                return frame
+                    .child(
+                        rmac_ui::svg_icon(path.to_path_buf(), plate_edge, self.scale_factor, cx)
+                            .w(px(plate_edge))
+                            .h(px(plate_edge))
+                            .object_fit(ObjectFit::Contain),
+                    )
+                    .into_any_element();
+            }
+        }
 
         if app.first_party {
             return frame

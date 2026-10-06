@@ -13,3 +13,6 @@ must close on an outside click and Escape. The runner also checks clicks on
 wallpaper inside and below the top bar's own layer, and on another window.
 Inside Control Centre, Esc in Sound's output list must return to the grid and
 a second Esc must close Control Centre.
+Esc on the Lulo menu and on the Wi-Fi menu must hand the keyboard back to the
+window the menu opened over, as macOS keeps that window key (UIA-14): a probe
+window loses niri focus while the menu is open and has it again after Esc.

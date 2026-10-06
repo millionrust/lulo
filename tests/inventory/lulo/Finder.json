@@ -151,6 +151,20 @@
           "children": []
         },
         {
+          "label": "Show Inspector",
+          "action": "finder::ShowInspector",
+          "shortcut": "⌥⌘I",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Get Summary Info",
+          "action": "finder::GetSummaryInfo",
+          "shortcut": "⌃⌘I",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Quick Look",
           "action": "finder::QuickLook",
           "shortcut": "⌘Y",
@@ -182,6 +196,13 @@
           "label": "Duplicate",
           "action": "finder::Duplicate",
           "shortcut": "⌘D",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Duplicate Exactly",
+          "action": "finder::DuplicateExactly",
+          "shortcut": "⌥⇧⌘D",
           "separator_before": false,
           "children": []
         },
@@ -903,6 +924,13 @@
           "children": []
         },
         {
+          "label": "Show Progress Window",
+          "action": "finder::ShowProgressWindow",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Show Previous Tab",
           "action": "finder::PreviousTab",
           "shortcut": "",
@@ -1144,6 +1172,10 @@
         "label": "Get Info"
       },
       {
+        "type": "item",
+        "label": "Show Inspector"
+      },
+      {
         "type": "command_item",
         "label": "Rename"
       },
@@ -1154,6 +1186,10 @@
       {
         "type": "command_item",
         "label": "Duplicate"
+      },
+      {
+        "type": "item",
+        "label": "Duplicate Exactly"
       },
       {
         "type": "item",
@@ -1227,6 +1263,10 @@
         "label": "Get Info"
       },
       {
+        "type": "item",
+        "label": "Show Inspector"
+      },
+      {
         "type": "command_item",
         "label": "Rename"
       },
@@ -1237,6 +1277,10 @@
       {
         "type": "command_item",
         "label": "Duplicate"
+      },
+      {
+        "type": "item",
+        "label": "Duplicate Exactly"
       },
       {
         "type": "item",

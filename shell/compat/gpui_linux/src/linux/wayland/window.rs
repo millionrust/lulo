@@ -2199,6 +2199,9 @@ impl PlatformWindow for WaylandWindow {
         let needs_redraw = state.renderer.needs_redraw();
         state.force_render_after_recovery =
             force_render_after_draw(state.renderer_presented, needs_redraw);
+        if state.force_render_after_recovery {
+            super::frame_trace::record("force_render");
+        }
     }
 
     fn completed_frame(&self) {

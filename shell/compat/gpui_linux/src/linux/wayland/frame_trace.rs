@@ -15,7 +15,10 @@
 //     or not it changes what the window draws (a window drawn active from
 //     its first frame records `focus_in` and draws nothing for it);
 // and, for every toplevel configure and size or scale change:
-//   - `configure` / `resize`.
+//   - `configure` / `resize`;
+// and when a drawn frame leaves the next one to re-render the whole scene
+// (a dropped or suboptimal swapchain image):
+//   - `force_render`.
 // and, once each, the startup phases before the first frame (for
 // scripts/behavior/run_speed_sweep.py's cold-launch breakdown):
 //   - `common_start` / `common_ready`: around `LinuxCommon::new`, which

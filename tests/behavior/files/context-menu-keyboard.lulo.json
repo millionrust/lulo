@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "scenario": "files/context-menu-keyboard",
+  "platform": "Lulo",
+  "observations": {
+    "open": {
+      "menu": {
+        "present": true,
+        "items": [
+          "Open",
+          "Duplicate",
+          "label",
+          "Tags…",
+          "Quick Actions"
+        ]
+      }
+    },
+    "chosen": {
+      "menu": {"present": false},
+      "files": {"entries": ["report copy.txt", "report.txt"]},
+      "selection": {"items": ["report copy.txt"]}
+    }
+  }
+}

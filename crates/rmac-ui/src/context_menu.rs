@@ -15,9 +15,9 @@
 
 use gpui::{
     anchored, canvas, deferred, div, point, prelude::FluentBuilder as _, px, size, Action,
-    AnyElement, AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, Context, ElementId,
-    EntityId, FocusHandle, Focusable, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    KeyDownEvent, MouseButton, ParentElement as _, Pixels, Point, Render, Role, SharedString, Size,
+    AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, Context, ElementId, EntityId,
+    FocusHandle, Focusable, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent,
+    MouseButton, ParentElement as _, Pixels, Point, Render, Role, SharedString, Size,
     StatefulInteractiveElement as _, Styled as _, TextRun, Toggled, Window,
     WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
@@ -230,13 +230,16 @@ fn panel_width(entries: &[MenuEntry], text_width: &dyn Fn(&str, f32, FontWeight)
         .ceil()
 }
 
-fn measure(entries: &[MenuEntry], window: &Window) -> Size<Pixels> {
+/// The panel size for `entries`, measured in `family`, the font the menu is
+/// drawn in (a new pop-up window has no inherited text style of its own).
+fn measure(entries: &[MenuEntry], family: &SharedString, window: &Window) -> Size<Pixels> {
     let style = window.text_style();
     let text_width = |text: &str, text_size: f32, weight: FontWeight| -> f32 {
         if text.is_empty() {
             return 0.0;
         }
         let mut font = style.font();
+        font.family = family.clone();
         font.weight = weight;
         let run = TextRun {
             len: text.len(),
@@ -604,7 +607,8 @@ fn sync_popup(
 ) {
     let fingerprint = signature(&entries);
     let changed = fingerprint != link.signature.get();
-    let panel = measure(&entries, window);
+    let font_family = window.text_style().font_family;
+    let panel = measure(&entries, &font_family, window);
     if changed {
         link.signature.set(fingerprint);
         *link.entries.borrow_mut() = Rc::new(entries);
@@ -621,7 +625,6 @@ fn sync_popup(
         return;
     }
     let parent = window.window_handle();
-    let font_family = window.text_style().font_family;
     let weak = Rc::downgrade(&link);
     cx.defer(move |cx| {
         let Some(link) = weak.upgrade() else {
@@ -859,7 +862,7 @@ impl MenuPopup {
             ),
             grab: true,
         };
-        let panel = measure(&items, window);
+        let panel = measure(&items, &self.font_family, window);
         let target = self.target.clone();
         let font_family = self.font_family.clone();
         let depth = self.depth + 1;
@@ -974,7 +977,7 @@ impl Render for MenuPopup {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let entries = self.entries();
         // Rows can change while the menu is open (a check mark, a label).
-        let measured = measure(&entries, window);
+        let measured = measure(&entries, &self.font_family, window);
         if measured != self.panel {
             self.panel = measured;
             let margin = px(SHADOW_MARGIN);
@@ -1509,7 +1512,8 @@ impl gpui::RenderOnce for InWindowMenu {
             on_hover_item: clear_submenu,
             activate: activate.clone(),
         };
-        let width = measure(&self.entries, window).width;
+        let family = window.text_style().font_family;
+        let width = measure(&self.entries, &family, window).width;
         let (panel, _) = render_panel(&self.entries, width, &ctx, window, cx);
         let flyout = open.and_then(|index| match self.entries.get(index) {
             Some(MenuEntry::Submenu { items, .. }) => {
@@ -1520,7 +1524,7 @@ impl gpui::RenderOnce for InWindowMenu {
                     on_hover_item: Rc::new(|_, _| {}),
                     activate: activate.clone(),
                 };
-                let sub_width = measure(items, window).width;
+                let sub_width = measure(items, &family, window).width;
                 let (sub, _) = render_panel(items, sub_width, &sub_ctx, window, cx);
                 let top = px(entry_top(&self.entries, index) - PANEL_PADDING);
                 let sub = sub.absolute().top(top);

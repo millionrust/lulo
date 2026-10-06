@@ -10,9 +10,9 @@
 //! app's root element or opaque siblings paint over it.
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, AnyElement, App, Context, ElementId, FocusHandle,
+    div, prelude::FluentBuilder as _, px, AnyElement, App, ElementId, FocusHandle,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, ParentElement as _, RenderOnce,
-    Role, SharedString, Styled as _, Subscription, Window,
+    Role, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window,
 };
 use gpui_component::StyledExt as _;
 use std::cell::RefCell;

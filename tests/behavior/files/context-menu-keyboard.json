@@ -1,0 +1,18 @@
+{
+  "title": "The item menu is a keyboard menu: type-select Duplicate, Return chooses it",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"context": "report.txt", "settle": 1.0},
+    {"observe": "open", "facts": ["menu"]},
+    {"capture": "open"},
+    {"key": "d", "settle": 0.4},
+    {"key": "enter", "settle": 1.2},
+    {"observe": "chosen", "facts": ["menu", "files", "selection"]}
+  ],
+  "menu_until": "Quick Actions",
+  "tolerance": {"open.menu.items": "subset"}
+}

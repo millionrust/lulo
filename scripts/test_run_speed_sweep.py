@@ -51,6 +51,20 @@ class TraceMathTests(unittest.TestCase):
         self.assertIsNone(sweep.settled_span_ms([("frame_callback", 1)]))
 
 
+class FocusSummaryTests(unittest.TestCase):
+    def test_counts_presents_after_the_first_focus(self) -> None:
+        events = [("present", 100_000), ("focus_in", 250_000), ("present", 260_000)]
+        self.assertEqual(sweep.focus_summary(events),
+                         {"focus_after_first_frame_ms": 150.0, "presents_after_focus": 1})
+
+    def test_a_window_drawn_active_presents_nothing_for_focus(self) -> None:
+        events = [("present", 100_000), ("focus_in", 250_000)]
+        self.assertEqual(sweep.focus_summary(events)["presents_after_focus"], 0)
+
+    def test_old_traces_have_no_focus_rows(self) -> None:
+        self.assertIsNone(sweep.focus_summary([("present", 1)])["presents_after_focus"])
+
+
 class QuiescenceTests(unittest.TestCase):
     def test_returns_none_when_the_trace_never_gains_a_present_row(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -233,6 +233,23 @@ def quiescence_wait(trace_path: Path, deadline: float) -> Optional[float]:
     return None
 
 
+def focus_summary(events: list[tuple[str, int]]) -> dict[str, Any]:
+    """When the compositor first focused the window, in trace-clock ms
+    after its first present, and how many presents came after that focus
+    (0 when the window was already drawn active, SPEED-02). Traces from
+    builds without `focus_in` rows give Nones."""
+
+    first = first_present_micros(events)
+    focus = next((micros for event, micros in events if event == "focus_in"), None)
+    if first is None or focus is None:
+        return {"focus_after_first_frame_ms": None, "presents_after_focus": None}
+    return {
+        "focus_after_first_frame_ms": (focus - first) / 1000.0,
+        "presents_after_focus": sum(1 for event, micros in events
+                                    if event == "present" and micros > focus),
+    }
+
+
 def settled_span_ms(events: list[tuple[str, int]]) -> Optional[float]:
     """Trace-clock milliseconds from the first `present` to the last one."""
 
@@ -450,6 +467,7 @@ class Run(InteractionScenarios):
             span = settled_span_ms(read_trace(trace))
             if settled is not None and span is not None:
                 icons_painted_ms = (presented - start) * 1000.0 + span
+        focus = focus_summary(read_trace(trace))
         self.stop(process)
         time.sleep(0.5)  # let the compositor unmap before the next launch
 
@@ -461,6 +479,7 @@ class Run(InteractionScenarios):
             "first_frame_ms": since(presented),
             "window_listed_ms": since(listed_at),
             "icons_painted_ms": icons_painted_ms,
+            **focus,
         }
 
     def measure_app(self, name: str, binaries: list[str], app_id: Optional[str]) -> dict[str, Any]:

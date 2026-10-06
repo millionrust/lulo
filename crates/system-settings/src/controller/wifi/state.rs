@@ -2,6 +2,18 @@
 
 use super::*;
 
+/// See [`Settings::wifi_view_state`].
+pub(in crate::controller) type WifiViewState = (
+    bool,
+    bool,
+    bool,
+    bool,
+    Option<String>,
+    Vec<rmac_network::WifiNetwork>,
+    Vec<rmac_network::WifiSavedNetwork>,
+    Option<SharedString>,
+);
+
 impl Settings {
     /// Read the current radio state when returning to Wi-Fi. Hidden-pane
     /// NetworkManager signals do not run a full snapshot in the background.
@@ -36,6 +48,21 @@ impl Settings {
         self.wifi_interface = snapshot.interface;
         self.wifi_networks = snapshot.networks;
         self.wifi_saved_networks = snapshot.saved_networks;
+    }
+
+    /// Everything a Wi-Fi refresh can change that the window shows, to tell
+    /// whether a background refresh needs a repaint at all.
+    pub(in crate::controller) fn wifi_view_state(&self) -> WifiViewState {
+        (
+            self.wifi_loading,
+            self.wifi_busy,
+            self.wifi_available,
+            self.wifi_on,
+            self.wifi_interface.clone(),
+            self.wifi_networks.clone(),
+            self.wifi_saved_networks.clone(),
+            self.wifi_error.clone(),
+        )
     }
 
     pub(in crate::controller) fn begin_wifi_mutation(&mut self) {

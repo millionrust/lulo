@@ -135,6 +135,12 @@ pub struct WaylandWindowState {
     client: WaylandClientStatePtr,
     handle: AnyWindowHandle,
     active: bool,
+    /// rmac: `active` was presumed when the window was created (a focusable
+    /// toplevel: the compositor focuses every new toplevel in Lulo), so the
+    /// first frame already draws the window active. Cleared by the first
+    /// keyboard focus change or toplevel configure that says otherwise;
+    /// while set, focus arriving is a no-op instead of a second full frame.
+    active_presumed: bool,
     hovered: bool,
     /// Set while the scene GPUI last drew is not on screen (a lost device,
     /// or a frame the renderer drew but could not present); the next frame
@@ -622,6 +628,12 @@ impl WaylandWindowState {
         };
         super::frame_trace::record("renderer_ready");
 
+        // rmac: a focusable toplevel starts active (see `active_presumed`).
+        let presume_active = options.focus
+            && !input_only
+            && matches!(surface_state, WaylandSurfaceState::Xdg(_))
+            && presume_active_enabled();
+
         if let WaylandSurfaceState::Xdg(ref xdg_state) = surface_state {
             if let Some(title) = options.titlebar.and_then(|titlebar| titlebar.title) {
                 xdg_state.toplevel.set_title(title.to_string());
@@ -676,7 +688,8 @@ impl WaylandWindowState {
             client,
             appearance,
             handle,
-            active: false,
+            active: presume_active,
+            active_presumed: presume_active,
             hovered: false,
             force_render_after_recovery: false,
             renderer_presented: false,
@@ -850,6 +863,18 @@ impl WaylandWindow {
 
         Ok((this, surface.id()))
     }
+}
+
+/// rmac: whether a keyboard focus event changes what the window shows.
+fn focus_change_needed(active: bool, focus: bool) -> bool {
+    active != focus
+}
+
+/// rmac: `RMAC_GPUI_PRESUME_ACTIVE=0` keeps new toplevels inactive until
+/// the compositor focuses them (upstream GPUI's behaviour), for comparison.
+fn presume_active_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("RMAC_GPUI_PRESUME_ACTIVE").as_deref() != Ok("0"))
 }
 
 /// rmac: whether a window's frame loop is parked: its last two frames drew
@@ -1359,6 +1384,7 @@ impl WaylandWindowStatePtr {
                 let mut fullscreen = false;
                 let mut maximized = false;
                 let mut resizing = false;
+                let mut activated = false;
 
                 for state in states {
                     match state {
@@ -1369,6 +1395,7 @@ impl WaylandWindowStatePtr {
                             fullscreen = true;
                         }
                         xdg_toplevel::State::Resizing => resizing = true,
+                        xdg_toplevel::State::Activated => activated = true,
                         xdg_toplevel::State::TiledTop => {
                             tiling.top = true;
                         }
@@ -1399,6 +1426,16 @@ impl WaylandWindowStatePtr {
                     resizing,
                     tiling,
                 });
+                // rmac: a mapped window the compositor configures without
+                // the activated state never got the focus it was presumed
+                // to have (the initial configure, before the window maps,
+                // never carries it in niri).
+                let unconfirmed =
+                    state.active_presumed && state.acknowledged_first_configure && !activated;
+                drop(state);
+                if unconfirmed {
+                    self.set_focused(false);
+                }
 
                 false
             }
@@ -1710,6 +1747,20 @@ impl WaylandWindowStatePtr {
     }
 
     pub fn set_focused(&self, focus: bool) {
+        {
+            let mut state = self.state.borrow_mut();
+            state.active_presumed = false;
+            if !focus_change_needed(state.active, focus) {
+                // rmac: already drawn in this state (a presumed-active
+                // window gaining focus, or a repeated enter/leave): GPUI's
+                // handler would re-render the whole window for nothing.
+                drop(state);
+                if let Some(adapter) = self.state.borrow_mut().accesskit_adapter.as_mut() {
+                    adapter.update_window_focus_state(focus);
+                }
+                return;
+            }
+        }
         self.wake_frame();
         self.state.borrow_mut().active = focus;
         let callback = self.callbacks.borrow_mut().active_status_change.take();
@@ -1720,6 +1771,12 @@ impl WaylandWindowStatePtr {
         if let Some(adapter) = self.state.borrow_mut().accesskit_adapter.as_mut() {
             adapter.update_window_focus_state(focus);
         }
+    }
+
+    /// rmac: whether this window still shows the active state it was
+    /// presumed to have at creation, with no keyboard focus event yet.
+    pub fn active_presumed(&self) -> bool {
+        self.state.borrow().active_presumed
     }
 
     pub fn set_hovered(&self, focus: bool) {
@@ -2482,12 +2539,22 @@ fn geometry_inside_frame(size: Size<Pixels>, inset: Pixels, tiling: Tiling) -> B
 #[cfg(test)]
 mod rmac_frame_loop_tests {
     use super::{
-        INACTIVE_FRAME_INTERVAL, THROTTLE_RETRY_DELAY, a11y_origin_inset, force_render_after_draw,
-        frame_loop_parked, geometry_inside_frame, keeps_drawing, may_have_throttled,
-        parse_unpresented_draws,
+        INACTIVE_FRAME_INTERVAL, THROTTLE_RETRY_DELAY, a11y_origin_inset, focus_change_needed,
+        force_render_after_draw, frame_loop_parked, geometry_inside_frame, keeps_drawing,
+        may_have_throttled, parse_unpresented_draws,
     };
     use gpui::{Tiling, px, size};
     use std::time::Duration;
+
+    #[test]
+    fn unchanged_focus_is_not_a_change() {
+        // A window presumed active that then gains keyboard focus, or a
+        // repeated leave, must not re-render the whole window.
+        assert!(!focus_change_needed(true, true));
+        assert!(!focus_change_needed(false, false));
+        assert!(focus_change_needed(true, false));
+        assert!(focus_change_needed(false, true));
+    }
 
     #[test]
     fn mapped_and_resized_window_geometry_excludes_client_frame() {

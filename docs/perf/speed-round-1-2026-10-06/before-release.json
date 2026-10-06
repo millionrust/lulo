@@ -1,0 +1,426 @@
+{
+  "apps": {
+    "calculator": {
+      "backend_init_ms": 6.055678008124232,
+      "first_frame_ms": 165.08428601082414,
+      "first_frame_pass": true,
+      "icons_painted_ms": 182.67494703005255,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 6.022539921104908,
+          "first_frame_ms": 159.43871391937137,
+          "icons_painted_ms": 179.49171391937136,
+          "window_listed_ms": 174.2028269218281
+        },
+        {
+          "backend_init_ms": 6.387147936038673,
+          "first_frame_ms": 165.10194703005254,
+          "icons_painted_ms": 182.67494703005255,
+          "window_listed_ms": 179.5894909882918
+        },
+        {
+          "backend_init_ms": 6.055678008124232,
+          "first_frame_ms": 165.08428601082414,
+          "icons_painted_ms": 183.88328601082415,
+          "window_listed_ms": 198.47372104413807
+        }
+      ],
+      "window_listed_ms": 179.5894909882918
+    },
+    "calendar": {
+      "backend_init_ms": 6.528462981805205,
+      "first_frame_ms": 211.17632102686912,
+      "first_frame_pass": true,
+      "icons_painted_ms": 255.96132102686911,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 31.457190052606165,
+          "first_frame_ms": 313.4190801065415,
+          "icons_painted_ms": 358.89908010654153,
+          "window_listed_ms": 360.60439806897193
+        },
+        {
+          "backend_init_ms": 5.742029985412955,
+          "first_frame_ms": 211.17632102686912,
+          "icons_painted_ms": 255.96132102686911,
+          "window_listed_ms": 258.7054400937632
+        },
+        {
+          "backend_init_ms": 6.528462981805205,
+          "first_frame_ms": 201.4656689716503,
+          "icons_painted_ms": 255.0806689716503,
+          "window_listed_ms": 255.63191599212587
+        }
+      ],
+      "window_listed_ms": 258.7054400937632
+    },
+    "clock": {
+      "backend_init_ms": 5.759245017543435,
+      "first_frame_ms": 202.42009300272912,
+      "first_frame_pass": true,
+      "icons_painted_ms": 249.47938402679563,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 10.935041937045753,
+          "first_frame_ms": 211.03492402471602,
+          "icons_painted_ms": 320.85092402471605,
+          "window_listed_ms": 312.233907985501
+        },
+        {
+          "backend_init_ms": 5.759245017543435,
+          "first_frame_ms": 202.42009300272912,
+          "icons_painted_ms": 249.22509300272912,
+          "window_listed_ms": 251.0312959784642
+        },
+        {
+          "backend_init_ms": 5.736012943089008,
+          "first_frame_ms": 196.53238402679563,
+          "icons_painted_ms": 249.47938402679563,
+          "window_listed_ms": 246.99771695304662
+        }
+      ],
+      "window_listed_ms": 251.0312959784642
+    },
+    "files": {
+      "backend_init_ms": 5.741361994296312,
+      "first_frame_ms": 195.67765097599477,
+      "first_frame_pass": true,
+      "icons_painted_ms": 397.3766509759948,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 10.963381035253406,
+          "first_frame_ms": 205.66133700776845,
+          "icons_painted_ms": 1040.1963370077683,
+          "window_listed_ms": 952.3043390363455
+        },
+        {
+          "backend_init_ms": 5.741361994296312,
+          "first_frame_ms": 190.85959193762392,
+          "icons_painted_ms": 358.7925919376239,
+          "window_listed_ms": 296.75778595265
+        },
+        {
+          "backend_init_ms": 5.739970016293228,
+          "first_frame_ms": 195.67765097599477,
+          "icons_painted_ms": 397.3766509759948,
+          "window_listed_ms": 274.1320609347895
+        }
+      ],
+      "window_listed_ms": 296.75778595265
+    },
+    "mail": {
+      "backend_init_ms": 6.2690210761502385,
+      "first_frame_ms": 180.45687803532928,
+      "first_frame_pass": true,
+      "icons_painted_ms": 229.0828780353293,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 62.16279696673155,
+          "first_frame_ms": 328.9523629937321,
+          "icons_painted_ms": 375.32836299373207,
+          "window_listed_ms": 382.4776099063456
+        },
+        {
+          "backend_init_ms": 6.2690210761502385,
+          "first_frame_ms": 175.75668299105018,
+          "icons_painted_ms": 225.2166829910502,
+          "window_listed_ms": 229.42571702878922
+        },
+        {
+          "backend_init_ms": 5.761377047747374,
+          "first_frame_ms": 180.45687803532928,
+          "icons_painted_ms": 229.0828780353293,
+          "window_listed_ms": 233.56916301418096
+        }
+      ],
+      "window_listed_ms": 233.56916301418096
+    },
+    "notes": {
+      "backend_init_ms": 5.749535979703069,
+      "first_frame_ms": 207.06899999640882,
+      "first_frame_pass": true,
+      "icons_painted_ms": 380.24599999640884,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 67.98066000919789,
+          "first_frame_ms": 339.50021606869996,
+          "icons_painted_ms": 524.8112160687,
+          "window_listed_ms": 393.5150830075145
+        },
+        {
+          "backend_init_ms": 5.749535979703069,
+          "first_frame_ms": 192.0374910114333,
+          "icons_painted_ms": 362.7944910114333,
+          "window_listed_ms": 243.4655399993062
+        },
+        {
+          "backend_init_ms": 5.717188003472984,
+          "first_frame_ms": 207.06899999640882,
+          "icons_painted_ms": 380.24599999640884,
+          "window_listed_ms": 257.6306840637699
+        }
+      ],
+      "window_listed_ms": 257.6306840637699
+    },
+    "preview": {
+      "backend_init_ms": 6.625217967666686,
+      "first_frame_ms": 195.53450809326023,
+      "first_frame_pass": true,
+      "icons_painted_ms": 243.25050809326024,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 62.31062801089138,
+          "first_frame_ms": 338.67798605933785,
+          "icons_painted_ms": 396.34598605933786,
+          "window_listed_ms": 393.2062960229814
+        },
+        {
+          "backend_init_ms": 6.625217967666686,
+          "first_frame_ms": 185.99086196627468,
+          "icons_painted_ms": 234.7018619662747,
+          "window_listed_ms": 240.54836202412844
+        },
+        {
+          "backend_init_ms": 5.81827899441123,
+          "first_frame_ms": 195.53450809326023,
+          "icons_painted_ms": 243.25050809326024,
+          "window_listed_ms": 246.19330908171833
+        }
+      ],
+      "window_listed_ms": 246.19330908171833
+    },
+    "settings": {
+      "backend_init_ms": 5.962826078757644,
+      "first_frame_ms": 280.81605094484985,
+      "first_frame_pass": true,
+      "icons_painted_ms": 923.8350509448499,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 10.84722497034818,
+          "first_frame_ms": 318.9800849650055,
+          "icons_painted_ms": 966.5650849650056,
+          "window_listed_ms": 409.1801409376785
+        },
+        {
+          "backend_init_ms": 5.962826078757644,
+          "first_frame_ms": 267.8164690732956,
+          "icons_painted_ms": 892.2314690732956,
+          "window_listed_ms": 396.86433505266905
+        },
+        {
+          "backend_init_ms": 5.8198790065944195,
+          "first_frame_ms": 280.81605094484985,
+          "icons_painted_ms": 923.8350509448499,
+          "window_listed_ms": 397.2164079314098
+        }
+      ],
+      "window_listed_ms": 397.2164079314098
+    },
+    "system-monitor": {
+      "backend_init_ms": 6.3867190619930625,
+      "first_frame_ms": 263.21080001071095,
+      "first_frame_pass": true,
+      "icons_painted_ms": 338.02980001071097,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 26.149060926400125,
+          "first_frame_ms": 376.6398299485445,
+          "icons_painted_ms": 465.1798299485445,
+          "window_listed_ms": 458.80814199335873
+        },
+        {
+          "backend_init_ms": 6.3867190619930625,
+          "first_frame_ms": 263.21080001071095,
+          "icons_painted_ms": 338.02980001071097,
+          "window_listed_ms": 324.094763956964
+        },
+        {
+          "backend_init_ms": 5.780179053544998,
+          "first_frame_ms": 250.67072408273816,
+          "icons_painted_ms": 324.16372408273816,
+          "window_listed_ms": 307.1962060639635
+        }
+      ],
+      "window_listed_ms": 324.094763956964
+    },
+    "terminal": {
+      "backend_init_ms": 6.65521202608943,
+      "first_frame_ms": 180.97392795607448,
+      "first_frame_pass": true,
+      "icons_painted_ms": null,
+      "icons_painted_note": "animates continuously (not scored)",
+      "runs": [
+        {
+          "backend_init_ms": 63.11189499683678,
+          "first_frame_ms": 309.0928209712729,
+          "icons_painted_ms": null,
+          "window_listed_ms": 329.2862179223448
+        },
+        {
+          "backend_init_ms": 6.65521202608943,
+          "first_frame_ms": 180.97392795607448,
+          "icons_painted_ms": null,
+          "window_listed_ms": 211.7251210147515
+        },
+        {
+          "backend_init_ms": 6.519205053336918,
+          "first_frame_ms": 180.81345409154892,
+          "icons_painted_ms": null,
+          "window_listed_ms": 197.70718703512102
+        }
+      ],
+      "window_listed_ms": 211.7251210147515
+    },
+    "text-editor": {
+      "backend_init_ms": 6.5386060159653425,
+      "first_frame_ms": 175.73703604284674,
+      "first_frame_pass": true,
+      "icons_painted_ms": 214.39903604284675,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 62.24260095041245,
+          "first_frame_ms": 307.9961179755628,
+          "icons_painted_ms": 349.4381179755628,
+          "window_listed_ms": 328.7850070046261
+        },
+        {
+          "backend_init_ms": 5.747721996158361,
+          "first_frame_ms": 164.65556691400707,
+          "icons_painted_ms": 201.70256691400706,
+          "window_listed_ms": 187.8933779662475
+        },
+        {
+          "backend_init_ms": 6.5386060159653425,
+          "first_frame_ms": 175.73703604284674,
+          "icons_painted_ms": 214.39903604284675,
+          "window_listed_ms": 199.49883699882776
+        }
+      ],
+      "window_listed_ms": 199.49883699882776
+    },
+    "weather": {
+      "backend_init_ms": 5.780852981843054,
+      "first_frame_ms": 172.06968797836453,
+      "first_frame_pass": true,
+      "icons_painted_ms": 221.2506879783645,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 21.874357014894485,
+          "first_frame_ms": 288.0981160560623,
+          "icons_painted_ms": 337.0491160560623,
+          "window_listed_ms": 341.25893702730536
+        },
+        {
+          "backend_init_ms": 5.780852981843054,
+          "first_frame_ms": 172.06968797836453,
+          "icons_painted_ms": 221.2506879783645,
+          "window_listed_ms": 252.02930998057127
+        },
+        {
+          "backend_init_ms": 5.766923073679209,
+          "first_frame_ms": 169.67955906875432,
+          "icons_painted_ms": 209.7475590687543,
+          "window_listed_ms": 217.1935810474679
+        }
+      ],
+      "window_listed_ms": 252.02930998057127
+    }
+  },
+  "captured_at": "2026-10-06T01:39:01Z",
+  "panels": {
+    "app-switcher": {
+      "open_ms": 57.565080001950264,
+      "open_pass": true,
+      "opens": [
+        148.06610497180372,
+        57.565080001950264,
+        56.20419199112803
+      ]
+    },
+    "control-centre": {
+      "open_ms": 105.60893197543919,
+      "open_pass": false,
+      "opens": [
+        224.35504000168294,
+        96.58907703123987,
+        105.60893197543919
+      ]
+    },
+    "launchpad": {
+      "open_ms": 101.11052100546658,
+      "open_pass": false,
+      "opens": [
+        232.01056197285652,
+        90.0555009720847,
+        101.11052100546658
+      ]
+    },
+    "mission-control": {
+      "open_ms": 82.92374201118946,
+      "open_pass": true,
+      "opens": [
+        203.87693995144218,
+        82.92374201118946,
+        79.84904595650733
+      ]
+    },
+    "notification-centre": {
+      "open_ms": 96.35708702262491,
+      "open_pass": true,
+      "opens": [
+        213.57802709098905,
+        77.25163397844881,
+        96.35708702262491
+      ]
+    },
+    "spotlight": {
+      "open_ms": 106.04968399275094,
+      "open_pass": false,
+      "opens": [
+        140.48387599177659,
+        106.04968399275094,
+        89.95203103404492
+      ]
+    }
+  },
+  "profile": "release",
+  "repeat": 3,
+  "schema_version": 1,
+  "settings_panes": {
+    "switch_max_ms": 52.316,
+    "switch_ms": 16.131,
+    "switch_pass": true,
+    "switches": [
+      16.097,
+      52.316,
+      23.86,
+      16.165,
+      8.34,
+      12.745
+    ],
+    "titles": [
+      "General \u2014 Settings",
+      "Accessibility \u2014 Settings",
+      "Appearance \u2014 Settings",
+      "Desktop & Dock \u2014 Settings",
+      "Displays \u2014 Settings",
+      "Touchscreen \u2014 Settings",
+      "Menu Bar \u2014 Settings"
+    ]
+  },
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

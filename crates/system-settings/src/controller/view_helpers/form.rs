@@ -18,15 +18,18 @@ pub(in crate::controller) fn tile26(icon: &'static str, color: Hsla) -> AnyEleme
     tile(icon, color, style::LARGE_ICON).into_any_element()
 }
 
-/// An application's own icon at `size`, else a tinted tile.
+/// An application's own icon at `size`, else a tinted tile. The icon is
+/// rasterized at `size` off the UI thread (`rmac_ui::svg_icon`), not decoded
+/// at its 1024 pt master size the way a plain `img(path)` would (SET-114).
 pub(in crate::controller) fn app_icon(
     icon: Option<&PathBuf>,
     fallback: &'static str,
     color: Hsla,
     size: f32,
+    cx: &Context<Settings>,
 ) -> AnyElement {
     match icon {
-        Some(icon) => img(icon.clone())
+        Some(icon) => rmac_ui::svg_icon(icon.clone(), size, cx)
             .w(px(size))
             .h(px(size))
             .flex_none()

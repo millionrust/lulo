@@ -96,7 +96,6 @@ impl Settings {
                 let app_id = rmac_notifications::AppId::parse(&application.app_id).ok()?;
                 let identity = self.application_identity(&application.app_id);
                 Some(focus_allowed_app_row(
-                    &view,
                     mode_id,
                     &application.app_id,
                     identity
@@ -105,6 +104,7 @@ impl Settings {
                     identity.and_then(|identity| identity.icon.as_ref()),
                     mode.allowed_apps().contains(&app_id),
                     busy,
+                    cx,
                 ))
             })
             .collect::<Vec<_>>();

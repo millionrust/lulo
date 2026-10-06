@@ -222,6 +222,7 @@ strip = false
 [patch."https://github.com/zed-industries/zed.git"]
 ztracing = { path = "shell/compat/ztracing" }
 gpui_linux = { path = "shell/compat/gpui_linux" }
+gpui_wgpu = { path = "shell/compat/gpui_wgpu" }
 
 [patch."https://github.com/longbridge/gpui-component.git"]
 gpui-component = { version = "=0.5.2", path = "vendor/gpui-component/crates/ui" }

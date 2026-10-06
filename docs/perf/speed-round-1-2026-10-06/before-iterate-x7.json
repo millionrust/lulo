@@ -1,0 +1,191 @@
+{
+  "apps": {
+    "calculator": {
+      "backend_init_ms": 6.199239986017346,
+      "first_frame_ms": 170.3631040873006,
+      "first_frame_pass": true,
+      "icons_painted_ms": 187.28495106591285,
+      "icons_painted_pass": true,
+      "runs": [
+        {
+          "backend_init_ms": 5.772853968665004,
+          "first_frame_ms": 218.4120899764821,
+          "icons_painted_ms": 238.7680899764821,
+          "window_listed_ms": 235.48991500865668
+        },
+        {
+          "backend_init_ms": 5.680970032699406,
+          "first_frame_ms": 169.97395106591284,
+          "icons_painted_ms": 187.28495106591285,
+          "window_listed_ms": 200.1068830722943
+        },
+        {
+          "backend_init_ms": 6.275707040913403,
+          "first_frame_ms": 160.3189919842407,
+          "icons_painted_ms": 177.8069919842407,
+          "window_listed_ms": 182.34719999600202
+        },
+        {
+          "backend_init_ms": 5.858507007360458,
+          "first_frame_ms": 170.3631040873006,
+          "icons_painted_ms": 186.71710408730058,
+          "window_listed_ms": 199.75259504280984
+        },
+        {
+          "backend_init_ms": 6.3361580250784755,
+          "first_frame_ms": 168.01577503792942,
+          "icons_painted_ms": 183.35477503792941,
+          "window_listed_ms": 208.13431695569307
+        },
+        {
+          "backend_init_ms": 6.5991709707304835,
+          "first_frame_ms": 170.95355200581253,
+          "icons_painted_ms": 187.36355200581252,
+          "window_listed_ms": 199.58449096884578
+        },
+        {
+          "backend_init_ms": 6.199239986017346,
+          "first_frame_ms": 176.75010301172733,
+          "icons_painted_ms": 193.63210301172734,
+          "window_listed_ms": 203.37739493697882
+        }
+      ],
+      "window_listed_ms": 200.1068830722943
+    },
+    "files": {
+      "backend_init_ms": 5.752738914452493,
+      "first_frame_ms": 195.70290902629495,
+      "first_frame_pass": true,
+      "icons_painted_ms": 381.7926370411664,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 64.07628499437124,
+          "first_frame_ms": 376.6091810539365,
+          "icons_painted_ms": 1221.5601810539365,
+          "window_listed_ms": 957.2756090201437
+        },
+        {
+          "backend_init_ms": 5.73723902925849,
+          "first_frame_ms": 206.3068370334804,
+          "icons_painted_ms": 358.12283703348044,
+          "window_listed_ms": 280.2334689768031
+        },
+        {
+          "backend_init_ms": 5.775994970463216,
+          "first_frame_ms": 190.75015897396952,
+          "icons_painted_ms": 383.0551589739695,
+          "window_listed_ms": 271.59981802105904
+        },
+        {
+          "backend_init_ms": 6.2881100457161665,
+          "first_frame_ms": 191.4043299620971,
+          "icons_painted_ms": 379.7833299620971,
+          "window_listed_ms": 288.8559349812567
+        },
+        {
+          "backend_init_ms": 5.752738914452493,
+          "first_frame_ms": 213.1979080149904,
+          "icons_painted_ms": 391.6169080149904,
+          "window_listed_ms": 291.7698599630967
+        },
+        {
+          "backend_init_ms": 5.7121909921988845,
+          "first_frame_ms": 195.70290902629495,
+          "icons_painted_ms": 367.43390902629494,
+          "window_listed_ms": 277.39400404971093
+        },
+        {
+          "backend_init_ms": 5.672016064636409,
+          "first_frame_ms": 195.54463704116642,
+          "icons_painted_ms": 381.7926370411664,
+          "window_listed_ms": 274.35376902576536
+        }
+      ],
+      "window_listed_ms": 280.2334689768031
+    },
+    "settings": {
+      "backend_init_ms": 5.931775085628033,
+      "first_frame_ms": 313.1580649642274,
+      "first_frame_pass": false,
+      "icons_painted_ms": 978.1121209818721,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 69.86826402135193,
+          "first_frame_ms": 472.93984901625663,
+          "icons_painted_ms": 1164.1128490162566,
+          "window_listed_ms": 588.8885100139305
+        },
+        {
+          "backend_init_ms": 5.74558402877301,
+          "first_frame_ms": 316.15236902143806,
+          "icons_painted_ms": 962.119369021438,
+          "window_listed_ms": 462.72235608194023
+        },
+        {
+          "backend_init_ms": 11.13232597708702,
+          "first_frame_ms": 313.1580649642274,
+          "icons_painted_ms": 948.1020649642273,
+          "window_listed_ms": 419.81910401955247
+        },
+        {
+          "backend_init_ms": 5.847153021022677,
+          "first_frame_ms": 305.0929420860484,
+          "icons_painted_ms": 989.2149420860484,
+          "window_listed_ms": 435.0115330889821
+        },
+        {
+          "backend_init_ms": 5.99801994394511,
+          "first_frame_ms": 339.1211209818721,
+          "icons_painted_ms": 978.1121209818721,
+          "window_listed_ms": 426.0142350103706
+        },
+        {
+          "backend_init_ms": 5.931775085628033,
+          "first_frame_ms": 301.9265430048108,
+          "icons_painted_ms": 979.6535430048108,
+          "window_listed_ms": 403.9615320507437
+        },
+        {
+          "backend_init_ms": 5.881897988729179,
+          "first_frame_ms": 307.8466379083693,
+          "icons_painted_ms": 772.5386379083693,
+          "window_listed_ms": 462.0907009812072
+        }
+      ],
+      "window_listed_ms": 435.0115330889821
+    }
+  },
+  "captured_at": "2026-10-06T01:41:08Z",
+  "panels": {},
+  "profile": "probe",
+  "repeat": 7,
+  "schema_version": 1,
+  "settings_panes": {
+    "switch_max_ms": 32.31,
+    "switch_ms": 18.685499999999998,
+    "switch_pass": true,
+    "switches": [
+      32.31,
+      18.889,
+      20.592,
+      18.482,
+      9.729,
+      12.594
+    ],
+    "titles": [
+      "General \u2014 Settings",
+      "Accessibility \u2014 Settings",
+      "Appearance \u2014 Settings",
+      "Desktop & Dock \u2014 Settings",
+      "Displays \u2014 Settings",
+      "Touchscreen \u2014 Settings",
+      "Menu Bar \u2014 Settings"
+    ]
+  },
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

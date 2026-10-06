@@ -3451,24 +3451,6 @@
     {
         "type": "shell",
         "commands": [
-            "cp -r --reflink=auto \"flatpak-cargo/git/zed-76c9396/crates/gpui_wgpu\" \"cargo/vendor/gpui_wgpu\""
-        ]
-    },
-    {
-        "type": "inline",
-        "contents": "[package]\nname = \"gpui_wgpu\"\nversion = \"0.1.0\"\nedition = \"2024\"\npublish = false\nlicense = \"Apache-2.0\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"allow\"\n\n[lints.clippy]\ndbg_macro = \"deny\"\ntodo = \"deny\"\ndeclare_interior_mutable_const = \"deny\"\nredundant_clone = \"deny\"\ndisallowed_methods = \"deny\"\ntype_complexity = \"allow\"\nlet_underscore_future = \"allow\"\nsingle_range_in_vec_init = \"allow\"\ntoo_many_arguments = \"allow\"\nlarge_enum_variant = \"allow\"\nnonminimal_bool = \"allow\"\n\n[lints.clippy.style]\nlevel = \"allow\"\npriority = -1\n\n[lib]\npath = \"src/gpui_wgpu.rs\"\n\n[features]\ndefault = []\nfont-kit = [\"dep:font-kit\"]\n\n[dependencies]\nanyhow = \"1.0.86\"\nbytemuck = \"1\"\ncosmic-text = \"0.19.0\"\netagere = \"0.2\"\nitertools = \"0.14.0\"\nparking_lot = \"0.12.1\"\nprofiling = \"1\"\nraw-window-handle = \"0.6\"\nswash = \"0.2.6\"\nunicode-segmentation = \"1.10\"\nwgpu = \"29.0.4\"\n\n[dependencies.gpui]\npath = \"crates/gpui\"\ndefault-features = false\n\n[dependencies.collections]\npath = \"crates/collections\"\nversion = \"0.1.0\"\n\n[dependencies.log]\nversion = \"0.4.16\"\nfeatures = [\"kv_unstable_serde\", \"serde\"]\n\n[dependencies.smallvec]\nversion = \"1.6\"\nfeatures = [\"union\", \"const_new\"]\n\n[dependencies.gpui_util]\npath = \"crates/gpui_util\"\n\n[dependencies.font-kit]\ngit = \"https://github.com/zed-industries/font-kit\"\nrev = \"94b0f28166665e8fd2f53ff6d268a14955c82269\"\npackage = \"zed-font-kit\"\nversion = \"0.14.1-zed\"\noptional = true\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dependencies]\npollster = \"0.4.0\"\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies]\nwasm-bindgen = \"0.2.120\"\nwasm-bindgen-futures = \"0.4\"\njs-sys = \"0.3\"\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.web-sys]\nversion = \"0.3\"\nfeatures = [\"HtmlCanvasElement\"]\n\n[dev-dependencies.criterion]\nversion = \"0.5\"\nfeatures = [\"html_reports\"]\n\n[[bench]]\nname = \"layout_line\"\nharness = false\n",
-        "dest": "cargo/vendor/gpui_wgpu",
-        "dest-filename": "Cargo.toml"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": null, \"files\": {}}",
-        "dest": "cargo/vendor/gpui_wgpu",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "shell",
-        "commands": [
             "cp -r --reflink=auto \"flatpak-cargo/git/zed-76c9396/crates/gpui_windows\" \"cargo/vendor/gpui_windows\""
         ]
     },

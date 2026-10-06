@@ -27,6 +27,30 @@ class FirstPresentTests(unittest.TestCase):
         self.assertIsNone(sweep.first_present_micros([("draw_start", 1)]))
 
 
+class TraceMathTests(unittest.TestCase):
+    def test_counts_only_present_rows(self) -> None:
+        events = [("frame_callback", 1), ("present", 2), ("draw_start", 3), ("present", 4)]
+        self.assertEqual(sweep.present_count(events), 2)
+
+    def test_input_to_next_present_uses_the_first_input_after_the_index(self) -> None:
+        events = [("input", 1000), ("present", 2000), ("input", 5000),
+                  ("frame_callback", 6000), ("present", 20000)]
+        self.assertEqual(sweep.input_to_next_present_ms(events, 2), 15.0)
+        self.assertEqual(sweep.input_to_next_present_ms(events, 0), 1.0)
+
+    def test_input_without_a_later_present_has_no_latency(self) -> None:
+        self.assertIsNone(sweep.input_to_next_present_ms([("present", 1), ("input", 2)], 0))
+
+    def test_median_skips_missing_runs(self) -> None:
+        self.assertEqual(sweep.median([300.0, None, 100.0, 200.0]), 200.0)
+        self.assertIsNone(sweep.median([None, None]))
+
+    def test_settled_span_is_first_to_last_present(self) -> None:
+        events = [("present", 1000), ("frame_callback", 90000), ("present", 51000)]
+        self.assertEqual(sweep.settled_span_ms(events), 50.0)
+        self.assertIsNone(sweep.settled_span_ms([("frame_callback", 1)]))
+
+
 class QuiescenceTests(unittest.TestCase):
     def test_returns_none_when_the_trace_never_gains_a_present_row(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -73,7 +97,7 @@ class MarkdownRenderingTests(unittest.TestCase):
             "not_measured": ["settings-pane-switching"],
         }
         markdown = sweep.render_markdown(report)
-        self.assertIn("| files | 250 ms | PASS | 310 ms | FAIL |", markdown)
+        self.assertIn("| files | n/a | 250 ms | PASS | n/a | 310 ms | FAIL |", markdown)
         self.assertIn("animates continuously (not scored)", markdown)
         self.assertIn("| spotlight | 85 ms | PASS |", markdown)
         self.assertIn("settings-pane-switching", markdown)

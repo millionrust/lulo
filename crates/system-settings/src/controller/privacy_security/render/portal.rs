@@ -119,6 +119,7 @@ impl Settings {
                 "icons/app-window.svg",
                 secondary(),
                 style::ROW_ICON,
+                cx,
             );
             let busy = self
                 .privacy_busy

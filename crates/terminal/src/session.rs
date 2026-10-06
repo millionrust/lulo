@@ -101,7 +101,21 @@ fn request_redraw(redraw: &RedrawSender) {
 fn shell_program(configured: Option<String>) -> String {
     configured
         .filter(|shell| !shell.trim().is_empty())
-        .unwrap_or_else(|| "/bin/sh".to_string())
+        .unwrap_or_else(default_shell)
+}
+
+/// The shell Terminal starts when the user has not chosen one: `$SHELL` on
+/// Unix, PowerShell on Windows (ConPTY; see ADR 0023 phase 2). Named by
+/// program only — `CommandBuilder`/ConPTY resolve it through `PATH`, same as
+/// `cmd.exe` would.
+#[cfg(unix)]
+fn default_shell() -> String {
+    "/bin/sh".to_string()
+}
+
+#[cfg(windows)]
+fn default_shell() -> String {
+    "powershell.exe".to_string()
 }
 
 /// What a session runs: the user's interactive shell, or (Shell ▸ New
@@ -1430,8 +1444,8 @@ mod tests {
 
     #[test]
     fn shell_fallback_is_portable_and_ignores_empty_configuration() {
-        assert_eq!(shell_program(None), "/bin/sh");
-        assert_eq!(shell_program(Some("  ".to_string())), "/bin/sh");
+        assert_eq!(shell_program(None), default_shell());
+        assert_eq!(shell_program(Some("  ".to_string())), default_shell());
         assert_eq!(shell_program(Some("/bin/fish".to_string())), "/bin/fish");
     }
 

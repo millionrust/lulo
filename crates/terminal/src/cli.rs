@@ -61,10 +61,7 @@ pub(crate) fn command_to_exec(command: &str, run_in_shell: bool) -> Option<ExecC
         return None;
     }
     if run_in_shell {
-        return Some(ExecCommand {
-            program: "/bin/sh".to_string(),
-            args: vec!["-c".to_string(), trimmed.to_string()],
-        });
+        return Some(shell_c_command(trimmed));
     }
     let mut words = split_command_words(trimmed);
     if words.is_empty() {
@@ -75,6 +72,26 @@ pub(crate) fn command_to_exec(command: &str, run_in_shell: bool) -> Option<ExecC
         program,
         args: words,
     })
+}
+
+/// `-c`/`-Command`: run `line` through a shell rather than `exec`ing it
+/// directly. `/bin/sh` on Unix; PowerShell (ADR 0023 phase 2's Windows
+/// default shell) on Windows, since there is no `cmd.exe` equivalent of a
+/// POSIX pipeline.
+#[cfg(unix)]
+fn shell_c_command(line: &str) -> ExecCommand {
+    ExecCommand {
+        program: "/bin/sh".to_string(),
+        args: vec!["-c".to_string(), line.to_string()],
+    }
+}
+
+#[cfg(windows)]
+fn shell_c_command(line: &str) -> ExecCommand {
+    ExecCommand {
+        program: "powershell.exe".to_string(),
+        args: vec!["-Command".to_string(), line.to_string()],
+    }
 }
 
 /// Why `-e` was present but unusable.
@@ -263,10 +280,7 @@ mod tests {
         );
         assert_eq!(
             command_to_exec("ls -la | grep foo", true),
-            Some(ExecCommand {
-                program: "/bin/sh".into(),
-                args: vec!["-c".into(), "ls -la | grep foo".into()],
-            })
+            Some(shell_c_command("ls -la | grep foo"))
         );
         assert_eq!(command_to_exec("   ", false), None);
         assert_eq!(command_to_exec("", true), None);

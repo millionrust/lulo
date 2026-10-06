@@ -601,6 +601,15 @@ pub fn find_links(page: &TextPage) -> Vec<(usize, UnitRect, String)> {
 
 /// A user-facing explanation when a poppler tool cannot run.
 pub fn missing_tool_message(tool: &str) -> String {
+    // poppler-utils has no Windows package to point at (ADR 0023 phase 2:
+    // PDF rendering there is future work, Windows.Data.Pdf or pdfium), so
+    // the Linux/macOS remedy would be misleading rather than honest there.
+    #[cfg(windows)]
+    {
+        let _ = tool;
+        "Preview can’t open PDF documents on Windows yet.".to_owned()
+    }
+    #[cfg(not(windows))]
     format!("Preview needs “{tool}” from poppler-utils to open PDF documents.")
 }
 

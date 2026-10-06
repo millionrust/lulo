@@ -35,7 +35,8 @@ pub(crate) fn show(main: Entity<NotesView>, cx: &mut gpui::App) {
     }
     let resume_id = {
         let notes = main.read(cx);
-        (notes.always_resume_quick_note || notes.quick_note_hot_corner_resume)
+        notes
+            .always_resume_quick_note
             .then_some(notes.quick_note_id)
             .flatten()
     };

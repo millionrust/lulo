@@ -399,7 +399,6 @@ struct NotesView {
     quick_note_window: Option<WindowHandle<rmac_ui::Root>>,
     quick_note_id: Option<NoteId>,
     always_resume_quick_note: bool,
-    quick_note_hot_corner_resume: bool,
 }
 
 impl NotesView {
@@ -524,7 +523,6 @@ impl NotesView {
             quick_note_window: None,
             quick_note_id: None,
             always_resume_quick_note: false,
-            quick_note_hot_corner_resume: false,
         };
         rmac_ui::set_menu_checked(
             "notes::ToggleCheckSpellingWhileTyping",

@@ -123,13 +123,6 @@ impl MenuEntry {
             _ => row_height(),
         }
     }
-
-    fn label(&self) -> Option<&SharedString> {
-        match self {
-            MenuEntry::Item { label, .. } | MenuEntry::Submenu { label, .. } => Some(label),
-            _ => None,
-        }
-    }
 }
 
 /// First enabled item whose label starts with `query` (case-insensitive).
@@ -564,7 +557,23 @@ impl ContextMenu {
         let owner = state.owner;
         let pos = self.pos;
         let entries = self.items;
+        let keys_link = Rc::downgrade(&state.link);
         catcher(state)
+            // A compositor that keeps the keyboard on the window under a
+            // grabbing pop-up (Sway does) still sends menu keys here; they
+            // belong to the menu, so pass them on.
+            .capture_key_down(move |event: &KeyDownEvent, _, cx| {
+                let Some(popup) = keys_link.upgrade().and_then(|link| link.window.get()) else {
+                    return;
+                };
+                cx.stop_propagation();
+                let keystroke = event.keystroke.clone();
+                cx.defer(move |cx| {
+                    let _ = popup.update(cx, |_, window, cx| {
+                        window.dispatch_keystroke(keystroke, cx);
+                    });
+                });
+            })
             .child(
                 canvas(
                     move |_, window, cx| {
@@ -758,6 +767,8 @@ struct MenuPopup {
     child: Option<(usize, AnyWindowHandle)>,
     /// A submenu whose pop-up is being opened.
     opening_child: Option<usize>,
+    /// An entry type-select chose before its row was drawn.
+    pending_focus: Option<usize>,
     /// The focus handles of this render's selectable rows, by entry index.
     rows: Vec<(usize, FocusHandle)>,
     typed: String,
@@ -803,6 +814,7 @@ impl MenuPopup {
             panel,
             child: None,
             opening_child: None,
+            pending_focus: None,
             rows: Vec::new(),
             typed: String::new(),
             typed_at: None,
@@ -929,17 +941,27 @@ impl MenuPopup {
         self.typed_at = Some(now);
         self.typed.push_str(key);
         let entries = self.entries();
-        let labels: Vec<(&str, bool)> = self
-            .rows
+        let labels: Vec<(&str, bool)> = entries
             .iter()
-            .filter_map(|(index, _)| {
-                let entry = entries.get(*index)?;
-                Some((entry.label().map(|l| l.as_ref()).unwrap_or(""), true))
+            .map(|entry| match entry {
+                MenuEntry::Item { label, enabled, .. } => (label.as_ref(), *enabled),
+                MenuEntry::Submenu { label, .. } => (label.as_ref(), true),
+                _ => ("", false),
             })
             .collect();
         if let Some(found) = type_select_match(&labels, &self.typed) {
-            if let Some((_, handle)) = self.rows.get(found) {
-                window.focus(handle, cx);
+            self.focus_entry(found, window, cx);
+        }
+    }
+
+    /// Highlight entry `index`, or as soon as its row is drawn: keys can
+    /// arrive before a new pop-up's first frame.
+    fn focus_entry(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        match self.rows.iter().find(|(row, _)| *row == index) {
+            Some((_, handle)) => window.focus(handle, cx),
+            None => {
+                self.pending_focus = Some(index);
+                cx.notify();
             }
         }
     }
@@ -1048,6 +1070,11 @@ impl Render for MenuPopup {
         };
         let (panel, rows) = render_panel(&entries, self.panel.width, &ctx, window, cx);
         self.rows = rows;
+        if let Some(index) = self.pending_focus.take() {
+            if let Some((_, handle)) = self.rows.iter().find(|(row, _)| *row == index) {
+                window.focus(handle, cx);
+            }
+        }
 
         let target = self.target.clone();
         let dismissed = self.dismissed.clone();

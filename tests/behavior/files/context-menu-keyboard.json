@@ -6,10 +6,10 @@
   "launch": {"reveal": "report.txt"},
   "steps": [
     {"key": "cmd-2"},
-    {"context": "report.txt", "settle": 1.0},
+    {"context": "report.txt", "settle": 2.0},
     {"observe": "open", "facts": ["menu"]},
     {"capture": "open"},
-    {"key": "d", "settle": 0.4},
+    {"key": "d", "settle": 0.8},
     {"key": "enter", "settle": 1.2},
     {"observe": "chosen", "facts": ["menu", "files", "selection"]}
   ],

@@ -43,6 +43,44 @@ pub struct MailView {
     /// sync runtime, kept only to wake the right account's worker right
     /// after an organise action queues its journal entry.
     runtime: Option<Arc<rmac_mail_runtime::Runtime>>,
+    /// The conversation list, drawn as its own cached view (SPEED-09).
+    list_view: Option<Entity<MailListView>>,
+}
+
+/// The conversation list as its own GPUI view (SPEED-09). A scroll
+/// re-renders only this view and the root shell; the rows it lists are
+/// built once per change to `MailView` (it observes it) instead of on every
+/// frame, which with 10,000 messages cloned 50,000 strings per frame.
+struct MailListView {
+    mail: gpui::WeakEntity<MailView>,
+    rows: Option<(Arc<Vec<Row>>, usize)>,
+}
+
+impl MailListView {
+    fn new(mail: &Entity<MailView>, cx: &mut Context<Self>) -> Self {
+        cx.observe(mail, |this, _, cx| {
+            this.rows = None;
+            cx.notify();
+        })
+        .detach();
+        Self {
+            mail: mail.downgrade(),
+            rows: None,
+        }
+    }
+}
+
+impl Render for MailListView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(mail) = self.mail.upgrade() else {
+            return div().into_any_element();
+        };
+        let (rows, unread) = self
+            .rows
+            .get_or_insert_with(|| mail.read(cx).list_rows())
+            .clone();
+        mail.read(cx).list(rows, unread, mail.downgrade())
+    }
 }
 
 #[derive(Clone)]
@@ -95,6 +133,7 @@ impl MailView {
             copy_destination: false,
             accounts,
             runtime,
+            list_view: None,
         };
         view.ensure_body_loaded(cx);
         view
@@ -650,7 +689,8 @@ impl MailView {
         panel.into_any_element()
     }
 
-    fn list(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// The rows the conversation list shows, and how many are unread.
+    fn list_rows(&self) -> (Arc<Vec<Row>>, usize) {
         let visible = self.state.visible();
         // `MailState::thread_count` scans every message; calling it once
         // per visible row would make building the list O(n²) in a 10 000
@@ -683,12 +723,15 @@ impl MailView {
                 })
                 .collect(),
         );
-        let view = cx.entity().downgrade();
-        let count = rows.len();
         let unread = visible
             .iter()
             .filter(|&&index| self.state.messages[index].unread)
             .count();
+        (rows, unread)
+    }
+
+    fn list(&self, rows: Arc<Vec<Row>>, unread: usize, view: gpui::WeakEntity<Self>) -> AnyElement {
+        let count = rows.len();
         div()
             .id("mail-conversations")
             .role(Role::ListBox)
@@ -1222,11 +1265,26 @@ impl MailView {
 }
 
 impl Render for MailView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.accounts.is_empty() {
             return self.empty_state(cx);
         }
         self.sync_menu(cx);
+        let entity = cx.entity();
+        let list_view = self
+            .list_view
+            .get_or_insert_with(|| cx.new(|cx| MailListView::new(&entity, cx)))
+            .clone();
+        // A cached view is laid out from this style. While an assistive
+        // technology is connected every frame rebuilds the accessibility
+        // tree from prepaint, which a reused subtree skips.
+        let list = if window.is_a11y_active() {
+            list_view.into_any_element()
+        } else {
+            list_view
+                .cached(gpui::StyleRefinement::default().size_full())
+                .into_any_element()
+        };
         div()
             .size_full()
             .relative()
@@ -1350,7 +1408,7 @@ impl Render for MailView {
                     .top(px(TOOLBAR))
                     .bottom_0()
                     .flex()
-                    .child(self.list(cx))
+                    .child(div().w(px(LIST)).h_full().flex_none().child(list))
                     .child(self.viewer(cx)),
             )
             .child(self.sidebar(cx))

@@ -1,0 +1,229 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 5.924143013544381,
+      "first_frame_ms": 229.80271803680807,
+      "first_frame_pass": true,
+      "icons_painted_ms": 368.55771803680807,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 5.763207911513746,
+          "draw_skips": 0,
+          "first_frame_ms": 159.5557809341699,
+          "focus_after_first_frame_ms": 82.574,
+          "force_renders": 0,
+          "icons_painted_ms": 262.3617809341699,
+          "presents_after_focus": 1,
+          "window_listed_ms": 288.86626195162535
+        },
+        {
+          "backend_init_ms": 6.264167022891343,
+          "draw_skips": 0,
+          "first_frame_ms": 258.3222850225866,
+          "focus_after_first_frame_ms": 85.067,
+          "force_renders": 0,
+          "icons_painted_ms": 375.3202850225866,
+          "presents_after_focus": 1,
+          "window_listed_ms": 391.2350219907239
+        },
+        {
+          "backend_init_ms": 5.924143013544381,
+          "draw_skips": 0,
+          "first_frame_ms": 229.80271803680807,
+          "focus_after_first_frame_ms": 97.856,
+          "force_renders": 0,
+          "icons_painted_ms": 368.55771803680807,
+          "presents_after_focus": 1,
+          "window_listed_ms": 381.2558250501752
+        }
+      ],
+      "window_listed_ms": 381.2558250501752
+    }
+  },
+  "captured_at": "2026-10-06T13:58:07Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 181.54860904905945,
+      "switcher_first_frame_ms": 44.152772054076195,
+      "switches": [
+        687.3022869694978,
+        181.28301796969026,
+        181.54860904905945
+      ]
+    },
+    "cmd-tab-hold": {
+      "commits": [
+        57.68623191397637,
+        59.48323104530573,
+        55.952704045921564
+      ],
+      "pass": false,
+      "release_to_switch_ms": 57.68623191397637,
+      "reveal_ms": 130.9807829093188,
+      "reveals": [
+        148.22827803436667,
+        122.39577306900173,
+        130.9807829093188
+      ]
+    },
+    "files-icon-scroll": {
+      "frame_p50_ms": 4.482,
+      "frame_p95_ms": 5.599,
+      "frames": 63,
+      "pass": true,
+      "render_p50_ms": 3.86,
+      "render_p95_ms": 4.999,
+      "stalls": 0,
+      "submit_p50_ms": 0.622,
+      "submit_p95_ms": 0.67,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 8.74
+    },
+    "files-list-scroll": {
+      "frame_p50_ms": 8.321,
+      "frame_p95_ms": 11.888,
+      "frames": 59,
+      "pass": true,
+      "render_p50_ms": 7.668,
+      "render_p95_ms": 11.103,
+      "stalls": 0,
+      "submit_p50_ms": 0.667,
+      "submit_p95_ms": 0.732,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 12.385
+    },
+    "mail-list-scroll": {
+      "frame_p50_ms": 5.075,
+      "frame_p95_ms": 5.633,
+      "frames": 71,
+      "pass": true,
+      "render_p50_ms": 4.495,
+      "render_p95_ms": 5.039,
+      "stalls": 0,
+      "submit_p50_ms": 0.605,
+      "submit_p95_ms": 0.677,
+      "within_16_7ms_share": 1.0,
+      "worst_frame_ms": 6.478
+    },
+    "notes-list-scroll": {
+      "error": "rmac-notes / seed_speed_fixture (rmac-notes-storage example) not found"
+    },
+    "resize-drag": {
+      "final_size": [
+        699,
+        808
+      ],
+      "frame_p50_ms": 13.648,
+      "frame_p95_ms": 39.609,
+      "frames": 11,
+      "pass": false,
+      "render_p50_ms": 7.742,
+      "render_p95_ms": 38.72,
+      "stalls": 0,
+      "submit_p50_ms": 3.144,
+      "submit_p95_ms": 21.715,
+      "within_16_7ms_share": 0.5454545454545454,
+      "worst_frame_ms": 39.609
+    },
+    "spotlight-typing": {
+      "echo_p95_ms": 34.148,
+      "pass": false,
+      "results_ms": 28.81,
+      "runs": [
+        {
+          "echo_after_frame_callback_p95_ms": 34.007,
+          "echo_max_ms": 34.148,
+          "echo_p50_ms": 1.062,
+          "echo_p95_ms": 34.148,
+          "first_keys_ms": [
+            1.838,
+            34.148,
+            1.107
+          ],
+          "frame_p50_ms": 1.341,
+          "frame_p95_ms": 4.575,
+          "frames": 23,
+          "frames_pass": false,
+          "keys": 10,
+          "pass": false,
+          "results_ms": 28.34,
+          "stalls": 0,
+          "within_16_7ms_share": 0.9565217391304348,
+          "worst_frame_ms": 21.352
+        },
+        {
+          "echo_after_frame_callback_p95_ms": 32.581,
+          "echo_max_ms": 32.723,
+          "echo_p50_ms": 1.147,
+          "echo_p95_ms": 32.723,
+          "first_keys_ms": [
+            3.866,
+            32.723,
+            1.173
+          ],
+          "frame_p50_ms": 2.039,
+          "frame_p95_ms": 4.844,
+          "frames": 20,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 28.81,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.729
+        },
+        {
+          "echo_after_frame_callback_p95_ms": 33.346,
+          "echo_max_ms": 33.524,
+          "echo_p50_ms": 1.126,
+          "echo_p95_ms": 33.524,
+          "first_keys_ms": [
+            3.911,
+            33.524,
+            1.158
+          ],
+          "frame_p50_ms": 2.772,
+          "frame_p95_ms": 11.176,
+          "frames": 19,
+          "frames_pass": true,
+          "keys": 8,
+          "pass": true,
+          "results_ms": 29.86,
+          "stalls": 0,
+          "within_16_7ms_share": 1.0,
+          "worst_frame_ms": 11.176
+        }
+      ]
+    },
+    "text-editor-rich-typing": {
+      "echo_after_frame_callback_p95_ms": 9.978,
+      "echo_max_ms": 24.579,
+      "echo_p50_ms": 7.792,
+      "echo_p95_ms": 11.117,
+      "first_keys_ms": [
+        24.579,
+        8.91,
+        11.117
+      ],
+      "frame_p50_ms": 6.974,
+      "frame_p95_ms": 9.978,
+      "frames": 44,
+      "frames_pass": false,
+      "keys": 42,
+      "pass": false,
+      "stalls": 0,
+      "within_16_7ms_share": 0.9772727272727273,
+      "worst_frame_ms": 17.536
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 3,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

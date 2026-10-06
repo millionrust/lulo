@@ -241,12 +241,19 @@ def focus_summary(events: list[tuple[str, int]]) -> dict[str, Any]:
 
     first = first_present_micros(events)
     focus = next((micros for event, micros in events if event == "focus_in"), None)
+    # SPEED-02: frames the renderer could not present (a suboptimal
+    # swapchain) and the forced full redraws that followed them.
+    redraws = {
+        "draw_skips": sum(1 for event, _ in events if event == "draw_skip"),
+        "force_renders": sum(1 for event, _ in events if event == "force_render"),
+    }
     if first is None or focus is None:
-        return {"focus_after_first_frame_ms": None, "presents_after_focus": None}
+        return {"focus_after_first_frame_ms": None, "presents_after_focus": None, **redraws}
     return {
         "focus_after_first_frame_ms": (focus - first) / 1000.0,
         "presents_after_focus": sum(1 for event, micros in events
                                     if event == "present" and micros > focus),
+        **redraws,
     }
 
 

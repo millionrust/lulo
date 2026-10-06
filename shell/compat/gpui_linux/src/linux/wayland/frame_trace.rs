@@ -66,8 +66,13 @@ pub(crate) fn init() {
         Ok(file) => {
             let mut writer = BufWriter::new(file);
             let _ = writeln!(writer, "event,micros");
+            let start = Instant::now();
+            // rmac: this trace's zero on CLOCK_MONOTONIC (what `Instant` and
+            // Python's `time.monotonic()` read on Linux), so a harness can
+            // line up rows from several processes and its own inputs.
+            let _ = writeln!(writer, "monotonic_origin,{}", monotonic_micros());
             WRITER.with(|cell| *cell.borrow_mut() = Some(writer));
-            let _ = START.set(Instant::now());
+            let _ = START.set(start);
             ENABLED.store(true, Ordering::Relaxed);
         }
         Err(err) => {
@@ -85,6 +90,12 @@ pub(crate) fn record(event: &str) {
     }
 }
 
+/// Whether rows are being recorded, for callers that build a row's text.
+#[inline]
+pub(crate) fn enabled() -> bool {
+    ENABLED.load(Ordering::Relaxed)
+}
+
 #[cold]
 fn record_enabled(event: &str) {
     let Some(start) = START.get() else { return };
@@ -98,4 +109,15 @@ fn record_enabled(event: &str) {
             let _ = writer.flush();
         }
     });
+}
+
+/// CLOCK_MONOTONIC now, in microseconds.
+fn monotonic_micros() -> u128 {
+    let mut now = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: `now` is a valid, writable timespec.
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut now) };
+    now.tv_sec as u128 * 1_000_000 + now.tv_nsec as u128 / 1_000
 }

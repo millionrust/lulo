@@ -26,8 +26,16 @@ impl Render for FinderView {
             self.sidebar_visible,
             self.sidebar_width,
         );
-        let window_active = window.is_window_active();
-        let window_height = f32::from(window.bounds().size.height);
+        let entity = cx.entity();
+        let views = self
+            .views
+            .get_or_insert_with(|| cached_views::FinderViews::new(&entity, cx));
+        let (sidebar_view, toolbar_view, content_view) = (
+            views.sidebar.clone(),
+            views.toolbar.clone(),
+            views.content.clone(),
+        );
+        let cache_views = !window.is_a11y_active();
         let multi = self.tabs.len() > 1;
         let menu_at = self.menu_at.clone();
         let menu_purpose = self.menu_purpose;
@@ -300,7 +308,13 @@ impl Render for FinderView {
                 this.close_finder_window(window, cx);
             }))
             .when(layout.sidebar_visible, |root| {
-                root.child(self.render_sidebar(cx))
+                root.child(
+                    div()
+                        .w(px(self.sidebar_width))
+                        .h_full()
+                        .flex_shrink_0()
+                        .child(cached_views::view_element(&sidebar_view, cache_views)),
+                )
             })
             .child(
                 div()
@@ -309,7 +323,13 @@ impl Render for FinderView {
                     .h_full()
                     .v_flex()
                     .when(self.toolbar_visible, |el| {
-                        el.child(self.render_toolbar(layout, cx))
+                        el.child(
+                            div()
+                                .h(px(TOOLBAR_HEIGHT))
+                                .w_full()
+                                .flex_none()
+                                .child(cached_views::view_element(&toolbar_view, cache_views)),
+                        )
                     })
                     .when_some(operation_notice, |el, message| {
                         let checking = message.as_ref() == DIRECTORY_STALL_NOTICE;
@@ -515,17 +535,14 @@ impl Render for FinderView {
                         el.child(self.render_tabs(cx))
                     })
                     .when(self.trash_view, |el| el.child(self.render_trash_bar(cx)))
-                    .child(self.render_list(
-                        window_active,
-                        window_height,
-                        f32::from(window.bounds().size.width)
-                            - if layout.sidebar_visible {
-                                self.sidebar_width
-                            } else {
-                                0.0
-                            },
-                        cx,
-                    )),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h(px(0.0))
+                            .w_full()
+                            .flex()
+                            .child(cached_views::view_element(&content_view, cache_views)),
+                    ),
             )
             .when_some(go_to_sheet, |el, sheet| el.child(sheet))
             .when_some(menu_at, |el, state| {

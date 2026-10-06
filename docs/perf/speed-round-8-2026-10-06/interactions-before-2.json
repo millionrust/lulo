@@ -1,0 +1,96 @@
+{
+  "apps": {
+    "settings": {
+      "backend_init_ms": 15.903112012892962,
+      "first_frame_ms": 313.67971701547503,
+      "first_frame_pass": false,
+      "icons_painted_ms": 482.08480299384144,
+      "icons_painted_pass": false,
+      "runs": [
+        {
+          "backend_init_ms": 69.57349297590554,
+          "draw_skips": 0,
+          "first_frame_ms": 321.34780299384147,
+          "focus_after_first_frame_ms": 96.621,
+          "force_renders": 0,
+          "icons_painted_ms": 482.08480299384144,
+          "presents_after_focus": 1,
+          "window_listed_ms": 481.01830191444606
+        },
+        {
+          "backend_init_ms": 15.903112012892962,
+          "draw_skips": 0,
+          "first_frame_ms": 313.67971701547503,
+          "focus_after_first_frame_ms": 129.372,
+          "force_renders": 0,
+          "icons_painted_ms": 507.02371701547503,
+          "presents_after_focus": 1,
+          "window_listed_ms": 513.2293010829017
+        },
+        {
+          "backend_init_ms": 11.156067019328475,
+          "draw_skips": 0,
+          "first_frame_ms": 267.89498003199697,
+          "focus_after_first_frame_ms": 119.554,
+          "force_renders": 0,
+          "icons_painted_ms": 267.89498003199697,
+          "presents_after_focus": 0,
+          "window_listed_ms": 409.51693803071976
+        }
+      ],
+      "window_listed_ms": 481.01830191444606
+    }
+  },
+  "captured_at": "2026-10-06T14:00:36Z",
+  "interactions": {
+    "cmd-tab-hold": {
+      "commits": [
+        57.7406840166077,
+        59.16452198289335,
+        58.37444600183517
+      ],
+      "pass": false,
+      "release_to_switch_ms": 58.37444600183517,
+      "reveal_ms": 166.27518204040825,
+      "reveals": [
+        716.9551260303706,
+        166.27518204040825,
+        164.86026695929468
+      ]
+    },
+    "files-list-scroll": {
+      "frame_p50_ms": 12.198,
+      "frame_p95_ms": 15.136,
+      "frames": 56,
+      "pass": false,
+      "render_p50_ms": 11.546,
+      "render_p95_ms": 14.349,
+      "stalls": 0,
+      "submit_p50_ms": 0.661,
+      "submit_p95_ms": 0.756,
+      "within_16_7ms_share": 0.9821428571428571,
+      "worst_frame_ms": 19.937
+    },
+    "mail-list-scroll": {
+      "frame_p50_ms": 12.099,
+      "frame_p95_ms": 13.57,
+      "frames": 65,
+      "pass": false,
+      "render_p50_ms": 11.569,
+      "render_p95_ms": 12.933,
+      "stalls": 0,
+      "submit_p50_ms": 0.601,
+      "submit_p95_ms": 0.659,
+      "within_16_7ms_share": 0.9846153846153847,
+      "worst_frame_ms": 20.499
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 3,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

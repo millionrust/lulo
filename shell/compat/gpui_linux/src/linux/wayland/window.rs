@@ -1085,6 +1085,10 @@ impl WaylandWindowStatePtr {
         // Nothing drew. Either the callback already requested runs one more
         // check at the next vblank, or the loop is now parked until
         // `check_parked` sees the event loop wake for something else.
+        if !state.active {
+            // GPUI throttles an inactive window's frames to 30 a second.
+            super::frame_trace::record("idle_inactive");
+        }
         state.idle_streak = state.idle_streak.saturating_add(1);
         if may_have_throttled(false, state.active, since_previous) && !state.throttle_retry_armed {
             // GPUI may have kept queued next-frame callbacks (a finished image
@@ -1266,10 +1270,18 @@ impl WaylandWindowStatePtr {
         if let xdg_surface::Event::Configure { serial } = event {
             {
                 let mut state = self.state.borrow_mut();
-                if let Some(window_controls) = state.in_progress_window_controls.take() {
+                if let Some(window_controls) = state.in_progress_window_controls.take()
+                    // rmac: niri repeats the capabilities with later
+                    // configures (its activation one included), and GPUI
+                    // re-renders the whole window for every appearance
+                    // change: one more full frame ~30 ms after a new
+                    // window is focused (SPEED-02).
+                    && window_controls != state.window_controls
+                {
                     state.window_controls = window_controls;
 
                     drop(state);
+                    super::frame_trace::record("appearance_changed");
                     let mut callbacks = self.callbacks.borrow_mut();
                     if let Some(appearance_changed) = callbacks.appearance_changed.as_mut() {
                         appearance_changed();
@@ -1343,6 +1355,13 @@ impl WaylandWindowStatePtr {
     pub fn handle_toplevel_decoration_event(&self, event: zxdg_toplevel_decoration_v1::Event) {
         if let zxdg_toplevel_decoration_v1::Event::Configure { mode } = event {
             match mode {
+                // rmac: an unchanged mode repaints nothing (see the window
+                // controls above).
+                WEnum::Value(zxdg_toplevel_decoration_v1::Mode::ServerSide)
+                    if self.state.borrow().decorations == WindowDecorations::Server => {}
+                WEnum::Value(zxdg_toplevel_decoration_v1::Mode::ClientSide)
+                    if self.state.borrow().decorations == WindowDecorations::Client
+                        && self.state.borrow().acknowledged_first_configure => {}
                 WEnum::Value(zxdg_toplevel_decoration_v1::Mode::ServerSide) => {
                     self.state.borrow_mut().decorations = WindowDecorations::Server;
                     let callback = self.callbacks.borrow_mut().appearance_changed.take();
@@ -1770,6 +1789,14 @@ impl WaylandWindowStatePtr {
         super::frame_trace::record(if focus { "focus_in" } else { "focus_out" });
         {
             let mut state = self.state.borrow_mut();
+            if super::frame_trace::enabled() {
+                // Which window: one process may own several surfaces.
+                super::frame_trace::record(&format!(
+                    "focus_window:{}:{}",
+                    state.app_id.as_deref().unwrap_or("-"),
+                    state.surface.id().protocol_id()
+                ));
+            }
             state.active_presumed = false;
             if !focus_change_needed(state.active, focus) {
                 // rmac: already drawn in this state (a presumed-active

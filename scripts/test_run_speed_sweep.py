@@ -55,7 +55,8 @@ class FocusSummaryTests(unittest.TestCase):
     def test_counts_presents_after_the_first_focus(self) -> None:
         events = [("present", 100_000), ("focus_in", 250_000), ("present", 260_000)]
         self.assertEqual(sweep.focus_summary(events),
-                         {"focus_after_first_frame_ms": 150.0, "presents_after_focus": 1})
+                         {"focus_after_first_frame_ms": 150.0, "presents_after_focus": 1,
+                          "draw_skips": 0, "force_renders": 0})
 
     def test_a_window_drawn_active_presents_nothing_for_focus(self) -> None:
         events = [("present", 100_000), ("focus_in", 250_000)]

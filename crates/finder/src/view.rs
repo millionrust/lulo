@@ -8,6 +8,7 @@
 mod accessibility;
 mod archive_controller;
 mod bounded_cache;
+mod cached_views;
 mod chrome_presentation;
 mod clean_up_controller;
 mod clipboard_window;
@@ -535,6 +536,8 @@ struct FinderView {
     sidebar_focus: FocusHandle,
     sidebar_cursor: Option<usize>,
     native_window_title: String,
+    /// The sidebar and content area as cached views (SPEED-08).
+    views: Option<cached_views::FinderViews>,
     watcher: Option<RecommendedWatcher>,
     filesystem_events: async_channel::Sender<()>,
     filesystem_hints: Arc<Mutex<FilesystemHints>>,

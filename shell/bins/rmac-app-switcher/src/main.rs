@@ -36,11 +36,16 @@ pub(crate) mod linux_wayland {
     use crate::model::{self, Command, Layout, Recency, RunningApp, Session};
 
     /// A quick ⌘Tab tap switches without flashing the panel, as on macOS:
-    /// the surface takes the keyboard at once but stays 1 × 1 until then.
+    /// the surface takes the keyboard at once but stays 1 × 1 until it knows
+    /// ⌘ is still held (the compositor's modifier state, which follows the
+    /// keyboard enter at once) or, failing that, for this long.
     const REVEAL_DELAY: Duration = Duration::from_millis(120);
     /// After the surface gains focus, wait for the compositor's modifier
-    /// state before treating "⌘ is up" as a release.
-    const RELEASE_GRACE: Duration = Duration::from_millis(80);
+    /// state before treating "⌘ is up" as a release. niri sends it in the
+    /// same flush as the keyboard enter, so it has always been dispatched
+    /// well within one frame; the grace only covers a slow event loop. A
+    /// quick ⌘Tab tap pays it once (SPEED-11: it was 80 ms).
+    const RELEASE_GRACE: Duration = Duration::from_millis(16);
     /// Never keep an invisible exclusive surface that never got the keyboard.
     /// The surface took 750 ms to get the keyboard in the reference laptop's
     /// nested journey session and sometimes over 1 s, when ⌘Tab then did
@@ -265,6 +270,11 @@ pub(crate) mod linux_wayland {
                 if window.is_window_active() {
                     if !this.was_active {
                         this.was_active = true;
+                        if window.modifiers().platform {
+                            // ⌘ is still held: show the panel now.
+                            this.saw_command = true;
+                            this.reveal(window, cx);
+                        }
                         this.arm_after_grace(window, cx);
                     }
                 } else if this.was_active {
@@ -341,6 +351,9 @@ pub(crate) mod linux_wayland {
         ) {
             if event.modifiers.platform {
                 self.saw_command = true;
+                // ⌘ is held after ⌘Tab: this is not a quick tap, so show
+                // the panel at once rather than after REVEAL_DELAY.
+                self.reveal(window, cx);
             } else if self.armed || self.saw_command {
                 self.commit(window, cx);
             }

@@ -107,7 +107,14 @@ impl Mask {
                 }
             }
         }
-        any.then_some((min_x, min_y, max_x - min_x + 1, max_y - min_y + 1))
+        if !any {
+            // `min_x`/`min_y` are still `u32::MAX` here; computing the
+            // width/height below would underflow, so this must return
+            // before that arithmetic runs (`then_some`'s argument is
+            // evaluated eagerly, unlike `then`, so it cannot gate this).
+            return None;
+        }
+        Some((min_x, min_y, max_x - min_x + 1, max_y - min_y + 1))
     }
 
     /// A translucent colour overlay (same size as the mask) a caller can

@@ -156,7 +156,11 @@ fn main() {
         delivery::accounts()
     };
     let initial_state = if fixture_mode {
-        MailState::fixture()
+        let extra = std::env::var("RMAC_MAIL_FIXTURE_MESSAGES")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+        MailState::fixture_with_extra(extra.min(100_000))
     } else {
         let (mailboxes, messages) = live::load(&accounts);
         MailState::new(mailboxes, messages)

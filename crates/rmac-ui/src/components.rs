@@ -35,6 +35,7 @@ gpui::actions!(
 pub(crate) const MENU_CONTEXT: &str = "RmacContextMenu";
 
 pub(crate) fn init(cx: &mut App) {
+    crate::context_menu::init(cx);
     cx.bind_keys([KeyBinding::new(
         crate::shortcuts::ESCAPE.keystroke,
         DismissMenu,

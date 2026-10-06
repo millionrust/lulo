@@ -323,6 +323,31 @@ struct PopupLink {
 thread_local! {
     /// macOS shows one context menu at a time.
     static OPEN_POPUP: Cell<Option<AnyWindowHandle>> = const { Cell::new(None) };
+    /// The open menu pop-ups, innermost submenu last: where menu keys go.
+    static KEY_TARGETS: RefCell<Vec<AnyWindowHandle>> = const { RefCell::new(Vec::new()) };
+}
+
+/// While a menu is open it takes every key, as on macOS. A compositor that
+/// keeps the keyboard on the window under a grabbing pop-up (Sway does)
+/// sends menu keys to that window instead; pass them on to the innermost
+/// open menu before any of the window's own bindings see them.
+pub(crate) fn init(cx: &mut App) {
+    cx.intercept_keystrokes(|event, window, cx| {
+        let Some(target) = KEY_TARGETS.with(|targets| targets.borrow().last().copied()) else {
+            return;
+        };
+        if target == window.window_handle() {
+            return;
+        }
+        cx.stop_propagation();
+        let keystroke = event.keystroke.clone();
+        cx.defer(move |cx| {
+            let _ = target.update(cx, |_, window, cx| {
+                window.dispatch_keystroke(keystroke, cx);
+            });
+        });
+    })
+    .detach();
 }
 
 /// Focus and placement state for one open context menu.
@@ -557,23 +582,7 @@ impl ContextMenu {
         let owner = state.owner;
         let pos = self.pos;
         let entries = self.items;
-        let keys_link = Rc::downgrade(&state.link);
         catcher(state)
-            // A compositor that keeps the keyboard on the window under a
-            // grabbing pop-up (Sway does) still sends menu keys here; they
-            // belong to the menu, so pass them on.
-            .capture_key_down(move |event: &KeyDownEvent, _, cx| {
-                let Some(popup) = keys_link.upgrade().and_then(|link| link.window.get()) else {
-                    return;
-                };
-                cx.stop_propagation();
-                let keystroke = event.keystroke.clone();
-                cx.defer(move |cx| {
-                    let _ = popup.update(cx, |_, window, cx| {
-                        window.dispatch_keystroke(keystroke, cx);
-                    });
-                });
-            })
             .child(
                 canvas(
                     move |_, window, cx| {
@@ -790,6 +799,12 @@ impl MenuPopup {
     ) -> Self {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        let handle = window.window_handle();
+        KEY_TARGETS.with(|targets| targets.borrow_mut().push(handle));
+        cx.on_release(move |_, _| {
+            KEY_TARGETS.with(|targets| targets.borrow_mut().retain(|open| *open != handle));
+        })
+        .detach();
         let dismissed = Rc::new(Cell::new(false));
         // A pop-up closed by the window server (a click in another app)
         // dismisses the app's menu state too.

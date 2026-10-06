@@ -731,6 +731,20 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> Option<impl IntoElement> {
         let sheet = self.pending_background_colour.as_ref()?;
+        let typed = sheet
+            .hex
+            .read(cx)
+            .value()
+            .trim()
+            .trim_start_matches('#')
+            .to_string();
+        let preview = (typed.len() == 6)
+            .then(|| u32::from_str_radix(&typed, 16).ok())
+            .flatten()
+            .unwrap_or_else(|| {
+                self.background_override
+                    .unwrap_or_else(|| profiles::active().bg)
+            });
         let panel = Self::sheet_panel("terminal-edit-background-colour", "Edit Background Colour")
             .key_context("TerminalBackgroundColour")
             .on_action(
@@ -741,11 +755,30 @@ impl TerminalView {
             .w(px(320.0))
             .child(
                 div()
-                    .id("background-colour-field")
-                    .role(Role::TextInput)
-                    .aria_label("Background colour (hex)")
-                    .accessible_text_input(&sheet.hex, cx)
-                    .child(TextField::new(&sheet.hex)),
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .id("background-colour-swatch")
+                            .role(Role::Img)
+                            .aria_label("Preview")
+                            .w(px(24.0))
+                            .h(px(24.0))
+                            .rounded(px(rmac_ui::mac::radius_control()))
+                            .border_1()
+                            .border_color(rmac_ui::mac::separator())
+                            .bg(Hsla::from(gpui::rgb(preview))),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .id("background-colour-field")
+                            .role(Role::TextInput)
+                            .aria_label("Background colour (hex)")
+                            .accessible_text_input(&sheet.hex, cx)
+                            .child(TextField::new(&sheet.hex)),
+                    ),
             )
             .when(sheet.error, |panel| {
                 panel.child(

@@ -348,7 +348,7 @@ impl<'a> Lexer<'a> {
 
 /// A lexer positioned just after the first `needle` control word, inside
 /// its group, or `None` when the document has no such group.
-fn lexer_after(bytes: &[u8], needle: &[u8]) -> Option<Lexer<'_>> {
+fn lexer_after<'a>(bytes: &'a [u8], needle: &[u8]) -> Option<Lexer<'a>> {
     let mut from = 0;
     while let Some(found) = bytes[from..]
         .windows(needle.len())

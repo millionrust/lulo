@@ -211,7 +211,7 @@ impl<T: ReceiveData> DataOffer<T> {
         Some(match rtf {
             Some(rtf) => ClipboardItem::new_string_with_metadata(
                 result,
-                frame_rich_formats(&[("text/rtf", &rtf)]),
+                frame_rich_formats(&[("text/rtf", rtf.as_str())]),
             ),
             None => ClipboardItem::new_string(result),
         })

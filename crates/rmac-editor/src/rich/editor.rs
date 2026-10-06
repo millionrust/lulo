@@ -1455,8 +1455,8 @@ impl RichTextEditor {
         let rtf = String::from_utf8(super::rtf::write(&fragment)).unwrap_or_default();
         let html = super::html::write(&fragment);
         let metadata = super::clipboard::encode_formats(&[
-            (super::clipboard::RTF_MIME, &rtf),
-            (super::clipboard::HTML_MIME, &html),
+            (super::clipboard::RTF_MIME, rtf.as_str()),
+            (super::clipboard::HTML_MIME, html.as_str()),
         ]);
         STYLED_CLIPBOARD.with(|clipboard| {
             *clipboard.borrow_mut() = Some((text.clone(), fragment));

@@ -391,7 +391,16 @@ class Wayland:
 
     def drag(self, start: tuple[float, float], end: tuple[float, float], width: int, height: int,
              button: str = "left", steps: int = 8, step_delay: float = 0.04,
-             grab_delay: float = 0.0) -> None:
+             grab_delay: float = 0.0, modifiers: Optional[list[str]] = None) -> None:
+        """Press at `start`, move to `end` in `steps` and release, holding
+        `modifiers` throughout (niri's Mod + right-drag resizes)."""
+
+        mask = 0
+        for mod in modifiers or []:
+            mod_code, bit = MODIFIER_KEYS[mod]
+            self._key(mod_code, True)
+            mask |= bit
+            self._modifiers(mask)
         self.move(*start, width, height)
         time.sleep(0.05)
         self.button(True, button)
@@ -403,6 +412,13 @@ class Wayland:
                 time.sleep(grab_delay)
             time.sleep(step_delay)
         self.button(False, button)
+        for mod in reversed(modifiers or []):
+            mod_code, bit = MODIFIER_KEYS[mod]
+            self._key(mod_code, False)
+            mask &= ~bit
+            self._modifiers(mask)
+        if modifiers:
+            self.roundtrip()
 
     def click(self, x: float, y: float, width: int, height: int, button: str = "left", count: int = 1,
               modifiers: Optional[list[str]] = None) -> None:

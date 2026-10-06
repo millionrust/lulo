@@ -567,7 +567,7 @@ impl TerminalView {
         self.pending_open_shell = None;
         window.focus(&self.focus, cx);
         match crate::cli::restore_flag(&restore) {
-            Some(flag) if rmac_ui::open_another_window(vec![flag], cx) => {}
+            Some(flag) if rmac_ui::open_another_window(vec![flag.clone()], cx) => {}
             _ => {
                 self.operation_error = Some("Terminal could not open a new window.".into());
             }

@@ -346,7 +346,7 @@ mod tests {
             .map(|arguments| parse_startup_request(arguments.iter().map(OsString::from)).unwrap())
             .collect::<Vec<_>>();
         assert!(reparsed[0].open_untitled && reparsed[0].paths.is_empty());
-        assert_eq!(reparsed[1].paths, [PathBuf::from("/home/user/one.txt")]);
+        assert_eq!(reparsed[1].paths, [PathBuf::from(one)]);
         assert!(!reparsed[1].open_untitled);
     }
 

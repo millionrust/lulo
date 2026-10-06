@@ -310,6 +310,7 @@ struct EditorView {
 #[cfg(test)]
 mod tests {
     use super::document_io::same_file_identity;
+    #[cfg(unix)]
     use super::recovery_state::recovery_path_for_platform;
     use super::{
         can_begin_print, document, pdf_export_filename, render_pdf_export, save_document,

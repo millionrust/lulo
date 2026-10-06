@@ -25,7 +25,7 @@ detail), `docs/journey-suite.md` (the package-scoped fixture runner).
 | `linux` | Formatting, the shared-control/gpui_component/no-mac-captures/design-token boundary scripts, wording, Clippy (`-D warnings`), `cargo test --workspace --all-features`, and the full `scripts/test_*.py` suite | See below |
 | `linux-2604` | `linux`'s formatting/Clippy/tests/Python-suite steps (not its repo-specific boundary scripts) on `ubuntu-26.04` instead of `ubuntu-24.04`. **Non-blocking** (`continue-on-error: true`) — see [Ubuntu 26.04](#ubuntu-2604) | Same `cargo`/`python3` commands as `linux`, below |
 | `macos` | Clippy, tests, and the Python suite on `macos-15` | Same commands as `linux`, minus the Linux-only boundary scripts |
-| `windows` | ADR 0023 phase 1 on `windows-latest`: Clippy (`-D warnings`, `--all-targets`) and unit tests for Calculator, Notes, Text Editor, `rmac-editor` and the `rmac-notes-*` crates, a debug build of the three apps, and `scripts/windows/launch_smoke.py`, which starts each app with a private profile and checks it opens a window (screenshots are uploaded). **Non-blocking** (`continue-on-error: true`) — see [Windows](#windows) | Windows only; see [Windows](#windows) |
+| `windows` | ADR 0023 phase 1 on `windows-latest`: Clippy (`-D warnings`, `--all-targets`) and unit tests for Calculator, Notes, Text Editor, `rmac-ui`, `rmac-editor`, `rmac-storage`, `rmac-recent-documents` and the `rmac-notes-*` crates, a debug build of the three apps, and `scripts/windows/launch_smoke.py`, which starts each app with a private profile and checks it opens a window (screenshots are uploaded). **Non-blocking** (`continue-on-error: true`) — see [Windows](#windows) | Windows only; see [Windows](#windows) |
 | `upstream-gpui-linux` | The separately locked `shell/` workspace: formatting, its own `cargo deny`, `cargo test --lib`, Clippy on the `wayland` feature, and a nested-Wayland smoke check | See `shell/` steps below |
 
 ## `runtime.yml` — every push and pull request
@@ -295,9 +295,10 @@ To reproduce it on a Windows PC with the Windows SDK installed:
 ```sh
 cargo clippy --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
   -p rmac-editor -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime \
-  --all-targets -- -D warnings
-cargo test --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
-  -p rmac-editor -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime
+  -p rmac-ui -p rmac-storage -p rmac-recent-documents --all-targets -- -D warnings
+cargo test --locked --no-fail-fast -p rmac-calculator -p rmac-notes -p rmac-text-editor \
+  -p rmac-editor -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime \
+  -p rmac-ui -p rmac-storage -p rmac-recent-documents
 cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor --bins
 python scripts/windows/launch_smoke.py target/debug rmac-calculator rmac-notes rmac-text-editor
 ```

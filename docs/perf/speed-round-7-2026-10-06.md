@@ -74,7 +74,7 @@ branch. For each fix, "before" is the same tree without that fix. Settings
 | Interaction | Target | Before | After | |
 |---|---|---|---|---|
 | Files icon view, 2,000 items, scroll | ≥ 99 % ≤ 16.7 ms | 70.6 %, p95 116 ms, 10 stalls | **100 %**, p95 7 ms | fixed |
-| Notes list, 500 notes, scroll | ≥ 99 % | 69.0 %, p95 84 ms, 13 stalls | **98.6–100 %**, p95 8–11 ms | fixed |
+| Notes list, 500 notes, scroll | ≥ 99 % | 69.0 %, p95 84 ms, 13 stalls | **98.6–100 %**, p95 8–11 ms | fixed (one sweep 98.6 %) |
 | Notes, typing in a 200 KB note | echo p95 < 16 ms | p50 250 ms, **p95 592 ms** | p50 7 ms, p95 25 ms | much better, not met |
 | Files list view, 2,000 items, scroll | ≥ 99 % | 91–96 % (p95 17 ms) | 91–98 % (p95 15–18 ms) | not met |
 | Mail list, 10,000 messages, scroll | ≥ 99 % | — (no fixture) | 95.3–96.9 %, p95 16 ms | not met |

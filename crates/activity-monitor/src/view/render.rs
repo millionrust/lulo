@@ -8,16 +8,19 @@ use rmac_ui::{mac, Button, SearchField, Table};
 use sysinfo::Pid;
 
 use crate::columns::ColKey;
+use crate::floating_windows::MetricWindowKind;
 use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab};
 use crate::view_filter::ViewFilter;
 use crate::{
     process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, EnterFullScreen,
     FilterProcesses, FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess,
-    JumpToSelection, Minimize, QuitProcess, RefreshEveryFiveSeconds, RefreshEverySecond,
-    RefreshEveryTwoSeconds, SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses,
-    ShowAllProcesses, ShowDeltasForProcess, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
-    ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleCpuColumn,
-    ToggleEnergyColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
+    JumpToSelection, Minimize, QuitAndKeepWindows, QuitProcess, RefreshEveryFiveSeconds,
+    RefreshEverySecond, RefreshEveryTwoSeconds, SampleProcess, SendSignalToProcess,
+    SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses, ShowAllProcesses,
+    ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess, ShowGpuHistoryWindow,
+    ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses, ShowOtherUsersProcesses,
+    ShowSelectedProcesses, ShowSystemProcesses, ToggleCpuColumn, ToggleEnergyColumn,
+    ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
     UseSelectionForFind,
 };
 
@@ -140,6 +143,24 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &CancelKill, _, cx| {
                 this.cancel_kill(cx);
+            }))
+            .on_action(cx.listener(|this, _: &SendSignalToProcess, window, cx| {
+                this.open_signal_sheet(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SampleProcess, _, cx| {
+                this.sample_selected_process(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowCpuUsageWindow, _, cx| {
+                this.open_metric_window(MetricWindowKind::CpuUsage, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowCpuHistoryWindow, _, cx| {
+                this.open_metric_window(MetricWindowKind::CpuHistory, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowGpuHistoryWindow, _, cx| {
+                this.open_metric_window(MetricWindowKind::GpuHistory, cx);
+            }))
+            .on_action(cx.listener(|this, _: &QuitAndKeepWindows, _, cx| {
+                this.quit_and_keep_open_windows(cx);
             }))
             .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {
                 window.remove_window();
@@ -297,5 +318,6 @@ impl Render for MonitorView {
             })
             .children(self.render_confirm(cx))
             .children(self.render_inspector(cx))
+            .children(self.render_signal_sheet(cx))
     }
 }

@@ -214,6 +214,7 @@ impl FinderView {
                 )
                 .separator()
                 .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo))
+                .item("Show Inspector", Box::new(ShowInspector))
                 .command_item("Rename", rmac_ui::shortcuts::ENTER, Box::new(RenameItem));
             if let Some(label) = compress_label {
                 m = m.item(label, Box::new(Compress));
@@ -224,6 +225,7 @@ impl FinderView {
                     rmac_ui::shortcuts::DUPLICATE,
                     Box::new(Duplicate),
                 )
+                .item("Duplicate Exactly", Box::new(DuplicateExactly))
                 .item("Make Alias", Box::new(MakeAlias))
                 .command_item("Quick Look", rmac_ui::shortcuts::SPACE, Box::new(QuickLook))
                 .item(slideshow_label, Box::new(Slideshow))

@@ -3,10 +3,15 @@
 #[cfg(target_os = "linux")]
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
+use crate::signal_picker::NamedSignal;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SignalKind {
     Terminate,
     Kill,
+    /// View ▸ Send Signal to Process…: any of the fixed named signals the
+    /// sheet offers.
+    Named(NamedSignal),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,6 +64,7 @@ impl ProcessHandle {
         let signal = match kind {
             SignalKind::Terminate => libc::SIGTERM,
             SignalKind::Kill => libc::SIGKILL,
+            SignalKind::Named(named) => named.number(),
         };
         // SAFETY: `self.pidfd` is live for the duration of the syscall,
         // `siginfo` is null as permitted by pidfd_send_signal, and flags are
@@ -109,6 +115,12 @@ mod tests {
     #[cfg(not(target_os = "linux"))]
     #[test]
     fn development_fallback_preserves_every_sysinfo_result() {
+        assert_eq!(
+            ProcessHandle::open(1)
+                .unwrap()
+                .send(SignalKind::Named(NamedSignal::Hup), || Some(true)),
+            SignalOutcome::Delivered
+        );
         assert_eq!(
             ProcessHandle::open(1)
                 .unwrap()

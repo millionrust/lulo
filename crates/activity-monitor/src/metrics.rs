@@ -99,6 +99,11 @@ pub(crate) struct History {
     /// Bytes per second received / sent, the Network graph's two series.
     pub(crate) net_recv: Vec<f32>,
     pub(crate) net_sent: Vec<f32>,
+    /// GPU busy percentage (Window ▸ GPU History), pushed only on ticks
+    /// where a real reading was available (`gpu_stats::GpuReading::
+    /// Percent`) — left empty rather than padded with zeroes when no
+    /// supported GPU sysfs source exists.
+    pub(crate) gpu: Vec<f32>,
 }
 
 impl History {

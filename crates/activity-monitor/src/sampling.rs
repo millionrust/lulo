@@ -6,6 +6,7 @@ use std::time::Instant;
 use sysinfo::Networks;
 
 use crate::cpu_ticks;
+use crate::gpu_stats::{self, GpuReading};
 use crate::host_stats;
 use crate::metrics::{Aggregates, History, NetIface, REFRESH_SECS};
 use crate::process_table::{is_thread_group_leader, resync_selection, ProcessTableDelegate};
@@ -19,6 +20,10 @@ pub(crate) struct Sampler {
     prev_cpu_ticks: Option<[u64; 4]>,
     pub(crate) cpu_split: Option<(f32, f32, f32)>,
     last_sample: Option<Instant>,
+    /// Window ▸ GPU History's latest reading, kept separate from
+    /// `history.gpu` so the window can show "unavailable" accurately even
+    /// after real samples have already been pushed to the history.
+    pub(crate) gpu_reading: GpuReading,
 }
 
 impl Sampler {
@@ -31,6 +36,7 @@ impl Sampler {
             prev_cpu_ticks: None,
             cpu_split: None,
             last_sample: None,
+            gpu_reading: GpuReading::Unavailable,
         }
     }
 
@@ -148,6 +154,11 @@ impl Sampler {
         };
         History::push(&mut self.history.mem, memory_percent);
         History::push(&mut self.history.energy, aggregates.energy_total.min(100.0));
+
+        self.gpu_reading = gpu_stats::read();
+        if let GpuReading::Percent(percent) = self.gpu_reading {
+            History::push(&mut self.history.gpu, f32::from(percent));
+        }
 
         self.aggregates = aggregates;
     }

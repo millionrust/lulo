@@ -783,6 +783,11 @@ impl FinderView {
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
+            // Duplicate already copies exactly: it keeps each item's
+            // permissions and never resolves links (`file_ops.rs`), and a
+            // user cannot give a copy someone else's owner, the only extra
+            // the Mac's Duplicate Exactly keeps.
+            .on_action(cx.listener(|this, _: &DuplicateExactly, _, cx| this.duplicate(cx)))
             .on_action(cx.listener(|this, _: &TogglePreview, _, cx| {
                 this.preview_visible = !this.preview_visible;
                 cx.notify();
@@ -921,6 +926,8 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &Slideshow, _, cx| this.slideshow(cx)))
             .on_action(cx.listener(|this, _: &Compress, _, cx| this.compress_selection(cx)))
             .on_action(cx.listener(|this, _: &GetInfo, window, cx| this.get_info(window, cx)))
+            .on_action(cx.listener(|this, _: &ShowInspector, _, cx| this.show_inspector(cx)))
+            .on_action(cx.listener(|this, _: &GetSummaryInfo, _, cx| this.get_summary_info(cx)))
             .on_action(
                 cx.listener(|this, _: &ViewAsIcons, _, cx| {
                     this.select_view_mode(ViewMode::Icon, cx)
@@ -998,6 +1005,9 @@ impl FinderView {
             }))
             .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.select_adjacent_tab(-1, cx)))
             .on_action(cx.listener(|this, _: &NextTab, _, cx| this.select_adjacent_tab(1, cx)))
+            .on_action(
+                cx.listener(|this, _: &ShowProgressWindow, _, cx| this.show_progress_window(cx)),
+            )
             .on_action(cx.listener(|this, _: &ToggleTabBar, _, cx| this.toggle_tab_bar(cx)))
             .on_action(cx.listener(|this, _: &ToggleToolbar, _, cx| {
                 this.toolbar_visible = !this.toolbar_visible;

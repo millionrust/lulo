@@ -1452,11 +1452,14 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Close Window", "finder::CloseTab", "⌘W"),
             item!("Close All", "finder::CloseAll", "⌥⌘W"),
             item!("Get Info", "finder::GetInfo", "⌘I", separator),
+            item!("Show Inspector", "finder::ShowInspector", "⌥⌘I"),
+            item!("Get Summary Info", "finder::GetSummaryInfo", "⌃⌘I"),
             item!("Quick Look", "finder::QuickLook", "⌘Y"),
             item!("Slideshow", "finder::Slideshow", "⌥⌘Y"),
             item!("Rename", "finder::RenameItem", ""),
             item!("Compress", "finder::Compress", ""),
             item!("Duplicate", "finder::Duplicate", "⌘D"),
+            item!("Duplicate Exactly", "finder::DuplicateExactly", "⌥⇧⌘D"),
             item!("Make Alias", "finder::MakeAlias", "⌘L"),
             item!("Show Original", "finder::ShowOriginal", "⌘R"),
             item!("Add to Sidebar", "finder::AddToSidebar", "⌃⌘T"),
@@ -1567,7 +1570,8 @@ const FILES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Window",
         items: &[
-            item!("Show Previous Tab", "finder::PreviousTab", ""),
+            item!("Show Progress Window", "finder::ShowProgressWindow", ""),
+            item!("Show Previous Tab", "finder::PreviousTab", "", separator),
             item!("Show Next Tab", "finder::NextTab", ""),
         ],
     },
@@ -1579,12 +1583,29 @@ const FILES_MENUS: &[MenuSpec] = &[
 
 const MONITOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
-        label: WINDOW_MENU,
+        label: APPLICATION_MENU,
         items: &[item!(
-            "Activity Monitor",
-            "activity_monitor::ShowMainWindow",
-            "⌘1"
+            "Quit and Keep Windows",
+            "activity_monitor::QuitAndKeepWindows",
+            ""
         )],
+    },
+    MenuSpec {
+        label: WINDOW_MENU,
+        items: &[
+            item!("Activity Monitor", "activity_monitor::ShowMainWindow", "⌘1"),
+            item!("CPU Usage", "activity_monitor::ShowCpuUsageWindow", "⌘2"),
+            item!(
+                "CPU History",
+                "activity_monitor::ShowCpuHistoryWindow",
+                "⌘3"
+            ),
+            item!(
+                "GPU History",
+                "activity_monitor::ShowGpuHistoryWindow",
+                "⌘4"
+            ),
+        ],
     },
     MenuSpec {
         label: "File",
@@ -1712,12 +1733,18 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("Inspect Process", "activity_monitor::InspectProcess", "⌘I"),
+            item!("Sample Process", "activity_monitor::SampleProcess", "⌥⌘S"),
             item!(
                 "Show Deltas for Process",
                 "activity_monitor::ShowDeltasForProcess",
                 "⌥⌘J"
             ),
             item!("Quit Process", "activity_monitor::QuitProcess", "⌥⌘Q"),
+            item!(
+                "Send Signal to Process…",
+                "activity_monitor::SendSignalToProcess",
+                ""
+            ),
             item!(
                 "Clear CPU History",
                 "activity_monitor::ClearCpuHistory",

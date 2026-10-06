@@ -217,6 +217,7 @@ impl FinderView {
             favourite_order,
             sidebar_drop_index: None,
             info_windows: Vec::new(),
+            inspector_window: None,
             go_to: None,
             pending_select: None,
             pending_select_many: Vec::new(),

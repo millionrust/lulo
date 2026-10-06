@@ -3,12 +3,19 @@
 mod columns;
 mod cpu_ticks;
 mod dock_icon;
+mod floating_windows;
+mod gpu_stats;
 mod host_stats;
 mod metrics;
 mod process_action;
 mod process_signal;
 mod process_table;
+mod quit_and_keep_windows;
+mod sample_window;
 mod sampling;
+mod sampling_report;
+mod signal_escalation;
+mod signal_picker;
 mod storage;
 mod view;
 mod view_filter;
@@ -53,7 +60,13 @@ gpui::actions!(
         RefreshEveryFiveSeconds,
         CancelKill,
         ConfirmKill,
-        Minimize
+        Minimize,
+        SendSignalToProcess,
+        SampleProcess,
+        ShowCpuUsageWindow,
+        ShowCpuHistoryWindow,
+        ShowGpuHistoryWindow,
+        QuitAndKeepWindows
     ]
 );
 
@@ -120,6 +133,10 @@ fn main() {
                 gpui::KeyBinding::new("cmd-m", Minimize, Some("ActivityMonitor")),
                 gpui::KeyBinding::new("cmd-1", ShowMainWindow, Some("ActivityMonitor")),
                 gpui::KeyBinding::new("ctrl-cmd-f", EnterFullScreen, Some("ActivityMonitor")),
+                gpui::KeyBinding::new("alt-cmd-s", SampleProcess, Some("ActivityMonitor")),
+                gpui::KeyBinding::new("cmd-2", ShowCpuUsageWindow, Some("ActivityMonitor")),
+                gpui::KeyBinding::new("cmd-3", ShowCpuHistoryWindow, Some("ActivityMonitor")),
+                gpui::KeyBinding::new("cmd-4", ShowGpuHistoryWindow, Some("ActivityMonitor")),
             ]);
             window.focus(&view.focus, cx);
             view

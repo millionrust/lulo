@@ -216,4 +216,104 @@ impl MonitorView {
         // `rmac_ui::alert`'s pattern.
         Some(rmac_ui::dialog("activity-monitor-inspector", card).into_any_element())
     }
+
+    /// View ▸ Send Signal to Process… (MON-10/14, MON-MENU-032).
+    pub(super) fn render_signal_sheet(&self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
+        use crate::signal_picker::NamedSignal;
+
+        let identity = self.signal_sheet.clone()?;
+        let feedback = self.signal_feedback.clone();
+
+        let signal_row = |signal: NamedSignal| {
+            div()
+                .h_flex()
+                .items_center()
+                .justify_between()
+                .gap_3()
+                .py_1p5()
+                .border_b_1()
+                .border_color(mac::separator())
+                .child(
+                    div()
+                        .v_flex()
+                        .gap_0p5()
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(13.0))
+                                .font_weight(mac::MEDIUM)
+                                .text_color(mac::text())
+                                .child(signal.label()),
+                        )
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(mac::text_secondary())
+                                .child(signal.description()),
+                        ),
+                )
+                .child(
+                    Button::new(format!("signal-send-{}", signal.label()), "Send").on_click(
+                        cx.listener(move |this, _, _, cx| this.send_named_signal(signal, cx)),
+                    ),
+                )
+        };
+
+        let card = div()
+            .v_flex()
+            .tab_group()
+            .gap_1()
+            .w(px(440.0))
+            .p_5()
+            .rounded(px(mac::radius_card()))
+            .bg(mac::window())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_lg()
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .justify_between()
+                    .pb_2()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(15.0))
+                            .font_weight(mac::SEMIBOLD)
+                            .text_color(mac::text())
+                            .child(format!(
+                                "Send Signal to \u{201c}{}\u{201d} (PID {})",
+                                identity.name, identity.pid
+                            )),
+                    )
+                    .child(
+                        Button::new("signal-sheet-cancel", "Cancel")
+                            .on_click(cx.listener(|this, _, _, cx| this.cancel_signal_sheet(cx))),
+                    ),
+            )
+            .children(NamedSignal::ALL.into_iter().map(signal_row))
+            .children(feedback.map(|feedback| {
+                let (background, border, text) = if feedback.success {
+                    (mac::accent_subtle(), mac::accent_border(), mac::text())
+                } else {
+                    (mac::error_background(), mac::error_border(), mac::danger())
+                };
+                div()
+                    .mt_2()
+                    .p_2()
+                    .rounded(px(mac::radius_control()))
+                    .bg(background)
+                    .border_1()
+                    .border_color(border)
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(text)
+                    .child(
+                        div()
+                            .font_weight(mac::SEMIBOLD)
+                            .child(feedback.title.clone()),
+                    )
+                    .child(feedback.detail.clone())
+            }));
+
+        Some(rmac_ui::dialog("activity-monitor-signal-sheet", card).into_any_element())
+    }
 }

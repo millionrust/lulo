@@ -178,6 +178,7 @@ fn centered_window_bounds(width: f32, height: f32, cx: &App) -> WindowBounds {
 /// with "Reserve space" off. This is the real, live-settings equivalent of
 /// the macOS-shaped guess `fit_to_screen` falls back to when there's no
 /// compositor snapshot to ask (before a window's first frame).
+#[cfg(unix)]
 fn reserved_edges(
     compositor: &rmac_compositor::Snapshot,
     output: &rmac_compositor::OutputId,
@@ -204,6 +205,7 @@ fn reserved_edges(
 /// Shrink `(width, height)` to fit inside `(screen_width, screen_height)`
 /// less the reserved `edges` (top, right, bottom, left) and a little air
 /// around both.
+#[cfg(unix)]
 fn fit_to_usable_area(
     width: f32,
     height: f32,
@@ -223,6 +225,7 @@ fn fit_to_usable_area(
 /// integer scale, and briefly reports that integer scale), so ask the
 /// compositor for the focused output's logical size and shrink the new window
 /// if it reaches under the Dock.
+#[cfg(unix)]
 fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
     window
         .spawn(cx, async move |cx| {
@@ -316,6 +319,11 @@ fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
         })
         .detach();
 }
+
+/// Windows opens a window inside the work area (the screen less the
+/// taskbar and any app bars) and keeps it there, so nothing is left to fit.
+#[cfg(not(unix))]
+fn fit_to_display_after_first_frame(_window: &Window, _cx: &App) {}
 
 /// macOS never opens a new window taller or wider than the space between the
 /// menu bar and the Dock; on a small screen the default size shrinks to fit.
@@ -1303,7 +1311,9 @@ pub fn boot_with_assets<A, V, F>(
 
 #[cfg(test)]
 mod fit_tests {
-    use super::{fit_to_screen, fit_to_usable_area};
+    use super::fit_to_screen;
+    #[cfg(unix)]
+    use super::fit_to_usable_area;
 
     #[test]
     fn default_sizes_shrink_to_the_space_between_menu_bar_and_dock() {
@@ -1313,6 +1323,7 @@ mod fit_tests {
         assert_eq!(fit_to_screen(2000.0, 900.0, 1470.0, 956.0), (1430.0, 822.0));
     }
 
+    #[cfg(unix)]
     #[test]
     fn usable_area_shrinks_a_window_that_reaches_under_a_bottom_dock() {
         // 1920x1080 output, 32 top bar, 96 Dock (reserve space on) + a
@@ -1325,6 +1336,7 @@ mod fit_tests {
         assert_eq!(height, 1080.0 - 32.0 - 96.0 - 16.0);
     }
 
+    #[cfg(unix)]
     #[test]
     fn usable_area_leaves_a_window_untouched_when_it_already_fits() {
         assert_eq!(
@@ -1333,6 +1345,7 @@ mod fit_tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn usable_area_reserves_the_side_the_dock_is_actually_on() {
         // A left-placed Dock takes width, not height: an oversized
@@ -1344,6 +1357,7 @@ mod fit_tests {
         assert_eq!(height, 900.0);
     }
 
+    #[cfg(unix)]
     #[test]
     fn usable_area_never_shrinks_below_the_app_minimum() {
         let (width, height) =
@@ -1352,6 +1366,7 @@ mod fit_tests {
         assert_eq!(height, super::MIN_WINDOW_HEIGHT);
     }
 
+    #[cfg(unix)]
     fn output(id: &str) -> rmac_compositor::Output {
         rmac_compositor::Output {
             id: id.into(),
@@ -1376,6 +1391,7 @@ mod fit_tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn reserved_edges_reads_the_top_bar_and_the_docks_real_placement_and_zone() {
         let output_id = rmac_compositor::OutputId::from("eDP-1");

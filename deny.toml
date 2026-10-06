@@ -4,6 +4,8 @@ targets = [
     "x86_64-apple-darwin",
     "aarch64-unknown-linux-gnu",
     "x86_64-unknown-linux-gnu",
+    # ADR 0023: the Windows app build (CI's non-blocking `windows` job).
+    "x86_64-pc-windows-msvc",
 ]
 all-features = true
 
@@ -39,6 +41,10 @@ exceptions = [
     { crate = "cbindgen@0.28.0", allow = ["MPL-2.0"] },
     { crate = "spellbook@0.4.2", allow = ["MPL-2.0"] },
     { crate = "option-ext@0.2.0", allow = ["MPL-2.0"] },
+    # DirectWrite bindings under font-kit, in the Windows build only (ADR
+    # 0023). Used unmodified, so MPL-2.0's file-level copyleft adds nothing
+    # to ship, as for spellbook.
+    { crate = "dwrote@0.11.5", allow = ["MPL-2.0"] },
 ]
 
 [bans]

@@ -39,9 +39,10 @@ The globally accepted SPDX licenses are:
   `Unicode-3.0`, `Unlicense`, and `Zlib`;
 - public-domain dedication: `CC0-1.0`.
 
-`MPL-2.0` is not globally accepted. It is allowed only for `cbindgen` 0.28.0
-and `option-ext` 0.2.0, whose file-level copyleft terms are compatible with
-their current build/runtime use. Adding another MPL dependency requires an
+`MPL-2.0` is not globally accepted. It is allowed only for `cbindgen` 0.28.0,
+`option-ext` 0.2.0, `spellbook` 0.4.2 and `dwrote` 0.11.5 (DirectWrite
+bindings in the Windows build only; ADR 0023), whose file-level copyleft
+terms are compatible with their current, unmodified build/runtime use. Adding another MPL dependency requires an
 explicit reviewed exception. No GPL or LGPL-only dependency is accepted by the
 product policy; alternative-license expressions pass only when an allowed
 choice is available.

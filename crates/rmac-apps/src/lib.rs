@@ -1,6 +1,8 @@
 //! Cross-platform installed-application catalog and launcher.
 
-#![cfg_attr(target_os = "macos", allow(dead_code))]
+// The XDG association and desktop-entry plumbing only runs on Linux; macOS and
+// Windows builds keep the parsers (and their tests) without calling them.
+#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
 mod catalog;
 mod icons;

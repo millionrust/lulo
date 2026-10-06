@@ -141,6 +141,10 @@ pub(super) fn same_file_identity(left: &Path, right: &Path) -> bool {
     }
     #[cfg(not(unix))]
     {
+        // Both exist; the same canonical path is the same file. (Windows'
+        // volume serial and file index would also catch hard links, but std
+        // does not expose them on stable Rust.)
+        let _ = (left_metadata, right_metadata);
         match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
             (Ok(left), Ok(right)) => left == right,
             _ => false,

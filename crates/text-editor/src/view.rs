@@ -310,6 +310,7 @@ struct EditorView {
 #[cfg(test)]
 mod tests {
     use super::document_io::same_file_identity;
+    #[cfg(unix)]
     use super::recovery_state::recovery_path_for_platform;
     use super::{
         can_begin_print, document, pdf_export_filename, render_pdf_export, save_document,
@@ -341,6 +342,8 @@ mod tests {
         assert!(clock.should_write(newer, true));
     }
 
+    // Unix path literals: on Windows `/var/state` is not absolute.
+    #[cfg(unix)]
     #[test]
     fn recovery_paths_follow_xdg_and_macos_conventions() {
         let linux_xdg = recovery_path_for_platform(

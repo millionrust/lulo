@@ -10,8 +10,14 @@ name = "rmac-sound"
 path = "src/bin/sound.rs"
 
 [dependencies]
-rmac-audio.workspace = true
-rmac-focus-linux.workspace = true
 rmac-storage.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+# Output mute state (PipeWire) and the Focus state (D-Bus). Windows plays no
+# cues yet (ADR 0023), so it needs neither.
+[target.'cfg(unix)'.dependencies]
+rmac-audio.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rmac-focus-linux.workspace = true

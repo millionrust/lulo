@@ -36,6 +36,25 @@ pub fn create_dir_all_private(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Make the entries just created, renamed or removed in `directory` durable.
+///
+/// Unix fsyncs the directory itself. Windows cannot open a directory with the
+/// write access `FlushFileBuffers` needs, and has no directory fsync: NTFS
+/// journals the rename or create, so after a crash the directory holds either
+/// the old entry or the new one, never a torn one. The file's own data was
+/// already flushed with `sync_all` before the rename.
+pub(crate) fn sync_directory(directory: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        File::open(directory)?.sync_all()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = directory;
+        Ok(())
+    }
+}
+
 /// Unlink a file and sync its parent directory before returning success.
 pub fn remove_file_durable(path: &Path) -> io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
@@ -45,7 +64,7 @@ pub fn remove_file_durable(path: &Path) -> io::Result<()> {
         )
     })?;
     std::fs::remove_file(path)?;
-    File::open(parent)?.sync_all()
+    sync_directory(parent)
 }
 
 /// Atomically replace `path` using a same-directory temporary file.
@@ -75,7 +94,7 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
         file.sync_all()?;
         drop(file);
         std::fs::rename(&temporary, path)?;
-        File::open(parent)?.sync_all()?;
+        sync_directory(parent)?;
         Ok(())
     })();
 
@@ -124,7 +143,7 @@ pub fn atomic_write_private(path: &Path, contents: &[u8]) -> io::Result<()> {
         file.sync_all()?;
         drop(file);
         std::fs::rename(&temporary, path)?;
-        File::open(parent)?.sync_all()?;
+        sync_directory(parent)?;
         Ok(())
     })();
 
@@ -167,7 +186,7 @@ pub fn write_new_private(path: &Path, contents: &[u8]) -> io::Result<()> {
         file.write_all(contents)?;
         file.sync_all()?;
         drop(file);
-        File::open(parent)?.sync_all()?;
+        sync_directory(parent)?;
         Ok(())
     })();
 
@@ -231,7 +250,7 @@ pub fn write_new_private_stream(
         }
         file.sync_all()?;
         drop(file);
-        File::open(parent)?.sync_all()?;
+        sync_directory(parent)?;
         Ok(FileFingerprint {
             byte_len,
             sha256: hasher.finalize().into(),
@@ -266,7 +285,7 @@ pub fn copy_no_clobber(source: &Path, destination: &Path) -> io::Result<u64> {
         destination_file.set_permissions(source_file.metadata()?.permissions())?;
         destination_file.sync_all()?;
         drop(destination_file);
-        File::open(parent)?.sync_all()?;
+        sync_directory(parent)?;
         Ok(copied)
     })();
 

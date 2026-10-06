@@ -292,9 +292,14 @@ impl RecoveryWriter {
     }
 }
 
+/// Windows: this process is alive; any other owner is treated as gone until
+/// a Win32 backend checks it with `OpenProcess` (ADR 0023, phase 2). Only a
+/// second Text Editor process running at the same time could then offer a
+/// draft that is still open, and the single-instance hand-off is Linux-only
+/// for now.
 #[cfg(not(unix))]
-fn process_is_alive(_process_id: u32) -> bool {
-    false
+fn process_is_alive(process_id: u32) -> bool {
+    process_id == std::process::id()
 }
 
 fn quarantine(path: &Path) {

@@ -324,10 +324,16 @@ impl Drop for ActivePlayback {
     }
 }
 
+#[cfg(unix)]
 fn output_muted() -> bool {
     rmac_audio::snapshot()
         .map(|snapshot| snapshot.output.muted)
         .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn output_muted() -> bool {
+    false
 }
 
 #[cfg(target_os = "linux")]

@@ -71,8 +71,11 @@ impl NotesView {
             return;
         }
         if !pw_record_available() {
-            self.message =
-                Some("Notes could not find pw-record (PipeWire) to capture audio.".into());
+            self.message = Some(if cfg!(windows) {
+                "Notes can't record audio on Windows yet.".into()
+            } else {
+                "Notes could not find pw-record (PipeWire) to capture audio.".into()
+            });
             cx.notify();
             return;
         }
@@ -115,9 +118,18 @@ impl NotesView {
         // SAFETY: `child.id()` is a live PID this process owns (we just
         // spawned it and have not reaped it yet); SIGINT is the normal
         // "finish the file" signal `pw-record` documents, unlike `kill()`.
+        #[cfg(unix)]
         unsafe {
             libc::kill(recording.child.id() as libc::pid_t, libc::SIGINT);
         }
+        // Windows has no SIGINT for another process; no capture tool starts
+        // there yet (`pw_record_available` is false), so just end it.
+        #[cfg(not(unix))]
+        let recording = {
+            let mut recording = recording;
+            let _ = recording.child.kill();
+            recording
+        };
         cx.spawn_in(window, async move |this, cx| {
             let AudioRecording {
                 mut child,

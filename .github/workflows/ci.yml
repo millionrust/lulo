@@ -260,6 +260,87 @@ jobs:
       - name: Run Python tests
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
+  windows:
+    name: Windows apps (non-blocking)
+    # ADR 0023 phase 1: Calculator, Notes and Text Editor, with the shared
+    # crates they use (rmac-ui, storage, editor, Notes' store), build, pass
+    # Clippy and their unit tests, and open a window on Windows. Non-blocking until it has run clean for a while;
+    # see docs/ci.md.
+    runs-on: windows-latest
+    timeout-minutes: 75
+    continue-on-error: true
+    env:
+      RMAC_WINDOWS_PACKAGES: >-
+        -p rmac-calculator -p rmac-notes -p rmac-text-editor -p rmac-editor
+        -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime
+        -p rmac-ui -p rmac-storage -p rmac-recent-documents
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # One cache entry per lockfile, saved once even when a later step
+      # fails, so a red run still warms the next one.
+      - name: Restore Cargo data
+        id: cargo-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Run Clippy
+        run: cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
+
+      # The remaining steps still run after a Clippy failure, so one run
+      # reports every kind of Windows breakage.
+      - name: Run tests
+        if: ${{ !cancelled() }}
+        run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES
+
+      - name: Build the apps
+        if: ${{ !cancelled() }}
+        run: cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor --bins
+
+      - name: Launch each app
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==12.1.1
+          python scripts/windows/launch_smoke.py --screenshots windows-screens \
+            target/debug rmac-calculator rmac-notes rmac-text-editor
+
+      - name: Upload app screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-app-screens
+          path: windows-screens
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Save Cargo data
+        if: always() && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
   upstream-gpui-linux:
     name: Current GPUI Linux runtime gate
     runs-on: ubuntu-24.04

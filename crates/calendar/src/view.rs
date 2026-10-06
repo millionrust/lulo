@@ -1360,7 +1360,17 @@ impl CalendarView {
             .bg(mac::material_sidebar())
             .border_1()
             .border_color(mac::separator());
-        panel = panel.child(rmac_ui::traffic_lights());
+        // The panel's own 8pt inset plus the measured traffic-light origin
+        // (`rmac_ui::traffic_lights_origin`), matching Finder/Notes/System
+        // Settings' sidebar panels — not flush against the panel's corner.
+        let lights_origin = rmac_ui::traffic_lights_origin(true) - 8.0;
+        panel = panel.child(
+            div()
+                .absolute()
+                .left(px(lights_origin))
+                .top(px(lights_origin))
+                .child(rmac_ui::traffic_lights()),
+        );
         let mut list = div()
             .id("calendar-list")
             .role(Role::List)

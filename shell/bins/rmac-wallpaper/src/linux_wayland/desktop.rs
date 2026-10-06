@@ -84,6 +84,12 @@ const SELECTION_RADIUS: f32 = 6.0;
 const LABEL_PAD: f32 = 5.0;
 const LABEL_RADIUS: f32 = 4.0;
 const LABEL_INACTIVE: u32 = 0xFFFFFF40;
+/// Unselected label text shadow (design-lab/desktop.html `.label`): white
+/// text needs this to stay readable over any wallpaper, light or dark.
+/// macOS's `text-shadow: 0 1px 2px rgba(0,0,0,.65)` has no blur equivalent
+/// in GPUI's text styling, so a single offset copy approximates it.
+const LABEL_SHADOW: u32 = 0x000000A6;
+const LABEL_SHADOW_OFFSET: f32 = 1.0;
 /// Marquee (S).
 const MARQUEE_FILL: u32 = 0xFFFFFF1F;
 const MARQUEE_BORDER: u32 = 0xFFFFFF80;
@@ -1735,31 +1741,54 @@ impl Wallpaper {
             )
             .child(match field {
                 Some(field) => div().mt(px(LABEL_GAP)).child(field).into_any_element(),
-                None => div()
-                    .mt(px(LABEL_GAP))
-                    .max_w(px(LABEL_MAX_WIDTH))
-                    .px(px(LABEL_PAD))
-                    .rounded(px(LABEL_RADIUS))
-                    .text_size(px(options.text_size))
-                    .line_height(px(options.label_line()))
-                    .text_center()
+                None => {
                     // Same fix as Finder's icon view: wrap onto two lines and
                     // middle-ellipsize what still overflows, rather than
                     // `line_clamp` alone hard-cropping with no ellipsis
                     // affix, which left a left-clipped fragment on screen.
-                    .whitespace_normal()
-                    .text_ellipsis_middle()
-                    .line_clamp(2)
-                    .text_color(rgba(0xFFFFFFFF))
-                    .when(selected, |label| {
-                        label.bg(rgba(if active {
-                            tokens::accent()
-                        } else {
-                            LABEL_INACTIVE
-                        }))
-                    })
-                    .child(label)
-                    .into_any_element(),
+                    let wrap = |el: gpui::Div| -> gpui::Div {
+                        el.text_size(px(options.text_size))
+                            .line_height(px(options.label_line()))
+                            .text_center()
+                            .whitespace_normal()
+                            .text_ellipsis_middle()
+                            .line_clamp(2)
+                    };
+                    div()
+                        .mt(px(LABEL_GAP))
+                        .max_w(px(LABEL_MAX_WIDTH))
+                        .px(px(LABEL_PAD))
+                        .rounded(px(LABEL_RADIUS))
+                        .relative()
+                        .when(selected, |label| {
+                            label.bg(rgba(if active {
+                                tokens::accent()
+                            } else {
+                                LABEL_INACTIVE
+                            }))
+                        })
+                        // The shadow copy is the in-flow child (it sizes the
+                        // box exactly as the single-text version used to);
+                        // the real text sits on top via inset_0, so both
+                        // share identical wrapping. macOS draws no shadow
+                        // once the pill background gives the text contrast.
+                        .when(!selected, |label_box| {
+                            label_box.child(
+                                wrap(div())
+                                    .relative()
+                                    .top(px(LABEL_SHADOW_OFFSET))
+                                    .text_color(rgba(LABEL_SHADOW))
+                                    .child(label.clone()),
+                            )
+                        })
+                        .child(
+                            wrap(div())
+                                .when(!selected, |el| el.absolute().inset_0())
+                                .text_color(rgba(0xFFFFFFFF))
+                                .child(label),
+                        )
+                        .into_any_element()
+                }
             })
     }
 

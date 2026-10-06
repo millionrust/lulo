@@ -616,6 +616,10 @@ impl MailView {
                     })),
             );
         }
+        // The panel's own 8pt inset plus the measured traffic-light origin
+        // (`rmac_ui::traffic_lights_origin`), matching Finder/Notes/System
+        // Settings' sidebar panels — not flush against the panel's corner.
+        let lights_origin = rmac_ui::traffic_lights_origin(true) - 8.0;
         div()
             .absolute()
             .left(px(8.0))
@@ -626,7 +630,13 @@ impl MailView {
             .bg(mac::material_sidebar())
             .border_1()
             .border_color(mac::separator())
-            .child(rmac_ui::traffic_lights())
+            .child(
+                div()
+                    .absolute()
+                    .left(px(lights_origin))
+                    .top(px(lights_origin))
+                    .child(rmac_ui::traffic_lights()),
+            )
             .child(list)
             .into_any_element()
     }
@@ -1184,10 +1194,14 @@ impl MailView {
             .into_any_element()
     }
 
-    /// Shown instead of the three-pane window when GOA has no mail
+    /// Shown instead of the message list/viewer when GOA has no mail
     /// account yet. Mail must never show fixture or sample data to a real
     /// user — this, not a fake mailbox, is what someone with no account
-    /// sees (`docs/design/calendar-mail.md` §3).
+    /// sees (`docs/design/calendar-mail.md` §3). macOS Mail keeps its
+    /// normal three-pane chrome (toolbar, sidebar) around this prompt
+    /// rather than blanking the whole window, so this reuses the same
+    /// `toolbar`/`sidebar` the populated window renders — both already
+    /// degrade safely with zero accounts (every control just goes idle).
     fn empty_state(&self, cx: &mut Context<Self>) -> AnyElement {
         div()
             .size_full()
@@ -1195,13 +1209,25 @@ impl MailView {
             .bg(mac::window())
             .track_focus(&self.focus)
             .key_context("Mail")
-            .child(rmac_ui::traffic_lights())
+            // Close must work even with no account configured yet: this is
+            // the only root the empty state renders, so it needs its own
+            // close-action handling — the normal three-pane root (below)
+            // isn't mounted while `self.accounts` is empty.
+            .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
+            .on_action(
+                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+            )
+            .child(self.toolbar(cx))
             .child(
                 div()
                     .id("mail-empty-state")
                     .role(Role::Group)
                     .aria_label("No Mail Accounts")
-                    .size_full()
+                    .absolute()
+                    .left(px(SIDEBAR + 8.0))
+                    .right_0()
+                    .top(px(TOOLBAR))
+                    .bottom_0()
                     .flex()
                     .flex_col()
                     .items_center()
@@ -1260,6 +1286,7 @@ impl MailView {
                             })),
                     ),
             )
+            .child(self.sidebar(cx))
             .into_any_element()
     }
 }

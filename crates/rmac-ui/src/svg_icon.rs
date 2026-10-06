@@ -29,7 +29,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use gpui::{img, AssetSource, Context, Img, RenderImage, SharedString};
+use gpui::{img, AssetSource, Context, Img, RenderImage, SharedString, SvgRenderer};
 
 /// Where an icon's raw SVG bytes come from.
 #[derive(Clone)]
@@ -139,6 +139,9 @@ struct IconCache {
     /// render passes before the first one lands doesn't queue the same
     /// decode twice.
     pending: HashSet<CacheKey>,
+    /// Keys `rasterize` could not bring up to their size; drawn with GPUI's
+    /// own `img(source)` instead of being retried on every frame.
+    failed: HashSet<CacheKey>,
 }
 
 /// Generous relative to the actual working set (~100 icons × a handful of
@@ -166,6 +169,7 @@ fn cache() -> &'static Mutex<IconCache> {
             entries: HashMap::new(),
             order: VecDeque::new(),
             pending: HashSet::new(),
+            failed: HashSet::new(),
         })
     })
 }
@@ -187,24 +191,84 @@ fn blank<T: 'static>(cx: &Context<T>) -> Arc<RenderImage> {
         .clone()
 }
 
-/// Width of the SVG's own `viewBox`, read directly out of the bytes
-/// (every master icon in `assets/icons` is `viewBox="0 0 W H"` with no
-/// transform; a missing or unparsable one falls back to 1024, this repo's
-/// actual convention — see the audit behind this module: ~98 SVGs with a
-/// viewBox of 512 or more, nearly all exactly 1024×1024).
-fn native_width(bytes: &[u8]) -> f32 {
+/// The width the SVG renderer itself gives this SVG at scale 1.0: usvg sizes
+/// a tree by the root `<svg>`'s `width` attribute when it is a plain or `px`
+/// length, and only falls back to the `viewBox` width without one. Lulo's
+/// installed app icons (`packaging/rmac-apps/icons`, what a `.desktop`
+/// entry's `Icon=` resolves to) are 1024-unit artwork that declare
+/// `width="128"`, so treating the `viewBox` as the size (as this module
+/// once did) rasterized them at an eighth of the requested size — the
+/// blurry Dock of build d7fa75c9. `None` when neither is readable;
+/// `rasterize` then corrects from the first bitmap it gets.
+fn intrinsic_width(bytes: &[u8]) -> Option<f32> {
     let text = String::from_utf8_lossy(bytes);
-    text.find("viewBox=\"")
-        .and_then(|start| {
-            let rest = &text[start + "viewBox=\"".len()..];
-            let end = rest.find('"')?;
-            let mut parts = rest[..end].split_whitespace();
-            parts.next()?; // min-x
-            parts.next()?; // min-y
-            parts.next()?.parse::<f32>().ok()
+    let start = text.find("<svg")?;
+    let tag = &text[start..start + text[start..].find('>')?];
+    let attribute = |name: &str| -> Option<String> {
+        let needle = format!("{name}=");
+        let mut search = 0;
+        while let Some(found) = tag[search..].find(&needle) {
+            let at = search + found;
+            search = at + needle.len();
+            if !tag[..at].ends_with(char::is_whitespace) {
+                continue; // e.g. `stroke-width=` when looking for `width=`
+            }
+            let rest = &tag[search..];
+            let quote = rest.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+            let value = &rest[1..];
+            return value.find(quote).map(|end| value[..end].trim().to_string());
+        }
+        None
+    };
+    let width = attribute("width").and_then(|value| {
+        value
+            .strip_suffix("px")
+            .unwrap_or(&value)
+            .trim()
+            .parse::<f32>()
+            .ok()
+    });
+    width
+        .or_else(|| {
+            let view_box = attribute("viewBox")?;
+            let mut parts = view_box
+                .split(|c: char| c.is_whitespace() || c == ',')
+                .filter(|part| !part.is_empty());
+            parts.nth(2)?.parse::<f32>().ok()
         })
-        .filter(|width| *width > 0.0)
-        .unwrap_or(1024.0)
+        .filter(|width| width.is_finite() && *width > 0.0)
+}
+
+/// The longer edge of a decoded bitmap, in pixels.
+fn long_side(image: &RenderImage) -> u32 {
+    let size = image.size(0);
+    size.width.0.max(size.height.0).max(0) as u32
+}
+
+/// Rasterizes `bytes` so the bitmap's longer edge is at least `target`
+/// physical px. The scale comes from `intrinsic_width`; the bitmap is then
+/// measured, and one that still came out short (an SVG sized in units the
+/// estimate does not read, such as `width="1in"`) is re-rendered with the
+/// shortfall corrected. `None` when it cannot reach `target` at all, so
+/// the cache never holds — and never serves — a bitmap smaller than the
+/// size it is keyed by.
+fn rasterize(renderer: &SvgRenderer, bytes: &[u8], target: u32) -> Option<Arc<RenderImage>> {
+    let estimate = intrinsic_width(bytes).unwrap_or(1024.0);
+    let mut scale = (target as f32 / estimate).max(0.001);
+    for _ in 0..4 {
+        // An estimate far too small rounds the pixmap down to zero pixels,
+        // which the renderer rejects: grow it and measure again.
+        let Ok(image) = renderer.render_single_frame(bytes, scale) else {
+            scale *= 16.0;
+            continue;
+        };
+        let long = long_side(&image);
+        if long >= target {
+            return Some(image);
+        }
+        scale *= (target + 1) as f32 / long.max(1) as f32;
+    }
+    None
 }
 
 /// Draws `source` at a logical size the caller sets afterwards with
@@ -244,8 +308,14 @@ pub fn svg_icon<T: 'static>(
         source.cache_key(),
         bucket_up(size.max(1.0) * scale_factor.max(1.0)),
     );
-    if let Some(image) = cache().lock().unwrap().entries.get(&key).cloned() {
-        return img(image);
+    {
+        let guard = cache().lock().unwrap();
+        if let Some(image) = guard.entries.get(&key).cloned() {
+            return img(image);
+        }
+        if guard.failed.contains(&key) {
+            return source.fallback_img();
+        }
     }
     spawn_decode(source, key, cx);
     img(blank(cx))
@@ -260,23 +330,29 @@ fn spawn_decode<T: 'static>(source: IconSource, key: CacheKey, cx: &Context<T>) 
     }
     let renderer = cx.svg_renderer();
     let assets = cx.asset_source().clone();
-    let target = key.1 as f32;
+    let target = key.1;
     cx.spawn(async move |this, cx| {
         let decoded = blocking::unblock(move || {
             let bytes = source.load_bytes(&assets)?;
-            let scale = (target / native_width(&bytes)).max(0.001);
-            renderer.render_single_frame(&bytes, scale).ok()
+            rasterize(&renderer, &bytes, target)
         })
         .await;
         {
             let mut guard = cache().lock().unwrap();
             guard.pending.remove(&key);
-            if let Some(image) = decoded {
-                guard.order.push_back(key.clone());
-                guard.entries.insert(key, image);
-                while guard.order.len() > CACHE_CAPACITY {
-                    if let Some(oldest) = guard.order.pop_front() {
-                        guard.entries.remove(&oldest);
+            match decoded {
+                None => {
+                    // Never retried per frame: `svg_icon` hands this key to
+                    // GPUI's own `img(source)` from now on.
+                    guard.failed.insert(key);
+                }
+                Some(image) => {
+                    guard.order.push_back(key.clone());
+                    guard.entries.insert(key, image);
+                    while guard.order.len() > CACHE_CAPACITY {
+                        if let Some(oldest) = guard.order.pop_front() {
+                            guard.entries.remove(&oldest);
+                        }
                     }
                 }
             }
@@ -288,7 +364,45 @@ fn spawn_decode<T: 'static>(source: IconSource, key: CacheKey, cx: &Context<T>) 
 
 #[cfg(test)]
 mod tests {
-    use super::bucket_up;
+    use super::{bucket_up, intrinsic_width, long_side, rasterize};
+    use std::sync::Arc;
+
+    /// An installed Lulo app icon: 1024-unit artwork declared 128 px wide.
+    const FILES_ICON: &[u8] =
+        include_bytes!("../../../packaging/rmac-apps/icons/org.rmac.Files.svg");
+    /// A bundled master: the same artwork declared 1024 px wide.
+    const NOTES_ASSET: &[u8] = include_bytes!("../../../assets/icons/notes.svg");
+
+    /// The renderer sizes by `width`, not `viewBox`; reading the latter is
+    /// what rasterized every installed app icon at an eighth of its size.
+    #[test]
+    fn intrinsic_width_follows_the_width_attribute() {
+        assert_eq!(intrinsic_width(FILES_ICON), Some(128.0));
+        assert_eq!(intrinsic_width(NOTES_ASSET), Some(1024.0));
+        assert_eq!(
+            intrinsic_width(br#"<svg viewBox="0,0,48,48" width="100%">"#),
+            Some(48.0)
+        );
+        assert_eq!(intrinsic_width(b"<svg>"), None);
+    }
+
+    /// Whatever the SVG declares, the cached bitmap is at least the
+    /// physical size it is keyed by.
+    #[test]
+    fn rasterize_never_returns_a_bitmap_smaller_than_requested() {
+        let renderer = gpui::SvgRenderer::new(Arc::new(()));
+        let inches = br#"<svg xmlns="http://www.w3.org/2000/svg" width="0.25in" height="0.25in" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="red"/></svg>"#;
+        for bytes in [FILES_ICON, NOTES_ASSET, inches.as_slice()] {
+            for target in [16, 40, 64, 104, 160] {
+                let image = rasterize(&renderer, bytes, target).expect("icon decodes");
+                assert!(
+                    long_side(&image) >= target,
+                    "{} px bitmap for a {target} px request",
+                    long_side(&image)
+                );
+            }
+        }
+    }
 
     /// A bucketed raster target is never smaller than what was asked for
     /// — GPUI must only ever downsample this art, never upsample it.

@@ -619,6 +619,17 @@ python3 scripts/behavior/run_niri_minimize.py --niri ~/rmac-niri-build/target/re
   --bin-dir $CARGO_TARGET_DIR/iterate [--calculator $CARGO_TARGET_DIR/iterate/rmac-calculator]
 ```
 
+Dock icon sharpness (DOCK-30) uses the same nested niri with no input at all.
+`scripts/behavior/run_dock_sharpness.py` starts only the Dock at `--scale`, optionally with a
+read-only copy of a `shell.json` (pinned apps, tile size), captures the output and scores each
+tile's mean absolute Laplacian. The blurry d7fa75c9 Dock scored a median of 4.9 at scale 1, the
+fixed one 18.6; `--min-sharpness 12` makes that a pass/fail check.
+
+```sh
+python3 scripts/behavior/run_dock_sharpness.py --dock $CARGO_TARGET_DIR/iterate/dock \
+  --scale 1.25 --min-sharpness 12 [--shell-json COPY_OF_SHELL_JSON] [--output DIR]
+```
+
 Title-bar movement runs in nested niri as well, because Sway does not exercise GPUI's
 `xdg_toplevel.move` requests. The runner uses the shipped `shell.kdl`, drags Calculator and
 Settings plus a GTK window with the virtual pointer, and checks niri's reported positions. It

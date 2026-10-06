@@ -27,8 +27,8 @@ Scenarios, each starting from a clean (all-closed) state:
     the other instead of just closing (macOS behaviour, `TopBar::open_menu`'s
     existing `stop_propagation`);
   - Escape closes an open menu;
-  - holding ⌥ while Finder's Application menu is open swaps Empty Trash…
-    for its hidden alternate, Empty Trash, in the same row, reverting the
+  - holding ⌥ while Finder's Application menu is open swaps Empty Bin…
+    for its hidden alternate, Empty Bin, in the same row, reverting the
     instant ⌥ is released (UIA-22);
   - opening Control Center alongside an open app menu, then clicking the
     wallpaper, closes both (checked with `grim` + a pixel-difference crop
@@ -483,8 +483,8 @@ class Run:
                        self.find_menu_item("About") is not None)
 
     def option_alternate_swaps_in_open_app_menu(self) -> None:
-        """UIA-22: Finder's Application menu shows "Empty Trash…"; AppKit
-        replaces it in place with its ⌥ alternate, "Empty Trash", for as
+        """UIA-22: Finder's Application menu shows "Empty Bin…"; AppKit
+        replaces it in place with its ⌥ alternate, "Empty Bin", for as
         long as Option is held, reverting the instant it's released. No
         Files window is open in this harness, so the top bar falls back to
         Files' own static menu definition (`static_fallback_menus`), which
@@ -497,48 +497,50 @@ class Run:
             return self.find_node(("menu item",), lambda name: name == label)
 
         self.close_everything()
-        # Index 1: the active app's own title, right of the logo (the same
-        # lookup `clicking_another_title_switches_menus` uses). With
-        # nothing focused this is the desktop's ("Finder"-equivalent) title.
-        title = self.wait_for(
-            lambda: self.find_node(
-                ("push button", "button"), lambda name: name != LULO_MENU and name.endswith(" menu")
-            ),
-            10,
-            0.3,
-        )
-        self.check("⌥ alternate: the active app's own title is present", title is not None)
+        # Index 1, specifically: the active app's own bold title
+        # (`format!("{} menu", bar.active_app)`, `main.rs`), not any of the
+        # exported File/Edit/View/… titles beside it — those also end with
+        # " menu", so a generic suffix match (as
+        # `clicking_another_title_switches_menus` uses, where it genuinely
+        # doesn't matter which title it finds) can land on the wrong one.
+        # With nothing focused, the desktop default is Files
+        # (`static_fallback_menus`, `app_display_name(FILES)` == "Files"),
+        # whose Application menu — not File/Edit/etc. — carries Empty
+        # Bin…/Empty Bin.
+        title = self.wait_for(lambda: self.find_button("Files menu"), 10, 0.3)
+        self.check("⌥ alternate: the Files application title is present", title is not None)
         if title is None:
             return
-        title_name = title.name
         opened = self.retry_until(
-            lambda: self.click_node(
-                self.find_node(("push button", "button"), lambda name: name == title_name)
-            ),
-            lambda: exact("Empty Trash…") is not None,
+            lambda: self.click_node(self.find_button("Files menu")),
+            lambda: exact("Empty Bin…") is not None,
         )
-        self.check("⌥ alternate: the Application menu opens with Empty Trash…", opened)
+        self.check("⌥ alternate: the Application menu opens with Empty Bin…", opened)
         if not opened:
             return
-        self.keys.hold_modifier("alt")
+        # `.hold("alt-f5")`, not a bare modifier: F5 is tapped and released
+        # immediately (harmless — nothing in an open app menu binds it) so
+        # the modifier state change rides along with a real key event, the
+        # same proven path `.hold("cmd-tab")` already uses elsewhere.
+        self.keys.hold("alt-f5")
         try:
             swapped = self.wait_for(
-                lambda: exact("Empty Trash") is not None and exact("Empty Trash…") is None,
+                lambda: exact("Empty Bin") is not None and exact("Empty Bin…") is None,
                 5,
                 0.2,
             )
             self.check(
-                "⌥ alternate: holding ⌥ swaps Empty Trash… to Empty Trash in the same slot",
+                "⌥ alternate: holding ⌥ swaps Empty Bin… to Empty Bin in the same slot",
                 swapped,
             )
         finally:
-            self.keys.release_modifier("alt")
+            self.keys.release("alt-f5")
         reverted = self.wait_for(
-            lambda: exact("Empty Trash…") is not None and exact("Empty Trash") is None,
+            lambda: exact("Empty Bin…") is not None and exact("Empty Bin") is None,
             5,
             0.2,
         )
-        self.check("⌥ alternate: releasing ⌥ reverts the row to Empty Trash…", reverted)
+        self.check("⌥ alternate: releasing ⌥ reverts the row to Empty Bin…", reverted)
         self.close_everything()
 
     def status_menu_dismissal(self, label: str) -> None:
@@ -953,6 +955,13 @@ class Run:
                 }
                 self.layer_popover_dismissal(self.args.only, namespaces[self.args.only])
             return self.finish()
+        # Before `dock_click_closes_app_menu` below: it deliberately clicks
+        # a Dock tile to close a menu, which (correctly — clicking a Dock
+        # icon launches that app, as on the Mac) starts whatever app sits
+        # at the shelf's horizontal centre, so every later scenario here
+        # finds that app focused rather than the empty desktop Files' own
+        # static fallback menus (and so Empty Bin…) need.
+        self.option_alternate_swaps_in_open_app_menu()
         self.dock_click_closes_app_menu()
         self.wallpaper_click_inside_band_closes_app_menu()
         self.wallpaper_click_below_band_closes_status_menu()
@@ -960,7 +969,6 @@ class Run:
         self.other_window_click_closes_app_menu()
         self.clicking_another_title_switches_menus()
         self.clicking_same_title_keeps_menu()
-        self.option_alternate_swaps_in_open_app_menu()
         for label in ("Wi-Fi", "Bluetooth", "Sound"):
             self.status_menu_dismissal(label)
         self.dock_context_menu_dismissal()

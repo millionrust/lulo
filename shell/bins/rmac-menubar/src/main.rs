@@ -4704,23 +4704,31 @@ mod linux_wayland {
                     this.set_pointer_inside(*hovered, cx);
                 }))
                 .font_family("Inter")
-                .on_modifiers_changed(cx.listener(|this, event: &ModifiersChangedEvent, _, cx| {
-                    // Holding Option while the Wi-Fi menu is open reveals its
-                    // details, as on macOS.
-                    if this.status_menu.is_some() && event.modifiers.alt && !this.status_option {
-                        this.status_option = true;
-                        cx.notify();
-                    }
-                    // An open app menu swaps each alternate-bearing item
-                    // (Empty Bin…/Empty Bin, UIA-22) in place for as long as
-                    // ⌥ is held, reverting the instant it's released —
-                    // unlike `status_option` above, this tracks the live
-                    // key state both ways, not just a one-way reveal.
-                    if this.open_menu.is_some() && this.app_menu_option != event.modifiers.alt {
-                        this.app_menu_option = event.modifiers.alt;
-                        cx.notify();
-                    }
-                }))
+                .on_modifiers_changed(cx.listener(
+                    |this, event: &ModifiersChangedEvent, window, cx| {
+                        // Holding Option while the Wi-Fi menu is open reveals its
+                        // details, as on macOS.
+                        if this.status_menu.is_some() && event.modifiers.alt && !this.status_option
+                        {
+                            this.status_option = true;
+                            cx.notify();
+                        }
+                        // An open app menu swaps each alternate-bearing item
+                        // (Empty Bin…/Empty Bin, UIA-22) in place for as long as
+                        // ⌥ is held, reverting the instant it's released —
+                        // unlike `status_option` above, this tracks the live
+                        // key state both ways, not just a one-way reveal. A
+                        // bare modifier change is otherwise the only input
+                        // event in the whole gesture, so force a prompt
+                        // repaint instead of leaving it for whatever the next
+                        // frame happens to be.
+                        if this.open_menu.is_some() && this.app_menu_option != event.modifiers.alt {
+                            this.app_menu_option = event.modifiers.alt;
+                            cx.notify();
+                            window.refresh();
+                        }
+                    },
+                ))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     if this.open_menu.is_some() || this.status_menu.is_some() {
                         cx.stop_propagation();

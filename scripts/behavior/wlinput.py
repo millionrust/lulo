@@ -335,22 +335,6 @@ class Wayland:
         mods, code = parse_chord(chord)
         self.stroke(mods, code)
 
-    def hold_modifier(self, mod: str) -> None:
-        """Press and hold a bare modifier with no base key — ⌥ alone, for a
-        menu's alternate items (UIA-22) to watch live the way AppKit does.
-        Release with `release_modifier`."""
-
-        key, bit = MODIFIER_KEYS[mod]
-        self._key(key, True)
-        self._modifiers(bit)
-        self.roundtrip()
-
-    def release_modifier(self, mod: str) -> None:
-        key, _bit = MODIFIER_KEYS[mod]
-        self._key(key, False)
-        self._modifiers(0)
-        self.roundtrip()
-
     def hold(self, chord: str, extra: tuple[str, ...] = ()) -> None:
         """Press the chord's modifiers, tap its key and keep the modifiers
         down (⌘Tab held to browse the switcher), then press `extra`

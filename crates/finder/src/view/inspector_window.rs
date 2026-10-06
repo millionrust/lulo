@@ -200,7 +200,7 @@ fn pending_summary_details() -> Vec<(&'static str, String)> {
 enum InspectorContent {
     Message(&'static str),
     Item {
-        entry: Entry,
+        entry: Box<Entry>,
         details: Vec<(&'static str, String)>,
     },
     Summary {
@@ -264,7 +264,7 @@ impl InspectorWindow {
         self.scan_generation = self.scan_generation.wrapping_add(1);
         let mut title = snapshot.title();
         self.content = match &snapshot.target {
-            InspectorTarget::Message(message) => InspectorContent::Message(*message),
+            InspectorTarget::Message(message) => InspectorContent::Message(message),
             InspectorTarget::Item(path) => match entry_for(path) {
                 Some(entry) => {
                     title = format!("{} Info", entry.name);
@@ -273,7 +273,7 @@ impl InspectorWindow {
                     }
                     InspectorContent::Item {
                         details: info_details(&entry),
-                        entry,
+                        entry: Box::new(entry),
                     }
                 }
                 None => InspectorContent::Message(NO_SELECTION),

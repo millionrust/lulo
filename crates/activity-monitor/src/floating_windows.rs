@@ -9,7 +9,7 @@ use gpui::{
     div, px, App, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, Styled as _, Window, WindowHandle,
 };
-use rmac_ui::{mac, Root};
+use rmac_ui::{mac, Root, StyledExt as _};
 
 use crate::gpu_stats::GpuReading;
 use crate::view::MonitorView;
@@ -278,10 +278,10 @@ mod tests {
             .map(|k| k.storage_id())
             .collect();
         for title in &titles {
-            assert_eq!(titles.iter().filter(|t| t == title).count(), 1);
+            assert_eq!(titles.iter().filter(|t| *t == title).count(), 1);
         }
         for id in &ids {
-            assert_eq!(ids.iter().filter(|i| i == id).count(), 1);
+            assert_eq!(ids.iter().filter(|i| *i == id).count(), 1);
         }
     }
 }

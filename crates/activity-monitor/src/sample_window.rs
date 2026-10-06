@@ -6,7 +6,7 @@ use gpui::{
     div, px, App, AppContext as _, Context, FocusHandle, FontWeight, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _, Window,
 };
-use rmac_ui::{mac, Root};
+use rmac_ui::{mac, Root, StyledExt as _};
 
 use crate::sampling_report::{format_report, SampleReport};
 

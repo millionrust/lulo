@@ -60,6 +60,8 @@ class ScrollRun(base.Run):
         super().__init__(args, work)
         self.width, self.height, self.scale = CASES[args.case]
         self.logical_h = round(self.height / self.scale)
+        self.margin = SCREEN_MARGIN * self.scale
+        self.arrow = ARROW * self.scale
         self.shots = Path(args.shots) if args.shots else None
 
     def bin(self, name: str) -> str:
@@ -115,7 +117,8 @@ class ScrollRun(base.Run):
         self.keys = wlinput.Wayland({**self.env, "WAYLAND_DISPLAY": self.sway_display,
                                      "RMAC_BEHAVIOR_NESTED": "1"})
 
-    # Logical points to the host Sway's pixels.
+    # GPUI reports AT-SPI extents in output pixels, which are also the host
+    # Sway's pixels, so everything below works in pixels.
     def click_at(self, x: float, y: float, button: str = "left") -> bool:
         self.point(x, y)
         self.keys.button(True, button)
@@ -125,7 +128,7 @@ class ScrollRun(base.Run):
         return True
 
     def point(self, x: float, y: float) -> None:
-        self.keys.move(x * self.scale, y * self.scale, self.width, self.height)
+        self.keys.move(x, y, self.width, self.height)
         time.sleep(0.3)
 
     def shot(self, name: str) -> Image.Image:
@@ -170,7 +173,7 @@ class ScrollRun(base.Run):
             return self.finish()
         opened = self.retry_until(lambda: self.click_node(button),
                                   lambda: self.find_menu("File menu") is not None)
-        self.check("File menu opens", opened)
+        self.check("File menu opens", opened, f"button={self.extents(button)}")
         if not opened:
             return self.finish()
         time.sleep(1.0)
@@ -183,32 +186,39 @@ class ScrollRun(base.Run):
         x, y, w, h = panel
         bottom = y + h
         self.check("panel stays 5 pt above the screen bottom",
-                   bottom <= self.logical_h - SCREEN_MARGIN + 1, f"panel={panel} screen={self.logical_h}")
+                   bottom <= self.height - self.margin + 2, f"panel={panel} screen={self.height}")
         opened_shot = self.shot("open")
         last = items[-1]
         if self.args.case == "fits":
             self.check("every row is inside the panel",
-                       all(row[1] >= y - 1 and row[1] + row[3] <= bottom + 1 for row in items),
+                       all(row[1] >= y - 2 and row[1] + row[3] <= bottom + 2 for row in items),
                        f"panel={panel} last={last}")
-            # Below the panel, past its shadow's reach, the screen must be
-            # unchanged: the old backdrop slab drew a light block there.
+            # The last row's label is really painted. When the bar's surface
+            # was too short, the rows stopped part-way and only the plain
+            # material backdrop (a flat light slab) showed where they belong.
             s = self.scale
-            below = (int((x + 20) * s), int((bottom + 60) * s),
-                     int((x + w - 20) * s), int(min(bottom + 200, self.logical_h - 2) * s))
-            if below[3] > below[1]:
-                changed = self.changed_pixels(closed, opened_shot, below)
-                self.check("nothing is drawn under the panel", changed < 50, f"changed={changed} box={below}")
+            label = opened_shot.crop((int(x + 20 * s), int(last[1]),
+                                      int(x + w / 2), int(last[1] + last[3]))).convert("L")
+            values = list(label.getdata())
+            spread = max(values) - min(values) if values else 0
+            self.check("the last row is drawn", spread >= 80, f"spread={spread} row={last}")
+            # Beside the panel's left edge, below the bar, nothing changes:
+            # the backdrop is no wider or taller than the panel.
+            beside = (max(0, int(x - 60 * s)), int(y + h / 2), max(1, int(x - 45 * s)), int(bottom - 20 * s))
+            if beside[2] > beside[0]:
+                changed = self.changed_pixels(closed, opened_shot, beside)
+                self.check("nothing is drawn beside the panel", changed < 50, f"changed={changed} box={beside}")
             # The panel's material is near-white in light appearance.
             if self.args.appearance == "light":
-                inner = opened_shot.crop((int((x + w - 12) * s), int((y + h / 2) * s),
-                                          int((x + w - 6) * s), int((y + h / 2 + 40) * s)))
+                inner = opened_shot.crop((int(x + w - 12 * s), int(y + h / 2),
+                                          int(x + w - 6 * s), int(y + h / 2 + 40 * s)))
                 pixels = list(inner.getdata())
                 mean = sum(sum(p) for p in pixels) / (3 * max(1, len(pixels)))
                 self.check("light material is bright", mean >= 200, f"mean={mean:.0f}")
             self.keys.key("escape")
             return self.finish()
 
-        hidden = [row for row in items if row[1] + row[3] > bottom + 1]
+        hidden = [row for row in items if row[1] + row[3] > bottom + 2]
         self.check("rows are hidden below the panel", bool(hidden), f"panel={panel} last={last}")
         first_top = items[0][1]
         # Up with nothing highlighted highlights the last row: it scrolls
@@ -217,8 +227,8 @@ class ScrollRun(base.Run):
         time.sleep(0.6)
         items = self.menu_items(self.find_menu("File menu"))
         self.check("Up scrolls the last row into view",
-                   items and items[-1][1] + items[-1][3] <= bottom + 1, f"last={items[-1] if items else None}")
-        self.check("the first rows scroll away", items and items[0][1] < first_top - ARROW,
+                   items and items[-1][1] + items[-1][3] <= bottom + 2, f"last={items[-1] if items else None}")
+        self.check("the first rows scroll away", items and items[0][1] < first_top - self.arrow,
                    f"first={items[0] if items else None}")
         self.shot("scrolled-end")
         # The wheel scrolls back up a little.
@@ -232,11 +242,11 @@ class ScrollRun(base.Run):
         self.check("the wheel scrolls the rows back", items and items[0][1] > scrolled,
                    f"before={scrolled} after={items[0] if items else None}")
         # Resting on the top arrow scrolls to the very top, then stops.
-        self.point(x + w / 2, y + ARROW / 2)
+        self.point(x + w / 2, y + self.arrow / 2)
         time.sleep(2.5)
         items = self.menu_items(self.find_menu("File menu"))
         self.check("resting on the top arrow scrolls to the top",
-                   items and abs(items[0][1] - first_top) <= 1,
+                   items and abs(items[0][1] - first_top) <= 2,
                    f"first={items[0] if items else None} want={first_top}")
         self.shot("scrolled-top")
         self.keys.key("escape")

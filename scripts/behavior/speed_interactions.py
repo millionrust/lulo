@@ -1001,6 +1001,19 @@ class InteractionScenarios:
             summary = {**frames_summary(events), **frame_split_ms(events)}
             summary["configures"] = sum(1 for event, _ in events if event == "configure")
             summary["resizes"] = sum(1 for event, _ in events if event == "resize")
+            # SPEED-12: swapchain rebuilds versus resizes drawn into the
+            # swapchain already allocated, and how long each configure took
+            # to reach the screen.
+            summary["swapchain_rebuilds"] = sum(1 for event, _ in events if event == "renderer_resized")
+            summary["swapchain_kept"] = sum(1 for event, _ in events if event == "renderer_kept")
+            answers = []
+            for index, (event, micros) in enumerate(events):
+                if event == "configure":
+                    present = next((at for name, at in events[index + 1:] if name == "present"), None)
+                    if present is not None:
+                        answers.append((present - micros) / 1000.0)
+            summary["configure_to_present_p95_ms"] = percentile(answers, 0.95)
+            summary["configure_to_present_max_ms"] = max(answers) if answers else None
             summary["start_size"] = start_size
             final = (self.window_by_app_id(SETTINGS_APP_ID) or {}).get("layout") or {}
             summary["final_size"] = final.get("window_size")

@@ -32,7 +32,12 @@ pub(super) struct PaneView {
 impl SettingsViews {
     pub(super) fn new(settings: &Entity<Settings>, cx: &mut App) -> Self {
         let sidebar = cx.new(|cx| {
-            cx.observe(settings, |_, _, cx| cx.notify()).detach();
+            cx.observe(settings, |_, _, cx| {
+                // SPEED-02: which notification dirtied the window.
+                rmac_ui::trace_mark("settings_notified");
+                cx.notify()
+            })
+            .detach();
             SidebarView {
                 settings: settings.downgrade(),
             }
@@ -64,6 +69,7 @@ pub(super) fn view_element<V: Render>(view: &Entity<V>, cached: bool) -> AnyElem
 
 impl Render for SidebarView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        rmac_ui::trace_mark("settings_sidebar_render");
         let sidebar = self.settings.upgrade().map(|settings| {
             settings.update(cx, |settings, cx| {
                 let layout = settings.layout(window);
@@ -78,6 +84,7 @@ impl Render for SidebarView {
 
 impl Render for PaneView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        rmac_ui::trace_mark("settings_pane_render");
         let detail = self
             .settings
             .upgrade()

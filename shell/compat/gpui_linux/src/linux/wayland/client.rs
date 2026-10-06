@@ -349,6 +349,14 @@ pub fn request_layer_window_configure(window: AnyWindowHandle) -> bool {
     find_window(window).is_some_and(|found| found.request_map_configure())
 }
 
+/// rmac: allocate `window`'s swapchain for `size` (logical) now and crop it
+/// to the window with `wp_viewport`, so growing to `size` later is drawn in
+/// the same frame without rebuilding the swapchain. Returns false when
+/// `window` is not a window of this client or cannot crop.
+pub fn reserve_window_drawable(window: AnyWindowHandle, size: Size<Pixels>) -> bool {
+    find_window(window).is_some_and(|found| found.reserve_drawable(size))
+}
+
 fn find_window(window: AnyWindowHandle) -> Option<WaylandWindowStatePtr> {
     FILE_DRAG_CLIENT.with(|slot| {
         let client = slot.borrow().upgrade()?;

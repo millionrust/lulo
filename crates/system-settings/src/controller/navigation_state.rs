@@ -104,6 +104,7 @@ impl Settings {
     /// Repaint the detail pane, and the root shell around it (toolbar,
     /// banner, sheets), but not the sidebar: for data no sidebar row reads.
     pub(super) fn notify_pane(&self, cx: &mut Context<Self>) {
+        rmac_ui::trace_mark("settings_pane_notified");
         match &self.views {
             Some(views) => views.pane.update(cx, |_, cx| cx.notify()),
             None => cx.notify(),

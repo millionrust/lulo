@@ -1123,43 +1123,49 @@ mod linux_wayland {
         /// window it was opened over, as macOS keeps that window key. ⌃F2
         /// keyboard mode restores focus itself (`leave_menu_keyboard`).
         fn close_menu_returning_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-            let target = if self.keyboard.is_none() {
-                self.focus_return.or(self.menu_window)
-            } else {
-                None
-            };
-            self.close_menu(window, cx);
-            if let Some(window) = target {
-                cx.spawn(async move |_, _| {
-                    // A click gave the bar niri's on-demand layer focus, which
-                    // `FocusWindow` alone leaves in place. Focusing the
-                    // window's own (already active) workspace releases it
-                    // without moving anything; then the window takes the
-                    // keyboard back.
-                    let workspace =
-                        rmac_compositor_niri::snapshot()
-                            .await
-                            .ok()
-                            .and_then(|snapshot| {
-                                snapshot
-                                    .windows
-                                    .iter()
-                                    .find(|candidate| candidate.id == window)
-                                    .and_then(|candidate| candidate.workspace)
-                            });
-                    let actions = workspace
-                        .map(|workspace| rmac_compositor::Action::FocusWorkspace { workspace })
-                        .into_iter()
-                        .chain([rmac_compositor::Action::FocusWindow { window }]);
-                    for action in actions {
-                        if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
-                            eprintln!("could not return focus from the menu bar: {error:?}");
-                            return;
-                        }
-                    }
-                })
-                .detach();
+            if self.keyboard.is_some() {
+                self.close_menu(window, cx);
+                return;
             }
+            let remembered = self.focus_return.or(self.menu_window);
+            self.close_menu(window, cx);
+            cx.spawn(async move |_, _| {
+                let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+                    return;
+                };
+                // The window remembered at open, or else the one niri's
+                // layout still has active under the bar's layer focus (the
+                // status projection can lag a just-finished focus change).
+                let Some(target) = remembered.or_else(|| {
+                    snapshot
+                        .workspaces
+                        .iter()
+                        .find(|workspace| workspace.focused)
+                        .and_then(|workspace| workspace.active_window)
+                }) else {
+                    return;
+                };
+                // A click gave the bar niri's on-demand layer focus, which
+                // `FocusWindow` alone leaves in place. Focusing the window's
+                // own (already active) workspace releases it without moving
+                // anything; then the window takes the keyboard back.
+                let workspace = snapshot
+                    .windows
+                    .iter()
+                    .find(|candidate| candidate.id == target)
+                    .and_then(|candidate| candidate.workspace);
+                let actions = workspace
+                    .map(|workspace| rmac_compositor::Action::FocusWorkspace { workspace })
+                    .into_iter()
+                    .chain([rmac_compositor::Action::FocusWindow { window: target }]);
+                for action in actions {
+                    if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                        eprintln!("could not return focus from the menu bar: {error:?}");
+                        return;
+                    }
+                }
+            })
+            .detach();
         }
 
         /// Runs from pointer handlers, outside render, where

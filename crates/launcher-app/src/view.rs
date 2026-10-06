@@ -613,26 +613,6 @@ impl LauncherView {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::SurfaceBridge;
-    use rmac_launcher_system::{FailureKind, Surface as _};
-
-    #[test]
-    fn settings_surface_rejects_hidden_destinations() {
-        let (sender, _receiver) = async_channel::bounded(1);
-        let surface = SurfaceBridge { clipboard: sender };
-        assert_eq!(
-            surface.open_setting("assistant").unwrap_err().kind,
-            FailureKind::InvalidAction
-        );
-        assert_eq!(
-            surface.open_setting("screen-time").unwrap_err().kind,
-            FailureKind::InvalidAction
-        );
-    }
-}
-
 /// Show the compact bar or the expanded panel (SPEED-10). On Linux the layer
 /// surface keeps its expanded size from the start: the space below the bar
 /// is transparent and outside the input region while the bar is compact, so
@@ -668,5 +648,25 @@ pub(crate) fn set_compact(window: &mut gpui::Window, compact: bool) {
             )
         };
         window.resize(size(px(width), px(height)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SurfaceBridge;
+    use rmac_launcher_system::{FailureKind, Surface as _};
+
+    #[test]
+    fn settings_surface_rejects_hidden_destinations() {
+        let (sender, _receiver) = async_channel::bounded(1);
+        let surface = SurfaceBridge { clipboard: sender };
+        assert_eq!(
+            surface.open_setting("assistant").unwrap_err().kind,
+            FailureKind::InvalidAction
+        );
+        assert_eq!(
+            surface.open_setting("screen-time").unwrap_err().kind,
+            FailureKind::InvalidAction
+        );
     }
 }

@@ -31,3 +31,11 @@ serde_json.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus.workspace = true
+
+# No /usr/share/zoneinfo to read on Windows (ADR 0023 phase 2): chrono-tz's
+# embedded IANA data, and chrono::Local for the OS's own zone, back the
+# world clock and alarm scheduling instead. Both are already workspace
+# dependencies (calendar, calendar-agent), so this adds no new crate.
+[target.'cfg(windows)'.dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true

@@ -7,13 +7,26 @@ authors.workspace = true
 publish = false
 
 [dependencies]
-ashpd = { workspace = true, features = ["raw_handle"] }
 blocking.workspace = true
 futures-util.workspace = true
 raw-window-handle.workspace = true
 rmac-print.workspace = true
 serde.workspace = true
 zbus.workspace = true
+
+# ashpd (the XDG Print portal transport) is itself Unix-only — it reaches
+# into std::os::fd and zbus::zvariant::{Fd,OwnedFd}, neither of which exist
+# on Windows — and every line that uses it is already behind `mod linux`'s
+# own `cfg(unix)` gate (see lib.rs). It was previously declared as an
+# unconditional dependency, which built lib.rs's `cfg(unix)`-only code on
+# every Unix (Linux and macOS) but still tried, and failed, to compile
+# ashpd itself for Windows the moment anything pulled this crate into a
+# Windows build (ADR 0023 phase 2: Preview and Terminal now do). Gating the
+# dependency itself, not just the code, makes a Windows build skip ashpd
+# entirely, matching this crate's own already-documented Windows gap
+# ("Printing is unavailable").
+[target.'cfg(unix)'.dependencies]
+ashpd = { workspace = true, features = ["raw_handle"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { workspace = true, features = ["wayland"] }

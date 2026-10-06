@@ -827,8 +827,6 @@ fn open_target_restore_window(
     path: &std::path::Path,
     profile: usize,
 ) -> Option<crate::session_restore::RestoreWindow> {
-    use std::os::unix::fs::PermissionsExt;
-
     let metadata = std::fs::metadata(path).ok()?;
     let tab = if metadata.is_dir() {
         crate::session_restore::RestoreTab {
@@ -839,7 +837,7 @@ fn open_target_restore_window(
             scrollback: String::new(),
         }
     } else {
-        let executable = metadata.permissions().mode() & 0o111 != 0;
+        let executable = is_executable(&metadata, path);
         let parent = path.parent().map(std::path::Path::to_path_buf);
         if executable {
             crate::session_restore::RestoreTab {
@@ -852,14 +850,56 @@ fn open_target_restore_window(
         } else {
             crate::session_restore::RestoreTab {
                 cwd: parent,
-                program: Some("/bin/sh".to_string()),
-                args: vec![path.to_string_lossy().into_owned()],
+                program: Some(shell_runner()),
+                args: shell_run_args(path),
                 profile,
                 scrollback: String::new(),
             }
         }
     };
     Some(crate::session_restore::RestoreWindow { tabs: vec![tab] })
+}
+
+/// Unix: the executable bit. Windows has no such bit; a `.exe`/`.bat`/`.cmd`
+/// extension is "executable" there (what `cmd.exe` would run directly).
+#[cfg(unix)]
+fn is_executable(metadata: &std::fs::Metadata, _path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(windows)]
+fn is_executable(_metadata: &std::fs::Metadata, path: &std::path::Path) -> bool {
+    let _ = _metadata;
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("exe")
+                || extension.eq_ignore_ascii_case("bat")
+                || extension.eq_ignore_ascii_case("cmd")
+        })
+}
+
+/// What runs a non-executable file: `/bin/sh` on Unix, the same default
+/// shell Terminal starts (`powershell.exe`) on Windows.
+#[cfg(unix)]
+fn shell_runner() -> String {
+    "/bin/sh".to_string()
+}
+
+#[cfg(windows)]
+fn shell_runner() -> String {
+    "powershell.exe".to_string()
+}
+
+#[cfg(unix)]
+fn shell_run_args(path: &std::path::Path) -> Vec<String> {
+    vec![path.to_string_lossy().into_owned()]
+}
+
+#[cfg(windows)]
+fn shell_run_args(path: &std::path::Path) -> Vec<String> {
+    vec!["-File".to_string(), path.to_string_lossy().into_owned()]
 }
 
 #[cfg(test)]
@@ -884,6 +924,7 @@ mod open_target_tests {
         assert_eq!(restore.tabs[0].profile, 2);
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_non_executable_file_runs_through_a_plain_shell() {
         let path = std::env::temp_dir().join(format!(
@@ -900,6 +941,7 @@ mod open_target_tests {
         std::fs::remove_file(&path).ok();
     }
 
+    #[cfg(unix)]
     #[test]
     fn an_executable_file_runs_directly() {
         use std::os::unix::fs::PermissionsExt;
@@ -911,6 +953,40 @@ mod open_target_tests {
         let mut perms = std::fs::metadata(&path).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&path, perms).unwrap();
+        let restore = open_target_restore_window(&path, 0).expect("exists");
+        assert_eq!(
+            restore.tabs[0].program.as_deref(),
+            Some(path.to_str().unwrap())
+        );
+        assert!(restore.tabs[0].args.is_empty());
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_non_executable_file_runs_through_powershell() {
+        let path = std::env::temp_dir().join(format!(
+            "rmac-terminal-open-target-test-{}.txt",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"echo hi\n").unwrap();
+        let restore = open_target_restore_window(&path, 0).expect("exists");
+        assert_eq!(restore.tabs[0].program.as_deref(), Some("powershell.exe"));
+        assert_eq!(
+            restore.tabs[0].args,
+            vec!["-File".to_string(), path.to_string_lossy().into_owned()]
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_exe_file_runs_directly() {
+        let path = std::env::temp_dir().join(format!(
+            "rmac-terminal-open-target-test-exec-{}.exe",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"not a real PE, only the extension matters here\n").unwrap();
         let restore = open_target_restore_window(&path, 0).expect("exists");
         assert_eq!(
             restore.tabs[0].program.as_deref(),

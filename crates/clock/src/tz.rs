@@ -19,6 +19,57 @@ pub struct Zone {
     indices: Vec<u8>,
     types: Vec<LocalType>,
     rule: Option<Rule>,
+    /// Windows has no `/usr/share/zoneinfo` tzdata to read (ADR 0023 phase
+    /// 2): `chrono-tz`'s embedded IANA data, or the OS's own current local
+    /// rules, back the zone instead. `None` on every platform for a zone
+    /// built from TZif bytes (`parse`, `load_from` — used by tests on every
+    /// platform too).
+    #[cfg(windows)]
+    windows_backend: Option<WindowsBackend>,
+}
+
+/// How a Windows [`Zone`] computes its offset without a tzdata file.
+#[cfg(windows)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum WindowsBackend {
+    /// A named IANA zone (world clock cities, via [`Zone::load`]).
+    Named(chrono_tz::Tz),
+    /// The OS's own local zone, whatever it is. Used by [`local_zone`]
+    /// when the IANA name cannot be read; correct for "now" and for any
+    /// other instant the OS's own time APIs can resolve, but the zone's
+    /// `name` stays a placeholder (no Windows-to-IANA mapping yet).
+    OsLocal,
+}
+
+/// The offset (and an approximate "is this DST" guess, unused outside
+/// `is_dst_at`'s own tests today) at `utc` for a Windows-backed zone.
+/// `chrono-tz`'s offset for a named zone, or `chrono::Local`'s for the OS's
+/// own zone, is exact for the given instant either way — this only adds a
+/// cheap standard-vs-non-standard comparison for the DST flag, since
+/// neither `chrono` type exposes it directly.
+#[cfg(windows)]
+fn windows_offset_at(backend: &WindowsBackend, utc: i64) -> (i32, bool) {
+    use chrono::{Offset as _, TimeZone as _, Utc};
+    const HALF_YEAR_SECONDS: i64 = 183 * 86_400;
+    let offset_of = |utc: i64| -> i32 {
+        let Some(instant) = Utc.timestamp_opt(utc, 0).single() else {
+            return 0;
+        };
+        match backend {
+            WindowsBackend::Named(tz) => instant.with_timezone(tz).offset().fix().local_minus_utc(),
+            WindowsBackend::OsLocal => instant
+                .with_timezone(&chrono::Local)
+                .offset()
+                .fix()
+                .local_minus_utc(),
+        }
+    };
+    let offset = offset_of(utc);
+    let six_months_away = offset_of(utc.saturating_add(HALF_YEAR_SECONDS));
+    // The smaller of the two offsets half a year apart is taken as
+    // "standard time"; any larger offset is reported as DST. Zones with no
+    // DST at all report `offset == six_months_away`, so this is false.
+    (offset, offset > six_months_away)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,12 +99,32 @@ impl Zone {
             indices: Vec::new(),
             types: vec![LocalType { offset, dst: false }],
             rule: None,
+            #[cfg(windows)]
+            windows_backend: None,
         }
     }
 
-    /// Load an IANA zone such as `Asia/Kolkata` from the system database.
+    /// Load an IANA zone such as `Asia/Kolkata`: from the system tzdata on
+    /// Unix, from `chrono-tz`'s embedded copy on Windows (ADR 0023 phase 2).
+    #[cfg(not(windows))]
     pub fn load(name: &str) -> Result<Self, Error> {
         Self::load_from(Path::new(ZONEINFO), name)
+    }
+
+    #[cfg(windows)]
+    pub fn load(name: &str) -> Result<Self, Error> {
+        if !valid_name(name) {
+            return Err(Error::InvalidName);
+        }
+        let tz: chrono_tz::Tz = name.parse().map_err(|_| Error::Unreadable)?;
+        Ok(Self {
+            name: name.to_owned(),
+            transitions: Vec::new(),
+            indices: Vec::new(),
+            types: Vec::new(),
+            rule: None,
+            windows_backend: Some(WindowsBackend::Named(tz)),
+        })
     }
 
     pub fn load_from(root: &Path, name: &str) -> Result<Self, Error> {
@@ -131,7 +202,24 @@ impl Zone {
             indices,
             types,
             rule,
+            #[cfg(windows)]
+            windows_backend: None,
         })
+    }
+
+    /// The OS's own current local zone, used when no IANA name can be read
+    /// (`local_zone`, Windows only). Correct for any instant the OS's own
+    /// time APIs can resolve; the zone's `name` stays a placeholder.
+    #[cfg(windows)]
+    fn os_local() -> Self {
+        Self {
+            name: "Local".to_owned(),
+            transitions: Vec::new(),
+            indices: Vec::new(),
+            types: Vec::new(),
+            rule: None,
+            windows_backend: Some(WindowsBackend::OsLocal),
+        }
     }
 
     /// Seconds east of UTC in force at `utc` (Unix seconds).
@@ -145,6 +233,10 @@ impl Zone {
     }
 
     fn local_type_at(&self, utc: i64) -> (i32, bool) {
+        #[cfg(windows)]
+        if let Some(backend) = &self.windows_backend {
+            return windows_offset_at(backend, utc);
+        }
         if let (Some(&last), Some(rule)) = (self.transitions.last(), self.rule.as_ref()) {
             if utc >= last {
                 return rule.offset_at(utc);
@@ -265,11 +357,22 @@ pub fn zone_name_from_path(path: &Path) -> Option<String> {
 }
 
 /// The system zone, or UTC when it cannot be read.
+#[cfg(not(windows))]
 pub fn local_zone() -> Zone {
     local_zone_name()
         .and_then(|name| Zone::load(&name).ok())
         .or_else(|| Zone::parse("localtime", &std::fs::read("/etc/localtime").ok()?).ok())
         .unwrap_or_else(Zone::utc)
+}
+
+/// Windows has no `$TZ`/`/etc/localtime` to name the zone (ADR 0023 phase
+/// 2), so this skips straight to the OS's own current rules rather than
+/// falling all the way back to UTC.
+#[cfg(windows)]
+pub fn local_zone() -> Zone {
+    local_zone_name()
+        .and_then(|name| Zone::load(&name).ok())
+        .unwrap_or_else(Zone::os_local)
 }
 
 pub fn zoneinfo_root() -> PathBuf {
@@ -645,5 +748,34 @@ mod tests {
             let summer = days_from_civil(2030, 7, 1) * 86_400;
             assert_eq!(zone.offset_at(summer), 7_200);
         }
+    }
+
+    // Windows has no `/usr/share/zoneinfo`, so `Zone::load` goes through
+    // `chrono-tz` instead (ADR 0023 phase 2). Same instants as
+    // `system_database_when_present`, which is `/usr/share/zoneinfo`'s own
+    // Unix coverage of the same two zones.
+    #[cfg(windows)]
+    #[test]
+    fn windows_named_zone_matches_chrono_tz() {
+        let kolkata = Zone::load("Asia/Kolkata").expect("chrono-tz has Asia/Kolkata");
+        assert_eq!(kolkata.offset_at(1_790_000_000), 19_800);
+        let berlin = Zone::load("Europe/Berlin").expect("chrono-tz has Europe/Berlin");
+        let summer = days_from_civil(2030, 7, 1) * 86_400;
+        assert_eq!(berlin.offset_at(summer), 7_200);
+        let winter = days_from_civil(2030, 1, 1) * 86_400;
+        assert_eq!(berlin.offset_at(winter), 3_600);
+        assert_eq!(Zone::load("Not/AZone"), Err(Error::Unreadable));
+        assert_eq!(Zone::load("../../etc/passwd"), Err(Error::InvalidName));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_os_local_zone_is_self_consistent() {
+        // The CI runner's own zone is unknown, so this only checks that
+        // asking twice agrees and nothing panics — real correctness is
+        // `chrono::Local`'s, already relied on elsewhere.
+        let zone = Zone::os_local();
+        assert_eq!(zone.name, "Local");
+        assert_eq!(zone.offset_at(1_790_000_000), zone.offset_at(1_790_000_000));
     }
 }

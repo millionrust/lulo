@@ -72,7 +72,12 @@ impl Land {
         for character in data.chars() {
             match character {
                 '0'..='9' | '.' | '-' => token.push(character),
-                'M' | 'L' | 'Z' | ' ' | '\n' | ',' => {
+                // '\r': a Windows (CRLF) checkout of this embedded SVG asset
+                // puts one before every '\n' in the path data; treating it
+                // as an ignorable separator, like the other whitespace
+                // here, keeps parsing identical to the LF-only checkout
+                // every other platform gets.
+                'M' | 'L' | 'Z' | ' ' | '\n' | '\r' | ',' => {
                     flush_number(&mut token, &mut numbers)?;
                     if numbers.len() == 2 {
                         ring.push((numbers[0] / 10.0 - 180.0, 90.0 - numbers[1] / 10.0));
@@ -255,6 +260,16 @@ mod tests {
         assert!(Land::parse("<svg/>").is_none());
         assert!(Land::parse("<path d=\"M1 2Lx 3Z\"/>").is_none());
         assert!(Land::parse("<path d=\"M1 2L3 4L5 0Z\"/>").is_some());
+    }
+
+    #[test]
+    fn crlf_line_endings_parse_the_same_as_lf() {
+        // A Windows (core.autocrlf) checkout of the bundled SVG turns every
+        // embedded '\n' into "\r\n"; parsing must not choke on the '\r'.
+        let lf = Land::parse("<path d=\"M1 2L3 4\nL5 0Z\"/>").unwrap();
+        let crlf = Land::parse("<path d=\"M1 2L3 4\r\nL5 0Z\"/>").unwrap();
+        assert_eq!(lf.ring_count(), crlf.ring_count());
+        assert_eq!(crlf.ring_count(), 1);
     }
 
     #[test]

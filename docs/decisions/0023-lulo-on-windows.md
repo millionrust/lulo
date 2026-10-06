@@ -340,6 +340,44 @@ path, the Mac-style Open and Save panel, toasts, the remaining app crates, MSIX 
 signing, and the UI Automation behaviour subset. The `WIN-OS-*` rows in `docs/parity.md` track
 the Windows gaps.
 
+## Phase 2 slice as built (Preview, Clock, Weather, Terminal)
+
+Branch `op/win-phase2b` extended the apps that build, pass Clippy and open a window on
+`windows-latest` CI past Calculator/Notes/Text Editor, in the order the phase plan named —
+Preview, Clock, Weather, then Terminal — because most of their platform seams turned out to
+already follow this ADR's `cfg(target_os = "linux")`/`cfg(not(target_os = "linux"))` pattern
+(the "not Linux" branch already shared by macOS and, it turns out, Windows): clipboard,
+printing and notification code in Preview/Clock/Terminal needed no change at all to compile
+and behave honestly on Windows. The `windows` CI job's package list and
+`scripts/windows/launch_smoke.py` now cover all seven apps.
+
+- **Preview.** Images are unaffected — nothing in that path was Linux-specific. PDF
+  rendering stays poppler-utils (no Windows build of it exists), so
+  `poppler::missing_tool_message` now gives a Windows-specific "Preview can't open PDF
+  documents on Windows yet." instead of pointing at an apt package that doesn't exist there;
+  a real Windows.Data.Pdf or pdfium backend is still open (see docs/parity.md PREV-29).
+- **Clock.** Time zones are real on Windows, not a stub: `chrono-tz` (already a workspace
+  dependency via the calendar crates, so this adds no new dependency to review) backs named
+  IANA zones for World Clock and alarm scheduling, and `chrono::Local` backs the OS's own
+  zone when no IANA name can be read, replacing the Unix-only `/usr/share/zoneinfo` reader.
+  Alarms/timers are the honest stub this ADR's "Honest stubs" rule asks for: Windows has no
+  systemd user units, so `schedule::apply` now returns a clear "not available on this
+  platform yet" error on every non-Linux target instead of shelling out to a `systemctl` that
+  was never going to exist (previously ungated, so it also silently tried this on macOS).
+- **Weather.** No change needed: it fetches over HTTPS through the system `curl` (present on
+  Windows 10 1803+/11) and has no location lookup to begin with — already "manual cities
+  only", the phase-2 fallback this ADR allows.
+- **Terminal.** `portable-pty`'s ConPTY backend runs PowerShell as the default shell; the
+  existing `cfg(unix)` gating around PTY job control (`libc::tcgetpgrp`, process-group
+  `SIGHUP`) and Shell ▸ Open…'s Unix executable-bit check needed only a Windows default shell
+  and an extension-based (`.exe`/`.bat`/`.cmd`) stand-in for "executable", not new platform
+  code. "Run command inside a shell" and Shell ▸ Open… on a non-executable file now use
+  `powershell.exe -Command`/`-File` on Windows in place of `/bin/sh -c`/`/bin/sh`.
+
+Not done in this slice (tracked in docs/parity.md): real PDF rendering and Windows alarm/timer
+delivery. These four apps still bind their own shortcuts as `cmd-…`; moving them onto
+`rmac_ui::bind_keys` (phase 2a above) is the next step.
+
 ## Phase plan
 
 The goal is "usable on Windows without Linux". Phases are ordered by how much value they

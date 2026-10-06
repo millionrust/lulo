@@ -262,10 +262,11 @@ jobs:
 
   windows:
     name: Windows apps (non-blocking)
-    # ADR 0023 phases 1-2: Calculator, Notes and Text Editor, with the shared
-    # crates they use (rmac-ui, storage, editor, Notes' store, sound), build,
-    # pass Clippy and their unit tests, and open a window on Windows; the
-    # launch check also opens each window's menu strip with Alt, presses
+    # ADR 0023 phases 1-2: Calculator, Notes, Text Editor, Preview, Clock,
+    # Weather and Terminal, with the shared crates they need (rmac-ui,
+    # storage, editor, Notes' store, the print/portal/spelling/sound seams),
+    # build, pass Clippy and their unit tests, and open a window on Windows;
+    # the launch check also opens each window's menu strip with Alt, presses
     # Ctrl+N and, for Text Editor, hands a second launch to the running app.
     # Non-blocking until it has run clean for a while; see docs/ci.md.
     runs-on: windows-latest
@@ -275,7 +276,9 @@ jobs:
       RMAC_WINDOWS_PACKAGES: >-
         -p rmac-calculator -p rmac-notes -p rmac-text-editor -p rmac-editor
         -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime
-        -p rmac-ui -p rmac-storage -p rmac-recent-documents -p rmac-sound
+        -p rmac-ui -p rmac-storage -p rmac-recent-documents
+        -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal
+        -p rmac-portal -p rmac-print-linux -p rmac-spelling -p rmac-sound
     defaults:
       run:
         shell: bash
@@ -315,14 +318,17 @@ jobs:
 
       - name: Build the apps
         if: ${{ !cancelled() }}
-        run: cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor --bins
+        run: |
+          cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
+            -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal --bins
 
       - name: Launch each app
         if: ${{ !cancelled() }}
         run: |
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
-            target/debug rmac-calculator rmac-notes rmac-text-editor
+            target/debug rmac-calculator rmac-notes rmac-text-editor \
+            rmac-preview rmac-clock rmac-weather rmac-terminal
 
       - name: Upload app screenshots
         if: ${{ !cancelled() }}

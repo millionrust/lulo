@@ -8,6 +8,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
 
 use crate::format::WallTime;
@@ -107,7 +108,20 @@ pub fn unit_directory() -> Option<PathBuf> {
         .map(|root| root.join("systemd/user"))
 }
 
+/// Write the units for `state` and (re)arm or disarm the timer. Windows has
+/// no systemd user units (ADR 0023 phase 2): alarms and timers are an
+/// honest stub there until a Task Scheduler/toast backend lands, rather
+/// than shelling out to a `systemctl` that does not exist.
+#[cfg(not(target_os = "linux"))]
+pub fn apply(_state: &State, _now: u64, _offset_at: &impl Fn(i64) -> i32) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "alarms and timers are not available on this platform yet",
+    ))
+}
+
 /// Write the units for `state` and (re)arm or disarm the timer.
+#[cfg(target_os = "linux")]
 pub fn apply(state: &State, now: u64, offset_at: &impl Fn(i64) -> i32) -> io::Result<()> {
     let directory = unit_directory()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no configuration directory"))?;
@@ -145,6 +159,7 @@ pub fn apply(state: &State, now: u64, offset_at: &impl Fn(i64) -> i32) -> io::Re
     systemctl(&["restart", TIMER_UNIT])
 }
 
+#[cfg(target_os = "linux")]
 fn systemctl(arguments: &[&str]) -> io::Result<()> {
     let status = Command::new("systemctl")
         .arg("--user")

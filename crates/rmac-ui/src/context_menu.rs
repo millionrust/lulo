@@ -422,6 +422,7 @@ impl ContextMenu {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_item(
         mut self,
         label: impl Into<SharedString>,

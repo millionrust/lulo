@@ -65,17 +65,16 @@ impl FinderView {
             let thumbnail = self.thumbs.get(&entry.path).cloned();
             let title = format!("{} Info", entry.name);
             let (width, height) = rmac_ui::outer_window_size(INFO_WIDTH, INFO_MAX_HEIGHT);
-            let mut options = rmac_ui::window_options_for_app_with_title(
+            // Not `window_options_for_app_with_title`: Get Info would then
+            // inherit whatever size the main Files window last saved under
+            // the same app_id (the UIA-06/UIA-09 window-geometry-key bug).
+            let mut options = rmac_ui::window_options_for_panel_with_title(
                 rmac_ui::app_id::FILES,
                 title,
                 width,
                 height,
                 cx,
             );
-            options.window_bounds = Some(gpui::WindowBounds::centered(
-                gpui::size(px(width), px(height)),
-                cx,
-            ));
             options.window_min_size = Some(gpui::size(px(width), px(height)));
             let info_owner = owner.clone();
             let opened = cx.open_window(options, move |window, cx| {

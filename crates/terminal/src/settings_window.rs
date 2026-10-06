@@ -47,7 +47,10 @@ pub(crate) fn show(cx: &mut App) {
             return;
         }
     }
-    let options = rmac_ui::window_options_for_app(rmac_ui::app_id::TERMINAL, WIDTH, HEIGHT, cx);
+    // Not `window_options_for_app`: Settings would then inherit whatever
+    // size a Terminal window last saved under the same app_id (the
+    // UIA-06/UIA-09 window-geometry-key bug).
+    let options = rmac_ui::window_options_for_panel(rmac_ui::app_id::TERMINAL, WIDTH, HEIGHT, cx);
     let opened = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| SettingsView::new(window, cx));

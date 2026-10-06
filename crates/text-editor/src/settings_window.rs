@@ -5,7 +5,7 @@ use gpui::{
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
-use rmac_ui::{Button, Checkbox, Root, StyledExt as _};
+use rmac_ui::{Button, Checkbox, PopUpButton, PopupMenuItem, Root, StyledExt as _};
 
 use crate::{
     document::TextEncoding,
@@ -138,26 +138,6 @@ impl SettingsView {
                 .checked(checked)
                 .on_change(move |value, window, cx| on_change(value, window, cx)),
         )
-    }
-
-    fn encoding_row(&self, encoding: TextEncoding, cx: &mut Context<Self>) -> impl IntoElement {
-        let selected = self.settings.default_encoding == encoding;
-        div()
-            .id(format!("settings-encoding-{}", encoding.label()))
-            .role(Role::RadioButton)
-            .aria_label(encoding.label())
-            .aria_selected(selected)
-            .flex()
-            .items_center()
-            .justify_between()
-            .h(px(30.0))
-            .px_2()
-            .hover(|hovered| hovered.bg(rmac_ui::mac::hover()))
-            .child(encoding.label())
-            .child(if selected { "✓" } else { "" })
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.edit(|settings| settings.default_encoding = encoding, cx);
-            }))
     }
 
     fn render_new_document(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -332,26 +312,44 @@ impl SettingsView {
     }
 
     fn render_open_and_save(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        let current = self.settings.default_encoding;
         div()
             .child(Self::section_label("Plain Text Encoding"))
             .child("New documents use:")
             .child(
-                div()
-                    .mt_2()
-                    .border_1()
-                    .border_color(rmac_ui::mac::separator())
-                    .rounded(px(rmac_ui::mac::radius_control()))
-                    .overflow_hidden()
-                    .children(
-                        [
-                            TextEncoding::Utf8,
-                            TextEncoding::Utf8Bom,
-                            TextEncoding::Utf16Le,
-                            TextEncoding::Utf16Be,
-                        ]
-                        .into_iter()
-                        .map(|encoding| self.encoding_row(encoding, cx)),
-                    ),
+                // A pop-up, not a list showing every choice at once
+                // (UIA-09 leftovers — matches the Mac's `AXPopUpButton`
+                // encoding controls, `win-settings-open-save-*` audit
+                // capture).
+                div().mt_2().w_full().child(
+                    PopUpButton::new("settings-default-encoding", current.label())
+                        .w_full()
+                        .dropdown_menu(move |menu, _, _| {
+                            [
+                                TextEncoding::Utf8,
+                                TextEncoding::Utf8Bom,
+                                TextEncoding::Utf16Le,
+                                TextEncoding::Utf16Be,
+                            ]
+                            .into_iter()
+                            .fold(menu, |menu, encoding| {
+                                let view = view.clone();
+                                menu.item(
+                                    PopupMenuItem::new(encoding.label())
+                                        .checked(encoding == current)
+                                        .on_click(move |_, _, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.edit(
+                                                    |settings| settings.default_encoding = encoding,
+                                                    cx,
+                                                );
+                                            });
+                                        }),
+                                )
+                            })
+                        }),
+                ),
             )
             .child(
                 div()
@@ -442,7 +440,7 @@ impl Render for SettingsView {
             .child(
                 div()
                     .flex()
-                    .justify_end()
+                    .justify_start()
                     .px_3()
                     .py_2()
                     .border_t_1()

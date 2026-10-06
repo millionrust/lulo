@@ -334,17 +334,17 @@ impl FinderView {
         cx.spawn(async move |_, cx: &mut gpui::AsyncApp| {
             cx.update(|cx| {
                 let (width, height) = rmac_ui::outer_window_size(236.0, height);
-                let mut options = rmac_ui::window_options_for_app_with_title(
+                // Not `window_options_for_app_with_title`: View Options
+                // would then inherit whatever size the main Files window
+                // last saved under the same app_id (the UIA-06/UIA-09
+                // window-geometry-key bug).
+                let mut options = rmac_ui::window_options_for_panel_with_title(
                     rmac_ui::app_id::FILES,
                     title,
                     width,
                     height,
                     cx,
                 );
-                options.window_bounds = Some(gpui::WindowBounds::centered(
-                    gpui::size(px(width), px(height)),
-                    cx,
-                ));
                 options.focus = false;
                 options.kind = gpui::WindowKind::Floating;
                 let view_owner = owner.clone();

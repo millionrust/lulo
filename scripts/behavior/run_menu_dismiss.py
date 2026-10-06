@@ -27,6 +27,9 @@ Scenarios, each starting from a clean (all-closed) state:
     the other instead of just closing (macOS behaviour, `TopBar::open_menu`'s
     existing `stop_propagation`);
   - Escape closes an open menu;
+  - holding ⌥ while Finder's Application menu is open swaps Empty Trash…
+    for its hidden alternate, Empty Trash, in the same row, reverting the
+    instant ⌥ is released (UIA-22);
   - opening Control Center alongside an open app menu, then clicking the
     wallpaper, closes both (checked with `grim` + a pixel-difference crop
     over Control Center's corner, since it is a layer-shell popover with no
@@ -479,6 +482,65 @@ class Run:
             self.check("Same title: a second click keeps the menu open",
                        self.find_menu_item("About") is not None)
 
+    def option_alternate_swaps_in_open_app_menu(self) -> None:
+        """UIA-22: Finder's Application menu shows "Empty Trash…"; AppKit
+        replaces it in place with its ⌥ alternate, "Empty Trash", for as
+        long as Option is held, reverting the instant it's released. No
+        Files window is open in this harness, so the top bar falls back to
+        Files' own static menu definition (`static_fallback_menus`), which
+        already carries the pair — `crates/rmac-app-menu/src/lib.rs`'s
+        `FILES_MENUS`. Exercises `TopBar::app_menu_option`
+        (`on_modifiers_changed`) and `menu_model::displayed_items`.
+        """
+
+        def exact(label: str):
+            return self.find_node(("menu item",), lambda name: name == label)
+
+        self.close_everything()
+        # Index 1: the active app's own title, right of the logo (the same
+        # lookup `clicking_another_title_switches_menus` uses). With
+        # nothing focused this is the desktop's ("Finder"-equivalent) title.
+        title = self.wait_for(
+            lambda: self.find_node(
+                ("push button", "button"), lambda name: name != LULO_MENU and name.endswith(" menu")
+            ),
+            10,
+            0.3,
+        )
+        self.check("⌥ alternate: the active app's own title is present", title is not None)
+        if title is None:
+            return
+        title_name = title.name
+        opened = self.retry_until(
+            lambda: self.click_node(
+                self.find_node(("push button", "button"), lambda name: name == title_name)
+            ),
+            lambda: exact("Empty Trash…") is not None,
+        )
+        self.check("⌥ alternate: the Application menu opens with Empty Trash…", opened)
+        if not opened:
+            return
+        self.keys.hold_modifier("alt")
+        try:
+            swapped = self.wait_for(
+                lambda: exact("Empty Trash") is not None and exact("Empty Trash…") is None,
+                5,
+                0.2,
+            )
+            self.check(
+                "⌥ alternate: holding ⌥ swaps Empty Trash… to Empty Trash in the same slot",
+                swapped,
+            )
+        finally:
+            self.keys.release_modifier("alt")
+        reverted = self.wait_for(
+            lambda: exact("Empty Trash…") is not None and exact("Empty Trash") is None,
+            5,
+            0.2,
+        )
+        self.check("⌥ alternate: releasing ⌥ reverts the row to Empty Trash…", reverted)
+        self.close_everything()
+
     def status_menu_dismissal(self, label: str) -> None:
         captures = {"Wi-Fi": "wifi", "Bluetooth": "bluetooth", "Sound": "sound"}
         for method in ("outside click", "Escape"):
@@ -880,6 +942,8 @@ class Run:
                 self.control_centre_detail_escape()
             elif self.args.only == "fake-hardware":
                 self.fake_hardware_shows_real_data()
+            elif self.args.only == "option-alternate":
+                self.option_alternate_swaps_in_open_app_menu()
             else:
                 namespaces = {
                     "quick-settings": "rmac-quick-settings",
@@ -896,6 +960,7 @@ class Run:
         self.other_window_click_closes_app_menu()
         self.clicking_another_title_switches_menus()
         self.clicking_same_title_keeps_menu()
+        self.option_alternate_swaps_in_open_app_menu()
         for label in ("Wi-Fi", "Bluetooth", "Sound"):
             self.status_menu_dismissal(label)
         self.dock_context_menu_dismissal()
@@ -994,7 +1059,8 @@ def main() -> int:
     )
     parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
                                            "launcher", "app-drawer", "notification-center",
-                                           "combined", "control-centre-list", "fake-hardware"))
+                                           "combined", "control-centre-list", "fake-hardware",
+                                           "option-alternate"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

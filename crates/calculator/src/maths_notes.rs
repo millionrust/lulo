@@ -37,7 +37,12 @@ pub(crate) fn show(main: Entity<CalculatorView>, cx: &mut App) {
             return;
         }
     }
-    let options = rmac_ui::window_options_for_app(rmac_ui::app_id::CALCULATOR, WIDTH, HEIGHT, cx);
+    // Not `window_options_for_app`: Maths Notes would then inherit
+    // whatever size the main Calculator window last saved under the same
+    // app_id (the UIA-06/UIA-09 window-geometry-key bug) — Calculator's own
+    // Basic/Scientific modes already resize that window between 230 and
+    // 674 pt wide.
+    let options = rmac_ui::window_options_for_panel(rmac_ui::app_id::CALCULATOR, WIDTH, HEIGHT, cx);
     match cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Maths Notes");
@@ -62,7 +67,11 @@ struct MathsNotesView {
 
 impl MathsNotesView {
     fn new(main: Entity<CalculatorView>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        rmac_ui::observe_window_state(rmac_ui::app_id::CALCULATOR, window, cx);
+        // `register_menu_target` below already tracks this as a key-window
+        // candidate; `observe_window_state` would additionally persist its
+        // geometry under `app_id::CALCULATOR`, the same key the main
+        // window uses, letting this window's own size overwrite the main
+        // window's restored one on close (the UIA-06/UIA-09 bug).
         // No soft wrap: one text line must stay one visual row so the
         // results column lines up with it.
         let input = cx.new(|cx| {

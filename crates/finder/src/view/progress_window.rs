@@ -179,7 +179,10 @@ fn show_progress_window(cx: &mut gpui::App) {
         }
     }
     let (width, height) = rmac_ui::outer_window_size(WIDTH, HEIGHT);
-    let mut options = rmac_ui::window_options_for_app_with_title(
+    // Not `window_options_for_app_with_title`: Progress would then inherit
+    // whatever size the main Files window last saved under the same
+    // app_id (the UIA-06/UIA-09 window-geometry-key bug).
+    let mut options = rmac_ui::window_options_for_panel_with_title(
         rmac_ui::app_id::FILES,
         "Progress",
         width,

@@ -175,6 +175,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         ),
         KeyBinding::new("ctrl-cmd-t", AddToSidebar, Some("Finder")),
         KeyBinding::new("alt-cmd-v", MoveItemHere, Some("Finder")),
+        KeyBinding::new("alt-shift-cmd-v", PasteExactly, Some("Finder")),
         KeyBinding::new("cmd-shift-d", GoDesktop, Some("Finder")),
         KeyBinding::new("cmd-shift-o", GoDocuments, Some("Finder")),
         KeyBinding::new("cmd-shift-f", GoRecents, Some("Finder")),

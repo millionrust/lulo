@@ -602,6 +602,17 @@ pub fn window_menu(
     // reference Mac with no Calculator window open) Minimise All shows no
     // key equivalent there either, unlike every other app's.
     let is_calculator = app_id == Some(rmac_apps::identity::CALCULATOR);
+    // NOT-MENU-007/008: the reference Mac capture shows a real ⌃⌘Z/⌃⌥⌘Z
+    // key equivalent on Zoom/Zoom All in Notes and nowhere else captured
+    // (Calculator, Clock, Finder, Preview, System Monitor, Terminal, Text
+    // Editor and Weather all show no shortcut there) — an Apple quirk, not
+    // a generic Window-menu rule, so this stays Notes-only rather than
+    // applying it to every app's Window menu.
+    let zoom_shortcuts = if app_id == Some(rmac_apps::identity::NOTES) {
+        ("⌃⌘Z", "⌃⌥⌘Z")
+    } else {
+        ("", "")
+    };
     let command = |label: &str, command: WindowCommand, shortcut: &str| {
         Item::new(label, command.action(), shortcut).enabled(has_focus)
     };
@@ -683,8 +694,9 @@ pub fn window_menu(
         command(words.minimise(), WindowCommand::Minimise, "⌘M"),
         Item::new("Minimise All", MINIMISE_ALL_ACTION, minimise_all_shortcut)
             .enabled(!windows.is_empty()),
-        command("Zoom", WindowCommand::Zoom, ""),
-        Item::new("Zoom All", WindowCommand::ZoomAll.action(), "").enabled(!windows.is_empty()),
+        command("Zoom", WindowCommand::Zoom, zoom_shortcuts.0),
+        Item::new("Zoom All", WindowCommand::ZoomAll.action(), zoom_shortcuts.1)
+            .enabled(!windows.is_empty()),
         command("Fill", WindowCommand::Fill, "⌃⇧⌘F"),
         command(words.centre(), WindowCommand::Centre, "⌃⌘C"),
         Item::submenu(
@@ -2340,7 +2352,12 @@ mod tests {
         assert_eq!(menu.items[1].shortcut, "⌥⌘M");
         assert_eq!(menu.items[1].action, MINIMISE_ALL_ACTION);
         assert!(menu.items[1].enabled);
+        // NOT-MENU-007/008: Finder's own Mac capture shows no key
+        // equivalent on Zoom/Zoom All at all, unlike Notes (see
+        // `notes_zoom_carries_its_mac_only_shortcut` below).
+        assert_eq!(menu.items[2].shortcut, "");
         assert!(menu.items[3].enabled);
+        assert_eq!(menu.items[3].shortcut, "");
         assert_eq!(
             WindowCommand::parse(&menu.items[3].action),
             Some(WindowCommand::ZoomAll)
@@ -2394,6 +2411,29 @@ mod tests {
         assert!(!idle.items[0].enabled);
         assert!(!idle.items[1].enabled);
         assert!(!idle.items.last().unwrap().enabled);
+    }
+
+    #[test]
+    fn notes_zoom_carries_its_mac_only_shortcut() {
+        // NOT-MENU-007/008: the reference Mac capture shows ⌃⌘Z/⌃⌥⌘Z on
+        // Zoom/Zoom All in Notes and nowhere else captured — real in both
+        // apps (Fill, round-tripped by `window_actions_round_trip` above),
+        // but only Notes advertises the key equivalent, matching the Mac.
+        let words = rmac_locale::FileVocabulary::for_locale("en_GB.UTF-8");
+        let notes = window_menu(&[], None, Vec::new(), words, Some("org.rmac.Notes"));
+        assert_eq!(notes.items[2].label, "Zoom");
+        assert_eq!(notes.items[2].shortcut, "⌃⌘Z");
+        assert_eq!(notes.items[3].label, "Zoom All");
+        assert_eq!(notes.items[3].shortcut, "⌃⌥⌘Z");
+
+        let other = window_menu(&[], None, Vec::new(), words, Some("org.rmac.Preview"));
+        assert_eq!(other.items[2].shortcut, "");
+        assert_eq!(other.items[3].shortcut, "");
+
+        // No app id at all (an unknown/third-party window) also gets no
+        // shortcut, same as every captured app but Notes.
+        let unknown = window_menu(&[], None, Vec::new(), words, None);
+        assert_eq!(unknown.items[2].shortcut, "");
     }
 
     #[test]

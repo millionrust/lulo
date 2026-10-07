@@ -203,6 +203,13 @@
               "children": []
             },
             {
+              "label": "CPU Time",
+              "action": "activity_monitor::ToggleCpuTimeColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "# Threads",
               "action": "activity_monitor::ToggleThreadsColumn",
               "shortcut": "",
@@ -219,6 +226,20 @@
             {
               "label": "Energy Impact",
               "action": "activity_monitor::ToggleEnergyColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bytes Read",
+              "action": "activity_monitor::ToggleBytesReadColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bytes Written",
+              "action": "activity_monitor::ToggleBytesWrittenColumn",
               "shortcut": "",
               "separator_before": false,
               "children": []

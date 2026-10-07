@@ -49,6 +49,20 @@ pub(crate) struct Settings {
     /// Settings ▸ New Document ▸ Options ▸ Show ruler (TXT-SETTINGS-015):
     /// whether a new rich-text window starts with its ruler shown.
     pub(crate) show_ruler_default: bool,
+    /// The nine checkboxes under Settings' own "New Document" tab
+    /// (TXT-SETTINGS-003/004/006/007/012..015/017): the state every new
+    /// document window's Edit ▸ Spelling and Grammar / Substitutions
+    /// toggles start from, rather than always the same hard-coded Mac
+    /// default regardless of what the owner last set.
+    pub(crate) check_spelling_while_typing_default: bool,
+    pub(crate) check_grammar_with_spelling_default: bool,
+    pub(crate) correct_spelling_automatically_default: bool,
+    pub(crate) smart_copy_paste_default: bool,
+    pub(crate) smart_quotes_default: bool,
+    pub(crate) smart_dashes_default: bool,
+    pub(crate) smart_links_default: bool,
+    pub(crate) data_detectors_default: bool,
+    pub(crate) text_replacement_default: bool,
 }
 
 impl Default for Settings {
@@ -64,6 +78,19 @@ impl Default for Settings {
             rich_text_font: RichTextFont::default(),
             rich_text_font_size: 12,
             show_ruler_default: true,
+            // Mirrors `rmac_ui::text_assist::TextAssistSettings::default()`
+            // and the view's own `data_detectors` default, so a document
+            // window opened before anyone touches Settings behaves exactly
+            // as it always has.
+            check_spelling_while_typing_default: true,
+            check_grammar_with_spelling_default: false,
+            correct_spelling_automatically_default: false,
+            smart_copy_paste_default: true,
+            smart_quotes_default: true,
+            smart_dashes_default: true,
+            smart_links_default: true,
+            data_detectors_default: true,
+            text_replacement_default: true,
         }
     }
 }
@@ -120,6 +147,21 @@ fn parse(contents: &str) -> Settings {
                 }
             }
             "show_ruler_default" => settings.show_ruler_default = value == "true",
+            "check_spelling_while_typing_default" => {
+                settings.check_spelling_while_typing_default = value == "true";
+            }
+            "check_grammar_with_spelling_default" => {
+                settings.check_grammar_with_spelling_default = value == "true";
+            }
+            "correct_spelling_automatically_default" => {
+                settings.correct_spelling_automatically_default = value == "true";
+            }
+            "smart_copy_paste_default" => settings.smart_copy_paste_default = value == "true",
+            "smart_quotes_default" => settings.smart_quotes_default = value == "true",
+            "smart_dashes_default" => settings.smart_dashes_default = value == "true",
+            "smart_links_default" => settings.smart_links_default = value == "true",
+            "data_detectors_default" => settings.data_detectors_default = value == "true",
+            "text_replacement_default" => settings.text_replacement_default = value == "true",
             _ => {}
         }
     }
@@ -138,7 +180,7 @@ fn serialize(settings: Settings) -> String {
         RichTextFont::JetBrainsMono => "jetbrains-mono",
     };
     format!(
-        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\nrich_text_default={}\nrich_text_font={rich_text_font}\nrich_text_font_size={}\nshow_ruler_default={}\n",
+        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\nrich_text_default={}\nrich_text_font={rich_text_font}\nrich_text_font_size={}\nshow_ruler_default={}\ncheck_spelling_while_typing_default={}\ncheck_grammar_with_spelling_default={}\ncorrect_spelling_automatically_default={}\nsmart_copy_paste_default={}\nsmart_quotes_default={}\nsmart_dashes_default={}\nsmart_links_default={}\ndata_detectors_default={}\ntext_replacement_default={}\n",
         settings.width_chars,
         settings.height_lines,
         settings.font_size,
@@ -146,6 +188,15 @@ fn serialize(settings: Settings) -> String {
         settings.rich_text_default,
         settings.rich_text_font_size,
         settings.show_ruler_default,
+        settings.check_spelling_while_typing_default,
+        settings.check_grammar_with_spelling_default,
+        settings.correct_spelling_automatically_default,
+        settings.smart_copy_paste_default,
+        settings.smart_quotes_default,
+        settings.smart_dashes_default,
+        settings.smart_links_default,
+        settings.data_detectors_default,
+        settings.text_replacement_default,
     )
 }
 
@@ -235,6 +286,15 @@ mod tests {
             rich_text_font: RichTextFont::JetBrainsMono,
             rich_text_font_size: 18,
             show_ruler_default: false,
+            check_spelling_while_typing_default: false,
+            check_grammar_with_spelling_default: true,
+            correct_spelling_automatically_default: true,
+            smart_copy_paste_default: false,
+            smart_quotes_default: false,
+            smart_dashes_default: false,
+            smart_links_default: false,
+            data_detectors_default: false,
+            text_replacement_default: false,
         };
         assert_eq!(parse(&serialize(settings)), settings);
         let bounded =
@@ -243,5 +303,23 @@ mod tests {
         assert_eq!(bounded.height_lines, 10);
         assert_eq!(bounded.font_size, 32);
         assert_eq!(bounded.rich_text_font_size, 32);
+    }
+
+    #[test]
+    fn spelling_and_substitution_defaults_match_the_shared_mac_defaults() {
+        // TXT-SETTINGS-003/004/006/007/012..015/017: a fresh install (no
+        // settings file yet) seeds every new document window exactly as it
+        // always has — `rmac_ui::text_assist::TextAssistSettings::default()`
+        // and the view's own `data_detectors: true`.
+        let settings = Settings::default();
+        assert!(settings.check_spelling_while_typing_default);
+        assert!(!settings.check_grammar_with_spelling_default);
+        assert!(!settings.correct_spelling_automatically_default);
+        assert!(settings.smart_copy_paste_default);
+        assert!(settings.smart_quotes_default);
+        assert!(settings.smart_dashes_default);
+        assert!(settings.smart_links_default);
+        assert!(settings.data_detectors_default);
+        assert!(settings.text_replacement_default);
     }
 }

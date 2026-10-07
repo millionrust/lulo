@@ -15,6 +15,10 @@ gpui.workspace = true
 gpui-component.workspace = true
 rmac-ui.workspace = true
 rmac-portal.workspace = true
+# Only the small clipboard multi-format framing helper (`rich::clipboard`),
+# the same one the rich-text editor and the Wayland backend already use to
+# offer RTF/HTML alongside plain text on one copy (Edit ▸ Copy Special).
+rmac-editor.workspace = true
 alacritty_terminal = "0.25"
 # Already resolved transitively through portable-pty; named directly only to
 # downcast its shell-spawn failures back to the original `io::Error` kind.

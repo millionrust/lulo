@@ -214,6 +214,17 @@ impl FinderView {
         self.paste_with_kind(true, cx);
     }
 
+    /// ⌥⇧⌘V, Paste Exactly (FIL-MENU-005): on the Mac this skips the alias
+    /// resolution and Spotlight-comment loss a plain Paste can apply.
+    /// Lulo's own transfer never resolves symlinks or drops metadata on an
+    /// ordinary Paste either (`item_operations::duplicate`'s "Duplicate
+    /// Exactly" relies on the same guarantee), so this runs the identical,
+    /// real transfer under its own menu item and shortcut rather than
+    /// inventing a second, lossier Paste to differentiate it from.
+    pub(super) fn paste_exactly(&mut self, cx: &mut Context<Self>) {
+        self.paste_with_kind(false, cx);
+    }
+
     fn paste_with_kind(&mut self, force_move: bool, cx: &mut Context<Self>) {
         if self.block_mutation_during_transfer(cx) {
             return;

@@ -371,9 +371,21 @@ impl EditorView {
 
         let view = Self {
             alert: None,
-            text_assist: rmac_ui::text_assist::TextAssistSettings::default(),
+            // TXT-SETTINGS-003/004/006/007/012..015/017: seeded from the
+            // persisted Settings ▸ New Document defaults rather than
+            // always the same hard-coded Mac default.
+            text_assist: rmac_ui::text_assist::TextAssistSettings {
+                check_spelling_while_typing: settings.check_spelling_while_typing_default,
+                check_grammar_with_spelling: settings.check_grammar_with_spelling_default,
+                correct_spelling_automatically: settings.correct_spelling_automatically_default,
+                smart_quotes: settings.smart_quotes_default,
+                smart_dashes: settings.smart_dashes_default,
+                text_replacement: settings.text_replacement_default,
+                smart_copy_paste: settings.smart_copy_paste_default,
+                smart_links: settings.smart_links_default,
+            },
             spell_checker: rmac_spelling::shared(),
-            data_detectors: true,
+            data_detectors: settings.data_detectors_default,
             input,
             rich,
             // An untitled rich window starts clean on its empty document.

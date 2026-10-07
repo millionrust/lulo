@@ -961,6 +961,14 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             item!("Redo", "input::Redo", "⇧⌘Z"),
             item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "terminal::Copy", "⌘C"),
+            // TRM-MENU-001/002/003: the Mac's own Copy Special leads with
+            // these two shortcut-bearing commands, then a style-for-"Copy"
+            // radio group (Terminal's Settings (Default), Plain Text, and
+            // the twelve named built-in profiles — left for later rather
+            // than listing items that would just re-run the same copy).
+            // Both items below used to call the exact same plain `copy`;
+            // they are real, DISTINCT actions now
+            // (`TerminalView::copy_without_background_colour`).
             submenu!(
                 "Copy Special",
                 "terminal::CopySpecialMenu",
@@ -1542,6 +1550,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Copy as Pathname", "finder::CopyAsPathname", "⌥⌘C"),
             item!("Copy as Link", "finder::CopyAsLink", "⌃⌥⌘C"),
             item!("Paste", "finder::PasteItems", "⌘V"),
+            item!("Paste Exactly", "finder::PasteExactly", "⌥⇧⌘V"),
             item!("Move Item Here", "finder::MoveItemHere", "⌥⌘V"),
             item!("Select All", "finder::SelectAll", "⌘A"),
             item!("Deselect All", "finder::DeselectAll", "⌥⌘A"),
@@ -1715,9 +1724,24 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                     item!("Process ID", "activity_monitor::TogglePidColumn", ""),
                     item!("User", "activity_monitor::ToggleUserColumn", ""),
                     item!("% CPU", "activity_monitor::ToggleCpuColumn", ""),
+                    // MON-MENU-003: total CPU seconds since launch, not the
+                    // instantaneous %CPU column above.
+                    item!("CPU Time", "activity_monitor::ToggleCpuTimeColumn", ""),
                     item!("# Threads", "activity_monitor::ToggleThreadsColumn", ""),
                     item!("Real Memory", "activity_monitor::ToggleMemoryColumn", ""),
                     item!("Energy Impact", "activity_monitor::ToggleEnergyColumn", ""),
+                    // MON-MENU-019/020: the read/write halves of the
+                    // existing combined Disk I/O column.
+                    item!(
+                        "Bytes Read",
+                        "activity_monitor::ToggleBytesReadColumn",
+                        ""
+                    ),
+                    item!(
+                        "Bytes Written",
+                        "activity_monitor::ToggleBytesWrittenColumn",
+                        ""
+                    ),
                 ]
             ),
             submenu!(
@@ -4261,6 +4285,7 @@ mod tests {
             ("finder::SortBySize", "⌃⌥⌘6"),
             ("finder::TogglePreview", "⇧⌘P"),
             ("finder::MoveItemHere", "⌥⌘V"),
+            ("finder::PasteExactly", "⌥⇧⌘V"),
             ("finder::GoRecents", "⇧⌘F"),
             ("finder::GoDocuments", "⇧⌘O"),
             ("finder::GoDesktop", "⇧⌘D"),

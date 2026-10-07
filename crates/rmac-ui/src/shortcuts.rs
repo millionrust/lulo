@@ -233,6 +233,9 @@ pub const TOGGLE_MONOSPACE: Shortcut = Shortcut::new("cmd-shift-m", "⇧⌘M");
 pub const SETTINGS: Shortcut = Shortcut::new("cmd-,", "⌘,");
 /// Window and application shortcuts every rmac app answers (components.rs).
 pub const MINIMIZE: Shortcut = Shortcut::new("cmd-m", "⌘M");
+/// Window ▸ Zoom (⌃⌘Z): toggle the focused window between its user size
+/// and the working area, as every Mac app's Window menu offers.
+pub const ZOOM_WINDOW: Shortcut = Shortcut::new("ctrl-cmd-z", "⌃⌘Z");
 pub const HIDE: Shortcut = Shortcut::new("cmd-h", "⌘H");
 pub const HIDE_OTHERS: Shortcut = Shortcut::new("cmd-alt-h", "⌥⌘H");
 pub const QUIT: Shortcut = Shortcut::new("cmd-q", "⌘Q");
@@ -298,6 +301,7 @@ mod tests {
         TOGGLE_MONOSPACE,
         SETTINGS,
         MINIMIZE,
+        ZOOM_WINDOW,
         HIDE,
         HIDE_OTHERS,
         QUIT,

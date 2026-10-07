@@ -19,9 +19,9 @@ use crate::{
     SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses, ShowAllProcesses,
     ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess, ShowGpuHistoryWindow,
     ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses, ShowOtherUsersProcesses,
-    ShowSelectedProcesses, ShowSystemProcesses, ToggleCpuColumn, ToggleEnergyColumn,
-    ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
-    UseSelectionForFind,
+    ShowSelectedProcesses, ShowSystemProcesses, ToggleBytesReadColumn, ToggleBytesWrittenColumn,
+    ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn, ToggleMemoryColumn,
+    TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
 };
 
 use super::MonitorView;
@@ -92,6 +92,15 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ToggleEnergyColumn, _, cx| {
                 this.toggle_column(ColKey::Energy, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleCpuTimeColumn, _, cx| {
+                this.toggle_column(ColKey::CpuTime, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleBytesReadColumn, _, cx| {
+                this.toggle_column(ColKey::BytesRead, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleBytesWrittenColumn, _, cx| {
+                this.toggle_column(ColKey::BytesWritten, cx);
             }))
             .on_action(cx.listener(|this, _: &ShowDeltasForProcess, _, cx| {
                 this.toggle_show_deltas(cx);

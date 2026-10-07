@@ -324,6 +324,12 @@ impl MonitorView {
             ("activity_monitor::ToggleThreadsColumn", ColKey::Threads),
             ("activity_monitor::ToggleMemoryColumn", ColKey::Mem),
             ("activity_monitor::ToggleEnergyColumn", ColKey::Energy),
+            ("activity_monitor::ToggleCpuTimeColumn", ColKey::CpuTime),
+            ("activity_monitor::ToggleBytesReadColumn", ColKey::BytesRead),
+            (
+                "activity_monitor::ToggleBytesWrittenColumn",
+                ColKey::BytesWritten,
+            ),
         ] {
             rmac_ui::set_menu_checked(action, visible.contains(&column), cx);
         }

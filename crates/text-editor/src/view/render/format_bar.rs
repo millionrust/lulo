@@ -21,6 +21,17 @@ use super::*;
 use rmac_ui::PopUpButton;
 
 /// A toggle segment (B/I/U/S): small, bordered, highlighted while on.
+///
+/// `Size::Small`'s normal 12 pt side padding (gpui-component's
+/// `button.rs`) alone made eight one-glyph buttons (here and in the
+/// alignment segment below) wider than the Mac's own 22 pt segment
+/// buttons (design-lab/text-editor-format-bar.html), before any gap or
+/// label width was even counted, which pushed the bar's right edge past
+/// TextEdit's 586 pt default window and clipped it. `rmac_ui::Button`
+/// has no `.compact()` the way gpui-component's own `ButtonGroup` does
+/// (its `.compact()` is a different type), but it does implement `Styled`
+/// (`.refine_style` applies these on top of `Size::Small`'s own padding),
+/// so the same 6 pt/24 pt `.compact()` would have used are set directly.
 fn style_toggle(
     id: &'static str,
     label: &'static str,
@@ -31,6 +42,8 @@ fn style_toggle(
 ) -> impl IntoElement {
     Button::new(id, label)
         .small()
+        .px(px(6.0))
+        .min_w(px(24.0))
         .tooltip(accessible)
         .selected(on)
         .on_click(cx.listener(move |this, _, _, cx| handler(this, cx)))
@@ -82,6 +95,7 @@ impl EditorView {
         // `highlight_at_selection` has no name for.
         let highlight_colour = style.highlight.map(rich::palette::to_hsla);
         let alignment = ruler.alignment;
+        // The same tighter padding as `style_toggle`'s doc comment above.
         let align_button = |id: &'static str,
                             label: &'static str,
                             accessible: &'static str,
@@ -89,6 +103,8 @@ impl EditorView {
                             cx: &mut Context<Self>| {
             Button::new(id, label)
                 .small()
+                .px(px(6.0))
+                .min_w(px(24.0))
                 .tooltip(accessible)
                 .selected(alignment == value)
                 .on_click(cx.listener(move |this, _, _, cx| this.set_alignment(value, cx)))
@@ -104,12 +120,14 @@ impl EditorView {
             .bg(mac::chrome())
             .border_b_1()
             .border_color(mac::separator())
-            // B I U S
+            // B I U S. A tighter 2 pt gap between these four, matching the
+            // Mac's own `.seg{gap:2px}` segment (design-lab/
+            // text-editor-format-bar.html) rather than `gap_1()`'s 4 pt.
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
+                    .gap(px(2.0))
                     .child(style_toggle(
                         "format-bold",
                         "B",
@@ -235,12 +253,12 @@ impl EditorView {
                             .on_click(cx.listener(|this, _, _, cx| this.bigger(cx))),
                     ),
             )
-            // Alignment
+            // Alignment: the same tighter 2 pt gap as the B/I/U/S segment.
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
+                    .gap(px(2.0))
                     .child(align_button(
                         "format-align-left",
                         "⟸",

@@ -2161,7 +2161,10 @@ impl Render for ClockView {
                 .flex()
                 .justify_center()
                 .text_size(px(12.0))
-                .text_color(mac::danger())
+                // Honest, not alarming: this says an alert may not ring, it
+                // is not a destructive failure, so it reads as quiet
+                // secondary text rather than `mac::danger()` red.
+                .text_color(mac::text_secondary())
                 .child(message)
         });
         div()

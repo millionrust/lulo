@@ -5,9 +5,11 @@
   apps) is on `op/win-phase2a`; the second slice (Preview, Clock, Weather, Terminal build
   and open) is on `op/win-phase2b`; the third slice (those four apps' own shortcuts move to
   `rmac_ui::bind_keys`, single instance for Calculator/Clock/Weather/Preview, real PDF
-  rendering, and the CI proof for all of it) is on `op/win-phase2c`. The rest of phases 2–5
-  needs owner approval and the hardware and signing items under "What the owner must
-  provide".
+  rendering, and the CI proof for all of it) is on `op/win-phase2c`. A follow-up pass using
+  the reference laptop's first numbers (idle CPU and launch time measured in CI, a real
+  foreground fix, Clock's alarms scheduled through Task Scheduler, a cross-platform
+  format-bar clipping fix) is on `op/win-polish`. The rest of phases 2–5 needs owner
+  approval and the hardware and signing items under "What the owner must provide".
 - **Scope:** every crate under `crates/` and `shell/`, the workspace `Cargo.toml`,
   `deny.toml`, `.github/workflows/ci.yml`, and a future `packaging/windows/`.
 - **Supersedes:** nothing. Builds on ADR 0006 (shell/app split), ADR 0007 (compositor
@@ -477,6 +479,109 @@ Preview, Clock, Weather and Terminal, plus real PDF rendering:
   fixture's colour anywhere in the captured window (`has_reddish_pixel`, loose on exact
   values since WARP's software rasteriser and PNG recompression both shift them slightly).
   The screenshot it saves (`rmac-preview-pdf.png`) is uploaded with the rest.
+
+## Phase 2c follow-up as built (branch `op/win-polish`)
+
+Branch `op/win-polish` worked the speed and polish gaps phase 2c left open,
+using the reference laptop's first real numbers (Ryzen 3 7320U, 8 GB, warm
+release build: 0.27–0.31 s to open each app, 0.5–3 % of one core sampled
+1.5–4.5 s after launch) as the baseline to improve on and CI as the only
+place that can prove a Windows change, since this pass had no GUI access to
+the laptop (session 0/SSH only) or to any Mac:
+
+- **Idle CPU, measured.** `scripts/windows/launch_smoke.py` now times each
+  app's own CPU (`GetProcessTimes`) over a 20 s window after a 10 s settle
+  with no input, printed as a share of Windows' 15.6 ms scheduling tick —
+  non-blocking, since the `windows` job already is. Auditing every
+  suspect the task named turned up one real gap and otherwise a clean
+  bill: the named-pipe single-instance server blocks on `ConnectNamedPipe`
+  rather than polling; the menu strip has no timer; Terminal's cursor
+  blink and foreground-job tracking already stop the moment a window is
+  unfocused or idle; the shared text-field caret (gpui-component's
+  `blink_cursor.rs`) already parks after 2 s of no interaction. Weather's
+  once-a-minute "keep the clock faces current" redraw has no
+  `window.is_window_active()` guard the way Clock's own ticker does, so it
+  is a real (if infrequent) wakeup — left open rather than threading a
+  `Window` handle through its three call sites without being able to
+  compile-check the result locally. Whatever idle CPU the new number still
+  shows is most likely `gpui_windows` itself (its DirectComposition present
+  loop): upstream Zed code, not vendored into this repo the way
+  `gpui_linux` was for ADR 0013's own idle-frame fix, so not something this
+  pass could patch — see `docs/parity.md` WIN-OS-11.
+- **Launch time, measured, not yet cut.** The same script now times
+  process start to a visible window and prints it per app. This pass's own
+  startup code (the named-pipe hand-off probe, settings reads) is small
+  and synchronous already; the time is believed to be mostly
+  `gpui_windows`'s own Direct3D/DirectComposition device creation and
+  DirectWrite font enumeration, again outside this repo's vendor tree.
+  Cutting it toward Lulo's Linux figure (~0.1 s) would need the same kind
+  of fork `gpui_linux` already is, which is its own project, not a fix
+  inside this one — see WIN-OS-12.
+- **Foreground, fixed.** Weather and Terminal opened behind an
+  already-open window on the laptop while every other app came forward.
+  Real: both apps' view constructors do real work before the window is
+  ready to show (Terminal's `Session::spawn` opens a PTY and starts the
+  shell; Weather reads cached forecasts from disk) where every other app's
+  constructor is a cheap settings read, and Windows only auto-foregrounds
+  a brand-new window for a short grace period after process start.
+  `rmac_ui::window::open_app_window` (Terminal, via `boot_app_instance`),
+  Weather's own window-open closure, and — defensively, since every app
+  relies on the same `cx.activate(true)`, confirmed a no-op on Windows by
+  reading `gpui_windows::platform.rs` — Calculator, Clock and Preview now
+  call `window.activate_window()` explicitly once the view is built,
+  rather than relying on that window of leniency, behind `#[cfg(windows)]`.
+  That gate is deliberate, not cosmetic: a first version called it
+  unconditionally, reasoning it would be a harmless no-op on Linux the
+  way `cx.activate` already is; it is not — `gpui_linux`'s own
+  `activate()` sends a real `xdg_activation_v1` request. Calling it
+  unconditionally would have been a real Linux behaviour change this
+  task explicitly ruled out, so it stays Windows-only even though two
+  separate CI runs on this branch (one with the call unconditional, one
+  Windows-only) showed identical `runtime.yml` numbers either way —
+  `desktop-paint`/`menu-dismiss` both failed on both runs, which is
+  pre-existing, already-tracked flakiness (`desktop-paint` is DESK-12's
+  own documented "icon in the very first captured frame" follow-up, not
+  new) rather than anything this change caused. The comparison still
+  earned keeping the gate: it removes a real, provable difference in
+  what Linux apps now do on open, whether or not these two checks happen
+  to notice it.
+  `launch_smoke.py --foreground-check` reproduces the two-windows-open
+  scenario in CI (its own per-app loop otherwise kills each app before the
+  next starts, so could not have caught this) — see WIN-OS-13.
+- **Clock's alarms and timers, delivered for real.** `schedule::apply` on
+  Windows was an unconditional error, so the Alarms tab showed a permanent
+  red "not available on this platform yet" banner and nothing ever rang.
+  It now mirrors the Linux systemd design with Task Scheduler in
+  `schedule.rs`: each due alarm, snooze and running countdown becomes one
+  `schtasks`-created task that runs `rmac-clock --ring-due`, the same
+  headless ring process Linux already uses and which already played the
+  alert sound in a loop on any non-Linux target — only the trigger was
+  missing. Rings happen whether or not Clock itself is running, matching
+  "real delivery" rather than "only while the app happens to be open". The
+  banner, now only shown when scheduling genuinely fails, no longer uses
+  `mac::danger()` red; a possibly-silent alarm is not a destructive
+  failure and reads as quiet secondary text instead. A toast alongside the
+  sound is still open — `ToastNotificationManager::CreateToastNotifierWithId`
+  needs an AUMID, which an unpackaged dev build has no shortcut/MSIX
+  identity to provide; that is phase 3's job, not this pass's — see
+  WIN-OS-14.
+- **Text Editor's clipped format bar, fixed (not Windows-specific).**
+  `text-editor.png` showed the alignment buttons cut off at the default
+  586 pt window width. The cause was in shared layout code, not a Windows
+  seam: `Size::Small`'s default 12 pt side padding alone made the B/I/U/S
+  and alignment buttons wider than the Mac's 22 pt segment buttons, before
+  any gap or label width was even counted. Both segments now set
+  `.px(px(6.0)).min_w(px(24.0))` directly — `rmac_ui::Button` implements
+  `Styled` but has no `.compact()` the way gpui-component's own
+  `ButtonGroup` does, which a real `cargo check` on the reference laptop
+  caught before this landed — and the Mac's own 2 pt inner gap, which
+  brings the bar back inside 586 pt on every platform — see
+  `docs/parity.md` UIA-07.
+
+Not attempted this pass, and recorded rather than silently skipped: patching
+`gpui_windows` itself for idle CPU or launch time (would need forking it the
+way `gpui_linux` already is, ADR 0013 scale, its own project); a Windows
+toast for Clock's alarms (needs an AUMID this build cannot provide yet).
 
 ## Phase plan
 

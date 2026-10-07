@@ -52,7 +52,8 @@ impl SpotlightView {
             }
         });
         let observe = cx.observe(&shell, |_, _, cx| cx.notify());
-        cx.set_global(SpotlightEntity(cx.entity()));
+        let entity = cx.entity();
+        cx.set_global(SpotlightEntity(entity));
         Self {
             shell,
             query,

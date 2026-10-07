@@ -88,7 +88,8 @@ fn context_menu(position: Point<Pixels>, items: &[Item], app: bool) -> ContextMe
 
 impl MenuOverlay {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        cx.set_global(OverlayEntity(cx.entity()));
+        let entity = cx.entity();
+        cx.set_global(OverlayEntity(entity));
         // Switching to another app with the keyboard closes the menu.
         let activation = cx.observe_window_activation(window, |overlay, window, cx| {
             if !window.is_window_active() && overlay.menu.is_some() {

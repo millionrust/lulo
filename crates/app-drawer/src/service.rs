@@ -6,7 +6,7 @@ use gpui::{
     WindowKind, WindowOptions,
 };
 
-use crate::view::{AppDrawer, DRAWER_HEIGHT, DRAWER_WIDTH};
+use crate::view::{AppDrawer, DRAWER_HEIGHT, DRAWER_SHADOW_GUTTER, DRAWER_WIDTH};
 
 #[cfg(target_os = "linux")]
 const LINUX_SHORTCUT_ENDPOINT: &str = "app-drawer";
@@ -182,6 +182,23 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         service.next_token = service.next_token.wrapping_add(1).max(1);
         service.next_token
     });
+    // The surface itself is inflated by `DRAWER_SHADOW_GUTTER` beyond the
+    // visible panel so the panel's drop shadow is not clipped at the
+    // surface's own edge (`crate::view::render`). The click-outside
+    // catcher's hole stays at the unInflated `bounds` — exactly where the
+    // panel actually draws, inset by the same gutter inside the larger
+    // surface — so a click past the panel's edge, in the transparent
+    // gutter, still falls through to the catcher and dismisses the drawer.
+    let window_bounds = Bounds::new(
+        point(
+            bounds.origin.x - px(DRAWER_SHADOW_GUTTER),
+            bounds.origin.y - px(DRAWER_SHADOW_GUTTER),
+        ),
+        size(
+            bounds.size.width + px(2.0 * DRAWER_SHADOW_GUTTER),
+            bounds.size.height + px(2.0 * DRAWER_SHADOW_GUTTER),
+        ),
+    );
     #[cfg(target_os = "linux")]
     {
         // Map the outside catcher before the visible panel so a quick first
@@ -224,7 +241,7 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         cx.update_global::<AppDrawerService, _>(|service, _| service.catcher = catcher);
     }
     let mut drawer = None;
-    let handle = cx.open_window(drawer_options(bounds), |window, cx| {
+    let handle = cx.open_window(drawer_options(window_bounds), |window, cx| {
         window.set_window_title("Apps");
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| AppDrawer::new(Some(token), window, cx));

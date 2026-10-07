@@ -64,6 +64,7 @@ sys.path.insert(0, str(HERE))
 
 import fake_hardware  # noqa: E402
 import run_lulo  # noqa: E402
+import shadow_fade  # noqa: E402
 import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
@@ -190,6 +191,13 @@ class Run:
         outputs = self.niri("outputs") or {}
         self.output = next(iter(outputs), "winit")
 
+        if self.args.appearance:
+            theme = Path(self.env["XDG_CONFIG_HOME"]) / "rmac" / "theme.json"
+            theme.parent.mkdir(parents=True, exist_ok=True)
+            theme.write_text(json.dumps(
+                {"version": 1, "preferences": {"color_scheme": self.args.appearance}}
+            ), encoding="utf-8")
+
         bins = Path(self.args.bin_dir)
         self.dock = self.spawn([str(bins / "dock")], "dock", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.top_bar = self.spawn([str(bins / "top-bar")], "top-bar", {"VK_ICD_FILENAMES": LAVAPIPE})
@@ -314,6 +322,40 @@ class Run:
         self.check(f"Visual capture: {name}", result.returncode == 0,
                    "" if result.returncode == 0 else result.stderr[-300:])
 
+    def find_open_confirmation_panel(self):
+        """The confirmation's own panel (`Role::Menu` in
+        `shell/bins/rmac-menubar/src/main.rs`'s `popup` closure — the same
+        div for an app menu and for a confirmation, so this only means what
+        it says while a confirmation is the thing actually open)."""
+
+        return self.find_node(("menu",), lambda _name: True)
+
+    def check_shadow_fade(self, capture_name: str) -> None:
+        """Confirms `capture_name`'s saved screenshot shows the
+        confirmation panel's drop shadow fading smoothly into the
+        wallpaper below and beside it, with no hard edge and no shadow left
+        incomplete within the surface's reserved margin — the owner's
+        2026-10-07 report of a grey band under the Restart/Shut Down
+        dialog (docs/parity.md SESSION-09)."""
+
+        if not self.args.capture_dir:
+            return
+        path = Path(self.args.capture_dir) / f"{capture_name}.png"
+        if not path.exists():
+            self.check(f"{capture_name}: shadow fade capture exists", False, str(path))
+            return
+        node = self.find_open_confirmation_panel()
+        box = self.extents(node) if node is not None else None
+        if box is None:
+            self.check(f"{capture_name}: shadow fade panel geometry found", False)
+            return
+        from PIL import Image
+
+        image = Image.open(path).convert("RGB")
+        below, right = shadow_fade.check_panel_shadow(image, box)
+        self.check(f"{capture_name}: shadow fade (below)", below.ok, below.detail)
+        self.check(f"{capture_name}: shadow fade (right)", right.ok, right.detail)
+
     def find_menu_item(self, prefix: str):
         return self.find_node(("menu item",), lambda name: name.startswith(prefix))
 
@@ -407,7 +449,9 @@ class Run:
                    self.retry_until(lambda: self.open_confirmation_via_menu(item_prefix),
                                     lambda: self.find_button(label)))
         if self.find_button(label) is not None:
-            self.capture_surface(f"session-{item_prefix.lower().replace('…', '').replace(' ', '-')}")
+            capture_name = f"session-{item_prefix.lower().replace('…', '').replace(' ', '-')}"
+            self.capture_surface(capture_name)
+            self.check_shadow_fade(capture_name)
         self.keys.key("escape")
         closed = self.wait_for(lambda: self.find_button(label) is None, 10)
         self.check(f"{label}: Escape cancels the confirmation", closed)
@@ -532,7 +576,9 @@ class Run:
             return
         cancel_before = self.button_diagnostics(label) if systemctl_verb is None else []
         cancel_focus_before = self.niri("focused-window") if systemctl_verb is None else None
-        self.capture_surface(f"power-dialog-{label.lower().replace(' ', '-')}")
+        power_capture_name = f"power-dialog-{label.lower().replace(' ', '-')}"
+        self.capture_surface(power_capture_name)
+        self.check_shadow_fade(power_capture_name)
         clicked = (
             self.click_visible_button(label)
             if systemctl_verb is None
@@ -922,6 +968,10 @@ def main() -> int:
     parser.add_argument("--niri", default="/usr/bin/niri")
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument(
+        "--appearance", choices=("light", "dark"), default=None,
+        help="force the private session's colour scheme (default: unset)",
+    )
     parser.add_argument(
         "--no-fake-hardware", dest="fake_hardware", action="store_false", default=True,
         help="skip the private NetworkManager/BlueZ/UPower mocks (docs/behavior-suite.md)",

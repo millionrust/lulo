@@ -3900,6 +3900,25 @@ mod linux_wayland {
                 .pending_system_action
                 .as_deref()
                 .map(menu_model::system_confirmation);
+            // A confirmation's outer panel is taller than `confirmation.height`:
+            // the panel below adds `pt`/`pb` of `APP_MENU_PADDING - EDGE` on
+            // top of the fixed-height body, so its true rendered height is
+            // `confirmation.height + 2 * APP_MENU_PADDING` (the two `EDGE`
+            // terms cancel against the panel's own 1 px border). The
+            // confirmation's blurred backdrop window (`MenuBackdropPanel`)
+            // and its drop shadow (`menu_shadow_frame`) must agree with that
+            // true height, or the backdrop glass and the shadow both end
+            // short of the panel's real bottom edge, leaving a flat,
+            // hard-edged band of shadow peeking out below it (owner report,
+            // 2026-10-07: a grey band under the Restart/Shut Down dialog
+            // ending in a hard line ~10 px below the visible panel — exactly
+            // `2 * APP_MENU_PADDING`). Every place below that positions or
+            // sizes the confirmation's surface uses this corrected height;
+            // only the body's own `.h(px(confirmation.height))` keeps the
+            // measured content height unchanged.
+            let confirmation_frame_height = confirmation
+                .as_ref()
+                .map(|confirmation| confirmation.height + 2.0 * menu_model::APP_MENU_PADDING);
             let menu_width = if let Some(confirmation) = &confirmation {
                 self.open_menu.map(|_| confirmation.width)
             } else {
@@ -3924,29 +3943,26 @@ mod linux_wayland {
                     .zip(menu_width)
                     .map(|(left, width)| left.min(screen_width - width - 4.0).max(4.0))
             };
-            let menu_height = if let Some(confirmation) = &confirmation {
-                Some(confirmation.height)
+            let menu_height = if confirmation.is_some() {
+                confirmation_frame_height
             } else {
                 self.open_menu
                     .and_then(|index| menus.get(index))
                     .map(|menu| app_menu_height(&menu.items))
             };
-            let panel_top = if let Some(confirmation) = &confirmation {
-                ((screen_height - confirmation.height) / 2.0)
+            let panel_top = if let Some(frame_height) = confirmation_frame_height {
+                ((screen_height - frame_height) / 2.0)
                     .max(menu_top)
-                    .min(screen_height - confirmation.height - 8.0)
+                    .min(screen_height - frame_height - 8.0)
             } else {
                 menu_top
             };
             // The menu under its title: cut to the screen and scrolled when
             // taller than the room below the bar. Confirmations never scroll.
-            let main_scroll = match (self.open_menu, &confirmation) {
-                (_, Some(confirmation)) => Some(MenuScroll::new(
-                    confirmation.height,
-                    0.0,
-                    f32::INFINITY,
-                    0.0,
-                )),
+            let main_scroll = match (self.open_menu, confirmation_frame_height) {
+                (_, Some(frame_height)) => {
+                    Some(MenuScroll::new(frame_height, 0.0, f32::INFINITY, 0.0))
+                }
                 (Some(index), None) => menus.get(index).map(|menu| {
                     self.level_scroll(0, index as u64, &menu.items, menu_top, screen_height)
                 }),

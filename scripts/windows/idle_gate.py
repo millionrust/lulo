@@ -7,7 +7,9 @@ Reads the JSON that `launch_smoke.py --results` writes and checks every app's
 idle CPU (process time over the 20 s no-input window, in 15.6 ms scheduling
 ticks) against the budget. With `gpui_windows`' parked frame loop
 (docs/decisions/0025-vendor-gpui-windows.md) an idle window wakes nothing,
-so the budget is one tick. Terminal is exempt by default: its live shell
+so the budget is one tick. The Lulo layer's two processes (`lulo-shell`
+and `lulo-session`, ADR 0023 phase 3), measured by `launch_smoke.py
+--shell`, are gated the same way. Terminal is exempt by default: its live shell
 (ConPTY) has its own work. A missing results file passes with a note, so a
 build failure, which the Windows job reports elsewhere, does not also fail
 this gate.

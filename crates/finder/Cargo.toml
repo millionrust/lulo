@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-links = "rmac_finder_resource"
 
 [[bin]]
 name = "rmac-files"
@@ -60,7 +59,3 @@ windows = { workspace = true, features = [
     "Win32_UI_Shell",
     "Win32_System_Com",
 ] }
-
-# The exe's version info and icon (ADR 0023 "Installer"); see build.rs.
-[target.'cfg(windows)'.build-dependencies]
-rmac-windows-resource-build.workspace = true

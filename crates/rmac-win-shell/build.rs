@@ -1,6 +1,10 @@
 fn main() {
-    // Shared by both of this crate's exes (lulo-session, lulo-shell): a
-    // build.rs's embedded resources apply crate-wide, not per [[bin]].
-    #[cfg(windows)]
-    rmac_windows_resource_build::embed("Lulo", "lulo-session");
+    // Deliberately no resource embedding here. Enabling it for
+    // rmac-finder (Files) hit a real CI link failure (CVTRES CVT1100,
+    // "duplicate resource. type:VERSION") not understood in the time this
+    // pass had -- see crates/finder/build.rs and ADR 0023 "Installer"
+    // "What is left". This crate has the same lib-plus-multiple-bins
+    // shape (lulo-session, lulo-shell) that could plausibly hit the same
+    // or a related issue, so it is left unembedded too rather than
+    // shipped unverified.
 }

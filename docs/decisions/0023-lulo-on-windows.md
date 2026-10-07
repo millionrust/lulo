@@ -693,22 +693,36 @@ Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows
   which `lulo-session.exe` launches itself) with no Start Menu entry of its own, and
   `"icon_svg"` names artwork outside the usual per-app Linux `.desktop` icon set (the Lulo
   layer's own mark, `assets/icons/lulo.svg`, for the single "Lulo" shortcut that runs
-  `lulo-session.exe`). An entry with neither `app_id` nor `icon_svg` gets no `ShortcutProperty`
-  and no generated icon -- `lulo-session.exe` has no `app_id` because nothing in
+  `lulo-session.exe`). An entry with neither `app_id` nor `icon_svg` gets no
+  `ShortcutProperty` -- `lulo-session.exe` has no `app_id` because nothing in
   `rmac-win-shell` sets a matching `AppUserModelID` at process start yet (unlike the seven
   apps below); giving its shortcut one anyway would be a mismatched identity, worse than
   none.
-- **Start Menu shortcuts with real icons.** `scripts/windows/make_icons.sh` rasterises each
-  app's existing artwork (`packaging/rmac-apps/icons/org.rmac.<App>.svg`, the same files
-  `scripts/build-icons.py` writes for the Linux `.desktop` icons -- never Apple's) into a
-  multi-resolution `.ico` with ImageMagick (preinstalled on `windows-latest`), before the
-  apps are built. `rmac-windows-resource-build::embed` (called from a one-line `build.rs` in
-  each app crate) embeds that icon, plus `FileDescription`/`ProductName`/`CompanyName`
-  "Lulo" and the exact Cargo version, as the exe's own Win32 resources -- so both the exe
-  itself and every shortcut to it (which inherits an exe's icon when none is set explicitly)
-  show the right artwork, with one thing embedding it rather than two copies to keep in
-  sync. A build that skips the icon step (plain local `cargo build`) still succeeds, with
-  the platform's default icon and a `cargo:warning` naming why.
+- **Start Menu shortcuts with real icons, for the seven original apps.**
+  `scripts/windows/make_icons.sh` rasterises each app's existing artwork
+  (`packaging/rmac-apps/icons/org.rmac.<App>.svg`, the same files `scripts/build-icons.py`
+  writes for the Linux `.desktop` icons -- never Apple's -- or, for the Lulo layer's own
+  shortcut, `assets/icons/lulo.svg`) into a multi-resolution `.ico` with ImageMagick
+  (preinstalled on `windows-latest`), before the apps are built. `rmac-windows-resource-build
+  ::embed` (called from a one-line `build.rs`) embeds that icon, plus
+  `FileDescription`/`ProductName`/`CompanyName` "Lulo" and the exact Cargo version, as the
+  exe's own Win32 resources, for Calculator, Notes, Text Editor, Preview, Clock, Weather and
+  Terminal -- so both the exe itself and every shortcut to it (which inherits an exe's icon
+  when none is set explicitly) show the right artwork, with one thing embedding it rather
+  than two copies to keep in sync. A build that skips the icon step (plain local
+  `cargo build`) still succeeds, with the platform's default icon and a `cargo:warning`
+  naming why. **Files and the Lulo layer do not call `embed`** (`crates/finder/build.rs`,
+  `crates/rmac-win-shell/build.rs` are deliberately empty): a real `cargo build --release`
+  of all nine binaries together hit CVTRES error CVT1100, "duplicate resource.
+  type:VERSION, name:1, language:0x0409", linking `rmac-files.exe` -- `resource.lib`
+  (`rmac-windows-resource-build`'s own output) listed twice in the linker command for a
+  reason this pass could not pin down in the time it had (gpui's own embedded resource, the
+  only other one in the graph, links once, correctly, and nothing else should be requesting
+  a native `resource` lib by that name; adding a unique `package.links` key to every crate
+  that calls `embed`, Cargo's documented fix for a build script's native-link output being
+  applied more than once, made no difference). Files and the Lulo layer still install, get
+  their shortcuts (where due) and run correctly; they keep the platform's default icon and
+  no `FileDescription`/`CompanyName` until this is understood -- see "What is left".
 - **AppUserModelID**, so Clock's alarms (WIN-OS-14) and every app's taskbar grouping and
   jump lists can work: each Start Menu shortcut's `ShortcutProperty` sets
   `System.AppUserModel.ID` to `Lulo.<App>` (`generate_apps_wxs.py`'s `aumid()`), and each app
@@ -791,6 +805,11 @@ alongside the existing unsigned exe zip.
 - A real toast for Clock's alarms (`ToastNotificationManager`) now that an AUMID exists.
 - An `AppUserModelID` for `lulo-session.exe`'s own shortcut, once `rmac-win-shell` sets a
   matching one at process start (WIN-OS-28).
+- The CVT1100 duplicate-resource link failure that keeps Files and the Lulo layer from
+  embedding an icon or version info ("What the installer does" above). Worth real
+  investigation (`cargo build -v` to see every build script's exact output, trying
+  `embed-resource` in place of `winres`, or a minimal reproduction outside this workspace)
+  before trying another blind fix.
 - A standing "Restore Windows taskbar" Start Menu shortcut (WIN-OS-26); today's fix only
   runs that restore automatically during a real uninstall, not as an anytime escape hatch.
 - MSIX packaging as an additional distribution format, once signing exists -- this

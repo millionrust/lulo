@@ -6463,7 +6463,6 @@ dependencies = [
  "rmac-storage",
  "rmac-thumbnails",
  "rmac-ui",
- "rmac-windows-resource-build",
  "rust-embed",
  "rustix 1.1.4",
  "serde",
@@ -7856,7 +7855,6 @@ dependencies = [
  "rmac-app-menu",
  "rmac-apps",
  "rmac-ui",
- "rmac-windows-resource-build",
  "windows 0.61.3",
  "windows-core 0.61.2",
 ]

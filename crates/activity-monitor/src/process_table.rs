@@ -889,9 +889,10 @@ impl ProcessTableDelegate {
 #[cfg(test)]
 mod tests {
     use super::{
-        full_process_name, is_leader_thread_kind, next_header_sort, selection_projection,
-        thread_group_size, ColKey, ProcRow,
+        full_process_name, is_leader_thread_kind, next_header_sort, read_cpu_time_seconds,
+        selection_projection, thread_group_size, ColKey, ProcRow, ProcessTableDelegate,
     };
+    use crate::metrics::{format_duration, format_mem};
     use rmac_ui::ColumnSort;
     use sysinfo::ThreadKind;
 

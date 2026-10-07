@@ -98,6 +98,10 @@ fn read_cpu_time_seconds(pid: u32) -> Option<u64> {
 
 /// `sysconf(_SC_CLK_TCK)`, almost universally 100 on Linux; falls back to
 /// that default rather than failing if the call is ever unavailable.
+/// `libc` is a Linux-only dependency here (`Cargo.toml`), matching
+/// `process_signal.rs`'s own split: this binary ships only on Linux, but
+/// `cargo check`/clippy on macOS still type-checks every file.
+#[cfg(target_os = "linux")]
 fn clock_ticks_per_second() -> u64 {
     let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
     if ticks > 0 {
@@ -105,6 +109,11 @@ fn clock_ticks_per_second() -> u64 {
     } else {
         100
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn clock_ticks_per_second() -> u64 {
+    100
 }
 
 /// One process-table snapshot. The command search text stays private because it
@@ -1005,7 +1014,10 @@ mod tests {
         process.bytes_written = 1_048_576;
         process.disk = process.bytes_read + process.bytes_written;
         assert_eq!(process.cell_text(ColKey::BytesRead), format_mem(2_097_152));
-        assert_eq!(process.cell_text(ColKey::BytesWritten), format_mem(1_048_576));
+        assert_eq!(
+            process.cell_text(ColKey::BytesWritten),
+            format_mem(1_048_576)
+        );
         assert_eq!(process.cell_text(ColKey::Disk), format_mem(3_145_728));
     }
 
@@ -1033,12 +1045,25 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn reading_this_test_processs_own_cpu_time_succeeds_on_linux() {
         let pid = std::process::id();
         // This process has run at least a little by the time its own test
-        // suite executes, so `/proc/<pid>/stat` is real and readable.
+        // suite executes, so `/proc/<pid>/stat` is real and readable. This
+        // binary only ships for Linux (`clock_ticks_per_second`'s own doc
+        // comment), but `cargo test --workspace` still runs this file's
+        // tests when checking the workspace from another platform, where
+        // `/proc` does not exist — `read_cpu_time_seconds` honestly
+        // returns `None` there instead of a fabricated value, so this
+        // particular assertion only holds on Linux.
         assert!(read_cpu_time_seconds(pid).is_some());
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn reading_a_process_without_proc_returns_none_rather_than_a_fabricated_value() {
+        assert_eq!(read_cpu_time_seconds(std::process::id()), None);
     }
 
     /// MON-01 fixture: a small table standing in for what `sysinfo` 0.33

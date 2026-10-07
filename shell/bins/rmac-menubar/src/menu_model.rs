@@ -695,8 +695,12 @@ pub fn window_menu(
         Item::new("Minimise All", MINIMISE_ALL_ACTION, minimise_all_shortcut)
             .enabled(!windows.is_empty()),
         command("Zoom", WindowCommand::Zoom, zoom_shortcuts.0),
-        Item::new("Zoom All", WindowCommand::ZoomAll.action(), zoom_shortcuts.1)
-            .enabled(!windows.is_empty()),
+        Item::new(
+            "Zoom All",
+            WindowCommand::ZoomAll.action(),
+            zoom_shortcuts.1,
+        )
+        .enabled(!windows.is_empty()),
         command("Fill", WindowCommand::Fill, "⌃⇧⌘F"),
         command(words.centre(), WindowCommand::Centre, "⌃⌘C"),
         Item::submenu(

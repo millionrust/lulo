@@ -20,8 +20,8 @@ use crate::{
     ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess, ShowGpuHistoryWindow,
     ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses, ShowOtherUsersProcesses,
     ShowSelectedProcesses, ShowSystemProcesses, ToggleBytesReadColumn, ToggleBytesWrittenColumn,
-    ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn, ToggleMemoryColumn,
-    TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
+    ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn, ToggleMemoryColumn, TogglePidColumn,
+    ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
 };
 
 use super::MonitorView;

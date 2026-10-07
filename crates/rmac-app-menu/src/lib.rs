@@ -1732,11 +1732,7 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                     item!("Energy Impact", "activity_monitor::ToggleEnergyColumn", ""),
                     // MON-MENU-019/020: the read/write halves of the
                     // existing combined Disk I/O column.
-                    item!(
-                        "Bytes Read",
-                        "activity_monitor::ToggleBytesReadColumn",
-                        ""
-                    ),
+                    item!("Bytes Read", "activity_monitor::ToggleBytesReadColumn", ""),
                     item!(
                         "Bytes Written",
                         "activity_monitor::ToggleBytesWrittenColumn",

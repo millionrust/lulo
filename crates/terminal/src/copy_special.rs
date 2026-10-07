@@ -348,7 +348,10 @@ mod tests {
     fn named_colors_resolve_through_the_given_profile_not_the_active_one() {
         let profile = profile();
         assert_eq!(named_color(NamedColor::Red, &profile), split(0x990000));
-        assert_eq!(named_color(NamedColor::Foreground, &profile), split(0xffffff));
+        assert_eq!(
+            named_color(NamedColor::Foreground, &profile),
+            split(0xffffff)
+        );
     }
 
     #[test]

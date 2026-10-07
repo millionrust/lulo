@@ -25,7 +25,7 @@ detail), `docs/journey-suite.md` (the package-scoped fixture runner).
 | `linux` | Formatting, the shared-control/gpui_component/no-mac-captures/design-token boundary scripts, wording, Clippy (`-D warnings`), `cargo test --workspace --all-features`, and the full `scripts/test_*.py` suite | See below |
 | `linux-2604` | `linux`'s formatting/Clippy/tests/Python-suite steps (not its repo-specific boundary scripts) on `ubuntu-26.04` instead of `ubuntu-24.04`. **Non-blocking** (`continue-on-error: true`) — see [Ubuntu 26.04](#ubuntu-2604) | Same `cargo`/`python3` commands as `linux`, below |
 | `macos` | Clippy, tests, and the Python suite on `macos-15` | Same commands as `linux`, minus the Linux-only boundary scripts |
-| `windows` | ADR 0023 phases 1–2 on `windows-latest`: Clippy (`-D warnings`, `--all-targets`) and unit tests for Calculator, Notes, Text Editor, `rmac-ui`, `rmac-editor`, `rmac-storage`, `rmac-recent-documents`, `rmac-sound` and the `rmac-notes-*` crates, a debug build of the three apps, and `scripts/windows/launch_smoke.py`, which starts each app with a private profile, checks it opens a window, taps Alt to open the menu strip's first menu, presses Ctrl+N, and hands a second Text Editor launch to the running one (screenshots are uploaded). **Non-blocking** (`continue-on-error: true`) — see [Windows](#windows) | Windows only; see [Windows](#windows) |
+| `windows` | ADR 0023 phases 1–2 on `windows-latest`: Clippy (`-D warnings`, `--all-targets`) and unit tests for Calculator, Notes, Text Editor, `rmac-ui`, `rmac-editor`, `rmac-storage`, `rmac-recent-documents`, `rmac-sound` and the `rmac-notes-*` crates, a debug build of the three apps, and `scripts/windows/launch_smoke.py`, which starts each app with a private profile, checks it opens a window, taps Alt to open the menu strip's first menu, presses Ctrl+N, and hands a second Text Editor launch to the running one (screenshots are uploaded). **Non-blocking** (every step `continue-on-error: true`) **except the idle gate** (`scripts/windows/idle_gate.py`, ADR 0025): every app but Terminal must stay within one tick of CPU over the 20 s idle window — see [Windows](#windows) | Windows only; see [Windows](#windows) |
 | `upstream-gpui-linux` | The separately locked `shell/` workspace: formatting, its own `cargo deny`, `cargo test --lib`, Clippy on the `wayland` feature, and a nested-Wayland smoke check | See `shell/` steps below |
 
 ## `runtime.yml` — every push and pull request
@@ -289,7 +289,13 @@ crates, PipeWire, D-Bus Focus state, xattrs) are `cfg(unix)` or
 
 The `windows` job saves one Cargo cache per lockfile even when a step fails,
 and runs every later step after a Clippy failure, so one run reports all
-Windows breakage. It stays non-blocking until it has run clean for a while.
+Windows breakage. It stays non-blocking until it has run clean for a while,
+except for one step: since `gpui_windows` is vendored and parks idle windows
+(ADR 0025), `launch_smoke.py --results` records each app's idle CPU and
+`idle_gate.py` fails the job when any app but Terminal used more than one
+15.6 ms tick over the 20 s idle window, naming the wake-ups and threads that
+did it. The same run prints each app's start-up phases
+(`RMAC_GPUI_STARTUP_TRACE`) and launch time.
 To reproduce it on a Windows PC with the Windows SDK installed:
 
 ```sh

@@ -58,7 +58,8 @@ is right for Windows.
   `gpui`'s `windows-manifest` feature, which embeds a DPI-aware manifest through
   `embed-resource`. All of these are already in `Cargo.lock`.
 - Our patches (`shell/compat/gpui_linux`, `gpui_wgpu`, `ztracing`) are not used on Windows.
-  `ztracing` is pure Rust.
+  `ztracing` is pure Rust. (Amended 2026-10-07: `gpui_windows` is now vendored too, in
+  `shell/compat/gpui_windows`, for its idle frame loop and start-up time; see ADR 0025.)
 - The shell (`shell/`) depends on Wayland layer-shell surfaces, which have no Windows
   equivalent inside GPUI. Each Windows shell surface will be a normal GPUI window that we
   then turn into an AppBar or tool window through its `HWND` (`raw-window-handle`).
@@ -578,7 +579,9 @@ the laptop (session 0/SSH only) or to any Mac:
   brings the bar back inside 586 pt on every platform — see
   `docs/parity.md` UIA-07.
 
-Not attempted this pass, and recorded rather than silently skipped: patching
+Not attempted this pass (done since on `op/gpui-windows-idle`, ADR 0025, which
+vendors `gpui_windows`, parks idle windows and cuts CI launch to about 95 ms),
+and recorded rather than silently skipped: patching
 `gpui_windows` itself for idle CPU or launch time (would need forking it the
 way `gpui_linux` already is, ADR 0013 scale, its own project); a Windows
 toast for Clock's alarms (needs an AUMID this build cannot provide yet).

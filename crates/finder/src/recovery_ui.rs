@@ -2,7 +2,7 @@
 
 use crate::{conflict::ConflictDecision, operation_journal};
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 use crate::trash_store;
 
 pub(crate) struct RecoveryPresentation {
@@ -51,7 +51,7 @@ pub(crate) fn recovery_presentation(
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(crate) fn trash_recovery_presentation(
     action: &trash_store::TrashRecoveryAction,
 ) -> RecoveryPresentation {
@@ -210,6 +210,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn trash_recovery_presentations_never_overstate_safe_actions() {
         let partial =
             trash_recovery_presentation(&trash_store::TrashRecoveryAction::ReturnRemainingItem {

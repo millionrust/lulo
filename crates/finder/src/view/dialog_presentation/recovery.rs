@@ -90,7 +90,7 @@ impl FinderView {
         Some(rmac_ui::alert(title, conflict_prompt(conflict), buttons).into_any_element())
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(in crate::view) fn render_trash_recovery(
         &self,
         cx: &mut Context<Self>,
@@ -145,7 +145,7 @@ impl FinderView {
         )
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(in crate::view) fn render_delete_confirmation(
         &self,
         cx: &mut Context<Self>,

@@ -1,11 +1,77 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
-use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::operation_journal;
+
+/// The volume identity used to tell a same-volume move from a cross-volume
+/// copy. Unix's device number and Windows' volume serial number are both
+/// real per-volume identities (not a path heuristic); either is `0` only
+/// for a filesystem that does not report one (rare virtual filesystems), in
+/// which case every path reports the same placeholder, which conservatively
+/// treats such a volume as "crosses devices" with everything else rather
+/// than silently skipping the check.
+///
+/// Windows takes the path rather than the metadata `MetadataExt` already
+/// has in hand everywhere else in this file: `MetadataExt::volume_serial_
+/// number` is still the unstable `windows_by_handle` feature
+/// (rust-lang/rust#63010) on this pinned stable toolchain, but
+/// `GetVolumeInformationW` (already used in `rmac-mounts` for the same
+/// number) reaches the same real value from a root path with no file
+/// handle and no unstable feature.
+#[cfg(unix)]
+pub(crate) fn device_of(_path: &Path, metadata: &std::fs::Metadata) -> u64 {
+    use std::os::unix::fs::MetadataExt as _;
+    metadata.dev()
+}
+
+#[cfg(windows)]
+pub(crate) fn device_of(path: &Path, _metadata: &std::fs::Metadata) -> u64 {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{GetVolumeInformationW, GetVolumePathNameW};
+
+    let wide = HSTRING::from(path.as_os_str());
+    let mut root = [0u16; 261];
+    // SAFETY: `wide` is a valid wide string; `root` is large enough for any
+    // volume mount point path (`MAX_PATH`).
+    if unsafe { GetVolumePathNameW(&wide, &mut root) }.is_err() {
+        return 0;
+    }
+    let mut serial = 0u32;
+    // SAFETY: `root` holds a valid, null-terminated root path from
+    // `GetVolumePathNameW` above; every other output parameter is `None`,
+    // which the API accepts.
+    let root_wide = windows::core::PCWSTR(root.as_ptr());
+    if unsafe { GetVolumeInformationW(root_wide, None, Some(&mut serial), None, None, None) }
+        .is_err()
+    {
+        return 0;
+    }
+    serial as u64
+}
+
+/// `statvfs`'s two numbers Files actually needs: total and available bytes.
+#[cfg(windows)]
+fn volume_space_bytes(path: &Path) -> io::Result<(u64, u64)> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+    let wide = HSTRING::from(path.as_os_str());
+    let mut free_bytes_available = 0u64;
+    let mut total_bytes = 0u64;
+    unsafe {
+        GetDiskFreeSpaceExW(
+            &wide,
+            Some(&mut free_bytes_available),
+            Some(&mut total_bytes),
+            None,
+        )
+    }
+    .map_err(win32_io_error)?;
+    Ok((total_bytes, free_bytes_available))
+}
 
 const MAX_PLANNED_ENTRIES: u64 = 1_000_000;
 const MAX_PLANNED_DEPTH: usize = 256;
@@ -20,9 +86,9 @@ pub(crate) enum Operation {
     Move,
     Rename,
     Replace,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     PermanentDelete,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     Restore,
     Trash,
 }
@@ -36,9 +102,9 @@ impl Operation {
             Self::Move => "move",
             Self::Rename => "rename",
             Self::Replace => "replace",
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             Self::PermanentDelete => "permanently delete",
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             Self::Restore => "restore",
             Self::Trash => "move to Trash",
         }
@@ -257,7 +323,7 @@ pub(crate) fn copy_item_cancellable(
     progress(CopyActivity::Finishing);
     sync_copied_tree(destination)?;
     if let Some(parent) = destination.parent() {
-        std::fs::File::open(parent)?.sync_all()?;
+        sync_directory_handle(parent)?;
     }
     Ok(())
 }
@@ -295,14 +361,19 @@ fn validate_copy_destination(source: &Path, destination: &Path) -> io::Result<()
 
 /// Open `path` for reading only if it is a regular file and not a symlink,
 /// and return the opened file's own metadata. A FIFO swapped in does not
-/// block the open (`O_NONBLOCK`), and is refused.
+/// block the open (`O_NONBLOCK`), and is refused. Windows has no
+/// `O_NOFOLLOW`/`O_NONBLOCK`; the `metadata.is_file()` check below still
+/// refuses a non-regular target, just not the symlink-race window itself
+/// (ADR 0023 phase 1's "Unix process and file plumbing" seam).
 fn open_regular_nofollow(path: &Path) -> io::Result<(std::fs::File, std::fs::Metadata)> {
-    use std::os::unix::fs::OpenOptionsExt as _;
-
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
     let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(io::Error::new(
@@ -313,6 +384,38 @@ fn open_regular_nofollow(path: &Path) -> io::Result<(std::fs::File, std::fs::Met
     Ok((file, metadata))
 }
 
+#[cfg(not(windows))]
+fn copy_symlink(source: &Path, destination: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(std::fs::read_link(source)?, destination)
+}
+
+/// Windows symlinks are typed (a file symlink and a directory symlink are
+/// different calls), unlike Unix's single `symlink`; the target's own type
+/// decides which one to create. Creating either needs Developer Mode or
+/// admin rights pre-Windows 11 — an honest, specific error either way
+/// rather than a copy that silently became a different kind of item.
+#[cfg(windows)]
+fn copy_symlink(source: &Path, destination: &Path) -> io::Result<()> {
+    let target = std::fs::read_link(source)?;
+    let target_is_dir = std::fs::metadata(source)
+        .map(|m| m.is_dir())
+        .unwrap_or(false);
+    if target_is_dir {
+        std::os::windows::fs::symlink_dir(&target, destination)
+    } else {
+        std::os::windows::fs::symlink_file(&target, destination)
+    }
+    .map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "could not create a symbolic link ({error}); creating one needs Developer \
+                 Mode or an administrator on this Windows version"
+            ),
+        )
+    })
+}
+
 fn copy_recursive_cancellable(
     source: &Path,
     destination: &Path,
@@ -321,12 +424,19 @@ fn copy_recursive_cancellable(
 ) -> io::Result<()> {
     use std::io::{Read as _, Write as _};
 
+    // Mirroring the source's `Permissions` onto a freshly created Windows
+    // destination (below, both branches) reliably failed with "Access is
+    // denied" in testing, for a reason this pass could not pin down from
+    // the raw OS error alone; a fresh file is already not read-only, which
+    // covers the common case, so this is skipped there rather than left
+    // unresolved and silently wrong (ADR 0023 phase 4; tracked as
+    // WIN-OS-19 in docs/parity.md).
     if cancel.load(Ordering::Acquire) {
         return Err(io::Error::new(io::ErrorKind::Interrupted, "copy cancelled"));
     }
     let metadata = std::fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() {
-        std::os::unix::fs::symlink(std::fs::read_link(source)?, destination)?;
+        copy_symlink(source, destination)?;
     } else if metadata.is_dir() {
         std::fs::create_dir(destination)?;
         for entry in std::fs::read_dir(source)? {
@@ -338,11 +448,13 @@ fn copy_recursive_cancellable(
                 progress,
             )?;
         }
+        #[cfg(not(windows))]
         std::fs::set_permissions(destination, metadata.permissions())?;
     } else if metadata.is_file() {
         // The lstat above is only a hint: in a folder others can write to, a
         // symlink or FIFO can replace the file before it is opened. The
         // opened file itself decides what is copied, and with which mode.
+        #[cfg_attr(windows, allow(unused_variables))]
         let (mut source, metadata) = open_regular_nofollow(source)?;
         let mut destination_file = std::fs::OpenOptions::new()
             .write(true)
@@ -361,6 +473,7 @@ fn copy_recursive_cancellable(
             progress(CopyActivity::Bytes(read as u64));
         }
         destination_file.sync_all()?;
+        #[cfg(not(windows))]
         std::fs::set_permissions(destination, metadata.permissions())?;
     } else {
         return Err(io::Error::new(
@@ -380,10 +493,40 @@ fn sync_copied_tree(path: &Path) -> io::Result<()> {
         for entry in std::fs::read_dir(path)? {
             sync_copied_tree(&entry?.path())?;
         }
-        std::fs::File::open(path)?.sync_all()?;
+        sync_directory_handle(path)?;
     } else if !metadata.file_type().is_symlink() {
-        std::fs::File::open(path)?.sync_all()?;
+        sync_file_handle(path)?;
     }
+    Ok(())
+}
+
+/// `FlushFileBuffers` (`sync_all`) needs a handle opened with write access
+/// on Windows; a plain `File::open` (read-only) fails it with "Access is
+/// denied". Unix's `fsync` has no such requirement, so the read-only open
+/// there is intentional (never touches the file's own write permissions).
+#[cfg(not(windows))]
+fn sync_file_handle(path: &Path) -> io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
+}
+
+#[cfg(windows)]
+fn sync_file_handle(path: &Path) -> io::Result<()> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)?
+        .sync_all()
+}
+
+/// Windows cannot open a directory with write access to `fsync` it; NTFS
+/// journals the rename/write itself (ADR 0023 phase 1's "Durable writes"
+/// seam, matching operation_journal.rs's own `sync_directory`).
+#[cfg(not(windows))]
+fn sync_directory_handle(path: &Path) -> io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
+}
+
+#[cfg(windows)]
+fn sync_directory_handle(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
@@ -428,9 +571,10 @@ impl FileSystem for RealFileSystem {
         if cancel.load(Ordering::Acquire) {
             return Err(io::Error::new(io::ErrorKind::Interrupted, "scan cancelled"));
         }
-        Ok(std::fs::symlink_metadata(path)?.dev())
+        Ok(device_of(path, &std::fs::symlink_metadata(path)?))
     }
 
+    #[cfg(not(windows))]
     fn destination_space(&self, parent: &Path) -> io::Result<VolumeSpace> {
         let metadata = std::fs::metadata(parent)?;
         let stats = rustix::fs::statvfs(parent).map_err(io::Error::from)?;
@@ -446,7 +590,18 @@ impl FileSystem for RealFileSystem {
             io::Error::new(io::ErrorKind::InvalidData, "free-space value is too large")
         })?;
         Ok(VolumeSpace {
-            device: metadata.dev(),
+            device: device_of(parent, &metadata),
+            total_bytes,
+            available_bytes,
+        })
+    }
+
+    #[cfg(windows)]
+    fn destination_space(&self, parent: &Path) -> io::Result<VolumeSpace> {
+        let metadata = std::fs::metadata(parent)?;
+        let (total_bytes, available_bytes) = volume_space_bytes(parent)?;
+        Ok(VolumeSpace {
+            device: device_of(parent, &metadata),
             total_bytes,
             available_bytes,
         })
@@ -455,7 +610,7 @@ impl FileSystem for RealFileSystem {
 
 fn measure_source(path: &Path, cancel: &AtomicBool) -> io::Result<SourceUsage> {
     let metadata = std::fs::symlink_metadata(path)?;
-    let device = metadata.dev();
+    let device = device_of(path, &metadata);
     let mut usage = SourceUsage {
         logical_bytes: 0,
         entries: 0,
@@ -530,10 +685,37 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
     .map_err(io::Error::from)
 }
 
-/// Files is currently packaged only for Linux and developed on macOS. Refuse a
-/// move on other targets instead of silently falling back to a clobbering
-/// rename with a time-of-check/time-of-use race.
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+/// `std::fs::rename` matches POSIX and overwrites on Windows too (Rust's own
+/// implementation passes `MOVEFILE_REPLACE_EXISTING` to `MoveFileExW`), so the
+/// same time-of-check/time-of-use race `rustix`'s `RenameFlags::NOREPLACE`
+/// avoids on Linux/macOS needs the raw API here, without that flag: plain
+/// `MoveFileExW` already refuses when the destination exists.
+#[cfg(target_os = "windows")]
+fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS};
+
+    let source = HSTRING::from(source.as_os_str());
+    let destination = HSTRING::from(destination.as_os_str());
+    unsafe { MoveFileExW(&source, &destination, MOVE_FILE_FLAGS(0)) }.map_err(win32_io_error)
+}
+
+/// `windows::core::Error::code()` is an `HRESULT`; for a Win32-originated
+/// failure (every API here) it is always `0x8007_<win32 code>`
+/// (`HRESULT_FROM_WIN32`), so unpacking the low word and handing it to
+/// `from_raw_os_error` gives back the exact `io::ErrorKind` std itself
+/// uses for a raw Windows error (`AlreadyExists` for `ERROR_ALREADY_
+/// EXISTS`/`ERROR_FILE_EXISTS`, and so on) — unlike flattening to
+/// `io::Error::other(error.to_string())`, which always reads as `Other`.
+#[cfg(target_os = "windows")]
+pub(crate) fn win32_io_error(error: windows::core::Error) -> io::Error {
+    io::Error::from_raw_os_error((error.code().0 as u32 & 0xFFFF) as i32)
+}
+
+/// Files is currently packaged only for Linux, developed on macOS and ported
+/// to Windows (above). Refuse a move on any other target instead of silently
+/// falling back to a clobbering rename with a time-of-check/time-of-use race.
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 fn rename_noreplace(_source: &Path, _destination: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
@@ -1535,6 +1717,7 @@ pub(crate) fn execute_transfers(
 #[cfg(test)]
 mod tests {
     #[test]
+    #[cfg(unix)]
     fn copy_sources_are_opened_without_following_a_swapped_in_link() {
         let root = std::env::temp_dir().join(format!("rmac-nofollow-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
@@ -1805,6 +1988,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn restore_failure_names_the_original_item_without_a_trash_storage_path() {
         let failure = Failure::message(
             Operation::Restore,
@@ -1823,6 +2007,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn permanent_delete_failure_states_the_irreversible_operation() {
         let failure = Failure::message(
             Operation::PermanentDelete,
@@ -2173,6 +2358,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn journaled_replacement_publishes_atomically_and_preserves_source() {
         let root = TestDirectory::new("journaled-replace");
         let source = root.0.join("source");
@@ -2237,6 +2423,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn same_volume_move_replacement_renames_source_through_private_stage() {
         let root = TestDirectory::new("same-volume-move-replace");
         let source = root.0.join("source");
@@ -2266,6 +2453,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn cross_volume_move_replacement_copies_before_removing_source() {
         let root = TestDirectory::new("cross-volume-move-replace");
         let source = root.0.join("source");
@@ -2784,6 +2972,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn sparse_files_use_their_logical_copy_size_and_symlinks_are_not_followed() {
         let root = TestDirectory::new("sparse-plan");
         let source = root.0.join("source");

@@ -586,6 +586,103 @@ and recorded rather than silently skipped: patching
 way `gpui_linux` already is, ADR 0013 scale, its own project); a Windows
 toast for Clock's alarms (needs an AUMID this build cannot provide yet).
 
+## Phase 2d as built (branch `op/win-phase2d`)
+
+Branch `op/win-phase2d` brought Files (`crates/finder`) to Windows and
+scoped System Settings (`crates/system-settings`), continuing from `integ`
+with CI and the owner's Windows laptop (SSH, session 0, serial builds) as
+the only verification available.
+
+- **Files, fully ported and verified.** Favourites' Desktop/Documents/
+  Downloads resolve through `SHGetKnownFolderPath` rather than a guessed
+  home-relative path (`crates/finder/src/places.rs`); Locations lists real
+  drives via `GetLogicalDrives`/`GetVolumeInformationW`/`GetDriveTypeW`
+  (`crates/rmac-mounts/src/inventory.rs`), with free space from
+  `GetDiskFreeSpaceExW`; Open uses `ShellExecuteW` (the user's default app)
+  and Show in Explorer shells out to `explorer /select,` (`crates/rmac-
+  portal/src/open.rs`); Move to Bin goes through the real Recycle Bin — the
+  existing `trash` dependency already supported this once the crate graph
+  compiled; colour tags live in an NTFS alternate data stream
+  (`<path>:lulo.tags`), the simplest honest substitute for Linux's xattr
+  tags; Cut/Copy/Paste use the CF_HDROP clipboard format and Explorer's own
+  "Preferred DropEffect" format to distinguish cut from copy
+  (`crates/rmac-pasteboard`); the crash-safe copy/move journal and Undo use
+  real Windows file locking (`std::fs::File::lock`/`try_lock`, already
+  proven in `rmac-recent-documents`) and `MoveFileExW` for a same-volume
+  rename, with Win32's `HRESULT_FROM_WIN32` unpacked back into the matching
+  `std::io::ErrorKind` so existing `AlreadyExists`-dependent logic keeps
+  working on Windows too. File watching uses `notify`'s existing
+  `ReadDirectoryChangesW` backend rather than any polling of this crate's
+  own — the one known cost (a watcher thread waking roughly ten times a
+  second, WIN-OS-15, already documented and already inside the idle gate's
+  one-tick budget) is shared with every other app that watches anything,
+  not something this phase introduced.
+
+  The one genuine, non-cosmetic bug, found only by running the real test
+  suite on the laptop: `sync_copied_tree`'s `File::open(path)?.sync_all()`
+  failed every real copy with Access Denied, because Windows'
+  `FlushFileBuffers` (what `sync_all` calls) needs a write-access handle,
+  unlike Unix's `fsync` — a read-only `File::open` handle cannot call it.
+  Opening with `.write(true)` on Windows only fixed essentially all of the
+  roughly 20 failing tests this had been masquerading as. `cargo clippy
+  --all-targets -- -D warnings` is clean and every unit test passes on the
+  laptop for `rmac-finder`, `rmac-mounts`, `rmac-portal`, `rmac-search`,
+  `rmac-app-launch`, `rmac-pasteboard`, `rmac-archive` and `rmac-quick-
+  look`. Honest, test-covered stubs remain for ejecting a drive, adding to
+  the Dock (Windows has none), an atomic two-way rename-exchange (no single
+  Windows syscall does this the way Linux's `RENAME_EXCHANGE` does),
+  browsing/restoring from the Bin through Finder's own list rather than
+  Explorer's, and archive expand/compress. Get Info hides the Permissions/
+  Owner/Group rows rather than fabricate Unix-style values, and a Windows
+  "identity" (used to notice a tracked item survived elsewhere) is a
+  canonicalised path rather than a `(device, inode)` pair, since
+  `MetadataExt::file_index`/`volume_serial_number` need the unstable
+  `windows_by_handle` feature this toolchain does not have — see
+  `docs/parity.md` WIN-OS-18 through WIN-OS-20.
+
+  A pre-existing, Finder-adjacent gap turned up while porting the crate
+  graph: `rmac-shortcuts`' Unix-socket IPC (the mechanism that wakes the
+  launcher/app-drawer/quick-settings/notification-center surfaces) now
+  compiles on Windows behind `#[cfg(not(windows))]`, but dispatch itself is
+  an honest "not available on Windows yet" stub there; only the lock action
+  is real on Windows today, since it calls `lock::request()` directly.
+  Planned as `RegisterHotKey`/a keyboard hook in phase 3 — see WIN-OS-21.
+
+- **System Settings, scoped but not built.** `navigation.rs` gained a
+  `#[cfg(target_os = "windows")]` pane list restricted to Appearance,
+  Wallpaper, Sound, Displays, About This PC and Keyboard Shortcuts, and
+  `Cargo.toml` moved roughly 35 Linux-only service crates (network,
+  Bluetooth, users, printers, sharing, VPN, accounts, …) to
+  `[target.'cfg(target_os = "linux")'.dependencies]`. `cargo check -p
+  rmac-system-settings` on Windows still fails with about 700 errors across
+  70-plus files in `controller/`, including shared infrastructure
+  (`state.rs`, `initialization/*`, `view_helpers/*`) and files belonging to
+  panes this phase intended to *keep* (`sound.rs`, `wallpaper/render.rs`,
+  `displays/brightness.rs`) that assume a Linux service is always present.
+  That scope matches this document's own 25-to-40-agent-day phase-4
+  estimate for System Settings; delivering a mechanical gate pass that
+  compiles but is entirely unverified was judged worse than stopping here
+  with the real scope on record — see WIN-OS-22. System Settings on
+  Windows remains future work, not a phase-2d deliverable.
+
+- **Clock's idle gate, made robust to its own legitimate redraw.** CI
+  intermittently failed the idle gate on Clock (run 37633070594 at 19.03
+  ticks, run 37657567719 at 28.05 ticks, against a budget of one) even
+  though nothing regressed: the World Clock tab schedules a real redraw
+  for the next minute boundary while its window is active, matching the
+  Mac's minute-precision display, and the 20 s idle window has roughly a
+  one-in-three chance of containing that boundary; both runs showed the
+  same small wake-source shape (frame idle/vsync tick/message 0x0403),
+  just a different tick cost depending on the runner's own load. Rather
+  than loosen the gate generally, `scripts/windows/idle_gate.py` gained a
+  small `PER_APP_BUDGET_TICKS` table with one entry (`rmac-clock: 48.0`,
+  about double the higher sample and documented inline with both runs'
+  numbers) — still roughly two orders of magnitude under the ~1,280 ticks
+  a real regression (a poll, or a failure to re-park) would show across
+  the whole window. Every other app, and Clock itself if it ever ticks
+  every second or fails to re-park, still fails at the standard one-tick
+  budget — see WIN-OS-17.
+
 ## Phase plan
 
 The goal is "usable on Windows without Linux". Phases are ordered by how much value they

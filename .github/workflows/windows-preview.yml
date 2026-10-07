@@ -42,13 +42,13 @@ jobs:
         run: |
           cargo build --locked --release -p rmac-calculator -p rmac-notes \
             -p rmac-text-editor -p rmac-preview -p rmac-clock -p rmac-weather \
-            -p rmac-terminal --bins
+            -p rmac-terminal -p rmac-finder --bins
 
       - name: Package
         run: |
           out=lulo-windows-preview
           mkdir -p "$out"
-          for app in calculator notes text-editor preview clock weather terminal; do
+          for app in calculator notes text-editor preview clock weather terminal files; do
             cp "target/release/rmac-$app.exe" "$out/"
           done
           cat > "$out/README.txt" <<'EOF'

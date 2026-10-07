@@ -17,3 +17,15 @@ async-channel.workspace = true
 objc2.workspace = true
 objc2-foundation = { workspace = true, features = ["NSArray", "NSString", "NSURL"] }
 objc2-app-kit = { workspace = true, features = ["NSPasteboard"] }
+
+# The real Windows clipboard: CF_HDROP (the format Explorer's own Copy/Cut/
+# Paste uses) plus the "Preferred DropEffect" format Explorer reads to tell
+# a cut from a copy.
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_UI_Shell",
+] }

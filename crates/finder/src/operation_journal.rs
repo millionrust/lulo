@@ -2,8 +2,12 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
-use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+#[cfg(not(windows))]
 use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
+// Only `journal_round_trips_non_utf8_paths` (below) still needs the raw byte
+// constructor, to build a deliberately non-UTF-8 Unix path fixture.
+#[cfg(all(test, unix))]
+use std::os::unix::ffi::OsStringExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -68,6 +72,7 @@ impl EntryIdentity {
         Ok(Self::from_metadata(&file.metadata()?))
     }
 
+    #[cfg(not(windows))]
     fn from_metadata(metadata: &fs::Metadata) -> Self {
         Self {
             device: metadata.dev(),
@@ -78,6 +83,42 @@ impl EntryIdentity {
             modified_nanoseconds: metadata.mtime_nsec(),
             changed_seconds: metadata.ctime(),
             changed_nanoseconds: metadata.ctime_nsec(),
+        }
+    }
+
+    /// Windows has no inode, device number or ctime, and
+    /// `MetadataExt::{volume_serial_number, file_index}` (the real
+    /// per-volume/per-file identities that would stand in for them) are
+    /// still the unstable `windows_by_handle` feature (rust-lang/rust#63010)
+    /// on this pinned stable toolchain. `device`/`inode` are left `0`
+    /// (matching rmac-search's own `cfg(not(unix))` identity, which already
+    /// drops them the same way); file attributes stand in for mode, and
+    /// file creation time stands in for ctime — not the same guarantee
+    /// ("renamed into place" can leave creation time unchanged where
+    /// Linux's ctime would move), but still a real changed-since signal,
+    /// documented here rather than left looking like the Unix guarantee
+    /// (ADR 0023 phase 4).
+    #[cfg(windows)]
+    fn from_metadata(metadata: &fs::Metadata) -> Self {
+        use std::os::windows::fs::MetadataExt as _;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let since_epoch = |time: io::Result<SystemTime>| {
+            time.ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .unwrap_or_default()
+        };
+        let modified = since_epoch(metadata.modified());
+        let created = since_epoch(metadata.created());
+        Self {
+            device: 0,
+            inode: 0,
+            mode: metadata.file_attributes(),
+            size: metadata.len(),
+            modified_seconds: modified.as_secs() as i64,
+            modified_nanoseconds: modified.subsec_nanos() as i64,
+            changed_seconds: created.as_secs() as i64,
+            changed_nanoseconds: created.subsec_nanos() as i64,
         }
     }
 
@@ -111,7 +152,7 @@ impl TreeManifest {
         Self::capture_inner(root, None)
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) fn capture_cancellable(root: &Path, cancel: &AtomicBool) -> io::Result<Self> {
         Self::capture_inner(root, Some(cancel))
     }
@@ -247,7 +288,7 @@ fn capture_manifest_entry(
         .checked_add(1)
         .filter(|entries| *entries <= MAX_MANIFEST_ENTRIES)
         .ok_or_else(|| invalid_data("source contains too many manifest entries"))?;
-    let relative_bytes = relative.as_os_str().as_bytes();
+    let relative_bytes = relative.as_os_str().as_encoded_bytes();
     builder.path_bytes = builder
         .path_bytes
         .checked_add(relative_bytes.len() as u64)
@@ -262,7 +303,7 @@ fn capture_manifest_entry(
     let metadata = fs::symlink_metadata(path)?;
     if metadata.file_type().is_symlink() {
         let target = fs::read_link(path)?;
-        let target = target.as_os_str().as_bytes();
+        let target = target.as_os_str().as_encoded_bytes();
         builder.path_bytes = builder
             .path_bytes
             .checked_add(target.len() as u64)
@@ -288,12 +329,12 @@ fn capture_manifest_entry(
                 ));
             }
             directory_name_bytes = directory_name_bytes
-                .checked_add(name.as_bytes().len() as u64)
+                .checked_add(name.as_encoded_bytes().len() as u64)
                 .filter(|bytes| *bytes <= MAX_MANIFEST_PATH_BYTES)
                 .ok_or_else(|| invalid_data("source directory names exceed the safety limit"))?;
             names.push(name);
         }
-        names.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+        names.sort_by(|left, right| left.as_encoded_bytes().cmp(right.as_encoded_bytes()));
         for name in names {
             capture_manifest_entry(
                 &path.join(&name),
@@ -370,15 +411,21 @@ struct TransferRecord {
 
 impl TransferRecord {
     fn source(&self) -> PathBuf {
-        PathBuf::from(OsString::from_vec(self.source_path_bytes.clone()))
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.source_path_bytes.clone())
+        })
     }
 
     fn destination(&self) -> PathBuf {
-        PathBuf::from(OsString::from_vec(self.destination_path_bytes.clone()))
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.destination_path_bytes.clone())
+        })
     }
 
     fn staging_destination(&self) -> PathBuf {
-        PathBuf::from(OsString::from_vec(self.staging_path_bytes.clone()))
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.staging_path_bytes.clone())
+        })
     }
 
     fn source_still_matches(&self) -> io::Result<bool> {
@@ -779,6 +826,7 @@ impl Journal {
                 "file-operation journal root is not a real directory",
             ));
         }
+        #[cfg(not(windows))]
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         let undo = UndoStore::open(root.join("undo"))?;
         let journal = Self { root, undo };
@@ -1267,7 +1315,8 @@ impl Journal {
                     ticket.record.replaced_identity = None;
                     ticket.record.replaced_manifest = None;
                 }
-                ticket.record.destination_path_bytes = candidate.as_os_str().as_bytes().to_vec();
+                ticket.record.destination_path_bytes =
+                    candidate.as_os_str().as_encoded_bytes().to_vec();
                 ticket.record.destination_identity = Some(staging_identity);
                 ticket.record.destination_manifest = Some(staging_manifest);
                 ticket.record.stage = TransferStage::DestinationComplete;
@@ -1488,9 +1537,9 @@ impl Journal {
             id: id.clone(),
             operation,
             stage: TransferStage::Prepared,
-            source_path_bytes: source.as_os_str().as_bytes().to_vec(),
-            destination_path_bytes: destination.as_os_str().as_bytes().to_vec(),
-            staging_path_bytes: staging.as_os_str().as_bytes().to_vec(),
+            source_path_bytes: source.as_os_str().as_encoded_bytes().to_vec(),
+            destination_path_bytes: destination.as_os_str().as_encoded_bytes().to_vec(),
+            staging_path_bytes: staging.as_os_str().as_encoded_bytes().to_vec(),
             source_identity,
             source_manifest: Some(source_manifest),
             destination_identity: None,
@@ -1526,8 +1575,7 @@ impl Journal {
 
     fn create_active_lock(&self, id: &str) -> io::Result<RecordLock> {
         let lock = self.open_record_lock(id, true)?;
-        rustix::fs::flock(&lock.file, rustix::fs::FlockOperation::LockExclusive)
-            .map_err(io::Error::from)?;
+        lock_exclusive_blocking(&lock.file)?;
         lock.file.sync_all()?;
         sync_directory(&self.root)?;
         Ok(lock)
@@ -1551,18 +1599,14 @@ impl Journal {
             }
             Err(error) => return Err(error),
         };
-        match rustix::fs::flock(
-            &lock.file,
-            rustix::fs::FlockOperation::NonBlockingLockExclusive,
-        )
-        .map_err(io::Error::from)
-        {
-            Ok(()) => Ok(Some(lock)),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
-            Err(error) => Err(error),
+        if try_lock_exclusive(&lock.file)? {
+            Ok(Some(lock))
+        } else {
+            Ok(None)
         }
     }
 
+    #[cfg(not(windows))]
     fn open_record_lock(&self, id: &str, create: bool) -> io::Result<RecordLock> {
         if Uuid::parse_str(id).is_err() {
             return Err(invalid_data("file-operation lock identity is invalid"));
@@ -1581,7 +1625,48 @@ impl Journal {
         .map_err(io::Error::from)?;
         let file = File::from(descriptor);
         let metadata = file.metadata()?;
-        if !metadata.is_file() || metadata.mode() & 0o777 != 0o600 {
+        if !metadata.is_file() || !mode_is_private(&metadata, 0o600) {
+            return Err(invalid_data(
+                "file-operation lock is not a private regular file",
+            ));
+        }
+        let identity = EntryIdentity::from_metadata(&metadata);
+        if EntryIdentity::capture(&path)? != identity {
+            return Err(invalid_data("file-operation lock identity changed"));
+        }
+        Ok(RecordLock {
+            file,
+            path,
+            identity,
+        })
+    }
+
+    /// Windows has no `O_NOFOLLOW`/mode bits; the per-user `%LOCALAPPDATA%`
+    /// ACL is the privacy boundary there instead (ADR 0023 phase 1's "Unix
+    /// process and file plumbing" seam), so this refuses only a symlink or
+    /// non-regular-file masquerading as the lock, not a permission value
+    /// Windows does not have.
+    #[cfg(windows)]
+    fn open_record_lock(&self, id: &str, create: bool) -> io::Result<RecordLock> {
+        if Uuid::parse_str(id).is_err() {
+            return Err(invalid_data("file-operation lock identity is invalid"));
+        }
+        let path = self.lock_path(id);
+        if let Ok(existing) = fs::symlink_metadata(&path) {
+            if !existing.file_type().is_file() {
+                return Err(invalid_data(
+                    "file-operation lock is not a private regular file",
+                ));
+            }
+        }
+        let mut options = OpenOptions::new();
+        options.read(true).write(true);
+        if create {
+            options.create_new(true);
+        }
+        let file = options.open(&path)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() {
             return Err(invalid_data(
                 "file-operation lock is not a private regular file",
             ));
@@ -1619,7 +1704,9 @@ impl Journal {
             .join(format!(".{}.{}.tmp", record.id, Uuid::new_v4()));
         let result = (|| {
             let mut options = OpenOptions::new();
-            options.write(true).create_new(true).mode(0o600);
+            options.write(true).create_new(true);
+            #[cfg(not(windows))]
+            options.mode(0o600);
             let mut file = options.open(&temp)?;
             file.write_all(&bytes)?;
             file.sync_all()?;
@@ -1649,7 +1736,7 @@ impl Journal {
                 let metadata = fs::symlink_metadata(&path)?;
                 if !metadata.is_file()
                     || metadata.file_type().is_symlink()
-                    || metadata.mode() & 0o777 != 0o600
+                    || !mode_is_private(&metadata, 0o600)
                     || metadata.len() != 0
                 {
                     return Err(invalid_data(
@@ -1665,7 +1752,7 @@ impl Journal {
                 let metadata = fs::symlink_metadata(&path)?;
                 if !metadata.is_file()
                     || metadata.file_type().is_symlink()
-                    || metadata.mode() & 0o777 != 0o600
+                    || !mode_is_private(&metadata, 0o600)
                     || metadata.len() > MAX_RECORD_BYTES
                 {
                     return Err(invalid_data(
@@ -1678,7 +1765,7 @@ impl Journal {
                 let metadata = fs::symlink_metadata(&path)?;
                 if !metadata.is_dir()
                     || metadata.file_type().is_symlink()
-                    || metadata.mode() & 0o777 != 0o700
+                    || !mode_is_private(&metadata, 0o700)
                 {
                     return Err(invalid_data(
                         "file-operation undo root is not a private real directory",
@@ -1737,7 +1824,7 @@ impl Journal {
             let metadata = fs::symlink_metadata(entry.path())?;
             if !metadata.is_file()
                 || metadata.file_type().is_symlink()
-                || metadata.mode() & 0o777 != 0o600
+                || !mode_is_private(&metadata, 0o600)
                 || metadata.len() > MAX_RECORD_BYTES
             {
                 return Err(invalid_data(
@@ -2189,8 +2276,64 @@ fn undo_seed_from_record(record: &TransferRecord, forward_path: &Path) -> io::Re
     })
 }
 
+#[cfg(not(windows))]
+fn mode_is_private(metadata: &fs::Metadata, expected: u32) -> bool {
+    metadata.mode() & 0o777 == expected
+}
+
+/// Windows has no POSIX mode bits; the per-user `%LOCALAPPDATA%` ACL is the
+/// privacy boundary instead (ADR 0023 phase 1), so this check is a no-op
+/// there rather than a Unix permission value Windows does not have.
+#[cfg(windows)]
+fn mode_is_private(_metadata: &fs::Metadata, _expected: u32) -> bool {
+    true
+}
+
+/// A blocking exclusive lock: `flock` on Unix/macOS, `LockFileEx` through
+/// std's `File::lock` on Windows (ADR 0023 phase 1's file-locks seam).
+#[cfg(not(windows))]
+fn lock_exclusive_blocking(file: &File) -> io::Result<()> {
+    rustix::fs::flock(file, rustix::fs::FlockOperation::LockExclusive).map_err(io::Error::from)
+}
+
+#[cfg(windows)]
+fn lock_exclusive_blocking(file: &File) -> io::Result<()> {
+    file.lock()
+}
+
+/// A non-blocking exclusive lock attempt: `Ok(true)` when it was taken,
+/// `Ok(false)` when another process already holds it.
+#[cfg(not(windows))]
+fn try_lock_exclusive(file: &File) -> io::Result<bool> {
+    match rustix::fs::flock(file, rustix::fs::FlockOperation::NonBlockingLockExclusive)
+        .map_err(io::Error::from)
+    {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(windows)]
+fn try_lock_exclusive(file: &File) -> io::Result<bool> {
+    match file.try_lock() {
+        Ok(()) => Ok(true),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(false),
+        Err(std::fs::TryLockError::Error(error)) => Err(error),
+    }
+}
+
+#[cfg(not(windows))]
 fn sync_directory(path: &Path) -> io::Result<()> {
     File::open(path)?.sync_all()
+}
+
+/// Windows cannot open a directory with write access to `fsync` it; NTFS
+/// journals the rename itself, so there is nothing durable left to flush
+/// here (ADR 0023 phase 1's "Durable writes" seam).
+#[cfg(windows)]
+fn sync_directory(_path: &Path) -> io::Result<()> {
+    Ok(())
 }
 
 fn sync_rename_parents(source: &Path, destination: &Path) -> io::Result<()> {
@@ -2287,14 +2430,14 @@ fn available_recovery_destination(destination: &Path) -> io::Result<PathBuf> {
     let name = destination
         .file_name()
         .ok_or_else(|| invalid_data("recovery destination has no file name"))?;
-    let mut base = name.as_bytes().to_vec();
+    let mut base = name.as_encoded_bytes().to_vec();
     base.extend_from_slice(b" (Recovered)");
     for index in 1..=10_000 {
         let mut bytes = base.clone();
         if index > 1 {
             bytes.extend_from_slice(format!(" {index}").as_bytes());
         }
-        let candidate = parent.join(OsString::from_vec(bytes));
+        let candidate = parent.join(unsafe { OsString::from_encoded_bytes_unchecked(bytes) });
         if capture_optional(&candidate)?.is_none() {
             return Ok(candidate);
         }
@@ -2334,7 +2477,23 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
     .map_err(io::Error::from)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+/// `std::fs::rename` overwrites on Windows too (Rust's own implementation
+/// passes `MOVEFILE_REPLACE_EXISTING` to `MoveFileExW`); plain `MoveFileExW`
+/// without that flag already refuses when the destination exists, giving
+/// the same no-replace guarantee `rustix`'s `RenameFlags::NOREPLACE` gives
+/// on Linux/macOS.
+#[cfg(target_os = "windows")]
+fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS};
+
+    let source = HSTRING::from(source.as_os_str());
+    let destination = HSTRING::from(destination.as_os_str());
+    unsafe { MoveFileExW(&source, &destination, MOVE_FILE_FLAGS(0)) }
+        .map_err(crate::file_ops::win32_io_error)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 fn rename_noreplace(_source: &Path, _destination: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
@@ -2456,12 +2615,11 @@ mod tests {
         let temporary = first
             .root
             .join(format!(".{}.{}.tmp", ticket.record.id, Uuid::new_v4()));
-        let mut temporary_file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)
-            .unwrap();
+        let mut temporary_options = OpenOptions::new();
+        temporary_options.write(true).create_new(true);
+        #[cfg(not(windows))]
+        temporary_options.mode(0o600);
+        let mut temporary_file = temporary_options.open(&temporary).unwrap();
         temporary_file.write_all(b"active atomic update").unwrap();
         temporary_file.sync_all().unwrap();
         drop(temporary_file);
@@ -2521,6 +2679,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn symlinked_record_lock_fails_closed() {
         let root = TestDirectory::new("symlink-lock");
         let source = root.0.join("source");
@@ -2553,6 +2712,7 @@ mod tests {
         let lock_path = ticket.lock.path.clone();
         let lock_metadata = fs::symlink_metadata(&lock_path).unwrap();
         assert!(lock_metadata.is_file());
+        #[cfg(not(windows))]
         assert_eq!(lock_metadata.mode() & 0o777, 0o600);
         assert_eq!(lock_metadata.len(), 0);
         fs::write(ticket.staging_destination(), b"source").unwrap();
@@ -2649,6 +2809,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn successful_replacement_atomically_publishes_copy_and_retains_undo_backup() {
         let root = TestDirectory::new("replace-commit");
         let source = root.0.join("source");
@@ -2709,6 +2870,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn successful_same_volume_move_replacement_stages_source_before_exchange() {
         let root = TestDirectory::new("move-replace-commit");
         let source = root.0.join("source");
@@ -2733,7 +2895,11 @@ mod tests {
         assert_eq!(journal.undo_store().count().unwrap(), 1);
     }
 
+    // `prepare_move_replace` recovery (despite this test's name) still
+    // needs the atomic replace/exchange primitive to finish publishing,
+    // which `rename_exchange` deliberately stubs out on Windows.
     #[test]
+    #[cfg(unix)]
     fn recovery_infers_move_source_staging_before_record_persistence() {
         let root = TestDirectory::new("move-replace-staging-interruption");
         let source = root.0.join("source");
@@ -2759,6 +2925,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn recovery_infers_move_replacement_exchange_before_stage_persistence() {
         let root = TestDirectory::new("move-replace-exchange-interruption");
         let source = root.0.join("source");
@@ -2878,6 +3045,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn recovery_infers_an_exchange_interrupted_before_stage_persistence() {
         let root = TestDirectory::new("replace-exchange-interruption");
         let source = root.0.join("source");
@@ -2911,6 +3079,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn recovery_finishes_replacement_cleanup_after_replaced_stage_persistence() {
         let root = TestDirectory::new("replace-cleanup-interruption");
         let source = root.0.join("source");
@@ -2942,6 +3111,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn replacement_recovery_resumes_partial_directory_cleanup_without_following_symlinks() {
         let root = TestDirectory::new("replace-partial-directory");
         let source = root.0.join("source");
@@ -2984,6 +3154,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn changed_replacement_backup_is_preserved_only_after_bound_review() {
         let root = TestDirectory::new("replace-backup-review");
         let source = root.0.join("source");
@@ -3035,6 +3206,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn replacement_backup_review_rejects_a_nested_change_after_review() {
         let root = TestDirectory::new("replace-backup-review-race");
         let source = root.0.join("source");
@@ -3241,6 +3413,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn source_manifest_is_deterministic_and_never_follows_symlink_target() {
         let root = TestDirectory::new("manifest-symlink");
         let source = root.0.join("source");
@@ -3374,7 +3547,11 @@ mod tests {
         assert_eq!(journal.pending_count().unwrap(), 1);
     }
 
+    // Non-UTF-8 path bytes are a Unix property (Windows paths are UTF-16
+    // based and reject arbitrary bytes); this test is a Unix-only check of
+    // the journal's byte-for-byte round trip, not a Windows gap.
     #[test]
+    #[cfg(unix)]
     fn journal_round_trips_non_utf8_paths() {
         let source = PathBuf::from("/").join(OsString::from_vec(vec![b's', b'o', b'u', 0xff]));
         let destination =
@@ -3385,12 +3562,12 @@ mod tests {
             id: id.clone(),
             operation: JournalOperation::Move,
             stage: TransferStage::Prepared,
-            source_path_bytes: source.as_os_str().as_bytes().to_vec(),
-            destination_path_bytes: destination.as_os_str().as_bytes().to_vec(),
+            source_path_bytes: source.as_os_str().as_encoded_bytes().to_vec(),
+            destination_path_bytes: destination.as_os_str().as_encoded_bytes().to_vec(),
             staging_path_bytes: PathBuf::from("/")
                 .join(format!(".rmac-transfer-{id}"))
                 .as_os_str()
-                .as_bytes()
+                .as_encoded_bytes()
                 .to_vec(),
             source_identity: EntryIdentity {
                 device: 1,
@@ -3677,7 +3854,7 @@ mod tests {
         let review = journal.review_pending().unwrap().remove(0);
         let candidate = review.preserve_destination.clone().unwrap();
         let mut record = review.record.clone();
-        record.destination_path_bytes = candidate.as_os_str().as_bytes().to_vec();
+        record.destination_path_bytes = candidate.as_os_str().as_encoded_bytes().to_vec();
         record.destination_identity = review.staging_snapshot.clone();
         record.destination_manifest =
             Some(TreeManifest::capture(&record.staging_destination()).unwrap());

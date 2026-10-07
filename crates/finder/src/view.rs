@@ -58,6 +58,7 @@ mod view_options;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -83,12 +84,12 @@ use crate::conflict::{
     conflict_prompt, prepare_conflict_batch, resolve_conflict_task, unique_path_avoiding,
     ConflictBatch, ConflictDecision, ConflictTransferKind,
 };
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 use crate::recovery_ui::trash_recovery_presentation;
 use crate::recovery_ui::{
     conflict_key_intent, recovery_key_intent, recovery_presentation, RecoveryKeyIntent,
 };
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 use crate::trash_store;
 #[cfg(target_os = "linux")]
 use crate::watchers::MOUNT_WATCH_UNAVAILABLE_MESSAGE;
@@ -508,27 +509,27 @@ struct FinderView {
     conflict_preflight: bool,
     conflict_batch: Option<ConflictBatch>,
     conflict_busy: bool,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     trash_store: Option<Arc<trash_store::TrashStore>>,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     trash_loading: bool,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     trash_pending: usize,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     trash_recovery_reviews: Vec<trash_store::TrashRecoveryReview>,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     trash_recovery_open: bool,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     trash_recovery_busy: bool,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     trash_operation: Option<ActiveTrash>,
     trash_view: bool,
     applications_view: bool,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     trash_items: Vec<trash_store::TrashedItem>,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     trash_generation: u64,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     delete_confirmation: Option<DeleteConfirmation>,
     /// Free space on the current volume (bytes), read once per navigation.
     free_bytes: Option<u64>,

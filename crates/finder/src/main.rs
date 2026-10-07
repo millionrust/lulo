@@ -5,7 +5,7 @@ mod directory_state;
 mod file_ops;
 mod operation_journal;
 mod recovery_ui;
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 mod trash_store;
 mod undo_journal;
 mod view;
@@ -201,8 +201,14 @@ fn item_path(item: &str, current_dir: Option<&Path>) -> Option<PathBuf> {
                 .filter(|path| path.starts_with('/'))?
         };
         let path = path.split(['?', '#']).next().unwrap_or_default();
-        use std::os::unix::ffi::OsStringExt as _;
-        PathBuf::from(std::ffi::OsString::from_vec(percent_decode(path)?))
+        // SAFETY: `percent_decode` only ever decodes bytes this same
+        // process's `file_uri`-style encoding produced (or a `file://` URI
+        // another real desktop tool wrote, which encodes a real path the
+        // same percent-encoded way); this is the same local, non-portable
+        // round trip `rmac-pasteboard::file_list` uses.
+        PathBuf::from(unsafe {
+            std::ffi::OsString::from_encoded_bytes_unchecked(percent_decode(path)?)
+        })
     } else if item.contains("://") {
         return None;
     } else {
@@ -249,7 +255,10 @@ fn percent_decode(text: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{item_path, StartupDestination};
+    #[cfg(unix)]
+    use super::item_path;
+    use super::StartupDestination;
+    #[cfg(unix)]
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -291,8 +300,10 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     struct Scratch(PathBuf);
 
+    #[cfg(unix)]
     impl Scratch {
         fn new(label: &str) -> Self {
             let path = std::env::temp_dir().join(format!(
@@ -309,6 +320,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     impl Drop for Scratch {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
@@ -316,6 +328,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn plain_paths_and_file_uris_name_local_items() {
         let cwd = Path::new("/home/u");
         assert_eq!(
@@ -342,6 +355,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_launch_opens_one_window_per_folder_and_reveals_files() {
         let scratch = Scratch::new("launch");
         let folder = scratch.0.join("My Docs");

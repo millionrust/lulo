@@ -258,6 +258,11 @@ mod tests {
         std::fs::write(directory.join("node_modules/ignored.txt"), b"x").unwrap();
         let kept_file = directory.join("kept/example.txt");
         std::fs::write(&kept_file, b"x").unwrap();
+        // Extended attributes are a `cfg(unix)` dependency here (rustix is
+        // not pulled in on Windows at all); `read_tag`'s own `cfg(not(unix))`
+        // stub already means no file carries a tag there, so this half of
+        // the test is a Unix-only check of `scan`, not a Windows gap.
+        #[cfg(unix)]
         if rustix::fs::setxattr(
             &kept_file,
             XATTR_NAME,

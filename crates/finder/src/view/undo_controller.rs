@@ -2,9 +2,9 @@ use super::*;
 
 impl FinderView {
     pub(super) fn start_undo(&mut self, cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         let trash_busy = self.trash_operation.is_some();
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let trash_busy = false;
         if self.transfer.is_some()
             || self.new_folder_busy
@@ -37,7 +37,7 @@ impl FinderView {
             cx.notify();
             return;
         }
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         if self.trash_loading
             || self.trash_pending != 0
             || self.trash_recovery_busy
@@ -55,9 +55,9 @@ impl FinderView {
             cx.notify();
             return;
         };
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         let trash_store = self.trash_store.clone();
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         if available.uses_trash && trash_store.is_none() {
             self.operation_error =
                 Some("Trash recovery is unavailable; this Undo cannot run safely".into());
@@ -84,7 +84,7 @@ impl FinderView {
                 let mut report_progress = |activity| {
                     let _ = progress_events.try_send(UndoEvent::Progress(activity));
                 };
-                #[cfg(any(target_os = "linux", test))]
+                #[cfg(any(target_os = "linux", all(test, unix)))]
                 let outcome = match trash_store {
                     Some(store) => store.execute_latest_undo(
                         &file_ops::RealFileSystem,
@@ -97,7 +97,7 @@ impl FinderView {
                         &mut report_progress,
                     ),
                 };
-                #[cfg(not(any(target_os = "linux", test)))]
+                #[cfg(not(any(target_os = "linux", all(test, unix))))]
                 let outcome = journal.undo_store().execute_latest(
                     &file_ops::RealFileSystem,
                     &cancel,

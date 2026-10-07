@@ -10,19 +10,11 @@ use std::time::SystemTime;
 use zip::write::SimpleFileOptions;
 
 use crate::staging::{place, Meter, Scratch};
-use crate::{display_name, Error, Progress};
+use crate::{compressed_name, display_name, Error, Progress};
 
 const CHUNK: usize = 256 * 1024;
 /// Entries at or above this size need zip64 headers.
 const ZIP64_THRESHOLD: u64 = u32::MAX as u64;
-
-/// The name Finder gives the archive before any " 2" numbering.
-pub fn compressed_name(items: &[PathBuf]) -> String {
-    match items {
-        [one] => format!("{}.zip", display_name(one)),
-        _ => "Archive.zip".to_owned(),
-    }
-}
 
 enum Kind {
     Directory,

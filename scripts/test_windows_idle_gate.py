@@ -49,6 +49,42 @@ class IdleGateTests(unittest.TestCase):
         failures = idle_gate.idle_failures(results, 1.0, ("rmac-terminal",))
         self.assertEqual(failures, ["rmac-weather: no idle CPU reading"])
 
+    def test_clocks_per_app_budget_tolerates_one_legitimate_minute_redraw(self) -> None:
+        # Run 37633070594: a real per-minute World Clock redraw landing
+        # inside the 20 s window, not a regression (see PER_APP_BUDGET_TICKS).
+        results = {"rmac-clock": {"idle_ticks": 19.03}}
+        self.assertEqual(
+            idle_gate.idle_failures(
+                results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
+            ),
+            [],
+        )
+
+    def test_clocks_per_app_budget_tolerates_a_noisier_runner_too(self) -> None:
+        # Run 37657567719: the same redraw, same wake-source shape, but a
+        # busier CI runner made the settle cost more ticks (see
+        # PER_APP_BUDGET_TICKS) — still nowhere near a real regression.
+        results = {"rmac-clock": {"idle_ticks": 28.05}}
+        self.assertEqual(
+            idle_gate.idle_failures(
+                results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
+            ),
+            [],
+        )
+
+    def test_clocks_per_app_budget_still_catches_a_real_regression(self) -> None:
+        results = {
+            "rmac-clock": {
+                "idle_ticks": 400.0,
+                "idle_wake_sources": [{"count": 1200, "source": "vsync tick"}],
+            }
+        }
+        failures = idle_gate.idle_failures(
+            results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn("rmac-clock", failures[0])
+
 
 class TraceParsingTests(unittest.TestCase):
     def test_wake_ups_are_grouped_by_source_most_frequent_first(self) -> None:

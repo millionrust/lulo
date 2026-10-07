@@ -32,7 +32,7 @@ impl FinderView {
         // Sidebar and Tags tabs below, right after `view` exists.
         let sections = Vec::new();
 
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         rmac_search::tag_index::start_background_scan(home.clone());
 
         bind_finder_keys(cx);
@@ -246,27 +246,27 @@ impl FinderView {
             conflict_preflight: false,
             conflict_batch: None,
             conflict_busy: false,
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             trash_store: None,
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             trash_loading: true,
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             trash_pending: 0,
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             trash_recovery_reviews: Vec::new(),
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             trash_recovery_open: false,
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             trash_recovery_busy: false,
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             trash_operation: None,
             trash_view: false,
             applications_view: false,
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             trash_items: Vec::new(),
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             trash_generation: 0,
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             delete_confirmation: None,
             free_bytes: None,
             dragging: None,

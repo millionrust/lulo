@@ -32,6 +32,7 @@ pub(super) fn shortcut_socket_path_in(runtime: &Path, id: &ShortcutId) -> Result
 const DISPATCH_RETRY_BUDGET: std::time::Duration = std::time::Duration::from_millis(1_500);
 const DISPATCH_RETRY_STEP: std::time::Duration = std::time::Duration::from_millis(10);
 
+#[cfg(any(not(windows), test))]
 pub(super) fn surface_unit(id: &ShortcutId) -> Option<&'static str> {
     Some(match id.0.as_str() {
         "launcher" => "rmac-launcher.service",
@@ -42,6 +43,7 @@ pub(super) fn surface_unit(id: &ShortcutId) -> Option<&'static str> {
     })
 }
 
+#[cfg(not(windows))]
 fn start_surface(unit: &str) {
     // Dispatch runs in a short-lived child of niri or the menu bar. Neither
     // caller waits on the UI thread. --no-block only queues the systemd job.
@@ -52,6 +54,10 @@ fn start_surface(unit: &str) {
         .status();
 }
 
+/// Windows has no surface processes to dispatch a shortcut to yet (global
+/// shortcuts there are planned as `RegisterHotKey`/a keyboard hook, ADR
+/// 0023 phase 3); the lock action is real everywhere since it only calls
+/// `lock::request()`, not the Unix-socket IPC below.
 pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
     let specs = default_shortcuts();
     validate_specs(&specs)?;
@@ -64,6 +70,11 @@ pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
     if id.0 == "lock" {
         return lock::request().map_err(|error| Error::new(Operation::Dispatch, error.to_string()));
     }
+    dispatch_over_socket(id)
+}
+
+#[cfg(not(windows))]
+fn dispatch_over_socket(id: &ShortcutId) -> Result<(), Error> {
     let path = shortcut_socket_path(id)?;
     let socket = std::os::unix::net::UnixDatagram::unbound()
         .map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
@@ -83,6 +94,15 @@ pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
     )
 }
 
+#[cfg(windows)]
+fn dispatch_over_socket(_id: &ShortcutId) -> Result<(), Error> {
+    Err(Error::new(
+        Operation::Dispatch,
+        "shortcut dispatch is not available on Windows yet",
+    ))
+}
+
+#[cfg(not(windows))]
 pub(super) fn send_with_retry(
     socket: &std::os::unix::net::UnixDatagram,
     bytes: &[u8],
@@ -141,10 +161,22 @@ pub(super) async fn watch_dispatches_inner(
             format!("unknown shortcut {}", id.0),
         ));
     }
-    let path = shortcut_socket_path(&id)?;
-    watch_dispatches_at(path, id, sender, ready).await
+    #[cfg(not(windows))]
+    {
+        let path = shortcut_socket_path(&id)?;
+        watch_dispatches_at(path, id, sender, ready).await
+    }
+    #[cfg(windows)]
+    {
+        let _ = (sender, ready);
+        Err(Error::new(
+            Operation::BindDispatch,
+            "shortcut dispatch is not available on Windows yet",
+        ))
+    }
 }
 
+#[cfg(not(windows))]
 pub(super) async fn watch_dispatches_at(
     path: PathBuf,
     id: ShortcutId,

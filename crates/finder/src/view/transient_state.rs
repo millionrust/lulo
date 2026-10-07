@@ -33,7 +33,7 @@ pub(super) enum TrashTaskKind {
     Delete,
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(super) struct TrashCompletion {
     pub(super) kind: TrashTaskKind,
     pub(super) completed: usize,
@@ -46,7 +46,7 @@ pub(super) struct TrashCompletion {
     pub(super) undo_availability: std::io::Result<Option<undo_journal::UndoAvailability>>,
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(super) enum TrashEvent {
     Progress { processed: usize, total: usize },
     Finished(TrashCompletion),
@@ -76,7 +76,7 @@ pub(super) struct ActiveUndo {
     pub(super) cancelling: bool,
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 #[derive(Clone)]
 pub(super) struct ActiveTrash {
     pub(super) label: SharedString,
@@ -86,7 +86,7 @@ pub(super) struct ActiveTrash {
     pub(super) cancelling: bool,
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 #[derive(Clone)]
 pub(super) struct DeleteConfirmation {
     /// Populated for a Bin-view Delete Immediately or an Empty Trash — the

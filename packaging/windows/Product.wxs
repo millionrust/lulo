@@ -33,6 +33,12 @@
 
     <SummaryInformation Description="Lulo installer" Manufacturer="Lulo" />
 
+    <!-- One self-contained .msi, no separate cab1.cab beside it to lose
+         (WiX's default without this is an external cabinet file, found by
+         an actual silent install in CI failing Error 1311, "source file
+         not found: cab1.cab", not by reading the schema). -->
+    <MediaTemplate EmbedCab="yes" />
+
     <MajorUpgrade
       DowngradeErrorMessage="A newer version of Lulo is already installed. Uninstall it first to install this version." />
 

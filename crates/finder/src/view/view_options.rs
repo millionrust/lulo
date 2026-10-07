@@ -915,11 +915,10 @@ impl Render for ViewOptionsWindow {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     #[test]
-    #[cfg(unix)]
     fn calculate_sizes_skips_symlink_cycles() {
         let root =
             std::env::temp_dir().join(format!("rmac-view-options-size-{}", std::process::id()));

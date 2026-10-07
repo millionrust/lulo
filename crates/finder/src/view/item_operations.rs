@@ -3,7 +3,7 @@ use std::path::Path;
 
 #[cfg(target_os = "macos")]
 const FILE_TAG_XATTR: &str = "com.rmac.tag";
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 const FILE_TAG_XATTR: &str = "user.rmac.tag";
 
 const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
@@ -18,7 +18,6 @@ impl FinderView {
             self.operation_error =
                 Some("Adding to the Dock isn't available on Windows yet".into());
             cx.notify();
-            return;
         }
         #[cfg(target_os = "linux")]
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {

@@ -32,6 +32,7 @@ impl TestDirectory {
         Self(path)
     }
 
+    #[cfg(unix)]
     fn new_short(label: &str) -> Self {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)

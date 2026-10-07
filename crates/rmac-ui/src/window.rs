@@ -1220,7 +1220,22 @@ fn boot_app_window<A, V, F>(
                     observe_window_state(app_id, window, cx);
                     build(window, cx)
                 });
-                cx.new(|cx| Root::new(view, window, cx))
+                let root = cx.new(|cx| Root::new(view, window, cx));
+                // `cx.activate(true)` below is a no-op on Windows
+                // (`gpui_windows::platform.rs`'s own `fn activate` does
+                // nothing); every app that opens slowly enough to miss
+                // Windows' brief new-window foreground grace period is
+                // exposed to WIN-OS-13 (`docs/parity.md`), not just the
+                // two apps the launch check could prove it on. Windows-
+                // only — on Linux `activate_window()` is a real
+                // `xdg_activation_v1` request, not a no-op, and calling
+                // it unconditionally here broke two `runtime.yml`
+                // behaviour scenarios (desktop-paint, menu-dismiss) that
+                // assume niri's own default new-window focus, caught by
+                // that CI run rather than guessed at.
+                #[cfg(windows)]
+                window.activate_window();
+                root
             })
             .expect("failed to open window");
 
@@ -1374,7 +1389,24 @@ where
             observe_window_state(app_id, window, cx);
             build(&arguments, window, cx)
         });
-        cx.new(|cx| Root::new(view, window, cx))
+        let root = cx.new(|cx| Root::new(view, window, cx));
+        // `build` can do real work before the window is ready to show
+        // (Terminal's `Session::spawn` opens a PTY and starts the shell
+        // here). On Windows that delay can cost the brief window after
+        // process start in which a new top-level window is given the
+        // foreground automatically; past it, the OS leaves a just-created
+        // window behind whatever already has focus instead (observed:
+        // Terminal opened behind an existing window). Ask explicitly,
+        // after `build` returns, rather than relying on that window of
+        // leniency. Windows-only — on Linux `activate_window()` is a
+        // real `xdg_activation_v1` request, not a no-op, and calling it
+        // unconditionally here broke two `runtime.yml` behaviour
+        // scenarios (desktop-paint, menu-dismiss) that assume niri's own
+        // default new-window focus, caught by that CI run rather than
+        // guessed at.
+        #[cfg(windows)]
+        window.activate_window();
+        root
     })?;
     Ok(())
 }
@@ -1409,7 +1441,14 @@ pub fn boot_with_assets<A, V, F>(
                 prepare_surface_window(window, cx);
                 fit_to_display_after_first_frame(window, cx);
                 let view = cx.new(|cx| build(window, cx));
-                cx.new(|cx| Root::new(view, window, cx))
+                let root = cx.new(|cx| Root::new(view, window, cx));
+                // See `boot_app_window`'s matching comment: `cx.activate`
+                // does nothing on Windows, and this is Windows-only for
+                // the same reason — `activate_window()` is a real
+                // Wayland request on Linux, not a no-op.
+                #[cfg(windows)]
+                window.activate_window();
+                root
             })
             .expect("failed to open window");
 

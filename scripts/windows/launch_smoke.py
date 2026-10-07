@@ -26,6 +26,26 @@ With --screenshots <dir>, captures are saved for each app: the window as
 it opened, with its first menu open, and after Ctrl+N (Pillow is used when
 it is installed; without it no capture is taken and the menu check is
 skipped). Windows only: it calls user32 through ctypes.
+
+Two more numbers print for every app, non-blocking (a slow or non-idle
+result fails nothing — this job already runs with `continue-on-error`):
+
+- **Launch time**, process start to a visible top-level window, polled at
+  `LAUNCH_POLL_SECONDS` resolution.
+- **Idle CPU**, `IDLE_WINDOW_SECONDS` of this process's own kernel+user
+  time (`GetProcessTimes`), after `IDLE_SETTLE_SECONDS` with no input, as a
+  share of one 15.6 ms scheduling tick. On Linux the apps are at true zero
+  when idle; the target here is the same, below one tick over the window,
+  except Terminal with a live shell.
+
+With `--foreground-check <app>`, after every app in `apps` has been tested
+and closed, one more pair is launched back to back and left running (not
+killed early like every other check): `<app>` first, then whichever of
+`rmac-weather`/`rmac-terminal` sits later in `apps`, without killing the
+first. The second app's window must become the foreground window — ADR
+0023's "Foreground" gap, launched this way because `launch()`'s own loop
+kills each app before the next starts, which cannot reproduce two windows
+open at once.
 """
 
 from __future__ import annotations
@@ -54,6 +74,74 @@ VK_ESCAPE = 0x1B
 VK_DOWN = 0x28
 VK_RETURN = 0x0D
 KEYEVENTF_KEYUP = 0x0002
+
+# How often `launch()` polls for the first visible window: the resolution
+# of the launch-time number it prints, not a user-visible delay.
+LAUNCH_POLL_SECONDS = 0.02
+# No input for this long before the idle-CPU measurement starts.
+IDLE_SETTLE_SECONDS = 10.0
+# How long the idle-CPU measurement itself runs.
+IDLE_WINDOW_SECONDS = 20.0
+# Windows' default scheduling quantum: a process doing nothing should not
+# show up as having used even one of these across the whole window.
+TICK_SECONDS = 0.0156
+TICK_100NS = int(TICK_SECONDS * 10_000_000)
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+class _FILETIME(ctypes.Structure):
+    _fields_ = [("dwLowDateTime", wintypes.DWORD), ("dwHighDateTime", wintypes.DWORD)]
+
+
+def _filetime_to_100ns(value: _FILETIME) -> int:
+    return (value.dwHighDateTime << 32) | value.dwLowDateTime
+
+
+def process_cpu_time_100ns(pid: int) -> int | None:
+    """This process's kernel+user CPU time so far, in 100 ns units, or
+    `None` when it cannot be read (already exited, or access denied)."""
+    handle = ctypes.windll.kernel32.OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+    )
+    if not handle:
+        return None
+    try:
+        creation, exited, kernel, user = (
+            _FILETIME(),
+            _FILETIME(),
+            _FILETIME(),
+            _FILETIME(),
+        )
+        ok = ctypes.windll.kernel32.GetProcessTimes(
+            handle,
+            ctypes.byref(creation),
+            ctypes.byref(exited),
+            ctypes.byref(kernel),
+            ctypes.byref(user),
+        )
+        if not ok:
+            return None
+        return _filetime_to_100ns(kernel) + _filetime_to_100ns(user)
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def measure_idle_cpu(
+    pid: int, settle: float = IDLE_SETTLE_SECONDS, window: float = IDLE_WINDOW_SECONDS
+) -> tuple[float, float] | None:
+    """(ticks, percent of one core) this process used over `window`
+    seconds of no input, after `settle` seconds of no input. `None` when
+    its CPU time could not be read (it may have exited)."""
+    time.sleep(settle)
+    before = process_cpu_time_100ns(pid)
+    if before is None:
+        return None
+    time.sleep(window)
+    after = process_cpu_time_100ns(pid)
+    if after is None:
+        return None
+    delta = max(after - before, 0)
+    return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100
 
 
 def user32():
@@ -349,6 +437,7 @@ def launch(
     for folder in ("Roaming", "Local"):
         (profile / folder).mkdir(parents=True, exist_ok=True)
     log = profile / "output.log"
+    launch_started = time.monotonic()
     with log.open("wb") as output:
         process = subprocess.Popen(
             [str(binary), *(arguments or [])],
@@ -365,7 +454,8 @@ def launch(
             windows = visible_windows(process.pid)
             if windows:
                 break
-            time.sleep(0.5)
+            time.sleep(LAUNCH_POLL_SECONDS)
+        launch_ms = (time.monotonic() - launch_started) * 1000
         if windows:
             # Still running a moment later: the first frame did not crash it.
             time.sleep(SETTLE_SECONDS)
@@ -378,6 +468,26 @@ def launch(
             return f"opened no visible window within {WINDOW_TIMEOUT_SECONDS:.0f} s"
         hwnd, title = windows[0]
         print(f"{app}: window {title!r}")
+        # ADR 0023 task 2 (launch time): process start to a visible
+        # top-level window. Not the same as a presented first frame
+        # (`RMAC_FRAME_TRACE` does not run on Windows, see the module
+        # docstring), but the closest number this script can take without
+        # it, and on the same clock every run.
+        print(f"{app}: launch time ~{launch_ms:.0f} ms (process start to a visible window)")
+
+        # ADR 0023 task 1 (idle CPU): before any input reaches this
+        # window, not after — `check_menu_strip`/`check_menu_command`/
+        # `check_new_shortcut` below all inject keys and mouse clicks.
+        idle = measure_idle_cpu(process.pid)
+        if idle is None:
+            print(f"{app}: idle CPU skipped (could not read its CPU time)")
+        else:
+            ticks, percent = idle
+            verdict = "OK" if ticks < 1.0 else "ABOVE TARGET"
+            print(
+                f"{app}: idle CPU over {IDLE_WINDOW_SECONDS:.0f} s = "
+                f"{ticks:.2f} ticks ({percent:.2f}% of one core) [{verdict}]"
+            )
 
         if not bring_forward(hwnd):
             return "could not bring the window forward to test its keys"
@@ -405,11 +515,90 @@ def launch(
             process.wait(timeout=30)
 
 
+def wait_for_window(pid: int, timeout: float = WINDOW_TIMEOUT_SECONDS) -> tuple[int, str] | None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        windows = visible_windows(pid)
+        if windows:
+            return windows[0]
+        time.sleep(LAUNCH_POLL_SECONDS)
+    return None
+
+
+def check_foreground_order(
+    bin_dir: Path, first_app: str, second_app: str, screenshots: Path | None
+) -> str | None:
+    """ADR 0023's "Foreground" gap: launch `first_app`, then `second_app`
+    without closing the first, and check the second's window — not the
+    first's — ends up as the foreground window. `launch()`'s own loop
+    cannot reproduce this: it kills each app before starting the next."""
+    processes: list[subprocess.Popen] = []
+    directories: list[tempfile.TemporaryDirectory] = []
+    try:
+        hwnds: dict[str, int] = {}
+        for app in (first_app, second_app):
+            directory = tempfile.TemporaryDirectory(prefix=f"{app}-fg-")
+            directories.append(directory)
+            profile = Path(directory.name)
+            environment = dict(os.environ)
+            environment["APPDATA"] = str(profile / "Roaming")
+            environment["LOCALAPPDATA"] = str(profile / "Local")
+            for folder in ("Roaming", "Local"):
+                (profile / folder).mkdir(parents=True, exist_ok=True)
+            process = subprocess.Popen(
+                [str(bin_dir / f"{app}.exe")],
+                env=environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            processes.append(process)
+            found = wait_for_window(process.pid)
+            if found is None:
+                return f"{app} opened no visible window within {WINDOW_TIMEOUT_SECONDS:.0f} s"
+            hwnds[app] = found[0]
+            if app == first_app:
+                # Let the first app settle into the foreground on its own
+                # before the second one starts, the same gap a person
+                # opening one app after another leaves.
+                time.sleep(SETTLE_SECONDS)
+        time.sleep(KEY_SETTLE_SECONDS)
+        foreground = user32().GetForegroundWindow()
+        if screenshots is not None:
+            save(grab(), screenshots / f"foreground-order-{first_app}-then-{second_app}.png")
+        print(
+            f"foreground order: opened {first_app}, then {second_app} without "
+            f"closing it; foreground window is now "
+            f"{'the second app' if foreground == hwnds[second_app] else 'something else'}"
+        )
+        if foreground != hwnds[second_app]:
+            return (
+                f"{second_app} opened behind {first_app} instead of becoming "
+                "the foreground window"
+            )
+        return None
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=30)
+        for directory in directories:
+            directory.cleanup()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("bin_dir", type=Path)
     parser.add_argument("apps", nargs="+")
     parser.add_argument("--screenshots", type=Path)
+    parser.add_argument(
+        "--foreground-check",
+        metavar="APP",
+        help=(
+            "Open APP, then whichever of rmac-weather/rmac-terminal is "
+            "later in `apps`, without closing APP first, and check the "
+            "second app's window becomes the foreground window."
+        ),
+    )
     arguments = parser.parse_args()
     if sys.platform != "win32":
         print("launch_smoke.py runs only on Windows", file=sys.stderr)
@@ -443,6 +632,26 @@ def main() -> int:
                 log = profile / "output.log"
                 if log.exists():
                     print(log.read_text(encoding="utf-8", errors="replace")[-4000:])
+
+    if arguments.foreground_check:
+        second_app = next(
+            (app for app in arguments.apps if app in ("rmac-weather", "rmac-terminal")),
+            None,
+        )
+        if second_app is None:
+            print(
+                "foreground order: skipped (no rmac-weather or rmac-terminal in `apps`)"
+            )
+        else:
+            error = check_foreground_order(
+                arguments.bin_dir,
+                arguments.foreground_check,
+                second_app,
+                arguments.screenshots,
+            )
+            if error is not None:
+                failures += 1
+                print(f"foreground order: FAIL: {error}")
     return 1 if failures else 0
 
 

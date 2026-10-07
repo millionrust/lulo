@@ -269,7 +269,11 @@ jobs:
     # the launch check also opens each of the seven windows' menu strip
     # with Alt, presses Ctrl+N and, for Text Editor, hands a second launch
     # to the running app. Preview also opens a tiny fixture PDF and checks
-    # that Windows.Data.Pdf (`winpdf.rs`) rendered its page.
+    # that Windows.Data.Pdf (`winpdf.rs`) rendered its page. It also prints
+    # each app's launch time and 20 s idle-CPU reading (the "Idle CPU"/
+    # "Launch time" tasks), and checks that opening Calculator then Weather
+    # without closing Calculator leaves Weather in the foreground (the
+    # "Foreground" task).
     # Non-blocking until it has run clean for a while; see docs/ci.md.
     runs-on: windows-latest
     timeout-minutes: 75
@@ -329,6 +333,7 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
+            --foreground-check rmac-calculator \
             target/debug rmac-calculator rmac-notes rmac-text-editor \
             rmac-preview rmac-clock rmac-weather rmac-terminal
 

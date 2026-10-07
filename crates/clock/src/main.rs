@@ -140,7 +140,18 @@ fn main() -> std::process::ExitCode {
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);
-                cx.new(|cx| Root::new(view, window, cx))
+                let root = cx.new(|cx| Root::new(view, window, cx));
+                // `cx.activate(true)` below does nothing on Windows
+                // (ADR 0023's "Foreground" follow-up, docs/parity.md
+                // WIN-OS-13); ask the window itself too. Windows-only —
+                // on Linux `activate_window()` is a real
+                // `xdg_activation_v1` request, not a no-op, and calling
+                // it unconditionally broke two `runtime.yml` behaviour
+                // scenarios that assume niri's own default new-window
+                // focus (caught by CI, not guessed at).
+                #[cfg(windows)]
+                window.activate_window();
+                root
             });
             if let Err(error) = opened {
                 eprintln!("rmac-clock: could not open a window: {error}");

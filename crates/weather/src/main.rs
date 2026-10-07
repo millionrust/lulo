@@ -104,7 +104,21 @@ fn main() {
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);
-                cx.new(|cx| Root::new(view, window, cx))
+                let root = cx.new(|cx| Root::new(view, window, cx));
+                // Ask explicitly rather than counting on the moment-of-
+                // creation grace a new top-level window otherwise gets:
+                // past that short window, Windows leaves a just-created
+                // window behind whatever already has focus instead of
+                // raising it (observed: Weather opened behind an existing
+                // window). Windows-only: on Linux this is not a no-op —
+                // it sends a real `xdg_activation_v1` request — and a
+                // first attempt at calling it unconditionally here broke
+                // two `runtime.yml` behaviour scenarios (desktop-paint,
+                // menu-dismiss) that assume niri's own default new-window
+                // focus, caught by that CI run rather than guessed at.
+                #[cfg(windows)]
+                window.activate_window();
+                root
             });
             if let Err(error) = opened {
                 eprintln!("rmac-weather: could not open a window: {error}");

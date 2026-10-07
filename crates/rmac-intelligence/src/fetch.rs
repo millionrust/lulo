@@ -66,7 +66,7 @@ pub fn fetch(model: &Model, mut progress: impl FnMut(u64, u64)) -> Result<PathBu
 /// The byte source: `(url, offset) -> a reader of the bytes from offset`,
 /// plus a way to learn whether it ended cleanly.
 pub trait Source {
-    type Reader: Read;
+    type Reader: ChildOutput;
     fn open(&mut self, url: &str, offset: u64) -> Result<Self::Reader, FetchError>;
     fn finish(&mut self, reader: Self::Reader) -> Result<(), FetchError>;
 }
@@ -127,10 +127,7 @@ pub fn fetch_into<S: Source>(
     model: &Model,
     progress: &mut impl FnMut(u64, u64),
     source: &mut S,
-) -> Result<PathBuf, FetchError>
-where
-    S::Reader: ChildOutput,
-{
+) -> Result<PathBuf, FetchError> {
     rmac_storage::create_dir_all_private(models).map_err(FetchError::Io)?;
     let lock = OpenOptions::new()
         .create(true)

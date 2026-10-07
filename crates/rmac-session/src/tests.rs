@@ -902,7 +902,8 @@ fn intelligence_starts_on_demand_capped_and_offline() {
             "missing {directive}"
         );
     }
-    assert!(!unit.contains("PrivateNetwork"));
+    // Not relied on: Ubuntu's user-namespace policy breaks it in user units.
+    assert!(!unit.lines().any(|line| line.starts_with("PrivateNetwork=")));
     assert!(!unit.contains("/bin/sh"));
     // Nothing starts it at login, and the supervisor does not own it.
     let target = include_str!("../units/rmac-session.target");

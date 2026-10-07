@@ -133,16 +133,22 @@ impl LauncherView {
     ) {
         let answer = match answer {
             Ok(answer) => answer,
-            Err(
-                ClientError::Off
-                | ClientError::NotDownloaded
-                | ClientError::NotSupported
-                | ClientError::Unavailable,
-            ) => {
-                self.assist.enabled = Some(false);
+            Err(error) => {
+                // The reason only, never what was typed.
+                if error != ClientError::Off {
+                    eprintln!("rmac-launcher: Lulo Intelligence did not answer: {error}");
+                }
+                if matches!(
+                    error,
+                    ClientError::Off
+                        | ClientError::NotDownloaded
+                        | ClientError::NotSupported
+                        | ClientError::Unavailable
+                ) {
+                    self.assist.enabled = Some(false);
+                }
                 return;
             }
-            Err(_) => return,
         };
         let Some(result) = assist_row(&answer.intent, answer.app) else {
             return;

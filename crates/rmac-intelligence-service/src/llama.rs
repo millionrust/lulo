@@ -84,7 +84,7 @@ impl Vocabulary for Pieces {
 pub struct LlamaEngine {
     model: &'static LlamaModel,
     context: LlamaContext<'static>,
-    batch: LlamaBatch,
+    batch: LlamaBatch<'static>,
     pieces: Pieces,
     tables: Tables,
     style: PromptStyle,
@@ -207,12 +207,12 @@ impl LlamaEngine {
             LlamaSampler::grammar(self.model, GBNF, "root").map_err(failed)?,
             LlamaSampler::greedy(),
         ]);
-        let mut position = self.prefix_tokens + request_tokens as i32;
+        let start = self.prefix_tokens + request_tokens as i32;
         let mut json = ANSWER_PREFIX.to_owned();
         let mut passes = 0;
-        for _ in 0..96 {
+        for position in start..start + 96 {
+            // `sample` also accepts the token into the grammar.
             let token = sampler.sample(&self.context, self.batch.n_tokens() - 1);
-            sampler.accept(token);
             if self.model.vocab().is_eog(token) {
                 break;
             }
@@ -221,7 +221,6 @@ impl LlamaEngine {
             self.batch
                 .add(token, position, &[SEQUENCE], true)
                 .map_err(failed)?;
-            position += 1;
             self.context.decode(&mut self.batch).map_err(failed)?;
             passes += 1;
         }
@@ -245,7 +244,7 @@ impl LlamaEngine {
 /// the schema-guided decoder except that it cannot bound a timer by its
 /// unit (the strict parser rejects more than 23 hours afterwards).
 pub const GBNF: &str = r#"root ::= "open_app\",\"app\":\"" text "\"}" | "appearance\",\"mode\":\"" ("dark" | "light") "\"}" | "volume\",\"" ("level\":" pct "}" | "change\":\"" ("up" | "down" | "mute" | "unmute") "\"}") | "brightness\",\"" ("level\":" pct "}" | "change\":\"" ("up" | "down") "\"}") | ("wifi" | "bluetooth" | "do_not_disturb") "\",\"on\":" ("true" | "false") "}" | "timer\",\"amount\":" amount ",\"unit\":\"" ("seconds" | "minutes" | "hours") "\"}" | "search_files\",\"query\":\"" text "\"}" | "none\"}"
-text ::= [^"\\\x00-\x1f] [^"\\\x00-\x1f]*
+text ::= [^"\\\n\r\t] [^"\\\n\r\t]*
 pct ::= "100" | [1-9] [0-9] | [0-9]
 amount ::= [1-9] [0-9] [0-9] | [1-9] [0-9] | [1-9]
 "#;
@@ -254,7 +253,7 @@ amount ::= [1-9] [0-9] [0-9] | [1-9] [0-9] | [1-9]
 /// last one; returns those logits.
 fn feed(
     context: &mut LlamaContext<'static>,
-    batch: &mut LlamaBatch,
+    batch: &mut LlamaBatch<'static>,
     tokens: &[LlamaToken],
     position: i32,
 ) -> Result<Vec<f32>, EngineError> {
@@ -278,7 +277,7 @@ fn feed(
 /// The running model as the decoder sees it.
 struct Stepper<'a> {
     context: &'a mut LlamaContext<'static>,
-    batch: &'a mut LlamaBatch,
+    batch: &'a mut LlamaBatch<'static>,
     position: i32,
 }
 
@@ -326,10 +325,10 @@ impl Engine for LlamaEngine {
         let (mut logits, request_tokens) =
             self.start_request("write a short sentence about the sea")?;
         let prefill_tok_s = request_tokens as f64 / started.elapsed().as_secs_f64().max(1e-6);
-        let mut position = self.prefix_tokens + request_tokens as i32;
+        let start = self.prefix_tokens + request_tokens as i32;
         let steps = 32;
         let decode_started = Instant::now();
-        for _ in 0..steps {
+        for position in start..start + steps {
             let token = logits
                 .iter()
                 .enumerate()
@@ -337,7 +336,6 @@ impl Engine for LlamaEngine {
                 .map(|(index, _)| LlamaToken(index as i32))
                 .ok_or_else(|| failed("no logits"))?;
             logits = feed(&mut self.context, &mut self.batch, &[token], position)?;
-            position += 1;
         }
         let decode_tok_s = f64::from(steps) / decode_started.elapsed().as_secs_f64().max(1e-6);
         Ok(Calibration {

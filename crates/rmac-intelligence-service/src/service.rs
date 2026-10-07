@@ -74,7 +74,9 @@ impl Interface {
         let received = Instant::now();
         let _ = self.activity.send(Activity::Busy).await;
         let result = async {
-            authorize(header, connection).await?;
+            authorize(header, connection).await.inspect_err(|error| {
+                eprintln!("rmac-intelligence-service: {error}");
+            })?;
             let (reply, answer) = async_channel::bounded(1);
             self.jobs
                 .send(Job {
@@ -243,6 +245,10 @@ fn work(jobs: async_channel::Receiver<Job>, state: Arc<Mutex<&'static str>>) {
             set_state(&state, "Ready");
             reply.map_err(ServiceError::from)
         })();
+        if let Err(error) = &result {
+            // The reason only, never the request.
+            eprintln!("rmac-intelligence-service: {error}");
+        }
         let _ = job.reply.send_blocking(result);
     }
 }

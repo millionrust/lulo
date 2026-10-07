@@ -1,6 +1,6 @@
 {"request": "turn on dark mode", "expect": {"intent": "appearance", "mode": "dark"}, "tags": ["phase0", "brief"]}
 {"request": "switch to light mode please", "expect": {"intent": "appearance", "mode": "light"}, "tags": ["phase0"]}
-{"request": "open notes", "expect": {"intent": "open_app", "app": "Notes"}, "tags": ["phase0"]}
+{"request": "open my notes", "expect": {"intent": "open_app", "app": "Notes"}, "tags": ["phase0"]}
 {"request": "launch the terminal", "expect": {"intent": "open_app", "app": "Terminal"}, "tags": ["phase0"]}
 {"request": "set volume to 40", "expect": {"intent": "volume", "level": 40}, "tags": ["phase0"]}
 {"request": "mute the sound", "expect": {"intent": "volume", "change": "mute"}, "tags": ["phase0"]}

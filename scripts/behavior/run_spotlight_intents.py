@@ -217,11 +217,19 @@ def outer(args) -> int:
         bins = Path(args.bin_dir).expanduser().resolve()
         links = work / "bins"
         links.mkdir()
-        for source in bins.iterdir():
+        sources = {source.name: source for source in bins.iterdir()}
+        if args.override_bin_dir:
+            # Prefer freshly built programs; the shell falls back to --bin-dir.
+            overrides = Path(args.override_bin_dir).expanduser().resolve()
+            sources.update({source.name: source for source in overrides.glob("rmac-*")
+                            if source.is_file() and os.access(source, os.X_OK)})
+        for source in sources.values():
             if source.is_file() and source.name not in {"dock", "mission-control"}:
-                # A copy of the service (not a link) so its /proc exe path is
-                # unique to this run.
-                if source.name == SERVICE:
+                # Copies, not links: the service's /proc exe path is unique to
+                # this run, and Spotlight sits beside it, as in an install, so
+                # the service's caller check (a Lulo program in its own
+                # directory) holds.
+                if source.name in {SERVICE, "rmac-launcher"}:
                     target = links / source.name
                     target.write_bytes(source.read_bytes())
                     target.chmod(0o755)
@@ -259,10 +267,12 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bin-dir", required=True)
     parser.add_argument("--niri", default="/usr/bin/niri")
+    parser.add_argument("--override-bin-dir",
+                        help="prefer the rmac-* programs here; the rest come from --bin-dir")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     # run_lulo_journey.Driver reads these.
-    parser.set_defaults(frame_only=False, full_too=False, dump_a11y=False, override_bin_dir=None)
+    parser.set_defaults(frame_only=False, full_too=False, dump_a11y=False)
     args = parser.parse_args()
     if args.inner:
         return inner(args)

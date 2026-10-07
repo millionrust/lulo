@@ -51,6 +51,10 @@ pub fn matches(expected: &Intent, got: &Intent) -> bool {
         (Intent::SearchFiles { query: left }, Intent::SearchFiles { query: right }) => {
             same_text(left, right)
         }
+        // "1 hour" and "60 minutes" start the same timer.
+        (Intent::Timer { .. }, Intent::Timer { .. }) => {
+            expected.timer_seconds() == got.timer_seconds()
+        }
         _ => expected == got,
     }
 }

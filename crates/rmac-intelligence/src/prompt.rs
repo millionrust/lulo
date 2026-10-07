@@ -23,7 +23,7 @@ pub const ANSWER_PREFIX: &str = "{\"intent\":\"";
 
 /// Bumped whenever any prompt text changes, so saved prefix states from an
 /// older prompt are never restored.
-pub const PROMPT_VERSION: u32 = 3;
+pub const PROMPT_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PromptStyle {
@@ -67,11 +67,11 @@ do_not_disturb: silence notifications. {\"intent\":\"do_not_disturb\",\"on\":tru
 timer: a countdown. {\"intent\":\"timer\",\"amount\":<number>,\"unit\":\"seconds\", \"minutes\" or \"hours\"}
 search_files: find files. {\"intent\":\"search_files\",\"query\":\"<words to find>\"}
 none: anything else: questions, chat, other settings, or anything these actions cannot do. {\"intent\":\"none\"}
-Requests may have typos or be short. Answer with the JSON only.";
+Use level only when the request gives a number; louder, quieter, brighter or dimmer is a change. Alarms and reminders at a clock time are none. Requests may have typos or be short. Answer with the JSON only.";
 
 /// Worked examples: (request, answer). None of these is in the evaluation
 /// sets (`tests/intelligence/`); a unit test holds that.
-pub const EXAMPLES: [(&str, &str); 14] = [
+pub const EXAMPLES: [(&str, &str); 19] = [
     (
         "switch to dark mode",
         r#"{"intent":"appearance","mode":"dark"}"#,
@@ -107,6 +107,20 @@ pub const EXAMPLES: [(&str, &str); 14] = [
     ("change my wallpaper", r#"{"intent":"none"}"#),
     ("shut down the computer", r#"{"intent":"none"}"#),
     ("tell me a joke", r#"{"intent":"none"}"#),
+    ("make it louder", r#"{"intent":"volume","change":"up"}"#),
+    (
+        "brightness down to 35 percent",
+        r#"{"intent":"brightness","level":35}"#,
+    ),
+    (
+        "countdown of 2 hours",
+        r#"{"intent":"timer","amount":2,"unit":"hours"}"#,
+    ),
+    ("wake me up at 6 am", r#"{"intent":"none"}"#),
+    (
+        "bring up settings",
+        r#"{"intent":"open_app","app":"Settings"}"#,
+    ),
 ];
 
 const THINK_OFF: &str = "<think>\n\n</think>\n\n";

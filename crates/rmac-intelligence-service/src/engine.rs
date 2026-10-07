@@ -101,7 +101,7 @@ pub fn open() -> Result<Box<dyn Engine>, EngineError> {
         return Err(EngineError::Off);
     }
     if fixture_requested() {
-        return Ok(Box::new(crate::fixture::FixtureEngine::default()));
+        return Ok(Box::new(crate::fixture::FixtureEngine));
     }
     let facts = gate::current_facts();
     let decision = config.decision(&facts);

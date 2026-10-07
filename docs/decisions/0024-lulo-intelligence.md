@@ -490,6 +490,219 @@ enough for **single-step intents**. **Multi-step planning** needs a stronger mod
 | **4. Agent mode** | The planner, quarantined extraction, the data-flow policy, the action log and undo; skills Files → Calendar → Clock → Settings → Notes → Mail → menus; then the optional cloud planner; Terminal skill last. | The adversarial set: zero injected actions; every outbound or destructive step confirmed in behaviour tests. |
 | **5. Windows** (alongside ADR 0023 phases 2–3) | Named-pipe transport, AppContainer, Job Object limits, WinHTTP fetcher, `Windows.Media.Ocr`/`SpeechSynthesis`, WASAPI capture. | The same budgets on the Windows test PC. |
 
+## Phase 0 results (2026-10-07, measured)
+
+Measured on the reference laptop (`jacob@192.168.18.52`, i5-5300U, 2 physical
+cores / 4 threads, AVX2+FMA, 6.7 GiB RAM, Ubuntu 26.04 LTS "Resolute
+Raccoon", systemd 259) once the owner cleared the build cache (114 GB free
+at the start, 105 GB free at the end — the models and build are kept, not
+deleted, per the "delete only below 15 GB free" rule). An earlier attempt
+the same day was correctly blocked and abandoned when `df -h /` showed only
+2.3 GB free; that account is preserved in git history on this branch.
+
+### Build: practical, with one gap
+
+`tools/ai-spike` built and ran against **`llama-cpp-2` 0.1.158** (the exact
+version the ADR names) with a plain CPU build (no `vulkan` feature — the
+ADR itself expects the HD 5500 to lose to the CPU path, and Vulkan was not
+built or measured in this pass; that is a gap for phase 1 if GPU offload is
+ever reconsidered, not a blocker here). The C++ build (CMake + g++ 15.2.0,
+compiling `ggml`/`llama.cpp` from source) was **practical**, no fallback to
+candle/mistral.rs was needed: **but the laptop had no `cmake` installed and
+no `pip`, and the task rules forbid `sudo`.** Worked around with Kitware's
+portable `cmake-4.4.4-linux-x86_64.tar.gz` (sha256
+`e5bb807f7728cb60cd8b27ebc97a2edb469b68655f21e844a600c3575b76f5bb`, verified
+after download), unpacked under `~/rmac-ai-spike/tools/` and prepended to
+`PATH` for the build only — nothing installed outside the spike's own
+directory. **Phase 1 should add `cmake` to the laptop's normal package set**
+so the real service build does not need this workaround. The final
+`ai-spike` binary is 5.9 MB; the static libs it links
+(`libllama.a` 10.2 MiB, `libggml-base.a` 1.5 MiB, `libggml-cpu.a` 1.7 MiB,
+plus a 14.8 MiB `libllama-common.a`) are from a **native-only** build, not
+the ADR's `GGML_BACKEND_DL`+`GGML_CPU_ALL_VARIANTS` multi-variant build
+that ships one binary fast on every x86 PC — that build's size is still
+unmeasured and should be checked before phase 1 ships anything.
+
+### Models downloaded and verified
+
+| Model | Source (revision-pinned) | Size | SHA-256 |
+|---|---|---|---|
+| Qwen3.5-2B-Q4_K_M | `huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_K_M.gguf` | 1,280,835,840 B (1.28 GB / 1.19 GiB) | `aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223` |
+| Qwen3.5-0.8B-Q4_K_M | `huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/Qwen3.5-0.8B-Q4_K_M.gguf` | 532,517,120 B (0.53 GB / 0.50 GiB) | `bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517` |
+
+Both sizes match the ADR's §2 table almost exactly, confirming these are
+the right files. **Lesson for the real fetcher:** curl's own progress
+percentage is not proof of a complete file — an interrupted/resumed
+download (`curl -C -` across what turned out to be a re-signed CDN URL)
+produced a 0.8B file that read back as "100% done" at the wrong size and
+failed `llama_model_load` with "tensor data is not within the file
+bounds". The fetcher must always compare the final byte count (and ideally
+the SHA-256) against the manifest, never trust the downloader's own
+completion signal. `bartowski/Qwen_Qwen3.5-2B-GGUF` remains a second
+source if Unsloth's revision ever moves.
+
+### Methodology notes (read before the numbers)
+
+- **"Warm" here is not the ADR's cached-prefix warm.** This harness calls
+  `ctx.clear_kv_cache()` before every prompt (required — see the
+  architecture note below) and reprocesses the full system+user prompt
+  from scratch every single time. There is no prompt-prefix cache in this
+  minimal spike. So "ttft cold" and "ttft warm median" below are
+  deliberately near-identical: they are both measuring **repeated full
+  prefill**, which is the worst case the ADR's real design (§4, "each
+  task's fixed system prompt is evaluated once per load and its state
+  cached") exists specifically to avoid. Treat every TTFT number below as
+  "without prefix caching"; it is not evidence against caching helping,
+  it is the reason caching is necessary.
+- **Architecture finding for §4's design:** Qwen3.5's hybrid Gated
+  DeltaNet/attention layers keep a **recurrent memory module per sequence
+  that requires strictly increasing positions**. Reusing one context
+  across two *different* prompts without clearing it fails outright
+  ("the tokens for sequence 0 ... have inconsistent sequence positions").
+  This means §4's plan to cache **multiple** per-task system prompts and
+  reuse them needs either one llama.cpp sequence ID per cached task (not
+  just one shared context) or a separate context per task — a single
+  shared KV cache holding several tasks' cached prefixes will not work
+  as-is for this model family. Worth a line in §4 before phase 1's service
+  is built.
+- **TTFT = prefill time.** An early version of this harness measured only
+  the post-prefill sampling step and reported TTFT near 0 ms, because
+  llama.cpp's prefill decode already computes the first token's logits.
+  Fixed before any of the numbers below were taken.
+- **The base models think.** Despite the Unsloth docs describing
+  non-thinking as the small Qwen3.5 models' default, this hand-built
+  prompt (no HF `apply_chat_template`, no `enable_thinking=False`) gets a
+  `<think>...</think>` block before every JSON answer. The first quality
+  pass used a 64-token budget and silently truncated mid-thought, which
+  looked like wrong answers but was really a budget problem; fixed by
+  raising the quality harness's budget to 300 tokens. The **bench**
+  numbers below still use the shorter, more realistic per-feature budgets
+  (64/220/160 tokens) and so include real thinking-token cost — this is
+  honest default-model behaviour, not a harness bug, and fine-tuning or an
+  explicit non-thinking template flag (phase 1/2) should remove it.
+- **The shared laptop was not reliably idle.** Twice during this run,
+  unrelated `rustc` processes (another job on the shared box) pegged all
+  4 threads mid-benchmark and visibly corrupted the numbers (prefill/decode
+  dropping by 2–4×, one "warm slower than cold" inversion). Both
+  contaminated runs were discarded and redone after confirming
+  `ps -eo pcpu,comm | awk '$1+0>30'` was empty. The numbers below are from
+  those clean, idle-CPU re-runs; the discarded runs are kept on disk
+  (`bench-2b-run1.log`, `bench-08b-run1.log`) as a record of why the
+  idle-CPU check matters.
+
+### Measurements
+
+Each `bench` invocation runs 3 reps per prompt internally and reports the
+median, per the ADR's instructions; the table below is the clean re-run for
+each model.
+
+| Model | cold load | prompt | ttft cold | ttft warm (median, no cache) | decode (median) | prefill (median) | peak RSS |
+|---|---|---|---|---|---|---|---|
+| **2B** | 1.12 s | spotlight_intent | 5.50 s | 5.50 s | 7.3 tok/s | 25.5 tok/s | 1896 MiB |
+| 2B | | writing_rewrite (~150 w) | 9.05 s | 9.05 s | 7.5 tok/s | 20.9 tok/s | 1901 MiB |
+| 2B | | terminal_explain | 2.15 s | 2.15 s | 7.4 tok/s | 25.6 tok/s | 1901 MiB |
+| **0.8B** | 0.85 s | spotlight_intent | 2.50 s | 2.44 s | 14.4 tok/s | 57.3 tok/s | 856 MiB |
+| 0.8B | | writing_rewrite (~150 w) | 3.38 s | 3.38 s | 14.9 tok/s | 56.0 tok/s | 859 MiB |
+| 0.8B | | terminal_explain | 1.01 s | 1.01 s | 15.0 tok/s | 54.6 tok/s | 859 MiB |
+
+Unload (separate, dedicated run, same idle-CPU conditions): 2B load 1120 ms,
+peak RSS 1896 MiB, RSS right after dropping the model/context/backend in
+the same process 80 MiB; 0.8B load 768 ms, peak RSS 856 MiB, RSS after drop
+80 MiB. In both cases the process then exits and no `ai-spike` process or
+RSS remains (`pgrep` confirmed clean) — the strongest a one-shot CLI can
+show toward the real service's "0 after exit" requirement; the 65-second
+idle-unload timer itself is phase 1's D-Bus service behaviour, not
+something this binary has.
+
+**Quality (20-case intent set, closed tool schema, 300-token budget to let
+thinking finish):** **2B: 17/20 (85%). 0.8B: 16/20 (80%).** Both models
+missed only `open_setting` for two Settings-pane phrasings ("open bluetooth
+settings", "i need to change my wallpaper" → both models answered
+`open_app` instead) and "what's the capital of France" (0.8B tried to
+`open_app` a browser for it; 2B correctly said `none`); 0.8B also missed
+the third `open_setting` case 2B got right. Full transcripts: the
+`PASS`/`FAIL` lines with raw model output are in `quality-2b.log` and
+`quality-08b.log` under `~/rmac-ai-spike/` on the laptop. For context, this
+is a much easier task than full BFCL tool-calling (single-field action
+match against six intents, not multi-argument exact match), so these
+numbers are not directly comparable to the ADR §9 BFCL figures
+(0.8B 25.3%, 2B 43.6%) — they show the models can pick the right *action*
+reliably even before fine-tuning, which the ADR's closed intent list (§1,
+feature 1) is specifically designed around.
+
+**Prefill at ~1,500 tokens:** not directly tested — the longest prompt used
+here (`writing_rewrite`) is only ~200 tokens of input. Extrapolating from
+the measured short-prompt prefill rates (2B ~21-26 tok/s, 0.8B ~55-57 tok/s)
+gives roughly 2B 60-70 s and 0.8B 26-28 s for 1,500 tokens — both far over
+the 15 s budget — but this is an extrapolation, not a measurement, and
+prefill throughput is not always flat with length. A real long-prompt test
+belongs in phase 1/2 before relying on this number.
+
+### Budgets: pass/fail
+
+| Budget (§10 phase 0 row) | 2B | 0.8B |
+|---|---|---|
+| Zero idle cost (no process/RSS when off) | **PASS** — process exits, 0 RSS/CPU confirmed (65 s idle-unload timer itself untested, belongs to phase 1's service) | **PASS** (same caveat) |
+| Cold start to first token, warm page cache: ≤ 3.0 s (2B) / ≤ 1.5 s (0.8B) | **FAIL** (load 1.12 s + ttft 5.50 s = 6.6 s) | **FAIL** (0.85 s + 2.50 s = 3.3 s) |
+| ... or ≤ 6 s truly cold (more lenient, and page cache was in fact warm here) | **FAIL** (6.6 s, i.e. over budget even though the page cache was warm) | **PASS** (3.3 s < 6 s) |
+| Warm intent first token ≤ 400 ms with cached prefix | **Not measurable with this harness** — no prefix cache implemented (see methodology notes); raw repeated-prefill warm is the same as cold above, i.e. nowhere near 400 ms, which only shows caching is necessary, not that the target is unreachable |
+| Writing Tools first token (~200 words) ≤ 2.5 s | **FAIL** (9.05 s, 3.6×) | **FAIL** (3.38 s, 1.4×) |
+| Decode ≥ 8 tok/s (2B) / ≥ 20 tok/s (0.8B) on 2 threads | **FAIL** (7.3-7.5 tok/s — but above the ADR's own "drop to Tiny" trigger of < 6 tok/s) | **FAIL** (14.4-15.0 tok/s — but comfortably above the Tiny tier's own ≥ 10 tok/s hardware-gate floor, §4) |
+| Prefill ≈1,500 tokens ≤ 15 s | **FAIL (extrapolated, not measured directly)** | **FAIL (extrapolated, not measured directly)** |
+| Peak RSS ≤ 1.9 GiB (2B) / ≤ 1.0 GiB (0.8B) at 4K context | **PASS** (1901 MiB = 1.857 GiB, ~2 % margin) | **PASS** (859 MiB = 0.839 GiB, ~16 % margin) |
+| No new frame > 16.7 ms in Notes; Spotlight typing p95 unchanged | **Not measured** — no app integration exists; this standalone CLI has no UI thread to regress |
+| User-unit `MemoryMax`/`RestrictAddressFamilies` | **Untested; reasoned PASS** for both — cgroup `memory` controller delegated to `user@<uid>.service` (`Delegate=yes`, confirmed via `systemctl show`, no `systemctl --user` used); `RestrictAddressFamilies` is seccomp-based (`+SECCOMP` in `systemctl --version`) and independent of the cgroup/namespace issue (`apparmor_restrict_unprivileged_userns`) that breaks `PrivateNetwork=` on Ubuntu 26.04, which §5 already avoids |
+
+**Overall: both models miss most of phase 0's own speed budgets on this
+specific reference laptop, by margins ranging from small (0.8B's cold
+start, 0.8B's decode vs. the Tiny-tier floor) to large (2B's Writing Tools
+latency). Neither model fails outright; both sit in a degraded-but-usable
+zone relative to the ADR's own fallback thresholds** (2B stays above the
+"drop to Tiny" trigger; 0.8B clears the Tiny tier's own calibration floor
+comfortably). RSS is fine for both. Quality, on this simplified intent
+task, is good for both and close between them (17/20 vs 16/20).
+
+### Recommendation
+
+**Keep the two-tier design; narrow what "Standard" means on this exact
+hardware, and treat prefix caching as the load-bearing fix, not an
+optimisation.**
+
+1. **Prefix caching (ADR §4) is not optional polish — build it first.**
+   Every TTFT number above is a full, uncached prefill. The single biggest
+   lever for every budget in this table (cold start, warm intent, Writing
+   Tools) is caching each task's fixed system prompt once per load, which
+   this spike deliberately does not implement. Phase 1 should treat this
+   as a correctness requirement for the service, not a later optimisation,
+   and should account for the recurrent-memory finding above (separate
+   sequence IDs or contexts per cached task) when designing it.
+2. **On the reference laptop specifically, 2B performs closer to a Tiny
+   experience than a Standard one.** It clears the hardware gate's own
+   enable-time calibration floor (≥ 6 tok/s decode, §4) by a narrow margin
+   (7.3-7.5 measured) and gives meaningfully better quality on this test
+   (17/20 vs 16/20, a smaller gap than the ADR's cited BFCL scores would
+   suggest), but its Writing Tools and cold-start latency are 1.4-3.6×
+   over budget. 0.8B is faster everywhere, comfortably passes RSS and the
+   Tiny tier's own floor, and is barely behind on quality. **Recommend
+   re-examining the Standard tier's CPU requirement (§4's hardware-gate
+   table) specifically for 2-core/4-thread Broadwell-class CPUs like this
+   one** — either raise the physical-core requirement for Standard so this
+   class of hardware defaults to Tiny, or accept that "Standard" on this
+   hardware means "usable but slower than the budgets assume" until
+   prefix caching and/or fine-tuning close the gap. This is a tier-
+   boundary rethink, not a rejection of Qwen3.5-2B/0.8B as the model
+   family (§2's licence/quality reasoning there is untouched by anything
+   measured here).
+3. Re-measure after (1) and after fine-tuning (§6, phase 2) — both should
+   move these numbers, and a cheap re-run of this exact harness (now that
+   it builds and the models are already on the laptop) is the way to
+   check.
+4. Add `cmake` to the laptop's normal toolchain and measure the
+   `GGML_BACKEND_DL`/`GGML_CPU_ALL_VARIANTS` dynamic build's size before
+   phase 1 ships anything — this phase 0 build used a native-only build
+   and a portable `cmake` binary as a workaround, neither of which should
+   carry over unexamined into the real service build.
+
 ## 11. Open risks
 
 1. **Speed on the oldest PCs.** Prefill on a 2-core Broadwell may make summaries feel slow.

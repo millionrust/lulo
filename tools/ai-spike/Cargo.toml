@@ -1,0 +1,48 @@
+[workspace]
+# Empty table: makes this crate its own standalone workspace root, so cargo
+# never treats it as part of the main rmac workspace even though it lives
+# under the repo tree. This is what keeps the root Cargo.lock and
+# cargo-deny policy untouched (ADR 0024 phase 0 instructions).
+
+[package]
+name = "ai-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "ADR 0024 phase 0 measurement spike. Standalone crate, deliberately NOT a workspace member: it must never touch the main Cargo.lock or cargo-deny policy. Build and run only on the reference laptop, in its own target dir."
+
+# Built and measured on the reference laptop on 2026-10-07 (114 GB free at
+# the start). Resolves llama-cpp-2 0.1.158, the version the ADR names.
+# CMake was not preinstalled and there is no sudo on the laptop, so the
+# build used a portable cmake binary unpacked under ~/rmac-ai-spike/tools/
+# (see docs/decisions/0024-lulo-intelligence.md's "Phase 0 results" section
+# for the exact version/checksum and for the full results, methodology
+# caveats and recommendation). To rebuild:
+#   CARGO_TARGET_DIR=~/rmac-ai-spike/target cargo build --release
+# from this directory, on the laptop, outside any workspace lock, with that
+# cmake binary (or a system one) on PATH.
+
+[[bin]]
+name = "ai-spike"
+path = "src/main.rs"
+
+[dependencies]
+# ADR 0024 decision 3: llama.cpp via llama-cpp-2. Default build is CPU-only
+# (no "vulkan" feature) to match the ADR's phase-0 priority (CPU numbers
+# first; Vulkan is a separate, later measurement on the HD 5500, which the
+# ADR expects to lose to the CPU path on this GPU).
+llama-cpp-2 = { version = "0.1", default-features = false }
+
+[features]
+default = []
+# Opt-in second build for the Vulkan backend comparison (ADR §3). Keep the
+# two builds in separate target subdirectories so one doesn't invalidate the
+# other's incremental cache.
+vulkan = ["llama-cpp-2/vulkan"]
+
+[profile.release]
+# A spike binary, not a shipped artifact: prioritise build time and disk
+# over runtime polish. LTO would cost more disk on a laptop that is already
+# nearly full.
+lto = false
+debug = false

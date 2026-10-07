@@ -323,7 +323,7 @@ pub(crate) fn copy_item_cancellable(
     progress(CopyActivity::Finishing);
     sync_copied_tree(destination)?;
     if let Some(parent) = destination.parent() {
-        std::fs::File::open(parent)?.sync_all()?;
+        sync_directory_handle(parent)?;
     }
     Ok(())
 }
@@ -481,10 +481,23 @@ fn sync_copied_tree(path: &Path) -> io::Result<()> {
         for entry in std::fs::read_dir(path)? {
             sync_copied_tree(&entry?.path())?;
         }
-        std::fs::File::open(path)?.sync_all()?;
+        sync_directory_handle(path)?;
     } else if !metadata.file_type().is_symlink() {
         std::fs::File::open(path)?.sync_all()?;
     }
+    Ok(())
+}
+
+/// Windows cannot open a directory with write access to `fsync` it; NTFS
+/// journals the rename/write itself (ADR 0023 phase 1's "Durable writes"
+/// seam, matching operation_journal.rs's own `sync_directory`).
+#[cfg(not(windows))]
+fn sync_directory_handle(path: &Path) -> io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
+}
+
+#[cfg(windows)]
+fn sync_directory_handle(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 

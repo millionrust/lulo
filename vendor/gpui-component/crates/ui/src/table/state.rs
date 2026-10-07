@@ -1356,10 +1356,17 @@ where
             return None;
         };
 
-        let (icon, is_on) = match sort {
-            ColumnSort::Ascending => (IconName::SortAscending, true),
-            ColumnSort::Descending => (IconName::SortDescending, true),
-            ColumnSort::Default => (IconName::ChevronsUpDown, false),
+        // Only the active sort column shows a chevron (rmac: a sortable but
+        // currently-unsorted column — `ColumnSort::Default` — stays bare,
+        // matching how macOS tables such as Activity Monitor and Finder's
+        // list view mark exactly one column at a time). The click target
+        // itself is kept at the same size and position either way, so a
+        // column whose sort is not currently active is still one click to
+        // activate.
+        let icon = match sort {
+            ColumnSort::Ascending => Some(IconName::SortAscending),
+            ColumnSort::Descending => Some(IconName::SortDescending),
+            ColumnSort::Default => None,
         };
 
         Some(
@@ -1367,20 +1374,16 @@ where
                 .id(("icon-sort", col_ix))
                 .p(px(2.))
                 .rounded(cx.theme().radius / 2.)
-                .map(|this| match is_on {
-                    true => this,
-                    false => this.opacity(0.5),
-                })
                 .hover(|this| this.bg(cx.theme().tokens.secondary).opacity(7.))
                 .active(|this| this.bg(cx.theme().tokens.secondary_active).opacity(1.))
                 .on_click(
                     cx.listener(move |table, _, window, cx| table.perform_sort(col_ix, window, cx)),
                 )
-                .child(
+                .children(icon.map(|icon| {
                     Icon::new(icon)
                         .size_3()
-                        .text_color(cx.theme().secondary_foreground),
-                ),
+                        .text_color(cx.theme().secondary_foreground)
+                })),
         )
     }
 

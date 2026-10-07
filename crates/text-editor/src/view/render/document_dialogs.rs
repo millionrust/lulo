@@ -281,7 +281,15 @@ impl EditorView {
     /// Format ▸ Font ▸ Show Colours (⇧⌘C): the Colours panel's crayon box.
     /// Clicking a crayon colours the selection (or the next typing).
     pub(super) fn render_colours_panel(&self, cx: &mut Context<Self>) -> AnyElement {
-        let current = self.rich.read(cx).style_at_selection().color;
+        let style = self.rich.read(cx).style_at_selection();
+        let current = match self.colours_target {
+            super::super::format_text::ColourTarget::Text => style.color,
+            super::super::format_text::ColourTarget::Highlight => style.highlight,
+        };
+        let title = match self.colours_target {
+            super::super::format_text::ColourTarget::Text => "Colours",
+            super::super::format_text::ColourTarget::Highlight => "Highlight Colour",
+        };
         let mut grid = div()
             .flex()
             .flex_wrap()
@@ -305,13 +313,13 @@ impl EditorView {
                     } else {
                         mac::separator()
                     })
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| this.set_text_colour(Some(color), cx)),
-                    ),
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.apply_colours_panel_choice(Some(color), cx)
+                    })),
             );
         }
         sheet_card("colours-sheet", 296.0, 300.0)
-            .child(sheet_title("Colours"))
+            .child(sheet_title(title))
             .child(grid)
             .child(
                 div()
@@ -324,7 +332,9 @@ impl EditorView {
                             "Automatic",
                             DialogButtonKind::Normal,
                         )
-                        .on_click(cx.listener(|this, _, _, cx| this.set_text_colour(None, cx))),
+                        .on_click(
+                            cx.listener(|this, _, _, cx| this.apply_colours_panel_choice(None, cx)),
+                        ),
                     )
                     .child(
                         rmac_ui::dialog_button("colours-done", "Done", DialogButtonKind::Primary)

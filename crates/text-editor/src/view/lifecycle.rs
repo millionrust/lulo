@@ -446,6 +446,7 @@ impl EditorView {
             rich_zoom: 1.0,
             show_ruler: settings.show_ruler_default,
             colours_open: false,
+            colours_target: format_text::ColourTarget::default(),
             lists_open: false,
             fonts_open: false,
             font_families: None,

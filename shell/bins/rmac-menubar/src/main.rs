@@ -941,6 +941,20 @@ mod linux_wayland {
         /// Bumped whenever the pointer enters or leaves a scroll arrow; the
         /// arrow's scroll timer stops when it changes.
         scroll_arrow_generation: u64,
+        /// `menu_panel_width`'s result for the open top-level menu, kept
+        /// alongside the exact items it was computed from (UIA-23). A menu
+        /// repaints on every pointer move over it (hover highlighting) far
+        /// more often than its own content changes, and that width comes
+        /// from shaping every row's label, shortcut and badge through the
+        /// window's real text system — font layout, not a cheap lookup.
+        /// Reusing the last result whenever the items still match (a plain
+        /// `==`, no shaping at all) keeps that work off the hot repaint
+        /// path; only a menu whose content actually changed (the Window
+        /// menu's own list of open windows, Wi-Fi's networks, …) re-shapes.
+        menu_width_cache: Option<(Vec<rmac_app_menu::Item>, f32)>,
+        /// The same cache as `menu_width_cache`, for each open submenu
+        /// level, indexed by depth (`submenu_rows`'s own indices).
+        submenu_width_cache: Vec<(Vec<rmac_app_menu::Item>, f32)>,
         /// The focused app's windows, read from the compositor when a menu
         /// opens, for the Window menu.
         menu_windows: Vec<menu_model::MenuWindow>,
@@ -1121,6 +1135,8 @@ mod linux_wayland {
                 menu_scroll: BTreeMap::new(),
                 scroll_reveal: None,
                 scroll_arrow_generation: 0,
+                menu_width_cache: None,
+                submenu_width_cache: Vec::new(),
                 menu_windows: Vec::new(),
                 menu_window: None,
                 focus_return: None,
@@ -1203,6 +1219,8 @@ mod linux_wayland {
                 self.reset_menu_scroll();
                 self.hover_generation = self.hover_generation.saturating_add(1);
                 self.help_query.clear();
+                self.menu_width_cache = None;
+                self.submenu_width_cache.clear();
                 window.refresh();
                 cx.notify();
             }
@@ -1221,6 +1239,42 @@ mod linux_wayland {
             if self.fullscreen && !self.pointer_inside {
                 self.schedule_fullscreen_hide(cx);
             }
+        }
+
+        /// `menu_panel_width(menu, window)`, reusing the last result while
+        /// `menu`'s items still match what it was computed from (UIA-23):
+        /// see `menu_width_cache`.
+        fn cached_menu_width(&mut self, menu: &rmac_app_menu::Menu, window: &Window) -> f32 {
+            if let Some((items, width)) = &self.menu_width_cache {
+                if items == &menu.items {
+                    return *width;
+                }
+            }
+            let width = menu_panel_width(menu, window);
+            self.menu_width_cache = Some((menu.items.clone(), width));
+            width
+        }
+
+        /// `items_panel_width(items, window)` for the submenu open at
+        /// `depth`, memoized the same way as `cached_menu_width`.
+        fn cached_submenu_width(
+            &mut self,
+            depth: usize,
+            items: &[rmac_app_menu::Item],
+            window: &Window,
+        ) -> f32 {
+            if let Some((cached_items, width)) = self.submenu_width_cache.get(depth) {
+                if cached_items.as_slice() == items {
+                    return *width;
+                }
+            }
+            let width = items_panel_width(items, window);
+            if self.submenu_width_cache.len() <= depth {
+                self.submenu_width_cache
+                    .resize(depth + 1, (Vec::new(), 0.0));
+            }
+            self.submenu_width_cache[depth] = (items.to_vec(), width);
+            width
         }
 
         /// Remember the window that has the keyboard as the first menu of a
@@ -3851,7 +3905,7 @@ mod linux_wayland {
             } else {
                 self.open_menu
                     .and_then(|index| menus.get(index))
-                    .map(|menu| menu_panel_width(menu, window))
+                    .map(|menu| self.cached_menu_width(menu, window))
             };
             let screen_width = f32::from(window.bounds().size.width);
             // The bar's own surface: menus can only draw inside it. It is
@@ -3941,7 +3995,7 @@ mod linux_wayland {
                             break;
                         };
                         let items = parent.children.clone();
-                        let sub_width = items_panel_width(&items, window);
+                        let sub_width = self.cached_submenu_width(level + 1, &items, window);
                         path = path
                             .wrapping_mul(1_000_003)
                             .wrapping_add(parent_row as u64 + 1);

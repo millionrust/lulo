@@ -235,6 +235,13 @@ struct EditorView {
     show_ruler: bool,
     /// Format ▸ Font ▸ Show Colours.
     colours_open: bool,
+    /// Which run attribute the open colours panel sets (UIA-07): the
+    /// format bar has two real `AXColorWell` controls, one for text colour
+    /// and one for the paragraph's highlight/background colour, both
+    /// opening the same crayon grid — not just the Format ▸ Font ▸
+    /// Highlight menu's seven named presets, which stays a separate,
+    /// narrower shortcut into the same underlying colour.
+    colours_target: format_text::ColourTarget,
     /// Format ▸ List….
     lists_open: bool,
     /// Format ▸ Font ▸ Show Fonts (⌘T): the panel, the installed families

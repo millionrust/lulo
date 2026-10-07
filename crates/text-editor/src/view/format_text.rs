@@ -92,6 +92,17 @@ fn style_clipboard() -> &'static Mutex<Option<CharStyle>> {
     CLIPBOARD.get_or_init(|| Mutex::new(None))
 }
 
+/// Which run attribute the colours panel (`show_colours`) sets — the format
+/// bar's two `AXColorWell`s (UIA-07): text colour and highlight/background
+/// colour share the same crayon grid, distinguished only by which well
+/// opened it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum ColourTarget {
+    #[default]
+    Text,
+    Highlight,
+}
+
 /// Format ▸ Font ▸ Highlight's colours.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Highlight {
@@ -406,12 +417,24 @@ impl EditorView {
         }
     }
 
-    /// Format ▸ Font ▸ Show Colours (⇧⌘C).
+    /// Format ▸ Font ▸ Show Colours (⇧⌘C): always the text-colour well.
     pub(super) fn show_colours(&mut self, cx: &mut Context<Self>) {
-        if self.text_format_editable() {
-            self.colours_open = !self.colours_open;
-            cx.notify();
+        self.show_colours_for(ColourTarget::Text, cx);
+    }
+
+    /// The format bar's own two colour wells (UIA-07): the same crayon
+    /// grid, applied to whichever attribute's well was clicked.
+    pub(super) fn show_colours_for(&mut self, target: ColourTarget, cx: &mut Context<Self>) {
+        if !self.text_format_editable() {
+            return;
         }
+        if self.colours_open && self.colours_target == target {
+            self.colours_open = false;
+        } else {
+            self.colours_target = target;
+            self.colours_open = true;
+        }
+        cx.notify();
     }
 
     pub(super) fn close_colours(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -420,10 +443,23 @@ impl EditorView {
         cx.notify();
     }
 
-    pub(super) fn set_text_colour(&mut self, color: Option<rich::Rgb>, cx: &mut Context<Self>) {
-        if self.text_format_editable() {
-            self.rich
-                .update(cx, |editor, cx| editor.set_text_color(color, cx));
+    pub(super) fn apply_colours_panel_choice(
+        &mut self,
+        color: Option<rich::Rgb>,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.text_format_editable() {
+            return;
+        }
+        match self.colours_target {
+            ColourTarget::Text => {
+                self.rich
+                    .update(cx, |editor, cx| editor.set_text_color(color, cx));
+            }
+            ColourTarget::Highlight => {
+                self.rich
+                    .update(cx, |editor, cx| editor.set_highlight(color, cx));
+            }
         }
     }
 

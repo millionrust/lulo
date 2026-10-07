@@ -4467,6 +4467,30 @@ impl PreviewView {
                 .border_1()
                 .border_color(rgb(palette.control_edge))
         };
+        // PREV-17: unlike every other right-hand control, the search
+        // capsule is pinned to its own `.right()` (resolved by the layout
+        // engine against the toolbar's real rendered width) instead of a
+        // `.left()` computed from `width` — an estimate
+        // (`WAYLAND_VISIBLE_WIDTH_RESERVE`) of how much narrower niri's
+        // visible window is than GPUI's own Wayland viewport, measured
+        // once on the reference laptop and not exact for every window
+        // size. The same class of bug as UIA-17 (Notes' search field
+        // overflowing its toolbar): rather than letting an estimate
+        // determine the one control sitting flush against the window's own
+        // edge, this control's edge is tied directly to the real one.
+        let search_capsule = |id: &'static str, width: f32| {
+            div()
+                .id(id)
+                .absolute()
+                .right(px(metrics::RIGHT_INSET))
+                .top(px(metrics::CONTROL_TOP))
+                .w(px(width))
+                .h(px(metrics::CONTROL_HEIGHT))
+                .rounded(px(metrics::CONTROL_HEIGHT / 2.0))
+                .bg(rgb(palette.control_fill))
+                .border_1()
+                .border_color(rgb(palette.control_edge))
+        };
         let button = |id: &'static str, icon: &'static str, enabled: bool| {
             let name = match id {
                 "preview-zoom-out" => "Zoom Out",
@@ -4750,7 +4774,7 @@ impl PreviewView {
                     .current
                     .map(|current| format!("{} of {}", current + 1, self.search.matches.len()))
             };
-            capsule("preview-search", group.search, metrics::SEARCH_WIDTH)
+            search_capsule("preview-search", metrics::SEARCH_WIDTH)
                 .when(!is_pdf, |field| field.opacity(0.5))
                 .child(
                     div()

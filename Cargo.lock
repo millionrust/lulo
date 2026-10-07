@@ -7484,6 +7484,7 @@ dependencies = [
  "libc",
  "portable-pty",
  "raw-window-handle",
+ "rmac-editor",
  "rmac-portal",
  "rmac-print-linux",
  "rmac-storage",

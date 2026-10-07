@@ -47,6 +47,7 @@
          own success is never load-bearing for the install transaction. -->
     <CustomAction
       Id="RemoveClockScheduledTasks"
+      Directory="INSTALLFOLDER"
       ExeCommand="powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command &quot;Get-ScheduledTask -TaskName 'RmacClockAlarm-*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false&quot;"
       Execute="immediate"
       Return="ignore" />

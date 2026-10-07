@@ -14,8 +14,9 @@
 //! between menus, ↑/↓ between items, Return chooses and Esc closes.
 //!
 //! The strip is on wherever the Lulo menu bar is not: on Windows, unless
-//! `LULO_MENU_BAR` says the phase 3 bar is running. `RMAC_IN_WINDOW_MENUS=1`
-//! turns it on elsewhere, for development.
+//! `LULO_MENU_BAR` is set, and it hides itself while the Lulo layer's menu
+//! bar shows the app's menus (`menubar_link`, ADR 0023 phase 3).
+//! `RMAC_IN_WINDOW_MENUS=1` turns it on elsewhere, for development.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -76,10 +77,43 @@ fn trace(message: impl FnOnce() -> String) {
 /// The height app windows add for the strip: [`MENU_STRIP_HEIGHT`] once the
 /// app's menus are installed with the strip on, otherwise nothing.
 pub fn height(cx: &App) -> f32 {
-    if cx.has_global::<MenuStrips>() {
+    if cx.has_global::<MenuStrips>() && !bar_connected(cx) {
         MENU_STRIP_HEIGHT
     } else {
         0.0
+    }
+}
+
+/// Whether the Lulo layer's menu bar shows this app's menus, so the strip
+/// stays out of the way.
+fn bar_connected(cx: &App) -> bool {
+    #[cfg(windows)]
+    {
+        crate::menubar_link::connected(cx)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cx;
+        false
+    }
+}
+
+/// Redraw every strip after the menu bar came or went.
+#[cfg(windows)]
+pub(crate) fn refresh_all(cx: &mut App) {
+    let Some(strips) = cx.try_global::<MenuStrips>() else {
+        return;
+    };
+    let strips = strips
+        .strips
+        .iter()
+        .filter_map(|(_, strip)| strip.upgrade())
+        .collect::<Vec<_>>();
+    for strip in strips {
+        strip.update(cx, |strip, cx| {
+            strip.open = None;
+            cx.notify();
+        });
     }
 }
 
@@ -133,6 +167,9 @@ pub(crate) fn install(app_id: &'static str, cx: &mut App) {
     )));
     cx.bind_keys([KeyBinding::new("alt", ToggleMenuStrip, None)]);
     cx.on_action(|_: &ToggleMenuStrip, cx| {
+        if bar_connected(cx) {
+            return;
+        }
         let Some(window) = cx.active_window() else {
             trace(|| "Alt: no active window".into());
             return;
@@ -174,6 +211,9 @@ pub(crate) fn install(app_id: &'static str, cx: &mut App) {
             || keystroke.key.chars().count() != 1
             || !keystroke.key.chars().all(|c| c.is_ascii_alphabetic())
         {
+            return;
+        }
+        if bar_connected(cx) {
             return;
         }
         let letter = keystroke.key.to_ascii_lowercase();
@@ -223,7 +263,7 @@ fn with_strip(
 /// The menus as the strip shows them: the app menu under the app's name
 /// with the standard Hide and Quit, the app's own menus, then Window (with
 /// Minimize) and Help. The menu bar builds the same shape on Linux.
-fn strip_menus(app_name: &str, menus: Vec<Menu>) -> Vec<Menu> {
+pub(crate) fn strip_menus(app_name: &str, menus: Vec<Menu>) -> Vec<Menu> {
     let mut exported = menus;
     let mut application = rmac_app_menu::take_application_items(&mut exported);
     let mut window_items = rmac_app_menu::take_window_items(&mut exported);
@@ -258,7 +298,13 @@ fn strip_menus(app_name: &str, menus: Vec<Menu>) -> Vec<Menu> {
         items,
     }];
     strip.extend(exported);
-    let mut window = vec![Item::new("Minimize", "rmac_ui::MinimizeWindow", "⌘M")];
+    // Every Mac app's Window menu starts Minimize, Zoom (WIN-ZOOM-01): Zoom
+    // toggles this window between its user size and the working area, the
+    // same as ⌥-clicking the green button (`chrome::zoom_focused_window`).
+    let mut window = vec![
+        Item::new("Minimize", "rmac_ui::MinimizeWindow", "⌘M"),
+        Item::new("Zoom", "rmac_ui::ZoomWindow", "⌃⌘Z"),
+    ];
     if let Some(first) = window_items.first_mut() {
         first.separator_before = true;
     }
@@ -465,6 +511,10 @@ impl MenuStrip {
 
 impl Render for MenuStrip {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if bar_connected(cx) {
+            // The Lulo menu bar shows these menus instead: nothing here.
+            return div().id("rmac-menu-strip").into_any_element();
+        }
         let open_index = self.open.as_ref().map(|open| open.index);
         let titles = self.titles.iter().enumerate().map(|(index, title)| {
             div()
@@ -577,6 +627,7 @@ impl Render for MenuStrip {
                     .h_full(),
             )
             .children(open)
+            .into_any_element()
     }
 }
 
@@ -628,8 +679,10 @@ mod tests {
         assert!(strip[0].items[1].separator_before);
         let window = &strip[2].items;
         assert_eq!(window[0].action, "rmac_ui::MinimizeWindow");
-        assert_eq!(window[1].action, "notes::FocusMainWindow");
-        assert!(window[1].separator_before);
+        assert_eq!(window[1].action, "rmac_ui::ZoomWindow");
+        assert_eq!(window[1].label, "Zoom");
+        assert_eq!(window[2].action, "notes::FocusMainWindow");
+        assert!(window[2].separator_before);
         // Every command in the strip is distinct.
         let mut actions = strip
             .iter()

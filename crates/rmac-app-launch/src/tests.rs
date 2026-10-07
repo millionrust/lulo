@@ -2,7 +2,9 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::*;
-use crate::application::{may_fallback, runnable_program};
+use crate::application::may_fallback;
+#[cfg(unix)]
+use crate::application::runnable_program;
 use crate::document::is_regular_document;
 
 static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);

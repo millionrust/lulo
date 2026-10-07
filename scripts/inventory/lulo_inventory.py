@@ -234,8 +234,14 @@ def _synthesize_window_menu(
     items = [
         _item("Minimise", "window::minimise", "⌘M"),
         _item("Minimise All", "app::minimise-all", "" if is_fixed_size else "⌥⌘M"),
-        _item("Zoom", "window::zoom"),
-        _item("Zoom All", "window::zoom-all"),
+        # NOT-MENU-007/008: mirrors `window_menu` in
+        # shell/bins/rmac-menubar/src/menu_model.rs — the reference Mac
+        # capture shows a real ⌃⌘Z/⌃⌥⌘Z key equivalent on Zoom/Zoom All in
+        # Notes and nowhere else captured, so this stays Notes-only.
+        _item("Zoom", "window::zoom", "⌃⌘Z" if app_display_name == "Notes" else ""),
+        _item(
+            "Zoom All", "window::zoom-all", "⌃⌥⌘Z" if app_display_name == "Notes" else ""
+        ),
         _item("Fill", "window::fill", "⌃⇧⌘F"),
         _item("Centre", "window::centre", "⌃⌘C"),
         move_and_resize,

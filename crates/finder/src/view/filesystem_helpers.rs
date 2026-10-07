@@ -2,7 +2,7 @@ use super::*;
 
 /// Finder's Empty Trash alert: its title and message, in the locale's word
 /// for the Trash.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(super) fn empty_trash_prompt(bin: &str) -> (String, String) {
     (
         format!("Are you sure you want to permanently erase the items in the {bin}?"),
@@ -32,14 +32,14 @@ pub(super) fn permanent_delete_prompt(count: usize, name: Option<&str>) -> (Stri
 
 /// Item count for a delete confirmation, whichever of its two sources
 /// (already-trashed `items`, or live `paths` outside the Bin) is populated.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(super) fn delete_confirmation_count(confirmation: &DeleteConfirmation) -> usize {
     confirmation.items.len() + confirmation.paths.len()
 }
 
 /// The sanitized file name of the first item in a delete confirmation, for
 /// the single-item alert wording.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(super) fn delete_confirmation_first_name(confirmation: &DeleteConfirmation) -> Option<String> {
     let name = confirmation
         .items
@@ -396,20 +396,24 @@ pub(super) fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
         }
     }
     v.push(("Modified", e.modified.to_string()));
-    if let Some(md) = &md {
-        v.push(("Permissions", perm_string(md.permissions().mode())));
-    }
-    if let Some(md) = &md {
+    // Windows has no POSIX permission bits or uid/gid; these rows are left
+    // out there rather than shown with a fake or misleading value.
+    #[cfg(unix)]
+    {
         use std::os::unix::fs::MetadataExt as _;
-        let uid = md.uid();
-        let gid = md.gid();
-        v.push(("Owner", user_name(uid).unwrap_or_else(|| uid.to_string())));
-        v.push(("Group", group_name(gid).unwrap_or_else(|| gid.to_string())));
+        if let Some(md) = &md {
+            v.push(("Permissions", perm_string(md.permissions().mode())));
+            let uid = md.uid();
+            let gid = md.gid();
+            v.push(("Owner", user_name(uid).unwrap_or_else(|| uid.to_string())));
+            v.push(("Group", group_name(gid).unwrap_or_else(|| gid.to_string())));
+        }
     }
     v
 }
 
 /// The account name for `uid` from the system user database.
+#[cfg(unix)]
 fn user_name(uid: libc::uid_t) -> Option<String> {
     let mut buffer = vec![0u8; 16 * 1024];
     // SAFETY: passwd is plain data; getpwuid_r writes it and the strings it
@@ -435,6 +439,7 @@ fn user_name(uid: libc::uid_t) -> Option<String> {
 }
 
 /// The group name for `gid` from the system group database.
+#[cfg(unix)]
 fn group_name(gid: libc::gid_t) -> Option<String> {
     let mut buffer = vec![0u8; 16 * 1024];
     // SAFETY: group is plain data; getgrgid_r writes it and the strings it
@@ -459,6 +464,7 @@ fn group_name(gid: libc::gid_t) -> Option<String> {
     }
 }
 
+#[cfg(unix)]
 fn perm_string(mode: u32) -> String {
     let mut s = String::with_capacity(9);
     for shift in [6u32, 3, 0] {
@@ -470,6 +476,7 @@ fn perm_string(mode: u32) -> String {
     s
 }
 
+#[cfg(not(windows))]
 pub(super) fn free_space(path: &Path) -> Option<u64> {
     let stats = rustix::fs::statvfs(path).ok()?;
     let fragment_size = if stats.f_frsize == 0 {
@@ -478,6 +485,19 @@ pub(super) fn free_space(path: &Path) -> Option<u64> {
         stats.f_frsize
     };
     stats.f_bavail.checked_mul(fragment_size)
+}
+
+#[cfg(windows)]
+pub(super) fn free_space(path: &Path) -> Option<u64> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+    let wide = HSTRING::from(path.as_os_str());
+    let mut free_bytes_available = 0u64;
+    // SAFETY: `wide` is a valid wide string; the other two output
+    // parameters are `None`, which the API accepts.
+    unsafe { GetDiskFreeSpaceExW(&wide, Some(&mut free_bytes_available), None, None) }.ok()?;
+    Some(free_bytes_available)
 }
 
 pub(super) fn human_size(bytes: u64) -> String {

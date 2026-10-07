@@ -259,6 +259,9 @@ binds {
     // the same resident Mission Control service as Show Desktop above.
     Mod+Ctrl+Shift+F repeat=false hotkey-overlay-title="Fill" { spawn "/usr/libexec/rmac/rmac-mission-control" "fill"; }
     Mod+Ctrl+C repeat=false hotkey-overlay-title="Centre" { spawn "/usr/libexec/rmac/rmac-mission-control" "centre"; }
+    // Window ▸ Zoom (⌃⌘Z, NOT-MENU-007): the same toggle the green button's
+    // ⌥-click and a Zoom-set title-bar double-click already run.
+    Mod+Ctrl+Z repeat=false hotkey-overlay-title="Zoom" { spawn "/usr/libexec/rmac/rmac-mission-control" "zoom"; }
     Mod+Ctrl+Left repeat=false hotkey-overlay-title="Left" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-left"; }
     Mod+Ctrl+Right repeat=false hotkey-overlay-title="Right" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-right"; }
     Mod+Ctrl+Up repeat=false hotkey-overlay-title="Top" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-top"; }

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
-use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+#[cfg(not(windows))]
 use std::os::unix::fs::{
     DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _,
 };
@@ -80,7 +80,7 @@ pub(crate) struct UndoSeed {
     pub(crate) forward_record: PathBuf,
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(crate) struct TrashUndoSeed {
     pub(crate) id: String,
     pub(crate) kind: UndoKind,
@@ -149,11 +149,13 @@ impl UndoRecord {
             stage: UndoStage::ForwardPending,
             created_seconds: created.as_secs(),
             created_nanoseconds: created.subsec_nanos(),
-            source_path_bytes: seed.source.as_os_str().as_bytes().to_vec(),
-            destination_path_bytes: seed.destination.as_os_str().as_bytes().to_vec(),
-            backup_path_bytes: seed.backup.map(|path| path.as_os_str().as_bytes().to_vec()),
-            restore_staging_path_bytes: restore_staging.as_os_str().as_bytes().to_vec(),
-            cleanup_path_bytes: cleanup.as_os_str().as_bytes().to_vec(),
+            source_path_bytes: seed.source.as_os_str().as_encoded_bytes().to_vec(),
+            destination_path_bytes: seed.destination.as_os_str().as_encoded_bytes().to_vec(),
+            backup_path_bytes: seed
+                .backup
+                .map(|path| path.as_os_str().as_encoded_bytes().to_vec()),
+            restore_staging_path_bytes: restore_staging.as_os_str().as_encoded_bytes().to_vec(),
+            cleanup_path_bytes: cleanup.as_os_str().as_encoded_bytes().to_vec(),
             source_parent_identity: EntryIdentity::capture(source_parent)?,
             source_snapshot: seed.source_snapshot,
             destination_snapshot: seed.destination_snapshot,
@@ -163,13 +165,13 @@ impl UndoRecord {
             trash_info_path_bytes: None,
             trash_info_bytes: None,
             trash_info_identity: None,
-            forward_record_path_bytes: seed.forward_record.as_os_str().as_bytes().to_vec(),
+            forward_record_path_bytes: seed.forward_record.as_os_str().as_encoded_bytes().to_vec(),
         };
         record.validate(&record.id)?;
         Ok(record)
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     fn from_trash_seed(seed: TrashUndoSeed) -> io::Result<Self> {
         if !matches!(seed.kind, UndoKind::Trash | UndoKind::Restore) {
             return Err(invalid_data("Trash Undo seed has an invalid operation"));
@@ -199,42 +201,48 @@ impl UndoRecord {
             stage: UndoStage::ForwardPending,
             created_seconds: created.as_secs(),
             created_nanoseconds: created.subsec_nanos(),
-            source_path_bytes: seed.source.as_os_str().as_bytes().to_vec(),
-            destination_path_bytes: seed.data.as_os_str().as_bytes().to_vec(),
+            source_path_bytes: seed.source.as_os_str().as_encoded_bytes().to_vec(),
+            destination_path_bytes: seed.data.as_os_str().as_encoded_bytes().to_vec(),
             backup_path_bytes: None,
-            restore_staging_path_bytes: restore_staging.as_os_str().as_bytes().to_vec(),
-            cleanup_path_bytes: cleanup.as_os_str().as_bytes().to_vec(),
+            restore_staging_path_bytes: restore_staging.as_os_str().as_encoded_bytes().to_vec(),
+            cleanup_path_bytes: cleanup.as_os_str().as_encoded_bytes().to_vec(),
             source_parent_identity: seed.source_parent_identity,
             source_snapshot: seed.item_snapshot.clone(),
             destination_snapshot: seed.item_snapshot,
             replaced_snapshot: None,
             restore_container_identity: None,
             restored_snapshot: None,
-            trash_info_path_bytes: Some(seed.info.as_os_str().as_bytes().to_vec()),
+            trash_info_path_bytes: Some(seed.info.as_os_str().as_encoded_bytes().to_vec()),
             trash_info_bytes: Some(seed.info_bytes),
             trash_info_identity: seed.info_identity,
-            forward_record_path_bytes: seed.forward_record.as_os_str().as_bytes().to_vec(),
+            forward_record_path_bytes: seed.forward_record.as_os_str().as_encoded_bytes().to_vec(),
         };
         record.validate(&record.id)?;
         Ok(record)
     }
 
     fn source(&self) -> PathBuf {
-        PathBuf::from(OsString::from_vec(self.source_path_bytes.clone()))
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.source_path_bytes.clone())
+        })
     }
 
     fn destination(&self) -> PathBuf {
-        PathBuf::from(OsString::from_vec(self.destination_path_bytes.clone()))
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.destination_path_bytes.clone())
+        })
     }
 
     fn backup(&self) -> Option<PathBuf> {
-        self.backup_path_bytes
-            .as_ref()
-            .map(|bytes| PathBuf::from(OsString::from_vec(bytes.clone())))
+        self.backup_path_bytes.as_ref().map(|bytes| {
+            PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(bytes.clone()) })
+        })
     }
 
     fn restore_staging(&self) -> PathBuf {
-        PathBuf::from(OsString::from_vec(self.restore_staging_path_bytes.clone()))
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.restore_staging_path_bytes.clone())
+        })
     }
 
     fn restore_payload(&self) -> PathBuf {
@@ -242,13 +250,15 @@ impl UndoRecord {
     }
 
     fn cleanup(&self) -> PathBuf {
-        PathBuf::from(OsString::from_vec(self.cleanup_path_bytes.clone()))
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.cleanup_path_bytes.clone())
+        })
     }
 
     fn trash_info(&self) -> Option<PathBuf> {
-        self.trash_info_path_bytes
-            .as_ref()
-            .map(|bytes| PathBuf::from(OsString::from_vec(bytes.clone())))
+        self.trash_info_path_bytes.as_ref().map(|bytes| {
+            PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(bytes.clone()) })
+        })
     }
 
     fn forward_record(&self, undo_root: &Path) -> PathBuf {
@@ -258,7 +268,9 @@ impl UndoRecord {
                 .unwrap_or(undo_root)
                 .join(format!("{}.json", self.id));
         }
-        PathBuf::from(OsString::from_vec(self.forward_record_path_bytes.clone()))
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.forward_record_path_bytes.clone())
+        })
     }
 
     fn matches_seed(&self, seed: &UndoSeed) -> bool {
@@ -271,10 +283,11 @@ impl UndoRecord {
             && self.destination_snapshot == seed.destination_snapshot
             && self.replaced_snapshot == seed.replaced_snapshot
             && (self.forward_record_path_bytes.is_empty()
-                || self.forward_record_path_bytes == seed.forward_record.as_os_str().as_bytes())
+                || self.forward_record_path_bytes
+                    == seed.forward_record.as_os_str().as_encoded_bytes())
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     fn matches_trash_seed(&self, seed: &TrashUndoSeed) -> bool {
         self.id == seed.id
             && self.kind == seed.kind
@@ -287,7 +300,8 @@ impl UndoRecord {
             && self.trash_info_bytes.as_ref() == Some(&seed.info_bytes)
             && self.trash_info_identity == seed.info_identity
             && (self.forward_record_path_bytes.is_empty()
-                || self.forward_record_path_bytes == seed.forward_record.as_os_str().as_bytes())
+                || self.forward_record_path_bytes
+                    == seed.forward_record.as_os_str().as_encoded_bytes())
     }
 
     fn validate(&self, expected_id: &str) -> io::Result<()> {
@@ -336,7 +350,9 @@ impl UndoRecord {
             }
         }
         if !self.forward_record_path_bytes.is_empty() {
-            let forward = PathBuf::from(OsString::from_vec(self.forward_record_path_bytes.clone()));
+            let forward = PathBuf::from(unsafe {
+                OsString::from_encoded_bytes_unchecked(self.forward_record_path_bytes.clone())
+            });
             let expected_name = OsString::from(format!("{}.json", self.id));
             if !forward.is_absolute() || forward.file_name() != Some(expected_name.as_os_str()) {
                 return Err(invalid_data("Undo forward-record path is invalid"));
@@ -493,7 +509,7 @@ pub(crate) struct UndoStore {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UndoAvailability {
     pub(crate) label: String,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) uses_trash: bool,
 }
 
@@ -517,6 +533,7 @@ impl UndoStore {
         if !metadata.is_dir() || metadata.file_type().is_symlink() {
             return Err(invalid_data("undo root is not a real directory"));
         }
+        #[cfg(not(windows))]
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         let store = Self { root };
         let _lock = store.acquire_lock()?;
@@ -592,7 +609,7 @@ impl UndoStore {
         self.activate(&id)
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) fn archive_trash(&self, seed: TrashUndoSeed) -> io::Result<()> {
         let _lock = self.acquire_lock()?;
         let path = self.record_path(&seed.id);
@@ -620,7 +637,7 @@ impl UndoStore {
         self.prune_ready()
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) fn has_receipt(&self, id: &str) -> io::Result<bool> {
         let _lock = self.acquire_lock()?;
         match self.read_record_path(&self.record_path(id)) {
@@ -630,7 +647,7 @@ impl UndoStore {
         }
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) fn discard_trash_item(&self, data: &Path, info: &Path) -> io::Result<()> {
         let _lock = self.acquire_lock()?;
         let mut changed = false;
@@ -657,7 +674,7 @@ impl UndoStore {
         };
         Ok(Some(UndoAvailability {
             label: undo_label(&record),
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             uses_trash: matches!(record.kind, UndoKind::Trash | UndoKind::Restore),
         }))
     }
@@ -1368,7 +1385,9 @@ impl UndoStore {
             record.restored_snapshot = None;
             self.persist(record, false)?;
             let container = record.restore_staging();
+            #[cfg_attr(windows, allow(unused_mut))]
             let mut builder = fs::DirBuilder::new();
+            #[cfg(not(windows))]
             builder.mode(0o700);
             builder.create(&container)?;
             sync_directory(&source_parent)?;
@@ -1492,7 +1511,7 @@ impl UndoStore {
             let metadata = fs::symlink_metadata(&container)?;
             if !metadata.is_dir()
                 || metadata.file_type().is_symlink()
-                || metadata.permissions().mode() & 0o777 != 0o700
+                || !mode_matches(&metadata, 0o700)
             {
                 return Err(changed());
             }
@@ -1575,6 +1594,7 @@ impl UndoStore {
         Ok(())
     }
 
+    #[cfg(not(windows))]
     fn acquire_lock(&self) -> io::Result<File> {
         let path = self.root.join("undo.lock");
         let descriptor = match rustix::fs::open(
@@ -1612,7 +1632,7 @@ impl UndoStore {
         let metadata = descriptor.metadata()?;
         let identity = EntryIdentity::capture_file(&descriptor)?;
         if !metadata.is_file()
-            || metadata.permissions().mode() & 0o777 != 0o600
+            || !mode_matches(&metadata, 0o600)
             || metadata.len() != 0
             || EntryIdentity::capture(&path)? != identity
         {
@@ -1622,6 +1642,52 @@ impl UndoStore {
         }
         rustix::fs::flock(&descriptor, rustix::fs::FlockOperation::LockExclusive)
             .map_err(io::Error::from)?;
+        if EntryIdentity::capture(&path)? != identity
+            || EntryIdentity::capture_file(&descriptor)? != identity
+        {
+            return Err(invalid_data("undo lock identity changed while waiting"));
+        }
+        Ok(descriptor)
+    }
+
+    /// Windows: `LockFileEx` through std's `File::lock`, on a file opened
+    /// without `O_NOFOLLOW`/mode bits (no Windows equivalent; the per-user
+    /// `%LOCALAPPDATA%` ACL is the privacy boundary instead, ADR 0023 phase
+    /// 1's "Unix process and file plumbing" seam).
+    #[cfg(windows)]
+    fn acquire_lock(&self) -> io::Result<File> {
+        let path = self.root.join("undo.lock");
+        if let Ok(existing) = fs::symlink_metadata(&path) {
+            if !existing.file_type().is_file() {
+                return Err(invalid_data(
+                    "undo lock is not a private empty regular file",
+                ));
+            }
+        }
+        let descriptor = match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => {
+                file.sync_all()?;
+                file
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                OpenOptions::new().read(true).write(true).open(&path)?
+            }
+            Err(error) => return Err(error),
+        };
+        let metadata = descriptor.metadata()?;
+        let identity = EntryIdentity::capture_file(&descriptor)?;
+        if !metadata.is_file() || metadata.len() != 0 || EntryIdentity::capture(&path)? != identity
+        {
+            return Err(invalid_data(
+                "undo lock is not a private empty regular file",
+            ));
+        }
+        descriptor.lock()?;
         if EntryIdentity::capture(&path)? != identity
             || EntryIdentity::capture_file(&descriptor)? != identity
         {
@@ -1647,7 +1713,9 @@ impl UndoStore {
         let destination = self.record_path(&record.id);
         let result = (|| {
             let mut options = OpenOptions::new();
-            options.write(true).create_new(true).mode(0o600);
+            options.write(true).create_new(true);
+            #[cfg(not(windows))]
+            options.mode(0o600);
             let mut file = options.open(&temp)?;
             file.write_all(&bytes)?;
             file.sync_all()?;
@@ -1677,7 +1745,7 @@ impl UndoStore {
                 let metadata = fs::symlink_metadata(&path)?;
                 if !metadata.is_file()
                     || metadata.file_type().is_symlink()
-                    || metadata.permissions().mode() & 0o777 != 0o600
+                    || !mode_matches(&metadata, 0o600)
                     || metadata.len() != 0
                 {
                     return Err(invalid_data(
@@ -1708,7 +1776,7 @@ impl UndoStore {
         let metadata = fs::symlink_metadata(path)?;
         if !metadata.is_file()
             || metadata.file_type().is_symlink()
-            || metadata.permissions().mode() & 0o777 != 0o600
+            || !mode_matches(&metadata, 0o600)
             || metadata.len() > MAX_RECORD_BYTES
         {
             return Err(invalid_data(
@@ -1745,7 +1813,7 @@ impl UndoStore {
             let metadata = fs::symlink_metadata(entry.path())?;
             if !metadata.is_file()
                 || metadata.file_type().is_symlink()
-                || metadata.permissions().mode() & 0o777 != 0o600
+                || !mode_matches(&metadata, 0o600)
                 || metadata.len() > MAX_RECORD_BYTES
             {
                 return Err(invalid_data(
@@ -1875,8 +1943,28 @@ fn is_temp_name(name: &str) -> bool {
     Uuid::parse_str(record).is_ok() && Uuid::parse_str(nonce).is_ok()
 }
 
+#[cfg(not(windows))]
 fn sync_directory(path: &Path) -> io::Result<()> {
     File::open(path)?.sync_all()
+}
+
+/// Windows cannot open a directory with write access to `fsync` it; NTFS
+/// journals the rename itself (ADR 0023 phase 1's "Durable writes" seam).
+#[cfg(windows)]
+fn sync_directory(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn mode_matches(metadata: &fs::Metadata, expected: u32) -> bool {
+    metadata.permissions().mode() & 0o777 == expected
+}
+
+/// Windows has no POSIX mode bits; the per-user `%LOCALAPPDATA%` ACL is the
+/// privacy boundary instead (ADR 0023 phase 1).
+#[cfg(windows)]
+fn mode_matches(_metadata: &fs::Metadata, _expected: u32) -> bool {
+    true
 }
 
 fn sync_rename_parents(source: &Path, destination: &Path) -> io::Result<()> {
@@ -1901,6 +1989,19 @@ fn entry_exists(path: &Path) -> io::Result<bool> {
     }
 }
 
+/// Group/other-writable and ownership checks have no Windows equivalent
+/// (no POSIX mode bits or uid); the per-user `%LOCALAPPDATA%` ACL is the
+/// privacy boundary there instead (ADR 0023 phase 1).
+#[cfg(not(windows))]
+fn trash_info_permissions_ok(metadata: &fs::Metadata) -> bool {
+    metadata.mode() & 0o022 == 0 && metadata.uid() == rustix::process::geteuid().as_raw()
+}
+
+#[cfg(windows)]
+fn trash_info_permissions_ok(_metadata: &fs::Metadata) -> bool {
+    true
+}
+
 fn read_trash_info(path: &Path) -> io::Result<Option<(EntryIdentity, Vec<u8>)>> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
@@ -1909,16 +2010,15 @@ fn read_trash_info(path: &Path) -> io::Result<Option<(EntryIdentity, Vec<u8>)>> 
     };
     if !metadata.is_file()
         || metadata.file_type().is_symlink()
-        || metadata.mode() & 0o022 != 0
-        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || !trash_info_permissions_ok(&metadata)
         || metadata.len() > MAX_TRASH_INFO_BYTES
     {
         return Err(changed());
     }
     let mut options = OpenOptions::new();
-    options
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    options.read(true);
+    #[cfg(not(windows))]
+    options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
     let mut file = options.open(path)?;
     let identity = EntryIdentity::capture_file(&file)?;
     if EntryIdentity::capture(path)? != identity {
@@ -1942,9 +2042,9 @@ fn create_trash_info(path: &Path, bytes: &[u8]) -> io::Result<EntryIdentity> {
         return Err(invalid_data("Trash Undo metadata is too large"));
     }
     let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(not(windows))]
     options
-        .write(true)
-        .create_new(true)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
     let mut file = options.open(path)?;
@@ -1973,7 +2073,21 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
     .map_err(io::Error::from)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+/// `std::fs::rename` overwrites on Windows too (Rust's own implementation
+/// passes `MOVEFILE_REPLACE_EXISTING` to `MoveFileExW`); plain `MoveFileExW`
+/// without that flag already refuses when the destination exists.
+#[cfg(target_os = "windows")]
+fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS};
+
+    let source = HSTRING::from(source.as_os_str());
+    let destination = HSTRING::from(destination.as_os_str());
+    unsafe { MoveFileExW(&source, &destination, MOVE_FILE_FLAGS(0)) }
+        .map_err(crate::file_ops::win32_io_error)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 fn rename_noreplace(_source: &Path, _destination: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
@@ -2167,6 +2281,7 @@ mod tests {
         ticket.commit().unwrap();
     }
 
+    #[cfg(unix)]
     struct TrashUndoFixture {
         store: UndoStore,
         source: PathBuf,
@@ -2176,6 +2291,7 @@ mod tests {
         forward: PathBuf,
     }
 
+    #[cfg(unix)]
     fn trash_undo_fixture(
         root: &TestDirectory,
         kind: UndoKind,
@@ -2246,6 +2362,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn trash_receipt_stays_hidden_until_its_exact_forward_record_is_removed() {
         let root = TestDirectory::new("trash-two-phase");
         let fixture = trash_undo_fixture(&root, UndoKind::Trash, true);
@@ -2259,6 +2376,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn trash_undo_infers_a_data_rename_before_stage_persistence() {
         let root = TestDirectory::new("trash-rename-crash");
         let fixture = trash_undo_fixture(&root, UndoKind::Trash, false);
@@ -2278,6 +2396,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn restore_undo_infers_metadata_publication_before_stage_persistence() {
         let root = TestDirectory::new("restore-info-crash");
         let fixture = trash_undo_fixture(&root, UndoKind::Restore, false);
@@ -2296,6 +2415,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn restore_undo_infers_data_movement_before_stage_persistence() {
         let root = TestDirectory::new("restore-rename-crash");
         let fixture = trash_undo_fixture(&root, UndoKind::Restore, false);
@@ -2316,6 +2436,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn restore_undo_never_replaces_racing_trash_metadata() {
         let root = TestDirectory::new("restore-info-race");
         let fixture = trash_undo_fixture(&root, UndoKind::Restore, false);
@@ -2421,6 +2542,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn copy_replacement_undo_atomically_restores_the_previous_item() {
         let root = TestDirectory::new("replace");
         let source = root.0.join("source");
@@ -2454,6 +2576,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn replacement_undo_infers_an_exchange_before_stage_persistence() {
         let root = TestDirectory::new("replace-exchange-crash");
         let source = root.0.join("source");
@@ -2487,6 +2610,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn changed_replacement_backup_is_never_exchanged_or_removed_by_undo() {
         let root = TestDirectory::new("replace-backup-race");
         let source = root.0.join("source");
@@ -2562,6 +2686,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn same_volume_move_replacement_undo_restores_both_exact_items() {
         let root = TestDirectory::new("move-replace");
         let source = root.0.join("source");
@@ -2629,6 +2754,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn cross_volume_move_replacement_undo_restores_both_items() {
         let root = TestDirectory::new("cross-move-replace");
         let source = root.0.join("source");

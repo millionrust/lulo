@@ -12,12 +12,21 @@
 //! outside the unreserved set is encoded and decoding yields raw bytes, not
 //! UTF-8.
 
-// Only Linux reads these formats; macOS uses NSPasteboard's file URLs.
+// Only Linux reads these formats; macOS uses NSPasteboard's file URLs and
+// Windows uses CF_HDROP (ADR 0023 phase 4), neither of which parses a
+// `file://` URI list at all.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
+#[cfg(any(target_os = "linux", all(test, unix)))]
 use std::ffi::OsString;
 use std::fmt;
-use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+// `file_uri` below needs `OsStrExt` on every non-Windows target (it is real
+// production code on macOS too, not just Linux); `OsStringExt` is only
+// needed by the Linux-only URI-list parsing further down, plus its tests.
+#[cfg(not(windows))]
+use std::os::unix::ffi::OsStrExt as _;
+#[cfg(any(target_os = "linux", all(test, unix)))]
+use std::os::unix::ffi::OsStringExt as _;
 use std::path::{Path, PathBuf};
 
 pub const URI_LIST: &str = "text/uri-list";
@@ -75,6 +84,7 @@ fn shorten(value: &str) -> String {
 }
 
 /// `file://` URI for an absolute path; `None` for a relative one.
+#[cfg(not(windows))]
 pub fn file_uri(path: &Path) -> Option<String> {
     if !path.is_absolute() {
         return None;
@@ -95,8 +105,38 @@ pub fn file_uri(path: &Path) -> Option<String> {
     Some(uri)
 }
 
+/// `file://` URI for an absolute Windows path; `None` for a relative one.
+/// `C:\Users\me` becomes `file:///C:/Users/me` (RFC 8089's own Windows
+/// example): backslashes become the URI path separator, and the drive
+/// letter sits right after the triple slash, with no empty authority to
+/// percent-encode around it.
+#[cfg(windows)]
+pub fn file_uri(path: &Path) -> Option<String> {
+    if !path.is_absolute() {
+        return None;
+    }
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let text = path.to_str()?;
+    let mut uri = String::with_capacity("file:///".len() + text.len());
+    uri.push_str("file:///");
+    for byte in text.bytes() {
+        let byte = if byte == b'\\' { b'/' } else { byte };
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/' | b':') {
+            uri.push(char::from(byte));
+        } else {
+            uri.push('%');
+            uri.push(char::from(HEX[usize::from(byte >> 4)]));
+            uri.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+    }
+    Some(uri)
+}
+
 /// The path a local `file:` URI names. Accepts `file:///p`,
-/// `file://localhost/p` and the RFC 8089 short form `file:/p`.
+/// `file://localhost/p` and the RFC 8089 short form `file:/p`. Not needed
+/// on Windows: `read_file_list` there reads `CF_HDROP` paths directly, with
+/// no URI to parse (ADR 0023 phase 4).
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub fn file_uri_path(uri: &str) -> Result<PathBuf, ParseError> {
     let not_local = || ParseError::NotLocalFile(uri.to_owned());
     let scheme_end = uri.find(':').ok_or_else(not_local)?;
@@ -124,6 +164,7 @@ pub fn file_uri_path(uri: &str) -> Result<PathBuf, ParseError> {
     Ok(PathBuf::from(OsString::from_vec(bytes)))
 }
 
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn percent_decode(encoded: &str) -> Option<Vec<u8>> {
     let bytes = encoded.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
@@ -146,6 +187,7 @@ fn percent_decode(encoded: &str) -> Option<Vec<u8>> {
     Some(decoded)
 }
 
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn hex_value(byte: u8) -> Option<u8> {
     match byte {
         b'0'..=b'9' => Some(byte - b'0'),
@@ -155,17 +197,20 @@ fn hex_value(byte: u8) -> Option<u8> {
     }
 }
 
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn uris(paths: &[PathBuf]) -> impl Iterator<Item = String> + '_ {
     paths.iter().filter_map(|path| file_uri(path))
 }
 
 /// `text/uri-list` payload: CRLF after every URI, as RFC 2483 asks.
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub fn format_uri_list(paths: &[PathBuf]) -> String {
     uris(paths).map(|uri| uri + "\r\n").collect()
 }
 
 /// `x-special/gnome-copied-files` payload, byte-for-byte what Nautilus
 /// writes: the action, then `\n` and a URI for each file, no final newline.
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub fn format_gnome_copied_files(paths: &[PathBuf], cut: bool) -> String {
     let mut text = String::from(if cut { "cut" } else { "copy" });
     for uri in uris(paths) {
@@ -175,6 +220,7 @@ pub fn format_gnome_copied_files(paths: &[PathBuf], cut: bool) -> String {
     text
 }
 
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn entries(bytes: &[u8]) -> Result<impl Iterator<Item = &str>, ParseError> {
     let text = std::str::from_utf8(bytes).map_err(|_| ParseError::NotText)?;
     Ok(text
@@ -185,6 +231,7 @@ fn entries(bytes: &[u8]) -> Result<impl Iterator<Item = &str>, ParseError> {
 
 /// Paths in a `text/uri-list`. Every entry must be a local file: a list
 /// that mixes in web addresses is refused rather than half-pasted.
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub fn parse_uri_list(bytes: &[u8]) -> Result<Vec<PathBuf>, ParseError> {
     entries(bytes)?
         .filter(|line| !line.starts_with('#'))
@@ -193,6 +240,7 @@ pub fn parse_uri_list(bytes: &[u8]) -> Result<Vec<PathBuf>, ParseError> {
 }
 
 /// A `x-special/gnome-copied-files` payload.
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub fn parse_gnome_copied_files(bytes: &[u8]) -> Result<FileList, ParseError> {
     let mut lines = entries(bytes)?;
     let cut = match lines.next() {
@@ -205,11 +253,27 @@ pub fn parse_gnome_copied_files(bytes: &[u8]) -> Result<FileList, ParseError> {
 }
 
 /// Dolphin's `application/x-kde-cutselection` marker: `1` means cut.
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub fn parse_kde_cut_selection(bytes: &[u8]) -> bool {
     bytes.trim_ascii() == b"1"
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::file_uri;
+    use std::path::Path;
+
+    #[test]
+    fn uris_use_forward_slashes_and_a_triple_slash_drive_prefix() {
+        assert_eq!(
+            file_uri(Path::new(r"C:\Users\me\My Report #2 (final).pdf")).as_deref(),
+            Some("file:///C:/Users/me/My%20Report%20%232%20%28final%29.pdf")
+        );
+        assert_eq!(file_uri(Path::new("relative\\name")), None);
+    }
+}
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -220,8 +284,8 @@ mod tests {
     #[test]
     fn uris_encode_everything_outside_the_unreserved_set() {
         assert_eq!(
-            file_uri(Path::new("/home/me/My Report #2 (final).pdf")).as_deref(),
-            Some("file:///home/me/My%20Report%20%232%20%28final%29.pdf")
+            file_uri(Path::new("/home/me/My Report #2 (final).pdf")).as_deref(), // wording: internal
+            Some("file:///home/me/My%20Report%20%232%20%28final%29.pdf")         // wording: internal
         );
         assert_eq!(
             file_uri(Path::new("/tmp/a%b?c")).as_deref(),
@@ -242,7 +306,7 @@ mod tests {
     fn uris_round_trip_arbitrary_path_bytes() {
         for bytes in [
             &b"/"[..],
-            b"/home/me/Documents",
+            b"/home/me/Documents", // wording: internal
             b"/tmp/sp ace/%25/#hash?q",
             b"/tmp/\x01\x7f\x80\xfe\xff",
             "/tmp/日本語/ファイル.txt".as_bytes(),

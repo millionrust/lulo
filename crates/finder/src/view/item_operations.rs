@@ -3,7 +3,7 @@ use std::path::Path;
 
 #[cfg(target_os = "macos")]
 const FILE_TAG_XATTR: &str = "com.rmac.tag";
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 const FILE_TAG_XATTR: &str = "user.rmac.tag";
 
 const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
@@ -13,6 +13,12 @@ impl FinderView {
         if paths.is_empty() {
             return;
         }
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.operation_error = Some("Adding to the Dock isn't available on Windows yet".into());
+            cx.notify();
+        }
+        #[cfg(target_os = "linux")]
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let resolved = blocking::unblock(move || {
                 paths
@@ -128,7 +134,7 @@ impl FinderView {
                 // FILES-05: keep the Linux tag index (there is no Spotlight
                 // here) exactly in step with what Files itself just wrote,
                 // without waiting for this folder to be listed again.
-                #[cfg(any(target_os = "linux", test))]
+                #[cfg(any(target_os = "linux", all(test, unix)))]
                 rmac_search::tag_index::record(&path, (!remove_tag).then_some(tag));
             }
         }
@@ -366,7 +372,7 @@ impl FinderView {
             let destination_dir = src.parent().unwrap_or(self.cwd.as_path());
             let dst = unique_path_avoiding(destination_dir.join(alias_name), &destinations);
             destinations.insert(dst.clone());
-            match std::os::unix::fs::symlink(&src, &dst) {
+            match make_alias(&src, &dst) {
                 Ok(()) => last_destination = Some(dst),
                 Err(error) => failures.push(file_ops::Failure::message(
                     file_ops::Operation::CreateAlias,
@@ -400,6 +406,28 @@ impl FinderView {
     }
 }
 
+/// File ▸ Make Alias: a real symlink everywhere, including Windows, where
+/// creating one needs Developer Mode or an administrator (pre-Windows 11)
+/// — an honest, specific error from `symlink_file`/`_dir` either way,
+/// rather than a copy silently standing in for an alias (ADR 0023 phase 4).
+#[cfg(not(windows))]
+fn make_alias(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(source, destination)
+}
+
+#[cfg(windows)]
+fn make_alias(source: &Path, destination: &Path) -> std::io::Result<()> {
+    let is_dir = std::fs::metadata(source)
+        .map(|m| m.is_dir())
+        .unwrap_or(false);
+    if is_dir {
+        std::os::windows::fs::symlink_dir(source, destination)
+    } else {
+        std::os::windows::fs::symlink_file(source, destination)
+    }
+}
+
+#[cfg(not(windows))]
 fn write_file_tag(path: &Path, tag: &str) -> Result<(), rustix::io::Errno> {
     rustix::fs::setxattr(
         path,
@@ -409,14 +437,46 @@ fn write_file_tag(path: &Path, tag: &str) -> Result<(), rustix::io::Errno> {
     )
 }
 
+#[cfg(not(windows))]
 fn clear_file_tag(path: &Path) -> Result<(), rustix::io::Errno> {
     rustix::fs::removexattr(path, FILE_TAG_XATTR)
 }
 
+#[cfg(not(windows))]
 fn read_file_tag(path: &Path) -> Result<Vec<u8>, rustix::io::Errno> {
     let mut buffer = [0u8; 32];
     let length = rustix::fs::getxattr(path, FILE_TAG_XATTR, &mut buffer)?;
     Ok(buffer[..length].to_vec())
+}
+
+// Windows has no xattrs. An NTFS alternate data stream named after the path
+// (`<path>:lulo.tags`) is the simplest honest equivalent (ADR 0023 phase 4):
+// one extra, unindexed stream per tagged file, written and read with plain
+// `std::fs`, and removed with `remove_file` on the stream's own name — NTFS
+// deletes exactly that stream, not the file it rides on. It is lost if the
+// file moves to a non-NTFS volume (a USB stick formatted FAT/exFAT), which
+// is the same honest limitation xattr tags already have crossing to a
+// filesystem without extended attributes.
+#[cfg(windows)]
+fn tag_stream_path(path: &Path) -> std::path::PathBuf {
+    let mut stream = path.as_os_str().to_owned();
+    stream.push(":lulo.tags");
+    std::path::PathBuf::from(stream)
+}
+
+#[cfg(windows)]
+fn write_file_tag(path: &Path, tag: &str) -> std::io::Result<()> {
+    std::fs::write(tag_stream_path(path), tag.as_bytes())
+}
+
+#[cfg(windows)]
+fn clear_file_tag(path: &Path) -> std::io::Result<()> {
+    std::fs::remove_file(tag_stream_path(path))
+}
+
+#[cfg(windows)]
+fn read_file_tag(path: &Path) -> std::io::Result<Vec<u8>> {
+    std::fs::read(tag_stream_path(path))
 }
 
 /// The one Finder-style colour tag on `path`, by name (e.g. "blue"), for
@@ -430,7 +490,7 @@ pub(super) fn file_tag_label(path: &Path) -> Option<SharedString> {
         .map(|tag| SharedString::from(*tag))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tag_tests {
     use super::{clear_file_tag, read_file_tag, write_file_tag};
     use std::fs;
@@ -451,6 +511,30 @@ mod tag_tests {
             );
             return;
         }
+        let stored = read_file_tag(&path).unwrap();
+
+        assert_eq!(stored.as_slice(), b"blue");
+        assert_eq!(fs::read(&path).unwrap(), b"file contents remain unchanged");
+        clear_file_tag(&path).unwrap();
+        assert!(read_file_tag(&path).is_err());
+        let _ = fs::remove_file(path);
+    }
+}
+
+// Windows: the alternate-data-stream tag, round-tripped on a real NTFS file.
+// GitHub's `windows-latest` runner's `target`/temp volumes are NTFS, so this
+// is a real check, not a skip.
+#[cfg(all(test, windows))]
+mod tag_tests {
+    use super::{clear_file_tag, read_file_tag, write_file_tag};
+    use std::fs;
+
+    #[test]
+    fn selected_tag_is_persisted_in_an_alternate_data_stream() {
+        let path = std::env::temp_dir().join(format!("rmac-tag-test-{}.txt", uuid::Uuid::new_v4()));
+        fs::write(&path, "file contents remain unchanged").unwrap();
+
+        write_file_tag(&path, "blue").unwrap();
         let stored = read_file_tag(&path).unwrap();
 
         assert_eq!(stored.as_slice(), b"blue");

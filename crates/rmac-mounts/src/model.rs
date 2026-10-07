@@ -2,9 +2,11 @@ use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) const MAX_MOUNTINFO_BYTES: u64 = 4 * 1024 * 1024;
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub(crate) const MAX_MOUNTS: usize = 256;
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub(crate) const MAX_DISPLAY_NAME_BYTES: usize = 256;
 #[cfg(target_os = "linux")]
 pub(crate) const MOUNT_WATCH_TIMEOUT_SECONDS: i64 = 5;
@@ -39,6 +41,7 @@ impl Usage {
         self.total > 0 && (self.available < 5_000_000_000 || self.available < self.total / 20)
     }
 
+    #[cfg(any(not(windows), test))]
     pub(crate) fn from_blocks(block_size: u64, blocks: u64, available_blocks: u64) -> Self {
         let total = blocks.saturating_mul(block_size);
         let available = available_blocks.saturating_mul(block_size).min(total);

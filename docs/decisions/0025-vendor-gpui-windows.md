@@ -124,6 +124,11 @@ and `gpui_wgpu`.
   inactive, within 33.3 ms of the previous one) arms one 35 ms `WM_TIMER`
   whose frame GPUI cannot skip. It never re-arms itself, so an idle window
   takes at most one extra wake-up. This is ADR 0013's 2026-10-04 amendment.
+  (Amended 2026-10-07, `op/win-shell`: once a retry has fired, the window
+  arms no other until it draws again. With several inactive windows in one
+  process, as in the Lulo layer, each retry's message re-checked the other
+  parked windows and their idle frames armed retries of their own, about 40
+  a second.)
 - Minimising takes GPUI's frame callback away (upstream) and now also leaves
   the demand; restoring rejoins it. A destroyed window leaves it too.
 - Direct Manipulation (touchpad pan and pinch) runs in manual-update mode and

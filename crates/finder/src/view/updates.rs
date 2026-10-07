@@ -11,7 +11,7 @@ impl FinderView {
             self.applications_click(cx);
             return;
         }
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         {
             self.delete_confirmation = None;
         }
@@ -20,6 +20,10 @@ impl FinderView {
 
     /// Refresh after a watcher event without spawning `df`; free space changes
     /// slowly and is refreshed on navigation and explicit file operations.
+    // `directory_state::Identity` is `Copy` on Unix (a bare device/inode
+    // pair) and a real `PathBuf` clone on Windows; the `.clone()`s below are
+    // only a free copy there, but one spelling covers both platforms.
+    #[allow(clippy::clone_on_copy)]
     pub(super) fn reload_after_event(&mut self, hints: FilesystemHints, cx: &mut Context<Self>) {
         if self.trash_view {
             return;
@@ -42,7 +46,7 @@ impl FinderView {
                 self.operation_error = Some(FILESYSTEM_WATCH_INTERRUPTED_MESSAGE.into());
             }
         }
-        let Some(expected) = self.cwd_identity else {
+        let Some(expected) = self.cwd_identity.clone() else {
             self.reload_inner(cx, false);
             return;
         };
@@ -60,13 +64,14 @@ impl FinderView {
                 .background_executor()
                 .spawn({
                     let current = current.clone();
+                    let expected = expected.clone();
                     async move { directory_state::renamed_path(&current, expected, &renames) }
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 if this.directory_generation != generation
                     || this.cwd != current
-                    || this.cwd_identity != Some(expected)
+                    || this.cwd_identity != Some(expected.clone())
                 {
                     return;
                 }
@@ -102,6 +107,8 @@ impl FinderView {
         }
     }
 
+    // See `reload_after_event`'s note: `Identity` is `Copy` on Unix only.
+    #[allow(clippy::clone_on_copy)]
     fn reload_inner(&mut self, cx: &mut Context<Self>, refresh_free_space: bool) {
         self.cancel_search();
         self.result_title = None;
@@ -111,7 +118,7 @@ impl FinderView {
         self.column_selection = None;
         if let Some(t) = self.tabs.get_mut(self.active) {
             t.cwd = self.cwd.clone();
-            t.identity = self.cwd_identity;
+            t.identity = self.cwd_identity.clone();
         }
         // Reconfigure the watcher only after navigation. Re-watching the same
         // directory in response to its own event can create a reload storm.
@@ -203,7 +210,7 @@ impl FinderView {
 
         let path = self.cwd.clone();
         let home = self.home.clone();
-        let expected_identity = self.cwd_identity;
+        let expected_identity = self.cwd_identity.clone();
         self.directory_generation = self.directory_generation.wrapping_add(1);
         let generation = self.directory_generation;
         self.directory_load_pending = true;
@@ -255,7 +262,7 @@ impl FinderView {
                             // reload already reads this folder, so refresh
                             // the Linux tag index's slice of it for free —
                             // no separate home-wide watch needed.
-                            #[cfg(any(target_os = "linux", test))]
+                            #[cfg(any(target_os = "linux", all(test, unix)))]
                             rmac_search::tag_index::note_listed(
                                 &path,
                                 entries.iter().map(|entry| entry.path.as_path()),
@@ -265,7 +272,7 @@ impl FinderView {
                                 read_entries_checked(&folder, show_hidden, None).ok().map(|(_, mut rows)| {
                                     sort_entries(&mut rows, key, asc);
                                     view_options::group_entries(&mut rows, group);
-                                    #[cfg(any(target_os = "linux", test))]
+                                    #[cfg(any(target_os = "linux", all(test, unix)))]
                                     rmac_search::tag_index::note_listed(
                                         &folder,
                                         rows.iter().map(|entry| entry.path.as_path()),
@@ -297,7 +304,7 @@ impl FinderView {
                 }
                 match result {
                     Ok((identity, entries, children, free)) => {
-                        this.cwd_identity = Some(identity);
+                        this.cwd_identity = Some(identity.clone());
                         if let Some(tab) = this.tabs.get_mut(this.active) {
                             tab.identity = Some(identity);
                         }

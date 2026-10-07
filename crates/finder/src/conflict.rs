@@ -1,6 +1,7 @@
 //! Snapshot-bound Keep Both, Replace, and Skip decisions for Files transfers.
 
 use std::collections::{BTreeSet, VecDeque};
+#[cfg(not(windows))]
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 
@@ -132,6 +133,7 @@ pub(crate) fn prepare_conflict_batch(
     })
 }
 
+#[cfg(not(windows))]
 fn same_file_in_same_directory(source: &Path, destination: &Path) -> bool {
     if source == destination {
         return true;
@@ -152,6 +154,34 @@ fn same_file_in_same_directory(source: &Path, destination: &Path) -> bool {
         && source_dir.ino() == destination_dir.ino()
         && source_item.dev() == destination_item.dev()
         && source_item.ino() == destination_item.ino()
+}
+
+/// Windows has no inode, and the real per-file identity that would stand
+/// in for one (`MetadataExt::file_index`) is still the unstable
+/// `windows_by_handle` feature (rust-lang/rust#63010) on this pinned
+/// stable toolchain. `canonicalize` is the real, stable alternative here:
+/// it already resolves symlinks and NTFS junctions/reparse points to one
+/// real path, which is exactly the "is this actually the same file,
+/// reached two different ways" question this function answers (ADR 0023
+/// phase 4).
+#[cfg(windows)]
+fn same_file_in_same_directory(source: &Path, destination: &Path) -> bool {
+    if source == destination {
+        return true;
+    }
+    let Some((source_parent, destination_parent)) = source.parent().zip(destination.parent())
+    else {
+        return false;
+    };
+    let (Ok(source_dir), Ok(destination_dir), Ok(source_item), Ok(destination_item)) = (
+        source_parent.canonicalize(),
+        destination_parent.canonicalize(),
+        source.canonicalize(),
+        destination.canonicalize(),
+    ) else {
+        return false;
+    };
+    source_dir == destination_dir && source_item == destination_item
 }
 
 fn unique_copy_path_avoiding(source: &Path, reserved: &BTreeSet<PathBuf>) -> PathBuf {
@@ -357,6 +387,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_broken_symlink_still_reserves_its_file_name() {
         let root = TestDirectory::new("broken-link-name");
         let link = root.0.join("report copy.txt");
@@ -369,6 +400,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn same_folder_copy_recognizes_an_aliased_parent_path() {
         let root = TestDirectory::new("aliased-folder");
         let folder = root.0.join("actual");

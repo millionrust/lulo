@@ -15,16 +15,29 @@ pub enum ProcessColumn {
     Status,
     /// Threads in the process's thread group (see `process_table::ProcRow`).
     Threads,
+    /// Total CPU seconds consumed since the process started (MON-MENU-003),
+    /// read from `/proc/<pid>/stat`'s utime+stime — not a copy of the
+    /// instantaneous %CPU column.
+    CpuTime,
+    /// Bytes read since the last refresh (MON-MENU-020): the read half of
+    /// the combined `Disk` column, split out as the Mac offers both.
+    BytesRead,
+    /// Bytes written since the last refresh (MON-MENU-019): the write half
+    /// of the combined `Disk` column.
+    BytesWritten,
 }
 
 impl ProcessColumn {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 15] = [
         Self::Pid,
         Self::Name,
         Self::Cpu,
+        Self::CpuTime,
         Self::Memory,
         Self::Energy,
         Self::Disk,
+        Self::BytesRead,
+        Self::BytesWritten,
         Self::ParentPid,
         Self::User,
         Self::VirtualMemory,
@@ -50,6 +63,9 @@ impl ProcessColumn {
             Self::RunTime => "Run Time",
             Self::Status => "Status",
             Self::Threads => "Threads",
+            Self::CpuTime => "CPU Time",
+            Self::BytesRead => "Bytes Read",
+            Self::BytesWritten => "Bytes Written",
         }
     }
 }

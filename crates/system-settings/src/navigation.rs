@@ -77,6 +77,64 @@ pub(super) const PANE_ROUTES: [(&str, &str); 31] = [
     ("printers-scanners", "Printers & Scanners"),
 ];
 
+/// Windows (ADR 0023 phase 4): only panes Settings can really drive there.
+/// General stays for About This PC (real CPU/RAM/OS, SET-era `SubPage::
+/// About`); Software Update and Storage are General's other two subpages
+/// and are hidden the same honest way `category_parent` already hides them
+/// from the sidebar on every platform, by `subpage_route` simply not being
+/// asked for them here. Every Linux-only service pane (network, Bluetooth,
+/// users, login items, printers, sharing, VPN, accessibility, …) is left
+/// out rather than shown broken; see docs/parity.md.
+#[cfg(target_os = "windows")]
+pub(super) fn categories() -> Vec<Vec<Category>> {
+    let teal = color(0x30b0c7);
+    let gray = color(0x8e8e93);
+    let pink = color(0xff2d55);
+
+    let cat = |name: &str, icon: &'static str, color: Hsla, desc: &str| Category {
+        name: name.to_string().into(),
+        icon,
+        color,
+        desc: desc.to_string().into(),
+        search_terms: crate::settings_search::terms_for_pane(name),
+    };
+
+    vec![vec![
+        cat(
+            "General",
+            "icons/settings.svg",
+            gray,
+            "See information about this PC.",
+        ),
+        cat(
+            "Appearance",
+            "icons/palette.svg",
+            color(0x1d1d1f),
+            "Change how windows, buttons, and menus look.",
+        ),
+        cat(
+            "Displays",
+            "icons/monitor.svg",
+            color(0x1372f9),
+            "See connected displays and their resolution.",
+        ),
+        cat(
+            "Wallpaper",
+            "icons/image.svg",
+            teal,
+            "Choose original or local images for every Lulo window.",
+        ),
+        cat("Sound", "icons/volume-2.svg", pink, "Adjust alert sounds."),
+        cat(
+            "Keyboard",
+            "icons/keyboard.svg",
+            gray,
+            "See the Mac-style keyboard shortcuts Lulo apps use.",
+        ),
+    ]]
+}
+
+#[cfg(not(target_os = "windows"))]
 pub(super) fn categories() -> Vec<Vec<Category>> {
     let blue = color(0x1372f9);
     let gray = color(0x8e8e93);

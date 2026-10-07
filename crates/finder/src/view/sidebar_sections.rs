@@ -261,6 +261,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn saved_order_moves_custom_and_builtin_favourites_together() {
         let home = Path::new("/nonexistent-rmac-sidebar-test/jake");
         let words = rmac_locale::FileVocabulary::for_locale("en_US.UTF-8");

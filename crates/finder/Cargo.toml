@@ -19,8 +19,6 @@ gpui-component.workspace = true
 gpui-component-assets.workspace = true
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true
-rmac-dock.workspace = true
-rmac-dock-system.workspace = true
 rmac-archive.workspace = true
 rmac-appearance.workspace = true
 rmac-locale.workspace = true
@@ -43,3 +41,21 @@ trash.workspace = true
 notify.workspace = true
 rustix.workspace = true
 uuid.workspace = true
+
+# The Dock (rmac-dock-system pulls in rmac-compositor-niri, which is
+# Linux-only). "Add to Dock" is a Windows honest stub until phase 3's Dock
+# exists there (ADR 0023).
+[target.'cfg(target_os = "linux")'.dependencies]
+rmac-dock.workspace = true
+rmac-dock-system.workspace = true
+
+# Real folders/drives (SHGetKnownFolderPath, GetLogicalDrives), opening with
+# the default app, the Recycle Bin, and the operation journal's no-replace
+# rename and free-space checks (ADR 0023 phase 4).
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_UI_Shell",
+    "Win32_System_Com",
+] }

@@ -14,9 +14,9 @@ impl FinderView {
             cx.notify();
             return true;
         }
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         let trash_busy = self.trash_operation.is_some();
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let trash_busy = false;
         if self.transfer.is_none()
             && !self.new_folder_busy

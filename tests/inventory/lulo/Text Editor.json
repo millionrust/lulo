@@ -1184,6 +1184,14 @@
       },
       {
         "kind": "section",
+        "label": "Spelling"
+      },
+      {
+        "kind": "section",
+        "label": "Substitutions"
+      },
+      {
+        "kind": "section",
         "label": "Plain Text Encoding"
       },
       {
@@ -1209,6 +1217,42 @@
       {
         "kind": "control",
         "label": "Show ruler"
+      },
+      {
+        "kind": "control",
+        "label": "Check spelling as you type"
+      },
+      {
+        "kind": "control",
+        "label": "Check grammar with spelling"
+      },
+      {
+        "kind": "control",
+        "label": "Correct spelling automatically"
+      },
+      {
+        "kind": "control",
+        "label": "Smart copy/paste"
+      },
+      {
+        "kind": "control",
+        "label": "Smart quotes"
+      },
+      {
+        "kind": "control",
+        "label": "Smart dashes"
+      },
+      {
+        "kind": "control",
+        "label": "Smart links"
+      },
+      {
+        "kind": "control",
+        "label": "Data detectors"
+      },
+      {
+        "kind": "control",
+        "label": "Text replacement"
       },
       {
         "kind": "control",

@@ -165,11 +165,11 @@ impl FinderView {
         if let Some(dialog) = self.accessible_recovery_dialog() {
             dialogs.push(dialog);
         }
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         if let Some(dialog) = self.accessible_trash_recovery_dialog() {
             dialogs.push(dialog);
         }
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         if let Some(dialog) = self.accessible_delete_dialog() {
             dialogs.push(dialog);
         }
@@ -256,7 +256,7 @@ impl FinderView {
         })
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     fn accessible_trash_recovery_dialog(&self) -> Option<AccessibleDialog> {
         if !self.trash_recovery_open || self.recovery_open {
             return None;
@@ -300,7 +300,7 @@ impl FinderView {
         })
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     fn accessible_delete_dialog(&self) -> Option<AccessibleDialog> {
         let confirmation = self.delete_confirmation.as_ref()?;
         let count = delete_confirmation_count(confirmation);
@@ -496,7 +496,7 @@ impl FinderView {
         }
         if let Some(error) = &self.operation_error {
             let recovery_pending = self.pending_operations != 0;
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             let recovery_pending = recovery_pending || self.trash_pending != 0;
             regions.push(AccessibleLiveRegion {
                 id: "operation-error".to_string(),
@@ -530,7 +530,7 @@ impl FinderView {
                 )],
             });
         }
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         if let Some(operation) = &self.trash_operation {
             let cancelling = operation.cancelling;
             regions.push(AccessibleLiveRegion {

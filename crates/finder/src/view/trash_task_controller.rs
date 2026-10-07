@@ -2,17 +2,17 @@ use super::*;
 
 impl FinderView {
     pub(super) fn cancel_trash(&mut self, cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         if let Some(operation) = self.trash_operation.as_mut() {
             operation.cancel.store(true, Ordering::Release);
             operation.cancelling = true;
             cx.notify();
         }
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let _ = cx;
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(super) fn receive_trash_events(
         &mut self,
         event_rx: async_channel::Receiver<TrashEvent>,
@@ -44,7 +44,7 @@ impl FinderView {
         .detach();
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     fn finish_trash_task(&mut self, completion: TrashCompletion, cx: &mut Context<Self>) {
         let TrashCompletion {
             kind,

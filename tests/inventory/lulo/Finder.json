@@ -317,6 +317,13 @@
           "children": []
         },
         {
+          "label": "Paste Exactly",
+          "action": "finder::PasteExactly",
+          "shortcut": "⌥⇧⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Move Item Here",
           "action": "finder::MoveItemHere",
           "shortcut": "⌥⌘V",

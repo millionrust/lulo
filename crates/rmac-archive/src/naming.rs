@@ -2,6 +2,16 @@
 
 use std::path::{Path, PathBuf};
 
+/// The name Finder gives the archive before any " 2" numbering. Pure string
+/// logic (no archive reading or writing), so it stays available even where
+/// `compress()` itself is a Windows stub (ADR 0023 phase 4).
+pub fn compressed_name(items: &[PathBuf]) -> String {
+    match items {
+        [one] => format!("{}.zip", crate::display_name(one)),
+        _ => "Archive.zip".to_owned(),
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Zip,

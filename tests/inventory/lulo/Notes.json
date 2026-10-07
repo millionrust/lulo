@@ -1057,14 +1057,14 @@
         {
           "label": "Zoom",
           "action": "window::zoom",
-          "shortcut": "",
+          "shortcut": "⌃⌘Z",
           "separator_before": false,
           "children": []
         },
         {
           "label": "Zoom All",
           "action": "window::zoom-all",
-          "shortcut": "",
+          "shortcut": "⌃⌥⌘Z",
           "separator_before": false,
           "children": []
         },

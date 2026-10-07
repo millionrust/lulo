@@ -1,11 +1,13 @@
 name: Windows preview build
 
-# ADR 0023: an optimised build of the Lulo apps that run on Windows, zipped
-# (unsigned) for hands-on testing, and a real per-user MSI installer (ADR
-# 0023's "Installer" section) built from the same exes. Code signing is
-# wired in but skipped -- never faked -- until the owner's Azure Trusted
-# Signing secrets exist (see the `installer` job). Runs on demand, or on a
-# push to the `windows-preview` branch.
+# ADR 0023: an optimised build of the Lulo apps that run on Windows (now
+# including Files and the Lulo layer -- the menu bar, Dock and Spotlight
+# over the Windows desktop, phase 3), zipped (unsigned) for hands-on
+# testing, and a real per-user MSI installer (ADR 0023's "Installer"
+# section) built from the same exes. Code signing is wired in but skipped
+# -- never faked -- until the owner's Azure Trusted Signing secrets exist
+# (see the `installer` job). Runs on demand, or on a push to the
+# `windows-preview` branch.
 on:
   workflow_dispatch:
   push:
@@ -60,14 +62,15 @@ jobs:
         run: |
           cargo build --locked --release -p rmac-calculator -p rmac-notes \
             -p rmac-text-editor -p rmac-preview -p rmac-clock -p rmac-weather \
-            -p rmac-terminal --bins
+            -p rmac-terminal -p rmac-finder -p rmac-win-shell --bins
 
       - name: Collect the built exes
         run: |
           mkdir -p exes
-          for app in calculator notes text-editor preview clock weather terminal; do
+          for app in calculator notes text-editor preview clock weather terminal files; do
             cp "target/release/rmac-$app.exe" exes/
           done
+          cp target/release/lulo-session.exe target/release/lulo-shell.exe exes/
 
       - name: Upload the built exes
         # Consumed by the `installer` job below; not for direct download.
@@ -90,11 +93,19 @@ jobs:
 
           Double-click any rmac-*.exe to open that app, or use
           Lulo-Setup-*.msi (a separate artifact on this run) for a real
-          Start Menu install with an uninstaller.
+          Start Menu install with an uninstaller. Shortcuts use Ctrl where
+          the Mac uses Cmd (Ctrl+N, Ctrl+S, Ctrl+Q...). Press Alt to open
+          the menu bar at the top of each window.
 
-          Shortcuts use Ctrl where the Mac uses Cmd (Ctrl+N, Ctrl+S,
-          Ctrl+Q...). Press Alt to open the menu bar at the top of each
-          window.
+          The Lulo layer: double-click lulo-session.exe to put Lulo's menu
+          bar, Dock and Spotlight (Alt+Space) over the Windows desktop. The
+          Windows taskbar hides while it runs. Lulo menu > Turn Off Lulo
+          gives the normal desktop back; so does running
+          "lulo-session.exe --restore-windows-desktop" if anything goes
+          wrong. Lulo apps opened while the layer runs show their menus in
+          its menu bar. The installer's own Start Menu shortcut for Lulo
+          runs lulo-session.exe the same way, but never starts it on its
+          own.
           EOF
           7z a -tzip "$out.zip" "$out" > /dev/null
 

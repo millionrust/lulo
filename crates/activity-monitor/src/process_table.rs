@@ -75,6 +75,47 @@ fn full_process_name(process: &Process) -> SharedString {
     process.name().to_string_lossy().into_owned().into()
 }
 
+/// Total CPU seconds `pid` has consumed since it started (MON-MENU-003):
+/// `/proc/<pid>/stat`'s utime+stime fields, which `sysinfo` 0.33 reads
+/// internally but does not expose on `Process`. `None` for a process that
+/// exited between the refresh and this read, or on a platform without
+/// `/proc` (so the column shows "—" rather than a false zero).
+///
+/// `comm` (the second field) can itself contain spaces and parentheses, so
+/// this splits on the *last* `)` rather than counting whitespace-separated
+/// fields from the start, the same way the kernel's own documentation
+/// describes parsing this file.
+fn read_cpu_time_seconds(pid: u32) -> Option<u64> {
+    let content = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let after_comm = content.rsplit_once(')')?.1;
+    let fields: Vec<&str> = after_comm.split_whitespace().collect();
+    // Fields after `comm` are numbered from 3 in proc(5); utime is field 14,
+    // stime is field 15, so index 11 and 12 from this split.
+    let utime: u64 = fields.get(11)?.parse().ok()?;
+    let stime: u64 = fields.get(12)?.parse().ok()?;
+    Some((utime + stime) / clock_ticks_per_second())
+}
+
+/// `sysconf(_SC_CLK_TCK)`, almost universally 100 on Linux; falls back to
+/// that default rather than failing if the call is ever unavailable.
+/// `libc` is a Linux-only dependency here (`Cargo.toml`), matching
+/// `process_signal.rs`'s own split: this binary ships only on Linux, but
+/// `cargo check`/clippy on macOS still type-checks every file.
+#[cfg(target_os = "linux")]
+fn clock_ticks_per_second() -> u64 {
+    let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    if ticks > 0 {
+        ticks as u64
+    } else {
+        100
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn clock_ticks_per_second() -> u64 {
+    100
+}
+
 /// One process-table snapshot. The command search text stays private because it
 /// is only an indexing implementation detail; the view consumes the remaining
 /// measured fields for summaries, actions, and the inspector.
@@ -93,6 +134,15 @@ pub(crate) struct ProcRow {
     pub(crate) mem: u64,
     /// Bytes read+written since the last refresh (a per-tick I/O proxy).
     pub(crate) disk: u64,
+    /// The read half of `disk` (MON-MENU-020).
+    pub(crate) bytes_read: u64,
+    /// The write half of `disk` (MON-MENU-019).
+    pub(crate) bytes_written: u64,
+    /// Total CPU seconds consumed since the process started (MON-MENU-003),
+    /// read from `/proc/<pid>/stat`'s utime+stime ticks. `None` when that
+    /// file could not be read (the process exited, or this is not Linux);
+    /// shown as "—" rather than a false zero.
+    pub(crate) cpu_time: Option<u64>,
     /// Energy-impact approximation. macOS's exact figure is proprietary; we
     /// combine the two real energy-relevant signals sysinfo exposes — CPU usage
     /// plus this interval's disk I/O — so it isn't merely a copy of %CPU.
@@ -140,6 +190,12 @@ impl ProcRow {
             ColKey::Mem => format_mem(self.mem),
             ColKey::Energy => format!("{:.1}", self.energy),
             ColKey::Disk => format_mem(self.disk),
+            ColKey::BytesRead => format_mem(self.bytes_read),
+            ColKey::BytesWritten => format_mem(self.bytes_written),
+            ColKey::CpuTime => self
+                .cpu_time
+                .map(format_duration)
+                .unwrap_or_else(|| "—".to_string()),
             ColKey::Threads => self.threads.to_string(),
             ColKey::Ppid => self.ppid.map(|pid| pid.to_string()).unwrap_or_default(),
             ColKey::User => self.user.to_string(),
@@ -407,6 +463,7 @@ impl ProcessTableDelegate {
 
                 let cpu = process.cpu_usage();
                 let disk = disk_usage.read_bytes + disk_usage.written_bytes;
+                let cpu_time = read_cpu_time_seconds(process.pid().as_u32());
                 let uid = process.user_id().map(|uid| **uid);
                 let user = process
                     .user_id()
@@ -422,6 +479,9 @@ impl ProcessTableDelegate {
                     cpu_ready,
                     mem: process.memory(),
                     disk,
+                    bytes_read: disk_usage.read_bytes,
+                    bytes_written: disk_usage.written_bytes,
+                    cpu_time,
                     energy: cpu + (disk as f32 / 1_048_576.0) * 0.5,
                     ppid: process.parent().map(|parent| parent.as_u32()),
                     user,
@@ -486,6 +546,9 @@ impl ProcessTableDelegate {
                     .partial_cmp(&right.energy)
                     .unwrap_or(Ordering::Equal),
                 ColKey::Disk => left.disk.cmp(&right.disk),
+                ColKey::BytesRead => left.bytes_read.cmp(&right.bytes_read),
+                ColKey::BytesWritten => left.bytes_written.cmp(&right.bytes_written),
+                ColKey::CpuTime => left.cpu_time.cmp(&right.cpu_time),
                 ColKey::Ppid => left.ppid.cmp(&right.ppid),
                 ColKey::User => left.user.cmp(&right.user),
                 ColKey::Vmem => left.vmem.cmp(&right.vmem),
@@ -826,9 +889,10 @@ impl ProcessTableDelegate {
 #[cfg(test)]
 mod tests {
     use super::{
-        full_process_name, is_leader_thread_kind, next_header_sort, selection_projection,
-        thread_group_size, ColKey, ProcRow,
+        full_process_name, is_leader_thread_kind, next_header_sort, read_cpu_time_seconds,
+        selection_projection, thread_group_size, ColKey, ProcRow, ProcessTableDelegate,
     };
+    use crate::metrics::{format_duration, format_mem};
     use rmac_ui::ColumnSort;
     use sysinfo::ThreadKind;
 
@@ -899,6 +963,9 @@ mod tests {
             cpu_ready,
             mem: 0,
             disk: 0,
+            bytes_read: 0,
+            bytes_written: 0,
+            cpu_time: None,
             energy: 0.0,
             ppid: None,
             user: "user".into(),
@@ -939,6 +1006,65 @@ mod tests {
         let mut leader = row(1.0, true);
         leader.threads = 7;
         assert_eq!(leader.cell_text(ColKey::Threads), "7");
+    }
+
+    #[test]
+    fn bytes_read_and_written_split_the_combined_disk_total() {
+        let mut process = row(1.0, true);
+        process.bytes_read = 2 * 1_048_576;
+        process.bytes_written = 1_048_576;
+        process.disk = process.bytes_read + process.bytes_written;
+        assert_eq!(process.cell_text(ColKey::BytesRead), format_mem(2_097_152));
+        assert_eq!(
+            process.cell_text(ColKey::BytesWritten),
+            format_mem(1_048_576)
+        );
+        assert_eq!(process.cell_text(ColKey::Disk), format_mem(3_145_728));
+    }
+
+    #[test]
+    fn cpu_time_shows_a_dash_until_proc_stat_is_readable() {
+        assert_eq!(row(1.0, true).cell_text(ColKey::CpuTime), "—");
+        let mut process = row(1.0, true);
+        process.cpu_time = Some(125);
+        assert_eq!(process.cell_text(ColKey::CpuTime), format_duration(125));
+    }
+
+    #[test]
+    fn cpu_time_sorts_numerically_with_unreadable_processes_last() {
+        let mut unknown = row(1.0, true);
+        unknown.cpu_time = None;
+        let mut short = row(1.0, true);
+        short.cpu_time = Some(5);
+        let mut long = row(1.0, true);
+        long.cpu_time = Some(500);
+        let mut rows = vec![unknown.clone(), long.clone(), short.clone()];
+        ProcessTableDelegate::sort_rows(&mut rows, ColKey::CpuTime, true);
+        assert_eq!(
+            rows.iter().map(|row| row.cpu_time).collect::<Vec<_>>(),
+            vec![None, Some(5), Some(500)]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reading_this_test_processs_own_cpu_time_succeeds_on_linux() {
+        let pid = std::process::id();
+        // This process has run at least a little by the time its own test
+        // suite executes, so `/proc/<pid>/stat` is real and readable. This
+        // binary only ships for Linux (`clock_ticks_per_second`'s own doc
+        // comment), but `cargo test --workspace` still runs this file's
+        // tests when checking the workspace from another platform, where
+        // `/proc` does not exist — `read_cpu_time_seconds` honestly
+        // returns `None` there instead of a fabricated value, so this
+        // particular assertion only holds on Linux.
+        assert!(read_cpu_time_seconds(pid).is_some());
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn reading_a_process_without_proc_returns_none_rather_than_a_fabricated_value() {
+        assert_eq!(read_cpu_time_seconds(std::process::id()), None);
     }
 
     /// MON-01 fixture: a small table standing in for what `sysinfo` 0.33

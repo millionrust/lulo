@@ -5,6 +5,7 @@
 
 use std::fs::OpenOptions;
 use std::io::{self, Read as _};
+#[cfg(not(windows))]
 use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -94,6 +95,7 @@ struct Identity {
 }
 
 impl Identity {
+    #[cfg(not(windows))]
     fn capture(metadata: &std::fs::Metadata) -> Self {
         Self {
             device: metadata.dev(),
@@ -102,6 +104,32 @@ impl Identity {
             size: metadata.len(),
             modified_seconds: metadata.mtime(),
             modified_nanoseconds: metadata.mtime_nsec(),
+        }
+    }
+
+    /// Windows has no inode or device number, and the real per-volume/
+    /// per-file identities that would stand in for them
+    /// (`MetadataExt::{volume_serial_number, file_index}`) are still the
+    /// unstable `windows_by_handle` feature (rust-lang/rust#63010) on this
+    /// pinned stable toolchain; `device`/`inode` are left `0` (matching
+    /// `rmac-finder::operation_journal::EntryIdentity`'s own Windows
+    /// fallback), and file attributes stand in for mode (ADR 0023 phase 4).
+    #[cfg(windows)]
+    fn capture(metadata: &std::fs::Metadata) -> Self {
+        use std::os::windows::fs::MetadataExt as _;
+
+        let modified = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .unwrap_or_default();
+        Self {
+            device: 0,
+            inode: 0,
+            mode: metadata.file_attributes(),
+            size: metadata.len(),
+            modified_seconds: modified.as_secs() as i64,
+            modified_nanoseconds: modified.subsec_nanos() as i64,
         }
     }
 
@@ -314,10 +342,11 @@ fn load_regular_text(
     cancel: &AtomicBool,
 ) -> io::Result<Option<Content>> {
     check_cancelled(cancel)?;
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(not(windows))]
+    options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let mut file = options.open(path)?;
     if Identity::capture(&file.metadata()?) != expected {
         return Err(changed());
     }
@@ -418,6 +447,7 @@ pub fn error_message(error: &io::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
     use std::time::UNIX_EPOCH;
 
@@ -499,6 +529,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn symbolic_link_is_described_without_following_its_target() {
         let root = scratch("link");
         std::fs::write(root.join("target.txt"), "private contents").unwrap();

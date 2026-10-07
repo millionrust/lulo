@@ -903,6 +903,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &CopyAsPathname, _, cx| this.copy_as_pathname(cx)))
             .on_action(cx.listener(|this, _: &CopyAsLink, _, cx| this.copy_as_link(cx)))
             .on_action(cx.listener(|this, _: &MoveItemHere, _, cx| this.move_item_here(cx)))
+            .on_action(cx.listener(|this, _: &PasteExactly, _, cx| this.paste_exactly(cx)))
             .on_action(cx.listener(|this, _: &GoTrash, _, cx| this.trash_click(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
             .on_action(cx.listener(|this, _: &OpenSelectionInNewTab, _, cx| {

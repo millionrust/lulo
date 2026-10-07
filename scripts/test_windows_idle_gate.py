@@ -1,4 +1,5 @@
-"""Tests for scripts/windows/idle_gate.py and launch_smoke.py's trace parsing."""
+"""Tests for scripts/windows/idle_gate.py, launch_smoke.py's trace parsing and
+shell_smoke.py's reading of the Lulo layer's trace."""
 
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ def load(name: str):
 
 idle_gate = load("idle_gate")
 launch_smoke = load("launch_smoke")
+shell_smoke = load("shell_smoke")
 
 
 class IdleGateTests(unittest.TestCase):
@@ -49,6 +51,51 @@ class IdleGateTests(unittest.TestCase):
         failures = idle_gate.idle_failures(results, 1.0, ("rmac-terminal",))
         self.assertEqual(failures, ["rmac-weather: no idle CPU reading"])
 
+    def test_clocks_per_app_budget_tolerates_one_legitimate_minute_redraw(self) -> None:
+        # Run 37633070594: a real per-minute World Clock redraw landing
+        # inside the 20 s window, not a regression (see PER_APP_BUDGET_TICKS).
+        results = {"rmac-clock": {"idle_ticks": 19.03}}
+        self.assertEqual(
+            idle_gate.idle_failures(
+                results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
+            ),
+            [],
+        )
+
+    def test_clocks_per_app_budget_tolerates_a_noisier_runner_too(self) -> None:
+        # Run 37657567719: the same redraw, same wake-source shape, but a
+        # busier CI runner made the settle cost more ticks (see
+        # PER_APP_BUDGET_TICKS) — still nowhere near a real regression.
+        results = {"rmac-clock": {"idle_ticks": 28.05}}
+        self.assertEqual(
+            idle_gate.idle_failures(
+                results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
+            ),
+            [],
+        )
+
+    def test_clocks_per_app_budget_still_catches_a_real_regression(self) -> None:
+        results = {
+            "rmac-clock": {
+                "idle_ticks": 400.0,
+                "idle_wake_sources": [{"count": 1200, "source": "vsync tick"}],
+            }
+        }
+        failures = idle_gate.idle_failures(
+            results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn("rmac-clock", failures[0])
+
+    def test_the_lulo_layer_is_gated_like_the_apps(self) -> None:
+        results = {
+            "lulo-session": {"idle_ticks": 0.0},
+            "lulo-shell": {"idle_ticks": 3.0},
+        }
+        failures = idle_gate.idle_failures(results, 1.0, ("rmac-terminal",))
+        self.assertEqual(len(failures), 1)
+        self.assertIn("lulo-shell", failures[0])
+
 
 class TraceParsingTests(unittest.TestCase):
     def test_wake_ups_are_grouped_by_source_most_frequent_first(self) -> None:
@@ -77,6 +124,31 @@ class TraceParsingTests(unittest.TestCase):
             launch_smoke.startup_phases(log),
             ["platform_new at 12.0 ms", "window_shown at 80.5 ms"],
         )
+
+
+class ShellTraceTests(unittest.TestCase):
+    def test_the_log_finds_the_latest_dock_tile_and_waits_from_a_line(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "shell.log"
+            path.write_text(
+                "\n".join(
+                    [
+                        "lulo-shell: starting pid 42 at 9 ms",
+                        "gpui_windows wake: vsync tick at 1.0 ms",
+                        "lulo-shell: dock tile rmac-calculator.exe Calculator at 100,700",
+                        "lulo-shell: dock tile rmac-calculator.exe Calculator at 110,700 running",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            log = shell_smoke.Log(path)
+            self.assertEqual(log.wait_for(r"^starting pid (\d+)", 0.1).group(1), "42")
+            tile = log.last(r"^dock tile rmac-calculator\.exe Calculator at (\d+),(\d+)")
+            self.assertEqual(tile.group(1), "110")
+            self.assertIsNone(log.wait_for(r"^starting", 0.05, after=1))
+            self.assertIsNotNone(log.wait_for(r"running$", 0.1, after=2))
 
 
 if __name__ == "__main__":

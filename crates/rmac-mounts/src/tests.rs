@@ -62,8 +62,19 @@ fn usage_math_is_saturating_and_flags_low_space() {
 }
 
 #[test]
+#[cfg(not(windows))]
 fn live_root_volume_has_bounded_capacity_relationships() {
     let usage = volume_usage(Path::new("/")).unwrap();
+    assert!(usage.total > 0);
+    assert!(usage.available <= usage.total);
+    assert_eq!(usage.used, usage.total - usage.available);
+}
+
+#[test]
+#[cfg(windows)]
+fn live_system_drive_has_bounded_capacity_relationships() {
+    let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+    let usage = volume_usage(Path::new(&format!("{drive}\\"))).unwrap();
     assert!(usage.total > 0);
     assert!(usage.available <= usage.total);
     assert_eq!(usage.used, usage.total - usage.available);

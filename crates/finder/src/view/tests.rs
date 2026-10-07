@@ -2,7 +2,9 @@ use super::*;
 use crate::file_ops::copy_item;
 use crate::view::go_to_folder_controller::{pending_selection_action, PendingSelectionAction};
 use crate::view::selection_controller::pathname_clipboard_text;
-use crate::view::sidebar_favourites::{dedupe_absolute_directories, extra_favourite_place};
+#[cfg(unix)]
+use crate::view::sidebar_favourites::dedupe_absolute_directories;
+use crate::view::sidebar_favourites::extra_favourite_place;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
@@ -32,6 +34,7 @@ impl TestDirectory {
         Self(path)
     }
 
+    #[cfg(unix)]
     fn new_short(label: &str) -> Self {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -51,6 +54,7 @@ impl Drop for TestDirectory {
 }
 
 #[test]
+#[cfg(unix)]
 fn checked_listing_rejects_a_replacement_at_the_same_path() {
     let root = TestDirectory::new("directory-replacement");
     let current = root.0.join("current");
@@ -130,6 +134,7 @@ fn recursive_copy_refuses_a_destination_inside_the_source() {
 }
 
 #[test]
+#[cfg(unix)]
 fn recursive_copy_detects_a_descendant_reached_through_a_symlink() {
     let root = TestDirectory::new("copy-symlink-descendant");
     let source = root.0.join("source");
@@ -147,6 +152,7 @@ fn recursive_copy_detects_a_descendant_reached_through_a_symlink() {
 }
 
 #[test]
+#[cfg(unix)]
 fn recursive_copy_preserves_a_symlink_without_traversing_its_target() {
     let root = TestDirectory::new("copy-symlink");
     let target = root.0.join("target");
@@ -183,6 +189,7 @@ fn recursive_copy_never_replaces_an_existing_file() {
 }
 
 #[test]
+#[cfg(unix)]
 fn recursive_copy_refuses_special_files_without_opening_them() {
     let root = TestDirectory::new_short("special");
     let source = root.0.join("source.socket");
@@ -413,6 +420,7 @@ fn pathname_clipboard_text_is_one_absolute_path_per_line() {
 }
 
 #[test]
+#[cfg(unix)]
 fn sidebar_favourites_drop_relative_and_duplicate_paths_and_cap_the_list() {
     let paths = vec![
         PathBuf::from("relative/not-a-favourite"),

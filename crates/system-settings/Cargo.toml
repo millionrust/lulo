@@ -17,19 +17,44 @@ gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
 image = { workspace = true, features = ["jpeg", "png", "webp"] }
+rmac-appearance.workspace = true
+rmac-app-launch.workspace = true
+rmac-apps.workspace = true
+rmac-display.workspace = true
+rmac-locale.workspace = true
+rmac-mounts.workspace = true
+rmac-portal.workspace = true
+rmac-recent-documents.workspace = true
+rmac-storage.workspace = true
+rmac-shortcuts.workspace = true
+rmac-shell-settings.workspace = true
+rmac-sound.workspace = true
+rmac-system-info.workspace = true
+rmac-theme.workspace = true
+rmac-ui.workspace = true
+rmac-wallpaper.workspace = true
+rmac-wallpaper-image.workspace = true
+rmac-wallpaper-system.workspace = true
+rust-embed.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# Linux-only service backends and panes this Settings build never shows on
+# Windows (ADR 0023 phase 4): network, Bluetooth, users, login items,
+# printers, sharing, accounts, focus, power, input devices, GTK sync,
+# screen reader, the niri compositor link, and the Linux-specific halves
+# of locale/time/notifications/privacy/updates. See navigation.rs's
+# Windows `categories()` for the pane list this build actually shows.
+[target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
 rmac-audio.workspace = true
 rmac-accounts.workspace = true
 rmac-accounts-linux.workspace = true
 rmac-accounts-ui.workspace = true
-rmac-appearance.workspace = true
 rmac-appearance-portal.workspace = true
-rmac-app-launch.workspace = true
-rmac-apps.workspace = true
 rmac-bluetooth.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
-rmac-display.workspace = true
 rmac-focus.workspace = true
 rmac-focus-linux.workspace = true
 rmac-focus-settings.workspace = true
@@ -39,9 +64,7 @@ rmac-keyboard.workspace = true
 rmac-login-items.workspace = true
 rmac-login-items-linux.workspace = true
 rmac-launcher-providers.workspace = true
-rmac-locale.workspace = true
 rmac-locale-linux.workspace = true
-rmac-mounts.workspace = true
 rmac-network.workspace = true
 rmac-notifications-linux.workspace = true
 rmac-notifications.workspace = true
@@ -51,27 +74,12 @@ rmac-power.workspace = true
 rmac-privacy.workspace = true
 rmac-printers-linux.workspace = true
 rmac-privacy-linux.workspace = true
-rmac-portal.workspace = true
 rmac-process.workspace = true
-rmac-recent-documents.workspace = true
 rmac-screen-reader.workspace = true
-rmac-storage.workspace = true
-rmac-shortcuts.workspace = true
 rmac-sharing.workspace = true
 rmac-sharing-linux.workspace = true
-rmac-shell-settings.workspace = true
-rmac-sound.workspace = true
-rmac-system-info.workspace = true
-rmac-theme.workspace = true
 rmac-time.workspace = true
 rmac-time-linux.workspace = true
-rmac-ui.workspace = true
 rmac-updates.workspace = true
 rmac-updates-linux.workspace = true
 rmac-users-linux.workspace = true
-rmac-wallpaper.workspace = true
-rmac-wallpaper-image.workspace = true
-rmac-wallpaper-system.workspace = true
-rust-embed.workspace = true
-serde.workspace = true
-serde_json.workspace = true

@@ -7,7 +7,9 @@
 //! as the Apps window reads this file once, when it opens, to build its
 //! recents row; nothing polls it.
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
+#[cfg(unix)]
+use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

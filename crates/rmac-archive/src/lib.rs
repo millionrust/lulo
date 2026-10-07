@@ -127,7 +127,9 @@ const CANCELLED: &str = "rmac-archive: cancelled";
 const EXPANSION_LIMIT: &str = "rmac-archive: expansion limit exceeded";
 
 /// Not `Interrupted`: std's read loops (`read_exact`, `read_to_end`, copy)
-/// silently retry that kind, so a cancelled read would spin forever.
+/// silently retry that kind, so a cancelled read would spin forever. Used
+/// by `staging.rs` (Linux-only for now) and by the round-trip test below.
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn cancelled_io() -> io::Error {
     io::Error::other(CANCELLED)
 }

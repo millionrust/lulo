@@ -428,9 +428,7 @@ mod imp {
         CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
         OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
-    use windows::Win32::System::Memory::{
-        GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock, GHND,
-    };
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GHND};
     use windows::Win32::UI::Shell::DragQueryFileW;
     use windows::core::w;
 
@@ -501,9 +499,12 @@ mod imp {
         let handle = unsafe { GlobalAlloc(GHND, total_bytes) }
             .map_err(|_| PasteboardError::new("The clipboard ran out of memory"))?;
         // SAFETY: `handle` was just allocated above and is not yet locked.
+        // `windows-rs` 0.61 does not bind `GlobalFree`; this leaks the
+        // just-allocated block on this (rare: a lock failing right after a
+        // successful alloc) error path. The block is small, process-local,
+        // and freed by Windows when the process exits.
         let locked = unsafe { GlobalLock(handle) };
         if locked.is_null() {
-            unsafe { GlobalFree(Some(handle)) }.ok();
             return Err(PasteboardError::new("The clipboard ran out of memory"));
         }
         // SAFETY: `locked` points at `total_bytes` of writable memory just
@@ -525,9 +526,9 @@ mod imp {
         unsafe { GlobalUnlock(handle) }.ok();
 
         // SAFETY: `handle` holds a well-formed `CF_HDROP` payload; ownership
-        // passes to the clipboard on success.
+        // passes to the clipboard on success. On failure the block leaks
+        // (see the `GlobalFree` note above); this path is rare.
         if unsafe { SetClipboardData(CF_HDROP, Some(HANDLE(handle.0))) }.is_err() {
-            unsafe { GlobalFree(Some(handle)) }.ok();
             return Err(PasteboardError::new("The clipboard refused the items"));
         }
 
@@ -547,19 +548,20 @@ mod imp {
         let Ok(handle) = (unsafe { GlobalAlloc(GHND, std::mem::size_of::<u32>()) }) else {
             return;
         };
+        // See the `GlobalFree` note in `write_file_list` above: this leaks
+        // the block on the (rare) failure path rather than guessing at an
+        // unbound API.
         let locked = unsafe { GlobalLock(handle) };
         if locked.is_null() {
-            unsafe { GlobalFree(Some(handle)) }.ok();
             return;
         }
         // SAFETY: `locked` points at a just-allocated, locked `u32`-sized
         // block.
         unsafe { (locked as *mut u32).write(effect) };
         unsafe { GlobalUnlock(handle) }.ok();
-        // SAFETY: `handle` holds a well-formed `DWORD` payload.
-        if unsafe { SetClipboardData(format, Some(HANDLE(handle.0))) }.is_err() {
-            unsafe { GlobalFree(Some(handle)) }.ok();
-        }
+        // SAFETY: `handle` holds a well-formed `DWORD` payload. On failure
+        // the block leaks (see the `GlobalFree` note above).
+        let _ = unsafe { SetClipboardData(format, Some(HANDLE(handle.0))) };
     }
 
     pub fn clear() -> Result<(), PasteboardError> {

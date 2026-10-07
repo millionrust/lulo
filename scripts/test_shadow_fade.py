@@ -25,10 +25,10 @@ sys.modules[SPEC.name] = shadow_fade
 SPEC.loader.exec_module(shadow_fade)
 
 
-WIDTH, HEIGHT = 240, 240
+WIDTH, HEIGHT = 360, 360
 BACKGROUND = 230
 PANEL = 40
-BOX = (60, 50, 120, 90)  # x, y, w, h: panel from (60,50) to (180,140)
+BOX = (100, 100, 120, 90)  # x, y, w, h: panel from (100,100) to (220,190)
 
 
 def _fill(width: int, height: int, value) -> Image.Image:

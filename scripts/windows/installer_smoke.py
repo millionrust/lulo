@@ -64,9 +64,20 @@ def run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
 
 
 def msiexec(mode: str, msi: Path) -> None:
-    result = run("msiexec", mode, str(msi), "/quiet", "/norestart", check=False)
+    log = msi.with_suffix(".install.log" if mode == "/i" else ".uninstall.log")
+    result = run(
+        "msiexec", mode, str(msi), "/quiet", "/norestart", "/l*v", str(log), check=False
+    )
     if result.returncode != 0:
         sys.stderr.write(result.stdout + result.stderr)
+        if log.is_file():
+            # The interesting lines are usually near the end (the actual
+            # failing action and its return code); the full log can be
+            # megabytes of per-file progress noise.
+            text = log.read_text(encoding="utf-16", errors="replace")
+            sys.stderr.write("\n--- tail of " + str(log) + " ---\n")
+            sys.stderr.write("\n".join(text.splitlines()[-200:]))
+            sys.stderr.write("\n")
         raise SystemExit(f"msiexec {mode} {msi} failed: exit {result.returncode}")
 
 

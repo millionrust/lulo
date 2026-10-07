@@ -60,7 +60,16 @@ const TAG_TARGET: f32 = 18.0;
 const TAG_GAP: f32 = 6.0;
 /// A submenu overlaps its parent by this much, as in the menu bar.
 const SUBMENU_OVERLAP: f32 = 4.0;
-/// Transparent room around the panel inside its pop-up window for the shadow.
+/// Transparent room around the panel inside its pop-up window for the
+/// shadow: the popover elevation's `shadow_margin()` (blur 18 + offset_y 6),
+/// the reference pattern every other clipped-shadow surface in the product
+/// now follows (`docs/parity.md` SESSION-07/-08, `crates/app-drawer`'s
+/// `DRAWER_SHADOW_GUTTER`, `crates/rmac-launcher`'s `SHADOW_GUTTER`). Kept
+/// as a constant rather than reading `theme::current()` here because the
+/// popover elevation's blur/offset never change with contrast or appearance
+/// (only its alpha does; see `rmac_design::elevation::Elevation::resolve`),
+/// so the margin a surface must reserve is fixed — asserted against the
+/// token in `shadow_margin_matches_the_popover_elevation_token` below.
 const SHADOW_MARGIN: f32 = 24.0;
 /// Type-select keeps extending the typed prefix within this pause.
 const TYPE_SELECT_PAUSE: Duration = Duration::from_millis(1000);
@@ -1693,6 +1702,18 @@ mod tests {
     #[test]
     fn menu_check_defaults_to_none() {
         assert_eq!(MenuCheck::default(), MenuCheck::None);
+    }
+
+    /// `SHADOW_MARGIN` is a constant approximation of the popover elevation
+    /// token's `shadow_margin()` (its blur/offset never change with
+    /// contrast, see `rmac_design::elevation::Elevation::resolve`) so every
+    /// other surface following this reference pattern can read the same
+    /// value without an `App` context. If the popover token ever moves,
+    /// this fails loudly instead of leaving the shadow clipped again.
+    #[test]
+    fn shadow_margin_matches_the_popover_elevation_token() {
+        let elevation = rmac_design::Elevation::resolve(rmac_appearance::Contrast::Normal);
+        assert_eq!(SHADOW_MARGIN, elevation.popover.shadow_margin());
     }
 
     #[test]

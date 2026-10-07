@@ -23,6 +23,19 @@ impl ElevationLevel {
         spread: 0.0,
         alpha: 0.0,
     };
+
+    /// Clear margin a surface casting this shadow must reserve on every
+    /// side, so the blur, spread, and offset are not clipped by the
+    /// surface's own bounds — a layer-shell or regular window sized tight
+    /// to its visible content, or any ancestor element that clips overflow.
+    /// A surface that reserves this margin should also inset its visible
+    /// panel by the same amount and restrict pointer input to that inset
+    /// rectangle, so a click in the margin still reaches whatever is
+    /// beneath (`crates/rmac-ui/src/context_menu.rs`'s `SHADOW_MARGIN` is
+    /// the reference implementation this generalizes).
+    pub fn shadow_margin(&self) -> f32 {
+        self.blur + self.spread.max(0.0) + self.offset_x.abs().max(self.offset_y.abs())
+    }
 }
 
 /// A window shadow as configured on the compositor.

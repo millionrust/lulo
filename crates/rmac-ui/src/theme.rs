@@ -268,6 +268,16 @@ pub struct ElevationLevel {
     pub offset_y: f32,
 }
 
+impl ElevationLevel {
+    /// Clear margin a surface casting this shadow must reserve on every
+    /// side so the blur and offset are not clipped by the surface's own
+    /// bounds. See `rmac_design::ElevationLevel::shadow_margin`, which this
+    /// mirrors for the trimmed token this crate's apps actually consume.
+    pub fn shadow_margin(&self) -> f32 {
+        self.blur + self.offset_y.abs()
+    }
+}
+
 impl From<rmac_design::ElevationLevel> for ElevationLevel {
     fn from(level: rmac_design::ElevationLevel) -> Self {
         Self {

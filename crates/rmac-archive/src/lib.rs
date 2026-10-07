@@ -24,7 +24,7 @@
 // and Unix symlinks (`expand.rs`'s `symlink`, `compress.rs`'s
 // `PermissionsExt`); porting that safely needs a real design pass, not a
 // line-by-line swap, so Windows gets an honest "not available yet" instead
-// (ADR 0023 phase 4; tracked as WIN-OS-18 in docs/parity.md). `naming` has
+// (ADR 0023 phase 4; tracked as WIN-OS-20 in docs/parity.md). `naming` has
 // no archive I/O at all and stays available everywhere, so Files can still
 // recognise an archive by name and offer Finder's own real naming rule for
 // the file Compress would create.

@@ -121,7 +121,7 @@ fn with_color_scheme(mut arguments: Vec<String>, scheme: Option<&str>) -> Vec<St
     arguments
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
     matches!(
         kind,

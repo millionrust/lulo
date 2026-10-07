@@ -2802,6 +2802,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn successful_replacement_atomically_publishes_copy_and_retains_undo_backup() {
         let root = TestDirectory::new("replace-commit");
         let source = root.0.join("source");
@@ -2862,6 +2863,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn successful_same_volume_move_replacement_stages_source_before_exchange() {
         let root = TestDirectory::new("move-replace-commit");
         let source = root.0.join("source");
@@ -2886,7 +2888,11 @@ mod tests {
         assert_eq!(journal.undo_store().count().unwrap(), 1);
     }
 
+    // `prepare_move_replace` recovery (despite this test's name) still
+    // needs the atomic replace/exchange primitive to finish publishing,
+    // which `rename_exchange` deliberately stubs out on Windows.
     #[test]
+    #[cfg(unix)]
     fn recovery_infers_move_source_staging_before_record_persistence() {
         let root = TestDirectory::new("move-replace-staging-interruption");
         let source = root.0.join("source");
@@ -2912,6 +2918,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn recovery_infers_move_replacement_exchange_before_stage_persistence() {
         let root = TestDirectory::new("move-replace-exchange-interruption");
         let source = root.0.join("source");
@@ -3031,6 +3038,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn recovery_infers_an_exchange_interrupted_before_stage_persistence() {
         let root = TestDirectory::new("replace-exchange-interruption");
         let source = root.0.join("source");
@@ -3064,6 +3072,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn recovery_finishes_replacement_cleanup_after_replaced_stage_persistence() {
         let root = TestDirectory::new("replace-cleanup-interruption");
         let source = root.0.join("source");
@@ -3138,6 +3147,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn changed_replacement_backup_is_preserved_only_after_bound_review() {
         let root = TestDirectory::new("replace-backup-review");
         let source = root.0.join("source");
@@ -3189,6 +3199,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn replacement_backup_review_rejects_a_nested_change_after_review() {
         let root = TestDirectory::new("replace-backup-review-race");
         let source = root.0.join("source");

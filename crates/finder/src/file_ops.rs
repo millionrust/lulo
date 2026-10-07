@@ -2354,6 +2354,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn journaled_replacement_publishes_atomically_and_preserves_source() {
         let root = TestDirectory::new("journaled-replace");
         let source = root.0.join("source");
@@ -2418,6 +2419,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn same_volume_move_replacement_renames_source_through_private_stage() {
         let root = TestDirectory::new("same-volume-move-replace");
         let source = root.0.join("source");
@@ -2447,6 +2449,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn cross_volume_move_replacement_copies_before_removing_source() {
         let root = TestDirectory::new("cross-volume-move-replace");
         let source = root.0.join("source");

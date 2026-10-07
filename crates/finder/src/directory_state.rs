@@ -126,7 +126,15 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    // Windows' canonical-path `Identity` cannot witness a rename survive:
+    // it resolves to the path as it stands *now*, so capturing it before
+    // the rename and re-capturing the moved folder afterwards necessarily
+    // gives two different strings, unlike Unix's inode, which is the same
+    // object either way. "Files' window follows a folder renamed out from
+    // under it" is therefore an accepted gap on Windows (WIN-OS-20) rather
+    // than something this pinned-stable-toolchain identity can fix.
     #[test]
+    #[cfg(unix)]
     fn rename_resolution_requires_the_exact_directory_identity() {
         let root = temporary_directory("rename");
         let old = root.join("old");

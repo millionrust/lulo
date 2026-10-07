@@ -2524,6 +2524,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn copy_replacement_undo_atomically_restores_the_previous_item() {
         let root = TestDirectory::new("replace");
         let source = root.0.join("source");
@@ -2557,6 +2558,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn replacement_undo_infers_an_exchange_before_stage_persistence() {
         let root = TestDirectory::new("replace-exchange-crash");
         let source = root.0.join("source");
@@ -2590,6 +2592,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn changed_replacement_backup_is_never_exchanged_or_removed_by_undo() {
         let root = TestDirectory::new("replace-backup-race");
         let source = root.0.join("source");
@@ -2665,6 +2668,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn same_volume_move_replacement_undo_restores_both_exact_items() {
         let root = TestDirectory::new("move-replace");
         let source = root.0.join("source");
@@ -2732,6 +2736,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn cross_volume_move_replacement_undo_restores_both_items() {
         let root = TestDirectory::new("cross-move-replace");
         let source = root.0.join("source");

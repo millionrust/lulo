@@ -322,6 +322,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn plain_paths_and_file_uris_name_local_items() {
         let cwd = Path::new("/home/u");
         assert_eq!(
@@ -348,6 +349,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_launch_opens_one_window_per_folder_and_reveals_files() {
         let scratch = Scratch::new("launch");
         let folder = scratch.0.join("My Docs");

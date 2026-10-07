@@ -505,6 +505,10 @@ impl MenuStrip {
 
 impl Render for MenuStrip {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if bar_connected(cx) {
+            // The Lulo menu bar shows these menus instead: nothing here.
+            return div().id("rmac-menu-strip").into_any_element();
+        }
         let open_index = self.open.as_ref().map(|open| open.index);
         let titles = self.titles.iter().enumerate().map(|(index, title)| {
             div()
@@ -580,8 +584,6 @@ impl Render for MenuStrip {
 
         div()
             .id("rmac-menu-strip")
-            // The Lulo menu bar shows these menus instead.
-            .when(bar_connected(cx), |strip| strip.hidden())
             .role(Role::MenuBar)
             .aria_label("Menu bar")
             .track_focus(&self.focus)
@@ -619,6 +621,7 @@ impl Render for MenuStrip {
                     .h_full(),
             )
             .children(open)
+            .into_any_element()
     }
 }
 

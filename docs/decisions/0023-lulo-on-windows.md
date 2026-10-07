@@ -739,6 +739,27 @@ visibility and state exactly as before. `idle_gate.py` gates `lulo-shell` and
 `lulo-session` like the apps (at most one tick over 20 s idle). Screenshots
 are in the `windows-shell-screens` artifact.
 
+Numbers (CI run 37670849555, debug build, 1024×768 WARP desktop): the first
+shell window 281 ms after `lulo-session` starts, bar and Dock placed 281 ms
+after `lulo-shell` starts; idle over 20 s: `lulo-shell` 0.00 ticks,
+`lulo-session` 0.00 ticks. Getting there took two fixes worth knowing:
+
+- `gpui_windows` (ADR 0025): several inactive windows in one process kept
+  each other awake. Each one-shot throttle retry's message re-checked the
+  other parked windows, whose idle frames then looked "soon after" a frame
+  and armed their own retries: about 40 timers a second, 25 ticks over the
+  idle window. A retry that fired now arms no second one until the window
+  draws (`throttle_retry_spent`).
+- A hidden window gets no `WM_PAINT`, so a frame a hidden panel asked for
+  kept the vsync thread running. Panels (Spotlight, the menu panel) wait
+  cloaked (`DWMWA_CLOAK`) and off screen instead, where they paint and park.
+  Surfaces are also told to redraw only when what they show changed, not on
+  every window event from other apps.
+
+On the runner the Apps folder lists only six apps and no Notepad (Windows
+Server), so Spotlight's Start-menu path is proven there only through the
+Lulo apps and those six; the owner's PC shows the full list.
+
 Not in this slice (the next ones, in order): the low-level keyboard hook (⌘
 as Ctrl for Windows apps, ⌘Tab, ⌘Space, Win key opening Spotlight); Control
 Centre with real Wi-Fi, Bluetooth, sound and brightness controls; the Dock's

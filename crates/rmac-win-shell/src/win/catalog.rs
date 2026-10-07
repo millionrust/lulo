@@ -94,8 +94,20 @@ pub fn load_apps() -> Vec<Entry> {
         .map(|app| Entry::new(app.name, Target::Lulo(app.exe), "", Kind::Application))
         .collect::<Vec<_>>();
     match apps_folder() {
-        Some(found) if !found.is_empty() => apps.extend(found),
-        _ => apps.extend(start_menu_shortcuts()),
+        Some(found) if !found.is_empty() => {
+            super::trace(|| format!("catalog: {} apps in the Apps folder", found.len()));
+            apps.extend(found);
+        }
+        _ => {
+            let found = start_menu_shortcuts();
+            super::trace(|| {
+                format!(
+                    "catalog: the Apps folder could not be read; {} Start menu shortcuts",
+                    found.len()
+                )
+            });
+            apps.extend(found);
+        }
     }
     apps
 }

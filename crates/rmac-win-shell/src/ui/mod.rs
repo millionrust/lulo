@@ -161,6 +161,13 @@ impl ShellState {
         });
     }
 
+    /// What the bar shows of the app in front.
+    fn front_key(&self) -> Option<(isize, u32, String)> {
+        self.front
+            .as_ref()
+            .map(|front| (front.hwnd, front.pid, front.name.clone()))
+    }
+
     /// The menus the bar shows after the Lulo menu: the front Lulo app's
     /// own, or the app and Window menus for any other app.
     pub fn front_menus(&self) -> Vec<Menu> {
@@ -862,16 +869,24 @@ fn spawn_receivers(cx: &mut App, shell: Entity<ShellState>, receivers: ReceiverS
         cx.spawn(async move |cx| {
             while let Ok(event) = desktop.recv().await {
                 match event {
+                    // Surfaces redraw only when what they show changed: other
+                    // apps' windows come and go all the time.
                     DesktopEvent::Foreground(hwnd) => shell.update(cx, |state, cx| {
+                        let before = state.front_key();
                         state.set_foreground(hwnd);
-                        cx.notify();
+                        if state.front_key() != before {
+                            cx.notify();
+                        }
                     }),
                     DesktopEvent::WindowsChanged => {
                         let changed = shell.update(cx, |state, cx| {
-                            let before = state.tiles.clone();
+                            let before = (state.tiles.clone(), state.front_key());
                             state.refresh_windows();
-                            cx.notify();
-                            before != state.tiles
+                            let changed = before.0 != state.tiles;
+                            if changed || before.1 != state.front_key() {
+                                cx.notify();
+                            }
+                            changed
                         });
                         if changed {
                             cx.update(dock::place);

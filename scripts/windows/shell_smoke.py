@@ -365,6 +365,10 @@ def check_shell(
             print(f"shell: {name}: idle CPU = {ticks:.2f} ticks ({percent:.2f}% of one core), {total} wake-ups")
             for count, source in wakes:
                 print(f"shell: {name}:   {count:5d} x {source}")
+            if name == "lulo-shell" and total:
+                # Every wake-up in order, to name what woke an idle shell.
+                for line in [line for line in trace.splitlines() if line.startswith(wake_prefix)][:150]:
+                    print(f"shell: lulo-shell idle: {line[len(wake_prefix):]}")
             for thread, thread_ticks in threads[:6]:
                 print(f"shell: {name}:   thread {thread} used {thread_ticks:.2f} ticks")
 

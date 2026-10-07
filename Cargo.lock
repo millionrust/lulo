@@ -6403,6 +6403,7 @@ dependencies = [
  "sha2 0.10.9",
  "trash",
  "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6762,6 +6763,7 @@ dependencies = [
  "blocking",
  "rustix 1.1.4",
  "url",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6944,6 +6946,7 @@ dependencies = [
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -7007,6 +7010,7 @@ version = "0.9.0-beta.1"
 dependencies = [
  "ashpd 0.12.3",
  "url",
+ "windows 0.61.3",
 ]
 
 [[package]]

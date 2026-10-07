@@ -20,13 +20,16 @@ const VERSION: u32 = 1;
 const MAX_ENTRIES: usize = 32;
 const MAX_FILE_BYTES: usize = 64 * 1024;
 const MAX_ID_BYTES: usize = 512;
+#[cfg(unix)]
 const LOCK_ATTEMPTS: usize = 200;
+#[cfg(unix)]
 const LOCK_RETRY: Duration = Duration::from_millis(5);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ErrorKind {
     Io(io::ErrorKind),
     Invalid,
+    #[cfg(unix)]
     Busy,
 }
 

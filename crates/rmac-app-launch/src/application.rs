@@ -110,6 +110,7 @@ async fn try_compositor_spawn(
     Ok(None)
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn with_color_scheme(mut arguments: Vec<String>, scheme: Option<&str>) -> Vec<String> {
     if let Some(scheme) = scheme {
         arguments.splice(
@@ -120,7 +121,7 @@ fn with_color_scheme(mut arguments: Vec<String>, scheme: Option<&str>) -> Vec<St
     arguments
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(crate) fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
     matches!(
         kind,
@@ -132,7 +133,7 @@ pub(crate) fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
 
 /// Whether `program` names an executable the way `execvp` would find it:
 /// a path containing `/` is used as is, a bare name is searched in `path`.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(crate) fn runnable_program(
     program: &std::path::Path,
     path: Option<&std::ffi::OsStr>,
@@ -163,7 +164,7 @@ pub(crate) fn runnable_program(
     })
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn executable(candidate: &std::path::Path) -> Result<(), std::io::ErrorKind> {
     // Follows symlinks, so a dangling link counts as missing.
     let metadata = std::fs::metadata(candidate).map_err(|error| error.kind())?;

@@ -79,7 +79,7 @@ def _edge_then_smooth_capture() -> Image.Image:
         dx = max(x - px, px - (x + w - 1), 0)
         dy = max(y - py, py - (y + h - 1), 0)
         distance = max(dx, dy)
-        decay = (BACKGROUND - entry) * (1 - math.exp(-distance / 30.0))
+        decay = (BACKGROUND - entry) * (1 - math.exp(-distance / 12.0))
         return min(BACKGROUND, round(entry + decay))
 
     return _fill(WIDTH, HEIGHT, level)

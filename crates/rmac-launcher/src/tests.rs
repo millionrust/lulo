@@ -28,6 +28,11 @@ fn result(provider: &str, local: &str, category: Category, title: &str) -> Searc
         Category::SearchIn => Action::SearchFiles {
             query: title.into(),
         },
+        Category::Intelligence => Action::PerformIntent {
+            intent: rmac_intelligence::Intent::Appearance {
+                mode: rmac_intelligence::AppearanceMode::Dark,
+            },
+        },
     };
     SearchResult {
         id: ResultId {
@@ -750,4 +755,50 @@ fn learning_round_trips_through_text_and_skips_damage() {
     ignored.record("   ", &id("apps", "terminal"), 1);
     ignored.record("term", &id("apps", " "), 1);
     assert!(ignored.is_empty());
+}
+
+#[test]
+fn the_assist_row_leads_only_its_own_query_and_confident_matches_skip_it() {
+    let apps = provider("apps", Category::Applications, Privacy::default());
+    let notes = || {
+        Ok(vec![result(
+            "apps",
+            "notes",
+            Category::Applications,
+            "Notes",
+        )])
+    };
+    let mut session = Session::default();
+    let request = session.begin("dark mode on", vec![apps.clone()]);
+    assert!(session.apply(request.generation, apps.id.clone(), notes()));
+    assert!(!session.has_confident_match());
+    let row = result(
+        INTELLIGENCE_PROVIDER,
+        r#"{"intent":"appearance","mode":"dark"}"#,
+        Category::Intelligence,
+        "Turn On Dark Mode",
+    );
+    // Another query's answer is ignored.
+    assert!(!session.apply_assist(request.generation + 1, Some(row.clone())));
+    assert!(session.apply_assist(request.generation, Some(row.clone())));
+    assert_eq!(session.results()[0].result.title, "Turn On Dark Mode");
+    assert_eq!(session.selected(), Some(&row.id));
+    // Only an Intelligence row from the Intelligence provider is accepted.
+    let mut wrong_category = row.clone();
+    wrong_category.category = Category::Other;
+    assert!(!session.apply_assist(request.generation, Some(wrong_category)));
+    let mut wrong_provider = row.clone();
+    wrong_provider.id.provider = rmac_shell_settings::ProviderId("apps".into());
+    assert!(!session.apply_assist(request.generation, Some(wrong_provider)));
+    // Clearing removes it; a new query never carries it over.
+    assert!(session.apply_assist(request.generation, None));
+    assert!(session.results().is_empty());
+    assert!(session.apply_assist(request.generation, Some(row)));
+    let next = session.begin("notes", vec![apps.clone()]);
+    assert!(session.apply(next.generation, apps.id.clone(), notes()));
+    assert!(session.has_confident_match());
+    assert!(session
+        .results()
+        .iter()
+        .all(|ranked| ranked.result.category != Category::Intelligence));
 }

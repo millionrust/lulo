@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true
+rmac-intelligence.workspace = true
 rmac-launcher.workspace = true
 
 [dev-dependencies]

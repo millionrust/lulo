@@ -82,6 +82,8 @@ require_space() {
 command -v cargo >/dev/null 2>&1 || fail "cargo is required"
 command -v dpkg >/dev/null 2>&1 || fail "dpkg is required"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+# llama.cpp, inside rmac-intelligence-service (ADR 0024), builds with CMake.
+command -v cmake >/dev/null 2>&1 || [[ -n "${CMAKE:-}" ]] || fail "cmake is required"
 # [profile.iterate] (Cargo.toml) leaves `strip = false` so a plain
 # `cargo build --profile iterate` keeps debug symbols for relinking and
 # debugging on the reference PC. A candidate's *staged copy* is stripped
@@ -127,6 +129,15 @@ if [[ ${CARGO_ENCODED_RUSTFLAGS+x} ]]; then
 else
   export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$repo_root=/rmac --remap-path-prefix=$cargo_home=/cargo"
 fi
+# llama.cpp's CPU kernels: a portable x86-64 baseline with AVX2, FMA and
+# F16C (Haswell, 2013, and later), never the build machine's own CPU. This
+# matches Lulo Intelligence's hardware gate, which offers the model only on
+# CPUs with those instructions. Set explicitly because ggml turns them off
+# when SOURCE_DATE_EPOCH is set (Debian package builds).
+if [[ "$architecture" == amd64 ]]; then
+  export GGML_NATIVE=OFF GGML_SSE42=ON GGML_AVX=ON GGML_AVX2=ON GGML_FMA=ON \
+    GGML_F16C=ON GGML_BMI2=ON
+fi
 (
   cd "$repo_root"
   cargo build --locked --profile "$profile" --jobs "$cargo_jobs" \
@@ -152,6 +163,8 @@ fi
     -p rmac-notification-center-app --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
     -p rmac-clipboard-linux --bin rmac-clipboard-service \
+    -p rmac-intelligence-service --bin rmac-intelligence-service \
+    -p rmac-intelligence --bin rmac-intelligence-fetch \
     -p rmac-file-chooser --bin rmac-file-chooser \
     -p rmac-shortcuts \
       --bin rmac-shortcut-broker \

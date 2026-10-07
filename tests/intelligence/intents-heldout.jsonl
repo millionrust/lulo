@@ -1,0 +1,38 @@
+{"request": "enable dark theme", "expect": {"intent": "appearance", "mode": "dark"}, "tags": []}
+{"request": "make everything light again", "expect": {"intent": "appearance", "mode": "light"}, "tags": ["vague"]}
+{"request": "night mode please", "expect": {"intent": "appearance", "mode": "dark"}, "tags": []}
+{"request": "open the clock app", "expect": {"intent": "open_app", "app": "Clock"}, "tags": []}
+{"request": "can you launch preview", "expect": {"intent": "open_app", "app": "Preview"}, "tags": []}
+{"request": "start mail", "expect": {"intent": "open_app", "app": "Mail"}, "tags": ["short"]}
+{"request": "put volume on 25", "expect": {"intent": "volume", "level": 25}, "tags": []}
+{"request": "sound at sixty percent", "expect": {"intent": "volume", "level": 60}, "tags": []}
+{"request": "too loud, lower it", "expect": {"intent": "volume", "change": "down"}, "tags": ["vague"]}
+{"request": "mute everything", "expect": {"intent": "volume", "change": "mute"}, "tags": []}
+{"request": "brightness to max", "expect": {"intent": "brightness", "level": 100}, "tags": []}
+{"request": "darken the display", "expect": {"intent": "brightness", "change": "down"}, "tags": []}
+{"request": "screen brightness 45", "expect": {"intent": "brightness", "level": 45}, "tags": []}
+{"request": "connect to wifi", "expect": {"intent": "wifi", "on": true}, "tags": []}
+{"request": "disconnect the wi-fi", "expect": {"intent": "wifi", "on": false}, "tags": []}
+{"request": "bluetooth off please", "expect": {"intent": "bluetooth", "on": false}, "tags": []}
+{"request": "switch on bluetooth", "expect": {"intent": "bluetooth", "on": true}, "tags": []}
+{"request": "silence my notifications", "expect": {"intent": "do_not_disturb", "on": true}, "tags": []}
+{"request": "disable do not disturb", "expect": {"intent": "do_not_disturb", "on": false}, "tags": []}
+{"request": "15 minute timer", "expect": {"intent": "timer", "amount": 15, "unit": "minutes"}, "tags": ["short"]}
+{"request": "set a timer for 45 seconds", "expect": {"intent": "timer", "amount": 45, "unit": "seconds"}, "tags": []}
+{"request": "timer for two hours", "expect": {"intent": "timer", "amount": 2, "unit": "hours"}, "tags": []}
+{"request": "find documents about the project plan", "expect": {"intent": "search_files", "query": "project plan"}, "tags": []}
+{"request": "look for my holiday pictures", "expect": {"intent": "search_files", "query": "holiday"}, "tags": []}
+{"request": "drak mod", "expect": {"intent": "appearance", "mode": "dark"}, "tags": ["typo", "short"]}
+{"request": "turn of the wifi", "expect": {"intent": "wifi", "on": false}, "tags": ["typo"]}
+{"request": "opn termnal", "expect": {"intent": "open_app", "app": "Terminal"}, "tags": ["typo"]}
+{"request": "brightnes down", "expect": {"intent": "brightness", "change": "down"}, "tags": ["typo"]}
+{"request": "kindly increase the brightness", "expect": {"intent": "brightness", "change": "up"}, "tags": ["indian-english"]}
+{"request": "please put timer for 10 minutes", "expect": {"intent": "timer", "amount": 10, "unit": "minutes"}, "tags": ["indian-english"]}
+{"request": "do the needful and off the bluetooth", "expect": {"intent": "bluetooth", "on": false}, "tags": ["indian-english"]}
+{"request": "sound is very less, increase it", "expect": {"intent": "volume", "change": "up"}, "tags": ["indian-english"]}
+{"request": "what is the meaning of life", "expect": {"intent": "none"}, "tags": ["refusal", "question"]}
+{"request": "restart my computer", "expect": {"intent": "none"}, "tags": ["refusal"]}
+{"request": "change the keyboard language", "expect": {"intent": "none"}, "tags": ["refusal", "settings-pane"]}
+{"request": "write a poem about rain", "expect": {"intent": "none"}, "tags": ["refusal"]}
+{"request": "empty the trash", "expect": {"intent": "none"}, "tags": ["refusal", "destructive"]}
+{"request": "how much battery is left", "expect": {"intent": "none"}, "tags": ["refusal", "question"]}

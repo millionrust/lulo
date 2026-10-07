@@ -159,6 +159,33 @@ impl Coordinator {
                 .apply(batch.generation, batch.provider, batch.results)
     }
 
+    /// The generation of the query being searched.
+    pub fn generation(&self) -> u64 {
+        self.launcher.session().generation()
+    }
+
+    /// Whether the plain search already answers the query (see
+    /// [`rmac_launcher::Session::has_confident_match`]).
+    pub fn has_confident_match(&self) -> bool {
+        self.launcher.session().has_confident_match()
+    }
+
+    /// The row selected now, if any.
+    pub fn selected(&self) -> Option<ResultId> {
+        self.launcher.session().selected().cloned()
+    }
+
+    /// Show, replace or clear the "Lulo can do this" row for `generation`.
+    pub fn apply_assist(
+        &mut self,
+        generation: u64,
+        result: Option<rmac_launcher::SearchResult>,
+    ) -> bool {
+        self.launcher.is_open()
+            && self.activation.is_none()
+            && self.launcher.session_mut().apply_assist(generation, result)
+    }
+
     pub fn apply_catalog(&mut self, update: CatalogUpdate) -> CatalogEffect {
         if update.revision < self.application_catalog_revision {
             return CatalogEffect {
@@ -376,6 +403,7 @@ fn action_label(action: &rmac_launcher::Action) -> &'static str {
         | rmac_launcher::Action::RevealFile { .. } => "Show in Folder",
         rmac_launcher::Action::CopyText { .. } => "Copy",
         rmac_launcher::Action::SearchFiles { .. } => "Search",
+        rmac_launcher::Action::PerformIntent { .. } => "Run",
     }
 }
 

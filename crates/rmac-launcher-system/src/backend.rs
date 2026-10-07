@@ -30,6 +30,20 @@ pub trait Backend: Send + Sync + 'static {
             ))
         })
     }
+
+    /// Carry out a Lulo Intelligence intent the person picked.
+    fn perform_intent<'a>(
+        &'a self,
+        intent: &'a rmac_intelligence::Intent,
+    ) -> BackendFuture<'a, Result<(), BackendError>> {
+        let _ = intent;
+        Box::pin(async {
+            Err(BackendError::new(
+                FailureKind::Unavailable,
+                "Lulo Intelligence actions are unavailable",
+            ))
+        })
+    }
 }
 
 /// UI-owned operations that require the live launcher application context.
@@ -47,6 +61,22 @@ pub trait Surface: Send + Sync + 'static {
             FailureKind::Unavailable,
             "Files search is unavailable",
         ))
+    }
+
+    /// Carry out an intent. The work (session-bus calls, a settings write)
+    /// must happen off the UI thread, so this returns a future the caller
+    /// awaits.
+    fn perform_intent(
+        &self,
+        intent: &rmac_intelligence::Intent,
+    ) -> BackendFuture<'static, Result<(), BackendError>> {
+        let _ = intent;
+        Box::pin(async {
+            Err(BackendError::new(
+                FailureKind::Unavailable,
+                "Lulo Intelligence actions are unavailable",
+            ))
+        })
     }
 }
 
@@ -104,6 +134,13 @@ impl<S: Surface> Backend for SystemBackend<S> {
 
     fn search_files<'a>(&'a self, query: &'a str) -> BackendFuture<'a, Result<(), BackendError>> {
         Box::pin(async move { self.surface.search_files(query) })
+    }
+
+    fn perform_intent<'a>(
+        &'a self,
+        intent: &'a rmac_intelligence::Intent,
+    ) -> BackendFuture<'a, Result<(), BackendError>> {
+        self.surface.perform_intent(intent)
     }
 }
 

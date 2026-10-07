@@ -1,8 +1,9 @@
 # ADR 0024 — Lulo Intelligence: a small local model, loaded on demand, behind typed actions
 
-- **Status:** proposed 2026-10-07. Fine-tuning is approved by the owner (2026-10-07) and is a
-  planned phase. Any rented-GPU spend still needs the owner's account and payment. Nothing is
-  built yet; phase 0 is a measurement spike on the reference laptop.
+- **Status:** accepted; phase 1 in progress on `op/ai-phase1` (2026-10-07): the
+  `org.rmac.Intelligence1` service, prompt-prefix caching, Spotlight "Lulo can do this" rows and
+  the Settings ▸ Lulo Intelligence pane. Fine-tuning is approved by the owner (2026-10-07) and is
+  a planned phase. Any rented-GPU spend still needs the owner's account and payment.
 - **Scope:** new crates `rmac-intelligence` (types, prompts, hardware gate, action registry,
   client), `rmac-intelligence-service` (the model process), `rmac-voice` (speech, phase 3);
   a new System Settings pane `crates/system-settings/src/controller/intelligence`; hooks in
@@ -72,7 +73,9 @@ Phase 0 replaces these estimates with measurements.
 | Phi-4-mini | 3.8B | MIT | 2.49 GB | ~3.0 GiB | 4–6 | Strong at maths; no edge for our tasks. |
 | Llama 3.2 3B | 3B | **Custom** (Llama 3.2 Community Licence: attribution, an acceptable-use policy, a 700M-MAU clause) | 2.02 GB | ~2.4 GiB | 5–8 | **Excluded** because of the custom licence. |
 
-**Decision:** the default is **Qwen3.5-2B** and the tiny fallback is **Qwen3.5-0.8B**.
+**Decision:** the two tiers are **Qwen3.5-0.8B** (Tiny) and **Qwen3.5-2B** (Standard). Phase 0
+showed that on 2-core PCs like the reference laptop the 0.8B model is the right default; 2B is
+offered only where it decodes at 8 tok/s or better (§4's hardware gate).
 Reasons: both are Apache-2.0; they are the best scorers at their sizes; the hybrid attention
 keeps memory low at long context; and they share one tokenizer and chat template, so one
 prompt set and one dataset serve both tiers. **Qwen3.5-4B** is an opt-in "Enhanced" download
@@ -160,17 +163,24 @@ app (Notes, Spotlight, …) ──D-Bus──▶ org.rmac.Intelligence1 ──�
 
 ### Hardware gate (adapts to each PC)
 
-| Tier | Model | Static requirements | Calibration (10 s, at enable time) |
+| Tier | Model | Static requirements | Measured requirement |
 |---|---|---|---|
-| Not offered | — | x86-64 without AVX2+FMA, fewer than 2 physical cores, or MemTotal < 3.5 GiB | — |
-| Tiny | Qwen3.5-0.8B | AVX2 (or NEON), MemTotal ≥ 3.5 GiB | decode ≥ 10 tok/s, otherwise "not available on this PC" |
-| **Standard** (reference laptop) | Qwen3.5-2B | MemTotal ≥ 6 GiB, ≥ 2 physical cores | decode ≥ 6 tok/s, otherwise offer Tiny |
-| Enhanced (opt-in) | Qwen3.5-4B | MemTotal ≥ 12 GiB and ≥ 4 cores, or a Vulkan GPU with ≥ 4 GiB VRAM | decode ≥ 6 tok/s |
+| Not offered | — | x86-64 without AVX2, FMA, F16C and BMI2 (the packaged llama.cpp baseline), fewer than 2 physical cores, or MemTotal < 3.5 GiB | — |
+| **Tiny** (default, and the reference laptop) | Qwen3.5-0.8B | AVX2 (or NEON), MemTotal ≥ 3.5 GiB | Tiny decode ≥ 10 tok/s, otherwise "not available on this PC" |
+| Standard (offered, never the default) | Qwen3.5-2B | MemTotal ≥ 6 GiB, ≥ 2 physical cores | 2B decode ≥ 8 tok/s: measured on 2B when it is on disk, otherwise predicted as 0.51 × the Tiny rate |
+| Enhanced (opt-in, later phase) | Qwen3.5-4B | MemTotal ≥ 12 GiB and ≥ 4 cores, or a Vulkan GPU with ≥ 4 GiB VRAM | decode ≥ 6 tok/s |
 
-Facts come from `rmac-system-info` (`facts.rs` already reads `MemTotal`), plus CPUID. The
-calibration result is stored and re-run when the CPU model or RAM size changes. Settings
-always explains why a tier was chosen ("This PC has 6.7 GB of memory; Lulo uses the
-Standard model").
+Revised after phase 0 (`crates/rmac-intelligence/src/gate.rs`). Phase 0 measured the 2B model at
+7.3 tok/s and 0.8B at 14.4 tok/s on the reference laptop's 2 cores: decode is memory-bandwidth
+bound, so 2B runs at about 0.51× the 0.8B rate on any PC. The Standard floor is phase 0's own 2B
+budget, 8 tok/s; the reference laptop (predicted 7.3) therefore gets Tiny and is not offered
+Standard, which phase 0 recommended. Settings measures the Tiny rate once, after the download
+(`Calibrate`, 32 decode steps), and keeps it with the CPU model and memory size it was measured
+on; new hardware makes it stale.
+
+Facts come from `/proc/cpuinfo` (physical cores from `core id`, the CPU flags) and
+`/proc/meminfo`. Settings always explains why a tier was chosen ("This PC has 6.7 GB of memory;
+Lulo uses the Tiny model, which answers fastest here").
 
 ### Model download and storage
 
@@ -702,6 +712,189 @@ optimisation.**
    phase 1 ships anything — this phase 0 build used a native-only build
    and a portable `cmake` binary as a workaround, neither of which should
    carry over unexamined into the real service build.
+
+## Phase 1 (2026-10-07): the service, the prefix cache and Spotlight rows
+
+Built on `op/ai-phase1`. Scope was cut to what could be proven well: the intent task only;
+Writing Tools, voice and the Lulo panel stay in later phases.
+
+### What was built
+
+- **`rmac-intelligence`** (no model runtime): the closed task list (`Task::Intent` only; other
+  names are refused), the typed `Intent` with its strict JSON wire form, row titles and
+  confirmation tier, the prompt, the schema-guided decoder, the pinned manifest (size and
+  SHA-256 of both GGUF files, revision-pinned URLs), the hardware gate, the settings file
+  (`$XDG_CONFIG_HOME/rmac/intelligence.json`, off unless it says on; corrupt reads as off), the
+  checksum-verified fetcher and the session-bus client (feature `client`).
+- **`rmac-intelligence-service`** (`org.rmac.Intelligence1` at `/org/rmac/Intelligence1`):
+  `Prepare()`, `Run(task, text) -> s` and `Calibrate() -> s`, and a `State` property. Phase 1
+  answers `Run` directly instead of through the `Delta`/`Done` signals of §4: an intent is one
+  short JSON reply, and Writing Tools will add streaming. Text arrives as a string capped at
+  800 bytes (the prompt uses at most 200); the memfd path arrives with long inputs.
+  - Activated on demand (`org.rmac.Intelligence1.service` → `SystemdService=
+    rmac-intelligence.service`), never in `rmac-session.target`, never supervised.
+  - Exits 60 s after its last call. The main loop waits on one deadline and the call queue;
+    nothing polls. A request while turned off, unsupported, short of memory or without a model
+    is answered with that error and the process exits a second later.
+  - Re-reads the on/off setting on every request, so turning it off takes effect at once.
+  - Caller check: same uid (`GetConnectionUnixUser`), and the caller's `/proc/<pid>/exe` must
+    be an `rmac-*` program in `/usr/libexec/rmac`, `/usr/bin` or the service's own directory.
+  - Loads only a model whose size and SHA-256 match the manifest; a verified-stamp (size,
+    mtime, inode) avoids re-hashing on every load.
+  - Requires `MemAvailable` ≥ the tier's budget + 768 MiB before loading.
+  - The unit sets `MemoryHigh=2G`, `MemoryMax=2560M`, `MemorySwapMax=0`,
+    `RestrictAddressFamilies=AF_UNIX`, `NoNewPrivileges=yes`, `CPUWeight=50`,
+    `IOSchedulingClass=idle`, plus `LockPersonality`, `RestrictRealtime`,
+    `SystemCallArchitectures=native`, `PrivateTmp` and `UMask=0077`. One static unit cannot
+    follow the tier, so the caps are the Standard tier's; Tiny stays far below them, and the
+    free-memory gate uses the chosen tier's own budget. A per-tier drop-in is phase 2.
+  - llama.cpp is built from source by `llama-cpp-2` 0.1.158 (CPU only, no OpenMP, no "common"
+    library) on Linux only; macOS and Windows builds of the workspace never compile it.
+    Packaged builds set an AVX2/FMA/F16C/BMI2 baseline (`build-native-inputs.sh`), which the
+    hardware gate requires, so a package never runs the build machine's own instructions.
+    `cmake` and `libclang-dev` are now declared build dependencies (CI, `release.yml`,
+    `packaging/rmac-source/debian/control`). The models are never packaged.
+- **Settings ▸ Lulo Intelligence** (SET-115): header, the on/off switch (off by default), the
+  gate's verdict, the model (a pop-up only where Standard is allowed), the download row
+  (Download / Stop / Resume at N % / Remove Model) driven by the one-shot
+  `rmac-intelligence-fetch` helper, and the one-time speed check after a download.
+- **Spotlight "Lulo can do this" rows** (`crates/launcher-app/src/view/assist.rs`): see below.
+
+### Prompt-prefix caching (Qwen3.5's hybrid layers)
+
+Phase 0 found that a Qwen3.5 context cannot be rewound by trimming the KV cache: its Gated
+DeltaNet layers keep a recurrent state per sequence that only moves forward. The service
+therefore saves the *whole* sequence state:
+
+1. at load, the fixed prefix (system prompt, action schema, 19 worked examples; 693 tokens) is evaluated
+   once on sequence 0;
+2. `llama_state_seq_get_data_ext` captures sequence 0 — attention KV and recurrent state
+   together — into memory;
+3. every request clears the context, restores that state with
+   `llama_state_seq_set_data_ext`, and evaluates only its own tokens from the prefix's end.
+
+The same state is also written to `$XDG_CACHE_HOME/lulo/intelligence/prefix-<hash>.state`
+(`llama_state_seq_save_file`), keyed by the model file, prompt version, prompt text, context
+size and llama.cpp version. A later service start reads it back instead of evaluating the
+prefix again, after checking that the saved tokens are exactly the prefix's. Separate
+sequence ids per task (phase 0's other option) are not needed while there is one task.
+
+### Schema-guided decoding
+
+The answer always starts `{"intent":"`, written into the prompt. From there
+`rmac_intelligence::decode` only lets the model choose what the schema allows: intent names,
+enumerations (`dark`/`light`, `true`/`false`, units) by comparing just those tokens' logits;
+numbers digit by digit within their range (volume and brightness 0–100, timers 1–999 and at
+most 23 hours); app names and file queries as quote-free text up to 64 bytes. Literal JSON
+between choices is never generated token by token: it is queued and fed in one batch the next
+time a logit is needed, and the closing `}` is never fed at all. "Turn on dark mode" costs the
+request's tokens plus two forward passes. A unit test drives the decoder with 3,000 random
+logit streams and every result parses as a valid intent; invalid output is impossible.
+llama.cpp's own GBNF sampler (`rmac-intelligence-bench --decoder gbnf`, grammar in
+`llama.rs`) is kept for comparison.
+
+### Spotlight rows
+
+- Asked only when Lulo Intelligence is on, every search provider has answered, none matched
+  confidently (no answer card; no result whose name starts with the query or one of its
+  words), the query has two or more words with letters, and typing paused 250 ms. The model
+  starts loading (`Prepare`) as soon as a query qualifies, so loading overlaps the rest of the
+  typing. The request runs on the blocking pool; a newer keystroke drops it.
+- The answer is one ordinary result row in its own "Lulo Intelligence" section above the
+  others: "Turn On Dark Mode — Lulo can do this". Nothing changes until it is picked.
+  Opening an app (resolved against the installed apps; no row for an app that is not
+  installed), searching files and starting a timer run when picked. Settings changes
+  (appearance, volume, brightness, Wi-Fi, Bluetooth, Do Not Disturb) ask on the row itself:
+  the first Return or click changes the subtitle to "Press Return again to confirm".
+- Each intent uses the service Lulo already has for the job: the rmac theme store and the
+  toolkit sync (appearance, as Settings ▸ Appearance), Control Centre's typed operations
+  (volume, Wi-Fi, Bluetooth, Focus), the OSD's logind backlight call (brightness), Clock's
+  locked store and systemd ring timer (timers), and the launcher's own app launch and
+  "Search in Files" actions.
+
+### Evaluation sets
+
+`tests/intelligence/intents-dev.jsonl` (66 cases: phase 0's 20, the brief's examples, typos,
+Indian-English phrasing, refusals, one injection attempt) is the set the prompt was tuned on.
+`tests/intelligence/intents-heldout.jsonl` (38 cases) was written before any measurement and is
+frozen by SHA-256 in a unit test; it was never used for tuning. No request appears in both sets
+or in the prompt's examples.
+
+### Phase 1 results
+
+Measured on the reference laptop (i5-5300U, 2 cores / 4 threads, 6.7 GiB) on 2026-10-07, with
+the `iterate` build of `op/ai-phase1`, 2 threads (physical cores), the List prompt (version 4)
+and the schema-guided decoder unless stated. Every run held the shared build lock, so no build
+competed for the CPU. Tools: `rmac-intelligence-bench eval|latency|service`; the D-Bus runs
+used a private session bus that activated the real service with the real model.
+
+**Latency, Tiny (Qwen3.5-0.8B)**
+
+| | First token | Request → parsed intent |
+|---|---|---|
+| Warm, "turn on dark mode" (first request after load) | 243 ms | 354 ms |
+| Warm, the four brief requests × 10 (dark mode, 10-minute timer, open Notes, volume 30 %) | p50 259 ms, p90 316 ms | p50 487 ms, p90 658 ms |
+| Warm, through D-Bus as Spotlight calls it (same 40 requests, client clock) | — | p50 486 ms, p90 659 ms |
+| Warm, the 104 evaluation requests | p50 239–259 ms | p50 407–419 ms, p90 ≈ 600 ms |
+| Cold: service activated, prefix state read from disk | — | 1.56 s (model load 0.85 s, prefix restore 27 ms) |
+| Cold, first ever (693-token prefix evaluated, then saved) | — | 16.5 s through the service; 12.6 s in-process |
+
+The ≤ 400 ms target holds for the **first token** on every request (p90 316 ms) and for the
+whole answer to short settings requests ("turn on dark mode": 354 ms). It does **not** hold
+end to end across all requests: the p50 is 0.41–0.49 s and the p90 0.6–0.66 s, because a timer,
+an app name or a number needs two to four more forward passes at 15 tok/s. Phase 0's uncached
+first token was 2.44 s; caching the prefix made it 9.4× faster. Four threads instead of two
+changed nothing measurable (warm p50 474 against 487 ms). The first-ever cold start is slow
+because the prefix is evaluated at 45 tok/s; it happens once per model and prompt version,
+and Settings' speed check after the download pays it, not the first Spotlight request.
+
+**Latency, Standard (Qwen3.5-2B)**: warm first token p50 553 ms, end to end p50 1,026 ms (brief
+requests) and 813–879 ms (evaluation sets); cold with the saved prefix 1.13 s to load; the
+first-ever prefix evaluation 26.9 s. Decode 7.66 tok/s, below Standard's 8 tok/s floor, as the
+gate predicted from the Tiny rate (15.1 × 0.51 = 7.7): the reference laptop is offered Tiny
+only.
+
+**Accuracy with constrained decoding** (no fine-tuning; 0 invalid outputs in every run)
+
+| Model | Decoder | Dev set (66, tuned on) | Held-out (38, frozen) | Held-out wrong actions | End to end p50 |
+|---|---|---|---|---|---|
+| 0.8B | schema-guided | 61/66 (92.4 %) | 33/38 (86.8 %) | 2 | 407–419 ms |
+| 0.8B | llama.cpp GBNF | 61/66 (92.4 %) | 33/38 (86.8 %) | 2 | 964–1,020 ms |
+| 2B | schema-guided | 61/66 (92.4 %) | 34/38 (89.5 %) | 1 | 813–879 ms |
+| 2B | llama.cpp GBNF | 61/66 (92.4 %) | 34/38 (89.5 %) | 1 | 1,608–1,708 ms |
+
+The two decoders choose the same answers; the schema-guided one is 2.3× faster because it
+never decodes forced JSON one token at a time. The prompt was tuned on the dev set only
+(the Chat style scored 52/66 against the List style's 56/66 at version 3; version 4 added five
+examples and two rules). Held-out misses for 0.8B: "make everything light again" →
+brightness 100 and "turn of the wifi" → Wi-Fi on (wrong actions, both Settings changes that
+still ask before running), and three harmless "none" answers ("can you launch preview",
+"drak mod", "do the needful and off the bluetooth"). The ADR §6 gates (≥ 95 % seen, ≤ 0.5 %
+wrong actions) are not met before fine-tuning, which is phase 2's job.
+
+**Memory**: service RSS 0.87 GiB with Tiny loaded (bench peak 0.85–0.89 GiB); 2B peak
+1.89–1.94 GiB. Both inside the unit's caps.
+
+**Idle cost**: through the real service on a private bus, from 5 s to 50 s after the last
+request the service's threads made **0** context switches (no timer, no polling), and it
+exited **60 s** after its last request. A request while turned off is answered "off" and the
+process exits within a second without loading anything; with the feature off Spotlight never
+asks, so nothing starts at all.
+
+**Nested behaviour scenario** (`scripts/behavior/run_spotlight_intents.py`, private headless
+Sway + nested niri, fixture model, packaged shell with this branch's Spotlight and service):
+off — no row, service never started; on — "Turn On Dark Mode, Lulo can do this" shown, first
+Return armed it ("Press Return again to confirm") with the appearance still Light, second
+Return switched it to Dark and closed Spotlight, and the service exited once idle. It passed
+3 of 3 runs after one fix: the first two runs linked Spotlight from the build directory
+instead of placing it beside the service, as installs do, and no row appeared then; the cause
+was not fully pinned down (the service and Spotlight now log why an answer is missing). It
+also runs in Lulo runtime CI as the `spotlight-intents` check.
+
+**Not done in phase 1**: a per-tier memory-cap drop-in; unloading on memory pressure (PSI);
+a metered-connection warning before the download; the `systemd-analyze security` review of
+the unit in a real user manager; streaming replies and the other tasks (Writing Tools, Help
+answers, Terminal explanations); fine-tuning (phase 2, needed for the §6 accuracy gates).
 
 ## 11. Open risks
 

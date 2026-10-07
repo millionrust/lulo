@@ -1,6 +1,7 @@
 //! Session-owned, Spotlight-style launcher surface.
 
 mod assets;
+mod intelligence;
 mod service;
 mod view;
 

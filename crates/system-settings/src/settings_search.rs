@@ -144,6 +144,13 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
             "increased contrast",
             "reduced motion",
         ],
+        "Lulo Intelligence" => &[
+            "Spotlight actions",
+            "on-device model",
+            "download model",
+            "remove model",
+            "turn on Lulo Intelligence",
+        ],
         "Desktop & Dock" => &[
             "Dock position",
             "Dock displays",

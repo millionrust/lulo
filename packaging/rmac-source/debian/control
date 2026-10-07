@@ -8,8 +8,12 @@ Rules-Requires-Root: no
 # uses the rustup toolchain pinned in rust-toolchain.toml (1.95.0), which the
 # Ubuntu archive does not carry. dpkg-checkbuilddeps cannot see it, so
 # scripts/linux/build-rmac-source-package.sh checks for cargo itself.
+# cmake and libclang-dev build llama.cpp and its bindings for
+# rmac-intelligence-service (docs/decisions/0024-lulo-intelligence.md).
 Build-Depends: clang,
+               cmake,
                dpkg-dev,
+               libclang-dev,
                libfontconfig1-dev,
                libfreetype-dev,
                libpam0g-dev,

@@ -121,12 +121,14 @@ jobs:
             build-essential \
             ca-certificates \
             clang \
+            cmake \
             curl \
             debhelper \
             dpkg-dev \
             fakeroot \
             git \
             gnupg \
+            libclang-dev \
             libfontconfig1-dev \
             libfreetype-dev \
             libpam0g-dev \
@@ -244,12 +246,14 @@ jobs:
             build-essential \
             ca-certificates \
             clang \
+            cmake \
             curl \
             debhelper \
             dpkg-dev \
             fakeroot \
             git \
             gnupg \
+            libclang-dev \
             libfontconfig1-dev \
             libfreetype-dev \
             libpam0g-dev \
@@ -662,12 +666,14 @@ jobs:
             build-essential \
             ca-certificates \
             clang \
+            cmake \
             curl \
             debhelper \
             dpkg-dev \
             fakeroot \
             git \
             gnupg \
+            libclang-dev \
             libfontconfig1-dev \
             libfreetype-dev \
             libpam0g-dev \

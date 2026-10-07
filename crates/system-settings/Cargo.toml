@@ -35,6 +35,9 @@ rmac-focus-linux.workspace = true
 rmac-focus-settings.workspace = true
 rmac-gtk-settings.workspace = true
 rmac-input.workspace = true
+# Settings ▸ Lulo Intelligence (ADR 0024): on/off, hardware gate, model
+# download and calibration through the service.
+rmac-intelligence = { workspace = true, features = ["client"] }
 rmac-keyboard.workspace = true
 rmac-login-items.workspace = true
 rmac-login-items-linux.workspace = true

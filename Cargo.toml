@@ -41,6 +41,9 @@ image = { version = "0.25.10", default-features = false }
 html5ever = "=0.27.0"
 kdl = { version = "=6.5.0", features = ["v1-fallback"] }
 libc = "=0.2.186"
+# Lulo Intelligence's model runtime (ADR 0024 §3), only in
+# rmac-intelligence-service on Linux. CPU only: no OpenMP, no "common".
+llama-cpp-2 = { version = "=0.1.158", default-features = false }
 libloading = "=0.8.9"
 lzma-rs = "0.3"
 markdown = "=1.0.0"
@@ -104,6 +107,7 @@ rmac-dock = { version = "=0.9.0-beta.1", path = "crates/rmac-dock" }
 rmac-dock-system = { version = "=0.9.0-beta.1", path = "crates/rmac-dock-system" }
 rmac-dock-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-dock-runtime" }
 rmac-input = { version = "=0.9.0-beta.1", path = "crates/rmac-input" }
+rmac-intelligence = { version = "=0.9.0-beta.1", path = "crates/rmac-intelligence", default-features = false }
 rmac-keyboard = { version = "=0.9.0-beta.1", path = "crates/rmac-keyboard" }
 rmac-launcher = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher" }
 rmac-launcher-providers = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-providers" }

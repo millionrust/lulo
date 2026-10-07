@@ -54,6 +54,19 @@ impl Surface for SurfaceBridge {
             .map_err(|error| BackendError::new(FailureKind::Io(error.kind()), error.to_string()))
     }
 
+    /// A picked "Lulo can do this" row, carried out on the blocking pool.
+    fn perform_intent(
+        &self,
+        intent: &rmac_intelligence::Intent,
+    ) -> rmac_launcher_system::BackendFuture<'static, Result<(), BackendError>> {
+        let intent = intent.clone();
+        Box::pin(async move {
+            blocking::unblock(move || crate::intelligence::perform(&intent))
+                .await
+                .map_err(|detail| BackendError::new(FailureKind::Other, detail))
+        })
+    }
+
     fn copy_text(&self, text: &str) -> Result<(), BackendError> {
         self.clipboard.try_send(text.to_owned()).map_err(|_| {
             BackendError::new(FailureKind::Unavailable, "clipboard surface is unavailable")

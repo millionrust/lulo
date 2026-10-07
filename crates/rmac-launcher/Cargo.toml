@@ -9,5 +9,7 @@ publish = false
 [dependencies]
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
+# The typed Lulo Intelligence intent a "Lulo can do this" row performs.
+rmac-intelligence.workspace = true
 rmac-shell-invocation.workspace = true
 rmac-shell-settings.workspace = true

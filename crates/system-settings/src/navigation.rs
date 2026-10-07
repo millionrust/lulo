@@ -43,7 +43,7 @@ pub(super) enum SubPage {
 }
 
 pub(super) const GENERAL_DESTINATIONS: [&str; 3] = ["About", "Software Update", "Storage"];
-pub(super) const PANE_ROUTES: [(&str, &str); 30] = [
+pub(super) const PANE_ROUTES: [(&str, &str); 31] = [
     ("wifi", "Wi-Fi"),
     ("bluetooth", "Bluetooth"),
     ("network", "Network"),
@@ -57,6 +57,7 @@ pub(super) const PANE_ROUTES: [(&str, &str); 30] = [
     ("sharing", "Sharing"),
     ("accessibility", "Accessibility"),
     ("appearance", "Appearance"),
+    ("intelligence", "Lulo Intelligence"),
     ("desktop-dock", "Desktop & Dock"),
     ("displays", "Displays"),
     ("touchscreen", "Touchscreen"),
@@ -174,6 +175,14 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 "icons/palette.svg",
                 color(0x1d1d1f),
                 "Change how windows, buttons, and menus look.",
+            ),
+            // macOS 26 lists Apple Intelligence & Siri here, after
+            // Appearance; Lulo's on-device equivalent takes its place.
+            cat(
+                "Lulo Intelligence",
+                "icons/sparkles.svg",
+                color(0xaf52de),
+                "Let Spotlight carry out requests with a model that runs on this computer.",
             ),
             cat(
                 "Desktop & Dock",
@@ -363,6 +372,7 @@ pub(super) fn category_has_dedicated_renderer(name: &str) -> bool {
             | "Sharing"
             | "Accessibility"
             | "Appearance"
+            | "Lulo Intelligence"
             | "Desktop & Dock"
             | "Displays"
             | "Touchscreen"

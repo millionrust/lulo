@@ -125,6 +125,7 @@ def package_files() -> dict[str, tuple[bytes, int]]:
     session = REPO_ROOT / "crates" / "rmac-session"
     notifications = REPO_ROOT / "crates" / "rmac-notifications-linux" / "install"
     focus = REPO_ROOT / "crates" / "rmac-focus-linux" / "install"
+    intelligence = REPO_ROOT / "crates" / "rmac-intelligence-service" / "install"
     file_chooser = REPO_ROOT / "crates" / "rmac-file-chooser" / "install"
 
     files: dict[str, tuple[bytes, int]] = {
@@ -273,6 +274,15 @@ def package_files() -> dict[str, tuple[bytes, int]]:
                 focus / "org.rmac.Focus1.service.in",
                 "@RMAC_FOCUS_EXEC@",
                 f"{SYSTEM_LIBEXEC}/rmac-focus-service",
+            ),
+            0o644,
+        ),
+        # Lulo Intelligence (ADR 0024): activated on demand, never at login.
+        "usr/share/dbus-1/services/org.rmac.Intelligence1.service": (
+            _dbus_service(
+                intelligence / "org.rmac.Intelligence1.service.in",
+                "@RMAC_INTELLIGENCE_EXEC@",
+                f"{SYSTEM_LIBEXEC}/rmac-intelligence-service",
             ),
             0o644,
         ),

@@ -81,6 +81,8 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-notification-center",
     "rmac-focus-service",
     "rmac-clipboard-service",
+    "rmac-intelligence-service",
+    "rmac-intelligence-fetch",
     "rmac-shortcut-broker",
     "rmac-shortcut-dispatch",
     "rmac-locker",
@@ -102,6 +104,7 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-file-chooser.service",
     "rmac-focus.service",
     "rmac-idle-lock.service",
+    "rmac-intelligence.service",
     "rmac-launcher.service",
     "rmac-lock-coordinator.service",
     "rmac-lock.service",
@@ -161,6 +164,7 @@ EXPECTED_PATHS = {
     ),
     Path("usr/share/dbus-1/services/org.rmac.NotificationCenter1.service"),
     Path("usr/share/dbus-1/services/org.rmac.Focus1.service"),
+    Path("usr/share/dbus-1/services/org.rmac.Intelligence1.service"),
     Path(
         "usr/share/dbus-1/services/"
         "org.freedesktop.impl.portal.desktop.rmac.filechooser.service"

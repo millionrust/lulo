@@ -70,6 +70,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             clang \
+            cmake \
+            libclang-dev \
             libfontconfig1-dev \
             libfreetype-dev \
             libpam0g-dev \
@@ -168,6 +170,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             clang \
+            cmake \
+            libclang-dev \
             libfontconfig1-dev \
             libfreetype-dev \
             libpam0g-dev \

@@ -19,7 +19,9 @@ pub(crate) fn copy_text(row: &Row) -> Option<String> {
         Category::Dictionary => row.subtitle.clone(),
         Category::Files => Some(row.id.local.clone()),
         Category::SearchIn => None,
-        Category::Applications | Category::Settings | Category::Other => Some(row.title.clone()),
+        Category::Applications | Category::Settings | Category::Other | Category::Intelligence => {
+            Some(row.title.clone())
+        }
     }
     .filter(|text| !text.is_empty())
 }

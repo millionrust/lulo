@@ -12,6 +12,7 @@ pub enum Operation {
     RevealFile,
     CopyText,
     SearchFiles,
+    PerformIntent,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,6 +67,7 @@ impl fmt::Display for Error {
             Operation::RevealFile => "Could not reveal the file",
             Operation::CopyText => "Could not copy the result",
             Operation::SearchFiles => "Could not open Files",
+            Operation::PerformIntent => "Lulo could not do that",
         })
     }
 }
@@ -81,6 +83,7 @@ pub enum Outcome {
     FileRevealed,
     TextCopied,
     FilesSearched,
+    IntentPerformed,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

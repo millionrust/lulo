@@ -135,6 +135,7 @@ PANE_ROUTES: list[tuple[str, str]] = [
     ("sharing", "Sharing"),
     ("accessibility", "Accessibility"),
     ("appearance", "Appearance"),
+    ("intelligence", "Lulo Intelligence"),
     ("desktop-dock", "Desktop & Dock"),
     ("displays", "Displays"),
     ("touchscreen", "Touchscreen"),

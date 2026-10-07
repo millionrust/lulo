@@ -5,6 +5,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 pub(crate) const DEFAULT_LIMIT: usize = 40;
+/// A title match this good (the query is a prefix of the title or of one
+/// of its words) answers the query without Lulo Intelligence.
+pub(crate) const CONFIDENT_MATCH: u16 = 700;
+/// The provider id of "Lulo can do this" rows. It is not a registered
+/// search provider: the launcher adds the row itself after the search.
+pub const INTELLIGENCE_PROVIDER: &str = "intelligence";
 pub(crate) const DEFAULT_CATEGORY_LIMIT: usize = 12;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -22,6 +28,10 @@ pub enum Category {
     /// The fixed "Search in Files" row macOS keeps at the end of every list
     /// ("Search in Finder").
     SearchIn,
+    /// A "Lulo can do this" row: a plain-language request Lulo Intelligence
+    /// turned into one typed action (ADR 0024). Nothing runs until it is
+    /// picked, and Settings changes ask for a second Return.
+    Intelligence,
 }
 
 impl Category {
@@ -35,6 +45,7 @@ impl Category {
             Self::Files => "Files",
             Self::Other => "Other",
             Self::SearchIn => "Search",
+            Self::Intelligence => "Lulo Intelligence",
         }
     }
 
@@ -47,6 +58,7 @@ impl Category {
             Self::Dictionary => 15,
             Self::Other => 10,
             Self::SearchIn => 0,
+            Self::Intelligence => 60,
         }
     }
 
@@ -62,7 +74,7 @@ impl Category {
     pub(crate) fn matches_any_query(self) -> bool {
         matches!(
             self,
-            Self::Calculator | Self::Clock | Self::Dictionary | Self::SearchIn
+            Self::Calculator | Self::Clock | Self::Dictionary | Self::SearchIn | Self::Intelligence
         )
     }
 }
@@ -167,6 +179,10 @@ pub enum Action {
     /// Open Files searching the home folder for `query`.
     SearchFiles {
         query: String,
+    },
+    /// Carry out a Lulo Intelligence intent (a Settings change or a timer).
+    PerformIntent {
+        intent: rmac_intelligence::Intent,
     },
 }
 

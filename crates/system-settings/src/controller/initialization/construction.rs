@@ -268,6 +268,8 @@ impl Settings {
             lock_request_busy: false,
             lock_request_error: None,
 
+            intelligence: intelligence::IntelligencePane::default(),
+
             shell_settings_loading: true,
             shell_settings_busy: false,
             shell_settings: None,
@@ -416,6 +418,7 @@ impl Settings {
             "Internet Accounts" => settings.refresh_internet_accounts(cx),
             "Users & Groups" | "Login Password" => settings.refresh_users(cx),
             "Printers & Scanners" => settings.refresh_printers(cx),
+            "Lulo Intelligence" => settings.refresh_intelligence(cx),
             _ => {}
         }
         settings

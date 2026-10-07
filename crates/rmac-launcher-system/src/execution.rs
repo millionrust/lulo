@@ -56,6 +56,19 @@ pub async fn execute(
                 .await
                 .map(|()| Outcome::FilesSearched)
         }
+        rmac_launcher::Action::PerformIntent { intent } => {
+            if *intent == rmac_intelligence::Intent::None {
+                Err(BackendError::new(
+                    FailureKind::InvalidAction,
+                    "the intent asks for nothing",
+                ))
+            } else {
+                backend
+                    .perform_intent(intent)
+                    .await
+                    .map(|()| Outcome::IntentPerformed)
+            }
+        }
     }
     .map_err(|error| failure(activation, operation, error))?;
 
@@ -74,6 +87,7 @@ fn operation(action: &rmac_launcher::Action) -> Operation {
         rmac_launcher::Action::RevealFile { .. } => Operation::RevealFile,
         rmac_launcher::Action::CopyText { .. } => Operation::CopyText,
         rmac_launcher::Action::SearchFiles { .. } => Operation::SearchFiles,
+        rmac_launcher::Action::PerformIntent { .. } => Operation::PerformIntent,
     }
 }
 

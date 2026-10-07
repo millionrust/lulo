@@ -85,7 +85,7 @@ pub fn query_matches(query: &str, title: &str, subtitle: Option<&str>) -> bool {
         || subtitle.is_some_and(|subtitle| match_quality(&query, &normalize(subtitle)).is_some())
 }
 
-fn match_quality(query: &str, value: &str) -> Option<u16> {
+pub(crate) fn match_quality(query: &str, value: &str) -> Option<u16> {
     if value == query {
         Some(1_000)
     } else if value.starts_with(query) {

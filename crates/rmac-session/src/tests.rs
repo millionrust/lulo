@@ -881,6 +881,42 @@ fn file_chooser_backend_is_a_separate_activated_portal() {
 }
 
 #[test]
+fn intelligence_starts_on_demand_capped_and_offline() {
+    let unit = include_str!("../units/rmac-intelligence.service");
+    assert!(unit.contains("Type=dbus"));
+    assert!(unit.contains("BusName=org.rmac.Intelligence1"));
+    assert!(unit.contains("ExecStart=%h/.local/libexec/rmac/rmac-intelligence-service"));
+    assert!(unit.contains("Restart=no"));
+    // ADR 0024 §4/§5: memory caps, no swap, no network, lower priority.
+    for directive in [
+        "MemoryHigh=2G",
+        "MemoryMax=2560M",
+        "MemorySwapMax=0",
+        "RestrictAddressFamilies=AF_UNIX",
+        "NoNewPrivileges=yes",
+        "CPUWeight=50",
+        "IOSchedulingClass=idle",
+    ] {
+        assert!(
+            unit.lines().any(|line| line == directive),
+            "missing {directive}"
+        );
+    }
+    // Not relied on: Ubuntu's user-namespace policy breaks it in user units.
+    assert!(!unit.lines().any(|line| line.starts_with("PrivateNetwork=")));
+    assert!(!unit.contains("/bin/sh"));
+    // Nothing starts it at login, and the supervisor does not own it.
+    let target = include_str!("../units/rmac-session.target");
+    assert!(!target.contains("rmac-intelligence.service"));
+    assert!(!COMPONENT_UNITS.contains(&"rmac-intelligence.service"));
+    let activation =
+        include_str!("../../rmac-intelligence-service/install/org.rmac.Intelligence1.service.in");
+    assert!(activation.contains("Name=org.rmac.Intelligence1"));
+    assert!(activation.contains("@RMAC_INTELLIGENCE_EXEC@"));
+    assert!(activation.contains("SystemdService=rmac-intelligence.service"));
+}
+
+#[test]
 fn focus_activation_asset_routes_to_the_supervised_authority() {
     let activation = include_str!("../../rmac-focus-linux/install/org.rmac.Focus1.service.in");
     assert!(activation.contains("Name=org.rmac.Focus1"));

@@ -1,0 +1,26 @@
+[package]
+name = "rmac-intelligence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+description = "Lulo Intelligence (ADR 0024): closed task list, typed intents, prompts, schema-guided decoding, hardware gate, pinned model manifest, settings, fetcher and the session-bus client. No model runtime: that lives in rmac-intelligence-service."
+
+[features]
+default = []
+# The org.rmac.Intelligence1 session-bus client (zbus). Types-only users such
+# as rmac-launcher leave it off.
+client = ["dep:zbus", "dep:rmac-dbus"]
+
+[[bin]]
+name = "rmac-intelligence-fetch"
+path = "src/bin/rmac-intelligence-fetch.rs"
+
+[dependencies]
+rmac-dbus = { workspace = true, optional = true }
+rmac-storage.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+zbus = { workspace = true, optional = true }

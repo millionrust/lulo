@@ -1,6 +1,7 @@
 //! Launcher query, selection, activation, and system-surface controller.
 
 mod actions;
+mod assist;
 mod completion;
 mod panel;
 mod render;
@@ -62,6 +63,8 @@ pub(crate) struct LauncherView {
     /// and panel icons (`rmac_ui::svg_icon`) rasterize for the surface's
     /// real physical pixels instead of a fixed-assumption bitmap.
     scale_factor: f32,
+    /// The "Lulo can do this" row (Lulo Intelligence, ADR 0024).
+    assist: assist::Assist,
 }
 
 struct InputProbe {
@@ -244,8 +247,10 @@ impl LauncherView {
             }),
             previous_window,
             scale_factor: window.scale_factor(),
+            assist: assist::Assist::default(),
         };
         view.ensure_browse_selection();
+        view.load_assist_setting(cx);
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
         view
     }
@@ -282,6 +287,7 @@ impl LauncherView {
                                     }
                                 }
                                 this.ensure_browse_selection();
+                                this.consider_assist(cx);
                                 cx.notify();
                             }
                         })
@@ -424,6 +430,15 @@ impl LauncherView {
         }
         if matches!(command, KeyCommand::ArrowDown | KeyCommand::ArrowUp) {
             self.keyboard_selection = true;
+        }
+        // A Settings change from Lulo Intelligence asks first: the first
+        // Return only arms the row.
+        if command == KeyCommand::Return {
+            if let Some(id) = self.selected_assist() {
+                if self.arm_assist(&id, cx) {
+                    return;
+                }
+            }
         }
         let effect = self.coordinator.handle_key(command);
         self.apply_key_effect(effect, window, cx);
@@ -570,6 +585,9 @@ impl LauncherView {
         cx: &mut Context<Self>,
     ) {
         self.coordinator.select(&id);
+        if mode == ActivationMode::Primary && self.arm_assist(&id, cx) {
+            return;
+        }
         let effect = self.coordinator.activate_selected(mode);
         self.apply_key_effect(effect, window, cx);
     }
@@ -593,7 +611,12 @@ impl LauncherView {
                     let _ = cx.update_window(window_handle, |_, window, cx| {
                         let _ = this.update(cx, |this, cx| {
                             if this.coordinator.finish_activation(result) {
-                                if let Some((query, id)) = this.coordinator.take_completed_choice()
+                                // Lulo Intelligence rows are not learned:
+                                // they exist only for the query that made them.
+                                if let Some((query, id)) =
+                                    this.coordinator.take_completed_choice().filter(|(_, id)| {
+                                        id.provider.0 != rmac_launcher::INTELLIGENCE_PROVIDER
+                                    })
                                 {
                                     service::learn(query, id, cx);
                                 }

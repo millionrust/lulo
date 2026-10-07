@@ -88,6 +88,9 @@ fn result(id: &str, category: Category, title: &str) -> SearchResult {
         Category::SearchIn => Action::SearchFiles {
             query: title.into(),
         },
+        Category::Intelligence => Action::PerformIntent {
+            intent: rmac_intelligence::Intent::Wifi { on: true },
+        },
     };
     SearchResult {
         id: ResultId {

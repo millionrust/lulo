@@ -2483,7 +2483,7 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
     let source = HSTRING::from(source.as_os_str());
     let destination = HSTRING::from(destination.as_os_str());
     unsafe { MoveFileExW(&source, &destination, MOVE_FILE_FLAGS(0)) }
-        .map_err(|error| io::Error::other(error.to_string()))
+        .map_err(crate::file_ops::win32_io_error)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

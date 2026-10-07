@@ -69,7 +69,7 @@ fn volume_space_bytes(path: &Path) -> io::Result<(u64, u64)> {
             None,
         )
     }
-    .map_err(|error| io::Error::other(error.to_string()))?;
+    .map_err(win32_io_error)?;
     Ok((total_bytes, free_bytes_available))
 }
 
@@ -669,7 +669,19 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
     let source = HSTRING::from(source.as_os_str());
     let destination = HSTRING::from(destination.as_os_str());
     unsafe { MoveFileExW(&source, &destination, MOVE_FILE_FLAGS(0)) }
-        .map_err(|error| io::Error::other(error.to_string()))
+        .map_err(win32_io_error)
+}
+
+/// `windows::core::Error::code()` is an `HRESULT`; for a Win32-originated
+/// failure (every API here) it is always `0x8007_<win32 code>`
+/// (`HRESULT_FROM_WIN32`), so unpacking the low word and handing it to
+/// `from_raw_os_error` gives back the exact `io::ErrorKind` std itself
+/// uses for a raw Windows error (`AlreadyExists` for `ERROR_ALREADY_
+/// EXISTS`/`ERROR_FILE_EXISTS`, and so on) — unlike flattening to
+/// `io::Error::other(error.to_string())`, which always reads as `Other`.
+#[cfg(target_os = "windows")]
+pub(crate) fn win32_io_error(error: windows::core::Error) -> io::Error {
+    io::Error::from_raw_os_error((error.code().0 as u32 & 0xFFFF) as i32)
 }
 
 /// Files is currently packaged only for Linux, developed on macOS and ported

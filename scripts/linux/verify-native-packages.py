@@ -563,7 +563,7 @@ def verify_directory(
                 )
             except Exception as error:
                 raise VerificationError(
-                    f"{specification.name} immutable payload verification failed"
+                    f"{specification.name} immutable payload verification failed: {error}"
                 ) from error
             binary_paths, scanned_bytes = _verify_binary_records(
                 extracted,

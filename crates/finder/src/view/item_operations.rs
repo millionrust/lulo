@@ -13,6 +13,14 @@ impl FinderView {
         if paths.is_empty() {
             return;
         }
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.operation_error =
+                Some("Adding to the Dock isn't available on Windows yet".into());
+            cx.notify();
+            return;
+        }
+        #[cfg(target_os = "linux")]
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let resolved = blocking::unblock(move || {
                 paths

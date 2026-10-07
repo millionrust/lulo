@@ -143,8 +143,8 @@ enum KnownFolder {
 #[cfg(target_os = "windows")]
 fn known_or_home_folder(folder: KnownFolder, home: &Path, fallback_name: &str) -> PathBuf {
     use windows::Win32::UI::Shell::{
-        FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, KF_FLAG_DEFAULT,
-        SHGetKnownFolderPath,
+        FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, SHGetKnownFolderPath,
+        KF_FLAG_DEFAULT,
     };
 
     let id = match folder {

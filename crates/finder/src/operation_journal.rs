@@ -411,15 +411,21 @@ struct TransferRecord {
 
 impl TransferRecord {
     fn source(&self) -> PathBuf {
-        PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(self.source_path_bytes.clone()) })
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.source_path_bytes.clone())
+        })
     }
 
     fn destination(&self) -> PathBuf {
-        PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(self.destination_path_bytes.clone()) })
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.destination_path_bytes.clone())
+        })
     }
 
     fn staging_destination(&self) -> PathBuf {
-        PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(self.staging_path_bytes.clone()) })
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.staging_path_bytes.clone())
+        })
     }
 
     fn source_still_matches(&self) -> io::Result<bool> {
@@ -1309,7 +1315,8 @@ impl Journal {
                     ticket.record.replaced_identity = None;
                     ticket.record.replaced_manifest = None;
                 }
-                ticket.record.destination_path_bytes = candidate.as_os_str().as_encoded_bytes().to_vec();
+                ticket.record.destination_path_bytes =
+                    candidate.as_os_str().as_encoded_bytes().to_vec();
                 ticket.record.destination_identity = Some(staging_identity);
                 ticket.record.destination_manifest = Some(staging_manifest);
                 ticket.record.stage = TransferStage::DestinationComplete;
@@ -2477,8 +2484,8 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
 /// on Linux/macOS.
 #[cfg(target_os = "windows")]
 fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
-    use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
     use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS};
 
     let source = HSTRING::from(source.as_os_str());
     let destination = HSTRING::from(destination.as_os_str());

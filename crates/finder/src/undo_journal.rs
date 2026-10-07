@@ -151,7 +151,9 @@ impl UndoRecord {
             created_nanoseconds: created.subsec_nanos(),
             source_path_bytes: seed.source.as_os_str().as_encoded_bytes().to_vec(),
             destination_path_bytes: seed.destination.as_os_str().as_encoded_bytes().to_vec(),
-            backup_path_bytes: seed.backup.map(|path| path.as_os_str().as_encoded_bytes().to_vec()),
+            backup_path_bytes: seed
+                .backup
+                .map(|path| path.as_os_str().as_encoded_bytes().to_vec()),
             restore_staging_path_bytes: restore_staging.as_os_str().as_encoded_bytes().to_vec(),
             cleanup_path_bytes: cleanup.as_os_str().as_encoded_bytes().to_vec(),
             source_parent_identity: EntryIdentity::capture(source_parent)?,
@@ -220,21 +222,27 @@ impl UndoRecord {
     }
 
     fn source(&self) -> PathBuf {
-        PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(self.source_path_bytes.clone()) })
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.source_path_bytes.clone())
+        })
     }
 
     fn destination(&self) -> PathBuf {
-        PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(self.destination_path_bytes.clone()) })
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.destination_path_bytes.clone())
+        })
     }
 
     fn backup(&self) -> Option<PathBuf> {
-        self.backup_path_bytes
-            .as_ref()
-            .map(|bytes| PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(bytes.clone()) }))
+        self.backup_path_bytes.as_ref().map(|bytes| {
+            PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(bytes.clone()) })
+        })
     }
 
     fn restore_staging(&self) -> PathBuf {
-        PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(self.restore_staging_path_bytes.clone()) })
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.restore_staging_path_bytes.clone())
+        })
     }
 
     fn restore_payload(&self) -> PathBuf {
@@ -242,13 +250,15 @@ impl UndoRecord {
     }
 
     fn cleanup(&self) -> PathBuf {
-        PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(self.cleanup_path_bytes.clone()) })
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.cleanup_path_bytes.clone())
+        })
     }
 
     fn trash_info(&self) -> Option<PathBuf> {
-        self.trash_info_path_bytes
-            .as_ref()
-            .map(|bytes| PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(bytes.clone()) }))
+        self.trash_info_path_bytes.as_ref().map(|bytes| {
+            PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(bytes.clone()) })
+        })
     }
 
     fn forward_record(&self, undo_root: &Path) -> PathBuf {
@@ -258,7 +268,9 @@ impl UndoRecord {
                 .unwrap_or(undo_root)
                 .join(format!("{}.json", self.id));
         }
-        PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(self.forward_record_path_bytes.clone()) })
+        PathBuf::from(unsafe {
+            OsString::from_encoded_bytes_unchecked(self.forward_record_path_bytes.clone())
+        })
     }
 
     fn matches_seed(&self, seed: &UndoSeed) -> bool {
@@ -271,7 +283,8 @@ impl UndoRecord {
             && self.destination_snapshot == seed.destination_snapshot
             && self.replaced_snapshot == seed.replaced_snapshot
             && (self.forward_record_path_bytes.is_empty()
-                || self.forward_record_path_bytes == seed.forward_record.as_os_str().as_encoded_bytes())
+                || self.forward_record_path_bytes
+                    == seed.forward_record.as_os_str().as_encoded_bytes())
     }
 
     #[cfg(any(target_os = "linux", all(test, unix)))]
@@ -287,7 +300,8 @@ impl UndoRecord {
             && self.trash_info_bytes.as_ref() == Some(&seed.info_bytes)
             && self.trash_info_identity == seed.info_identity
             && (self.forward_record_path_bytes.is_empty()
-                || self.forward_record_path_bytes == seed.forward_record.as_os_str().as_encoded_bytes())
+                || self.forward_record_path_bytes
+                    == seed.forward_record.as_os_str().as_encoded_bytes())
     }
 
     fn validate(&self, expected_id: &str) -> io::Result<()> {
@@ -336,7 +350,9 @@ impl UndoRecord {
             }
         }
         if !self.forward_record_path_bytes.is_empty() {
-            let forward = PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(self.forward_record_path_bytes.clone()) });
+            let forward = PathBuf::from(unsafe {
+                OsString::from_encoded_bytes_unchecked(self.forward_record_path_bytes.clone())
+            });
             let expected_name = OsString::from(format!("{}.json", self.id));
             if !forward.is_absolute() || forward.file_name() != Some(expected_name.as_os_str()) {
                 return Err(invalid_data("Undo forward-record path is invalid"));
@@ -2028,7 +2044,9 @@ fn create_trash_info(path: &Path, bytes: &[u8]) -> io::Result<EntryIdentity> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(not(windows))]
-    options.mode(0o600).custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    options
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
     let mut file = options.open(path)?;
     file.write_all(bytes)?;
     file.sync_all()?;
@@ -2060,8 +2078,8 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
 /// without that flag already refuses when the destination exists.
 #[cfg(target_os = "windows")]
 fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
-    use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
     use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS};
 
     let source = HSTRING::from(source.as_os_str());
     let destination = HSTRING::from(destination.as_os_str());

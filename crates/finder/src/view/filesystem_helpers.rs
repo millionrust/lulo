@@ -489,8 +489,8 @@ pub(super) fn free_space(path: &Path) -> Option<u64> {
 
 #[cfg(windows)]
 pub(super) fn free_space(path: &Path) -> Option<u64> {
-    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
     let wide = HSTRING::from(path.as_os_str());
     let mut free_bytes_available = 0u64;

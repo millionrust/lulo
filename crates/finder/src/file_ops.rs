@@ -29,8 +29,8 @@ pub(crate) fn device_of(_path: &Path, metadata: &std::fs::Metadata) -> u64 {
 
 #[cfg(windows)]
 pub(crate) fn device_of(path: &Path, _metadata: &std::fs::Metadata) -> u64 {
-    use windows::Win32::Storage::FileSystem::{GetVolumeInformationW, GetVolumePathNameW};
     use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{GetVolumeInformationW, GetVolumePathNameW};
 
     let wide = HSTRING::from(path.as_os_str());
     let mut root = [0u16; 261];
@@ -55,8 +55,8 @@ pub(crate) fn device_of(path: &Path, _metadata: &std::fs::Metadata) -> u64 {
 /// `statvfs`'s two numbers Files actually needs: total and available bytes.
 #[cfg(windows)]
 fn volume_space_bytes(path: &Path) -> io::Result<(u64, u64)> {
-    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
     let wide = HSTRING::from(path.as_os_str());
     let mut free_bytes_available = 0u64;
@@ -397,7 +397,9 @@ fn copy_symlink(source: &Path, destination: &Path) -> io::Result<()> {
 #[cfg(windows)]
 fn copy_symlink(source: &Path, destination: &Path) -> io::Result<()> {
     let target = std::fs::read_link(source)?;
-    let target_is_dir = std::fs::metadata(source).map(|m| m.is_dir()).unwrap_or(false);
+    let target_is_dir = std::fs::metadata(source)
+        .map(|m| m.is_dir())
+        .unwrap_or(false);
     if target_is_dir {
         std::os::windows::fs::symlink_dir(&target, destination)
     } else {
@@ -509,7 +511,10 @@ fn sync_file_handle(path: &Path) -> io::Result<()> {
 
 #[cfg(windows)]
 fn sync_file_handle(path: &Path) -> io::Result<()> {
-    std::fs::OpenOptions::new().write(true).open(path)?.sync_all()
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)?
+        .sync_all()
 }
 
 /// Windows cannot open a directory with write access to `fsync` it; NTFS
@@ -687,13 +692,12 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
 /// `MoveFileExW` already refuses when the destination exists.
 #[cfg(target_os = "windows")]
 fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
-    use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
     use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS};
 
     let source = HSTRING::from(source.as_os_str());
     let destination = HSTRING::from(destination.as_os_str());
-    unsafe { MoveFileExW(&source, &destination, MOVE_FILE_FLAGS(0)) }
-        .map_err(win32_io_error)
+    unsafe { MoveFileExW(&source, &destination, MOVE_FILE_FLAGS(0)) }.map_err(win32_io_error)
 }
 
 /// `windows::core::Error::code()` is an `HRESULT`; for a Win32-originated

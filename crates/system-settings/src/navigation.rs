@@ -123,12 +123,7 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
             teal,
             "Choose original or local images for every Lulo window.",
         ),
-        cat(
-            "Sound",
-            "icons/volume-2.svg",
-            pink,
-            "Adjust alert sounds.",
-        ),
+        cat("Sound", "icons/volume-2.svg", pink, "Adjust alert sounds."),
         cat(
             "Keyboard",
             "icons/keyboard.svg",

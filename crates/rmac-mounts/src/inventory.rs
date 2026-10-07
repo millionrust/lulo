@@ -4,12 +4,12 @@ use std::io;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+use crate::model::MAX_DISPLAY_NAME_BYTES;
 #[cfg(target_os = "linux")]
 use crate::model::MAX_MOUNTINFO_BYTES;
 #[cfg(any(target_os = "linux", target_os = "macos", test))]
 use crate::model::MAX_MOUNTS;
-#[cfg(any(target_os = "linux", target_os = "macos", test))]
-use crate::model::MAX_DISPLAY_NAME_BYTES;
 use crate::{Error, Mount, Usage, Volume};
 
 pub fn discover() -> Result<Vec<Mount>, Error> {
@@ -45,7 +45,9 @@ pub fn discover() -> Result<Vec<Mount>, Error> {
 /// entry (ADR 0023 phase 4's Locations mapping).
 #[cfg(target_os = "windows")]
 fn discover_windows() -> Result<Vec<Mount>, Error> {
-    use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW};
+    use windows::Win32::Storage::FileSystem::{
+        GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW,
+    };
 
     // `GetDriveTypeW`'s return value, from `fileapi.h`; windows-rs does not
     // wrap these as named constants (they are raw preprocessor `#define`s,
@@ -70,14 +72,7 @@ fn discover_windows() -> Result<Vec<Mount>, Error> {
         // SAFETY: `label_buffer` is a valid, sufficiently sized buffer; every
         // other output parameter is `None`, which the API accepts.
         let has_media = unsafe {
-            GetVolumeInformationW(
-                &root_wide,
-                Some(&mut label_buffer),
-                None,
-                None,
-                None,
-                None,
-            )
+            GetVolumeInformationW(&root_wide, Some(&mut label_buffer), None, None, None, None)
         }
         .is_ok();
         if !has_media {
@@ -211,8 +206,8 @@ pub(crate) fn volume_usage(path: &Path) -> io::Result<Usage> {
 
 #[cfg(target_os = "windows")]
 pub(crate) fn volume_usage(path: &Path) -> io::Result<Usage> {
-    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
     let wide = HSTRING::from(path.as_os_str());
     let mut free_bytes_available = 0u64;

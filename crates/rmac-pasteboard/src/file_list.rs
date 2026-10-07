@@ -20,8 +20,13 @@
 #[cfg(any(target_os = "linux", all(test, unix)))]
 use std::ffi::OsString;
 use std::fmt;
+// `file_uri` below needs `OsStrExt` on every non-Windows target (it is real
+// production code on macOS too, not just Linux); `OsStringExt` is only
+// needed by the Linux-only URI-list parsing further down, plus its tests.
+#[cfg(not(windows))]
+use std::os::unix::ffi::OsStrExt as _;
 #[cfg(any(target_os = "linux", all(test, unix)))]
-use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+use std::os::unix::ffi::OsStringExt as _;
 use std::path::{Path, PathBuf};
 
 pub const URI_LIST: &str = "text/uri-list";
@@ -116,8 +121,7 @@ pub fn file_uri(path: &Path) -> Option<String> {
     uri.push_str("file:///");
     for byte in text.bytes() {
         let byte = if byte == b'\\' { b'/' } else { byte };
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/' | b':')
-        {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/' | b':') {
             uri.push(char::from(byte));
         } else {
             uri.push('%');

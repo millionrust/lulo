@@ -39,13 +39,17 @@ rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-# Linux-only service backends and panes this Settings build never shows on
-# Windows (ADR 0023 phase 4): network, Bluetooth, users, login items,
-# printers, sharing, accounts, focus, power, input devices, GTK sync,
-# screen reader, the niri compositor link, and the Linux-specific halves
-# of locale/time/notifications/privacy/updates. See navigation.rs's
-# Windows `categories()` for the pane list this build actually shows.
-[target.'cfg(target_os = "linux")'.dependencies]
+# Service backends and panes this Settings build never shows on Windows
+# (ADR 0023 phase 4): network, Bluetooth, users, login items, printers,
+# sharing, accounts, focus, power, input devices, GTK sync, screen reader,
+# the niri compositor link, and the Linux-specific halves of
+# locale/time/notifications/privacy/updates. See navigation.rs's Windows
+# `categories()` for the pane list this build actually shows. `cfg(unix)`,
+# not `cfg(target_os = "linux")`: this crate also builds on macOS as a dev
+# convenience (every other crate's Linux-only deps follow the same
+# `cfg(unix)` convention), and these panes' own real backends are Linux
+# D-Bus/niri/udisks services behind their own internal seams regardless.
+[target.'cfg(unix)'.dependencies]
 libc.workspace = true
 rmac-audio.workspace = true
 rmac-accounts.workspace = true

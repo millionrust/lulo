@@ -15,8 +15,7 @@ impl FinderView {
         }
         #[cfg(not(target_os = "linux"))]
         {
-            self.operation_error =
-                Some("Adding to the Dock isn't available on Windows yet".into());
+            self.operation_error = Some("Adding to the Dock isn't available on Windows yet".into());
             cx.notify();
         }
         #[cfg(target_os = "linux")]
@@ -418,7 +417,9 @@ fn make_alias(source: &Path, destination: &Path) -> std::io::Result<()> {
 
 #[cfg(windows)]
 fn make_alias(source: &Path, destination: &Path) -> std::io::Result<()> {
-    let is_dir = std::fs::metadata(source).map(|m| m.is_dir()).unwrap_or(false);
+    let is_dir = std::fs::metadata(source)
+        .map(|m| m.is_dir())
+        .unwrap_or(false);
     if is_dir {
         std::os::windows::fs::symlink_dir(source, destination)
     } else {

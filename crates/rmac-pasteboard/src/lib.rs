@@ -423,6 +423,7 @@ mod imp {
     use std::os::windows::ffi::OsStrExt as _;
     use std::path::PathBuf;
 
+    use windows::core::w;
     use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND};
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
@@ -430,7 +431,6 @@ mod imp {
     };
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GHND};
     use windows::Win32::UI::Shell::DragQueryFileW;
-    use windows::core::w;
 
     use super::{FileList, PasteboardError};
 
@@ -532,7 +532,11 @@ mod imp {
             return Err(PasteboardError::new("The clipboard refused the items"));
         }
 
-        set_preferred_drop_effect(if cut { DROPEFFECT_MOVE } else { DROPEFFECT_COPY });
+        set_preferred_drop_effect(if cut {
+            DROPEFFECT_MOVE
+        } else {
+            DROPEFFECT_COPY
+        });
         drop(guard);
         Ok(())
     }

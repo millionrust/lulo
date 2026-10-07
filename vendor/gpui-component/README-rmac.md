@@ -16,3 +16,10 @@ its focused tests use the same GPUI revision and shared build artifacts.
 `crates/ui/src/kbd.rs` formats shortcuts in macOS glyphs on every platform
 (⌘ is Super on Lulo), so pop-up menus show "⌘⌫" instead of upstream's Linux
 "Win+Backspace".
+
+`crates/ui/src/table/state.rs`'s `render_sort_icon` shows a chevron only on
+a column's active sort direction (UIA-16): upstream drew a neutral
+chevrons-up-down glyph on every sortable column, not just the one actually
+sorted, where macOS tables such as Activity Monitor and Finder's list view
+mark exactly one column at a time. The click target that activates a
+column's sort is unchanged either way.

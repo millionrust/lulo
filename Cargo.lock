@@ -5933,10 +5933,12 @@ name = "rmac-activity-monitor"
 version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
+ "blocking",
  "futures-lite",
  "gpui",
  "gpui-component",
  "libc",
+ "rmac-apps",
  "rmac-storage",
  "rmac-ui",
  "sysinfo 0.33.1",

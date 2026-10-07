@@ -738,8 +738,8 @@ impl TableDelegate for ProcessTableDelegate {
         &mut self,
         row_index: usize,
         column_index: usize,
-        _window: &mut Window,
-        _cx: &mut Context<TableState<Self>>,
+        window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let row = &self.rows[row_index];
         let key = self
@@ -748,7 +748,27 @@ impl TableDelegate for ProcessTableDelegate {
             .copied()
             .unwrap_or(ColKey::Name);
         let text: SharedString = row.cell_text(key).into();
-        div().child(text)
+        // UIA-16: the Name column leads with the app's icon, as on the Mac
+        // — a generic one for a process that doesn't match an installed
+        // app (background daemons, kernel threads: most rows).
+        let icon = (key == ColKey::Name).then(|| {
+            const ICON_SIZE: f32 = 16.0;
+            let source: rmac_ui::IconSource =
+                match crate::row_icons::process_icon(row.name.as_ref(), cx) {
+                    Some(path) => path.into(),
+                    None => crate::row_icons::GENERIC_ICON.into(),
+                };
+            let scale_factor = window.scale_factor();
+            rmac_ui::svg_icon(source, ICON_SIZE, scale_factor, cx)
+                .size(gpui::px(ICON_SIZE))
+                .flex_none()
+        });
+        div()
+            .flex()
+            .items_center()
+            .when(icon.is_some(), |el| el.gap(gpui::px(6.0)))
+            .children(icon)
+            .child(text)
     }
 
     /// Export/accessibility text for one cell. `rmac_ui::Table` calls this

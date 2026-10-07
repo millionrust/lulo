@@ -8,3 +8,12 @@ authors.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd.workspace = true
 url.workspace = true
+
+# Open/reveal/trash through the real shell (ADR 0023 phase 4), replacing the
+# `xdg-open` fallback that never existed on Windows.
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }

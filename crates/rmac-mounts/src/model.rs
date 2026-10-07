@@ -2,7 +2,7 @@ use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) const MAX_MOUNTINFO_BYTES: u64 = 4 * 1024 * 1024;
 pub(crate) const MAX_MOUNTS: usize = 256;
 pub(crate) const MAX_DISPLAY_NAME_BYTES: usize = 256;

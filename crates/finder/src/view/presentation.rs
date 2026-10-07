@@ -54,7 +54,7 @@ impl Render for FinderView {
         let operation_error = self.operation_error.clone();
         let transfer = self.transfer.clone();
         let undo_progress = self.undo_operation.clone();
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         let trash_progress = self.trash_operation.as_ref().map(|operation| {
             (
                 SharedString::from(bin_copy(self.file_words, operation.label.as_ref())),
@@ -63,12 +63,12 @@ impl Render for FinderView {
                 operation.cancelling,
             )
         });
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let trash_progress: Option<(SharedString, usize, usize, bool)> = None;
         let recovery_pending = self.pending_operations != 0;
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         let trash_recovery_pending = self.trash_pending != 0;
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let trash_recovery_pending = false;
         let any_recovery_pending = recovery_pending || trash_recovery_pending;
         let operation_error = operation_error.map(|message| {
@@ -150,13 +150,13 @@ impl Render for FinderView {
         });
         let conflict_dialog = self.render_conflict(cx);
         let recovery_dialog = self.render_recovery(cx);
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         let trash_recovery_dialog = self.render_trash_recovery(cx);
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let trash_recovery_dialog: Option<gpui::AnyElement> = None;
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         let delete_dialog = self.render_delete_confirmation(cx);
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let delete_dialog: Option<gpui::AnyElement> = None;
         div()
             .id("files-root")
@@ -233,7 +233,7 @@ impl Render for FinderView {
                     }
                     return;
                 }
-                #[cfg(any(target_os = "linux", test))]
+                #[cfg(any(target_os = "linux", all(test, unix)))]
                 if this.delete_confirmation.is_some() {
                     cx.stop_propagation();
                     if event.keystroke.key.as_str() == "escape" {
@@ -262,7 +262,7 @@ impl Render for FinderView {
                     }
                     return;
                 } else {
-                    #[cfg(any(target_os = "linux", test))]
+                    #[cfg(any(target_os = "linux", all(test, unix)))]
                     if this.trash_recovery_open {
                         cx.stop_propagation();
                         match recovery_key_intent(
@@ -426,7 +426,7 @@ impl Render for FinderView {
                                             if recovery_pending {
                                                 this.recovery_open = true;
                                             } else {
-                                                #[cfg(any(target_os = "linux", test))]
+                                                #[cfg(any(target_os = "linux", all(test, unix)))]
                                                 if trash_recovery_pending {
                                                     this.trash_recovery_open = true;
                                                     cx.notify();
@@ -723,9 +723,9 @@ impl FinderView {
             self.undo_available.is_some() && self.undo_operation.is_none(),
             cx,
         );
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         let empty_bin_available = self.trash_store.is_some() && self.trash_operation.is_none();
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let empty_bin_available = false;
         rmac_ui::set_menu_enabled("finder::EmptyTrashImmediately", empty_bin_available, cx);
         rmac_ui::set_menu_label(

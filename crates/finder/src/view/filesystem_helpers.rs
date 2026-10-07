@@ -2,7 +2,7 @@ use super::*;
 
 /// Finder's Empty Trash alert: its title and message, in the locale's word
 /// for the Trash.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(super) fn empty_trash_prompt(bin: &str) -> (String, String) {
     (
         format!("Are you sure you want to permanently erase the items in the {bin}?"),
@@ -12,7 +12,7 @@ pub(super) fn empty_trash_prompt(bin: &str) -> (String, String) {
 
 /// File ▸ Delete Immediately…'s alert, in the Mac's exact wording: the
 /// question is the title, the irreversibility warning is the message.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(super) fn permanent_delete_prompt(count: usize, name: Option<&str>) -> (String, String) {
     if count == 1 {
         (
@@ -32,14 +32,14 @@ pub(super) fn permanent_delete_prompt(count: usize, name: Option<&str>) -> (Stri
 
 /// Item count for a delete confirmation, whichever of its two sources
 /// (already-trashed `items`, or live `paths` outside the Bin) is populated.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(super) fn delete_confirmation_count(confirmation: &DeleteConfirmation) -> usize {
     confirmation.items.len() + confirmation.paths.len()
 }
 
 /// The sanitized file name of the first item in a delete confirmation, for
 /// the single-item alert wording.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(super) fn delete_confirmation_first_name(confirmation: &DeleteConfirmation) -> Option<String> {
     let name = confirmation
         .items

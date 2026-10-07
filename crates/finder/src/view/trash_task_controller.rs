@@ -2,17 +2,17 @@ use super::*;
 
 impl FinderView {
     pub(super) fn cancel_trash(&mut self, cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         if let Some(operation) = self.trash_operation.as_mut() {
             operation.cancel.store(true, Ordering::Release);
             operation.cancelling = true;
             cx.notify();
         }
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let _ = cx;
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(super) fn receive_trash_events(
         &mut self,
         event_rx: async_channel::Receiver<TrashEvent>,
@@ -44,7 +44,7 @@ impl FinderView {
         .detach();
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     fn finish_trash_task(&mut self, completion: TrashCompletion, cx: &mut Context<Self>) {
         let TrashCompletion {
             kind,
@@ -170,7 +170,7 @@ impl FinderView {
 /// happened, plus (if the post-task housekeeping check could not verify the
 /// journal) a calm follow-up — never the alarming "Trash isn't available"
 /// wording, since the task itself just demonstrably worked.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn trash_task_summary(kind: TrashTaskKind, completed: usize, recovery_unavailable: bool) -> String {
     let mut notice = match (kind, completed) {
         (TrashTaskKind::Move, 1) => "Moved 1 item to Trash".to_string(),

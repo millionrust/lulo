@@ -108,14 +108,67 @@ pub fn favourite_folders(home: &Path) -> Vec<PlaceSpec> {
     let favourites = vec![
         place(
             "Downloads",
-            home.join("Downloads"),
+            known_or_home_folder(KnownFolder::Downloads, home, "Downloads"),
             "icons/circle-arrow-down.svg",
             false,
         ),
-        place("Documents", home.join("Documents"), "icons/file.svg", false),
-        place("Desktop", home.join("Desktop"), "icons/desktop.svg", false),
+        place(
+            "Documents",
+            known_or_home_folder(KnownFolder::Documents, home, "Documents"),
+            "icons/file.svg",
+            false,
+        ),
+        place(
+            "Desktop",
+            known_or_home_folder(KnownFolder::Desktop, home, "Desktop"),
+            "icons/desktop.svg",
+            false,
+        ),
     ];
     favourites
+}
+
+/// The known folders Favourites maps on Windows. Desktop, Documents and
+/// Downloads can each be redirected (OneDrive's "Manage backup", a roaming
+/// profile, a per-machine policy), so a plain `home.join(name)` would be
+/// wrong exactly when it matters; `SHGetKnownFolderPath` is the one real
+/// answer there (ADR 0023 phase 4). Linux and macOS have no such
+/// redirection, so the enum only matters on Windows.
+enum KnownFolder {
+    Desktop,
+    Documents,
+    Downloads,
+}
+
+#[cfg(target_os = "windows")]
+fn known_or_home_folder(folder: KnownFolder, home: &Path, fallback_name: &str) -> PathBuf {
+    use windows::Win32::UI::Shell::{
+        FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, KF_FLAG_DEFAULT,
+        SHGetKnownFolderPath,
+    };
+
+    let id = match folder {
+        KnownFolder::Desktop => &FOLDERID_Desktop,
+        KnownFolder::Documents => &FOLDERID_Documents,
+        KnownFolder::Downloads => &FOLDERID_Downloads,
+    };
+    // SAFETY: `id` is one of the well-known folder GUIDs above; no token
+    // (the current user) and the default flags ask for no extra behaviour.
+    let resolved = unsafe { SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, None) }
+        .ok()
+        .and_then(|wide| {
+            let path = unsafe { wide.to_string() }.ok().map(PathBuf::from);
+            unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(wide.0 as *const _)) };
+            path
+        });
+    resolved.unwrap_or_else(|| home.join(fallback_name))
+}
+
+/// Non-Windows: a plain `home.join(name)` is already right (Linux and
+/// macOS have no per-folder redirection to resolve).
+#[cfg(not(target_os = "windows"))]
+fn known_or_home_folder(_folder: KnownFolder, home: &Path, fallback_name: &str) -> PathBuf {
+    home.join(fallback_name)
 }
 
 /// The Mac's `/Applications`, offered whenever a like-named real folder

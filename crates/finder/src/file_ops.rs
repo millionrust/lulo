@@ -1,11 +1,50 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
-use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::operation_journal;
+
+/// The volume identity used to tell a same-volume move from a cross-volume
+/// copy. Unix's device number and Windows' volume serial number are both
+/// real per-volume identities (not a path heuristic); Windows' is `None` only
+/// for a filesystem that does not report one (rare virtual filesystems), in
+/// which case every path reports the same placeholder, which conservatively
+/// treats such a volume as "crosses devices" with everything else rather
+/// than silently skipping the check.
+#[cfg(unix)]
+fn device_of(metadata: &std::fs::Metadata) -> u64 {
+    use std::os::unix::fs::MetadataExt as _;
+    metadata.dev()
+}
+
+#[cfg(windows)]
+fn device_of(metadata: &std::fs::Metadata) -> u64 {
+    use std::os::windows::fs::MetadataExt as _;
+    metadata.volume_serial_number().unwrap_or(0) as u64
+}
+
+/// `statvfs`'s two numbers Files actually needs: total and available bytes.
+#[cfg(windows)]
+fn volume_space_bytes(path: &Path) -> io::Result<(u64, u64)> {
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use windows::core::HSTRING;
+
+    let wide = HSTRING::from(path.as_os_str());
+    let mut free_bytes_available = 0u64;
+    let mut total_bytes = 0u64;
+    unsafe {
+        GetDiskFreeSpaceExW(
+            &wide,
+            Some(&mut free_bytes_available),
+            Some(&mut total_bytes),
+            None,
+        )
+    }
+    .map_err(|error| io::Error::other(error.to_string()))?;
+    Ok((total_bytes, free_bytes_available))
+}
 
 const MAX_PLANNED_ENTRIES: u64 = 1_000_000;
 const MAX_PLANNED_DEPTH: usize = 256;
@@ -20,9 +59,9 @@ pub(crate) enum Operation {
     Move,
     Rename,
     Replace,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     PermanentDelete,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     Restore,
     Trash,
 }
@@ -36,9 +75,9 @@ impl Operation {
             Self::Move => "move",
             Self::Rename => "rename",
             Self::Replace => "replace",
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             Self::PermanentDelete => "permanently delete",
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             Self::Restore => "restore",
             Self::Trash => "move to Trash",
         }
@@ -428,9 +467,10 @@ impl FileSystem for RealFileSystem {
         if cancel.load(Ordering::Acquire) {
             return Err(io::Error::new(io::ErrorKind::Interrupted, "scan cancelled"));
         }
-        Ok(std::fs::symlink_metadata(path)?.dev())
+        Ok(device_of(&std::fs::symlink_metadata(path)?))
     }
 
+    #[cfg(not(windows))]
     fn destination_space(&self, parent: &Path) -> io::Result<VolumeSpace> {
         let metadata = std::fs::metadata(parent)?;
         let stats = rustix::fs::statvfs(parent).map_err(io::Error::from)?;
@@ -446,7 +486,18 @@ impl FileSystem for RealFileSystem {
             io::Error::new(io::ErrorKind::InvalidData, "free-space value is too large")
         })?;
         Ok(VolumeSpace {
-            device: metadata.dev(),
+            device: device_of(&metadata),
+            total_bytes,
+            available_bytes,
+        })
+    }
+
+    #[cfg(windows)]
+    fn destination_space(&self, parent: &Path) -> io::Result<VolumeSpace> {
+        let metadata = std::fs::metadata(parent)?;
+        let (total_bytes, available_bytes) = volume_space_bytes(parent)?;
+        Ok(VolumeSpace {
+            device: device_of(&metadata),
             total_bytes,
             available_bytes,
         })
@@ -455,7 +506,7 @@ impl FileSystem for RealFileSystem {
 
 fn measure_source(path: &Path, cancel: &AtomicBool) -> io::Result<SourceUsage> {
     let metadata = std::fs::symlink_metadata(path)?;
-    let device = metadata.dev();
+    let device = device_of(&metadata);
     let mut usage = SourceUsage {
         logical_bytes: 0,
         entries: 0,
@@ -530,10 +581,26 @@ fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
     .map_err(io::Error::from)
 }
 
-/// Files is currently packaged only for Linux and developed on macOS. Refuse a
-/// move on other targets instead of silently falling back to a clobbering
-/// rename with a time-of-check/time-of-use race.
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+/// `std::fs::rename` matches POSIX and overwrites on Windows too (Rust's own
+/// implementation passes `MOVEFILE_REPLACE_EXISTING` to `MoveFileExW`), so the
+/// same time-of-check/time-of-use race `rustix`'s `RenameFlags::NOREPLACE`
+/// avoids on Linux/macOS needs the raw API here, without that flag: plain
+/// `MoveFileExW` already refuses when the destination exists.
+#[cfg(target_os = "windows")]
+fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
+    use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
+    use windows::core::HSTRING;
+
+    let source = HSTRING::from(source.as_os_str());
+    let destination = HSTRING::from(destination.as_os_str());
+    unsafe { MoveFileExW(&source, &destination, MOVE_FILE_FLAGS(0)) }
+        .map_err(|error| io::Error::other(error.to_string()))
+}
+
+/// Files is currently packaged only for Linux, developed on macOS and ported
+/// to Windows (above). Refuse a move on any other target instead of silently
+/// falling back to a clobbering rename with a time-of-check/time-of-use race.
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 fn rename_noreplace(_source: &Path, _destination: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,

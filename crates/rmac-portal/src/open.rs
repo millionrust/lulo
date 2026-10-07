@@ -27,7 +27,18 @@ pub async fn show_item(path: &Path) -> Result<(), Error> {
             .map(|_| ())
             .map_err(|error| failure(Operation::Show, path, error))
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(target_os = "windows")]
+    {
+        // `/select,<path>` must reach Explorer as one argument (the comma
+        // glued to the path), which `Command`'s own Windows quoting gives
+        // us for free; no shell is invoked.
+        Command::new("explorer")
+            .arg(format!("/select,{}", path.display()))
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| failure(Operation::Show, path, error))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         Command::new("xdg-open")
             .arg(containing_directory(path))
@@ -58,7 +69,11 @@ pub async fn open_item(path: &Path) -> Result<(), Error> {
             .map(|_| ())
             .map_err(|error| failure(Operation::Open, path, error))
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(target_os = "windows")]
+    {
+        shell_execute_open(path.as_os_str()).map_err(|error| failure(Operation::Open, path, error))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         Command::new("xdg-open")
             .arg(path)
@@ -95,7 +110,11 @@ pub async fn open_uri(uri: &str) -> Result<(), UriError> {
             .map(|_| ())
             .map_err(uri_failure)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(target_os = "windows")]
+    {
+        shell_execute_open(std::ffi::OsStr::new(uri)).map_err(uri_failure)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         Command::new("xdg-open")
             .arg(uri)
@@ -125,7 +144,18 @@ pub async fn open_trash() -> Result<(), Error> {
             .map(|_| ())
             .map_err(|error| failure(Operation::Open, target, error))
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
+    {
+        // The real Windows Recycle Bin, not a stand-in: `trash_store.rs`
+        // already moves files there with `trash::os_limited`, so opening it
+        // for the user is a genuine "view the Bin" rather than a stub.
+        Command::new("explorer")
+            .arg("shell:RecycleBinFolder")
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| failure(Operation::Open, target, error))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         Err(Error {
             operation: Operation::Open,
@@ -168,7 +198,33 @@ async fn open_item_portal(path: &Path) -> Result<(), Error> {
         .map_err(|error| failure(Operation::Open, path, error))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+/// Open a path or URI with `ShellExecuteW`'s `open` verb: the real default
+/// app, not a stand-in (`cmd /c start` would go through a shell and mangle
+/// `&`/`%` in arguments; `ShellExecuteW` does not).
+#[cfg(target_os = "windows")]
+fn shell_execute_open(target: &std::ffi::OsStr) -> std::io::Result<()> {
+    use windows::core::HSTRING;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWDEFAULT;
+
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            windows::core::w!("open"),
+            &HSTRING::from(target),
+            None,
+            None,
+            SW_SHOWDEFAULT,
+        )
+    };
+    if result.0 as isize > 32 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn containing_directory(path: &Path) -> &Path {
     if path.is_dir() {
         path

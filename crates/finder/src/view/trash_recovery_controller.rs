@@ -1,7 +1,7 @@
 use super::*;
 
 impl FinderView {
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(super) fn close_trash_recovery(&mut self, cx: &mut Context<Self>) {
         if self.trash_recovery_busy {
             return;
@@ -10,7 +10,7 @@ impl FinderView {
         cx.notify();
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(super) fn resolve_current_trash_recovery(&mut self, cx: &mut Context<Self>) {
         if self.trash_recovery_busy {
             return;

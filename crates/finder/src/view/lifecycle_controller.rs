@@ -8,7 +8,7 @@ impl Drop for FinderView {
         if let Some(undo) = &self.undo_operation {
             undo.cancel.store(true, Ordering::Release);
         }
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         if let Some(trash) = &self.trash_operation {
             trash.cancel.store(true, Ordering::Release);
         }

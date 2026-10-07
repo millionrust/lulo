@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::io;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use crate::model::MAX_MOUNTINFO_BYTES;
 use crate::model::{MAX_DISPLAY_NAME_BYTES, MAX_MOUNTS};
 use crate::{Error, Mount, Usage, Volume};
@@ -14,7 +14,7 @@ pub fn discover() -> Result<Vec<Mount>, Error> {
     {
         discover_macos()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         let path = Path::new("/proc/self/mountinfo");
         let contents = read_bounded_text(path, MAX_MOUNTINFO_BYTES)?;
@@ -25,6 +25,84 @@ pub fn discover() -> Result<Vec<Mount>, Error> {
             Ok(mounts)
         }
     }
+    #[cfg(target_os = "windows")]
+    {
+        discover_windows()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Ok(Vec::new())
+    }
+}
+
+/// Every lettered drive (`GetLogicalDrives`), labelled with its volume name
+/// (`GetVolumeInformationW`) when it has one, else "Local Disk (C:)" or "CD
+/// Drive (D:)" to match Explorer's own wording. A drive with no media (an
+/// empty optical or card reader) is skipped rather than shown as a broken
+/// entry (ADR 0023 phase 4's Locations mapping).
+#[cfg(target_os = "windows")]
+fn discover_windows() -> Result<Vec<Mount>, Error> {
+    use windows::Win32::Storage::FileSystem::{
+        DRIVE_CDROM, DRIVE_REMOVABLE, GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW,
+    };
+
+    let mut mounts = Vec::new();
+    // SAFETY: no pointers; returns a bitmask with no error state.
+    let bitmask = unsafe { GetLogicalDrives() };
+    for letter in 0u32..26 {
+        if bitmask & (1 << letter) == 0 {
+            continue;
+        }
+        let drive_letter = (b'A' + letter as u8) as char;
+        let root = format!("{drive_letter}:\\");
+        let root_wide = windows::core::HSTRING::from(root.as_str());
+        // SAFETY: `root_wide` is a valid null-terminated wide string; the
+        // function only reads it.
+        let drive_type = unsafe { GetDriveTypeW(&root_wide) };
+        let mut label_buffer = [0u16; 256];
+        // SAFETY: `label_buffer` is a valid, sufficiently sized buffer; every
+        // other output parameter is `None`, which the API accepts.
+        let has_media = unsafe {
+            GetVolumeInformationW(
+                &root_wide,
+                Some(&mut label_buffer),
+                None,
+                None,
+                None,
+                None,
+            )
+        }
+        .is_ok();
+        if !has_media {
+            // No media in a removable/optical drive, or another transient
+            // failure; skip it rather than show a broken entry.
+            continue;
+        }
+        let label_len = label_buffer
+            .iter()
+            .position(|&unit| unit == 0)
+            .unwrap_or(label_buffer.len());
+        let label = String::from_utf16_lossy(&label_buffer[..label_len]);
+        let kind = if drive_type == DRIVE_REMOVABLE {
+            "Removable Disk"
+        } else if drive_type == DRIVE_CDROM {
+            "CD Drive"
+        } else {
+            "Local Disk"
+        };
+        let name = if label.is_empty() {
+            format!("{kind} ({drive_letter}:)")
+        } else {
+            format!("{label} ({drive_letter}:)")
+        };
+        mounts.push(Mount {
+            identity: format!("windows:{drive_letter}"),
+            name,
+            path: PathBuf::from(root),
+            ejectable: drive_type == DRIVE_REMOVABLE || drive_type == DRIVE_CDROM,
+        });
+    }
+    Ok(mounts)
 }
 
 /// Return the system volume plus user-visible mounted volumes with independent
@@ -81,7 +159,7 @@ pub(crate) fn revalidated_mount(expected: &Mount, current: Vec<Mount>) -> Option
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn read_bounded_text(path: &Path, limit: u64) -> Result<String, Error> {
     let file = std::fs::File::open(path).map_err(|source| Error::Io {
         operation: "open mount table",
@@ -109,6 +187,7 @@ fn read_bounded_text(path: &Path, limit: u64) -> Result<String, Error> {
     })
 }
 
+#[cfg(not(target_os = "windows"))]
 pub(crate) fn volume_usage(path: &Path) -> io::Result<Usage> {
     let status = rustix::fs::statvfs(path).map_err(io::Error::from)?;
     let block_size = if status.f_frsize > 0 {
@@ -121,6 +200,32 @@ pub(crate) fn volume_usage(path: &Path) -> io::Result<Usage> {
         status.f_blocks,
         status.f_bavail,
     ))
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn volume_usage(path: &Path) -> io::Result<Usage> {
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use windows::core::HSTRING;
+
+    let wide = HSTRING::from(path.as_os_str());
+    let mut free_bytes_available = 0u64;
+    let mut total_bytes = 0u64;
+    // SAFETY: `wide` is a valid wide string; both output pointers are valid
+    // for the duration of the call.
+    unsafe {
+        GetDiskFreeSpaceExW(
+            &wide,
+            Some(&mut free_bytes_available),
+            Some(&mut total_bytes),
+            None,
+        )
+    }
+    .map_err(|error| io::Error::other(error.to_string()))?;
+    Ok(Usage {
+        total: total_bytes,
+        used: total_bytes.saturating_sub(free_bytes_available),
+        available: free_bytes_available,
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -154,7 +259,7 @@ fn discover_macos() -> Result<Vec<Mount>, Error> {
     Ok(mounts)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn parse_mountinfo(contents: &str) -> (Vec<Mount>, bool) {
     let mut mounts = contents
         .lines()
@@ -167,7 +272,7 @@ pub(crate) fn parse_mountinfo(contents: &str) -> (Vec<Mount>, bool) {
     (mounts, truncated)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn parse_mountinfo_line(line: &str) -> Option<Mount> {
     let (mount_fields, _filesystem_fields) = line.split_once(" - ")?;
     let mut fields = mount_fields.split_whitespace();
@@ -186,7 +291,7 @@ pub(crate) fn parse_mountinfo_line(line: &str) -> Option<Mount> {
     })
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn decode_mount_field(value: &str) -> Option<String> {
     let mut decoded = String::with_capacity(value.len());
     let mut characters = value.chars();
@@ -207,7 +312,7 @@ pub(crate) fn decode_mount_field(value: &str) -> Option<String> {
     Some(decoded)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn user_visible_mount(path: &Path) -> bool {
     let is_descendant = |root: &str| path.starts_with(root) && path != Path::new(root);
     if is_descendant("/media") || is_descendant("/run/media") || is_descendant("/mnt") {
@@ -226,7 +331,7 @@ fn user_visible_mount(path: &Path) -> bool {
         && components[4] == "gvfs"
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn mount_display_name(path: &Path) -> Option<String> {
     let raw = path.file_name()?.to_string_lossy();
     if path.starts_with("/run/user")

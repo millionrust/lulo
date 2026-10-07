@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_125 gaps across 8 apps; 240 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_126 gaps across 8 apps; 240 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Finder
 
@@ -109,6 +109,7 @@ _125 gaps across 8 apps; 240 Mac-only items were allowlisted (see `tests/invento
 |---|---|---|---|---|---|---|
 | SET-MENU-001 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
 | SET-MENU-002 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
+| SET-SIDEBAR-001 | Lulo-only (not on the Mac) | Lulo Intelligence | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
 
 ## Terminal
 

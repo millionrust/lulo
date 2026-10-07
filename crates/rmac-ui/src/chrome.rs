@@ -199,6 +199,15 @@ pub fn minimize_focused_window(cx: &mut App) {
     send_window_action(WindowAction::Minimize, cx);
 }
 
+/// Window ▸ Zoom (⌃⌘Z): toggle this process's focused window between its
+/// user size and the working area, the same path the green button's
+/// ⌥-click and the title bar's double-click (when set to Zoom) already
+/// use. Exposed so every app can bind its Window menu's standard Zoom item
+/// to it (`menu_strip::strip_menus` adds the item itself).
+pub fn zoom_focused_window(cx: &mut App) {
+    send_window_action(WindowAction::Zoom, cx);
+}
+
 /// ⌘H: hide this application, parking every visible window it owns the
 /// way the menu bar's Hide does, so Show All, the Dock and ⌘Tab bring them
 /// back. With `others`, ⌥⌘H parks every other application's windows instead.

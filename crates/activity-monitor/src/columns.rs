@@ -14,9 +14,18 @@ pub(crate) enum ColKey {
     Pid,
     Name,
     Cpu,
+    /// Total CPU seconds consumed since launch (MON-MENU-003), distinct
+    /// from the instantaneous `Cpu` percentage.
+    CpuTime,
     Mem,
     Energy,
     Disk,
+    /// Bytes read since the last refresh (MON-MENU-020): the read half of
+    /// `Disk`.
+    BytesRead,
+    /// Bytes written since the last refresh (MON-MENU-019): the write half
+    /// of `Disk`.
+    BytesWritten,
     Ppid,
     User,
     Vmem,
@@ -28,13 +37,16 @@ pub(crate) enum ColKey {
 impl ColKey {
     /// Canonical order, also the order shown in the chooser. Process Name
     /// leads, matching the Mac (MON-02); PID moves later rather than first.
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 15] = [
         Self::Name,
         Self::Cpu,
+        Self::CpuTime,
         Self::Threads,
         Self::Mem,
         Self::Energy,
         Self::Disk,
+        Self::BytesRead,
+        Self::BytesWritten,
         Self::User,
         Self::Pid,
         Self::Ppid,
@@ -48,9 +60,12 @@ impl ColKey {
             Self::Pid => "pid",
             Self::Name => "name",
             Self::Cpu => "cpu",
+            Self::CpuTime => "cpu_time",
             Self::Mem => "mem",
             Self::Energy => "energy",
             Self::Disk => "disk",
+            Self::BytesRead => "bytes_read",
+            Self::BytesWritten => "bytes_written",
             Self::Ppid => "ppid",
             Self::User => "user",
             Self::Vmem => "vmem",
@@ -73,11 +88,14 @@ impl ColKey {
             Self::Pid => 72.0,
             Self::Name => 280.0,
             Self::Cpu => 96.0,
+            Self::CpuTime => 100.0,
             Self::Mem => 110.0,
             // Wider than the other 96px columns: the header now reads
             // "Energy (Est.)" rather than plain "Energy".
             Self::Energy => 116.0,
             Self::Disk => 120.0,
+            Self::BytesRead => 110.0,
+            Self::BytesWritten => 110.0,
             Self::Ppid => 96.0,
             Self::User => 130.0,
             Self::Vmem => 120.0,
@@ -92,9 +110,12 @@ impl ColKey {
             self,
             Self::Pid
                 | Self::Cpu
+                | Self::CpuTime
                 | Self::Mem
                 | Self::Energy
                 | Self::Disk
+                | Self::BytesRead
+                | Self::BytesWritten
                 | Self::Ppid
                 | Self::Vmem
                 | Self::RunTime
@@ -125,9 +146,12 @@ impl From<ColKey> for ProcessColumn {
             ColKey::Pid => Self::Pid,
             ColKey::Name => Self::Name,
             ColKey::Cpu => Self::Cpu,
+            ColKey::CpuTime => Self::CpuTime,
             ColKey::Mem => Self::Memory,
             ColKey::Energy => Self::Energy,
             ColKey::Disk => Self::Disk,
+            ColKey::BytesRead => Self::BytesRead,
+            ColKey::BytesWritten => Self::BytesWritten,
             ColKey::Ppid => Self::ParentPid,
             ColKey::User => Self::User,
             ColKey::Vmem => Self::VirtualMemory,
@@ -144,9 +168,12 @@ impl From<ProcessColumn> for ColKey {
             ProcessColumn::Pid => Self::Pid,
             ProcessColumn::Name => Self::Name,
             ProcessColumn::Cpu => Self::Cpu,
+            ProcessColumn::CpuTime => Self::CpuTime,
             ProcessColumn::Memory => Self::Mem,
             ProcessColumn::Energy => Self::Energy,
             ProcessColumn::Disk => Self::Disk,
+            ProcessColumn::BytesRead => Self::BytesRead,
+            ProcessColumn::BytesWritten => Self::BytesWritten,
             ProcessColumn::ParentPid => Self::Ppid,
             ProcessColumn::User => Self::User,
             ProcessColumn::VirtualMemory => Self::Vmem,
@@ -195,6 +222,7 @@ pub(crate) fn default_visible_for(tab: Tab) -> Vec<ColKey> {
         Tab::Cpu => &[
             ColKey::Name,
             ColKey::Cpu,
+            ColKey::CpuTime,
             ColKey::Threads,
             ColKey::RunTime,
             ColKey::Pid,
@@ -215,7 +243,14 @@ pub(crate) fn default_visible_for(tab: Tab) -> Vec<ColKey> {
             ColKey::Pid,
             ColKey::User,
         ],
-        Tab::Disk => &[ColKey::Name, ColKey::Disk, ColKey::Pid, ColKey::User],
+        Tab::Disk => &[
+            ColKey::Name,
+            ColKey::Disk,
+            ColKey::BytesRead,
+            ColKey::BytesWritten,
+            ColKey::Pid,
+            ColKey::User,
+        ],
         // Network has no process table (`Tab::has_process_table`); this
         // list is never shown but kept so every tab has one.
         Tab::Network => &[ColKey::Name, ColKey::Pid, ColKey::User],
@@ -321,5 +356,23 @@ mod tests {
             assert!(columns.contains(&ColKey::Name));
         }
         assert_eq!(default_visible(), cpu);
+        // MON-MENU-003/019/020: CPU Time sits on the CPU tab; Bytes
+        // Read/Written split the combined Disk column on the Disk tab.
+        assert!(cpu.contains(&ColKey::CpuTime));
+        assert!(disk.contains(&ColKey::BytesRead) && disk.contains(&ColKey::BytesWritten));
+    }
+
+    #[test]
+    fn cpu_time_and_split_disk_columns_round_trip_with_mac_titles() {
+        let expected = vec![
+            ColKey::Name,
+            ColKey::CpuTime,
+            ColKey::BytesRead,
+            ColKey::BytesWritten,
+        ];
+        assert_eq!(parse(&format(&expected)).unwrap(), expected);
+        assert_eq!(ColKey::CpuTime.title(), "CPU Time");
+        assert_eq!(ColKey::BytesRead.title(), "Bytes Read");
+        assert_eq!(ColKey::BytesWritten.title(), "Bytes Written");
     }
 }

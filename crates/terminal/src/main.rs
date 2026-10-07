@@ -5,6 +5,7 @@
 
 mod cli;
 mod controller;
+mod copy_special;
 mod emulator;
 mod find;
 mod hyperlink;

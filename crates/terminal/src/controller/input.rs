@@ -138,6 +138,50 @@ impl TerminalView {
         }
     }
 
+    /// Edit ▸ Copy Special ▸ Copy Without Background Colour (⌃⇧⌘C,
+    /// TRM-MENU-001): a styled copy of the current drag-selection, kept
+    /// distinct from Copy Plain Text above it (both used to call the same
+    /// plain `copy`) — RTF and HTML carry the selection's real foreground
+    /// ANSI colours (bold/italic/underline too) without each cell's
+    /// background fill, so a block of `grep --color` output pastes into
+    /// TextEdit, Mail or Notes as coloured text on the page's own
+    /// background rather than a block of highlighted colour. Falls back
+    /// to a plain copy when the selection is Find's multi-match kind,
+    /// which has no per-cell styling to re-render.
+    pub(super) fn copy_without_background_colour(&mut self, cx: &mut Context<Self>) {
+        if !self.tabs[self.active].ui.selected_matches.is_empty() {
+            self.copy(cx);
+            return;
+        }
+        let Some(selection) = self.tabs[self.active].ui.selection else {
+            return;
+        };
+        if selection.is_empty() {
+            return;
+        }
+        let Ok(term) = self.tabs[self.active].term.lock() else {
+            return;
+        };
+        let profile = active();
+        let runs =
+            crate::copy_special::styled_runs(&selection, &term, self.rows, self.cols, &profile);
+        drop(term);
+        if runs.is_empty() {
+            return;
+        }
+        let plain: String = runs.iter().map(|run| run.text.as_str()).collect();
+        // RTF has no background support here at all (`to_rtf`'s own doc
+        // comment), so only HTML needs its background cleared to the
+        // page's own colour rather than each cell's.
+        let html = crate::copy_special::to_html_without_background(&runs, profile.bg);
+        let rtf = crate::copy_special::to_rtf(&runs);
+        let metadata = rmac_editor::rich::clipboard::encode_formats(&[
+            (rmac_editor::rich::clipboard::RTF_MIME, rtf.as_str()),
+            (rmac_editor::rich::clipboard::HTML_MIME, html.as_str()),
+        ]);
+        cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(plain, metadata));
+    }
+
     /// Paste clipboard text using the active program's exact bracketed-paste
     /// mode. Unprotected multiline content pauses for private-safe review.
     pub(super) fn request_paste(&mut self, window: &mut Window, cx: &mut Context<Self>) {

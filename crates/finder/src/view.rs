@@ -229,6 +229,7 @@ actions!(
         SidebarAddToDock,
         AddToDock,
         MoveItemHere,
+        PasteExactly,
         GoDesktop,
         GoDocuments,
         GoRecents,

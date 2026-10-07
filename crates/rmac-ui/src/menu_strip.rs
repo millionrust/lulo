@@ -258,7 +258,13 @@ fn strip_menus(app_name: &str, menus: Vec<Menu>) -> Vec<Menu> {
         items,
     }];
     strip.extend(exported);
-    let mut window = vec![Item::new("Minimize", "rmac_ui::MinimizeWindow", "⌘M")];
+    // Every Mac app's Window menu starts Minimize, Zoom (WIN-ZOOM-01): Zoom
+    // toggles this window between its user size and the working area, the
+    // same as ⌥-clicking the green button (`chrome::zoom_focused_window`).
+    let mut window = vec![
+        Item::new("Minimize", "rmac_ui::MinimizeWindow", "⌘M"),
+        Item::new("Zoom", "rmac_ui::ZoomWindow", "⌃⌘Z"),
+    ];
     if let Some(first) = window_items.first_mut() {
         first.separator_before = true;
     }
@@ -628,8 +634,10 @@ mod tests {
         assert!(strip[0].items[1].separator_before);
         let window = &strip[2].items;
         assert_eq!(window[0].action, "rmac_ui::MinimizeWindow");
-        assert_eq!(window[1].action, "notes::FocusMainWindow");
-        assert!(window[1].separator_before);
+        assert_eq!(window[1].action, "rmac_ui::ZoomWindow");
+        assert_eq!(window[1].label, "Zoom");
+        assert_eq!(window[2].action, "notes::FocusMainWindow");
+        assert!(window[2].separator_before);
         // Every command in the strip is distinct.
         let mut actions = strip
             .iter()

@@ -302,6 +302,94 @@ impl SettingsView {
                     this.edit(|settings| settings.show_ruler_default = *value, cx);
                 }),
             ))
+            // TXT-SETTINGS-003/004/006/007/012..015/017: the starting
+            // state for every new document window's own Edit ▸ Spelling
+            // and Grammar / Substitutions toggles — real settings a new
+            // window actually seeds itself from (`EditorView::new_with_path`),
+            // not a cosmetic duplicate of the per-window menu.
+            .child(Self::section_label("Spelling"))
+            .child(Self::checkbox_row(
+                "settings-check-spelling-while-typing",
+                "Check spelling as you type",
+                self.settings.check_spelling_while_typing_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(
+                        |settings| settings.check_spelling_while_typing_default = *value,
+                        cx,
+                    );
+                }),
+            ))
+            .child(Self::checkbox_row(
+                "settings-check-grammar-with-spelling",
+                "Check grammar with spelling",
+                self.settings.check_grammar_with_spelling_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(
+                        |settings| settings.check_grammar_with_spelling_default = *value,
+                        cx,
+                    );
+                }),
+            ))
+            .child(Self::checkbox_row(
+                "settings-correct-spelling-automatically",
+                "Correct spelling automatically",
+                self.settings.correct_spelling_automatically_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(
+                        |settings| settings.correct_spelling_automatically_default = *value,
+                        cx,
+                    );
+                }),
+            ))
+            .child(Self::section_label("Substitutions"))
+            .child(Self::checkbox_row(
+                "settings-smart-copy-paste",
+                "Smart copy/paste",
+                self.settings.smart_copy_paste_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.smart_copy_paste_default = *value, cx);
+                }),
+            ))
+            .child(Self::checkbox_row(
+                "settings-smart-quotes",
+                "Smart quotes",
+                self.settings.smart_quotes_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.smart_quotes_default = *value, cx);
+                }),
+            ))
+            .child(Self::checkbox_row(
+                "settings-smart-dashes",
+                "Smart dashes",
+                self.settings.smart_dashes_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.smart_dashes_default = *value, cx);
+                }),
+            ))
+            .child(Self::checkbox_row(
+                "settings-smart-links",
+                "Smart links",
+                self.settings.smart_links_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.smart_links_default = *value, cx);
+                }),
+            ))
+            .child(Self::checkbox_row(
+                "settings-data-detectors",
+                "Data detectors",
+                self.settings.data_detectors_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.data_detectors_default = *value, cx);
+                }),
+            ))
+            .child(Self::checkbox_row(
+                "settings-text-replacement",
+                "Text replacement",
+                self.settings.text_replacement_default,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.text_replacement_default = *value, cx);
+                }),
+            ))
             .child(
                 div()
                     .pt_2()

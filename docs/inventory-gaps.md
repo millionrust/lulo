@@ -15,29 +15,28 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_141 gaps across 8 apps; 240 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_125 gaps across 8 apps; 240 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Finder
 
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
-| FIL-MENU-005 | missing menu item (has a shortcut) | Paste Exactly | Edit ▸ Paste Exactly | ⌥⇧⌘V |  | missing from Lulo's menu bar |
 | FIL-MENU-004 | missing menu item (has a shortcut) | Redo | Edit ▸ Redo | ⇧⌘Z |  | missing from Lulo's menu bar |
 | FIL-MENU-002 | missing menu item (has a shortcut) | Print | File ▸ Print | ⌘P |  | missing from Lulo's menu bar |
-| FIL-MENU-009 | missing menu item (has a shortcut) | Connect to Server… | Go ▸ Connect to Server… | ⌘K |  | missing from Lulo's menu bar |
-| FIL-MENU-008 | missing menu item (has a shortcut) | Network | Go ▸ Network | ⇧⌘K |  | missing from Lulo's menu bar |
-| FIL-MENU-010 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
+| FIL-MENU-008 | missing menu item (has a shortcut) | Connect to Server… | Go ▸ Connect to Server… | ⌘K |  | missing from Lulo's menu bar |
+| FIL-MENU-007 | missing menu item (has a shortcut) | Network | Go ▸ Network | ⇧⌘K |  | missing from Lulo's menu bar |
+| FIL-MENU-009 | missing menu item (has a shortcut) | Cycle Through Windows | Window ▸ Cycle Through Windows | ⌘` |  | missing from Lulo's menu bar |
 | FIL-CONTEXT-001 | missing context-menu item | label | context menu ▸ file |  |  | missing from Lulo's context menu |
 | FIL-CONTEXT-004 | missing context-menu item | label | context menu ▸ folder |  |  | missing from Lulo's context menu |
 | FIL-MENU-003 | missing menu item | Manage Shared Folder… | File ▸ Manage Shared Folder… |  |  | missing from Lulo's menu bar |
 | FIL-MENU-001 | missing menu item | New Smart Folder | File ▸ New Smart Folder |  |  | missing from Lulo's menu bar |
-| FIL-MENU-006 | missing menu item | Customise Toolbar… | View ▸ Customise Toolbar… |  |  | missing from Lulo's menu bar |
-| FIL-MENU-007 | missing menu item | Show Preview Options | View ▸ Show Preview Options |  |  | missing from Lulo's menu bar |
+| FIL-MENU-005 | missing menu item | Customise Toolbar… | View ▸ Customise Toolbar… |  |  | missing from Lulo's menu bar |
+| FIL-MENU-006 | missing menu item | Show Preview Options | View ▸ Show Preview Options |  |  | missing from Lulo's menu bar |
 | FIL-CONTEXT-002 | Lulo-only (not on the Mac) | <*name> | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
 | FIL-CONTEXT-003 | Lulo-only (not on the Mac) | Tags… | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
 | FIL-CONTEXT-005 | Lulo-only (not on the Mac) | <*name> | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
 | FIL-CONTEXT-006 | Lulo-only (not on the Mac) | Tags… | context menu ▸ folder |  |  | present in Lulo but not found on the Mac |
-| FIL-MENU-011 | Lulo-only (not on the Mac) | Bin | Go ▸ Trash |  |  | present in Lulo but not found on the Mac |
+| FIL-MENU-010 | Lulo-only (not on the Mac) | Bin | Go ▸ Trash |  |  | present in Lulo but not found on the Mac |
 
 ## Notes
 
@@ -49,9 +48,7 @@ _141 gaps across 8 apps; 240 Mac-only items were allowlisted (see `tests/invento
 | NOT-MENU-004 | missing menu item | Writing Direction | Format ▸ Text ▸ Writing Direction |  |  | missing from Lulo's menu bar |
 | NOT-MENU-005 | missing menu item | Paragraph | Format ▸ Text ▸ Writing Direction ▸ Paragraph |  |  | missing from Lulo's menu bar |
 | NOT-MENU-006 | missing menu item | Selection | Format ▸ Text ▸ Writing Direction ▸ Selection |  |  | missing from Lulo's menu bar |
-| NOT-MENU-007 | wrong/missing shortcut | Zoom | Window ▸ Zoom | ⌃⌘Z |  | shortcut differs |
-| NOT-MENU-008 | wrong/missing shortcut | Zoom All | Window ▸ Zoom All | ⌃⌥⌘Z |  | shortcut differs |
-| NOT-MENU-009 | Lulo-only (not on the Mac) | New Quick Note | File ▸ New Quick Note |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-007 | Lulo-only (not on the Mac) | New Quick Note | File ▸ New Quick Note |  |  | present in Lulo but not found on the Mac |
 
 ## Preview
 
@@ -78,36 +75,33 @@ _141 gaps across 8 apps; 240 Mac-only items were allowlisted (see `tests/invento
 |---|---|---|---|---|---|---|
 | MON-MENU-001 | missing menu item (has a shortcut) | Page Setup… | File ▸ Page Setup… | ⇧⌘P |  | missing from Lulo's menu bar |
 | MON-MENU-002 | missing menu item (has a shortcut) | Print… | File ▸ Print… | ⌘P |  | missing from Lulo's menu bar |
-| MON-MENU-025 | missing menu item | All Processes, Hierarchically | View ▸ All Processes, Hierarchically |  |  | missing from Lulo's menu bar |
-| MON-MENU-028 | missing menu item | Applications in last 12 hours | View ▸ Applications in last 12 hours |  |  | missing from Lulo's menu bar |
-| MON-MENU-006 | missing menu item | # Ports | View ▸ Columns ▸ # Ports |  |  | missing from Lulo's menu bar |
-| MON-MENU-004 | missing menu item | % GPU | View ▸ Columns ▸ % GPU |  |  | missing from Lulo's menu bar |
-| MON-MENU-020 | missing menu item | Bytes Read | View ▸ Columns ▸ Bytes Read |  |  | missing from Lulo's menu bar |
-| MON-MENU-019 | missing menu item | Bytes Written | View ▸ Columns ▸ Bytes Written |  |  | missing from Lulo's menu bar |
-| MON-MENU-003 | missing menu item | CPU Time | View ▸ Columns ▸ CPU Time |  |  | missing from Lulo's menu bar |
-| MON-MENU-018 | missing menu item | Compressed Memory | View ▸ Columns ▸ Compressed Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-005 | missing menu item | GPU Time | View ▸ Columns ▸ GPU Time |  |  | missing from Lulo's menu bar |
-| MON-MENU-012 | missing menu item | Idle Wake Ups | View ▸ Columns ▸ Idle Wake Ups |  |  | missing from Lulo's menu bar |
-| MON-MENU-009 | missing menu item | Kind | View ▸ Columns ▸ Kind |  |  | missing from Lulo's menu bar |
-| MON-MENU-017 | missing menu item | Memory | View ▸ Columns ▸ Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-021 | missing menu item | Preventing Sleep | View ▸ Columns ▸ Preventing Sleep |  |  | missing from Lulo's menu bar |
-| MON-MENU-007 | missing menu item | Real Private Memory | View ▸ Columns ▸ Real Private Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-008 | missing menu item | Real Shared Memory | View ▸ Columns ▸ Real Shared Memory |  |  | missing from Lulo's menu bar |
-| MON-MENU-015 | missing menu item | Received Bytes | View ▸ Columns ▸ Received Bytes |  |  | missing from Lulo's menu bar |
-| MON-MENU-016 | missing menu item | Received Packets | View ▸ Columns ▸ Received Packets |  |  | missing from Lulo's menu bar |
-| MON-MENU-011 | missing menu item | Restricted | View ▸ Columns ▸ Restricted |  |  | missing from Lulo's menu bar |
-| MON-MENU-010 | missing menu item | Sandbox | View ▸ Columns ▸ Sandbox |  |  | missing from Lulo's menu bar |
-| MON-MENU-013 | missing menu item | Sent Bytes | View ▸ Columns ▸ Sent Bytes |  |  | missing from Lulo's menu bar |
-| MON-MENU-014 | missing menu item | Sent Packets | View ▸ Columns ▸ Sent Packets |  |  | missing from Lulo's menu bar |
-| MON-MENU-022 | missing menu item | Show CPU History | View ▸ Dock Icon ▸ Show CPU History |  |  | missing from Lulo's menu bar |
-| MON-MENU-024 | missing menu item | Show Disk Activity | View ▸ Dock Icon ▸ Show Disk Activity |  |  | missing from Lulo's menu bar |
-| MON-MENU-023 | missing menu item | Show Network Usage | View ▸ Dock Icon ▸ Show Network Usage |  |  | missing from Lulo's menu bar |
-| MON-MENU-026 | missing menu item | GPU Processes | View ▸ GPU Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-029 | missing menu item | Processes, by GPU | View ▸ Processes, by GPU |  |  | missing from Lulo's menu bar |
-| MON-MENU-027 | missing menu item | Windowed Processes | View ▸ Windowed Processes |  |  | missing from Lulo's menu bar |
-| MON-MENU-030 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
-| MON-MENU-031 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
-| MON-MENU-032 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
+| MON-MENU-022 | missing menu item | All Processes, Hierarchically | View ▸ All Processes, Hierarchically |  |  | missing from Lulo's menu bar |
+| MON-MENU-025 | missing menu item | Applications in last 12 hours | View ▸ Applications in last 12 hours |  |  | missing from Lulo's menu bar |
+| MON-MENU-005 | missing menu item | # Ports | View ▸ Columns ▸ # Ports |  |  | missing from Lulo's menu bar |
+| MON-MENU-003 | missing menu item | % GPU | View ▸ Columns ▸ % GPU |  |  | missing from Lulo's menu bar |
+| MON-MENU-017 | missing menu item | Compressed Memory | View ▸ Columns ▸ Compressed Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-004 | missing menu item | GPU Time | View ▸ Columns ▸ GPU Time |  |  | missing from Lulo's menu bar |
+| MON-MENU-011 | missing menu item | Idle Wake Ups | View ▸ Columns ▸ Idle Wake Ups |  |  | missing from Lulo's menu bar |
+| MON-MENU-008 | missing menu item | Kind | View ▸ Columns ▸ Kind |  |  | missing from Lulo's menu bar |
+| MON-MENU-016 | missing menu item | Memory | View ▸ Columns ▸ Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-018 | missing menu item | Preventing Sleep | View ▸ Columns ▸ Preventing Sleep |  |  | missing from Lulo's menu bar |
+| MON-MENU-006 | missing menu item | Real Private Memory | View ▸ Columns ▸ Real Private Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-007 | missing menu item | Real Shared Memory | View ▸ Columns ▸ Real Shared Memory |  |  | missing from Lulo's menu bar |
+| MON-MENU-014 | missing menu item | Received Bytes | View ▸ Columns ▸ Received Bytes |  |  | missing from Lulo's menu bar |
+| MON-MENU-015 | missing menu item | Received Packets | View ▸ Columns ▸ Received Packets |  |  | missing from Lulo's menu bar |
+| MON-MENU-010 | missing menu item | Restricted | View ▸ Columns ▸ Restricted |  |  | missing from Lulo's menu bar |
+| MON-MENU-009 | missing menu item | Sandbox | View ▸ Columns ▸ Sandbox |  |  | missing from Lulo's menu bar |
+| MON-MENU-012 | missing menu item | Sent Bytes | View ▸ Columns ▸ Sent Bytes |  |  | missing from Lulo's menu bar |
+| MON-MENU-013 | missing menu item | Sent Packets | View ▸ Columns ▸ Sent Packets |  |  | missing from Lulo's menu bar |
+| MON-MENU-019 | missing menu item | Show CPU History | View ▸ Dock Icon ▸ Show CPU History |  |  | missing from Lulo's menu bar |
+| MON-MENU-021 | missing menu item | Show Disk Activity | View ▸ Dock Icon ▸ Show Disk Activity |  |  | missing from Lulo's menu bar |
+| MON-MENU-020 | missing menu item | Show Network Usage | View ▸ Dock Icon ▸ Show Network Usage |  |  | missing from Lulo's menu bar |
+| MON-MENU-023 | missing menu item | GPU Processes | View ▸ GPU Processes |  |  | missing from Lulo's menu bar |
+| MON-MENU-026 | missing menu item | Processes, by GPU | View ▸ Processes, by GPU |  |  | missing from Lulo's menu bar |
+| MON-MENU-024 | missing menu item | Windowed Processes | View ▸ Windowed Processes |  |  | missing from Lulo's menu bar |
+| MON-MENU-027 | missing menu item | Keep CPU Windows on Top | Window ▸ Keep CPU Windows on Top |  |  | missing from Lulo's menu bar |
+| MON-MENU-028 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
+| MON-MENU-029 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
 
 ## System Settings
 
@@ -115,7 +109,6 @@ _141 gaps across 8 apps; 240 Mac-only items were allowlisted (see `tests/invento
 |---|---|---|---|---|---|---|
 | SET-MENU-001 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
 | SET-MENU-002 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
-| SET-SIDEBAR-001 | Lulo-only (not on the Mac) | Lulo Intelligence | sidebar |  |  | present in Lulo's sidebar but not found on the Mac |
 
 ## Terminal
 
@@ -167,22 +160,13 @@ _141 gaps across 8 apps; 240 Mac-only items were allowlisted (see `tests/invento
 | TXT-MENU-010 | missing menu item | Show Tab Bar | View ▸ Show Tab Bar |  |  | missing from Lulo's menu bar |
 | TXT-SETTINGS-001 | missing settings control | Author: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TXT-SETTINGS-002 | missing settings control | Check and correct spelling in rich text documents only | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-003 | missing settings control | Check grammar with spelling | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-004 | missing settings control | Check spelling as you type | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-005 | missing settings control | Copyright: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-006 | missing settings control | Correct spelling automatically | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-007 | missing settings control | Data detectors | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-008 | missing settings control | Document properties are saved only with rich text files. Choose File > Show Properties to change the properties for an open document. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-009 | missing settings control | Helvetica 12 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-010 | missing settings control | Organisation: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-011 | missing settings control | Properties | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-012 | missing settings control | Smart copy/paste | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-013 | missing settings control | Smart dashes | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-014 | missing settings control | Smart links | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-015 | missing settings control | Smart quotes | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-016 | missing settings control | Smart quotes and dashes in rich text documents only | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-017 | missing settings control | Text replacement | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TXT-SETTINGS-018 | missing settings control | Use the Format menu to choose settings for an open document. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-003 | missing settings control | Copyright: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-004 | missing settings control | Document properties are saved only with rich text files. Choose File > Show Properties to change the properties for an open document. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-005 | missing settings control | Helvetica 12 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-006 | missing settings control | Organisation: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-007 | missing settings control | Properties | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-008 | missing settings control | Smart quotes and dashes in rich text documents only | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-SETTINGS-009 | missing settings control | Use the Format menu to choose settings for an open document. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 
 ## Weather
 

@@ -493,9 +493,23 @@ fn sync_copied_tree(path: &Path) -> io::Result<()> {
         }
         sync_directory_handle(path)?;
     } else if !metadata.file_type().is_symlink() {
-        std::fs::File::open(path)?.sync_all()?;
+        sync_file_handle(path)?;
     }
     Ok(())
+}
+
+/// `FlushFileBuffers` (`sync_all`) needs a handle opened with write access
+/// on Windows; a plain `File::open` (read-only) fails it with "Access is
+/// denied". Unix's `fsync` has no such requirement, so the read-only open
+/// there is intentional (never touches the file's own write permissions).
+#[cfg(not(windows))]
+fn sync_file_handle(path: &Path) -> io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
+}
+
+#[cfg(windows)]
+fn sync_file_handle(path: &Path) -> io::Result<()> {
+    std::fs::OpenOptions::new().write(true).open(path)?.sync_all()
 }
 
 /// Windows cannot open a directory with write access to `fsync` it; NTFS

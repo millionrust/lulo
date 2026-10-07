@@ -104,11 +104,13 @@ def _scan_binary_for_build_host_home(path: Path, remaining_budget: int) -> int:
     try:
         metadata = path.lstat()
     except OSError as error:
-        raise VerificationError("packaged binary cannot be inspected") from error
+        raise VerificationError(f"packaged binary cannot be inspected: {path.name}") from error
     if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
-        raise VerificationError("packaged binary is not a regular file")
+        raise VerificationError(f"packaged binary is not a regular file: {path.name}")
     if metadata.st_size > MAX_BINARY_SCAN_BYTES or metadata.st_size > remaining_budget:
-        raise VerificationError("native package binary scan exceeds its size limit")
+        raise VerificationError(
+            f"native package binary scan exceeds its size limit: {path.name}"
+        )
     overlap = 4096
     tail = b""
     scanned = 0
@@ -117,16 +119,20 @@ def _scan_binary_for_build_host_home(path: Path, remaining_budget: int) -> int:
             while chunk := source.read(PATH_SCAN_CHUNK_BYTES):
                 scanned += len(chunk)
                 if scanned > metadata.st_size or scanned > remaining_budget:
-                    raise VerificationError("native package binary changed while scanning")
-                if BUILD_HOST_HOME_PATH.search(tail + chunk):
                     raise VerificationError(
-                        "native package binary contains a build-host home path"
+                        f"native package binary changed while scanning: {path.name}"
+                    )
+                if BUILD_HOST_HOME_PATH.search(tail + chunk):
+                    # Name the binary, never the leaked path itself.
+                    raise VerificationError(
+                        "native package binary contains a build-host home path: "
+                        f"{path.name}"
                     )
                 tail = (tail + chunk)[-overlap:]
     except OSError as error:
-        raise VerificationError("packaged binary cannot be inspected") from error
+        raise VerificationError(f"packaged binary cannot be inspected: {path.name}") from error
     if scanned != metadata.st_size:
-        raise VerificationError("native package binary changed while scanning")
+        raise VerificationError(f"native package binary changed while scanning: {path.name}")
     return scanned
 
 
@@ -471,7 +477,9 @@ def verify_directory(
                 "size",
                 "static_dependencies",
             }:
-                raise VerificationError("native package manifest record is invalid")
+                raise VerificationError(
+                    f"native package manifest record is invalid: {specification.name}"
+                )
             filename = package_filename(
                 specification, expected_version, architecture
             )
@@ -485,14 +493,20 @@ def verify_directory(
                 or type(size) is not int
                 or size <= 0
             ):
-                raise VerificationError("native package archive record is invalid")
+                raise VerificationError(
+                    f"native package archive record is invalid: {specification.name}"
+                )
             archive = directory / filename
             mode, archive_size = _regular_mode(archive)
             if mode != 0o644 or archive_size != size:
-                raise VerificationError("native package archive has the wrong mode")
+                raise VerificationError(
+                    f"native package archive has the wrong mode or size: {filename}"
+                )
             actual_digest, actual_size = _sha256(archive)
             if actual_digest != digest or actual_size != size:
-                raise VerificationError("native package archive fingerprint differs")
+                raise VerificationError(
+                    f"native package archive fingerprint differs: {filename}"
+                )
             checksum_lines.append(f"{digest}  {filename}\n")
 
             static_dependencies = _require_string_list(
@@ -522,7 +536,8 @@ def verify_directory(
                     or recommends != tuple(specification.recommends)
                 ):
                     raise VerificationError(
-                        "native package dependency contract differs"
+                        "native package dependency contract differs: "
+                        f"{specification.name}"
                     )
             except ContractError as error:
                 raise VerificationError(str(error)) from error
@@ -537,7 +552,10 @@ def verify_directory(
                 Path("DEBIAN"),
                 Path("DEBIAN/control"),
             } | {Path("DEBIAN") / name for name in scripts}:
-                raise VerificationError("native package control inventory is not exact")
+                raise VerificationError(
+                    "native package control inventory is not exact: "
+                    f"{specification.name}"
+                )
             for name, expected_script in scripts.items():
                 script, script_mode = _regular_bytes(
                     extracted / "DEBIAN" / name, MAX_CONTROL_BYTES
@@ -555,7 +573,9 @@ def verify_directory(
                 architecture=architecture,
                 dependencies=dependencies,
             ):
-                raise VerificationError("native package control metadata differs")
+                raise VerificationError(
+                    f"native package control metadata differs: {specification.name}"
+                )
 
             try:
                 payload_verifiers[specification.name].verify_tree(
@@ -578,9 +598,17 @@ def verify_directory(
             base_files = set(payload_verifiers[specification.name].EXPECTED_PATHS)
             base_files.add(payload_verifiers[specification.name].MANIFEST)
             expected_payload = _with_parent_directories(base_files | binary_paths)
-            if _payload_entries(extracted) != expected_payload:
+            actual_payload = _payload_entries(extracted)
+            if actual_payload != expected_payload:
+                unexpected = sorted(
+                    path.as_posix() for path in actual_payload - expected_payload
+                )
+                missing = sorted(
+                    path.as_posix() for path in expected_payload - actual_payload
+                )
                 raise VerificationError(
-                    f"{specification.name} payload contains an unexpected path"
+                    f"{specification.name} payload is not exact: "
+                    f"unexpected {unexpected[:10]}, missing {missing[:10]}"
                 )
 
     if include_third_party:

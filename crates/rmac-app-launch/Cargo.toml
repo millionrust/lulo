@@ -8,12 +8,20 @@ publish = false
 
 [dependencies]
 blocking.workspace = true
-libc.workspace = true
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
-rmac-compositor-niri.workspace = true
 rmac-portal.workspace = true
 rmac-recent-documents.workspace = true
 rmac-storage.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+# niri-spawned activation (ADR 0023: Windows has no compositor to hand a
+# spawn request to; `try_compositor_spawn` always falls back there).
+[target.'cfg(target_os = "linux")'.dependencies]
+rmac-compositor-niri.workspace = true
+
+# POSIX checks (executable-bit, O_NOFOLLOW locks, signals): Linux and the
+# macOS development build, not Windows.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true

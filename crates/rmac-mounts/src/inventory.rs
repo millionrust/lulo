@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "linux")]
 use crate::model::MAX_MOUNTINFO_BYTES;
-use crate::model::{MAX_DISPLAY_NAME_BYTES, MAX_MOUNTS};
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+use crate::model::MAX_MOUNTS;
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+use crate::model::MAX_DISPLAY_NAME_BYTES;
 use crate::{Error, Mount, Usage, Volume};
 
 pub fn discover() -> Result<Vec<Mount>, Error> {
@@ -42,9 +45,13 @@ pub fn discover() -> Result<Vec<Mount>, Error> {
 /// entry (ADR 0023 phase 4's Locations mapping).
 #[cfg(target_os = "windows")]
 fn discover_windows() -> Result<Vec<Mount>, Error> {
-    use windows::Win32::Storage::FileSystem::{
-        DRIVE_CDROM, DRIVE_REMOVABLE, GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW,
-    };
+    use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW};
+
+    // `GetDriveTypeW`'s return value, from `fileapi.h`; windows-rs does not
+    // wrap these as named constants (they are raw preprocessor `#define`s,
+    // not a typed enum), so they are spelled out here.
+    const DRIVE_REMOVABLE: u32 = 2;
+    const DRIVE_CDROM: u32 = 5;
 
     let mut mounts = Vec::new();
     // SAFETY: no pointers; returns a bitmask with no error state.
@@ -353,6 +360,7 @@ fn mount_display_name(path: &Path) -> Option<String> {
     (!name.is_empty()).then_some(name)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub(crate) fn sanitize_display_name(value: &str) -> String {
     let normalized = value
         .chars()

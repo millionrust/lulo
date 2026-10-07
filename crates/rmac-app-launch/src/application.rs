@@ -14,54 +14,8 @@ pub async fn launch_with_color_scheme(
     let color_scheme = color_scheme
         .filter(|scheme| matches!(*scheme, "dark" | "light"))
         .map(str::to_owned);
-    if cfg!(target_os = "linux")
-        && std::env::var_os(rmac_compositor_niri::SOCKET_PATH_ENV).is_some()
-    {
-        if let Some(mut arguments) = rmac_apps::activation_spawn_argv(&spec) {
-            // niri acknowledges `spawn` before it forks, and a failed exec is
-            // only logged in niri's own output, so a missing or unrunnable
-            // program would otherwise "launch" with nothing on screen.
-            if let Some(program) = arguments.first().cloned() {
-                let path = std::env::var_os("PATH");
-                blocking::unblock(move || {
-                    runnable_program(std::path::Path::new(&program), path.as_deref())
-                })
-                .await
-                .map_err(|kind| Error {
-                    kind: ErrorKind::Io(kind),
-                })?;
-            }
-            arguments = with_color_scheme(arguments, color_scheme.as_deref());
-            if let Ok(command) = rmac_compositor::SpawnCommand::new(arguments) {
-                use std::sync::atomic::{AtomicU64, Ordering};
-
-                static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
-                let id = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed).max(1);
-                let result = rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
-                    id: rmac_compositor::ActivationId(id),
-                    action: rmac_compositor::Action::Spawn { command },
-                })
-                .await
-                .result;
-                match result {
-                    Ok(()) => {
-                        return Ok(Outcome {
-                            process_id: None,
-                            delivery: Delivery::CompositorActivation,
-                        });
-                    }
-                    Err(error) if may_fallback(error.kind) => {}
-                    Err(error) => {
-                        return Err(Error {
-                            kind: match error.kind {
-                                rmac_compositor::ActionErrorKind::Rejected => ErrorKind::Rejected,
-                                _ => ErrorKind::Protocol,
-                            },
-                        });
-                    }
-                }
-            }
-        }
+    if let Some(outcome) = try_compositor_spawn(&spec, color_scheme.as_deref()).await? {
+        return Ok(outcome);
     }
 
     blocking::unblock(move || {
@@ -89,6 +43,73 @@ pub async fn launch_with_color_scheme(
     .await
 }
 
+/// Ask niri to spawn the app directly, so it is tracked by the compositor
+/// from the moment it opens (window placement, activation). `Ok(None)` means
+/// "not handled; fall back to a direct spawn" (no niri session, or niri
+/// rejected it for a reason the direct path may still recover from).
+#[cfg(target_os = "linux")]
+async fn try_compositor_spawn(
+    spec: &rmac_apps::LaunchSpec,
+    color_scheme: Option<&str>,
+) -> Result<Option<Outcome>, Error> {
+    if std::env::var_os(rmac_compositor_niri::SOCKET_PATH_ENV).is_none() {
+        return Ok(None);
+    }
+    let Some(mut arguments) = rmac_apps::activation_spawn_argv(spec) else {
+        return Ok(None);
+    };
+    // niri acknowledges `spawn` before it forks, and a failed exec is
+    // only logged in niri's own output, so a missing or unrunnable
+    // program would otherwise "launch" with nothing on screen.
+    if let Some(program) = arguments.first().cloned() {
+        let path = std::env::var_os("PATH");
+        blocking::unblock(move || {
+            runnable_program(std::path::Path::new(&program), path.as_deref())
+        })
+        .await
+        .map_err(|kind| Error {
+            kind: ErrorKind::Io(kind),
+        })?;
+    }
+    arguments = with_color_scheme(arguments, color_scheme);
+    let Ok(command) = rmac_compositor::SpawnCommand::new(arguments) else {
+        return Ok(None);
+    };
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed).max(1);
+    let result = rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+        id: rmac_compositor::ActivationId(id),
+        action: rmac_compositor::Action::Spawn { command },
+    })
+    .await
+    .result;
+    match result {
+        Ok(()) => Ok(Some(Outcome {
+            process_id: None,
+            delivery: Delivery::CompositorActivation,
+        })),
+        Err(error) if may_fallback(error.kind) => Ok(None),
+        Err(error) => Err(Error {
+            kind: match error.kind {
+                rmac_compositor::ActionErrorKind::Rejected => ErrorKind::Rejected,
+                _ => ErrorKind::Protocol,
+            },
+        }),
+    }
+}
+
+/// Windows has no compositor to hand a spawn request to (ADR 0023); every
+/// launch takes the direct-fallback path below.
+#[cfg(not(target_os = "linux"))]
+async fn try_compositor_spawn(
+    _spec: &rmac_apps::LaunchSpec,
+    _color_scheme: Option<&str>,
+) -> Result<Option<Outcome>, Error> {
+    Ok(None)
+}
+
 fn with_color_scheme(mut arguments: Vec<String>, scheme: Option<&str>) -> Vec<String> {
     if let Some(scheme) = scheme {
         arguments.splice(
@@ -99,6 +120,7 @@ fn with_color_scheme(mut arguments: Vec<String>, scheme: Option<&str>) -> Vec<St
     arguments
 }
 
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
     matches!(
         kind,
@@ -110,6 +132,7 @@ pub(crate) fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
 
 /// Whether `program` names an executable the way `execvp` would find it:
 /// a path containing `/` is used as is, a bare name is searched in `path`.
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn runnable_program(
     program: &std::path::Path,
     path: Option<&std::ffi::OsStr>,
@@ -140,6 +163,7 @@ pub(crate) fn runnable_program(
     })
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn executable(candidate: &std::path::Path) -> Result<(), std::io::ErrorKind> {
     // Follows symlinks, so a dangling link counts as missing.
     let metadata = std::fs::metadata(candidate).map_err(|error| error.kind())?;

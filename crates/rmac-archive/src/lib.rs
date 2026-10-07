@@ -20,18 +20,60 @@
 //! until the whole archive has expanded, so a failure or cancel leaves the
 //! folder exactly as it was.
 
+// Both read and write every entry through `O_NOFOLLOW` opens, POSIX modes
+// and Unix symlinks (`expand.rs`'s `symlink`, `compress.rs`'s
+// `PermissionsExt`); porting that safely needs a real design pass, not a
+// line-by-line swap, so Windows gets an honest "not available yet" instead
+// (ADR 0023 phase 4; tracked as WIN-OS-18 in docs/parity.md). `naming` has
+// no archive I/O at all and stays available everywhere, so Files can still
+// recognise an archive by name and offer Finder's own real naming rule for
+// the file Compress would create.
+#[cfg(target_os = "linux")]
 mod compress;
+#[cfg(target_os = "linux")]
 mod expand;
 mod naming;
+#[cfg(target_os = "linux")]
 mod staging;
 
 use std::fmt;
 use std::io;
 use std::path::Path;
 
-pub use compress::{compress, compressed_name};
+#[cfg(target_os = "linux")]
+pub use compress::compress;
+#[cfg(target_os = "linux")]
 pub use expand::expand;
-pub use naming::{archive_stem, format_of, unique_path, Format};
+pub use naming::{archive_stem, compressed_name, format_of, unique_path, Format};
+
+/// Windows: expanding and compressing archives is not implemented yet
+/// (see the module doc above). `std::sync::atomic::AtomicBool` and
+/// `Progress`'s callback are accepted and ignored so callers do not need
+/// their own `cfg` split.
+#[cfg(not(target_os = "linux"))]
+pub fn compress(
+    _items: &[std::path::PathBuf],
+    _cancel: &std::sync::atomic::AtomicBool,
+    _progress: &mut dyn FnMut(Progress),
+) -> Result<std::path::PathBuf, Error> {
+    Err(Error::Io(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "Compress isn't available on Windows yet",
+    )))
+}
+
+/// Windows: see `compress` above.
+#[cfg(not(target_os = "linux"))]
+pub fn expand(
+    _archive: &Path,
+    _cancel: &std::sync::atomic::AtomicBool,
+    _progress: &mut dyn FnMut(Progress),
+) -> Result<std::path::PathBuf, Error> {
+    Err(Error::Io(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "Expand isn't available on Windows yet",
+    )))
+}
 
 /// Bytes processed so far out of the job's total (both in the units the job
 /// can measure up front: compressed bytes read when expanding, source bytes
@@ -228,12 +270,21 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn alert_wording_matches_the_mac() {
+    fn unsupported_format_wording_matches_the_mac() {
         assert_eq!(
             expand_error_message(Path::new("/home/me/qlab/Broken.zip"), &Error::Unsupported)
                 .as_deref(),
             Some("Unable to expand “Broken.zip”. It is in an unsupported format.")
         );
+    }
+
+    // `io::Error::from_raw_os_error`'s message is platform-specific (an
+    // errno on Unix, a Win32 error code on Windows: raw value 13 is EACCES
+    // ["Permission denied"] on Unix but Windows' own unrelated code 13 is
+    // ERROR_INVALID_DATA), so only Unix's own wording is checked exactly.
+    #[test]
+    #[cfg(not(windows))]
+    fn io_error_wording_matches_the_mac() {
         assert_eq!(
             expand_error_message(
                 Path::new("/home/me/qlab/Bundle.zip"),

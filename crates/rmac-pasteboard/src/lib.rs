@@ -411,6 +411,226 @@ mod imp {
     }
 }
 
+/// The real Windows clipboard. `CF_HDROP` is the format Explorer's own
+/// Copy/Cut/Paste writes and reads (ADR 0023 phase 4); "Preferred
+/// DropEffect" (`CFSTR_PREFERREDDROPEFFECT`, a registered format carrying
+/// one `DROPEFFECT_*` DWORD) is the same extra format Explorer uses to
+/// tell a cut from a copy, so a cut done in Files and pasted into Explorer
+/// (or the reverse) behaves the same way it would between two Explorer
+/// windows.
+#[cfg(windows)]
+mod imp {
+    use std::os::windows::ffi::OsStrExt as _;
+    use std::path::PathBuf;
+
+    use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND};
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
+        OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
+    };
+    use windows::Win32::System::Memory::{
+        GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock, GHND,
+    };
+    use windows::Win32::UI::Shell::DragQueryFileW;
+    use windows::core::w;
+
+    use super::{FileList, PasteboardError};
+
+    const CF_HDROP: u32 = 15;
+    const DROPEFFECT_COPY: u32 = 1;
+    const DROPEFFECT_MOVE: u32 = 2;
+
+    // The fixed header every `CF_HDROP` payload starts with (`shlobj_core.h`'s
+    // `DROPFILES`); windows-rs does not export it, so it is spelled out here.
+    #[repr(C)]
+    struct DropFiles {
+        files_offset: u32,
+        anchor_x: i32,
+        anchor_y: i32,
+        in_non_client_area: i32,
+        wide_chars: i32,
+    }
+
+    pub type Job = Box<dyn FnOnce() + Send>;
+
+    /// The Win32 clipboard answers at once; run on the caller's thread.
+    pub fn run(job: Job) {
+        job();
+    }
+
+    struct OpenGuard;
+
+    impl OpenGuard {
+        fn acquire() -> Result<Self, PasteboardError> {
+            // SAFETY: no preconditions beyond no other open clipboard on
+            // this thread, which `OpenClipboard` itself enforces.
+            unsafe { OpenClipboard(Some(HWND::default())) }
+                .map(|()| Self)
+                .map_err(|_| PasteboardError::new("The clipboard is in use"))
+        }
+    }
+
+    impl Drop for OpenGuard {
+        fn drop(&mut self) {
+            // SAFETY: this guard exists only while the clipboard is open.
+            let _ = unsafe { CloseClipboard() };
+        }
+    }
+
+    pub fn write_file_list(paths: &[PathBuf], cut: bool) -> Result<(), PasteboardError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let mut wide: Vec<u16> = Vec::new();
+        for path in paths {
+            wide.extend(path.as_os_str().encode_wide());
+            wide.push(0);
+        }
+        wide.push(0);
+        let header_bytes = std::mem::size_of::<DropFiles>();
+        let total_bytes = header_bytes + wide.len() * std::mem::size_of::<u16>();
+
+        let guard = OpenGuard::acquire()?;
+        // SAFETY: `EmptyClipboard` has no preconditions once open.
+        unsafe { EmptyClipboard() }
+            .map_err(|_| PasteboardError::new("The clipboard could not be cleared"))?;
+
+        // SAFETY: `GHND` zero-initialises the block; `total_bytes` is the
+        // header plus the double-NUL-terminated wide path list computed
+        // above.
+        let handle = unsafe { GlobalAlloc(GHND, total_bytes) }
+            .map_err(|_| PasteboardError::new("The clipboard ran out of memory"))?;
+        // SAFETY: `handle` was just allocated above and is not yet locked.
+        let locked = unsafe { GlobalLock(handle) };
+        if locked.is_null() {
+            unsafe { GlobalFree(Some(handle)) }.ok();
+            return Err(PasteboardError::new("The clipboard ran out of memory"));
+        }
+        // SAFETY: `locked` points at `total_bytes` of writable memory just
+        // allocated and locked above; `DropFiles` and the wide string list
+        // together fit exactly within it.
+        unsafe {
+            let header = locked as *mut DropFiles;
+            header.write(DropFiles {
+                files_offset: header_bytes as u32,
+                anchor_x: 0,
+                anchor_y: 0,
+                in_non_client_area: 0,
+                wide_chars: 1,
+            });
+            let data = (locked as *mut u8).add(header_bytes) as *mut u16;
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), data, wide.len());
+        }
+        // SAFETY: `handle` was locked exactly once above.
+        unsafe { GlobalUnlock(handle) }.ok();
+
+        // SAFETY: `handle` holds a well-formed `CF_HDROP` payload; ownership
+        // passes to the clipboard on success.
+        if unsafe { SetClipboardData(CF_HDROP, Some(HANDLE(handle.0))) }.is_err() {
+            unsafe { GlobalFree(Some(handle)) }.ok();
+            return Err(PasteboardError::new("The clipboard refused the items"));
+        }
+
+        set_preferred_drop_effect(if cut { DROPEFFECT_MOVE } else { DROPEFFECT_COPY });
+        drop(guard);
+        Ok(())
+    }
+
+    fn set_preferred_drop_effect(effect: u32) {
+        // SAFETY: a registered clipboard format id with no preconditions.
+        let format = unsafe { RegisterClipboardFormatW(w!("Preferred DropEffect")) };
+        if format == 0 {
+            return;
+        }
+        // SAFETY: a `DWORD`-sized, zero-initialised block, matching the
+        // registered format's documented contents.
+        let Ok(handle) = (unsafe { GlobalAlloc(GHND, std::mem::size_of::<u32>()) }) else {
+            return;
+        };
+        let locked = unsafe { GlobalLock(handle) };
+        if locked.is_null() {
+            unsafe { GlobalFree(Some(handle)) }.ok();
+            return;
+        }
+        // SAFETY: `locked` points at a just-allocated, locked `u32`-sized
+        // block.
+        unsafe { (locked as *mut u32).write(effect) };
+        unsafe { GlobalUnlock(handle) }.ok();
+        // SAFETY: `handle` holds a well-formed `DWORD` payload.
+        if unsafe { SetClipboardData(format, Some(HANDLE(handle.0))) }.is_err() {
+            unsafe { GlobalFree(Some(handle)) }.ok();
+        }
+    }
+
+    pub fn clear() -> Result<(), PasteboardError> {
+        let guard = OpenGuard::acquire()?;
+        // SAFETY: the clipboard is open, held by `guard`.
+        let result = unsafe { EmptyClipboard() };
+        drop(guard);
+        result.map_err(|_| PasteboardError::new("The clipboard could not be cleared"))
+    }
+
+    pub fn has_file_list() -> Result<bool, PasteboardError> {
+        // SAFETY: no preconditions; reads clipboard state without opening it.
+        Ok(unsafe { IsClipboardFormatAvailable(CF_HDROP) }.is_ok())
+    }
+
+    pub fn read_file_list() -> Result<Option<FileList>, PasteboardError> {
+        if !has_file_list()? {
+            return Ok(None);
+        }
+        let guard = OpenGuard::acquire()?;
+        // SAFETY: the clipboard is open, held by `guard`; `CF_HDROP` was
+        // confirmed available above.
+        let Ok(handle) = (unsafe { GetClipboardData(CF_HDROP) }) else {
+            return Ok(None);
+        };
+        let hdrop = windows::Win32::UI::Shell::HDROP(handle.0);
+        // SAFETY: `hdrop` is the clipboard's own `CF_HDROP` handle, valid
+        // for the lifetime of `guard`; `0xFFFF_FFFF` is `DragQueryFileW`'s
+        // documented "return the count" index.
+        let count = unsafe { DragQueryFileW(hdrop, 0xFFFF_FFFF, None) };
+        let mut paths = Vec::with_capacity(count as usize);
+        for index in 0..count {
+            let mut buffer = [0u16; 32 * 1024];
+            // SAFETY: `buffer` is a valid, sufficiently sized buffer for
+            // `index`, one of the `count` entries `DragQueryFileW` itself
+            // just reported.
+            let length = unsafe { DragQueryFileW(hdrop, index, Some(&mut buffer)) };
+            if length > 0 {
+                paths.push(PathBuf::from(String::from_utf16_lossy(
+                    &buffer[..length as usize],
+                )));
+            }
+        }
+        let cut = preferred_drop_effect_is_move();
+        drop(guard);
+        Ok((!paths.is_empty()).then_some(FileList { paths, cut }))
+    }
+
+    fn preferred_drop_effect_is_move() -> bool {
+        // SAFETY: a registered clipboard format id with no preconditions.
+        let format = unsafe { RegisterClipboardFormatW(w!("Preferred DropEffect")) };
+        if format == 0 || unsafe { IsClipboardFormatAvailable(format) }.is_err() {
+            return false;
+        }
+        // SAFETY: the clipboard is already open by this function's only
+        // caller, `read_file_list`, for as long as `guard` there is alive.
+        let Ok(handle) = (unsafe { GetClipboardData(format) }) else {
+            return false;
+        };
+        let locked = unsafe { GlobalLock(HGLOBAL(handle.0)) };
+        if locked.is_null() {
+            return false;
+        }
+        // SAFETY: `locked` points at the registered format's documented
+        // one-`DWORD` payload.
+        let effect = unsafe { *(locked as *const u32) };
+        unsafe { GlobalUnlock(HGLOBAL(handle.0)) }.ok();
+        effect == DROPEFFECT_MOVE
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

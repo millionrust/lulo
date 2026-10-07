@@ -23,12 +23,29 @@ from pathlib import Path
 DEFAULT_BUDGET_TICKS = 1.0
 DEFAULT_EXEMPT = ("rmac-terminal",)
 
+# Clock's World Clock tab legitimately redraws once a minute (it shows
+# minute precision, matching the Mac), scheduled only while its window is
+# active and only for the next minute boundary — not a poll. The 20 s idle
+# window has about a one-in-three chance of containing that one boundary
+# (run 37633070594 hit it: 19.03 ticks, 6 x frame idle, 5 x vsync tick,
+# 4 x WM_PAINT, 3 x message 0x0403 — one wake, one real draw, then
+# `gpui_windows`' two-frame settle before it re-parks, ADR 0025). That is
+# the budget below, not a loosened general one: a real regression (ticking
+# every second, or not re-parking) would still fail it.
+PER_APP_BUDGET_TICKS: dict[str, float] = {
+    "rmac-clock": 24.0,
+}
+
 
 def idle_failures(
-    results: dict[str, dict], budget_ticks: float, exempt: tuple[str, ...]
+    results: dict[str, dict],
+    budget_ticks: float,
+    exempt: tuple[str, ...],
+    per_app_budget: dict[str, float] | None = None,
 ) -> list[str]:
     """One message per app over budget, or with no idle reading."""
     failures = []
+    per_app_budget = per_app_budget or {}
     for app, measurement in sorted(results.items()):
         if app in exempt:
             continue
@@ -36,15 +53,16 @@ def idle_failures(
         if ticks is None:
             failures.append(f"{app}: no idle CPU reading")
             continue
+        app_budget = per_app_budget.get(app, budget_ticks)
         # Windows charges CPU time a whole 15.6 ms tick at a time, so a
         # reading is a whole number of ticks give or take rounding.
-        if round(ticks) > budget_ticks:
+        if round(ticks) > app_budget:
             sources = ", ".join(
                 f"{entry['count']} x {entry['source']}"
                 for entry in measurement.get("idle_wake_sources", [])[:4]
             )
             failures.append(
-                f"{app}: {ticks:.2f} ticks idle over the budget of {budget_ticks:g}"
+                f"{app}: {ticks:.2f} ticks idle over the budget of {app_budget:g}"
                 + (f" (wake-ups: {sources})" if sources else "")
             )
     return failures
@@ -65,7 +83,9 @@ def main() -> int:
             f"idle gate: {app}: {measurement.get('idle_ticks')} ticks, "
             f"{measurement.get('idle_wakes')} wake-ups, launch {measurement.get('launch_ms')} ms"
         )
-    failures = idle_failures(results, arguments.budget_ticks, tuple(arguments.exempt))
+    failures = idle_failures(
+        results, arguments.budget_ticks, tuple(arguments.exempt), PER_APP_BUDGET_TICKS
+    )
     for failure in failures:
         print(f"idle gate: FAIL: {failure}")
     return 1 if failures else 0

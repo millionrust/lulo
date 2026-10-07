@@ -137,7 +137,7 @@ mod tests {
         std::fs::rename(&old, &new).unwrap();
 
         assert_eq!(
-            renamed_path(&child, expected, &[(old.clone(), new.clone())]),
+            renamed_path(&child, expected.clone(), &[(old.clone(), new.clone())]),
             Some(RenameResolution {
                 old: old.clone(),
                 new: new.clone(),

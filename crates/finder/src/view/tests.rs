@@ -130,6 +130,7 @@ fn recursive_copy_refuses_a_destination_inside_the_source() {
 }
 
 #[test]
+#[cfg(unix)]
 fn recursive_copy_detects_a_descendant_reached_through_a_symlink() {
     let root = TestDirectory::new("copy-symlink-descendant");
     let source = root.0.join("source");
@@ -147,6 +148,7 @@ fn recursive_copy_detects_a_descendant_reached_through_a_symlink() {
 }
 
 #[test]
+#[cfg(unix)]
 fn recursive_copy_preserves_a_symlink_without_traversing_its_target() {
     let root = TestDirectory::new("copy-symlink");
     let target = root.0.join("target");
@@ -183,6 +185,7 @@ fn recursive_copy_never_replaces_an_existing_file() {
 }
 
 #[test]
+#[cfg(unix)]
 fn recursive_copy_refuses_special_files_without_opening_them() {
     let root = TestDirectory::new_short("special");
     let source = root.0.join("source.socket");

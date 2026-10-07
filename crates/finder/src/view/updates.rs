@@ -42,7 +42,7 @@ impl FinderView {
                 self.operation_error = Some(FILESYSTEM_WATCH_INTERRUPTED_MESSAGE.into());
             }
         }
-        let Some(expected) = self.cwd_identity else {
+        let Some(expected) = self.cwd_identity.clone() else {
             self.reload_inner(cx, false);
             return;
         };
@@ -60,13 +60,14 @@ impl FinderView {
                 .background_executor()
                 .spawn({
                     let current = current.clone();
+                    let expected = expected.clone();
                     async move { directory_state::renamed_path(&current, expected, &renames) }
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 if this.directory_generation != generation
                     || this.cwd != current
-                    || this.cwd_identity != Some(expected)
+                    || this.cwd_identity != Some(expected.clone())
                 {
                     return;
                 }
@@ -111,7 +112,7 @@ impl FinderView {
         self.column_selection = None;
         if let Some(t) = self.tabs.get_mut(self.active) {
             t.cwd = self.cwd.clone();
-            t.identity = self.cwd_identity;
+            t.identity = self.cwd_identity.clone();
         }
         // Reconfigure the watcher only after navigation. Re-watching the same
         // directory in response to its own event can create a reload storm.
@@ -203,7 +204,7 @@ impl FinderView {
 
         let path = self.cwd.clone();
         let home = self.home.clone();
-        let expected_identity = self.cwd_identity;
+        let expected_identity = self.cwd_identity.clone();
         self.directory_generation = self.directory_generation.wrapping_add(1);
         let generation = self.directory_generation;
         self.directory_load_pending = true;
@@ -297,7 +298,7 @@ impl FinderView {
                 }
                 match result {
                     Ok((identity, entries, children, free)) => {
-                        this.cwd_identity = Some(identity);
+                        this.cwd_identity = Some(identity.clone());
                         if let Some(tab) = this.tabs.get_mut(this.active) {
                             tab.identity = Some(identity);
                         }

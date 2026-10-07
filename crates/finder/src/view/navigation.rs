@@ -82,7 +82,7 @@ impl FinderView {
     fn save_tab(&mut self) {
         if let Some(tab) = self.tabs.get_mut(self.active) {
             tab.cwd = self.cwd.clone();
-            tab.identity = self.cwd_identity;
+            tab.identity = self.cwd_identity.clone();
             tab.back = self.back.clone();
             tab.fwd = self.fwd.clone();
         }
@@ -92,7 +92,7 @@ impl FinderView {
     fn load_tab(&mut self, index: usize) {
         if let Some(tab) = self.tabs.get(index) {
             self.cwd = tab.cwd.clone();
-            self.cwd_identity = tab.identity;
+            self.cwd_identity = tab.identity.clone();
             self.back = tab.back.clone();
             self.fwd = tab.fwd.clone();
         }

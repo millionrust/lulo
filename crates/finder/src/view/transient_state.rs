@@ -25,7 +25,7 @@ pub(super) enum UndoEvent {
     },
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Copy)]
 pub(super) enum TrashTaskKind {
     Move,

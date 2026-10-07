@@ -213,7 +213,12 @@ original measurement, run 37596770109, gave the same 6 to 13 ticks and 375 to
   100 ms timeout, so every notify watcher wakes its own thread ten times a
   second; in the previous run that charged Text Editor 2.00 ticks with no
   GPUI wake-up. Text Editor now makes its watcher only once a document has
-  a folder to watch. Clock and Terminal still own one (WIN-OS-15).
+  a folder to watch. The final run (37610904494) charged Calculator and
+  Terminal one tick each to the same thread: every rmac-ui app watched
+  `~/.config/rmac` for System Settings' theme file, which exists only on
+  Lulo OS and was found on Windows only because CI's shell sets `HOME`.
+  rmac-ui no longer starts that watcher on Windows. Clock's alarm-state
+  watcher still polls (WIN-OS-15).
 - The window is visible 70 to 175 ms before its first frame is presented
   (WIN-OS-16).
 

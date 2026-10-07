@@ -40,7 +40,9 @@ fn state() -> &'static Mutex<State> {
 /// once it has loaded and found nothing — callers show [`GENERIC_ICON`]
 /// either way, so the two cases need no distinction here.
 pub(crate) fn process_icon<T: 'static>(process_name: &str, cx: &Context<T>) -> Option<PathBuf> {
-    let mut guard = state().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut guard = state()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if guard.ready {
         return guard.by_program.get(process_name).cloned();
     }
@@ -56,7 +58,9 @@ fn spawn_load<T: 'static>(cx: &Context<T>) {
     cx.spawn(async move |this, cx| {
         let by_program = blocking::unblock(load_catalog).await;
         {
-            let mut guard = state().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut guard = state()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             guard.by_program = by_program;
             guard.ready = true;
             guard.loading = false;

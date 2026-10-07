@@ -443,7 +443,11 @@ impl EditorView {
         cx.notify();
     }
 
-    pub(super) fn apply_colours_panel_choice(&mut self, color: Option<rich::Rgb>, cx: &mut Context<Self>) {
+    pub(super) fn apply_colours_panel_choice(
+        &mut self,
+        color: Option<rich::Rgb>,
+        cx: &mut Context<Self>,
+    ) {
         if !self.text_format_editable() {
             return;
         }

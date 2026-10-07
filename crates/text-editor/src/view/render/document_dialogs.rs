@@ -313,9 +313,9 @@ impl EditorView {
                     } else {
                         mac::separator()
                     })
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| this.apply_colours_panel_choice(Some(color), cx)),
-                    ),
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.apply_colours_panel_choice(Some(color), cx)
+                    })),
             );
         }
         sheet_card("colours-sheet", 296.0, 300.0)
@@ -332,7 +332,9 @@ impl EditorView {
                             "Automatic",
                             DialogButtonKind::Normal,
                         )
-                        .on_click(cx.listener(|this, _, _, cx| this.apply_colours_panel_choice(None, cx))),
+                        .on_click(
+                            cx.listener(|this, _, _, cx| this.apply_colours_panel_choice(None, cx)),
+                        ),
                     )
                     .child(
                         rmac_ui::dialog_button("colours-done", "Done", DialogButtonKind::Primary)

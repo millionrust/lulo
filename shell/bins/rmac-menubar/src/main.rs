@@ -1260,7 +1260,8 @@ mod linux_wayland {
             }
             let width = items_panel_width(items, window);
             if self.submenu_width_cache.len() <= depth {
-                self.submenu_width_cache.resize(depth + 1, (Vec::new(), 0.0));
+                self.submenu_width_cache
+                    .resize(depth + 1, (Vec::new(), 0.0));
             }
             self.submenu_width_cache[depth] = (items.to_vec(), width);
             width

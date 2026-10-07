@@ -18,6 +18,7 @@ pub(super) fn extra_favourite_place(path: &Path) -> Place {
 }
 
 #[cfg(test)]
+#[cfg(unix)]
 pub(super) fn dedupe_absolute_directories(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     saved::sanitise(paths)
 }

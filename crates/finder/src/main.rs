@@ -255,7 +255,10 @@ fn percent_decode(text: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{item_path, StartupDestination};
+    #[cfg(unix)]
+    use super::item_path;
+    use super::StartupDestination;
+    #[cfg(unix)]
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -297,8 +300,10 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     struct Scratch(PathBuf);
 
+    #[cfg(unix)]
     impl Scratch {
         fn new(label: &str) -> Self {
             let path = std::env::temp_dir().join(format!(
@@ -315,6 +320,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     impl Drop for Scratch {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);

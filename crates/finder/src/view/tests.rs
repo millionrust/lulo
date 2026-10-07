@@ -2,7 +2,9 @@ use super::*;
 use crate::file_ops::copy_item;
 use crate::view::go_to_folder_controller::{pending_selection_action, PendingSelectionAction};
 use crate::view::selection_controller::pathname_clipboard_text;
-use crate::view::sidebar_favourites::{dedupe_absolute_directories, extra_favourite_place};
+#[cfg(unix)]
+use crate::view::sidebar_favourites::dedupe_absolute_directories;
+use crate::view::sidebar_favourites::extra_favourite_place;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]

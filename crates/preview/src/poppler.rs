@@ -600,16 +600,21 @@ pub fn find_links(page: &TextPage) -> Vec<(usize, UnitRect, String)> {
 }
 
 /// A user-facing explanation when a poppler tool cannot run.
+///
+/// On Windows, opening and rendering a PDF go through `Windows.Data.Pdf`
+/// instead (`winpdf.rs`, ADR 0023 phase 2c), so by the time this runs the
+/// only poppler tool a Windows build still calls is `pdftotext`, for the
+/// search/selection text layer — poppler-utils has no Windows package to
+/// point at, and there is no WinRT replacement for it (PREV-29).
+#[cfg(windows)]
 pub fn missing_tool_message(tool: &str) -> String {
-    // poppler-utils has no Windows package to point at (ADR 0023 phase 2:
-    // PDF rendering there is future work, Windows.Data.Pdf or pdfium), so
-    // the Linux/macOS remedy would be misleading rather than honest there.
-    #[cfg(windows)]
-    {
-        let _ = tool;
-        "Preview can’t open PDF documents on Windows yet.".to_owned()
-    }
-    #[cfg(not(windows))]
+    let _ = tool;
+    "Preview can’t search or select text in PDF documents on Windows yet.".to_owned()
+}
+
+/// A user-facing explanation when a poppler tool cannot run.
+#[cfg(not(windows))]
+pub fn missing_tool_message(tool: &str) -> String {
     format!("Preview needs “{tool}” from poppler-utils to open PDF documents.")
 }
 

@@ -31,3 +31,14 @@ rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 trash.workspace = true
+
+# Real PDF rendering on Windows (poppler-utils has no Windows package):
+# Windows.Data.Pdf through WinRT (ADR 0023 phase 2c).
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Data_Pdf",
+    "Storage",
+    "Storage_Streams",
+    "Foundation",
+    "Win32_System_WinRT",
+] }

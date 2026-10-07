@@ -2,6 +2,25 @@
 
 use super::*;
 
+/// The context menu's displayed Copy/Paste hints, matching whatever
+/// `copy_paste_key_bindings` actually bound (see that function's doc
+/// comment): elsewhere unchanged, on Windows Ctrl+Shift+C/Ctrl+Shift+V.
+fn copy_shortcut() -> rmac_ui::shortcuts::Shortcut {
+    if rmac_ui::shortcuts::PRIMARY_IS_CONTROL {
+        rmac_ui::shortcuts::Shortcut::new("ctrl-shift-c", "⇧⌘C")
+    } else {
+        rmac_ui::shortcuts::COPY
+    }
+}
+
+fn paste_shortcut() -> rmac_ui::shortcuts::Shortcut {
+    if rmac_ui::shortcuts::PRIMARY_IS_CONTROL {
+        rmac_ui::shortcuts::Shortcut::new("ctrl-shift-v", "⇧⌘V")
+    } else {
+        rmac_ui::shortcuts::PASTE
+    }
+}
+
 impl TerminalView {
     pub(super) fn render_find_panel(
         &self,
@@ -86,8 +105,8 @@ impl TerminalView {
 
     pub(super) fn render_context_menu(&self, state: rmac_ui::ContextMenuState) -> impl IntoElement {
         rmac_ui::ContextMenu::new(state.position())
-            .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(Copy))
-            .command_item("Paste", rmac_ui::shortcuts::PASTE, Box::new(Paste))
+            .command_item("Copy", copy_shortcut(), Box::new(Copy))
+            .command_item("Paste", paste_shortcut(), Box::new(Paste))
             .command_item(
                 "Select All",
                 rmac_ui::shortcuts::SELECT_ALL,

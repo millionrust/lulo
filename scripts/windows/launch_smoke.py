@@ -17,6 +17,11 @@ never reads or writes a real profile. For each app the check:
    checks that launch hands off to the running process (it exits and a
    window opens in the first one) instead of starting a second app.
 
+For Preview, a tiny one-page PDF (a red square, written by this script —
+no poppler or other PDF tool involved) is passed on the command line, and
+the check waits for it to render (ADR 0023 phase 2c, `rmac-preview`'s
+`winpdf` module) and looks for its colour in the window.
+
 With --screenshots <dir>, captures are saved for each app: the window as
 it opened, with its first menu open, and after Ctrl+N (Pillow is used when
 it is installed; without it no capture is taken and the menu check is
@@ -96,6 +101,39 @@ def window_rect(hwnd: int) -> tuple[int, int, int, int]:
     rect = wintypes.RECT()
     user32().GetWindowRect(hwnd, ctypes.byref(rect))
     return rect.left, rect.top, rect.right, rect.bottom
+
+
+def write_minimal_pdf(path: Path) -> None:
+    """A tiny, valid one-page PDF: a solid red square, no external tool."""
+    stream_data = b"1 0 0 rg 20 20 160 160 re f\n"
+    object_bodies = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+        b"/Contents 4 0 R /Resources << >> >>",
+        b"<< /Length " + str(len(stream_data)).encode("ascii") + b" >>\nstream\n"
+        + stream_data
+        + b"endstream",
+    ]
+    body = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for index, content in enumerate(object_bodies, start=1):
+        offsets.append(len(body))
+        body += f"{index} 0 obj\n".encode("ascii") + content + b"\nendobj\n"
+    xref_offset = len(body)
+    count = len(object_bodies) + 1
+    body += f"xref\n0 {count}\n".encode("ascii")
+    body += b"0000000000 65535 f \n"
+    for offset in offsets:
+        body += f"{offset:010d} 00000 n \n".encode("ascii")
+    body += (
+        b"trailer\n<< /Size "
+        + str(count).encode("ascii")
+        + b" /Root 1 0 R >>\nstartxref\n"
+        + str(xref_offset).encode("ascii")
+        + b"\n%%EOF\n"
+    )
+    path.write_bytes(bytes(body))
 
 
 def grab(bbox: tuple[int, int, int, int] | None = None):
@@ -192,6 +230,40 @@ def check_menu_strip(app: str, hwnd: int, screenshots: Path | None) -> str | Non
     return None
 
 
+def has_reddish_pixel(image) -> bool:
+    """A coarse scan for the fixture PDF's red square (loose on exact
+    colour: WARP's software rasteriser and PNG recompression both shift
+    values slightly)."""
+    if image is None:
+        return False
+    rgb = image.convert("RGB")
+    width, height = rgb.size
+    for y in range(0, height, 3):
+        for x in range(0, width, 3):
+            red, green, blue = rgb.getpixel((x, y))
+            if red > 140 and red - green > 50 and red - blue > 50:
+                return True
+    return False
+
+
+def check_preview_pdf(hwnd: int, screenshots: Path | None) -> str | None:
+    """Preview opened with the fixture PDF on its command line: wait for
+    Windows.Data.Pdf (`rmac-preview`'s `winpdf` module, ADR 0023 phase 2c)
+    to rasterise the page and look for the fixture's red square anywhere
+    in the window."""
+    time.sleep(KEY_SETTLE_SECONDS * 2)
+    capture = grab(window_rect(hwnd))
+    if screenshots is not None:
+        save(capture, screenshots / "rmac-preview-pdf.png")
+    if capture is None:
+        print("rmac-preview: PDF render check skipped (Pillow is not installed)")
+        return None
+    if not has_reddish_pixel(capture):
+        return "the fixture PDF's page did not render (no red pixels found)"
+    print("rmac-preview: the fixture PDF's page rendered")
+    return None
+
+
 def check_menu_command(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
     """Choose App ▸ About from the keyboard: Alt, Down, Return.
 
@@ -262,7 +334,12 @@ def check_single_instance(
     return None
 
 
-def launch(binary: Path, profile: Path, screenshots: Path | None) -> str | None:
+def launch(
+    binary: Path,
+    profile: Path,
+    screenshots: Path | None,
+    arguments: list[str] | None = None,
+) -> str | None:
     """Run one app; return an error message, or None when every check passed."""
     app = binary.stem
     environment = dict(os.environ)
@@ -274,7 +351,10 @@ def launch(binary: Path, profile: Path, screenshots: Path | None) -> str | None:
     log = profile / "output.log"
     with log.open("wb") as output:
         process = subprocess.Popen(
-            [str(binary)], env=environment, stdout=output, stderr=subprocess.STDOUT
+            [str(binary), *(arguments or [])],
+            env=environment,
+            stdout=output,
+            stderr=subprocess.STDOUT,
         )
     try:
         deadline = time.monotonic() + WINDOW_TIMEOUT_SECONDS
@@ -310,6 +390,10 @@ def launch(binary: Path, profile: Path, screenshots: Path | None) -> str | None:
             )
             if error
         ]
+        if app == "rmac-preview" and arguments:
+            error = check_preview_pdf(hwnd, screenshots)
+            if error:
+                errors.append(error)
         if app == "rmac-text-editor" and not errors:
             error = check_single_instance(binary, environment, process, log)
             if error:
@@ -338,7 +422,12 @@ def main() -> int:
         binary = arguments.bin_dir / f"{app}.exe"
         with tempfile.TemporaryDirectory(prefix=f"{app}-") as directory:
             profile = Path(directory)
-            error = launch(binary, profile, arguments.screenshots)
+            app_arguments: list[str] = []
+            if app == "rmac-preview":
+                fixture = profile / "fixture.pdf"
+                write_minimal_pdf(fixture)
+                app_arguments = [str(fixture)]
+            error = launch(binary, profile, arguments.screenshots, app_arguments)
             log = profile / "output.log"
             if log.exists():
                 trace = [

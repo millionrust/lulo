@@ -577,16 +577,28 @@ pub(crate) fn window_options_for_app_with_bounds(
     }
 }
 
+/// Give `window` the in-window menu strip, when it is on (ADR 0023): the
+/// half of [`observe_window_state`] that is not window-geometry
+/// persistence, for an app whose windows do not share one `app_id`-keyed
+/// saved geometry (Preview, one per document) and so calls
+/// [`crate::track_key_window`] directly instead of `observe_window_state`.
+/// Every other app's windows get this through `observe_window_state`
+/// already; call it directly only when that is not also wanted.
+pub fn register_menu_strip_window(window: &Window) {
+    crate::menu_strip::register_window(window);
+}
+
 /// Observe one app window and durably save only its latest stable geometry.
 /// Resize bursts coalesce for a short quiet period, and persistence runs away
 /// from the render thread. Failure is deliberately non-fatal: geometry is a
 /// convenience and the next launch falls back to safe centered bounds.
 ///
 /// The window is also tracked as a key-window candidate for the menu bar
-/// ([`crate::track_key_window`]).
+/// ([`crate::track_key_window`]) and, when it is on, given the in-window
+/// menu strip ([`register_menu_strip_window`]).
 pub fn observe_window_state<V: 'static>(app_id: &str, window: &mut Window, cx: &Context<V>) {
     crate::menu_target::track_key_window(window, cx);
-    crate::menu_strip::register_window(window);
+    register_menu_strip_window(window);
     let Ok(store) = WindowStateStore::from_environment(app_id) else {
         return;
     };
@@ -1091,7 +1103,12 @@ pub fn boot_single_window_app_with_assets<A, V, F, H>(
 /// compositor, restoring it if it is minimised. The launch that handed off
 /// to the running app does this: it holds the user's activation, which the
 /// running process does not.
-fn focus_running_app(app_id: &'static str) {
+///
+/// For a single-window app (Calculator, Clock, Weather) booted outside the
+/// `boot_single_window_app_with_assets`/`boot_unified_single_window_app_with_assets`
+/// helpers, call this right after [`hand_off_to_running_instance`] returns
+/// true, before the process exits.
+pub fn focus_running_app(app_id: &'static str) {
     #[cfg(target_os = "linux")]
     async_io::block_on(async {
         let snapshot = match rmac_compositor_niri::snapshot().await {
@@ -1135,6 +1152,17 @@ fn focus_running_app(app_id: &'static str) {
     });
     #[cfg(not(target_os = "linux"))]
     let _ = app_id;
+}
+
+/// Bring this process's key window to the front — the
+/// [`install_app_instance`] callback for a single-window app (Calculator,
+/// Clock, Weather) that was not booted through
+/// [`boot_single_window_app_with_assets`]: a second launch's hand-off asks
+/// the running process to do this instead of opening another window.
+pub fn activate_app_window(cx: &mut App) {
+    if let Some((window, _)) = crate::menu_target::target(cx) {
+        let _ = window.update(cx, |_, window, _| window.activate_window());
+    }
 }
 
 fn boot_app_window<A, V, F>(

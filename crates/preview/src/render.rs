@@ -403,6 +403,14 @@ fn tool_path(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+#[cfg(windows)]
+fn load_pdf_info(path: &Path) -> Result<PdfInfo, String> {
+    // Windows has no poppler-utils package; Windows.Data.Pdf renders PDFs
+    // there instead (ADR 0023 phase 2c, PREV-29).
+    crate::winpdf::load_pdf_info(path)
+}
+
+#[cfg(not(windows))]
 fn load_pdf_info(path: &Path) -> Result<PdfInfo, String> {
     let path = tool_path(path);
     let summary = run(poppler::PDFINFO, poppler::info_args(&path, None))
@@ -423,6 +431,20 @@ fn load_pdf_info(path: &Path) -> Result<PdfInfo, String> {
 }
 
 /// Rasterise one page `pixel_width` device pixels wide (BGRA, rotated).
+#[cfg(windows)]
+pub fn render_page(
+    path: &Path,
+    page: usize,
+    page_size: (f32, f32),
+    pixel_scale: f32,
+    rotation: Rotation,
+) -> Result<RgbaImage, String> {
+    let pixels = crate::winpdf::render_page(path, page, page_size, pixel_scale)?;
+    Ok(rotate(&pixels, rotation))
+}
+
+/// Rasterise one page `pixel_width` device pixels wide (BGRA, rotated).
+#[cfg(not(windows))]
 pub fn render_page(
     path: &Path,
     page: usize,
@@ -446,6 +468,11 @@ pub fn render_page(
     Ok(rotate(&pixels, rotation))
 }
 
+/// Word boxes for search and selection. Poppler-only: `Windows.Data.Pdf`
+/// renders pages but exposes no text layer, and there is no other
+/// Windows-native PDF text API to use instead (PREV-29) — an honest empty
+/// result (no search hits, no text selection in PDFs) rather than a fake
+/// one, following `poppler::missing_tool_message`'s Windows wording.
 pub fn extract_text(path: &Path) -> Result<Vec<TextPage>, String> {
     let output = run(poppler::PDFTOTEXT, poppler::text_args(&tool_path(path)))?;
     Ok(poppler::parse_bbox(&String::from_utf8_lossy(&output)))

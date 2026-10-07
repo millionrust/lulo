@@ -80,6 +80,13 @@ impl AssetSource for CombinedAssets {
 }
 
 fn main() {
+    // One process per app, as on the Mac: a later launch while Calculator
+    // is already running brings its window forward instead of opening a
+    // second one.
+    if rmac_ui::hand_off_to_running_instance(CALCULATOR, &[Vec::new()]) {
+        rmac_ui::focus_running_app(CALCULATOR);
+        return;
+    }
     rmac_ui::application()
         .with_assets(CombinedAssets)
         .run(|cx: &mut App| {
@@ -113,7 +120,7 @@ fn main() {
             // single window and no document state to restore (unlike
             // Preview's open-file list), so this is the same quit as ⌘Q.
             cx.on_action(|_: &QuitAndKeepWindows, cx| cx.quit());
-            rmac_ui::install_app_menu(CALCULATOR, cx);
+            rmac_ui::install_app_instance(CALCULATOR, |_, cx| rmac_ui::activate_app_window(cx), cx);
             // Basic is the starting mode, so View ▸ Basic is the ticked one.
             rmac_ui::set_menu_checked("calculator::ShowBasic", true, cx);
             rmac_ui::set_menu_checked("calculator::DecimalPlaces8", true, cx);

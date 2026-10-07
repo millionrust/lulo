@@ -4,6 +4,9 @@
 //! writes the library directly. Stable IDs, accepted snapshots, recovery, and
 //! the single writer remain authoritative off the UI thread.
 
+// A GUI app on Windows: no console window behind it (ADR 0023).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod audio_recorder;
 mod dialog_presentation;
 mod edit_recovery_controller;

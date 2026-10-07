@@ -1,0 +1,71 @@
+name: Windows preview build
+
+# ADR 0023: an optimised, unsigned build of the Lulo apps that run on
+# Windows, zipped for hands-on testing on a real PC. Not a release: no
+# signing, no installer (MSIX comes later). Runs on demand, or on a push to
+# the `windows-preview` branch.
+on:
+  workflow_dispatch:
+  push:
+    branches: [windows-preview]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Windows preview apps
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Restore Cargo data
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Build the apps
+        run: |
+          cargo build --locked --release -p rmac-calculator -p rmac-notes \
+            -p rmac-text-editor -p rmac-preview -p rmac-clock -p rmac-weather \
+            -p rmac-terminal --bins
+
+      - name: Package
+        run: |
+          out=lulo-windows-preview
+          mkdir -p "$out"
+          for app in calculator notes text-editor preview clock weather terminal; do
+            cp "target/release/rmac-$app.exe" "$out/"
+          done
+          cat > "$out/README.txt" <<'EOF'
+          Lulo apps for Windows - preview build (${{ github.sha }})
+
+          Unsigned test build. Windows SmartScreen may warn the first time:
+          choose "More info", then "Run anyway".
+
+          Double-click any rmac-*.exe to open that app. Press Alt to open
+          the menu bar at the top of each window. Shortcuts use Ctrl where
+          the Mac uses Cmd (Ctrl+N, Ctrl+S, Ctrl+Q...).
+          EOF
+          7z a -tzip "$out.zip" "$out" > /dev/null
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lulo-windows-preview
+          path: lulo-windows-preview.zip
+          retention-days: 14

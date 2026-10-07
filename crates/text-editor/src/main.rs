@@ -1,5 +1,8 @@
 //! rmac Text Editor — a fast, native TextEdit-style editor.
 
+// A GUI app on Windows: no console window behind it (ADR 0023).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod document;
 mod long_lines;
 mod recovery;

@@ -1,5 +1,8 @@
 //! rmac Calculator: macOS Calculator's Basic and Scientific modes.
 
+// A GUI app on Windows: no console window behind it (ADR 0023).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod maths_notes;
 mod view;
 

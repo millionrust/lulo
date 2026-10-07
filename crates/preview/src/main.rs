@@ -1,5 +1,8 @@
 //! rmac Preview: macOS Preview for images and PDF documents.
 
+// A GUI app on Windows: no console window behind it (ADR 0023).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod settings_window;
 mod view;
 

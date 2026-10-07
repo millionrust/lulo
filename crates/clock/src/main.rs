@@ -3,6 +3,9 @@
 //! `rmac-clock --ring-due` is the headless ring process the user systemd
 //! timer starts; it never opens a window.
 
+// A GUI app on Windows: no console window behind it (ADR 0023).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod ring;
 mod view;
 

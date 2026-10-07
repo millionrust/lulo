@@ -1,5 +1,8 @@
 //! rmac Terminal — a fast, native terminal emulator.
 
+// A GUI app on Windows: no console window behind it (ADR 0023).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod cli;
 mod controller;
 mod emulator;

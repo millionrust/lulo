@@ -1,6 +1,9 @@
 //! rmac Weather: current conditions, the hourly strip and ten days ahead for
 //! the cities the user adds. No location lookup; data from Open-Meteo.
 
+// A GUI app on Windows: no console window behind it (ADR 0023).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod settings_window;
 mod view;
 

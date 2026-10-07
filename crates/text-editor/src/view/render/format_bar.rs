@@ -9,9 +9,14 @@
 //! opens the existing Fonts/List/Spacing sheet (already real, already
 //! tested) rather than duplicate that picking logic inline; style, the
 //! colour wells and alignment are small enough to act immediately, as the
-//! Mac's own bar does.
+//! Mac's own bar does. Both colour wells are real `AXColorWell`-style
+//! controls that open the same crayon grid (`render_colours_panel`),
+//! targeted at text or highlight by which one was clicked
+//! (`ColourTarget`) — the highlight well is not limited to the Format ▸
+//! Font ▸ Highlight menu's seven named presets, which stays a separate
+//! shortcut into the same underlying colour.
 
-use super::super::format_text::Highlight;
+use super::super::format_text::ColourTarget;
 use super::*;
 use rmac_ui::PopUpButton;
 
@@ -71,9 +76,11 @@ impl EditorView {
             .map(rich::palette::to_hsla)
             .unwrap_or(mac::text());
         let highlight_swatch = self.highlight_at_selection(cx);
-        let highlight_colour = highlight_swatch
-            .and_then(|highlight| highlight.color())
-            .map(rich::palette::to_hsla);
+        // The well's own swatch is the selection's real highlight colour
+        // (`style.highlight`), not `highlight_swatch`'s closest-matching
+        // named preset — the well (UIA-07) can now set any colour, which
+        // `highlight_at_selection` has no name for.
+        let highlight_colour = style.highlight.map(rich::palette::to_hsla);
         let alignment = ruler.alignment;
         let align_button = |id: &'static str,
                             label: &'static str,
@@ -154,26 +161,28 @@ impl EditorView {
                         }))
                     }),
             )
-            // Highlight colour well: opens the same seven highlights the
-            // Format ▸ Font ▸ Highlight menu already offers, labelled with
-            // the active one (its own swatch tints the trigger).
+            // Highlight/background colour well (UIA-07): a real `AXColorWell`
+            // on the Mac, the same as the text colour well beside it — not
+            // just the Format ▸ Font ▸ Highlight menu's seven named presets
+            // (`HighlightNone`.../`HighlightBlue`, kept as that menu's own
+            // shortcuts into the same underlying colour, independent of
+            // this well). Opens the same crayon grid, targeted at highlight.
             .child(
-                PopUpButton::new(
-                    "format-highlight",
-                    highlight_swatch.map_or("Highlight", |h| h.label()),
-                )
-                .disabled(!editable)
-                .selected(highlight_swatch.is_some_and(|h| h != Highlight::None))
-                .dropdown_menu(|menu, _, _| {
-                    menu.menu("None", Box::new(HighlightNone))
-                        .menu("Accent", Box::new(HighlightAccent))
-                        .menu("Purple", Box::new(HighlightPurple))
-                        .menu("Pink", Box::new(HighlightPink))
-                        .menu("Orange", Box::new(HighlightOrange))
-                        .menu("Mint", Box::new(HighlightMint))
-                        .menu("Blue", Box::new(HighlightBlue))
-                })
-                .when_some(highlight_colour, |well, colour| well.bg(colour)),
+                div()
+                    .id("format-highlight-colour")
+                    .role(Role::Button)
+                    .aria_label(highlight_swatch.map_or("Highlight Colour", |h| h.label()))
+                    .size(px(20.0))
+                    .rounded(px(mac::radius_control()))
+                    .border_1()
+                    .border_color(mac::separator())
+                    .bg(highlight_colour.unwrap_or_else(mac::control_fill))
+                    .cursor_pointer()
+                    .when(editable, |well| {
+                        well.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.show_colours_for(ColourTarget::Highlight, cx);
+                        }))
+                    }),
             )
             // Font family: opens the Fonts panel (⌘T), already a live,
             // scanned list — a second inline copy of that list would be a

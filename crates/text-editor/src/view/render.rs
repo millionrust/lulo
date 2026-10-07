@@ -790,9 +790,13 @@ impl Render for EditorView {
                 )
             })
             .when(self.colours_open, |d| {
+                let label = match self.colours_target {
+                    super::format_text::ColourTarget::Text => "Colours",
+                    super::format_text::ColourTarget::Highlight => "Highlight Colour",
+                };
                 d.child(
                     rmac_ui::dialog("text-editor-colours", self.render_colours_panel(cx))
-                        .aria_label("Colours")
+                        .aria_label(label)
                         .attached(),
                 )
             })

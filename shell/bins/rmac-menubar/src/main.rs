@@ -1242,16 +1242,20 @@ mod linux_wayland {
             self.close_menu(window, cx);
             cx.spawn(async move |_, cx| {
                 // niri can still be mid-transition right after Escape: our
-                // own keyboard-leave from the bar's on-demand layer focus,
-                // and niri's own bookkeeping for it, land on niri's event
-                // loop asynchronously with respect to this task, so the
-                // first snapshot and the first `FocusWindow` can both race
-                // that and come back to a focus niri is about to change out
-                // from under them again on its own. Re-settle a few times,
-                // each on a fresh snapshot, until a follow-up snapshot shows
-                // the target genuinely holds focus, rather than trusting the
-                // first attempt.
-                for attempt in 0..5 {
+                // own keyboard-leave from the bar's on-demand layer focus is
+                // a round trip over the Wayland connection (this app tells
+                // the compositor it no longer wants the keyboard), and
+                // niri's own bookkeeping for releasing that on-demand grab
+                // runs on its event loop asynchronously with respect to this
+                // task. An `Action::FocusWindow` sent before niri has
+                // actually released the grab is a no-op from niri's point of
+                // view: the layer surface still holds it. Keep re-settling
+                // against fresh snapshots until one confirms the target
+                // genuinely holds focus, rather than trusting one attempt;
+                // bounded to a few seconds, well inside how long a human (or
+                // this behaviour suite) waits for Escape to give a window
+                // back its keyboard.
+                for attempt in 0..30 {
                     let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
                         return;
                     };
@@ -1308,9 +1312,9 @@ mod linux_wayland {
                     if settled == Some(target) {
                         return;
                     }
-                    if attempt < 4 {
+                    if attempt < 29 {
                         cx.background_executor()
-                            .timer(Duration::from_millis(20 * (attempt + 1)))
+                            .timer(Duration::from_millis(100))
                             .await;
                     }
                 }

@@ -422,6 +422,13 @@ fn copy_recursive_cancellable(
 ) -> io::Result<()> {
     use std::io::{Read as _, Write as _};
 
+    // Mirroring the source's `Permissions` onto a freshly created Windows
+    // destination (below, both branches) reliably failed with "Access is
+    // denied" in testing, for a reason this pass could not pin down from
+    // the raw OS error alone; a fresh file is already not read-only, which
+    // covers the common case, so this is skipped there rather than left
+    // unresolved and silently wrong (ADR 0023 phase 4; tracked as
+    // WIN-OS-19 in docs/parity.md).
     if cancel.load(Ordering::Acquire) {
         return Err(io::Error::new(io::ErrorKind::Interrupted, "copy cancelled"));
     }
@@ -439,11 +446,13 @@ fn copy_recursive_cancellable(
                 progress,
             )?;
         }
+        #[cfg(not(windows))]
         std::fs::set_permissions(destination, metadata.permissions())?;
     } else if metadata.is_file() {
         // The lstat above is only a hint: in a folder others can write to, a
         // symlink or FIFO can replace the file before it is opened. The
         // opened file itself decides what is copied, and with which mode.
+        #[cfg_attr(windows, allow(unused_variables))]
         let (mut source, metadata) = open_regular_nofollow(source)?;
         let mut destination_file = std::fs::OpenOptions::new()
             .write(true)
@@ -462,6 +471,7 @@ fn copy_recursive_cancellable(
             progress(CopyActivity::Bytes(read as u64));
         }
         destination_file.sync_all()?;
+        #[cfg(not(windows))]
         std::fs::set_permissions(destination, metadata.permissions())?;
     } else {
         return Err(io::Error::new(
@@ -2985,7 +2995,7 @@ mod tests {
             |update| updates.push(update),
         );
 
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert!(report.failures.is_empty());
         assert_eq!(std::fs::read(destination).unwrap(), bytes);
         assert_eq!(
             updates

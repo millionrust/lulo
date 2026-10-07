@@ -160,6 +160,21 @@ enum DocumentWatchEvent {
     Unavailable,
 }
 
+/// A watcher that reports changes in a document's folder to `events`.
+fn document_watcher(
+    events: async_channel::Sender<DocumentWatchEvent>,
+) -> Option<notify::RecommendedWatcher> {
+    notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+        let event = match result {
+            Ok(event) if matches!(event.kind, notify::EventKind::Access(_)) => return,
+            Ok(_) => DocumentWatchEvent::Changed,
+            Err(_) => DocumentWatchEvent::Unavailable,
+        };
+        let _ = events.try_send(event);
+    })
+    .ok()
+}
+
 struct EditorView {
     input: Entity<InputState>,
     /// The rich-text body, shown while `rich_text` is on (TE-03).
@@ -300,7 +315,11 @@ struct EditorView {
     external_change: Option<ExternalChange>,
     document_watch_warning: bool,
     watched_directory: Option<PathBuf>,
+    /// Made with the first document that has a folder to watch, not
+    /// before: notify's Windows backend wakes its thread ten times a second
+    /// for as long as a watcher exists (docs/decisions/0025).
     document_watcher: Option<notify::RecommendedWatcher>,
+    document_events: async_channel::Sender<DocumentWatchEvent>,
     pending_startup_path: Option<PathBuf>,
     pending_open_picker: bool,
     /// The modal alert currently shown, if any (shared `rmac_ui::alert`).

@@ -90,3 +90,4 @@ strip = false
 ztracing = { path = "compat/ztracing" }
 gpui_linux = { path = "compat/gpui_linux" }
 gpui_wgpu = { path = "compat/gpui_wgpu" }
+gpui_windows = { path = "compat/gpui_windows" }

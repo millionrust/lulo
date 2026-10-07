@@ -606,6 +606,11 @@ fn start_theme_runtime(cx: &mut App) {
 
     // Preference writes from System Settings arrive through the bounded file
     // watcher. Re-read the host as well so automatic values cannot go stale.
+    // Not on Windows: no System Settings writes the file there (ThemeStore
+    // finds a path only when HOME is set, as in CI's Unix-style shell), and
+    // notify's Windows backend wakes its thread ten times a second for as
+    // long as a watcher lives (docs/decisions/0025, parity WIN-OS-15).
+    #[cfg(not(windows))]
     cx.spawn(async move |cx: &mut gpui::AsyncApp| {
         let watcher = cx
             .background_executor()

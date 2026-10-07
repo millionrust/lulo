@@ -38,6 +38,14 @@ result fails nothing — this job already runs with `continue-on-error`):
   when idle; the target here is the same, below one tick over the window,
   except Terminal with a live shell.
 
+Each app also runs with `gpui_windows`' own traces on
+(docs/decisions/0025-vendor-gpui-windows.md): `RMAC_GPUI_STARTUP_TRACE`
+prints the start-up phases (DirectX devices, DirectWrite, window
+creation, first frame, first present), timed from process creation, and
+`RMAC_GPUI_WAKE_TRACE` logs every wake-up; the ones that fall inside the
+idle window are grouped by source and printed, so a regression names its
+cause.
+
 With `--foreground-check <app>`, after every app in `apps` has been tested
 and closed, one more pair is launched back to back and left running (not
 killed early like every other check): `<app>` first, then whichever of
@@ -52,6 +60,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import json
 import os
 import subprocess
 import sys
@@ -126,22 +135,153 @@ def process_cpu_time_100ns(pid: int) -> int | None:
         ctypes.windll.kernel32.CloseHandle(handle)
 
 
+TH32CS_SNAPTHREAD = 0x00000004
+THREAD_QUERY_LIMITED_INFORMATION = 0x0800
+
+
+class _THREADENTRY32(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ThreadID", wintypes.DWORD),
+        ("th32OwnerProcessID", wintypes.DWORD),
+        ("tpBasePri", wintypes.LONG),
+        ("tpDeltaPri", wintypes.LONG),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
+def thread_cpu_times_100ns(pid: int) -> dict[int, tuple[str, int]]:
+    """Each thread of `pid`: its description (Rust names its threads with
+    it) and kernel+user CPU time so far, in 100 ns units."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.OpenThread.restype = wintypes.HANDLE
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+    if not snapshot or snapshot == wintypes.HANDLE(-1).value:
+        return {}
+    threads: dict[int, tuple[str, int]] = {}
+    try:
+        entry = _THREADENTRY32()
+        entry.dwSize = ctypes.sizeof(_THREADENTRY32)
+        more = kernel32.Thread32First(snapshot, ctypes.byref(entry))
+        while more:
+            if entry.th32OwnerProcessID == pid:
+                tid = entry.th32ThreadID
+                handle = kernel32.OpenThread(THREAD_QUERY_LIMITED_INFORMATION, False, tid)
+                if handle:
+                    try:
+                        creation, exited, kernel, user = (
+                            _FILETIME(),
+                            _FILETIME(),
+                            _FILETIME(),
+                            _FILETIME(),
+                        )
+                        name = ""
+                        description = ctypes.c_wchar_p()
+                        if kernel32.GetThreadDescription(handle, ctypes.byref(description)) >= 0:
+                            name = description.value or ""
+                            kernel32.LocalFree(description)
+                        if kernel32.GetThreadTimes(
+                            handle,
+                            ctypes.byref(creation),
+                            ctypes.byref(exited),
+                            ctypes.byref(kernel),
+                            ctypes.byref(user),
+                        ):
+                            threads[tid] = (
+                                name,
+                                _filetime_to_100ns(kernel) + _filetime_to_100ns(user),
+                            )
+                    finally:
+                        kernel32.CloseHandle(handle)
+            more = kernel32.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+    return threads
+
+
+def busy_threads(
+    before: dict[int, tuple[str, int]], after: dict[int, tuple[str, int]]
+) -> list[tuple[str, float]]:
+    """The threads that used CPU between two `thread_cpu_times_100ns`
+    snapshots, as ("name (tid)", ticks), busiest first. A thread that
+    started in between counts all its time."""
+    busy = []
+    for tid, (name, time_after) in after.items():
+        time_before = before.get(tid, (name, 0))[1]
+        delta = time_after - time_before
+        if delta > 0:
+            busy.append((f"{name or 'unnamed'} ({tid})", delta / TICK_100NS))
+    return sorted(busy, key=lambda item: -item[1])
+
+
 def measure_idle_cpu(
-    pid: int, settle: float = IDLE_SETTLE_SECONDS, window: float = IDLE_WINDOW_SECONDS
-) -> tuple[float, float] | None:
-    """(ticks, percent of one core) this process used over `window`
-    seconds of no input, after `settle` seconds of no input. `None` when
-    its CPU time could not be read (it may have exited)."""
+    pid: int,
+    settle: float = IDLE_SETTLE_SECONDS,
+    window: float = IDLE_WINDOW_SECONDS,
+    log: Path | None = None,
+) -> tuple[float, float, str, list[tuple[str, float]]] | None:
+    """(ticks, percent of one core, trace, busy threads) for the CPU this
+    process used over `window` seconds of no input, after `settle` seconds
+    of no input, where `trace` is what the app wrote to `log` during the
+    window. `None` when its CPU time could not be read (it may have
+    exited)."""
     time.sleep(settle)
+    threads_before = thread_cpu_times_100ns(pid)
     before = process_cpu_time_100ns(pid)
     if before is None:
         return None
+    start = log.stat().st_size if log is not None and log.exists() else 0
     time.sleep(window)
     after = process_cpu_time_100ns(pid)
     if after is None:
         return None
+    threads = busy_threads(threads_before, thread_cpu_times_100ns(pid))
+    trace = ""
+    if log is not None and log.exists():
+        with log.open("rb") as output:
+            output.seek(start)
+            trace = output.read().decode("utf-8", errors="replace")
     delta = max(after - before, 0)
-    return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100
+    return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100, trace, threads
+
+
+# Per app: launch time, idle ticks and wake-ups, start-up phases; written
+# with --results for `idle_gate.py` and the job summary.
+MEASUREMENTS: dict[str, dict] = {}
+
+WAKE_PREFIX = "gpui_windows wake: "
+STARTUP_PREFIX = "gpui_windows startup: "
+
+
+def summarize_wakes(trace: str, limit: int = 8) -> list[tuple[int, str]]:
+    """The wake-up sources in a `RMAC_GPUI_WAKE_TRACE` excerpt, most
+    frequent first, as (count, "source detail")."""
+    counts: dict[str, int] = {}
+    for line in trace.splitlines():
+        if not line.startswith(WAKE_PREFIX):
+            continue
+        body = line[len(WAKE_PREFIX) :].rsplit(" at ", 1)[0]
+        counts[body] = counts.get(body, 0) + 1
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return [(count, body) for body, count in ranked[:limit]]
+
+
+def startup_phases(log_text: str) -> list[str]:
+    """Each `RMAC_GPUI_STARTUP_TRACE` phase, first occurrence only, as
+    "phase at N ms"."""
+    seen: set[str] = set()
+    phases = []
+    for line in log_text.splitlines():
+        if not line.startswith(STARTUP_PREFIX):
+            continue
+        body = line[len(STARTUP_PREFIX) :]
+        phase = body.split(" at ", 1)[0]
+        if phase not in seen:
+            seen.add(phase)
+            phases.append(body)
+    return phases
 
 
 def user32():
@@ -434,6 +574,8 @@ def launch(
     environment["APPDATA"] = str(profile / "Roaming")
     environment["LOCALAPPDATA"] = str(profile / "Local")
     environment["RMAC_MENU_STRIP_TRACE"] = "1"
+    environment["RMAC_GPUI_STARTUP_TRACE"] = "1"
+    environment["RMAC_GPUI_WAKE_TRACE"] = "1"
     for folder in ("Roaming", "Local"):
         (profile / folder).mkdir(parents=True, exist_ok=True)
     log = profile / "output.log"
@@ -478,16 +620,37 @@ def launch(
         # ADR 0023 task 1 (idle CPU): before any input reaches this
         # window, not after — `check_menu_strip`/`check_menu_command`/
         # `check_new_shortcut` below all inject keys and mouse clicks.
-        idle = measure_idle_cpu(process.pid)
+        phases = startup_phases(log.read_text(encoding="utf-8", errors="replace"))
+        for phase in phases:
+            print(f"{app}: startup {phase}")
+        measurement: dict = {"launch_ms": round(launch_ms), "startup": phases}
+        MEASUREMENTS[app] = measurement
+        idle = measure_idle_cpu(process.pid, log=log)
         if idle is None:
             print(f"{app}: idle CPU skipped (could not read its CPU time)")
         else:
-            ticks, percent = idle
+            ticks, percent, trace, threads = idle
             verdict = "OK" if ticks < 1.0 else "ABOVE TARGET"
             print(
                 f"{app}: idle CPU over {IDLE_WINDOW_SECONDS:.0f} s = "
                 f"{ticks:.2f} ticks ({percent:.2f}% of one core) [{verdict}]"
             )
+            wakes = summarize_wakes(trace)
+            total = sum(1 for line in trace.splitlines() if line.startswith(WAKE_PREFIX))
+            measurement["idle_ticks"] = round(ticks, 3)
+            measurement["idle_wakes"] = total
+            measurement["idle_wake_sources"] = [
+                {"count": count, "source": source} for count, source in wakes
+            ]
+            print(f"{app}: idle wake-ups over {IDLE_WINDOW_SECONDS:.0f} s = {total}")
+            for count, source in wakes:
+                print(f"{app}:   {count:5d} x {source}")
+            for thread, thread_ticks in threads[:6]:
+                print(f"{app}:   thread {thread} used {thread_ticks:.2f} ticks")
+            measurement["idle_busy_threads"] = [
+                {"thread": thread, "ticks": round(thread_ticks, 3)}
+                for thread, thread_ticks in threads[:6]
+            ]
 
         if not bring_forward(hwnd):
             return "could not bring the window forward to test its keys"
@@ -599,6 +762,11 @@ def main() -> int:
             "second app's window becomes the foreground window."
         ),
     )
+    parser.add_argument(
+        "--results",
+        type=Path,
+        help="Write each app's launch time, idle ticks and wake-ups here as JSON.",
+    )
     arguments = parser.parse_args()
     if sys.platform != "win32":
         print("launch_smoke.py runs only on Windows", file=sys.stderr)
@@ -631,7 +799,11 @@ def main() -> int:
                 print(f"{app}: FAIL: {error}")
                 log = profile / "output.log"
                 if log.exists():
-                    print(log.read_text(encoding="utf-8", errors="replace")[-4000:])
+                    text = log.read_text(encoding="utf-8", errors="replace")
+                    lines = [
+                        line for line in text.splitlines() if not line.startswith(WAKE_PREFIX)
+                    ]
+                    print("\n".join(lines)[-4000:])
 
     if arguments.foreground_check:
         second_app = next(
@@ -652,6 +824,8 @@ def main() -> int:
             if error is not None:
                 failures += 1
                 print(f"foreground order: FAIL: {error}")
+    if arguments.results is not None:
+        arguments.results.write_text(json.dumps(MEASUREMENTS, indent=2), encoding="utf-8")
     return 1 if failures else 0
 
 

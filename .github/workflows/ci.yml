@@ -274,10 +274,13 @@ jobs:
     # "Launch time" tasks), and checks that opening Calculator then Weather
     # without closing Calculator leaves Weather in the foreground (the
     # "Foreground" task).
-    # Non-blocking until it has run clean for a while; see docs/ci.md.
+    # Non-blocking until it has run clean for a while (each step below has
+    # `continue-on-error`), except the idle gate: since gpui_windows parks
+    # idle windows (ADR 0025) every app but Terminal must stay within one
+    # tick of CPU over the 20 s idle window, and that step fails the job.
+    # See docs/ci.md.
     runs-on: windows-latest
     timeout-minutes: 75
-    continue-on-error: true
     env:
       RMAC_WINDOWS_PACKAGES: >-
         -p rmac-calculator -p rmac-notes -p rmac-text-editor -p rmac-editor
@@ -294,9 +297,11 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install pinned Rust toolchain
+        continue-on-error: true
         run: rustup show active-toolchain
 
       - name: Install Python
+        continue-on-error: true
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -304,6 +309,7 @@ jobs:
       # One cache entry per lockfile, saved once even when a later step
       # fails, so a red run still warms the next one.
       - name: Restore Cargo data
+        continue-on-error: true
         id: cargo-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -314,40 +320,56 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
 
       - name: Run Clippy
+        continue-on-error: true
         run: cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
 
       # The remaining steps still run after a Clippy failure, so one run
       # reports every kind of Windows breakage.
+      # gpui_windows (ADR 0025) runs with the apps' packages so it builds
+      # with the same features: its frame-loop tests and upstream's own.
       - name: Run tests
         if: ${{ !cancelled() }}
-        run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES
+        continue-on-error: true
+        run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
 
       - name: Build the apps
         if: ${{ !cancelled() }}
+        continue-on-error: true
         run: |
           cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
             -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal --bins
 
       - name: Launch each app
         if: ${{ !cancelled() }}
+        continue-on-error: true
         run: |
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
-            --foreground-check rmac-calculator \
+            --foreground-check rmac-calculator --results windows-results.json \
             target/debug rmac-calculator rmac-notes rmac-text-editor \
             rmac-preview rmac-clock rmac-weather rmac-terminal
 
+      # Blocking: no app but Terminal may use more than one 15.6 ms tick of
+      # CPU over 20 s with no input (ADR 0025's parked frame loop).
+      - name: Idle gate
+        if: ${{ !cancelled() }}
+        run: python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1 --exempt rmac-terminal
+
       - name: Upload app screenshots
         if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-app-screens
-          path: windows-screens
+          path: |
+            windows-screens
+            windows-results.json
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Save Cargo data
         if: always() && steps.cargo-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |

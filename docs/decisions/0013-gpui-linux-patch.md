@@ -358,5 +358,6 @@ scales give the same size as before.
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and `gpui_wgpu` and
-  re-applying the rmac commits (see `git log -- shell/compat`).
+  re-applying the rmac commits (see `git log -- shell/compat`). ADR 0025 adds
+  `gpui_windows` to that list the same way.
 - No GPL code is involved: GPUI is Apache-2.0.

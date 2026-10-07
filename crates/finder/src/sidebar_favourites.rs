@@ -187,6 +187,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(unix)]
     fn files_missing_targets_and_deduplication_are_supported() {
         assert_eq!(
             sanitise(vec![
@@ -200,6 +201,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn insertion_reorders_without_a_duplicate() {
         let mut paths = vec!["/a".into(), "/b".into(), "/c".into()];
         assert!(insert(&mut paths, "/a".into(), 3));

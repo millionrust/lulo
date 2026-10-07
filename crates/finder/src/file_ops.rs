@@ -2985,7 +2985,7 @@ mod tests {
             |update| updates.push(update),
         );
 
-        assert!(report.failures.is_empty());
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
         assert_eq!(std::fs::read(destination).unwrap(), bytes);
         assert_eq!(
             updates

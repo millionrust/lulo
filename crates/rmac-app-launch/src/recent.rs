@@ -262,6 +262,11 @@ mod tests {
     }
 
     #[test]
+    // `FileLock::acquire`'s own `#[cfg(not(unix))]` stub always refuses
+    // (pre-existing, not introduced here): no lock implementation is
+    // bound to a real Windows primitive yet, so recent-launch recording
+    // is an honest no-op there, not a bug this test should catch.
+    #[cfg(unix)]
     fn records_move_to_the_front_deduplicate_and_are_bounded() {
         let path = temp_store_path("basic").join("recent-apps.json");
         record_recent_launch_at(&path, "org.rmac.Files").unwrap();

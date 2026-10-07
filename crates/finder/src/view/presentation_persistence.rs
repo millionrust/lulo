@@ -604,6 +604,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn folder_view_options_round_trip_without_changing_other_folders() {
         let path = test_path("folder-options");
         let store = FinderStateStore::at(path.clone());
@@ -629,6 +630,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn state_round_trips_and_recovers_from_primary_corruption() {
         let path = test_path("round-trip");
         let store = FinderStateStore::at(path.clone());
@@ -668,6 +670,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn version_two_migrates_only_the_old_default_sidebar_width() {
         let path = test_path("default-sidebar-width-migration");
         let parent = path.parent().unwrap();
@@ -722,6 +725,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn removing_a_store_clears_its_state_file_and_last_good_backup() {
         let path = test_path("remove");
         let parent = path.parent().unwrap();

@@ -52,6 +52,7 @@ impl Drop for TestDirectory {
 }
 
 #[test]
+#[cfg(unix)]
 fn checked_listing_rejects_a_replacement_at_the_same_path() {
     let root = TestDirectory::new("directory-replacement");
     let current = root.0.join("current");
@@ -417,6 +418,7 @@ fn pathname_clipboard_text_is_one_absolute_path_per_line() {
 }
 
 #[test]
+#[cfg(unix)]
 fn sidebar_favourites_drop_relative_and_duplicate_paths_and_cap_the_list() {
     let paths = vec![
         PathBuf::from("relative/not-a-favourite"),

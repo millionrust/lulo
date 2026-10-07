@@ -252,6 +252,7 @@ impl WindowsWindowInner {
         if wparam.0 == SIZE_MOVE_LOOP_TIMER_ID {
             let mut runnables = self.main_receiver.clone().try_iter();
             while let Some(Ok(runnable)) = runnables.next() {
+                crate::rmac_trace::wake("task", runnable.metadata().location);
                 WindowsDispatcher::execute_runnable(runnable);
             }
             self.handle_paint_msg(handle)
@@ -1245,10 +1246,17 @@ impl WindowsWindowInner {
             // will rebuild the scene with fresh atlas textures.
             self.state.renderer.borrow_mut().mark_drawable();
         }
+        self.state.drew_frame.set(false);
         request_frame(RequestFrameOptions {
             require_presentation: false,
             force_render,
         });
+        let drew = self.state.drew_frame.get();
+        crate::rmac_trace::wake("frame", if drew { "drew" } else { "idle" });
+        if drew {
+            static FIRST_DRAW: std::sync::Once = std::sync::Once::new();
+            FIRST_DRAW.call_once(|| crate::rmac_trace::startup("first_frame_drawn"));
+        }
 
         self.state.callbacks.request_frame.set(Some(request_frame));
         self.update_ime_enabled(handle);

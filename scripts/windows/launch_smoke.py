@@ -38,6 +38,14 @@ result fails nothing — this job already runs with `continue-on-error`):
   when idle; the target here is the same, below one tick over the window,
   except Terminal with a live shell.
 
+Each app also runs with `gpui_windows`' own traces on
+(docs/decisions/0025-vendor-gpui-windows.md): `RMAC_GPUI_STARTUP_TRACE`
+prints the start-up phases (DirectX devices, DirectWrite, window
+creation, first frame, first present), timed from process creation, and
+`RMAC_GPUI_WAKE_TRACE` logs every wake-up; the ones that fall inside the
+idle window are grouped by source and printed, so a regression names its
+cause.
+
 With `--foreground-check <app>`, after every app in `apps` has been tested
 and closed, one more pair is launched back to back and left running (not
 killed early like every other check): `<app>` first, then whichever of
@@ -127,21 +135,64 @@ def process_cpu_time_100ns(pid: int) -> int | None:
 
 
 def measure_idle_cpu(
-    pid: int, settle: float = IDLE_SETTLE_SECONDS, window: float = IDLE_WINDOW_SECONDS
-) -> tuple[float, float] | None:
-    """(ticks, percent of one core) this process used over `window`
-    seconds of no input, after `settle` seconds of no input. `None` when
-    its CPU time could not be read (it may have exited)."""
+    pid: int,
+    settle: float = IDLE_SETTLE_SECONDS,
+    window: float = IDLE_WINDOW_SECONDS,
+    log: Path | None = None,
+) -> tuple[float, float, str] | None:
+    """(ticks, percent of one core, trace) for the CPU this process used
+    over `window` seconds of no input, after `settle` seconds of no input,
+    where `trace` is what the app wrote to `log` during the window. `None`
+    when its CPU time could not be read (it may have exited)."""
     time.sleep(settle)
     before = process_cpu_time_100ns(pid)
     if before is None:
         return None
+    start = log.stat().st_size if log is not None and log.exists() else 0
     time.sleep(window)
     after = process_cpu_time_100ns(pid)
     if after is None:
         return None
+    trace = ""
+    if log is not None and log.exists():
+        with log.open("rb") as output:
+            output.seek(start)
+            trace = output.read().decode("utf-8", errors="replace")
     delta = max(after - before, 0)
-    return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100
+    return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100, trace
+
+
+WAKE_PREFIX = "gpui_windows wake: "
+STARTUP_PREFIX = "gpui_windows startup: "
+
+
+def summarize_wakes(trace: str, limit: int = 8) -> list[tuple[int, str]]:
+    """The wake-up sources in a `RMAC_GPUI_WAKE_TRACE` excerpt, most
+    frequent first, as (count, "source detail")."""
+    counts: dict[str, int] = {}
+    for line in trace.splitlines():
+        if not line.startswith(WAKE_PREFIX):
+            continue
+        body = line[len(WAKE_PREFIX) :].rsplit(" at ", 1)[0]
+        counts[body] = counts.get(body, 0) + 1
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return [(count, body) for body, count in ranked[:limit]]
+
+
+def startup_phases(log_text: str) -> list[str]:
+    """Each `RMAC_GPUI_STARTUP_TRACE` phase, first occurrence only, as
+    "phase at N ms"."""
+    seen: set[str] = set()
+    phases = []
+    for line in log_text.splitlines():
+        if not line.startswith(STARTUP_PREFIX):
+            continue
+        body = line[len(STARTUP_PREFIX) :]
+        phase = body.split(" at ", 1)[0]
+        if phase not in seen:
+            seen.add(phase)
+            phases.append(body)
+    return phases
 
 
 def user32():
@@ -434,6 +485,8 @@ def launch(
     environment["APPDATA"] = str(profile / "Roaming")
     environment["LOCALAPPDATA"] = str(profile / "Local")
     environment["RMAC_MENU_STRIP_TRACE"] = "1"
+    environment["RMAC_GPUI_STARTUP_TRACE"] = "1"
+    environment["RMAC_GPUI_WAKE_TRACE"] = "1"
     for folder in ("Roaming", "Local"):
         (profile / folder).mkdir(parents=True, exist_ok=True)
     log = profile / "output.log"
@@ -478,16 +531,23 @@ def launch(
         # ADR 0023 task 1 (idle CPU): before any input reaches this
         # window, not after — `check_menu_strip`/`check_menu_command`/
         # `check_new_shortcut` below all inject keys and mouse clicks.
-        idle = measure_idle_cpu(process.pid)
+        for phase in startup_phases(log.read_text(encoding="utf-8", errors="replace")):
+            print(f"{app}: startup {phase}")
+        idle = measure_idle_cpu(process.pid, log=log)
         if idle is None:
             print(f"{app}: idle CPU skipped (could not read its CPU time)")
         else:
-            ticks, percent = idle
+            ticks, percent, trace = idle
             verdict = "OK" if ticks < 1.0 else "ABOVE TARGET"
             print(
                 f"{app}: idle CPU over {IDLE_WINDOW_SECONDS:.0f} s = "
                 f"{ticks:.2f} ticks ({percent:.2f}% of one core) [{verdict}]"
             )
+            wakes = summarize_wakes(trace)
+            total = sum(1 for line in trace.splitlines() if line.startswith(WAKE_PREFIX))
+            print(f"{app}: idle wake-ups over {IDLE_WINDOW_SECONDS:.0f} s = {total}")
+            for count, source in wakes:
+                print(f"{app}:   {count:5d} x {source}")
 
         if not bring_forward(hwnd):
             return "could not bring the window forward to test its keys"
@@ -631,7 +691,11 @@ def main() -> int:
                 print(f"{app}: FAIL: {error}")
                 log = profile / "output.log"
                 if log.exists():
-                    print(log.read_text(encoding="utf-8", errors="replace")[-4000:])
+                    text = log.read_text(encoding="utf-8", errors="replace")
+                    lines = [
+                        line for line in text.splitlines() if not line.startswith(WAKE_PREFIX)
+                    ]
+                    print("\n".join(lines)[-4000:])
 
     if arguments.foreground_check:
         second_app = next(

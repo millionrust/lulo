@@ -182,6 +182,7 @@ unsafe extern "system" fn run_work_callback(
     work: PTP_WORK,
 ) {
     let runnable = unsafe { RunnableVariant::from_raw(NonNull::new_unchecked(context as *mut ())) };
+    crate::rmac_trace::wake("pool", runnable.metadata().location);
     WindowsDispatcher::execute_runnable(runnable);
     unsafe { CloseThreadpoolWork(work) };
 }
@@ -192,6 +193,7 @@ unsafe extern "system" fn run_timer_callback(
     timer: PTP_TIMER,
 ) {
     let runnable = unsafe { RunnableVariant::from_raw(NonNull::new_unchecked(context as *mut ())) };
+    crate::rmac_trace::wake("timer", runnable.metadata().location);
     WindowsDispatcher::execute_runnable(runnable);
     unsafe { CloseThreadpoolTimer(timer) };
 }

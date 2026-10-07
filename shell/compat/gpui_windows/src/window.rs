@@ -69,6 +69,9 @@ pub struct WindowsWindowState {
     /// cache, which would otherwise replay stale atlas tile references from
     /// the previous frame and panic in `DirectXAtlasState::texture`.
     pub force_render_after_recovery: Cell<bool>,
+    /// rmac: set when GPUI drew or presented a scene during the current
+    /// `draw_window`, so the frame loop knows whether the window is idle.
+    pub drew_frame: Cell<bool>,
 
     pub click_state: ClickState,
     pub current_cursor: Cell<Option<HCURSOR>>,
@@ -134,8 +137,10 @@ impl WindowsWindowState {
         };
         let border_offset = WindowBorderOffset::default();
         let restore_from_minimized = None;
+        crate::rmac_trace::startup("renderer_new");
         let renderer = DirectXRenderer::new(hwnd, directx_devices, disable_direct_composition)
             .context("Creating DirectX renderer")?;
+        crate::rmac_trace::startup("renderer_ready");
         let callbacks = Callbacks::default();
         let input_handler = None;
         let pending_surrogate = None;
@@ -169,6 +174,7 @@ impl WindowsWindowState {
             hovered: Cell::new(hovered),
             renderer: RefCell::new(renderer),
             force_render_after_recovery: Cell::new(false),
+            drew_frame: Cell::new(false),
             click_state,
             current_cursor: Cell::new(current_cursor),
             cursor_visible,
@@ -515,6 +521,7 @@ impl WindowsWindow {
             invalidate_devices,
             parent_hwnd,
         };
+        crate::rmac_trace::startup("create_window");
         let creation_result = unsafe {
             CreateWindowExW(
                 dwexstyle,
@@ -549,8 +556,10 @@ impl WindowsWindow {
             this.state.scale_factor.get(),
             &this.state.border_offset,
         )?;
+        crate::rmac_trace::startup("window_created");
         if params.show {
             unsafe { SetWindowPlacement(hwnd, &placement)? };
+            crate::rmac_trace::startup("window_shown");
         } else {
             this.state.initial_placement.set(Some(WindowOpenStatus {
                 placement,
@@ -954,6 +963,7 @@ impl PlatformWindow for WindowsWindow {
     }
 
     fn draw(&self, scene: &Scene) {
+        self.state.drew_frame.set(true);
         self.state
             .renderer
             .borrow_mut()

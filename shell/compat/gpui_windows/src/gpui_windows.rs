@@ -12,6 +12,7 @@ mod display;
 mod events;
 mod keyboard;
 mod platform;
+mod rmac_trace;
 mod system_settings;
 mod util;
 mod vsync;

@@ -100,15 +100,19 @@ impl WindowsPlatformState {
 
 impl WindowsPlatform {
     pub fn new(headless: bool) -> Result<Self> {
+        crate::rmac_trace::startup("platform_new");
         unsafe {
             OleInitialize(None).context("unable to initialize Windows OLE")?;
         }
+        crate::rmac_trace::startup("ole_initialized");
         let (directx_devices, text_system, direct_write_text_system) = if !headless {
             let devices = DirectXDevices::new().context("Creating DirectX devices")?;
+            crate::rmac_trace::startup("directx_devices");
             let dw_text_system = Arc::new(
                 DirectWriteTextSystem::new(&devices)
                     .context("Error creating DirectWriteTextSystem")?,
             );
+            crate::rmac_trace::startup("direct_write_text_system");
             (
                 Some(devices),
                 dw_text_system.clone() as Arc<dyn PlatformTextSystem>,
@@ -185,6 +189,7 @@ impl WindowsPlatform {
             HICON::default()
         };
 
+        crate::rmac_trace::startup("platform_ready");
         Ok(Self {
             inner,
             handle,
@@ -317,6 +322,7 @@ impl WindowsPlatform {
                 let vsync_provider = VSyncProvider::new();
                 loop {
                     vsync_provider.wait_for_vsync();
+                    crate::rmac_trace::wake("vsync", "tick");
                     if check_device_lost(&directx_device.device)
                         || invalidate_devices.fetch_and(false, Ordering::Acquire)
                     {
@@ -400,7 +406,9 @@ impl Platform for WindowsPlatform {
     }
 
     fn run(&self, on_finish_launching: Box<dyn 'static + FnOnce()>) {
+        crate::rmac_trace::startup("run");
         on_finish_launching();
+        crate::rmac_trace::startup("finished_launching");
         if !self.headless {
             self.begin_vsync_thread();
         }
@@ -408,6 +416,7 @@ impl Platform for WindowsPlatform {
         let mut msg = MSG::default();
         unsafe {
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                crate::rmac_trace::wake("message", format_args!("{:#06x}", msg.message));
                 if translate_accelerator(&msg).is_none() {
                     _ = TranslateMessage(&msg);
                     DispatchMessageW(&msg);
@@ -528,9 +537,11 @@ impl Platform for WindowsPlatform {
         handle: AnyWindowHandle,
         options: WindowParams,
     ) -> Result<Box<dyn PlatformWindow>> {
+        crate::rmac_trace::startup("open_window");
         let window = WindowsWindow::new(handle, options, self.generate_creation_info())?;
         let handle = window.get_raw_handle();
         self.raw_window_handles.write().push(handle.into());
+        crate::rmac_trace::startup("window_opened");
 
         Ok(Box::new(window))
     }
@@ -997,7 +1008,10 @@ impl WindowsPlatformInner {
                 }
                 let mut main_receiver = self.main_receiver.clone();
                 match main_receiver.try_pop() {
-                    Ok(Some(runnable)) => WindowsDispatcher::execute_runnable(runnable),
+                    Ok(Some(runnable)) => {
+                        crate::rmac_trace::wake("task", runnable.metadata().location);
+                        WindowsDispatcher::execute_runnable(runnable)
+                    }
                     _ => break 'timeout_loop,
                 }
             }
@@ -1010,6 +1024,7 @@ impl WindowsPlatformInner {
                 Ok(Some(runnable)) => {
                     self.dispatcher.wake_posted.store(true, Ordering::Release);
 
+                    crate::rmac_trace::wake("task", runnable.metadata().location);
                     WindowsDispatcher::execute_runnable(runnable);
                 }
                 _ => break 'tasks,

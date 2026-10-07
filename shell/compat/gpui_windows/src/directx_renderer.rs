@@ -224,7 +224,10 @@ impl DirectXRenderer {
                 .swap_chain
                 .Present(0, DXGI_PRESENT(0))
         };
-        result.ok().context("Presenting swap chain failed")
+        result.ok().context("Presenting swap chain failed")?;
+        static FIRST_PRESENT: std::sync::Once = std::sync::Once::new();
+        FIRST_PRESENT.call_once(|| crate::rmac_trace::startup("first_present"));
+        Ok(())
     }
 
     pub(crate) fn handle_device_lost(&mut self, directx_devices: &DirectXDevices) -> Result<()> {

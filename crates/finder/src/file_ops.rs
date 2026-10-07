@@ -2059,7 +2059,7 @@ mod tests {
         });
 
         assert_eq!(report.processed, 2);
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert!(report.failures.is_empty());
         assert_eq!(
             progress
                 .iter()
@@ -2177,7 +2177,7 @@ mod tests {
         let report =
             execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
 
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert!(report.failures.is_empty());
         assert!(!source.exists());
         assert_eq!(std::fs::read(destination).unwrap(), b"source bytes");
         assert_eq!(fs.remove_calls.get(), 1);
@@ -2347,7 +2347,7 @@ mod tests {
             |_| {},
         );
 
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert!(report.failures.is_empty());
         assert_eq!(std::fs::read(source).unwrap(), b"source bytes");
         assert_eq!(std::fs::read(destination).unwrap(), b"source bytes");
         assert_eq!(journal.pending_count().unwrap(), 0);
@@ -2375,7 +2375,7 @@ mod tests {
             |_| {},
         );
 
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert!(report.failures.is_empty());
         assert_eq!(std::fs::read(source).unwrap(), b"new bytes");
         assert_eq!(std::fs::read(destination).unwrap(), b"new bytes");
         assert_eq!(journal.pending_count().unwrap(), 0);
@@ -2439,7 +2439,7 @@ mod tests {
             |_| {},
         );
 
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert!(report.failures.is_empty());
         assert!(!source.exists());
         assert_eq!(std::fs::read(destination).unwrap(), b"new bytes");
         assert!(report.unfinished_moves.is_empty());
@@ -2470,7 +2470,7 @@ mod tests {
         let report =
             execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
 
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert!(report.failures.is_empty());
         assert!(!source.exists());
         assert_eq!(std::fs::read(destination).unwrap(), b"new bytes");
         assert_eq!(fs.remove_calls.get(), 1);
@@ -2927,7 +2927,7 @@ mod tests {
             |_| {},
         );
 
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert!(report.failures.is_empty());
         assert_eq!(&*fs.calls.borrow(), &["rename"]);
     }
 
@@ -3009,7 +3009,7 @@ mod tests {
             |update| updates.push(update),
         );
 
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert!(report.failures.is_empty());
         assert_eq!(std::fs::read(destination).unwrap(), bytes);
         assert_eq!(
             updates

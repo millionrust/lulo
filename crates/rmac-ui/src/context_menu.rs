@@ -531,8 +531,9 @@ impl ContextMenu {
     }
 
     /// Append a row with every attribute given, for menus built from an
-    /// `rmac_app_menu` table (the in-window menu strip).
-    pub(crate) fn entry(
+    /// `rmac_app_menu` table (the in-window menu strip, and the Lulo
+    /// layer's menu bar on Windows).
+    pub fn entry(
         self,
         label: impl Into<SharedString>,
         shortcut: Option<SharedString>,

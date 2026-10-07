@@ -24,6 +24,7 @@ use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
 use zbus::{interface, Connection};
 
+pub mod pipe;
 pub mod recent;
 pub mod unsaved;
 mod wire;

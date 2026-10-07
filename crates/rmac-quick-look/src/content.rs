@@ -447,6 +447,7 @@ pub fn error_message(error: &io::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
     use std::time::UNIX_EPOCH;
 
@@ -528,6 +529,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn symbolic_link_is_described_without_following_its_target() {
         let root = scratch("link");
         std::fs::write(root.join("target.txt"), "private contents").unwrap();

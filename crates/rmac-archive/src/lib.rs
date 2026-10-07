@@ -269,6 +269,7 @@ pub(crate) fn display_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(windows))]
     use std::path::PathBuf;
 
     #[test]

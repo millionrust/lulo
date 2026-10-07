@@ -136,7 +136,7 @@ impl FinderView {
                 // FILES-05: keep the Linux tag index (there is no Spotlight
                 // here) exactly in step with what Files itself just wrote,
                 // without waiting for this folder to be listed again.
-                #[cfg(any(target_os = "linux", all(test, unix)))]
+                #[cfg(any(target_os = "linux", test))]
                 rmac_search::tag_index::record(&path, (!remove_tag).then_some(tag));
             }
         }

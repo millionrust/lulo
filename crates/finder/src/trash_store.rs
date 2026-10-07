@@ -351,7 +351,7 @@ impl TrashRecord {
     }
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn default_state_root() -> io::Result<PathBuf> {
     let base = match std::env::var_os("XDG_STATE_HOME") {
         Some(path) if !path.is_empty() => PathBuf::from(path),
@@ -515,7 +515,7 @@ fn trash_root_is_structurally_valid(root: &Path) -> bool {
             .is_some_and(|parent| parent == OsStr::new(".Trash"))
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn resolve_layout(source: &Path) -> io::Result<TrashLayout> {
     validate_source_path(source)?;
     let mount_points = linux_mount_points()?;
@@ -554,7 +554,7 @@ fn resolve_layout(source: &Path) -> io::Result<TrashLayout> {
     })
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn home_trash_root() -> io::Result<PathBuf> {
     let root = match std::env::var_os("XDG_DATA_HOME") {
         Some(path) if !path.is_empty() => PathBuf::from(path).join("Trash"),
@@ -574,7 +574,7 @@ fn home_trash_root() -> io::Result<PathBuf> {
     Ok(root)
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn canonicalize_path_or_parents(path: &Path) -> io::Result<PathBuf> {
     let mut current = path;
     let mut suffix = Vec::<OsString>::new();
@@ -602,7 +602,7 @@ fn canonicalize_path_or_parents(path: &Path) -> io::Result<PathBuf> {
     }
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn linux_mount_points() -> io::Result<Vec<PathBuf>> {
     const MAX_MOUNTINFO_BYTES: u64 = 4 * 1024 * 1024;
     let mut bytes = Vec::new();
@@ -646,7 +646,7 @@ fn linux_mount_points() -> io::Result<Vec<PathBuf>> {
     Ok(points)
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn decode_mount_field(field: &[u8]) -> io::Result<Vec<u8>> {
     let mut decoded = Vec::with_capacity(field.len());
     let mut index = 0;
@@ -672,7 +672,7 @@ fn decode_mount_field(field: &[u8]) -> io::Result<Vec<u8>> {
     Ok(decoded)
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn containing_mount<'a>(path: &Path, mount_points: &'a [PathBuf]) -> io::Result<&'a Path> {
     mount_points
         .iter()
@@ -681,7 +681,7 @@ fn containing_mount<'a>(path: &Path, mount_points: &'a [PathBuf]) -> io::Result<
         .ok_or_else(|| invalid_data("path is outside the mounted filesystem table"))
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn existing_trash_layouts() -> io::Result<Vec<TrashLayout>> {
     let mount_points = linux_mount_points()?;
     let home_root = canonicalize_path_or_parents(&home_trash_root()?)?;
@@ -1707,7 +1707,7 @@ pub(crate) struct TrashStore {
 }
 
 impl TrashStore {
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn open_default() -> io::Result<Self> {
         let state_root = default_state_root()?.join("trash-operations");
         Self::open(state_root)
@@ -1760,7 +1760,7 @@ impl TrashStore {
         Ok((recovery, reviews))
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn list(&self) -> io::Result<Vec<TrashedItem>> {
         let _lock = self.lock()?;
         let recovery = self.recover_locked()?;
@@ -2372,7 +2372,7 @@ impl TrashStore {
         Ok(true)
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn trash(&self, source: &Path, cancel: &AtomicBool) -> io::Result<()> {
         let _lock = self.lock()?;
         let recovery = self.recover_locked()?;
@@ -2395,7 +2395,7 @@ impl TrashStore {
     /// same crash-recovery guarantees apply; the net effect on disk and to
     /// the user is identical — the item is gone with nothing left in the
     /// Bin.
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn delete_immediately(&self, source: &Path, cancel: &AtomicBool) -> io::Result<()> {
         let canonical = canonical_source_path(source)?;
         self.trash(source, cancel)?;
@@ -2409,7 +2409,7 @@ impl TrashStore {
         self.delete_permanently(&item, cancel)
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn restore(&self, item: &TrashedItem, cancel: &AtomicBool) -> io::Result<PathBuf> {
         let _lock = self.lock()?;
         let recovery = self.recover_locked()?;
@@ -2505,7 +2505,7 @@ impl TrashStore {
         Ok(destination)
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn delete_permanently(
         &self,
         item: &TrashedItem,

@@ -86,9 +86,9 @@ pub(crate) enum Operation {
     Move,
     Rename,
     Replace,
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     PermanentDelete,
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     Restore,
     Trash,
 }
@@ -102,9 +102,9 @@ impl Operation {
             Self::Move => "move",
             Self::Rename => "rename",
             Self::Replace => "replace",
-            #[cfg(any(target_os = "linux", all(test, unix)))]
+            #[cfg(any(target_os = "linux", test))]
             Self::PermanentDelete => "permanently delete",
-            #[cfg(any(target_os = "linux", all(test, unix)))]
+            #[cfg(any(target_os = "linux", test))]
             Self::Restore => "restore",
             Self::Trash => "move to Trash",
         }

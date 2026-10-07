@@ -17,9 +17,9 @@ pub(crate) const MOUNT_WATCH_UNAVAILABLE_MESSAGE: &str =
     "Automatic mounted-volume updates are temporarily unavailable";
 
 const MAX_RENAME_HINTS: usize = 16;
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 const MOUNT_WATCH_STABLE_PERIOD: Duration = Duration::from_secs(60);
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 const MOUNT_WATCH_MAX_RETRY: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
@@ -72,7 +72,7 @@ fn should_forward_filesystem_event(result: &notify::Result<notify::Event>) -> bo
     }
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MountWatchNotice {
     None,
@@ -80,13 +80,13 @@ pub(crate) enum MountWatchNotice {
     Restored,
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Default)]
 pub(crate) struct MountWatchHealth {
     pub(crate) unavailable: bool,
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 impl MountWatchHealth {
     pub(crate) fn record(&mut self, event: rmac_mounts::WatchEvent) -> MountWatchNotice {
         match event {
@@ -104,7 +104,7 @@ impl MountWatchHealth {
     }
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn next_mount_watch_retry(
     failures: u32,
     previous_attempt_lifetime: Duration,

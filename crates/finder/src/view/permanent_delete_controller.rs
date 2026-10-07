@@ -6,7 +6,7 @@ impl FinderView {
     /// is available everywhere and asks once before permanently erasing the
     /// selection (bypassing a normal move to Trash).
     pub(super) fn request_permanent_delete(&mut self, cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "linux", all(test, unix)))]
+        #[cfg(any(target_os = "linux", test))]
         {
             if self.transfer.is_some()
                 || self.undo_operation.is_some()
@@ -67,7 +67,7 @@ impl FinderView {
             let _ = rmac_sound::play_alert();
             cx.notify();
         }
-        #[cfg(not(any(target_os = "linux", all(test, unix))))]
+        #[cfg(not(any(target_os = "linux", test)))]
         {
             self.operation_error = Some("Permanent deletion is available on Linux".into());
             cx.notify();
@@ -85,7 +85,7 @@ impl FinderView {
     }
 
     fn request_empty_trash_with_confirmation(&mut self, confirm: bool, cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "linux", all(test, unix)))]
+        #[cfg(any(target_os = "linux", test))]
         {
             if self.transfer.is_some()
                 || self.undo_operation.is_some()
@@ -163,7 +163,7 @@ impl FinderView {
             })
             .detach();
         }
-        #[cfg(not(any(target_os = "linux", all(test, unix))))]
+        #[cfg(not(any(target_os = "linux", test)))]
         {
             let _ = confirm;
             self.operation_error = Some("Emptying the Trash is available on Linux".into());
@@ -171,13 +171,13 @@ impl FinderView {
         }
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(super) fn cancel_permanent_delete(&mut self, cx: &mut Context<Self>) {
         self.delete_confirmation = None;
         cx.notify();
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(super) fn confirm_permanent_delete(&mut self, cx: &mut Context<Self>) {
         let Some(confirmation) = self.delete_confirmation.take() else {
             return;

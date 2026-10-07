@@ -123,7 +123,7 @@ fn operation_rows(
 
 impl FinderView {
     fn progress_rows(&self) -> Vec<ProgressRow> {
-        #[cfg(any(target_os = "linux", all(test, unix)))]
+        #[cfg(any(target_os = "linux", test))]
         let trash = self.trash_operation.as_ref().map(|operation| {
             (
                 SharedString::from(bin_copy(self.file_words, operation.label.as_ref())),
@@ -132,7 +132,7 @@ impl FinderView {
                 operation.cancelling,
             )
         });
-        #[cfg(not(any(target_os = "linux", all(test, unix))))]
+        #[cfg(not(any(target_os = "linux", test)))]
         let trash: Option<(SharedString, usize, usize, bool)> = None;
         operation_rows(
             self.transfer.as_ref(),

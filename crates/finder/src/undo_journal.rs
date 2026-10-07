@@ -80,7 +80,7 @@ pub(crate) struct UndoSeed {
     pub(crate) forward_record: PathBuf,
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) struct TrashUndoSeed {
     pub(crate) id: String,
     pub(crate) kind: UndoKind,
@@ -169,7 +169,7 @@ impl UndoRecord {
         Ok(record)
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     fn from_trash_seed(seed: TrashUndoSeed) -> io::Result<Self> {
         if !matches!(seed.kind, UndoKind::Trash | UndoKind::Restore) {
             return Err(invalid_data("Trash Undo seed has an invalid operation"));
@@ -274,7 +274,7 @@ impl UndoRecord {
                 || self.forward_record_path_bytes == seed.forward_record.as_os_str().as_encoded_bytes())
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     fn matches_trash_seed(&self, seed: &TrashUndoSeed) -> bool {
         self.id == seed.id
             && self.kind == seed.kind
@@ -493,7 +493,7 @@ pub(crate) struct UndoStore {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UndoAvailability {
     pub(crate) label: String,
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) uses_trash: bool,
 }
 
@@ -592,7 +592,7 @@ impl UndoStore {
         self.activate(&id)
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn archive_trash(&self, seed: TrashUndoSeed) -> io::Result<()> {
         let _lock = self.acquire_lock()?;
         let path = self.record_path(&seed.id);
@@ -620,7 +620,7 @@ impl UndoStore {
         self.prune_ready()
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn has_receipt(&self, id: &str) -> io::Result<bool> {
         let _lock = self.acquire_lock()?;
         match self.read_record_path(&self.record_path(id)) {
@@ -630,7 +630,7 @@ impl UndoStore {
         }
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn discard_trash_item(&self, data: &Path, info: &Path) -> io::Result<()> {
         let _lock = self.acquire_lock()?;
         let mut changed = false;
@@ -657,7 +657,7 @@ impl UndoStore {
         };
         Ok(Some(UndoAvailability {
             label: undo_label(&record),
-            #[cfg(any(target_os = "linux", all(test, unix)))]
+            #[cfg(any(target_os = "linux", test))]
             uses_trash: matches!(record.kind, UndoKind::Trash | UndoKind::Restore),
         }))
     }

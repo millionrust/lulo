@@ -65,7 +65,7 @@ pub(super) fn spawn_recovery_loaders(cx: &mut Context<FinderView>) {
     })
     .detach();
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
         let result = cx
             .background_executor()

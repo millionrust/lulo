@@ -2,7 +2,7 @@
 
 use crate::{conflict::ConflictDecision, operation_journal};
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 use crate::trash_store;
 
 pub(crate) struct RecoveryPresentation {
@@ -51,7 +51,7 @@ pub(crate) fn recovery_presentation(
     }
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn trash_recovery_presentation(
     action: &trash_store::TrashRecoveryAction,
 ) -> RecoveryPresentation {

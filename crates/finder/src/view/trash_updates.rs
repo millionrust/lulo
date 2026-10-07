@@ -2,7 +2,7 @@ use super::*;
 
 impl FinderView {
     pub(super) fn reload_trash(&mut self, cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "linux", all(test, unix)))]
+        #[cfg(any(target_os = "linux", test))]
         {
             self.cancel_search();
             self.result_title = Some(self.file_words.bin().into());
@@ -97,7 +97,7 @@ impl FinderView {
             })
             .detach();
         }
-        #[cfg(not(any(target_os = "linux", all(test, unix))))]
+        #[cfg(not(any(target_os = "linux", test)))]
         {
             self.entries.clear();
             self.operation_error = Some("Trash browsing is available on Linux".into());
@@ -109,7 +109,7 @@ impl FinderView {
 /// A Trash item's XDG `DeletionDate` (local time, `YYYY-MM-DDThh:mm:ss`) in
 /// the list's date style ("Today at 11:19 AM"); an unreadable one is shown
 /// as written.
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn deletion_label(raw: &str) -> String {
     chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S")
         .ok()
@@ -123,7 +123,7 @@ pub(super) fn deletion_label(raw: &str) -> String {
 /// failures too (sidebar favourites, applications…), so this only clears a
 /// message that actually mentions Trash — never something else that happens
 /// to be showing at the same time.
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn should_clear_stale_trash_error(current: Option<&str>, trash_pending: usize) -> bool {
     trash_pending == 0 && current.is_some_and(|error| error.to_ascii_lowercase().contains("trash"))
 }

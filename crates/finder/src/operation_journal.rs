@@ -152,7 +152,7 @@ impl TreeManifest {
         Self::capture_inner(root, None)
     }
 
-    #[cfg(any(target_os = "linux", all(test, unix)))]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn capture_cancellable(root: &Path, cancel: &AtomicBool) -> io::Result<Self> {
         Self::capture_inner(root, Some(cancel))
     }

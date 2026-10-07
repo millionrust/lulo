@@ -274,6 +274,14 @@ jobs:
     # "Launch time" tasks), and checks that opening Calculator then Weather
     # without closing Calculator leaves Weather in the foreground (the
     # "Foreground" task).
+    # Phase 2d adds Files (crates/finder): real Favourites/Locations
+    # (SHGetKnownFolderPath, drive enumeration), Open with the default app,
+    # Move to Bin through the real Recycle Bin, colour tags in an NTFS
+    # alternate data stream, and a crash-safe Copy/Move journal and Undo
+    # with real Windows locking — all with their own passing unit tests.
+    # Linux-only pieces (the xdg-trash-spec Bin view/restore, Add to Dock,
+    # atomic replace/exchange, Unix-identity-dependent rename survival)
+    # are honest, test-gated stubs; see docs/parity.md's WIN-OS-18..20.
     # Non-blocking until it has run clean for a while (each step below has
     # `continue-on-error`), except the idle gate: since gpui_windows parks
     # idle windows (ADR 0025) every app but Terminal must stay within one
@@ -288,6 +296,8 @@ jobs:
         -p rmac-ui -p rmac-storage -p rmac-recent-documents
         -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal
         -p rmac-portal -p rmac-print-linux -p rmac-spelling -p rmac-sound
+        -p rmac-finder -p rmac-mounts -p rmac-search -p rmac-app-launch
+        -p rmac-pasteboard -p rmac-archive -p rmac-quick-look
     defaults:
       run:
         shell: bash
@@ -337,7 +347,8 @@ jobs:
         continue-on-error: true
         run: |
           cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
-            -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal --bins
+            -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal \
+            -p rmac-finder --bins
 
       - name: Launch each app
         if: ${{ !cancelled() }}
@@ -347,7 +358,7 @@ jobs:
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
             --foreground-check rmac-calculator --results windows-results.json \
             target/debug rmac-calculator rmac-notes rmac-text-editor \
-            rmac-preview rmac-clock rmac-weather rmac-terminal
+            rmac-preview rmac-clock rmac-weather rmac-terminal rmac-files
 
       # Blocking: no app but Terminal may use more than one 15.6 ms tick of
       # CPU over 20 s with no input (ADR 0025's parked frame loop).

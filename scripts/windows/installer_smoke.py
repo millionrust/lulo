@@ -157,8 +157,17 @@ def check_installed(failures: list[str]) -> None:
     for exe_name in ASSOCIATED_EXES:
         if not applications_key_exists(exe_name):
             failures.append(f"missing \"Open with\" registration for {exe_name}")
-    if "Lulo" not in arp_entry_names():
-        failures.append("no \"Lulo\" entry in Add/Remove Programs after install")
+    names = arp_entry_names()
+    for _ in range(5):
+        if "Lulo" in names:
+            break
+        time.sleep(1.0)
+        names = arp_entry_names()
+    if "Lulo" not in names:
+        failures.append(
+            "no \"Lulo\" entry in Add/Remove Programs after install "
+            f"(found: {names!r})"
+        )
 
 
 def check_launch(failures: list[str]) -> None:

@@ -42,3 +42,7 @@ windows = { workspace = true, features = [
     "Foundation",
     "Win32_System_WinRT",
 ] }
+
+# The exe's version info and icon (ADR 0023 "Installer"); see build.rs.
+[target.'cfg(windows)'.build-dependencies]
+rmac-windows-resource-build.workspace = true

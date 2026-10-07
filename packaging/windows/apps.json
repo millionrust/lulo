@@ -1,0 +1,72 @@
+[
+  {
+    "id": "calculator",
+    "app_id": "org.rmac.Calculator",
+    "display_name": "Calculator",
+    "bin": "rmac-calculator",
+    "extensions": []
+  },
+  {
+    "id": "notes",
+    "app_id": "org.rmac.Notes",
+    "display_name": "Notes",
+    "bin": "rmac-notes",
+    "extensions": []
+  },
+  {
+    "id": "text-editor",
+    "app_id": "org.rmac.TextEditor",
+    "display_name": "Text Editor",
+    "bin": "rmac-text-editor",
+    "extensions": ["txt", "md", "rtf"]
+  },
+  {
+    "id": "preview",
+    "app_id": "org.rmac.Preview",
+    "display_name": "Preview",
+    "bin": "rmac-preview",
+    "extensions": ["pdf", "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp"]
+  },
+  {
+    "id": "clock",
+    "app_id": "org.rmac.Clock",
+    "display_name": "Clock",
+    "bin": "rmac-clock",
+    "extensions": []
+  },
+  {
+    "id": "weather",
+    "app_id": "org.rmac.Weather",
+    "display_name": "Weather",
+    "bin": "rmac-weather",
+    "extensions": []
+  },
+  {
+    "id": "terminal",
+    "app_id": "org.rmac.Terminal",
+    "display_name": "Terminal",
+    "bin": "rmac-terminal",
+    "extensions": []
+  },
+  {
+    "id": "files",
+    "app_id": "org.rmac.Files",
+    "display_name": "Files",
+    "bin": "rmac-files",
+    "extensions": []
+  },
+  {
+    "id": "lulo-session",
+    "display_name": "Lulo",
+    "bin": "lulo-session",
+    "extensions": [],
+    "icon_svg": "assets/icons/lulo.svg"
+  },
+  {
+    "id": "lulo-shell",
+    "display_name": "Lulo Shell",
+    "bin": "lulo-shell",
+    "extensions": [],
+    "shortcut": false
+  }
+]

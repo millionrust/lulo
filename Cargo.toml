@@ -176,6 +176,10 @@ rmac-wallpaper-portal = { version = "=0.9.0-beta.1", path = "crates/rmac-wallpap
 rmac-wallpaper-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-wallpaper-runtime" }
 rmac-wallpaper-system = { version = "=0.9.0-beta.1", path = "crates/rmac-wallpaper-system" }
 rmac-window-state = { version = "=0.9.0-beta.1", path = "crates/rmac-window-state" }
+# Windows exe resources (version info, icon) for build.rs; ADR 0023
+# "Installer". A build-dependency only, under
+# `[target.'cfg(windows)'.build-dependencies]` in each app crate.
+rmac-windows-resource-build = { version = "=0.9.0-beta.1", path = "crates/rmac-windows-resource-build" }
 pam-sys2 = "=1.0.2"
 quick-xml = "0.39.4"
 raw-window-handle = "=0.6.2"

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lulo for Windows: a per-user installer (ADR 0023 "Installer").
+
+  No admin prompt: `Scope="perUser"` installs to
+  %LOCALAPPDATA%\Programs\Lulo and writes the Start Menu shortcut and file
+  associations under the current user only (HKCU). `MajorUpgrade` with a
+  fixed UpgradeCode (never change it) removes the previous version's files
+  in the same transaction as the new version's, so running the installer
+  again upgrades in place.
+
+  The app list is generated into Apps.wxs by generate_apps_wxs.py from
+  apps.json — add an app there, not here. Build both together:
+
+      wix build Product.wxs Apps.wxs -arch x64 -d LuloVersion=<x.y.z> \
+          -o Lulo-Setup.msi
+
+  (see build-installer.sh). No WiX extension is required: every element
+  here and in Apps.wxs — StandardDirectory, ShortcutProperty, CustomAction,
+  RegistryValue — is core WiX, so nothing of WiX's own MS-RL-licensed code
+  is embedded in the MSI this produces (see ADR 0023's "Installer" section);
+  the MSI is a standard Windows Installer database holding only Lulo's own
+  binaries, read by Windows' own msiexec.exe.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Lulo"
+    Manufacturer="Lulo"
+    Version="$(var.LuloVersion)"
+    UpgradeCode="2c6e6b8e-9b0c-4e4d-9e7a-9b0b5b6e6a9c"
+    Scope="perUser"
+    Compressed="yes">
+
+    <SummaryInformation Description="Lulo installer" Manufacturer="Lulo" />
+
+    <!-- One self-contained .msi, no separate cab1.cab beside it to lose
+         (WiX's default without this is an external cabinet file, found by
+         an actual silent install in CI failing Error 1311, "source file
+         not found: cab1.cab", not by reading the schema). -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of Lulo is already installed. Uninstall it first to install this version." />
+
+    <!-- Clock schedules each due alarm, snooze and running countdown as its
+         own per-user Task Scheduler task named RmacClockAlarm-<n>
+         (crates/clock/src/schedule.rs, WIN-OS-14); a real uninstall — not
+         an upgrade's own remove-then-install — removes every one of them,
+         so nothing Lulo's installer put on the system survives it.
+         Immediate (not deferred): the command line is fixed, so it needs no
+         session data captured ahead of it, and it need not run inside the
+         rollback-aware "in-script" phase since Return="ignore" means its
+         own success is never load-bearing for the install transaction. -->
+    <CustomAction
+      Id="RemoveClockScheduledTasks"
+      Directory="INSTALLFOLDER"
+      ExeCommand="powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command &quot;Get-ScheduledTask -TaskName 'RmacClockAlarm-*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false&quot;"
+      Execute="immediate"
+      Return="ignore" />
+
+    <!-- The Lulo layer (crates/rmac-win-shell, ADR 0023 phase 3) hides the
+         Windows taskbar and claims part of the work area for its own
+         AppBars while it runs. A real uninstall gives both back before
+         lulo-session.exe itself is removed, whether or not the layer
+         happens to be running right now — restore_windows_desktop() is
+         documented safe to call unconditionally and returns at once (no
+         window to wait on). References Apps.wxs's File_lulo_session by
+         its installed path; both files link into one output, so the
+         reference resolves regardless of which .wxs authors which. -->
+    <CustomAction
+      Id="RestoreWindowsDesktop"
+      Directory="INSTALLFOLDER"
+      ExeCommand="&quot;[#File_lulo_session]&quot; --restore-windows-desktop"
+      Execute="immediate"
+      Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="RemoveClockScheduledTasks" After="InstallInitialize" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="RestoreWindowsDesktop" After="InstallInitialize" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Lulo" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="LuloMenuFolder" Name="Lulo" />
+    </StandardDirectory>
+
+    <!-- Every app's <Component> (one exe, one Start Menu shortcut, and,
+         for Text Editor and Preview, "Open with" registration) lives in
+         Apps.wxs's AppComponents group — generated, not hand-written. No
+         explicit <Feature> is declared: WiX puts every referenced
+         component in one implicit feature, which is all this installer
+         needs. -->
+    <ComponentGroupRef Id="AppComponents" />
+
+    <!-- The two things the Lulo layer itself writes to the registry
+         (crates/rmac-win-shell/src/win/registry.rs), neither authored by
+         this installer at install time, so a plain <RegistryValue>
+         (removed on uninstall only because the installer itself wrote
+         it) does not apply to either: HKCU\Software\Lulo\Shell (its few
+         per-user settings, e.g. which monitor the Dock sits on) and the
+         "Lulo" value under the user's own Run key (its opt-in sign-in
+         toggle — this installer never sets it; it only clears it if the
+         user, or the Lulo menu's own switch, already did). A dummy
+         KeyPath value gives the component one (required) and is itself
+         removed on uninstall the ordinary way. -->
+    <Component Id="Comp_LuloShellRegistryCleanup" Directory="INSTALLFOLDER" Guid="*">
+      <RegistryValue Root="HKCU" Key="Software\Lulo\Installer" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      <RemoveRegistryKey Root="HKCU" Key="Software\Lulo\Shell" Action="removeOnUninstall" />
+      <RemoveRegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Lulo" />
+    </Component>
+  </Package>
+</Wix>

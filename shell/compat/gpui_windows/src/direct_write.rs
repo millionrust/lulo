@@ -163,7 +163,12 @@ impl GPUState {
 }
 
 impl DirectWriteTextSystem {
-    pub(crate) fn new(directx_devices: &DirectXDevices) -> Result<Self> {
+    /// rmac: `directx_devices` is called only once the system font
+    /// collection is loaded, so the platform can create the Direct3D devices
+    /// on another thread meanwhile (docs/decisions/0025-vendor-gpui-windows.md).
+    pub(crate) fn new(
+        directx_devices: impl FnOnce() -> Result<DirectXDevices>,
+    ) -> Result<(Self, DirectXDevices)> {
         let factory: IDWriteFactory5 = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
         // The `IDWriteInMemoryFontFileLoader` here is supported starting from
         // Windows 10 Creators Update, which consequently requires the entire
@@ -175,8 +180,6 @@ impl DirectWriteTextSystem {
         unsafe { GetUserDefaultLocaleName(&mut locale) };
         let locale = HSTRING::from_wide(&locale);
         let text_renderer = TextRendererWrapper::new(locale.clone());
-
-        let gpu_state = GPUState::new(directx_devices)?;
 
         let system_subpixel_rendering = get_system_subpixel_rendering();
         let system_ui_font_name = get_system_ui_font_name();
@@ -203,19 +206,26 @@ impl DirectWriteTextSystem {
                 .factory
                 .CreateFontCollectionFromFontSet(&custom_font_set)?
         };
+        crate::rmac_trace::startup("system_fonts_loaded");
 
-        Ok(Self {
-            components,
-            state: RwLock::new(DirectWriteState {
-                gpu_state,
-                system_font_collection,
-                custom_font_collection,
-                fonts: Vec::new(),
-                font_to_font_id: HashMap::default(),
-                font_info_cache: HashMap::default(),
-                layout_line_scratch: Vec::new(),
-            }),
-        })
+        let directx_devices = directx_devices()?;
+        let gpu_state = GPUState::new(&directx_devices)?;
+
+        Ok((
+            Self {
+                components,
+                state: RwLock::new(DirectWriteState {
+                    gpu_state,
+                    system_font_collection,
+                    custom_font_collection,
+                    fonts: Vec::new(),
+                    font_to_font_id: HashMap::default(),
+                    font_info_cache: HashMap::default(),
+                    layout_line_scratch: Vec::new(),
+                }),
+            },
+            directx_devices,
+        ))
     }
 
     pub(crate) fn handle_gpu_lost(&self, directx_devices: &DirectXDevices) -> Result<()> {

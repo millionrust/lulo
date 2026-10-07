@@ -101,17 +101,37 @@ impl WindowsPlatformState {
 impl WindowsPlatform {
     pub fn new(headless: bool) -> Result<Self> {
         crate::rmac_trace::startup("platform_new");
+        // rmac: creating the Direct3D devices loads the GPU driver, and
+        // DirectWrite loads the system font collection; neither needs the
+        // other, so the devices are made on their own thread while OLE starts
+        // and the fonts load here (docs/decisions/0025-vendor-gpui-windows.md).
+        let devices_thread = if headless {
+            None
+        } else {
+            std::thread::Builder::new()
+                .name("DirectXDevices".to_owned())
+                .spawn(|| {
+                    let devices = DirectXDevices::new();
+                    crate::rmac_trace::startup("directx_devices");
+                    SendDevices(devices)
+                })
+                .log_err()
+        };
         unsafe {
             OleInitialize(None).context("unable to initialize Windows OLE")?;
         }
         crate::rmac_trace::startup("ole_initialized");
         let (directx_devices, text_system, direct_write_text_system) = if !headless {
-            let devices = DirectXDevices::new().context("Creating DirectX devices")?;
-            crate::rmac_trace::startup("directx_devices");
-            let dw_text_system = Arc::new(
-                DirectWriteTextSystem::new(&devices)
-                    .context("Error creating DirectWriteTextSystem")?,
-            );
+            let (dw_text_system, devices) = DirectWriteTextSystem::new(|| {
+                match devices_thread.map(|thread| thread.join()) {
+                    Some(Ok(SendDevices(devices))) => devices,
+                    // The thread could not start or panicked: make them here.
+                    _ => DirectXDevices::new(),
+                }
+                .context("Creating DirectX devices")
+            })
+            .context("Error creating DirectWriteTextSystem")?;
+            let dw_text_system = Arc::new(dw_text_system);
             crate::rmac_trace::startup("direct_write_text_system");
             (
                 Some(devices),
@@ -356,6 +376,14 @@ impl WindowsPlatform {
             .unwrap();
     }
 }
+
+/// rmac: carries the Direct3D devices from the thread that made them. D3D11
+/// devices and DXGI factories are free-threaded, and the immediate context
+/// is only used by the main thread once it arrives.
+struct SendDevices(Result<DirectXDevices>);
+
+// SAFETY: see above; nothing else is shared with the creating thread.
+unsafe impl Send for SendDevices {}
 
 /// rmac: run a frame for each parked window, after the main thread did
 /// something that may have made it dirty (rmac_frame_loop).

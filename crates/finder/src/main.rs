@@ -5,7 +5,7 @@ mod directory_state;
 mod file_ops;
 mod operation_journal;
 mod recovery_ui;
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 mod trash_store;
 mod undo_journal;
 mod view;

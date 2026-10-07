@@ -60,6 +60,18 @@ class IdleGateTests(unittest.TestCase):
             [],
         )
 
+    def test_clocks_per_app_budget_tolerates_a_noisier_runner_too(self) -> None:
+        # Run 37657567719: the same redraw, same wake-source shape, but a
+        # busier CI runner made the settle cost more ticks (see
+        # PER_APP_BUDGET_TICKS) — still nowhere near a real regression.
+        results = {"rmac-clock": {"idle_ticks": 28.05}}
+        self.assertEqual(
+            idle_gate.idle_failures(
+                results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
+            ),
+            [],
+        )
+
     def test_clocks_per_app_budget_still_catches_a_real_regression(self) -> None:
         results = {
             "rmac-clock": {

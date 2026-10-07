@@ -665,18 +665,23 @@ the only verification available.
   with the real scope on record — see WIN-OS-22. System Settings on
   Windows remains future work, not a phase-2d deliverable.
 
-- **Clock's idle gate, made robust to its own legitimate redraw.** CI run
-  37633070594 intermittently failed the idle gate on Clock (19.03 ticks
-  against a budget of one) even though nothing regressed: the World Clock
-  tab schedules a real redraw for the next minute boundary while its
-  window is active, matching the Mac's minute-precision display, and the
-  20 s idle window has roughly a one-in-three chance of containing that
-  boundary. Rather than loosen the gate generally, `scripts/windows/
-  idle_gate.py` gained a small `PER_APP_BUDGET_TICKS` table with one entry
-  (`rmac-clock: 24.0`, sized to one legitimate wake-redraw-settle cycle and
-  documented inline with that run's own wake-source counts); every other
-  app, and Clock itself if it ever ticks every second or fails to
-  re-park, still fails at the standard one-tick budget — see WIN-OS-17.
+- **Clock's idle gate, made robust to its own legitimate redraw.** CI
+  intermittently failed the idle gate on Clock (run 37633070594 at 19.03
+  ticks, run 37657567719 at 28.05 ticks, against a budget of one) even
+  though nothing regressed: the World Clock tab schedules a real redraw
+  for the next minute boundary while its window is active, matching the
+  Mac's minute-precision display, and the 20 s idle window has roughly a
+  one-in-three chance of containing that boundary; both runs showed the
+  same small wake-source shape (frame idle/vsync tick/message 0x0403),
+  just a different tick cost depending on the runner's own load. Rather
+  than loosen the gate generally, `scripts/windows/idle_gate.py` gained a
+  small `PER_APP_BUDGET_TICKS` table with one entry (`rmac-clock: 48.0`,
+  about double the higher sample and documented inline with both runs'
+  numbers) — still roughly two orders of magnitude under the ~1,280 ticks
+  a real regression (a poll, or a failure to re-park) would show across
+  the whole window. Every other app, and Clock itself if it ever ticks
+  every second or fails to re-park, still fails at the standard one-tick
+  budget — see WIN-OS-17.
 
 ## Phase plan
 

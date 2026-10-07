@@ -26,14 +26,18 @@ DEFAULT_EXEMPT = ("rmac-terminal",)
 # Clock's World Clock tab legitimately redraws once a minute (it shows
 # minute precision, matching the Mac), scheduled only while its window is
 # active and only for the next minute boundary — not a poll. The 20 s idle
-# window has about a one-in-three chance of containing that one boundary
-# (run 37633070594 hit it: 19.03 ticks, 6 x frame idle, 5 x vsync tick,
-# 4 x WM_PAINT, 3 x message 0x0403 — one wake, one real draw, then
-# `gpui_windows`' two-frame settle before it re-parks, ADR 0025). That is
-# the budget below, not a loosened general one: a real regression (ticking
-# every second, or not re-parking) would still fail it.
+# window has about a one-in-three chance of containing that one boundary:
+# one wake, one real draw, then `gpui_windows`' two-frame settle before it
+# re-parks (ADR 0025). Two CI runs have now hit it, with the same small
+# wake-source shape (frame idle/vsync tick/message 0x0403, give or take a
+# WM_PAINT) but a tick count that varies with the runner's own load: run
+# 37633070594 cost 19.03 ticks, run 37657567719 cost 28.05 ticks. 48 — about
+# double the higher sample — is the budget below, not a loosened general
+# one: it is still two orders of magnitude under what a real regression
+# would show (a poll or a failure to re-park wakes every frame, which fills
+# the whole 20 s window at roughly 1,280 ticks, not a few dozen).
 PER_APP_BUDGET_TICKS: dict[str, float] = {
-    "rmac-clock": 24.0,
+    "rmac-clock": 48.0,
 }
 
 

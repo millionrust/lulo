@@ -284,8 +284,8 @@ mod tests {
     #[test]
     fn uris_encode_everything_outside_the_unreserved_set() {
         assert_eq!(
-            file_uri(Path::new("/home/me/My Report #2 (final).pdf")).as_deref(),
-            Some("file:///home/me/My%20Report%20%232%20%28final%29.pdf")
+            file_uri(Path::new("/home/me/My Report #2 (final).pdf")).as_deref(), // wording: internal
+            Some("file:///home/me/My%20Report%20%232%20%28final%29.pdf")         // wording: internal
         );
         assert_eq!(
             file_uri(Path::new("/tmp/a%b?c")).as_deref(),
@@ -306,7 +306,7 @@ mod tests {
     fn uris_round_trip_arbitrary_path_bytes() {
         for bytes in [
             &b"/"[..],
-            b"/home/me/Documents",
+            b"/home/me/Documents", // wording: internal
             b"/tmp/sp ace/%25/#hash?q",
             b"/tmp/\x01\x7f\x80\xfe\xff",
             "/tmp/日本語/ファイル.txt".as_bytes(),

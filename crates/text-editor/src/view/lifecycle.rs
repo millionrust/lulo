@@ -60,16 +60,6 @@ impl EditorView {
                 .detach();
         }
         let (document_events, document_event_rx) = async_channel::bounded(4);
-        let document_watcher =
-            notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-                let event = match result {
-                    Ok(event) if matches!(event.kind, notify::EventKind::Access(_)) => return,
-                    Ok(_) => DocumentWatchEvent::Changed,
-                    Err(_) => DocumentWatchEvent::Unavailable,
-                };
-                let _ = document_events.try_send(event);
-            })
-            .ok();
 
         // Dirty tracking + live match refresh + autosave on every edit.
         let sub_main = cx.subscribe_in(
@@ -487,7 +477,8 @@ impl EditorView {
             external_change: None,
             document_watch_warning: false,
             watched_directory: None,
-            document_watcher,
+            document_watcher: None,
+            document_events,
             pending_startup_path: initial_path,
             pending_open_picker: open_picker_on_ready,
             _subscriptions: vec![

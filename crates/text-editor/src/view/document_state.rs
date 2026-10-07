@@ -89,6 +89,9 @@ impl EditorView {
             ) {
                 let _ = watcher.unwatch(&directory);
             }
+            if next_directory.is_some() && self.document_watcher.is_none() {
+                self.document_watcher = super::document_watcher(self.document_events.clone());
+            }
             if let (Some(watcher), Some(directory)) =
                 (self.document_watcher.as_mut(), next_directory.as_ref())
             {

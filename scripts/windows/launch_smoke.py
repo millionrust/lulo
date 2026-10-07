@@ -54,6 +54,14 @@ first. The second app's window must become the foreground window — ADR
 0023's "Foreground" gap, launched this way because `launch()`'s own loop
 kills each app before the next starts, which cannot reproduce two windows
 open at once.
+
+With `--shell`, the Lulo layer (ADR 0023 phase 3: `lulo-session.exe` and
+`lulo-shell.exe` from the same folder) is checked last, by `shell_smoke.py`:
+the bar's and the Dock's AppBar strips, the Dock opening Calculator, the
+bar showing Calculator's own menus, a maximised window between the bar and
+the Dock, Spotlight on Alt+Space, and the desktop given back on exit. Both
+processes get an idle reading in `--results`, so `idle_gate.py` gates them
+like the apps.
 """
 
 from __future__ import annotations
@@ -763,6 +771,11 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--shell",
+        action="store_true",
+        help="Also check the Lulo layer (lulo-session.exe and lulo-shell.exe in bin_dir).",
+    )
+    parser.add_argument(
         "--results",
         type=Path,
         help="Write each app's launch time, idle ticks and wake-ups here as JSON.",
@@ -824,6 +837,27 @@ def main() -> int:
             if error is not None:
                 failures += 1
                 print(f"foreground order: FAIL: {error}")
+    if arguments.shell:
+        import shell_smoke  # this script's own folder is on sys.path
+
+        with tempfile.TemporaryDirectory(prefix="lulo-shell-", ignore_cleanup_errors=True) as directory:
+            shell_failures = shell_smoke.check_shell(
+                arguments.bin_dir,
+                Path(directory),
+                arguments.screenshots,
+                MEASUREMENTS,
+                measure_idle_cpu,
+                process_cpu_time_100ns,
+                summarize_wakes,
+                startup_phases,
+                WAKE_PREFIX,
+                TICK_100NS,
+            )
+        for failure in shell_failures:
+            failures += 1
+            print(f"shell: FAIL: {failure}")
+        if not shell_failures:
+            print("shell: every Lulo layer check passed")
     if arguments.results is not None:
         arguments.results.write_text(json.dumps(MEASUREMENTS, indent=2), encoding="utf-8")
     return 1 if failures else 0

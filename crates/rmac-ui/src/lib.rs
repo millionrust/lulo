@@ -18,6 +18,8 @@ mod instance_windows;
 pub mod mac;
 mod menu_strip;
 mod menu_target;
+#[cfg(windows)]
+mod menubar_link;
 mod platform;
 mod runtime;
 pub mod scroll;

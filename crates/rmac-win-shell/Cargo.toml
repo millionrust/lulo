@@ -1,0 +1,64 @@
+[package]
+name = "rmac-win-shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# The Lulo layer on Windows (ADR 0023 phase 3): the menu bar, Dock and
+# Spotlight on top of the Windows desktop. Elsewhere these binaries only
+# say that they run on Windows; Lulo OS has its own shell under `shell/`.
+[[bin]]
+name = "lulo-shell"
+path = "src/main.rs"
+
+# Turns the Lulo layer on: runs `lulo-shell`, puts the Windows taskbar and
+# work area back whenever it stops, and restarts it after a crash.
+[[bin]]
+name = "lulo-session"
+path = "src/bin/lulo-session.rs"
+
+[dependencies]
+chrono.workspace = true
+rmac-app-menu.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+async-channel.workspace = true
+blocking.workspace = true
+gpui.workspace = true
+image.workspace = true
+raw-window-handle.workspace = true
+rmac-apps.workspace = true
+rmac-ui.workspace = true
+# `#[implement]` (the volume callback) names `windows_core` directly; the
+# version GPUI's Windows backend already builds.
+windows-core = "0.61"
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_NetworkManagement_WiFi",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Power",
+    "Win32_System_Registry",
+    "Win32_System_Shutdown",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_Accessibility",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+] }

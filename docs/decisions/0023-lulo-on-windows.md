@@ -8,8 +8,10 @@
   rendering, and the CI proof for all of it) is on `op/win-phase2c`. A follow-up pass using
   the reference laptop's first numbers (idle CPU and launch time measured in CI, a real
   foreground fix, Clock's alarms scheduled through Task Scheduler, a cross-platform
-  format-bar clipping fix) is on `op/win-polish`. The rest of phases 2–5 needs owner
-  approval and the hardware and signing items under "What the owner must provide".
+  format-bar clipping fix) is on `op/win-polish`. Phase 3's design and first slice (the
+  Lulo layer: menu bar, Dock and Spotlight over the Windows desktop) are on
+  `op/win-shell`. The rest of phases 2–5 needs owner approval and the hardware and
+  signing items under "What the owner must provide".
 - **Scope:** every crate under `crates/` and `shell/`, the workspace `Cargo.toml`,
   `deny.toml`, `.github/workflows/ci.yml`, and a future `packaging/windows/`.
 - **Supersedes:** nothing. Builds on ADR 0006 (shell/app split), ADR 0007 (compositor
@@ -683,6 +685,188 @@ the only verification available.
   every second or fails to re-park, still fails at the standard one-tick
   budget — see WIN-OS-17.
 
+## Phase 3 design: the Lulo layer
+
+Phase 3 puts Lulo's shell on top of the Windows desktop as a layer the user
+switches on: `lulo-session.exe` turns it on, the Lulo menu's Turn Off Lulo (or
+`lulo-session --stop`) turns it off, and the normal Windows desktop comes back
+either way. Explorer stays the Windows shell (decision 1). The decisions:
+
+**One process for the surfaces.** `lulo-shell.exe` (crate `rmac-win-shell`)
+draws the menu bar, the Dock, Spotlight and the menu panels as windows of one
+GPUI process. On Lulo OS each surface is its own process (`shell/bins/*`), but
+there every one is a Wayland layer surface with its own small client; on
+Windows each GPUI process pays for its own Direct3D device, DirectWrite font
+collection and swap chains, so one process keeps start-up and memory small on
+8 GB machines. `lulo-session.exe` is a tiny watchdog without GPUI: it runs the
+shell, waits on its process handle (no CPU), restores the desktop whenever the
+shell stops and restarts it after a crash (at most three times a minute).
+`shell/bins/rmac-menubar`, `rmac-dock` and the Linux Spotlight are built on
+`wlr-layer-shell`, niri, D-Bus and Linux status services all the way through
+(each depends on `rmac-compositor-niri`, `zbus` and the NetworkManager, BlueZ
+and PipeWire crates), so the Windows surfaces reuse the shared pieces under
+them instead: `rmac-ui`'s components (`ContextMenu`, `TextField`,
+`svg_icon`), the `mac` design tokens, the Lulo app icons and the shell's
+glyphs, `rmac-app-menu`'s menu model and the Linux bar's measurements (24 pt
+bar, 48 pt Dock tiles with the Mac's 10/64 shelf padding). The platform seam
+is the crate boundary: `rmac-win-shell` is all `cfg(windows)` behind a model
+module that every platform builds and tests; on Linux and macOS its two
+binaries only say that they are for Windows. Nothing in `shell/` changes.
+
+**Surfaces.**
+
+| Lulo OS | Windows |
+|---|---|
+| Menu bar: a `wlr-layer-shell` surface with an exclusive zone | A `WS_EX_TOOLWINDOW` + `WS_EX_TOPMOST` + `WS_EX_NOACTIVATE` window registered as a top AppBar (`SHAppBarMessage` `ABM_NEW`, `ABM_QUERYPOS`/`ABM_SETPOS` on `ABE_TOP`), so Windows takes its strip out of the work area and maximised windows stop below it. It never takes the keyboard from the app in front. |
+| Dock: a layer surface along the bottom | A bottom AppBar the Dock's height (67 pt); the window is the shelf alone, centred in the strip, so no clear area covers app windows. A floating, auto-hiding Dock comes with Desktop & Dock settings. |
+| Menus: layer pop-ups | A clear, activatable panel covering the screen below the bar: the menu draws at its title, the rest of the panel catches the click that closes it (as on the Mac, the click does not reach the window below), and the panel takes the keyboard (↑/↓, Return, Esc) while it is open. Closing gives the foreground back to the app in front, before a command is sent to it. |
+| Spotlight: ⌘Space through the portal shortcut | `RegisterHotKey(Alt+Space)`. Win+Space is Windows' input-language switch and cannot be registered; Alt+Space only opens a classic window's system menu, which the ⌘-key hook (next slice) will route. The hotkey lands on the hook thread's queue, which also gives Lulo the right to take the foreground. The window is made hidden at start-up, so it shows at once. |
+
+Every Win32 call that sends messages to Lulo's own windows (moving,
+showing, hiding, the foreground) runs from a GPUI task outside any app update,
+as `gpui_windows` does for its own `SetWindowPos`: GPUI's window procedure
+calls back into the app, which must not be borrowed at that moment.
+
+**App menus over a named pipe.** On Lulo OS the bar reads each app's
+`org.rmac.AppMenu2` over D-Bus. On Windows the bar serves
+`\\.\pipe\lulo-menubar-<user>` (no remote clients, default same-user
+security) and sets the manual-reset event `Local\lulo-menubar-<user>` once
+the pipe exists. Every Lulo app (`rmac-ui`'s `menubar_link`) connects at start
+when the bar is there, or waits on the event in a blocked thread and connects
+when it starts. A synchronous handle serialises a blocking read with a write,
+so an app opens two connections: one it writes (a hello, then its menus) and
+one it reads (`activate <action>`, `validate`). The menus are the in-window
+strip's (the bold app menu with About, Hide and Quit, the app's menus,
+Window, Help) in the same pre-order rows as `org.rmac.AppMenu2`, one line per
+message (`rmac_app_menu::pipe`), read back through the same decoder and
+limits. The bar asks for `validate` as a menu opens, as `Layout` does on
+Linux; the open menu updates when the reply arrives. The bar learns which
+process sent the menus from the pipe (`GetNamedPipeClientProcessId`) and
+shows them when that process's window is in front. While connected, the app
+hides its menu strip; when the bar goes, the strip comes back. The first pipe
+instance uses `FILE_FLAG_FIRST_PIPE_INSTANCE`, which also keeps a second Lulo
+layer from starting. For a Windows app, whose menus stay in its own window,
+the bar shows its name (the executable's `FileDescription`) with Hide and
+Quit, and the Window menu (Minimize, Zoom, Close Window); menus read through
+UI Automation are a later slice. The desktop itself shows File Explorer's
+pair, where the Mac shows the Finder's.
+
+**The taskbar.** The Dock takes its place, so while Lulo runs the taskbar is
+set to auto-hide (`ABM_SETSTATE`), which gives its strip back to the work
+area, and hidden (`ShowWindow(SW_HIDE)` on `Shell_TrayWnd` and each
+`Shell_SecondaryTrayWnd`), so it does not slide up over the Dock (this amends decision 1, which hid it
+only on request: an auto-hidden taskbar would pop up over the Dock whenever
+the pointer reached the bottom edge). Before the
+first change the user's own state is recorded under
+`HKCU\Software\Lulo\Shell\TaskbarState`; an existing record is kept, because
+it holds the setting from before an earlier run that could not restore it.
+The record is the only lasting change, and it is undone on every way out:
+`lulo-shell`'s Turn Off and quit path, its `WM_QUERYENDSESSION`/`WM_ENDSESSION`
+hook (sign-out and shutdown), `lulo-session` after the shell exits or crashes
+(it also removes AppBars a dead shell left, by the window handles the shell
+recorded), `lulo-session` again at its next start, and
+`lulo-session --restore-windows-desktop` by hand. `TaskbarCreated` (Explorer
+restarting) hides the new taskbar and registers the AppBars again.
+`LULO_KEEP_TASKBAR=1` leaves the taskbar alone. Start, the Win key and the
+tray keep working.
+
+**Running apps without polling.** The Dock lists the windows Alt+Tab would
+(`EnumWindows`: visible, top-level, not tool windows unless `WS_EX_APPWINDOW`,
+unowned, not DWM-cloaked, titled, not Explorer's desktop or taskbar), grouped
+by executable (Store apps, which all run in `ApplicationFrameHost.exe`, by
+title). It reads the list again only when an out-of-context WinEvent hook
+reports a change: `EVENT_SYSTEM_FOREGROUND`, `EVENT_SYSTEM_MINIMIZESTART`/`END`
+and `EVENT_OBJECT_DESTROY`/`SHOW`/`HIDE` on top-level windows. The hooks and
+the hotkey live on one thread blocked in `GetMessageW`, and repeated events
+before the list is read fold into one. Pinned tiles are File Explorer and
+the Lulo apps; Windows apps' icons come from `IShellItemImageFactory` on a
+background thread. A click activates the app's front window (restoring it if
+minimised) or opens the app: Lulo apps from the folder `lulo-shell.exe` is in,
+anything else through `ShellExecute` on a COM thread.
+
+**Spotlight's catalogue.** Apps are the Lulo apps plus Windows' Apps folder
+(`FOLDERID_AppsFolder`, enumerated with `IEnumShellItems`), which holds the
+Start menu's shortcuts and the Store apps alike and opens each through
+`shell:AppsFolder\<parsing name>`; the Start menu's `.lnk` files are the
+fallback. Files are the names under Desktop, Documents, Downloads, Pictures,
+Music and Videos (five levels, 40,000 entries at most, links not followed).
+Both are read once on a background thread and again on the next Spotlight
+open after `FindFirstChangeNotification` reports a name change in their
+folders; nothing indexes or polls. Ranking is Lulo OS Spotlight's tiers
+(whole name, prefix, word prefix, substring, letters in order), apps first.
+Windows Search (`SystemIndex`) for file contents is a later slice.
+
+**Status items.** Read-only in this slice, each updated only by Windows'
+notifications: Wi-Fi from WlanApi (`WlanRegisterNotification`), sound from
+the default endpoint's `IAudioEndpointVolumeCallback`, battery from
+`PowerSettingRegisterNotification`. A PC without the hardware shows no item.
+The clock wakes once a minute, at the minute.
+
+**Autostart.** Opt-in only: the Lulo menu's Start Lulo at Sign-In writes
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Lulo` = `lulo-session.exe`
+and unticking it deletes the value. The MSIX package's `StartupTask` replaces
+it once the package exists.
+
+**The Lulo menu.** About This PC (Settings ▸ About), System Settings…
+(Windows Settings until Lulo's runs on Windows), Force Quit… (Task Manager),
+Sleep (`SetSuspendState`), Restart… and Shut Down… (`InitiateShutdownW`,
+after a confirmation, as on the Mac), Lock Screen (`LockWorkStation`), Log
+Out <user>… (`ExitWindowsEx`, after a confirmation), Start Lulo at Sign-In and
+Turn Off Lulo.
+
+## Phase 3 slice 1 as built (branch `op/win-shell`)
+
+`rmac-win-shell` builds `lulo-shell.exe` and `lulo-session.exe`; the preview
+zip (`windows-preview.yml`) carries both. What works, as designed above: the
+bar (Lulo menu, the front app's name and menus, Lulo apps' own menus over the
+pipe with live enabled and checked state, Wi-Fi/sound/battery, Spotlight,
+the clock), the Dock (pinned and running apps, running dots, click to open or
+activate), Spotlight (apps and files, ↑/↓, Return, Esc, click outside), the
+taskbar and work area restored on every exit, and opt-in autostart.
+
+CI (`windows` job, `launch_smoke.py --shell` running `shell_smoke.py` after
+the app checks) proves on the runner's desktop, with real input: the bar and
+the Dock reserve the work area and the taskbar is hidden; a click on the
+Dock's Calculator tile opens Calculator and its tile gets the dot; the bar
+shows Calculator's menus and its Calculator ▸ About Calculator opens
+Calculator's About panel; a maximised Notepad stays between the bar and the
+Dock; Alt+Space opens Spotlight, "text editor" finds Text Editor and Return
+opens it; `lulo-session --stop` gives back the work area and the taskbar's
+visibility and state exactly as before. `idle_gate.py` gates `lulo-shell` and
+`lulo-session` like the apps (at most one tick over 20 s idle). Screenshots
+are in the `windows-shell-screens` artifact.
+
+Numbers (CI run 37670849555, debug build, 1024×768 WARP desktop): the first
+shell window 281 ms after `lulo-session` starts, bar and Dock placed 281 ms
+after `lulo-shell` starts; idle over 20 s: `lulo-shell` 0.00 ticks,
+`lulo-session` 0.00 ticks. Getting there took two fixes worth knowing:
+
+- `gpui_windows` (ADR 0025): several inactive windows in one process kept
+  each other awake. Each one-shot throttle retry's message re-checked the
+  other parked windows, whose idle frames then looked "soon after" a frame
+  and armed their own retries: about 40 timers a second, 25 ticks over the
+  idle window. A retry that fired now arms no second one until the window
+  draws (`throttle_retry_spent`).
+- A hidden window gets no `WM_PAINT`, so a frame a hidden panel asked for
+  kept the vsync thread running. Panels (Spotlight, the menu panel) wait
+  cloaked (`DWMWA_CLOAK`) and off screen instead, where they paint and park.
+  Surfaces are also told to redraw only when what they show changed, not on
+  every window event from other apps.
+
+On the runner the Apps folder lists only six apps and no Notepad (Windows
+Server), so Spotlight's Start-menu path is proven there only through the
+Lulo apps and those six; the owner's PC shows the full list.
+
+Not in this slice (the next ones, in order): the low-level keyboard hook (⌘
+as Ctrl for Windows apps, ⌘Tab, ⌘Space, Win key opening Spotlight); Control
+Centre with real Wi-Fi, Bluetooth, sound and brightness controls; the Dock's
+right-click menus, drag to reorder and pin, magnification and minimised-window
+tiles; Windows apps' menus through UI Automation; Windows Search for file
+contents and Spotlight's answers (calculator, conversions); Notification
+Centre on `UserNotificationListener`; several monitors and the menu bar on
+each; Lulo apps staying open without windows now that a bar can reach them
+(WIN-OS-04).
+
 ## Phase plan
 
 The goal is "usable on Windows without Linux". Phases are ordered by how much value they
@@ -694,7 +878,7 @@ Windows test PC from phase 2.
 |---|---|---|---|---|
 | **1. Seam + CI** (this branch) | Nothing to download yet. Calculator, Notes and TextEdit build and launch on Windows in CI. | cfg seam, Windows CI job, cargo-deny target, this ADR | 1–2 | 1 week |
 | **2. The Lulo apps on Windows** (first slice built: shortcuts, menu strip, single instance, choosers, alert sound) | Download one signed installer and get Mac-feel Notes, TextEdit, Calculator, Preview, Clock, Weather, Terminal (ConPTY), Activity Monitor, then Calendar and Mail, in Start, with auto-update. **The first release that is valuable on its own.** | First the phase 1 gaps: `ctrl-` twins for every `cmd-` shortcut, an in-window menu strip, `PlaySound` cues, `ISpellChecker` spelling, Import/Export through GPUI prompts, a named-pipe single instance. Then port the remaining app crates; storage, locking and paths on Windows; open/save panels; printing through the Windows PDF path; toasts for Lulo apps; Credential Manager + loopback OAuth; MSIX packaging, signing and `.appinstaller` in CI; a "Lulo apps" behaviour subset under UI Automation | 15–25 | 4–6 weeks |
-| **3. The shell alongside Explorer** | The menu bar, Dock, Spotlight, ⌘Tab, Control Centre and Notification Centre on top of Windows, with the taskbar auto-hidden; uninstall restores it | `lulo-session` supervisor + watchdog; AppBar host for the bar and Dock; `rmac-compositor-win32` (EnumWindows, WinEvent hooks, activation); low-level keyboard hook for ⌘ shortcuts and ⌘Tab; Spotlight on Windows Search + Start-menu apps; Control Centre on WlanApi, Bluetooth, Core Audio, power and brightness; Notification Centre on `UserNotificationListener`; Now Playing on GSMTC; the menu bar shows Lulo apps' menus over Lulo's IPC (they already export menus through `rmac-app-menu`, whose D-Bus transport (`zbus`) needs a named-pipe backend), and an App/Window menu for other apps built from UI Automation | 30–45 | 8–12 weeks |
+| **3. The shell alongside Explorer** (slice 1 built: menu bar, Dock, Spotlight, taskbar handling, see "Phase 3 design") | The menu bar, Dock, Spotlight, ⌘Tab, Control Centre and Notification Centre on top of Windows, with the taskbar auto-hidden; uninstall restores it | `lulo-session` supervisor + watchdog; AppBar host for the bar and Dock; `rmac-compositor-win32` (EnumWindows, WinEvent hooks, activation); low-level keyboard hook for ⌘ shortcuts and ⌘Tab; Spotlight on Windows Search + Start-menu apps; Control Centre on WlanApi, Bluetooth, Core Audio, power and brightness; Notification Centre on `UserNotificationListener`; Now Playing on GSMTC; the menu bar shows Lulo apps' menus over Lulo's IPC (they already export menus through `rmac-app-menu`, whose D-Bus transport (`zbus`) needs a named-pipe backend), and an App/Window menu for other apps built from UI Automation | 30–45 | 8–12 weeks |
 | **4. Mission Control and the rest** | Mission Control and window previews, Dock minimise into tiles, Quick Look, Files (Finder) on Windows Shell APIs, screenshots, System Settings panes that make sense on Windows | DWM thumbnails, `Windows.Graphics.Capture`, the Finder backend on `IShellItem`, `IThumbnailCache` and NTFS tags; the System Settings pane set mapped to Windows Settings deep links | 25–40 | 6–10 weeks |
 | **5. Optional "Lulo only" mode** | Lulo replaces Explorer as the shell, for kiosks and enthusiasts | `Winlogon\Shell` per user, recovery key, an Explorer fallback watchdog, our own tray host | 10–15 | 3–4 weeks |
 

@@ -258,6 +258,14 @@ pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowReques
     });
     // Without the Lulo menu bar, every window shows these menus itself.
     crate::menu_strip::install(app_id, cx);
+    // On Windows the Lulo layer's menu bar shows them instead whenever it
+    // runs (ADR 0023 phase 3); the strips hide meanwhile.
+    #[cfg(windows)]
+    {
+        if crate::menu_strip::enabled() {
+            crate::menubar_link::install(app_id, cx);
+        }
+    }
     #[cfg(target_os = "linux")]
     {
         let (activation_tx, activation_rx) = rmac_app_menu::activation_channel();

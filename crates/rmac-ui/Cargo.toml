@@ -35,7 +35,8 @@ rmac-compositor-niri.workspace = true
 rmac-dock.workspace = true
 rmac-top-bar.workspace = true
 
-# Windows: the named-pipe single-instance hand-off (`instance_windows`),
+# Windows: the named-pipe single-instance hand-off (`instance_windows`)
+# and the link to the Lulo menu bar (`menubar_link`),
 # with the version and features GPUI's Windows backend already builds.
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
@@ -44,5 +45,6 @@ windows = { workspace = true, features = [
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_Pipes",
+    "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
 ] }

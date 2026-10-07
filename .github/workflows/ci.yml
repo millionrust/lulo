@@ -286,10 +286,16 @@ jobs:
     # Linux-only pieces (the xdg-trash-spec Bin view/restore, Add to Dock,
     # atomic replace/exchange, Unix-identity-dependent rename survival)
     # are honest, test-gated stubs; see docs/parity.md's WIN-OS-18..20.
+    # "Foreground" task). Phase 3's Lulo layer (`rmac-win-shell`:
+    # lulo-session and lulo-shell) is checked last on the same desktop: the
+    # bar's and the Dock's work-area strips, the Dock opening Calculator,
+    # Calculator's menus in the bar, a maximised window between the two,
+    # Spotlight on Alt+Space, and the taskbar and work area restored on exit.
     # Non-blocking until it has run clean for a while (each step below has
     # `continue-on-error`), except the idle gate: since gpui_windows parks
-    # idle windows (ADR 0025) every app but Terminal must stay within one
-    # tick of CPU over the 20 s idle window, and that step fails the job.
+    # idle windows (ADR 0025) every app but Terminal, and both Lulo layer
+    # processes, must stay within one tick of CPU over the 20 s idle window,
+    # and that step fails the job.
     # See docs/ci.md.
     runs-on: windows-latest
     timeout-minutes: 75
@@ -302,6 +308,7 @@ jobs:
         -p rmac-portal -p rmac-print-linux -p rmac-spelling -p rmac-sound
         -p rmac-finder -p rmac-mounts -p rmac-search -p rmac-app-launch
         -p rmac-pasteboard -p rmac-archive -p rmac-quick-look
+        -p rmac-app-menu -p rmac-win-shell
     defaults:
       run:
         shell: bash
@@ -352,7 +359,7 @@ jobs:
         run: |
           cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
             -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal \
-            -p rmac-finder --bins
+            -p rmac-finder -p rmac-win-shell --bins
 
       - name: Launch each app
         if: ${{ !cancelled() }}
@@ -360,12 +367,13 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
-            --foreground-check rmac-calculator --results windows-results.json \
+            --foreground-check rmac-calculator --results windows-results.json --shell \
             target/debug rmac-calculator rmac-notes rmac-text-editor \
             rmac-preview rmac-clock rmac-weather rmac-terminal rmac-files
 
-      # Blocking: no app but Terminal may use more than one 15.6 ms tick of
-      # CPU over 20 s with no input (ADR 0025's parked frame loop).
+      # Blocking: no app but Terminal, and neither Lulo layer process, may
+      # use more than one 15.6 ms tick of CPU over 20 s with no input (ADR
+      # 0025's parked frame loop; ADR 0023 phase 3).
       - name: Idle gate
         if: ${{ !cancelled() }}
         run: python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1 --exempt rmac-terminal
@@ -379,6 +387,16 @@ jobs:
           path: |
             windows-screens
             windows-results.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Lulo layer screenshots
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-shell-screens
+          path: windows-screens/shell-*.png
           if-no-files-found: ignore
           retention-days: 7
 

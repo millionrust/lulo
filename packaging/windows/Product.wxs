@@ -58,8 +58,25 @@
       Execute="immediate"
       Return="ignore" />
 
+    <!-- The Lulo layer (crates/rmac-win-shell, ADR 0023 phase 3) hides the
+         Windows taskbar and claims part of the work area for its own
+         AppBars while it runs. A real uninstall gives both back before
+         lulo-session.exe itself is removed, whether or not the layer
+         happens to be running right now — restore_windows_desktop() is
+         documented safe to call unconditionally and returns at once (no
+         window to wait on). References Apps.wxs's File_lulo_session by
+         its installed path; both files link into one output, so the
+         reference resolves regardless of which .wxs authors which. -->
+    <CustomAction
+      Id="RestoreWindowsDesktop"
+      Directory="INSTALLFOLDER"
+      ExeCommand="&quot;[#File_lulo_session]&quot; --restore-windows-desktop"
+      Execute="immediate"
+      Return="ignore" />
+
     <InstallExecuteSequence>
       <Custom Action="RemoveClockScheduledTasks" After="InstallInitialize" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="RestoreWindowsDesktop" After="InstallInitialize" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 
     <StandardDirectory Id="LocalAppDataFolder">
@@ -79,5 +96,22 @@
          component in one implicit feature, which is all this installer
          needs. -->
     <ComponentGroupRef Id="AppComponents" />
+
+    <!-- The two things the Lulo layer itself writes to the registry
+         (crates/rmac-win-shell/src/win/registry.rs), neither authored by
+         this installer at install time, so a plain <RegistryValue>
+         (removed on uninstall only because the installer itself wrote
+         it) does not apply to either: HKCU\Software\Lulo\Shell (its few
+         per-user settings, e.g. which monitor the Dock sits on) and the
+         "Lulo" value under the user's own Run key (its opt-in sign-in
+         toggle — this installer never sets it; it only clears it if the
+         user, or the Lulo menu's own switch, already did). A dummy
+         KeyPath value gives the component one (required) and is itself
+         removed on uninstall the ordinary way. -->
+    <Component Id="Comp_LuloShellRegistryCleanup" Directory="INSTALLFOLDER" Guid="*">
+      <RegistryValue Root="HKCU" Key="Software\Lulo\Installer" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      <RemoveRegistryKey Root="HKCU" Key="Software\Lulo\Shell" Action="removeOnUninstall" />
+      <RemoveRegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Lulo" />
+    </Component>
   </Package>
 </Wix>

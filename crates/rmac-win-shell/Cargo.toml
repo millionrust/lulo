@@ -62,3 +62,8 @@ windows = { workspace = true, features = [
     "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+# The version info and icon (ADR 0023 "Installer") shared by both this
+# crate's exes, lulo-session and lulo-shell; see build.rs.
+[target.'cfg(windows)'.build-dependencies]
+rmac-windows-resource-build.workspace = true

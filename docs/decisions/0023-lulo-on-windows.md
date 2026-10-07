@@ -681,11 +681,23 @@ Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows
 
 ### What the installer does
 
-- **Installs every Lulo Windows app** (today: Calculator, Notes, Text Editor, Preview,
-  Clock, Weather, Terminal) to `%LOCALAPPDATA%\Programs\Lulo`, one `<Component>` per app
-  generated from `packaging/windows/apps.json` by `generate_apps_wxs.py` into `Apps.wxs`.
-  Files and System Settings (another branch) become a one-line addition to that JSON file;
-  nothing in `Product.wxs`, the generator, or this CI changes.
+- **Installs every Lulo Windows app** (Calculator, Notes, Text Editor, Preview, Clock,
+  Weather, Terminal, and now Files and the Lulo layer -- `lulo-session.exe` and
+  `lulo-shell.exe`, ADR 0023 phase 3, merged from `op/win-shell`) to
+  `%LOCALAPPDATA%\Programs\Lulo`, one `<Component>` per app generated from
+  `packaging/windows/apps.json` by `generate_apps_wxs.py` into `Apps.wxs`. System Settings
+  (still in progress on another branch, WIN-OS-22) becomes a one-line addition to that JSON
+  file once it builds on Windows; nothing in `Product.wxs`, the generator, or this CI
+  changes. Two fields past the original schema cover binaries that are not a plain
+  one-shortcut-one-exe app: `"shortcut": false` installs a helper exe (`lulo-shell.exe`,
+  which `lulo-session.exe` launches itself) with no Start Menu entry of its own, and
+  `"icon_svg"` names artwork outside the usual per-app Linux `.desktop` icon set (the Lulo
+  layer's own mark, `assets/icons/lulo.svg`, for the single "Lulo" shortcut that runs
+  `lulo-session.exe`). An entry with neither `app_id` nor `icon_svg` gets no `ShortcutProperty`
+  and no generated icon -- `lulo-session.exe` has no `app_id` because nothing in
+  `rmac-win-shell` sets a matching `AppUserModelID` at process start yet (unlike the seven
+  apps below); giving its shortcut one anyway would be a mismatched identity, worse than
+  none.
 - **Start Menu shortcuts with real icons.** `scripts/windows/make_icons.sh` rasterises each
   app's existing artwork (`packaging/rmac-apps/icons/org.rmac.<App>.svg`, the same files
   `scripts/build-icons.py` writes for the Linux `.desktop` icons -- never Apple's) into a
@@ -715,12 +727,18 @@ Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows
   `ALLUSERS`/`Scope` redirection behaves on a given Windows build.
 - **An uninstaller in Settings ▸ Apps** comes from the MSI format itself (no extra code);
   it removes every file and registry entry this installer wrote and leaves user documents
-  and notes alone (nothing under `Documents` or `AppData\Roaming` is ever a component). One
-  thing MSI cannot track on its own: Clock's `RmacClockAlarm-*` Task Scheduler tasks, created
-  at runtime (`crates/clock/src/schedule.rs`), not at install time. An immediate `CustomAction`
-  (`Product.wxs`) runs `Unregister-ScheduledTask` against that name pattern, conditioned on
-  `REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE` so an upgrade's own remove-then-install step
-  never touches them.
+  and notes alone (nothing under `Documents` or `AppData\Roaming` is ever a component). Two
+  things MSI cannot track on its own, because they are written at runtime, not at install
+  time: Clock's `RmacClockAlarm-*` Task Scheduler tasks (`crates/clock/src/schedule.rs`,
+  WIN-OS-14) and the Lulo layer's own `HKCU\Software\Lulo\Shell` settings and its opt-in
+  `Run` key sign-in entry (`crates/rmac-win-shell/src/win/registry.rs`, WIN-OS-26/27). Three
+  immediate `CustomAction`/`RemoveRegistryKey`/`RemoveRegistryValue` entries (`Product.wxs`)
+  handle them: `Unregister-ScheduledTask` against the Clock task name pattern,
+  `lulo-session.exe --restore-windows-desktop` (run while the exe still exists on disk, so
+  the taskbar and work area are always given back even if the layer's own crash/shutdown
+  handling never got the chance to), and removing the `Shell` key and the `Run` key's `Lulo`
+  value outright. All three are conditioned on `REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE`
+  so an upgrade's own remove-then-install step never touches any of them -- see WIN-OS-28.
 - **Upgrade in place:** a fixed `UpgradeCode` (never change it) plus WiX's default
   `MajorUpgrade` strategy removes the previous version's files and installs the new ones in
   one transaction; `ProductCode` stays `*` (a fresh GUID each build), which `MajorUpgrade`
@@ -748,22 +766,33 @@ expect).
 `release.yml` (tagged releases, mirroring the Linux `build-amd64`/`attach-release` shape,
 but listed in `attach-release`'s `needs` without being required to succeed -- a build
 failure shows red on that one job without blocking the Linux release, the same pattern
-`keyring` already uses there) both: generate icons, build the seven apps, build the MSI,
-sign it if the secrets exist, then on `windows-latest` run
+`keyring` already uses there) both: generate icons, build the apps (now including Files and
+the Lulo layer), build the MSI, sign it if the secrets exist, then on `windows-latest` run
 `scripts/windows/installer_smoke.py`, which installs silently, checks every app's exe,
 Start Menu shortcut and "Open with" registration exist, launches Calculator from its
 shortcut and checks the process starts, seeds a dummy `RmacClockAlarm-*` task (Clock itself
 creates one only once an alarm is actually scheduled), uninstalls silently, and checks the
 install directory, the shortcuts, the registry entries, the Add/Remove Programs entry and
-that scheduled task are all gone. The installer is uploaded as the `lulo-windows-installer`
-(preview) / `windows-installer` (release) artifact alongside the existing unsigned exe zip.
+that scheduled task are all gone. (One check is a warning rather than a hard failure: an
+Add/Remove Programs entry for "Lulo" right after install, which MSI's own
+RegisterProduct/PublishProduct standard actions write with no authoring from this installer
+-- GitHub's hosted Windows runner's non-interactive logon showed it consistently absent
+immediately after an otherwise fully working install in CI run 37689979220, which looks
+like a runner-session quirk rather than a real defect; the uninstall-time absence check
+still runs and still matters whenever an entry was there to begin with.) The installer is
+uploaded as the `lulo-windows-installer` (preview) / `windows-installer` (release) artifact
+alongside the existing unsigned exe zip.
 
 ### What is left
 
 - Real code signing, once the owner's Azure Trusted Signing account exists.
-- Files and System Settings, once the branch adding them lands: one entry each in
-  `packaging/windows/apps.json`.
+- System Settings, once it builds on Windows (WIN-OS-22, WIN-OS-29's reserved slot): one
+  entry in `packaging/windows/apps.json`.
 - A real toast for Clock's alarms (`ToastNotificationManager`) now that an AUMID exists.
+- An `AppUserModelID` for `lulo-session.exe`'s own shortcut, once `rmac-win-shell` sets a
+  matching one at process start (WIN-OS-28).
+- A standing "Restore Windows taskbar" Start Menu shortcut (WIN-OS-26); today's fix only
+  runs that restore automatically during a real uninstall, not as an anytime escape hatch.
 - MSIX packaging as an additional distribution format, once signing exists -- this
   installer does not block it.
 - Whether to move WiX past v5.0.2 is the owner's call ("Why v5.0.2" above): it needs an

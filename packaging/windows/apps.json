@@ -47,5 +47,26 @@
     "display_name": "Terminal",
     "bin": "rmac-terminal",
     "extensions": []
+  },
+  {
+    "id": "files",
+    "app_id": "org.rmac.Files",
+    "display_name": "Files",
+    "bin": "rmac-files",
+    "extensions": []
+  },
+  {
+    "id": "lulo-session",
+    "display_name": "Lulo",
+    "bin": "lulo-session",
+    "extensions": [],
+    "icon_svg": "assets/icons/lulo.svg"
+  },
+  {
+    "id": "lulo-shell",
+    "display_name": "Lulo Shell",
+    "bin": "lulo-shell",
+    "extensions": [],
+    "shortcut": false
   }
 ]

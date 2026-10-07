@@ -57,14 +57,35 @@ def render_component(app: dict, exe_dir: pathlib.Path) -> str:
     exe_name = f"{app['bin']}.exe"
     source = (exe_dir / exe_name).as_posix()
     fid = file_id(app)
+    wants_shortcut = app.get("shortcut", True)
+    if wants_shortcut:
+        shortcut_open = (
+            f'          <Shortcut Id={attr(shortcut_id(app))} Directory="LuloMenuFolder"'
+            f' Name={attr(app["display_name"])} WorkingDirectory="INSTALLFOLDER" Advertise="no">'
+        )
+        # A helper exe with its own Start Menu entry needs an
+        # AppUserModelID that the running process itself also sets
+        # (rmac_ui::app_menu's `app_user_model_id`); one without an
+        # `app_id` here (the Lulo layer's own binaries, which have no
+        # such runtime counterpart yet) gets a plain shortcut instead of
+        # a mismatched identity nobody sets.
+        shortcut_body = (
+            f'            <ShortcutProperty Key="System.AppUserModel.ID" Value={attr(aumid(app["app_id"]))} />'
+            if app.get("app_id")
+            else None
+        )
+        file_lines = [
+            f'        <File Id={attr(fid)} Source={attr(source)} KeyPath="yes">',
+            shortcut_open,
+            *([shortcut_body] if shortcut_body else []),
+            '          </Shortcut>',
+            '        </File>',
+        ]
+    else:
+        file_lines = [f'        <File Id={attr(fid)} Source={attr(source)} KeyPath="yes" />']
     lines = [
         f'      <Component Id={attr(component_id(app))} Directory="INSTALLFOLDER" Guid="*">',
-        f'        <File Id={attr(fid)} Source={attr(source)} KeyPath="yes">',
-        f'          <Shortcut Id={attr(shortcut_id(app))} Directory="LuloMenuFolder"'
-        f' Name={attr(app["display_name"])} WorkingDirectory="INSTALLFOLDER" Advertise="no">',
-        f'            <ShortcutProperty Key="System.AppUserModel.ID" Value={attr(aumid(app["app_id"]))} />',
-        '          </Shortcut>',
-        '        </File>',
+        *file_lines,
     ]
     extensions = app.get("extensions") or []
     if extensions:

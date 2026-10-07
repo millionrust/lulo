@@ -790,14 +790,15 @@ jobs:
         run: |
           cargo build --locked --release -p rmac-calculator -p rmac-notes \
             -p rmac-text-editor -p rmac-preview -p rmac-clock -p rmac-weather \
-            -p rmac-terminal --bins
+            -p rmac-terminal -p rmac-finder -p rmac-win-shell --bins
 
       - name: Collect the built exes
         run: |
           mkdir -p exes
-          for app in calculator notes text-editor preview clock weather terminal; do
+          for app in calculator notes text-editor preview clock weather terminal files; do
             cp "target/release/rmac-$app.exe" exes/
           done
+          cp target/release/lulo-session.exe target/release/lulo-shell.exe exes/
 
       - name: Install the WiX Toolset CLI
         # Pinned exact version for reproducibility (ADR 0023 "Installer":

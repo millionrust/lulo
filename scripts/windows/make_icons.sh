@@ -16,20 +16,32 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 out_dir=${1:-"$root/packaging/windows/icons"}
 mkdir -p "$out_dir"
 
-python3 - "$root/packaging/windows/apps.json" "$root/packaging/rmac-apps/icons" "$out_dir" <<'PY'
+python3 - "$root" "$root/packaging/windows/apps.json" "$root/packaging/rmac-apps/icons" "$out_dir" <<'PY'
 import json
 import pathlib
 import subprocess
 import sys
 
-apps_path, icons_dir, out_dir = (pathlib.Path(a) for a in sys.argv[1:4])
+root, apps_path, icons_dir, out_dir = (pathlib.Path(a) for a in sys.argv[1:5])
 apps = json.loads(apps_path.read_text())
 # Covers everything from a Start Menu tile down to a small list icon;
 # ImageMagick packs them into one multi-resolution .ico.
 sizes = (16, 24, 32, 48, 64, 128, 256)
 
 for app in apps:
-    svg = icons_dir / f"{app['app_id']}.svg"
+    # Most apps' artwork is their Linux .desktop icon
+    # (packaging/rmac-apps/icons/<app_id>.svg); an entry can instead name
+    # its own source (the Lulo layer's own mark is not a packaged Linux
+    # app icon). An entry with neither (a helper exe with no Start Menu
+    # shortcut of its own, e.g. lulo-shell) gets no icon here -- its exe
+    # still builds, with the platform's default icon.
+    if app.get("icon_svg"):
+        svg = root / app["icon_svg"]
+    elif app.get("app_id"):
+        svg = icons_dir / f"{app['app_id']}.svg"
+    else:
+        print(f"skipping {app['id']!r}: no icon source declared")
+        continue
     if not svg.is_file():
         raise SystemExit(f"missing icon artwork for {app['id']!r}: {svg}")
     pngs = []

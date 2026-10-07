@@ -78,6 +78,12 @@ fn check_debug_layer_available() -> bool {
     {
         use windows::Win32::Graphics::Dxgi::{DXGIGetDebugInterface1, IDXGIInfoQueue};
 
+        // rmac: the debug layer slows device creation and every draw call,
+        // so debug builds start like release ones unless it is asked for
+        // with RMAC_GPUI_D3D_DEBUG=1 (docs/decisions/0025-vendor-gpui-windows.md).
+        if std::env::var("RMAC_GPUI_D3D_DEBUG").as_deref() != Ok("1") {
+            return false;
+        }
         unsafe { DXGIGetDebugInterface1::<IDXGIInfoQueue>(0) }
             .log_err()
             .is_some()

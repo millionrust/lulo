@@ -1,15 +1,28 @@
 #![allow(clippy::disallowed_methods, reason = "build scripts are exempt")]
 
 fn main() {
-    #[cfg(target_os = "windows")]
-    {
-        // Compile HLSL shaders
-        #[cfg(not(debug_assertions))]
-        compile_shaders();
+    // rmac: upstream compiled the shaders with fxc.exe only for release
+    // builds and let debug builds compile them at run time on every launch
+    // (D3DCompileFromFile with optimisations off), which added that compile
+    // to each debug launch. Every build now embeds fxc's output, so debug
+    // and release start the same way; GPUI_WINDOWS_RUNTIME_SHADERS=1 at build
+    // time restores the run-time compile for shader work
+    // (docs/decisions/0025-vendor-gpui-windows.md).
+    println!("cargo::rustc-check-cfg=cfg(gpui_windows_runtime_shaders)");
+    println!("cargo:rerun-if-env-changed=GPUI_WINDOWS_RUNTIME_SHADERS");
+    println!("cargo:rerun-if-changed=src/color_text_raster.hlsl");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
     }
+    if std::env::var("GPUI_WINDOWS_RUNTIME_SHADERS").as_deref() == Ok("1") {
+        println!("cargo:rustc-cfg=gpui_windows_runtime_shaders");
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    compile_shaders();
 }
 
-#[cfg(all(target_os = "windows", not(debug_assertions)))]
+#[cfg(target_os = "windows")]
 mod shader_compilation {
     use std::{
         fs,
@@ -238,5 +251,5 @@ mod shader_compilation {
     }
 }
 
-#[cfg(all(target_os = "windows", not(debug_assertions)))]
+#[cfg(target_os = "windows")]
 use shader_compilation::compile_shaders;

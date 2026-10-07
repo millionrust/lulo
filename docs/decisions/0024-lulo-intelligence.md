@@ -766,7 +766,7 @@ Phase 0 found that a Qwen3.5 context cannot be rewound by trimming the KV cache:
 DeltaNet layers keep a recurrent state per sequence that only moves forward. The service
 therefore saves the *whole* sequence state:
 
-1. at load, the fixed prefix (system prompt, action schema, 14 worked examples) is evaluated
+1. at load, the fixed prefix (system prompt, action schema, 19 worked examples; 693 tokens) is evaluated
    once on sequence 0;
 2. `llama_state_seq_get_data_ext` captures sequence 0 — attention KV and recurrent state
    together — into memory;
@@ -822,7 +822,79 @@ or in the prompt's examples.
 
 ### Phase 1 results
 
-PENDING: laptop measurement.
+Measured on the reference laptop (i5-5300U, 2 cores / 4 threads, 6.7 GiB) on 2026-10-07, with
+the `iterate` build of `op/ai-phase1`, 2 threads (physical cores), the List prompt (version 4)
+and the schema-guided decoder unless stated. Every run held the shared build lock, so no build
+competed for the CPU. Tools: `rmac-intelligence-bench eval|latency|service`; the D-Bus runs
+used a private session bus that activated the real service with the real model.
+
+**Latency, Tiny (Qwen3.5-0.8B)**
+
+| | First token | Request → parsed intent |
+|---|---|---|
+| Warm, "turn on dark mode" (first request after load) | 243 ms | 354 ms |
+| Warm, the four brief requests × 10 (dark mode, 10-minute timer, open Notes, volume 30 %) | p50 259 ms, p90 316 ms | p50 487 ms, p90 658 ms |
+| Warm, through D-Bus as Spotlight calls it (same 40 requests, client clock) | — | p50 486 ms, p90 659 ms |
+| Warm, the 104 evaluation requests | p50 239–259 ms | p50 407–419 ms, p90 ≈ 600 ms |
+| Cold: service activated, prefix state read from disk | — | 1.56 s (model load 0.85 s, prefix restore 27 ms) |
+| Cold, first ever (693-token prefix evaluated, then saved) | — | 16.5 s through the service; 12.6 s in-process |
+
+The ≤ 400 ms target holds for the **first token** on every request (p90 316 ms) and for the
+whole answer to short settings requests ("turn on dark mode": 354 ms). It does **not** hold
+end to end across all requests: the p50 is 0.41–0.49 s and the p90 0.6–0.66 s, because a timer,
+an app name or a number needs two to four more forward passes at 15 tok/s. Phase 0's uncached
+first token was 2.44 s; caching the prefix made it 9.4× faster. Four threads instead of two
+changed nothing measurable (warm p50 474 against 487 ms). The first-ever cold start is slow
+because the prefix is evaluated at 45 tok/s; it happens once per model and prompt version,
+and Settings' speed check after the download pays it, not the first Spotlight request.
+
+**Latency, Standard (Qwen3.5-2B)**: warm first token p50 553 ms, end to end p50 1,026 ms (brief
+requests) and 813–879 ms (evaluation sets); cold with the saved prefix 1.13 s to load; the
+first-ever prefix evaluation 26.9 s. Decode 7.66 tok/s, below Standard's 8 tok/s floor, as the
+gate predicted from the Tiny rate (15.1 × 0.51 = 7.7): the reference laptop is offered Tiny
+only.
+
+**Accuracy with constrained decoding** (no fine-tuning; 0 invalid outputs in every run)
+
+| Model | Decoder | Dev set (66, tuned on) | Held-out (38, frozen) | Held-out wrong actions | End to end p50 |
+|---|---|---|---|---|---|
+| 0.8B | schema-guided | 61/66 (92.4 %) | 33/38 (86.8 %) | 2 | 407–419 ms |
+| 0.8B | llama.cpp GBNF | 61/66 (92.4 %) | 33/38 (86.8 %) | 2 | 964–1,020 ms |
+| 2B | schema-guided | 61/66 (92.4 %) | 34/38 (89.5 %) | 1 | 813–879 ms |
+| 2B | llama.cpp GBNF | 61/66 (92.4 %) | 34/38 (89.5 %) | 1 | 1,608–1,708 ms |
+
+The two decoders choose the same answers; the schema-guided one is 2.3× faster because it
+never decodes forced JSON one token at a time. The prompt was tuned on the dev set only
+(the Chat style scored 52/66 against the List style's 56/66 at version 3; version 4 added five
+examples and two rules). Held-out misses for 0.8B: "make everything light again" →
+brightness 100 and "turn of the wifi" → Wi-Fi on (wrong actions, both Settings changes that
+still ask before running), and three harmless "none" answers ("can you launch preview",
+"drak mod", "do the needful and off the bluetooth"). The ADR §6 gates (≥ 95 % seen, ≤ 0.5 %
+wrong actions) are not met before fine-tuning, which is phase 2's job.
+
+**Memory**: service RSS 0.87 GiB with Tiny loaded (bench peak 0.85–0.89 GiB); 2B peak
+1.89–1.94 GiB. Both inside the unit's caps.
+
+**Idle cost**: through the real service on a private bus, from 5 s to 50 s after the last
+request the service's threads made **0** context switches (no timer, no polling), and it
+exited **60 s** after its last request. A request while turned off is answered "off" and the
+process exits within a second without loading anything; with the feature off Spotlight never
+asks, so nothing starts at all.
+
+**Nested behaviour scenario** (`scripts/behavior/run_spotlight_intents.py`, private headless
+Sway + nested niri, fixture model, packaged shell with this branch's Spotlight and service):
+off — no row, service never started; on — "Turn On Dark Mode, Lulo can do this" shown, first
+Return armed it ("Press Return again to confirm") with the appearance still Light, second
+Return switched it to Dark and closed Spotlight, and the service exited once idle. It passed
+3 of 3 runs after one fix: the first two runs linked Spotlight from the build directory
+instead of placing it beside the service, as installs do, and no row appeared then; the cause
+was not fully pinned down (the service and Spotlight now log why an answer is missing). It
+also runs in Lulo runtime CI as the `spotlight-intents` check.
+
+**Not done in phase 1**: a per-tier memory-cap drop-in; unloading on memory pressure (PSI);
+a metered-connection warning before the download; the `systemd-analyze security` review of
+the unit in a real user manager; streaming replies and the other tasks (Writing Tools, Help
+answers, Terminal explanations); fine-tuning (phase 2, needed for the §6 accuracy gates).
 
 ## 11. Open risks
 

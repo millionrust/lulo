@@ -131,6 +131,20 @@
           "children": []
         },
         {
+          "label": "Rename…",
+          "action": "preview::RenameDocument",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move To…",
+          "action": "preview::MoveToFolder",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Revert To",
           "action": "preview::RevertToMenu",
           "shortcut": "",

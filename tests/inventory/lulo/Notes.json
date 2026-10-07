@@ -1362,6 +1362,10 @@
       },
       {
         "kind": "control",
+        "label": "slider"
+      },
+      {
+        "kind": "control",
         "label": "Notes Settings"
       },
       {

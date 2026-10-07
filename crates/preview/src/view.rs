@@ -13,7 +13,7 @@ use gpui::{
     AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable as _,
     FontWeight, Image, ImageFormat, InteractiveElement as _, IntoElement, KeyDownEvent,
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, PathBuilder,
-    Render, RenderImage, Role, ScrollHandle, ScrollWheelEvent, SharedString,
+    PathPromptOptions, Render, RenderImage, Role, ScrollHandle, ScrollWheelEvent, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
 use rmac_preview::document::{self, ImageKind, Kind};
@@ -35,12 +35,12 @@ use crate::{
     BrowseSavedVersions, CheckDocumentNow, CloseAll, CloseSelected, CloseWindow, ContactSheet,
     ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, EnterFullScreen, ExportAs,
     ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal, FlipVertical, Forward, GoToPage,
-    HideSidebar, InvertSelection, JumpToSelection, ManageSignatures, MoveToTrash, NextDocument,
-    NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
-    RectangularSelection, Redact, RedoMarkup, RevertMarkup, RotateLeft, RotateRight, SaveAs,
-    SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes, ShowImageBackground,
-    ShowInspector, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails,
-    SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
+    HideSidebar, InvertSelection, JumpToSelection, ManageSignatures, MoveToFolder, MoveToTrash,
+    NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
+    RectangularSelection, Redact, RedoMarkup, RenameDocument, RevertMarkup, RotateLeft,
+    RotateRight, SaveAs, SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes,
+    ShowImageBackground, ShowInspector, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents,
+    ShowThumbnails, SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
     TakeScreenshotSelection, TakeScreenshotWindow, ToggleCheckGrammarWithSpelling,
     ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleMarkup,
     ToggleToolbar, TwoPages, UndoMarkup, UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn,
@@ -741,6 +741,15 @@ pub(crate) struct PreviewView {
     /// re-encode is running, so the menu item disables rather than
     /// re-entering.
     export_as_busy: bool,
+    /// File ▸ Rename… (PRV-MENU-002): a small sheet, modelled on Go to
+    /// Page's, holding the current document's file name.
+    rename_open: bool,
+    rename_input: Entity<InputState>,
+    rename_error: Option<SharedString>,
+    rename_busy: bool,
+    /// File ▸ Move To… (PRV-MENU-003): true while the folder-picker move
+    /// is running, so the menu item disables rather than re-entering.
+    move_busy: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1577,6 +1586,169 @@ impl PreviewView {
         .detach();
     }
 
+    // ---- rename / move (PRV-MENU-002/003) --------------------------------
+
+    /// File ▸ Rename… — a small sheet, modelled on Go to Page's, prefilled
+    /// with the current document's file name.
+    fn rename_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.rename_busy || self.move_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        if slot.loaded().is_none() {
+            return;
+        }
+        let name = slot
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.rename_input.update(cx, |input, cx| {
+            input.set_value(name.clone(), window, cx);
+            input.focus(window, cx);
+            input.set_selected_range(0..name.len(), cx);
+        });
+        self.rename_error = None;
+        self.rename_open = true;
+        cx.notify();
+    }
+
+    fn close_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.rename_open = false;
+        self.rename_error = None;
+        window.focus(&self.page_focus, cx);
+        cx.notify();
+    }
+
+    fn commit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.rename_open || self.rename_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        let id = slot.id;
+        let current = slot.path.clone();
+        let name = self.rename_input.read(cx).value().trim().to_string();
+        if !is_valid_document_name(&name) {
+            self.rename_error = Some("Choose a valid document name.".into());
+            cx.notify();
+            return;
+        }
+        let Some(destination) = current.parent().map(|parent| parent.join(&name)) else {
+            return;
+        };
+        if destination == current {
+            self.close_rename(window, cx);
+            return;
+        }
+        self.rename_busy = true;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let renamed = cx
+                .background_executor()
+                .spawn({
+                    let destination = destination.clone();
+                    async move { std::fs::rename(&current, &destination) }
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.rename_busy = false;
+                match renamed {
+                    Ok(()) => {
+                        if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                            slot.path = destination.clone();
+                            slot.name = document::display_name(&destination);
+                        }
+                        record_recent_document(destination, cx);
+                        this.close_rename(window, cx);
+                    }
+                    Err(_) => {
+                        this.rename_error = Some("The document could not be renamed.".into());
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// File ▸ Move To… — the Mac's folder-picker move, backed by the same
+    /// desktop portal `Save As…` uses with `directories: true`.
+    fn move_to_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.rename_busy || self.move_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        if slot.loaded().is_none() {
+            return;
+        }
+        let id = slot.id;
+        let current = slot.path.clone();
+        self.move_busy = true;
+        cx.notify();
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Move".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let picker = receiver.await;
+            let Ok(Ok(Some(mut folders))) = picker else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.move_busy = false;
+                    cx.notify();
+                });
+                return;
+            };
+            let Some(folder) = folders.pop() else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.move_busy = false;
+                    cx.notify();
+                });
+                return;
+            };
+            let Some(name) = current.file_name().map(std::ffi::OsStr::to_owned) else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.move_busy = false;
+                    cx.notify();
+                });
+                return;
+            };
+            let destination = folder.join(&name);
+            if destination == current {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.move_busy = false;
+                    cx.notify();
+                });
+                return;
+            }
+            let moved = cx
+                .background_executor()
+                .spawn({
+                    let destination = destination.clone();
+                    async move { std::fs::rename(&current, &destination) }
+                })
+                .await;
+            let _ = this.update_in(cx, |this, _, cx| {
+                this.move_busy = false;
+                match moved {
+                    Ok(()) => {
+                        if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                            slot.path = destination.clone();
+                            slot.name = document::display_name(&destination);
+                        }
+                        record_recent_document(destination, cx);
+                    }
+                    Err(error) => {
+                        eprintln!("rmac-preview: could not move document: {error}");
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// File ▸ Revert To ▸ Revert to Original / Last Opened (PDF/image).
     /// PDFs keep their existing "back to before any markup this session"
     /// behaviour below; an image dispatches to `revert_image_to_last_opened`.
@@ -1806,6 +1978,21 @@ impl PreviewView {
             })
             .detach();
         }
+        let rename_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Document name")
+                .clean_on_escape()
+        });
+        cx.subscribe_in(
+            &rename_input,
+            window,
+            |this, _, event: &InputEvent, window, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    this.commit_rename(window, cx);
+                }
+            },
+        )
+        .detach();
         let markup_text_input = cx.new(|cx| InputState::new(window, cx).placeholder("Text"));
         cx.subscribe_in(
             &markup_text_input,
@@ -1918,6 +2105,11 @@ impl PreviewView {
             versions_browser_busy: false,
             manage_signatures_open: false,
             export_as_busy: false,
+            rename_open: false,
+            rename_input,
+            rename_error: None,
+            rename_busy: false,
+            move_busy: false,
         };
         for index in 0..view.slots.len() {
             view.start_load(index, cx);
@@ -4329,6 +4521,13 @@ impl PreviewView {
             }
             return;
         }
+        if self.rename_input.focus_handle(cx).is_focused(window) {
+            if event.keystroke.key == "escape" {
+                self.close_rename(window, cx);
+                cx.stop_propagation();
+            }
+            return;
+        }
         let modifiers = event.keystroke.modifiers;
         if modifiers.platform || modifiers.control || modifiers.alt {
             return;
@@ -5911,6 +6110,76 @@ impl PreviewView {
             .into_any_element()
     }
 
+    /// Card for File ▸ Rename… (PRV-MENU-002), modelled on Go to Page's
+    /// card: a single field (prefilled with the current file name),
+    /// `Escape` cancels (`on_key_down`), `Enter` commits (wired when
+    /// `rename_input` is created in `new`), and an error line shows under
+    /// an invalid or failed rename.
+    fn render_rename_sheet(
+        &self,
+        palette: Palette,
+        width: f32,
+        height: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id("preview-rename")
+            .absolute()
+            .left(px((width - 260.0) / 2.0))
+            .top(px(height / 3.0))
+            .w(px(260.0))
+            .rounded(px(10.0))
+            .bg(rgb(palette.card))
+            .border_1()
+            .border_color(rgb(palette.card_separator))
+            .shadow_lg()
+            .p(px(10.0))
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.glyph))
+                    .child("Rename document"),
+            )
+            .child(rmac_ui::TextField::new(&self.rename_input).small())
+            .when_some(self.rename_error.clone(), |card, message| {
+                card.child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(mac::danger())
+                        .child(message),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-rename-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| this.close_rename(window, cx))),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-rename-save",
+                            "Rename",
+                            rmac_ui::DialogButtonKind::Primary,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.commit_rename(window, cx)),
+                        ),
+                    ),
+            )
+            .into_any_element()
+    }
+
     /// Card for Tools ▸ Adjust Size… (PRV-MENU-054): a width/height field
     /// pair, modelled on Go to Page's card. `Escape` cancels
     /// (`on_key_down`); `Enter` in either field submits (wired when the two
@@ -6451,6 +6720,12 @@ fn is_openable_document(path: &Path) -> bool {
     name.to_ascii_lowercase().ends_with(".pdf") || document::has_image_extension(&name)
 }
 
+/// File ▸ Rename…'s (PRV-MENU-002) one validity rule: a non-empty, single
+/// path component. Matches `text_editor`'s own `is_valid_document_name`.
+fn is_valid_document_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(std::path::MAIN_SEPARATOR)
+}
+
 /// The documents Preview (and any other rmac app) has opened lately, newest
 /// first, filtered to what Preview can itself open.
 fn load_recent_documents() -> Vec<PathBuf> {
@@ -6881,6 +7156,16 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_enabled(action, loaded, cx);
             }
             rmac_ui::set_menu_enabled(
+                "preview::RenameDocument",
+                loaded && !self.rename_busy && !self.move_busy,
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
+                "preview::MoveToFolder",
+                loaded && !self.rename_busy && !self.move_busy,
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
                 "preview::DeleteSelection",
                 self.markup_selected
                     .and_then(|index| self.slot()?.markup.items.get(index))
@@ -7131,6 +7416,12 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &Back, _, cx| this.navigate_history(true, cx)))
             .on_action(cx.listener(|this, _: &Forward, _, cx| this.navigate_history(false, cx)))
+            .on_action(cx.listener(|this, _: &RenameDocument, window, cx| {
+                this.rename_document(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &MoveToFolder, window, cx| {
+                this.move_to_folder(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &PrintDocument, window, cx| {
                 this.print_document(window, cx);
             }))
@@ -7352,6 +7643,9 @@ impl Render for PreviewView {
             .when(self.go_to_page_open, |root| {
                 root.child(self.render_go_to_page(palette, width, height))
             })
+            .when(self.rename_open, |root| {
+                root.child(self.render_rename_sheet(palette, width, height, cx))
+            })
             .when(self.adjust_size_open, |root| {
                 root.child(self.render_size_sheet(
                     palette,
@@ -7386,6 +7680,17 @@ impl Render for PreviewView {
 
 #[cfg(test)]
 mod tests {
+    use super::is_valid_document_name;
+
+    #[test]
+    fn rename_rejects_empty_dot_and_separator_names() {
+        assert!(is_valid_document_name("photo.png"));
+        assert!(is_valid_document_name("My Document"));
+        assert!(!is_valid_document_name(""));
+        assert!(!is_valid_document_name("."));
+        assert!(!is_valid_document_name(".."));
+        assert!(!is_valid_document_name("a/b"));
+    }
 
     #[test]
     fn only_a_new_from_clipboard_copy_is_removed_on_close() {

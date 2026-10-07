@@ -2137,6 +2137,8 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Close Selected", "preview::CloseSelected", "⇧⌘W"),
             item!("Save", "preview::SaveMarkup", "⌘S"),
             item!("Save As…", "preview::SaveAs", "⌥⇧⌘S"),
+            item!("Rename…", "preview::RenameDocument", ""),
+            item!("Move To…", "preview::MoveToFolder", ""),
             submenu!(
                 "Revert To",
                 "preview::RevertToMenu",
@@ -2151,11 +2153,11 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
-            // PREV-15: the Mac's File menu also has Duplicate, Rename…,
-            // Move To…, Enter Password…, Edit Permissions…, Import from
-            // Camera/Scanner and Share ▸ — none of those has a working
-            // implementation to wire up yet, so none is listed rather than
-            // adding a dead item. Take Screenshot and Export As… now do.
+            // PREV-15: the Mac's File menu also has Duplicate, Enter
+            // Password…, Edit Permissions…, Import from Camera/Scanner and
+            // Share ▸ — none of those has a working implementation to wire
+            // up yet, so none is listed rather than adding a dead item.
+            // Take Screenshot, Export As…, Rename… and Move To… now do.
             submenu!(
                 "Take Screenshot",
                 "preview::TakeScreenshotMenu",

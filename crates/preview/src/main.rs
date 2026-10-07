@@ -105,6 +105,8 @@ gpui::actions!(
         GoToPage,
         Back,
         Forward,
+        RenameDocument,
+        MoveToFolder,
         PrintDocument,
         ExportAsPdf,
         ExportAs,

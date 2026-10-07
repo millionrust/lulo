@@ -1173,6 +1173,90 @@
       "label": "Window Groups",
       "match": "exact",
       "reason": "Saved/restorable sets of Terminal windows (Window ▸ Save Windows as Group…). Tracked as unimplemented in docs/parity.md TERM-17/TERM-15; this is the Settings window's tab for managing those same saved groups, so it has the same dependency (TRM-SETTINGS-020)."
+    },
+    {
+      "app": "Notes",
+      "label": "Fill",
+      "match": "exact",
+      "reason": "Window ▸ Fill's Mac shortcut is fn⌃F, shown by Accessibility as the plain ⌃F it also is for Centre and Move & Resize (fn does not expose as an AX modifier). PC keyboards have no Globe/fn key, so Lulo's keyd layer substitutes ⌘ for it (ADR 0017, docs/decisions/0017-mac-keyboard.md); bare ⌃-only chords for this family also matter for the arrow keys, where niri already binds ⌃←/→/↑/↓ to Mission Control's Spaces (packaging/rmac-session/shell.kdl), so the whole group keeps the same ⌃⌘ pattern for consistency (WIN-01, docs/parity.md)."
+    },
+    {
+      "app": "Notes",
+      "label": "Centre",
+      "match": "exact",
+      "reason": "Window ▸ Centre's Mac shortcut is fn⌃C, shown by Accessibility as the plain ⌃C fn does not expose as an AX modifier. PC keyboards have no Globe/fn key, so Lulo's keyd layer substitutes ⌘ for it (ADR 0017); see the Fill entry above for the rest of this family's reasoning (WIN-01, docs/parity.md)."
+    },
+    {
+      "app": "Notes",
+      "label": "Left",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Left's Mac shortcut is fn⌃←, shown by Accessibility as plain ⌃←. niri already binds bare ⌃← to Mission Control's \"Previous Space\" (packaging/rmac-session/shell.kdl), and PC keyboards have no Globe/fn key to tell the two apart, so Lulo's keyd layer uses ⌃⌘← instead (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "Notes",
+      "label": "Right",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Right's Mac shortcut is fn⌃→, shown by Accessibility as plain ⌃→. niri already binds bare ⌃→ to Mission Control's \"Next Space\", and PC keyboards have no Globe/fn key to tell the two apart, so Lulo's keyd layer uses ⌃⌘→ instead (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "Notes",
+      "label": "Top",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Top's Mac shortcut is fn⌃↑, shown by Accessibility as plain ⌃↑. niri already binds bare ⌃↑ to Mission Control itself, and PC keyboards have no Globe/fn key to tell the two apart, so Lulo's keyd layer uses ⌃⌘↑ instead (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "Notes",
+      "label": "Bottom",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Bottom's Mac shortcut is fn⌃↓, shown by Accessibility as plain ⌃↓. niri already binds bare ⌃↓ to Mission Control's App Windows, and PC keyboards have no Globe/fn key to tell the two apart, so Lulo's keyd layer uses ⌃⌘↓ instead (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "Notes",
+      "label": "Return to Previous Size",
+      "match": "exact",
+      "reason": "Window ▸ Move & Resize ▸ Return to Previous Size's Mac shortcut is fn⌃R, shown by Accessibility as plain ⌃R (fn does not expose as an AX modifier). PC keyboards have no Globe/fn key, so Lulo's keyd layer uses ⌃⇧⌘R instead, matching the rest of this family (ADR 0017, WIN-01 in docs/parity.md)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Fill",
+      "match": "exact",
+      "reason": "Window ▸ Fill's Mac shortcut is fn⌃F, shown by Accessibility as the plain ⌃F it also is for Centre and Move & Resize (fn does not expose as an AX modifier). PC keyboards have no Globe/fn key, so Lulo's keyd layer substitutes ⌘ for it (ADR 0017, docs/decisions/0017-mac-keyboard.md); bare ⌃-only chords for this family also matter for the arrow keys, where niri already binds ⌃←/→/↑/↓ to Mission Control's Spaces (packaging/rmac-session/shell.kdl), so the whole group keeps the same ⌃⌘ pattern for consistency (WIN-01, docs/parity.md)."
+    },
+    {
+      "app": "Terminal",
+      "label": "Centre",
+      "match": "exact",
+      "reason": "Window ▸ Centre's Mac shortcut is fn⌃C, shown by Accessibility as the plain ⌃C fn does not expose as an AX modifier. PC keyboards have no Globe/fn key, so Lulo's keyd layer substitutes ⌘ for it (ADR 0017); see the Fill entry above for the rest of this family's reasoning (WIN-01, docs/parity.md)."
+    },
+    {
+      "app": "Text Editor",
+      "label": "Fill",
+      "match": "exact",
+      "reason": "Window ▸ Fill's Mac shortcut is fn⌃F, shown by Accessibility as the plain ⌃F it also is for Centre and Move & Resize (fn does not expose as an AX modifier). PC keyboards have no Globe/fn key, so Lulo's keyd layer substitutes ⌘ for it (ADR 0017, docs/decisions/0017-mac-keyboard.md); bare ⌃-only chords for this family also matter for the arrow keys, where niri already binds ⌃←/→/↑/↓ to Mission Control's Spaces (packaging/rmac-session/shell.kdl), so the whole group keeps the same ⌃⌘ pattern for consistency (WIN-01, docs/parity.md)."
+    },
+    {
+      "app": "Text Editor",
+      "label": "Centre",
+      "match": "exact",
+      "reason": "Window ▸ Centre's Mac shortcut is fn⌃C, shown by Accessibility as the plain ⌃C fn does not expose as an AX modifier. PC keyboards have no Globe/fn key, so Lulo's keyd layer substitutes ⌘ for it (ADR 0017); see the Fill entry above for the rest of this family's reasoning (WIN-01, docs/parity.md)."
+    },
+    {
+      "app": "Finder",
+      "label": "Other…",
+      "match": "exact",
+      "reason": "File ▸ Open With ▸ Other…/Always Open With ▸ Other… are real (`OpenWith`/`AlwaysOpenWithOther`, crates/finder/src/view/open_with_controller.rs opens a genuine file-picker-backed handler choice) but render as an in-app popup (`build_open_with_menu`, crates/finder/src/view/chrome_presentation/menus_tabs.rs) because the menu-bar wire protocol has no dynamic-submenu support, so the static inventory scan of the fixed menu-bar tree cannot see this row."
+    },
+    {
+      "app": "Finder",
+      "label": "Clear Menu",
+      "match": "exact",
+      "reason": "Go ▸ Recent Folders ▸ Clear Menu is real (`ClearRecentFolders`, crates/finder/src/view/navigation.rs clears the recent-folders list) but, like Open With's \"Other…\" above, renders inside the dynamic `build_recent_folders_menu` popup (crates/finder/src/view/chrome_presentation/menus_tabs.rs) rather than the static menu-bar tree the inventory scanner reads."
+    },
+    {
+      "app": "Notes",
+      "label": "New notes start with:",
+      "match": "exact",
+      "reason": "Deliberately not offered (NOTES-13, docs/parity.md). Notes keeps the title in its own field rather than the Mac's single first line, so porting this control would have to visibly insert a Markdown heading marker into a brand-new note's body, which two real attempts both showed breaks the empty-body invariant several behaviour scenarios depend on; a stored-but-inert control was tried too and rejected under the project's no-stub rule. See crates/notes/src/settings_window.rs's file header."
     }
   ]
 }

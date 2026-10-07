@@ -191,6 +191,13 @@ class Run:
         outputs = self.niri("outputs") or {}
         self.output = next(iter(outputs), "winit")
 
+        if self.args.appearance:
+            theme = Path(self.env["XDG_CONFIG_HOME"]) / "rmac" / "theme.json"
+            theme.parent.mkdir(parents=True, exist_ok=True)
+            theme.write_text(json.dumps(
+                {"version": 1, "preferences": {"color_scheme": self.args.appearance}}
+            ), encoding="utf-8")
+
         bins = Path(self.args.bin_dir)
         self.dock = self.spawn([str(bins / "dock")], "dock", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.top_bar = self.spawn([str(bins / "top-bar")], "top-bar", {"VK_ICD_FILENAMES": LAVAPIPE})
@@ -961,6 +968,10 @@ def main() -> int:
     parser.add_argument("--niri", default="/usr/bin/niri")
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument(
+        "--appearance", choices=("light", "dark"), default=None,
+        help="force the private session's colour scheme (default: unset)",
+    )
     parser.add_argument(
         "--no-fake-hardware", dest="fake_hardware", action="store_false", default=True,
         help="skip the private NetworkManager/BlueZ/UPower mocks (docs/behavior-suite.md)",

@@ -135,17 +135,100 @@ def process_cpu_time_100ns(pid: int) -> int | None:
         ctypes.windll.kernel32.CloseHandle(handle)
 
 
+TH32CS_SNAPTHREAD = 0x00000004
+THREAD_QUERY_LIMITED_INFORMATION = 0x0800
+
+
+class _THREADENTRY32(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ThreadID", wintypes.DWORD),
+        ("th32OwnerProcessID", wintypes.DWORD),
+        ("tpBasePri", wintypes.LONG),
+        ("tpDeltaPri", wintypes.LONG),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
+def thread_cpu_times_100ns(pid: int) -> dict[int, tuple[str, int]]:
+    """Each thread of `pid`: its description (Rust names its threads with
+    it) and kernel+user CPU time so far, in 100 ns units."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.OpenThread.restype = wintypes.HANDLE
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+    if not snapshot or snapshot == wintypes.HANDLE(-1).value:
+        return {}
+    threads: dict[int, tuple[str, int]] = {}
+    try:
+        entry = _THREADENTRY32()
+        entry.dwSize = ctypes.sizeof(_THREADENTRY32)
+        more = kernel32.Thread32First(snapshot, ctypes.byref(entry))
+        while more:
+            if entry.th32OwnerProcessID == pid:
+                tid = entry.th32ThreadID
+                handle = kernel32.OpenThread(THREAD_QUERY_LIMITED_INFORMATION, False, tid)
+                if handle:
+                    try:
+                        creation, exited, kernel, user = (
+                            _FILETIME(),
+                            _FILETIME(),
+                            _FILETIME(),
+                            _FILETIME(),
+                        )
+                        name = ""
+                        description = ctypes.c_wchar_p()
+                        if kernel32.GetThreadDescription(handle, ctypes.byref(description)) >= 0:
+                            name = description.value or ""
+                            kernel32.LocalFree(description)
+                        if kernel32.GetThreadTimes(
+                            handle,
+                            ctypes.byref(creation),
+                            ctypes.byref(exited),
+                            ctypes.byref(kernel),
+                            ctypes.byref(user),
+                        ):
+                            threads[tid] = (
+                                name,
+                                _filetime_to_100ns(kernel) + _filetime_to_100ns(user),
+                            )
+                    finally:
+                        kernel32.CloseHandle(handle)
+            more = kernel32.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+    return threads
+
+
+def busy_threads(
+    before: dict[int, tuple[str, int]], after: dict[int, tuple[str, int]]
+) -> list[tuple[str, float]]:
+    """The threads that used CPU between two `thread_cpu_times_100ns`
+    snapshots, as ("name (tid)", ticks), busiest first. A thread that
+    started in between counts all its time."""
+    busy = []
+    for tid, (name, time_after) in after.items():
+        time_before = before.get(tid, (name, 0))[1]
+        delta = time_after - time_before
+        if delta > 0:
+            busy.append((f"{name or 'unnamed'} ({tid})", delta / TICK_100NS))
+    return sorted(busy, key=lambda item: -item[1])
+
+
 def measure_idle_cpu(
     pid: int,
     settle: float = IDLE_SETTLE_SECONDS,
     window: float = IDLE_WINDOW_SECONDS,
     log: Path | None = None,
-) -> tuple[float, float, str] | None:
-    """(ticks, percent of one core, trace) for the CPU this process used
-    over `window` seconds of no input, after `settle` seconds of no input,
-    where `trace` is what the app wrote to `log` during the window. `None`
-    when its CPU time could not be read (it may have exited)."""
+) -> tuple[float, float, str, list[tuple[str, float]]] | None:
+    """(ticks, percent of one core, trace, busy threads) for the CPU this
+    process used over `window` seconds of no input, after `settle` seconds
+    of no input, where `trace` is what the app wrote to `log` during the
+    window. `None` when its CPU time could not be read (it may have
+    exited)."""
     time.sleep(settle)
+    threads_before = thread_cpu_times_100ns(pid)
     before = process_cpu_time_100ns(pid)
     if before is None:
         return None
@@ -154,13 +237,14 @@ def measure_idle_cpu(
     after = process_cpu_time_100ns(pid)
     if after is None:
         return None
+    threads = busy_threads(threads_before, thread_cpu_times_100ns(pid))
     trace = ""
     if log is not None and log.exists():
         with log.open("rb") as output:
             output.seek(start)
             trace = output.read().decode("utf-8", errors="replace")
     delta = max(after - before, 0)
-    return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100, trace
+    return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100, trace, threads
 
 
 # Per app: launch time, idle ticks and wake-ups, start-up phases; written
@@ -545,7 +629,7 @@ def launch(
         if idle is None:
             print(f"{app}: idle CPU skipped (could not read its CPU time)")
         else:
-            ticks, percent, trace = idle
+            ticks, percent, trace, threads = idle
             verdict = "OK" if ticks < 1.0 else "ABOVE TARGET"
             print(
                 f"{app}: idle CPU over {IDLE_WINDOW_SECONDS:.0f} s = "
@@ -561,6 +645,12 @@ def launch(
             print(f"{app}: idle wake-ups over {IDLE_WINDOW_SECONDS:.0f} s = {total}")
             for count, source in wakes:
                 print(f"{app}:   {count:5d} x {source}")
+            for thread, thread_ticks in threads[:6]:
+                print(f"{app}:   thread {thread} used {thread_ticks:.2f} ticks")
+            measurement["idle_busy_threads"] = [
+                {"thread": thread, "ticks": round(thread_ticks, 3)}
+                for thread, thread_ticks in threads[:6]
+            ]
 
         if not bring_forward(hwnd):
             return "could not bring the window forward to test its keys"

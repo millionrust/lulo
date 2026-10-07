@@ -248,6 +248,9 @@ pub(super) struct Settings {
     pub(super) lock_request_busy: bool,
     pub(super) lock_request_error: Option<SharedString>,
 
+    // Lulo Intelligence
+    pub(super) intelligence: intelligence::IntelligencePane,
+
     // Desktop & Dock
     pub(super) shell_settings_loading: bool,
     pub(super) shell_settings_busy: bool,

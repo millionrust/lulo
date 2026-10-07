@@ -54,6 +54,8 @@ impl LauncherView {
             Category::Dictionary => ("Aa", mac::system_red()),
             Category::Files => ("▤", mac::system_teal()),
             Category::Other | Category::SearchIn => ("•", mac::system_indigo()),
+            // Lulo Intelligence's own mark: an original four-point star.
+            Category::Intelligence => ("✦", mac::system_purple()),
         };
         div()
             .size(px(size))
@@ -335,6 +337,7 @@ pub(super) fn settings_pane_icon(pane_id: &str) -> Option<(&'static str, Hsla)> 
         "login-items" => ("spotlight/settings/app-window.svg", blue),
         "accessibility" => ("spotlight/settings/accessibility.svg", blue),
         "appearance" => ("spotlight/settings/palette.svg", mac::black),
+        "intelligence" => ("spotlight/settings/sparkles.svg", mac::system_purple),
         "desktop-dock" => ("spotlight/settings/app-window.svg", mac::black),
         "displays" | "touchscreen" => ("spotlight/settings/monitor.svg", blue),
         "menu-bar" => ("spotlight/settings/panel-top.svg", gray),

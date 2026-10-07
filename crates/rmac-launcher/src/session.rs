@@ -2,11 +2,11 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::engine::{normalize, score};
+use crate::engine::{match_quality, normalize, score};
 use crate::{
     Action, ActivationMode, ApplicationGroup, Cancellation, Category, Learning, MoveSelection,
     Privacy, ProviderDescriptor, ProviderError, RankedResult, Request, ResultId, SearchResult,
-    DEFAULT_CATEGORY_LIMIT, DEFAULT_LIMIT,
+    CONFIDENT_MATCH, DEFAULT_CATEGORY_LIMIT, DEFAULT_LIMIT, INTELLIGENCE_PROVIDER,
 };
 
 #[derive(Clone, Debug)]
@@ -183,6 +183,66 @@ impl Session {
 
     pub fn query(&self) -> &str {
         &self.query
+    }
+
+    /// The current query's generation; batches and assists for any other
+    /// generation are ignored.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Whether the plain search already answers the query: an answer card
+    /// (calculation, conversion, time, definition) or a result whose name
+    /// starts with the query or one of its words. Lulo Intelligence is only
+    /// asked when this is false.
+    pub fn has_confident_match(&self) -> bool {
+        let query = normalize(&self.query);
+        !query.is_empty()
+            && self
+                .ranked
+                .iter()
+                .any(|ranked| match ranked.result.category {
+                    Category::SearchIn | Category::Intelligence => false,
+                    Category::Calculator | Category::Clock | Category::Dictionary => true,
+                    _ => match_quality(&query, &normalize(&ranked.result.title))
+                        .is_some_and(|quality| quality >= CONFIDENT_MATCH),
+                })
+    }
+
+    /// Show (or clear) the "Lulo can do this" row for `generation`. Ignored
+    /// when the query has moved on. The row must be an Intelligence result
+    /// from [`INTELLIGENCE_PROVIDER`] with an action that category may carry.
+    pub fn apply_assist(&mut self, generation: u64, result: Option<SearchResult>) -> bool {
+        if generation != self.generation
+            || self
+                .cancellation
+                .as_ref()
+                .is_none_or(Cancellation::is_cancelled)
+        {
+            return false;
+        }
+        let provider = rmac_shell_settings::ProviderId(INTELLIGENCE_PROVIDER.into());
+        match result {
+            Some(result)
+                if result.id.provider == provider
+                    && !result.id.local.trim().is_empty()
+                    && result.category == Category::Intelligence
+                    && action_allowed(
+                        Category::Intelligence,
+                        Privacy::default(),
+                        &result.primary,
+                    )
+                    && result.alternate.is_none() =>
+            {
+                self.batches.insert(provider, vec![result]);
+            }
+            Some(_) => return false,
+            None => {
+                self.batches.remove(&provider);
+            }
+        }
+        self.rebuild();
+        true
     }
 
     pub fn results(&self) -> &[RankedResult] {
@@ -452,9 +512,11 @@ impl Session {
     }
 }
 
-/// Where a category sits in a query's list: answers, results, "Search in".
+/// Where a category sits in a query's list: answers (and the "Lulo can do
+/// this" row, which only appears when nothing else matched well), results,
+/// "Search in".
 fn list_region(category: Category) -> u8 {
-    if category.is_answer() {
+    if category.is_answer() || category == Category::Intelligence {
         0
     } else if category == Category::SearchIn {
         2
@@ -486,7 +548,13 @@ fn action_allowed(category: Category, privacy: Privacy, action: &Action) -> bool
             Category::Calculator | Category::Clock | Category::Dictionary,
             Action::CopyText { .. },
         )
-        | (Category::SearchIn, Action::SearchFiles { .. }) => true,
+        | (Category::SearchIn, Action::SearchFiles { .. })
+        | (
+            Category::Intelligence,
+            Action::PerformIntent { .. }
+            | Action::LaunchApplication { .. }
+            | Action::SearchFiles { .. },
+        ) => true,
         (Category::Files, Action::OpenFile { .. } | Action::RevealFile { .. })
         | (Category::Other, Action::OpenFile { .. } | Action::RevealFile { .. }) => {
             privacy.private_content

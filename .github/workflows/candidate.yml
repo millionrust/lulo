@@ -33,7 +33,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            clang dpkg-dev libfontconfig1-dev libfreetype-dev libpam0g-dev libssl-dev \
+            clang cmake dpkg-dev libclang-dev libfontconfig1-dev libfreetype-dev libpam0g-dev libssl-dev \
             libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev libxkbcommon-x11-dev pkg-config

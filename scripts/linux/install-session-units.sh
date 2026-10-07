@@ -6,6 +6,7 @@ repo_root=$(CDPATH= cd -- "${script_dir}/../.." && pwd)
 source_dir="${repo_root}/crates/rmac-session/units"
 notification_install_dir="${repo_root}/crates/rmac-notifications-linux/install"
 focus_install_dir="${repo_root}/crates/rmac-focus-linux/install"
+intelligence_install_dir="${repo_root}/crates/rmac-intelligence-service/install"
 file_chooser_install_dir="${repo_root}/crates/rmac-file-chooser/install"
 lock_config_source="${repo_root}/crates/rmac-session/swaylock.conf"
 lock_policy_source="${repo_root}/crates/rmac-session/lock-policy.json"
@@ -73,6 +74,17 @@ esac
     -p rmac-keyboard --bin rmac-mac-keyboard \
     -p rmac-setup-assistant --bin rmac-setup-assistant \
     -p rmac-polkit-agent --bin rmac-polkit-agent)
+# Lulo Intelligence (ADR 0024) compiles llama.cpp, which needs CMake and a
+# C++ compiler. Without CMake the rest of the session still installs.
+intelligence_built=no
+if command -v cmake >/dev/null 2>&1 || [ -n "${CMAKE:-}" ]; then
+    (cd "${repo_root}" && cargo build --locked --release --jobs "${cargo_jobs}" \
+        -p rmac-intelligence-service --bin rmac-intelligence-service \
+        -p rmac-intelligence --bin rmac-intelligence-fetch)
+    intelligence_built=yes
+else
+    echo "Note: cmake is not installed, so Lulo Intelligence was not built." >&2
+fi
 
 install -d -m 0755 "${unit_dir}"
 install -d -m 0755 "${libexec_dir}"
@@ -96,6 +108,10 @@ install -m 0755 "${target_dir}/release/rmac-lock-provider" "${libexec_dir}/rmac-
 install -m 0755 "${target_dir}/release/rmac-mac-keyboard" "${libexec_dir}/rmac-mac-keyboard"
 install -m 0755 "${target_dir}/release/rmac-setup-assistant" "${libexec_dir}/rmac-setup-assistant"
 install -m 0755 "${target_dir}/release/rmac-polkit-agent" "${libexec_dir}/rmac-polkit-agent"
+if [ "${intelligence_built}" = yes ]; then
+    install -m 0755 "${target_dir}/release/rmac-intelligence-service" "${libexec_dir}/rmac-intelligence-service"
+    install -m 0755 "${target_dir}/release/rmac-intelligence-fetch" "${libexec_dir}/rmac-intelligence-fetch"
+fi
 install -m 0755 "${script_dir}/start-rmac-session.sh" "${bin_dir}/rmac-session-start"
 install -d -m 0755 "${config_home}/rmac"
 if [ ! -e "${config_home}/rmac/swaylock.conf" ]; then
@@ -156,6 +172,18 @@ install -m 0644 "${focus_activation_tmp}" \
     "${dbus_service_dir}/org.rmac.Focus1.service"
 rm -f "${focus_activation_tmp}"
 trap - EXIT HUP INT TERM
+
+if [ "${intelligence_built}" = yes ]; then
+    intelligence_activation_tmp=$(mktemp "${TMPDIR:-/tmp}/rmac-intelligence-service.XXXXXX")
+    trap 'rm -f "${intelligence_activation_tmp}"' EXIT HUP INT TERM
+    sed "s|@RMAC_INTELLIGENCE_EXEC@|${libexec_dir}/rmac-intelligence-service|g" \
+        "${intelligence_install_dir}/org.rmac.Intelligence1.service.in" \
+        >"${intelligence_activation_tmp}"
+    install -m 0644 "${intelligence_activation_tmp}" \
+        "${dbus_service_dir}/org.rmac.Intelligence1.service"
+    rm -f "${intelligence_activation_tmp}"
+    trap - EXIT HUP INT TERM
+fi
 
 systemctl --user daemon-reload
 niri_config=${NIRI_CONFIG:-"${config_home}/rmac/niri/session.kdl"}

@@ -42,6 +42,7 @@ DBUS_SERVICES = (
     "org.freedesktop.impl.portal.desktop.rmac.service",
     "org.freedesktop.impl.portal.desktop.rmac.filechooser.service",
     "org.rmac.Focus1.service",
+    "org.rmac.Intelligence1.service",
     "org.rmac.NotificationCenter1.service",
 )
 PORTAL_FILES = (

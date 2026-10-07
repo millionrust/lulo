@@ -115,6 +115,10 @@ SESSION_BINARIES = (
     "rmac-notification-center",
     "rmac-focus-service",
     "rmac-clipboard-service",
+    # Lulo Intelligence (ADR 0024): the on-demand model service and its
+    # checksum-verified downloader. The model itself is never packaged.
+    "rmac-intelligence-service",
+    "rmac-intelligence-fetch",
     "rmac-file-chooser",
     "rmac-shortcut-broker",
     "rmac-shortcut-dispatch",

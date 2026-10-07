@@ -1,0 +1,37 @@
+[Unit]
+Description=Lulo Intelligence (on-device model, started on demand)
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-intelligence-service
+
+# ADR 0024. D-Bus activated by the first request to org.rmac.Intelligence1;
+# the session target never starts it, and it exits 60 s after its last
+# request, so with the feature off or unused it costs nothing. A crash is
+# not restarted: the next request activates it again.
+[Service]
+Type=dbus
+BusName=org.rmac.Intelligence1
+ExecStart=%h/.local/libexec/rmac/rmac-intelligence-service
+Restart=no
+# Memory: the largest offered model's budget (Standard, 2 GiB; Tiny uses
+# under 1 GiB). The service also refuses to load unless MemAvailable covers
+# the chosen model's budget plus 768 MiB. Past MemoryMax the kernel stops
+# this service, and with no swap it can never push the desktop into swap.
+MemoryHigh=2G
+MemoryMax=2560M
+MemorySwapMax=0
+# The desktop wins any CPU contention; model reads use idle I/O priority.
+CPUWeight=50
+IOSchedulingClass=idle
+# No network: Unix sockets only (the session bus). These are seccomp
+# filters, which work in user units; PrivateNetwork= is not used because
+# Ubuntu's unprivileged user-namespace policy breaks it there.
+RestrictAddressFamilies=AF_UNIX
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+PrivateTmp=yes
+UMask=0077

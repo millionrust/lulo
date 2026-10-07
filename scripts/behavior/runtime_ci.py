@@ -28,11 +28,13 @@ SHELL_BINARIES = {
 }
 REQUIRED_APPS = {name for choices in run_lulo.APP_BINARIES.values() for name in choices if name.startswith("rmac-")}
 REQUIRED_APPS.discard("rmac-wallpaper")
-REQUIRED = REQUIRED_APPS | {"rmac-file-chooser", "rmac-shortcut-dispatch"}
+REQUIRED = REQUIRED_APPS | {"rmac-file-chooser", "rmac-shortcut-dispatch",
+                            "rmac-intelligence-service"}
 JOURNEYS = {f"{number:02d}-{name}" for number, name in enumerate(
     ("files", "text-editor", "settings", "calculator", "preview", "notes",
      "terminal", "shell", "menu-bar", "spotlight"), 1)}
-CHECKS = {"menu-dismiss", "power-dialogs", "window-move", "idle-cpu", "desktop-paint"} | JOURNEYS
+CHECKS = {"menu-dismiss", "power-dialogs", "window-move", "idle-cpu", "desktop-paint",
+          "spotlight-intents"} | JOURNEYS
 SHARDS = 8
 
 

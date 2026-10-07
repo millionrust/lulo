@@ -518,6 +518,7 @@ impl Settings {
                 "Printers & Scanners" => self.refresh_printers(cx),
                 "VPN" => self.refresh_vpn(cx),
                 "Battery" => self.refresh_power(cx),
+                "Lulo Intelligence" => self.refresh_intelligence(cx),
                 _ => {}
             }
         }

@@ -20,6 +20,7 @@ impl Settings {
                 "Bluetooth" => self.render_bluetooth(cx),
                 "General" => self.render_general(cx),
                 "Appearance" => self.render_appearance(cx),
+                "Lulo Intelligence" => self.render_intelligence(cx),
                 "Notifications" => self.render_notifications(cx),
                 "Focus" => self.render_focus(cx),
                 "Lock Screen" => self.render_lock_screen(cx),

@@ -106,6 +106,12 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
             &["theme", "dark mode", "light mode", "accent", "color"],
         ),
         (
+            "intelligence",
+            "Lulo Intelligence",
+            "On-device help for Spotlight requests",
+            &["ai", "assistant", "siri", "model", "on-device"],
+        ),
+        (
             "desktop-dock",
             "Desktop & Dock",
             "Dock, windows, workspaces and desktop behaviour",

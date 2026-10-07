@@ -304,6 +304,18 @@ pub fn apply(_state: &State, _now: u64, _offset_at: &impl Fn(i64) -> i32) -> io:
 /// Write the units for `state` and (re)arm or disarm the timer.
 #[cfg(target_os = "linux")]
 pub fn apply(state: &State, now: u64, offset_at: &impl Fn(i64) -> i32) -> io::Result<()> {
+    apply_with(state, now, offset_at, &std::env::current_exe()?)
+}
+
+/// [`apply`], for a program other than Clock (Spotlight's "Start a
+/// 10-Minute Timer"): `clock` is the Clock executable the ring unit runs.
+#[cfg(target_os = "linux")]
+pub fn apply_with(
+    state: &State,
+    now: u64,
+    offset_at: &impl Fn(i64) -> i32,
+    clock: &Path,
+) -> io::Result<()> {
     let directory = unit_directory()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no configuration directory"))?;
     let timer_path = directory.join(TIMER_UNIT);
@@ -318,8 +330,7 @@ pub fn apply(state: &State, now: u64, offset_at: &impl Fn(i64) -> i32) -> io::Re
         }
         return Ok(());
     }
-    let executable = std::env::current_exe()?;
-    let service = service_unit(&executable).ok_or_else(|| {
+    let service = service_unit(clock).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             "Clock's path cannot be scheduled",

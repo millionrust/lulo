@@ -801,11 +801,16 @@ jobs:
 
       - name: Install the WiX Toolset CLI
         # Pinned exact version for reproducibility (ADR 0023 "Installer":
-        # WiX, not Inno Setup or MSIX -- see that section for why). No `wix
-        # extension add` is needed: Product.wxs and
-        # generate_apps_wxs.py's output use only core WiX elements.
+        # WiX, not Inno Setup or MSIX -- see that section for why). 5.0.2,
+        # not a newer release: WiX 6 added an "Open Source Maintenance Fee"
+        # EULA gate on its own pre-built binaries (still MS-RL source, but
+        # a separate runtime EULA -acceptEula flag this build does not
+        # accept on the owner's behalf); 5.0.2 is the newest release from
+        # before that gate existed. No `wix extension add` is needed:
+        # Product.wxs and generate_apps_wxs.py's output use only core WiX
+        # elements.
         run: |
-          dotnet tool install --global wix --version 7.0.0
+          dotnet tool install --global wix --version 5.0.2
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Build the installer

@@ -624,16 +624,38 @@ Files and System Settings, which another branch is adding, are a one-line additi
   Setup's own compiled Pascal runtime (the wizard UI and installation engine) in every copy
   Lulo ships -- legally fine under its license, but a second kind of third-party code
   shipped in the product for no benefit WiX's approach does not need.
-- **WiX Toolset (chosen, pinned to v7.0.0, the current release line; `Package/@Scope`,
-  `StandardDirectory`, the core `ShortcutProperty` element and the implicit feature this
-  installer relies on were all introduced in v4/v5 and are unchanged through v7):** produces
-  a plain MSI, a standard Windows Installer database with no code of WiX's own baked into
-  it -- `msiexec.exe`, part of Windows, reads the tables WiX compiled and does the actual
-  install. `Package Scope="perUser"` is exactly the no-admin install this needs, declarative
-  XML plus a CLI (`wix build Product.wxs Apps.wxs ...`) is easy to generate from
-  `apps.json` and run from CI non-interactively, `MajorUpgrade` with a fixed `UpgradeCode`
-  gives upgrade-in-place for free, and MSI's own Add/Remove Programs integration needs no
-  extra code to appear in Settings ▸ Apps.
+- **WiX Toolset (chosen, pinned to v5.0.2; `Package/@Scope`, `StandardDirectory`, the core
+  `ShortcutProperty` element, the implicit feature and `MajorUpgrade`'s default strategy
+  this installer relies on were all introduced in v4/v5 and confirmed unchanged in v5.0.2,
+  v6 and v7's own compiler source):** produces a plain MSI, a standard Windows Installer
+  database with no code of WiX's own baked into it -- `msiexec.exe`, part of Windows, reads
+  the tables WiX compiled and does the actual install. `Package Scope="perUser"` is exactly
+  the no-admin install this needs, declarative XML plus a CLI
+  (`wix build Product.wxs Apps.wxs ...`) is easy to generate from `apps.json` and run from
+  CI non-interactively, `MajorUpgrade` with a fixed `UpgradeCode` gives upgrade-in-place for
+  free, and MSI's own Add/Remove Programs integration needs no extra code to appear in
+  Settings ▸ Apps.
+
+**Why v5.0.2, not the current v7 release:** found only by actually running `wix build` in
+CI, not by reading license text ahead of time -- WiX 6.0.0 (April 2025) added an "Open
+Source Maintenance Fee" (OSMF) gate on its own pre-built binaries: `wix.exe` refuses to run
+at all ("WIX7015") until a `-acceptEula wix7` flag (or a `.wixproj`
+`<AcceptEula>` property) is passed. The source stays MS-RL (OSI-approved, confirmed from
+`OSMFEULA.txt` in the WiX repository: "the Fee is not a license fee... the Software's
+source code is licensed to User under the OSI License"), and self-compiling WiX from that
+source is explicitly carved out of the Agreement entirely ("User may independently compile
+binaries from the Software's source code without this Agreement"); only FireGiant's own
+pre-built binary release is gated, and only a *User* "as part of revenue-generating
+activities" with annual gross revenue at or above US$10,000 owes an actual Fee -- smaller
+users and non-commercial use are exempt, and accepting the EULA (which the flag alone does)
+does not by itself create a payment obligation either way. Still, deciding whether Lulo
+qualifies for an exemption is the owner's call, not this pass's to make by passing a flag on
+their behalf. **v5.0.2** (October 2024) is the newest release that predates OSMF entirely --
+confirmed by diffing its GitHub Release notes against 6.0.0's and reading its own
+`Compiler_Package.cs` for every element this installer uses (above) -- so it needs no EULA
+decision at all. If the owner later wants the newest WiX (performance fixes, bug fixes),
+that is a one-line version bump plus an explicit `-acceptEula` choice once gross revenue is
+known, not a blocker today.
 
 **cargo-deny and the repository's licence policy:** neither tool is ever a Cargo
 dependency -- both are external build tools invoked from CI (`wix build` / `ISCC.exe`), so
@@ -643,16 +665,17 @@ packages in `scripts/linux/`, or GCC to compile C code -- a build tool's licence
 attach to its output unless the tool's own source or binary ships inside that output.
 That *is* worth checking for an installer, since unlike a compiler, both WiX and Inno Setup
 *can* end up redistributed: WiX's MSI format contains none of WiX's own code (just standard
-Windows Installer tables and Lulo's own exes), so its MS-RL licence (still current as of
-WiX 7.0.0 -- confirmed from `LICENSE.TXT` in the WiX repository, not assumed) never attaches
-to anything Lulo ships. Inno Setup's compiled installer stub, by contrast, is Inno Setup's
-own code, embedded by design -- permitted under its licence, but the comparison above is
-why WiX was still preferred. The one new build-time Cargo dependency this pass adds,
-`winres` (MIT, confirmed from its published crate metadata, so already on `deny.toml`'s
-allow list with no new exception needed), is gated
-`[target.'cfg(windows)'.build-dependencies]` in each app crate (`crates/
-rmac-windows-resource-build`), so it is never resolved, let alone compiled, for the Linux or
-macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows`.
+Windows Installer tables and Lulo's own exes), so its MS-RL licence (confirmed from
+`LICENSE.TXT` in the WiX repository, not assumed) never attaches to anything Lulo ships,
+and the OSMF Agreement above says the same of its own Fee ("does not limit User's ability
+to access, modify, or distribute the Software's source code or self-compiled binaries").
+Inno Setup's compiled installer stub, by contrast, is Inno Setup's own code, embedded by
+design -- permitted under its licence, but the comparison above is why WiX was still
+preferred. The one new build-time Cargo dependency this pass adds, `winres` (MIT, confirmed
+from its published crate metadata, so already on `deny.toml`'s allow list with no new
+exception needed), is gated `[target.'cfg(windows)'.build-dependencies]` in each app crate
+(`crates/rmac-windows-resource-build`), so it is never resolved, let alone compiled, for the
+Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows`.
 
 ### What the installer does
 
@@ -741,6 +764,9 @@ that scheduled task are all gone. The installer is uploaded as the `lulo-windows
 - A real toast for Clock's alarms (`ToastNotificationManager`) now that an AUMID exists.
 - MSIX packaging as an additional distribution format, once signing exists -- this
   installer does not block it.
+- Whether to move WiX past v5.0.2 is the owner's call ("Why v5.0.2" above): it needs an
+  `-acceptEula wix7`-style decision, which depends on Lulo's gross revenue, not on anything
+  this branch can determine.
 
 ## Phase plan
 

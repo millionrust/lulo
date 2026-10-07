@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import json
 import os
 import subprocess
 import sys
@@ -161,6 +162,10 @@ def measure_idle_cpu(
     delta = max(after - before, 0)
     return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100, trace
 
+
+# Per app: launch time, idle ticks and wake-ups, start-up phases; written
+# with --results for `idle_gate.py` and the job summary.
+MEASUREMENTS: dict[str, dict] = {}
 
 WAKE_PREFIX = "gpui_windows wake: "
 STARTUP_PREFIX = "gpui_windows startup: "
@@ -531,8 +536,11 @@ def launch(
         # ADR 0023 task 1 (idle CPU): before any input reaches this
         # window, not after — `check_menu_strip`/`check_menu_command`/
         # `check_new_shortcut` below all inject keys and mouse clicks.
-        for phase in startup_phases(log.read_text(encoding="utf-8", errors="replace")):
+        phases = startup_phases(log.read_text(encoding="utf-8", errors="replace"))
+        for phase in phases:
             print(f"{app}: startup {phase}")
+        measurement: dict = {"launch_ms": round(launch_ms), "startup": phases}
+        MEASUREMENTS[app] = measurement
         idle = measure_idle_cpu(process.pid, log=log)
         if idle is None:
             print(f"{app}: idle CPU skipped (could not read its CPU time)")
@@ -545,6 +553,11 @@ def launch(
             )
             wakes = summarize_wakes(trace)
             total = sum(1 for line in trace.splitlines() if line.startswith(WAKE_PREFIX))
+            measurement["idle_ticks"] = round(ticks, 3)
+            measurement["idle_wakes"] = total
+            measurement["idle_wake_sources"] = [
+                {"count": count, "source": source} for count, source in wakes
+            ]
             print(f"{app}: idle wake-ups over {IDLE_WINDOW_SECONDS:.0f} s = {total}")
             for count, source in wakes:
                 print(f"{app}:   {count:5d} x {source}")
@@ -659,6 +672,11 @@ def main() -> int:
             "second app's window becomes the foreground window."
         ),
     )
+    parser.add_argument(
+        "--results",
+        type=Path,
+        help="Write each app's launch time, idle ticks and wake-ups here as JSON.",
+    )
     arguments = parser.parse_args()
     if sys.platform != "win32":
         print("launch_smoke.py runs only on Windows", file=sys.stderr)
@@ -716,6 +734,8 @@ def main() -> int:
             if error is not None:
                 failures += 1
                 print(f"foreground order: FAIL: {error}")
+    if arguments.results is not None:
+        arguments.results.write_text(json.dumps(MEASUREMENTS, indent=2), encoding="utf-8")
     return 1 if failures else 0
 
 

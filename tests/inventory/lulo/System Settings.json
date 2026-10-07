@@ -671,6 +671,10 @@
       "label": "Appearance"
     },
     {
+      "id": "intelligence",
+      "label": "Lulo Intelligence"
+    },
+    {
       "id": "desktop-dock",
       "label": "Desktop & Dock"
     },

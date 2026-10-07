@@ -135,6 +135,7 @@ mod tests {
     // than something this pinned-stable-toolchain identity can fix.
     #[test]
     #[cfg(unix)]
+    #[allow(clippy::clone_on_copy)] // `Identity` is `Copy` here but not on Windows.
     fn rename_resolution_requires_the_exact_directory_identity() {
         let root = temporary_directory("rename");
         let old = root.join("old");

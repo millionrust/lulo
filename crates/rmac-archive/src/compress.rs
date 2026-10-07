@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use zip::write::SimpleFileOptions;
 
 use crate::staging::{place, Meter, Scratch};
-use crate::{display_name, Error, Progress};
+use crate::{compressed_name, display_name, Error, Progress};
 
 const CHUNK: usize = 256 * 1024;
 /// Entries at or above this size need zip64 headers.

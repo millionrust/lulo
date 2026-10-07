@@ -20,6 +20,10 @@ impl FinderView {
 
     /// Refresh after a watcher event without spawning `df`; free space changes
     /// slowly and is refreshed on navigation and explicit file operations.
+    // `directory_state::Identity` is `Copy` on Unix (a bare device/inode
+    // pair) and a real `PathBuf` clone on Windows; the `.clone()`s below are
+    // only a free copy there, but one spelling covers both platforms.
+    #[allow(clippy::clone_on_copy)]
     pub(super) fn reload_after_event(&mut self, hints: FilesystemHints, cx: &mut Context<Self>) {
         if self.trash_view {
             return;
@@ -103,6 +107,8 @@ impl FinderView {
         }
     }
 
+    // See `reload_after_event`'s note: `Identity` is `Copy` on Unix only.
+    #[allow(clippy::clone_on_copy)]
     fn reload_inner(&mut self, cx: &mut Context<Self>, refresh_free_space: bool) {
         self.cancel_search();
         self.result_title = None;

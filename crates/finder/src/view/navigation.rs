@@ -79,6 +79,9 @@ impl FinderView {
     }
 
     /// Persist the active tab's live navigation state into the tab list.
+    // `directory_state::Identity` is `Copy` on Unix, a `PathBuf` clone on
+    // Windows; one spelling covers both platforms.
+    #[allow(clippy::clone_on_copy)]
     fn save_tab(&mut self) {
         if let Some(tab) = self.tabs.get_mut(self.active) {
             tab.cwd = self.cwd.clone();
@@ -89,6 +92,7 @@ impl FinderView {
     }
 
     /// Load tab `index`'s state into the live fields.
+    #[allow(clippy::clone_on_copy)]
     fn load_tab(&mut self, index: usize) {
         if let Some(tab) = self.tabs.get(index) {
             self.cwd = tab.cwd.clone();

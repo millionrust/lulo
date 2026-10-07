@@ -1202,11 +1202,21 @@ mod linux_wayland {
                 self.submenu_rows.clear();
                 self.reset_menu_scroll();
                 self.hover_generation = self.hover_generation.saturating_add(1);
-                self.menu_window = None;
                 self.help_query.clear();
                 window.refresh();
                 cx.notify();
             }
+            // `menu_window` is the same "window to give the keyboard back
+            // to" record as `focus_return`, just settled lazily (see
+            // `load_menu_windows`) instead of always known at open; closing
+            // a status menu (Wi-Fi, Bluetooth, Sound) left it holding
+            // whatever an earlier *app* menu session had set, since only the
+            // `open_menu` branch above ever cleared it. The next status menu
+            // to open over a different window then fell back to that stale
+            // id in `close_menu_returning_focus` instead of noticing nothing
+            // current applies, because `remembered` is checked before the
+            // live compositor snapshot. Clear both together on every close.
+            self.menu_window = None;
             self.focus_return = None;
             if self.fullscreen && !self.pointer_inside {
                 self.schedule_fullscreen_hide(cx);
@@ -1239,39 +1249,82 @@ mod linux_wayland {
             }
             let remembered = self.focus_return.or(self.menu_window);
             self.close_menu(window, cx);
-            cx.spawn(async move |_, _| {
-                let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
-                    return;
-                };
-                // The window remembered at open, or else the one niri's
-                // layout still has active under the bar's layer focus (the
-                // status projection can lag a just-finished focus change).
-                let Some(target) = remembered.or_else(|| {
-                    snapshot
+            cx.spawn(async move |_, cx| {
+                // niri can still be mid-transition right after Escape: our
+                // own keyboard-leave from the bar's on-demand layer focus is
+                // a round trip over the Wayland connection (this app tells
+                // the compositor it no longer wants the keyboard), and
+                // niri's own bookkeeping for releasing that on-demand grab
+                // runs on its event loop asynchronously with respect to this
+                // task. An `Action::FocusWindow` sent before niri has
+                // actually released the grab is a no-op from niri's point of
+                // view: the layer surface still holds it. Keep re-settling
+                // against fresh snapshots until one confirms the target
+                // genuinely holds focus, rather than trusting one attempt;
+                // bounded to a few seconds, well inside how long a human (or
+                // this behaviour suite) waits for Escape to give a window
+                // back its keyboard.
+                for attempt in 0..30 {
+                    let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+                        return;
+                    };
+                    // The window niri's layout still has active under the
+                    // bar's on-demand layer focus, queried fresh right now,
+                    // or else the one remembered at open. This app's own
+                    // `status` projection (what `remembered` is built from)
+                    // only catches up with a compositor focus change once
+                    // its event-stream subscription delivers and applies
+                    // that event; a focus change landing just before the
+                    // menu opened can still be in flight when it does,
+                    // pointing `remembered` at the window that was active
+                    // before that change instead of the one the user
+                    // actually meant to return to. niri's own live snapshot
+                    // carries no such lag, so it is the authoritative answer
+                    // here and `remembered` only covers the case where no
+                    // workspace is reported focused at all.
+                    let live = snapshot
                         .workspaces
                         .iter()
                         .find(|workspace| workspace.focused)
-                        .and_then(|workspace| workspace.active_window)
-                }) else {
-                    return;
-                };
-                // A click gave the bar niri's on-demand layer focus, which
-                // `FocusWindow` alone leaves in place. Focusing the window's
-                // own (already active) workspace releases it without moving
-                // anything; then the window takes the keyboard back.
-                let workspace = snapshot
-                    .windows
-                    .iter()
-                    .find(|candidate| candidate.id == target)
-                    .and_then(|candidate| candidate.workspace);
-                let actions = workspace
-                    .map(|workspace| rmac_compositor::Action::FocusWorkspace { workspace })
-                    .into_iter()
-                    .chain([rmac_compositor::Action::FocusWindow { window: target }]);
-                for action in actions {
-                    if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
-                        eprintln!("could not return focus from the menu bar: {error:?}");
+                        .and_then(|workspace| workspace.active_window);
+                    let Some(target) = live.or(remembered) else {
                         return;
+                    };
+                    // A click gave the bar niri's on-demand layer focus,
+                    // which `FocusWindow` alone leaves in place. Focusing
+                    // the window's own (already active) workspace releases
+                    // it without moving anything; then the window takes the
+                    // keyboard back.
+                    let workspace = snapshot
+                        .windows
+                        .iter()
+                        .find(|candidate| candidate.id == target)
+                        .and_then(|candidate| candidate.workspace);
+                    let actions = workspace
+                        .map(|workspace| rmac_compositor::Action::FocusWorkspace { workspace })
+                        .into_iter()
+                        .chain([rmac_compositor::Action::FocusWindow { window: target }]);
+                    for action in actions {
+                        if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                            eprintln!("could not return focus from the menu bar: {error:?}");
+                            return;
+                        }
+                    }
+                    let Ok(check) = rmac_compositor_niri::snapshot().await else {
+                        return;
+                    };
+                    let settled = check
+                        .workspaces
+                        .iter()
+                        .find(|workspace| workspace.focused)
+                        .and_then(|workspace| workspace.active_window);
+                    if settled == Some(target) {
+                        return;
+                    }
+                    if attempt < 29 {
+                        cx.background_executor()
+                            .timer(Duration::from_millis(100))
+                            .await;
                     }
                 }
             })

@@ -123,6 +123,7 @@ def check_panel_shadow(
     *,
     band: int = 80,
     step: int = 1,
+    skip: int = 4,
     max_step: float = 18.0,
     background_tolerance: float = 8.0,
 ) -> tuple[FadeReport, FadeReport]:
@@ -132,19 +133,34 @@ def check_panel_shadow(
 
     `max_step` is calibrated per device pixel: sampling at a coarser `step`
     scales it up to match, so a slow, genuinely smooth falloff sampled every
-    few pixels is not mistaken for a hard edge."""
+    few pixels is not mistaken for a hard edge.
+
+    The first `skip` device pixels right against the panel's own edge are
+    sampled (so they still count toward reaching the far-field background)
+    but excluded from the hard-edge check: a panel's opaque content gives
+    way to its shadow over just a pixel or two there by construction (the
+    blur's value near a solid edge is close to its darkest, near-constant
+    before it starts falling away), not because anything clipped it. The
+    class of bug this guards against -- a surface with no margin for the
+    blur -- shows up further out, as a band that stays flat instead of
+    continuing to fade, or a late, sudden cutoff; this skip exists so that
+    legitimate edge is not mistaken for it."""
 
     x, y, w, h = box
     width, height = image.size
     pixels = image.load()
     count = max(band // step, 2)
     scaled_max_step = max_step * step
+    # `skip` is a device-pixel count, like `band`; convert to the matching
+    # number of samples at this `step` so it means the same physical margin
+    # regardless of sampling density.
+    skip_samples = -(-skip // step)  # ceiling division
 
     cx = min(max(x + w // 2, 0), width - 1)
     below_background_y = min(y + h + band + 40, height - 1)
     below = sample_column(image, cx, y + h, count, step)
     below_report = check_fade(
-        below,
+        below[skip_samples:],
         luminance(pixels[cx, below_background_y]),
         max_step=scaled_max_step,
         background_tolerance=background_tolerance,
@@ -155,7 +171,7 @@ def check_panel_shadow(
     right_background_x = min(x + w + band + 40, width - 1)
     right = sample_row(image, cy, x + w, count, step)
     right_report = check_fade(
-        right,
+        right[skip_samples:],
         luminance(pixels[right_background_x, cy]),
         max_step=scaled_max_step,
         background_tolerance=background_tolerance,

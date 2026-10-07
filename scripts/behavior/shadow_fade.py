@@ -122,18 +122,23 @@ def check_panel_shadow(
     box: tuple[int, int, int, int],
     *,
     band: int = 80,
-    step: int = 2,
+    step: int = 1,
     max_step: float = 18.0,
     background_tolerance: float = 8.0,
 ) -> tuple[FadeReport, FadeReport]:
     """Checks the shadow below and to the right of `box` (a panel's
     `(x, y, w, h)` in the image's own device pixels, e.g. from an AT-SPI
-    `getExtents` call). Returns `(below, right)` reports."""
+    `getExtents` call). Returns `(below, right)` reports.
+
+    `max_step` is calibrated per device pixel: sampling at a coarser `step`
+    scales it up to match, so a slow, genuinely smooth falloff sampled every
+    few pixels is not mistaken for a hard edge."""
 
     x, y, w, h = box
     width, height = image.size
     pixels = image.load()
     count = max(band // step, 2)
+    scaled_max_step = max_step * step
 
     cx = min(max(x + w // 2, 0), width - 1)
     below_background_y = min(y + h + band + 40, height - 1)
@@ -141,7 +146,7 @@ def check_panel_shadow(
     below_report = check_fade(
         below,
         luminance(pixels[cx, below_background_y]),
-        max_step=max_step,
+        max_step=scaled_max_step,
         background_tolerance=background_tolerance,
         label="below the panel",
     )
@@ -152,7 +157,7 @@ def check_panel_shadow(
     right_report = check_fade(
         right,
         luminance(pixels[right_background_x, cy]),
-        max_step=max_step,
+        max_step=scaled_max_step,
         background_tolerance=background_tolerance,
         label="right of the panel",
     )

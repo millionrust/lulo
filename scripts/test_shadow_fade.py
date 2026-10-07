@@ -85,13 +85,18 @@ def _clipped_capture() -> Image.Image:
 
 
 def _stuck_capture() -> Image.Image:
-    """A panel whose shadow decays smoothly -- no single hard step -- but
-    is still clearly darker than the background at the end of the sampled
-    band, because the surface reserved too little margin for the blur to
-    finish falling off inside it."""
+    """A panel whose shadow sits at a constant mid-tone -- no hard step
+    anywhere in the sampled band, so the first check alone would not catch
+    it -- because the surface clipped it there instead of letting it fall
+    off: an opaque slab rather than a fading blur (docs/parity.md
+    SESSION-07's "black shadow/slab" report). The true background only
+    resumes well past the sampled band, like the real wallpaper resuming
+    past a backdrop window's edge, so a background sample taken further out
+    still reads the real background rather than the stuck shade."""
 
     x, y, w, h = BOX
-    floor = PANEL + 60  # never reaches BACKGROUND within any plausible band
+    floor = PANEL + 70
+    reach = 80  # comfortably past CHECK_BAND, short of CHECK_BAND + 40
 
     def level(px: int, py: int) -> int:
         if x <= px < x + w and y <= py < y + h:
@@ -99,8 +104,7 @@ def _stuck_capture() -> Image.Image:
         dx = max(x - px, px - (x + w - 1), 0)
         dy = max(y - py, py - (y + h - 1), 0)
         distance = max(dx, dy)
-        decay = (floor - PANEL) * (1 - math.exp(-distance / 12.0))
-        return min(BACKGROUND, round(PANEL + decay))
+        return floor if distance <= reach else BACKGROUND
 
     return _fill(WIDTH, HEIGHT, level)
 

@@ -752,6 +752,103 @@ jobs:
           path: target/rmac-source-rebuild
           if-no-files-found: error
 
+  windows-installer:
+    name: Build the Windows installer
+    # ADR 0023 "Installer": non-blocking while Windows support is new, the
+    # same way `keyring` above is optional -- attach-release's own
+    # `needs.windows-installer.result == 'success'` check (not present in
+    # its required-success list) decides whether to attach the installer,
+    # so a failure here is visible (this job, and so the run, still shows
+    # red) but never holds up the Linux release the way build-amd64's
+    # would. (Job-level `continue-on-error` was deliberately not used
+    # here: it would make `needs.windows-installer.result` always read
+    # "success" downstream, hiding a real failure from that check.)
+    # windows-preview.yml runs the same steps on every push for fast
+    # iteration; this is the tagged-release copy that signs (when the
+    # owner's Azure Trusted Signing secrets exist) and attaches to the
+    # Release itself.
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      filename: ${{ steps.build.outputs.filename }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Generate Windows app icons
+        run: bash scripts/windows/make_icons.sh
+
+      - name: Build the apps
+        run: |
+          cargo build --locked --release -p rmac-calculator -p rmac-notes \
+            -p rmac-text-editor -p rmac-preview -p rmac-clock -p rmac-weather \
+            -p rmac-terminal --bins
+
+      - name: Collect the built exes
+        run: |
+          mkdir -p exes
+          for app in calculator notes text-editor preview clock weather terminal; do
+            cp "target/release/rmac-$app.exe" exes/
+          done
+
+      - name: Install the WiX Toolset CLI
+        # Pinned exact version for reproducibility (ADR 0023 "Installer":
+        # WiX, not Inno Setup or MSIX -- see that section for why). No `wix
+        # extension add` is needed: Product.wxs and
+        # generate_apps_wxs.py's output use only core WiX elements.
+        run: |
+          dotnet tool install --global wix --version 7.0.0
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Build the installer
+        id: build
+        run: |
+          version="$GITHUB_REF_NAME"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${version#v}"
+          else
+            version="0.0.0-dev"
+          fi
+          filename="Lulo-Setup-$version-x64.msi"
+          bash packaging/windows/build-installer.sh exes "$version" "$filename"
+          echo "filename=$filename" >> "$GITHUB_OUTPUT"
+
+      # Skipped, never faked, until the owner provides
+      # RMAC_TRUSTED_SIGNING_* secrets (ADR 0023 "Installer").
+      # `continue-on-error` so a signing failure never blocks the
+      # unsigned installer everyone can already use.
+      - name: Sign the installer (Azure Trusted Signing)
+        if: ${{ vars.RMAC_TRUSTED_SIGNING_ACCOUNT != '' }}
+        continue-on-error: true
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.RMAC_TRUSTED_SIGNING_TENANT_ID }}
+          azure-client-id: ${{ secrets.RMAC_TRUSTED_SIGNING_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.RMAC_TRUSTED_SIGNING_CLIENT_SECRET }}
+          endpoint: ${{ vars.RMAC_TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.RMAC_TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.RMAC_TRUSTED_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}
+          files-folder-filter: msi
+
+      - name: Install, launch, and uninstall, checking every step
+        run: python3 scripts/windows/installer_smoke.py "${{ steps.build.outputs.filename }}"
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-installer
+          path: ${{ steps.build.outputs.filename }}
+          if-no-files-found: error
+
   sbom:
     name: Software bill of materials
     runs-on: ubuntu-24.04
@@ -812,7 +909,11 @@ jobs:
     # keeps this (and apt-repository below) off a workflow_dispatch or
     # test-branch dry run (see the "on:" trigger above): everything else
     # in this workflow still builds and verifies on those triggers.
-    needs: [dependency-policy, build-amd64, build-arm64, build-third-party-amd64, build-third-party-arm64, sbom, rmac-source, keyring]
+    # windows-installer is listed here only so its result/output are
+    # visible below; it is deliberately absent from the success
+    # conditions -- ADR 0023 "Installer" starts it non-blocking, the same
+    # way keyring is optional until the archive key exists.
+    needs: [dependency-policy, build-amd64, build-arm64, build-third-party-amd64, build-third-party-arm64, sbom, rmac-source, keyring, windows-installer]
     if: >-
       always() &&
       github.ref_type == 'tag' &&
@@ -885,6 +986,15 @@ jobs:
           name: keyring
           path: release-assets/keyring
 
+      - name: Download the Windows installer, if built
+        # ADR 0023 "Installer": non-blocking, so absent on a run where it
+        # failed -- the release still publishes Linux's own assets.
+        if: needs.windows-installer.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-installer
+          path: release-assets/windows-installer
+
       - name: Refuse to change a Release the APT repository already serves
         # Every pool object the signed repository publishes is re-fetched from
         # its Release's apt-inputs tar on later runs (docs/update-trust.md
@@ -924,6 +1034,9 @@ jobs:
           done
           if [ -d release-assets/sbom ]; then
             find release-assets/sbom -type f -exec cp -v {} "$bundle/" \;
+          fi
+          if [ -d release-assets/windows-installer ]; then
+            find release-assets/windows-installer -maxdepth 1 -name '*.msi' -exec cp -v {} "$bundle/" \;
           fi
           # niri and xwayland-satellite: every architecture contributes its
           # .deb, .buildinfo, .changes, and SBOM (all named per

@@ -230,11 +230,47 @@ fn available_in_key_window(actions: &[String], cx: &mut App) -> BTreeSet<String>
         .unwrap_or_default()
 }
 
+/// `"org.rmac.Calculator"` -> `"Lulo.Calculator"`: the identity Windows uses
+/// for toasts, taskbar grouping and jump lists. Kept in lock step with
+/// `packaging/windows/generate_apps_wxs.py`'s own `aumid()`, which derives
+/// the same string for the installer's Start Menu shortcuts -- there is no
+/// single source both sides can `include!()` across a Rust/Python split, so
+/// a test below pins the seven shipped apps' exact strings instead.
+#[cfg(windows)]
+fn app_user_model_id(app_id: &str) -> String {
+    format!("Lulo.{}", app_id.trim_start_matches("org.rmac."))
+}
+
+#[cfg(windows)]
+fn set_app_user_model_id(app_id: &str) {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+
+    let wide = app_user_model_id(app_id)
+        .encode_utf16()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    // SAFETY: a plain Win32 call; `wide` is NUL-terminated and outlives it.
+    if let Err(error) = unsafe { SetCurrentProcessExplicitAppUserModelID(PCWSTR(wide.as_ptr())) } {
+        eprintln!("{app_id}: could not set the AppUserModelID: {error}");
+    }
+}
+
 pub(crate) type OpenWindowRequest = Box<dyn Fn(Vec<String>, &mut App)>;
 
 /// Publish this app's menus, answer the menu bar's validation requests and
 /// route its activations into the app (see [`crate::register_menu_target`]).
 pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowRequest>, cx: &mut App) {
+    // The installer's Start Menu shortcut carries the same AppUserModelID
+    // (`packaging/windows/generate_apps_wxs.py`'s `ShortcutProperty`) on
+    // its `System.AppUserModel.ID`; Windows only treats a toast, a taskbar
+    // group or a jump list as this app's own when both agree. Clock's
+    // alarms (WIN-OS-14) need this before they can toast. A dev build run
+    // straight from `cargo run`, with no such shortcut, still sets its own
+    // identity here -- harmless, just unused until the app is launched
+    // through the installed shortcut.
+    #[cfg(windows)]
+    set_app_user_model_id(app_id);
     // Windows has no Lulo menu bar yet: a later launch reaches this process
     // over a named pipe instead of D-Bus (ADR 0023).
     #[cfg(windows)]
@@ -314,4 +350,41 @@ pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowReques
     }
     #[cfg(not(target_os = "linux"))]
     let _ = (menus, open_window);
+}
+
+#[cfg(all(test, windows))]
+mod aumid_tests {
+    use super::app_user_model_id;
+
+    /// The seven apps the installer ships (`packaging/windows/apps.json`):
+    /// every string here must stay byte-for-byte what
+    /// `generate_apps_wxs.py`'s `aumid()` writes into each Start Menu
+    /// shortcut's `ShortcutProperty`, or Clock's alarms (WIN-OS-14) and
+    /// every other app's taskbar grouping silently split from their
+    /// shortcut identity.
+    #[test]
+    fn matches_the_installer_generated_shortcut_identities() {
+        assert_eq!(
+            app_user_model_id(rmac_apps::identity::CALCULATOR),
+            "Lulo.Calculator"
+        );
+        assert_eq!(app_user_model_id(rmac_apps::identity::NOTES), "Lulo.Notes");
+        assert_eq!(
+            app_user_model_id(rmac_apps::identity::TEXT_EDITOR),
+            "Lulo.TextEditor"
+        );
+        assert_eq!(
+            app_user_model_id(rmac_apps::identity::PREVIEW),
+            "Lulo.Preview"
+        );
+        assert_eq!(app_user_model_id(rmac_apps::identity::CLOCK), "Lulo.Clock");
+        assert_eq!(
+            app_user_model_id(rmac_apps::identity::WEATHER),
+            "Lulo.Weather"
+        );
+        assert_eq!(
+            app_user_model_id(rmac_apps::identity::TERMINAL),
+            "Lulo.Terminal"
+        );
+    }
 }

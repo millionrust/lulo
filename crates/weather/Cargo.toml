@@ -30,3 +30,7 @@ rmac-ui = { workspace = true, optional = true }
 rust-embed = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
+
+# The exe's version info and icon (ADR 0023 "Installer"); see build.rs.
+[target.'cfg(windows)'.build-dependencies]
+rmac-windows-resource-build.workspace = true

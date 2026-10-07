@@ -1,0 +1,19 @@
+[package]
+name = "rmac-windows-resource-build"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Windows exe resources (version info, icon) for Lulo apps' build.rs (ADR 0023 Installer)"
+
+[lib]
+path = "src/lib.rs"
+
+# This crate is only ever pulled in as a `[target.'cfg(windows)'.
+# build-dependencies]` entry of an app crate (see e.g. crates/calculator/
+# Cargo.toml and build.rs), so Cargo never resolves or builds it -- and so
+# never `winres` either -- for a Linux or macOS target. No `cfg` of its own
+# is needed here for that reason (ADR 0025 vendors `gpui_windows` the same
+# way: the gate lives at the consumer's dependency declaration).
+[dependencies]
+winres = "0.1"

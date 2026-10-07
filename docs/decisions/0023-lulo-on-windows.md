@@ -8,10 +8,15 @@
   rendering, and the CI proof for all of it) is on `op/win-phase2c`. A follow-up pass using
   the reference laptop's first numbers (idle CPU and launch time measured in CI, a real
   foreground fix, Clock's alarms scheduled through Task Scheduler, a cross-platform
-  format-bar clipping fix) is on `op/win-polish`. The rest of phases 2–5 needs owner
-  approval and the hardware and signing items under "What the owner must provide".
+  format-bar clipping fix) is on `op/win-polish`. A real per-user installer -- a WiX MSI,
+  an AppUserModelID for every app, file associations offered but not forced, version info
+  resources, an uninstaller that also clears Clock's scheduled tasks, and the CI proof for
+  all of it -- is on `op/win-installer` (see "Installer" below). The rest of phases 2–5
+  needs owner approval and the hardware and signing items under "What the owner must
+  provide".
 - **Scope:** every crate under `crates/` and `shell/`, the workspace `Cargo.toml`,
-  `deny.toml`, `.github/workflows/ci.yml`, and a future `packaging/windows/`.
+  `deny.toml`, `.github/workflows/ci.yml`, `.github/workflows/windows-preview.yml`,
+  `.github/workflows/release.yml`, and `packaging/windows/`.
 - **Supersedes:** nothing. Builds on ADR 0006 (shell/app split), ADR 0007 (compositor
   choice), ADR 0014 (Mission Control), ADR 0017 (Mac keyboard) and ADR 0022 (accounts).
 
@@ -584,7 +589,158 @@ vendors `gpui_windows`, parks idle windows and cuts CI launch to about 95 ms),
 and recorded rather than silently skipped: patching
 `gpui_windows` itself for idle CPU or launch time (would need forking it the
 way `gpui_linux` already is, ADR 0013 scale, its own project); a Windows
-toast for Clock's alarms (needs an AUMID this build cannot provide yet).
+toast for Clock's alarms (needed an AUMID this build could not provide yet --
+`op/win-installer`, below, now sets one for every app, both on its Start Menu
+shortcut and at process start, but wiring `ToastNotificationManager` itself
+is still open).
+
+## Installer
+
+(`op/win-installer`.) Phase 2's plan called for "MSIX packaging, signing and `.appinstaller`
+in CI"; MSIX needs a trusted signature just to install, which blocks it until the owner's
+signing account exists (see "What the owner must provide"), so this pass builds the
+double-click installer people can use today and leaves MSIX for later, as a packaging
+format rather than a hard requirement.
+
+### Tool choice: a WiX MSI, not Inno Setup or MSIX
+
+**Requirements:** a per-user install (no admin prompt) to `%LOCALAPPDATA%\Programs\Lulo`,
+upgrade in place, a real Add/Remove Programs uninstall entry, and a build that a single
+declarative source file plus one generated fragment can drive from `apps.json` -- so that
+Files and System Settings, which another branch is adding, are a one-line addition
+(append to `packaging/windows/apps.json`), not a installer-script edit.
+
+- **MSIX:** ruled out by the task itself and confirmed while reading the ecosystem: an
+  unsigned or self-signed MSIX needs Developer Mode or a manually trusted certificate to
+  install at all, which fails the "double-click, no prior setup" bar this pass is for. It
+  stays the phase-2 target once Azure Trusted Signing exists (see "Signing" below); nothing
+  here forecloses it.
+- **Inno Setup:** free to use (its own permissive "Inno Setup License"), and its output
+  installer is an ordinary unsigned `.exe` SmartScreen already warns about the same way the
+  existing preview zip does, so it would work. It loses to WiX for two reasons rather than
+  one: its `.iss` script format is written procedurally (`[Files]`/`[Icons]` sections with
+  per-line directives), which is harder to generate safely from a list of apps than XML
+  elements with one attribute per fact; and the installer `.exe` it produces embeds Inno
+  Setup's own compiled Pascal runtime (the wizard UI and installation engine) in every copy
+  Lulo ships -- legally fine under its license, but a second kind of third-party code
+  shipped in the product for no benefit WiX's approach does not need.
+- **WiX Toolset (chosen, pinned to v7.0.0, the current release line; `Package/@Scope`,
+  `StandardDirectory`, the core `ShortcutProperty` element and the implicit feature this
+  installer relies on were all introduced in v4/v5 and are unchanged through v7):** produces
+  a plain MSI, a standard Windows Installer database with no code of WiX's own baked into
+  it -- `msiexec.exe`, part of Windows, reads the tables WiX compiled and does the actual
+  install. `Package Scope="perUser"` is exactly the no-admin install this needs, declarative
+  XML plus a CLI (`wix build Product.wxs Apps.wxs ...`) is easy to generate from
+  `apps.json` and run from CI non-interactively, `MajorUpgrade` with a fixed `UpgradeCode`
+  gives upgrade-in-place for free, and MSI's own Add/Remove Programs integration needs no
+  extra code to appear in Settings ▸ Apps.
+
+**cargo-deny and the repository's licence policy:** neither tool is ever a Cargo
+dependency -- both are external build tools invoked from CI (`wix build` / `ISCC.exe`), so
+`cargo deny check licenses` (`deny.toml`'s `[licenses]` table) never sees either one; this
+is the same posture as using `dpkg-buildpackage` and `debhelper` (GPL) to build the Debian
+packages in `scripts/linux/`, or GCC to compile C code -- a build tool's licence does not
+attach to its output unless the tool's own source or binary ships inside that output.
+That *is* worth checking for an installer, since unlike a compiler, both WiX and Inno Setup
+*can* end up redistributed: WiX's MSI format contains none of WiX's own code (just standard
+Windows Installer tables and Lulo's own exes), so its MS-RL licence (still current as of
+WiX 7.0.0 -- confirmed from `LICENSE.TXT` in the WiX repository, not assumed) never attaches
+to anything Lulo ships. Inno Setup's compiled installer stub, by contrast, is Inno Setup's
+own code, embedded by design -- permitted under its licence, but the comparison above is
+why WiX was still preferred. The one new build-time Cargo dependency this pass adds,
+`winres` (MIT, confirmed from its published crate metadata, so already on `deny.toml`'s
+allow list with no new exception needed), is gated
+`[target.'cfg(windows)'.build-dependencies]` in each app crate (`crates/
+rmac-windows-resource-build`), so it is never resolved, let alone compiled, for the Linux or
+macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows`.
+
+### What the installer does
+
+- **Installs every Lulo Windows app** (today: Calculator, Notes, Text Editor, Preview,
+  Clock, Weather, Terminal) to `%LOCALAPPDATA%\Programs\Lulo`, one `<Component>` per app
+  generated from `packaging/windows/apps.json` by `generate_apps_wxs.py` into `Apps.wxs`.
+  Files and System Settings (another branch) become a one-line addition to that JSON file;
+  nothing in `Product.wxs`, the generator, or this CI changes.
+- **Start Menu shortcuts with real icons.** `scripts/windows/make_icons.sh` rasterises each
+  app's existing artwork (`packaging/rmac-apps/icons/org.rmac.<App>.svg`, the same files
+  `scripts/build-icons.py` writes for the Linux `.desktop` icons -- never Apple's) into a
+  multi-resolution `.ico` with ImageMagick (preinstalled on `windows-latest`), before the
+  apps are built. `rmac-windows-resource-build::embed` (called from a one-line `build.rs` in
+  each app crate) embeds that icon, plus `FileDescription`/`ProductName`/`CompanyName`
+  "Lulo" and the exact Cargo version, as the exe's own Win32 resources -- so both the exe
+  itself and every shortcut to it (which inherits an exe's icon when none is set explicitly)
+  show the right artwork, with one thing embedding it rather than two copies to keep in
+  sync. A build that skips the icon step (plain local `cargo build`) still succeeds, with
+  the platform's default icon and a `cargo:warning` naming why.
+- **AppUserModelID**, so Clock's alarms (WIN-OS-14) and every app's taskbar grouping and
+  jump lists can work: each Start Menu shortcut's `ShortcutProperty` sets
+  `System.AppUserModel.ID` to `Lulo.<App>` (`generate_apps_wxs.py`'s `aumid()`), and each app
+  now calls `SetCurrentProcessExplicitAppUserModelID` with the identical string at startup
+  (`rmac_ui::app_menu::install`, gated `#[cfg(windows)]`) -- both sides must agree for
+  Windows to treat a toast, taskbar group or jump list as the app's own, so a test
+  (`crates/rmac-ui/src/app_menu.rs`'s `aumid_tests`) pins all seven apps' exact strings.
+  Wiring an actual toast (`ToastNotificationManager`) for Clock is still open.
+- **File associations, offered but not forced:** Text Editor for `.txt`/`.md`/`.rtf`,
+  Preview for `.pdf` and images. Each app registers itself under
+  `HKCU\Software\Classes\Applications\<exe>.exe` (`FriendlyAppName`, `shell\open\command`,
+  `SupportedTypes`) -- the standard Windows mechanism for appearing in a file's "Open with"
+  list without claiming the default handler, so a user's existing default association is
+  never overwritten. `HKCU`, not `HKCR`, is written explicitly rather than relied on via
+  implicit per-user redirection, so the result does not depend on exactly how MSI's
+  `ALLUSERS`/`Scope` redirection behaves on a given Windows build.
+- **An uninstaller in Settings ▸ Apps** comes from the MSI format itself (no extra code);
+  it removes every file and registry entry this installer wrote and leaves user documents
+  and notes alone (nothing under `Documents` or `AppData\Roaming` is ever a component). One
+  thing MSI cannot track on its own: Clock's `RmacClockAlarm-*` Task Scheduler tasks, created
+  at runtime (`crates/clock/src/schedule.rs`), not at install time. An immediate `CustomAction`
+  (`Product.wxs`) runs `Unregister-ScheduledTask` against that name pattern, conditioned on
+  `REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE` so an upgrade's own remove-then-install step
+  never touches them.
+- **Upgrade in place:** a fixed `UpgradeCode` (never change it) plus WiX's default
+  `MajorUpgrade` strategy removes the previous version's files and installs the new ones in
+  one transaction; `ProductCode` stays `*` (a fresh GUID each build), which `MajorUpgrade`
+  does not need to be fixed.
+- **Version info resources** (`rmac-windows-resource-build`, above): `FileVersion` and
+  `ProductVersion` carry the exact Cargo version string (e.g. `0.9.0-beta.1`); Win32's
+  numeric `VS_FIXEDFILEINFO` fields, which have no room for a pre-release tag, carry its
+  numeric prefix (`0.9.0.0`). The MSI's own `Version` property is the same numeric prefix
+  (`build-installer.sh` strips the suffix); the pre-release tag lives in the installer's
+  filename (`Lulo-Setup-0.9.0-beta.1-x64.msi`) instead.
+
+### Signing
+
+Not yet: Azure Trusted Signing needs an account the owner has not created yet (ADR 0023's
+"What the owner must provide"). The CI step (`azure/trusted-signing-action`) is wired in and
+conditioned on `vars.RMAC_TRUSTED_SIGNING_ACCOUNT` being set, with `continue-on-error: true`
+so a transient signing failure never hides the unsigned installer everyone can already use
+-- it never fakes a signature, and every installer built today is honestly unsigned
+(SmartScreen will warn, same as the existing preview zip's README already tells people to
+expect).
+
+### CI
+
+`windows-preview.yml` (every push to that branch, and `workflow_dispatch`) and
+`release.yml` (tagged releases, mirroring the Linux `build-amd64`/`attach-release` shape,
+but listed in `attach-release`'s `needs` without being required to succeed -- a build
+failure shows red on that one job without blocking the Linux release, the same pattern
+`keyring` already uses there) both: generate icons, build the seven apps, build the MSI,
+sign it if the secrets exist, then on `windows-latest` run
+`scripts/windows/installer_smoke.py`, which installs silently, checks every app's exe,
+Start Menu shortcut and "Open with" registration exist, launches Calculator from its
+shortcut and checks the process starts, seeds a dummy `RmacClockAlarm-*` task (Clock itself
+creates one only once an alarm is actually scheduled), uninstalls silently, and checks the
+install directory, the shortcuts, the registry entries, the Add/Remove Programs entry and
+that scheduled task are all gone. The installer is uploaded as the `lulo-windows-installer`
+(preview) / `windows-installer` (release) artifact alongside the existing unsigned exe zip.
+
+### What is left
+
+- Real code signing, once the owner's Azure Trusted Signing account exists.
+- Files and System Settings, once the branch adding them lands: one entry each in
+  `packaging/windows/apps.json`.
+- A real toast for Clock's alarms (`ToastNotificationManager`) now that an AUMID exists.
+- MSIX packaging as an additional distribution format, once signing exists -- this
+  installer does not block it.
 
 ## Phase plan
 

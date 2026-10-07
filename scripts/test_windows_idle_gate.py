@@ -25,7 +25,7 @@ class IdleGateTests(unittest.TestCase):
     def test_apps_within_budget_pass(self) -> None:
         results = {
             "rmac-calculator": {"idle_ticks": 0.0},
-            "rmac-notes": {"idle_ticks": 1.0},
+            "rmac-notes": {"idle_ticks": 1.002},
         }
         self.assertEqual(idle_gate.idle_failures(results, 1.0, ()), [])
 

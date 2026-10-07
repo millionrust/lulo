@@ -36,7 +36,9 @@ def idle_failures(
         if ticks is None:
             failures.append(f"{app}: no idle CPU reading")
             continue
-        if ticks > budget_ticks:
+        # Windows charges CPU time a whole 15.6 ms tick at a time, so a
+        # reading is a whole number of ticks give or take rounding.
+        if round(ticks) > budget_ticks:
             sources = ", ".join(
                 f"{entry['count']} x {entry['source']}"
                 for entry in measurement.get("idle_wake_sources", [])[:4]

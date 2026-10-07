@@ -72,6 +72,8 @@ pub struct WindowsWindowState {
     /// rmac: set when GPUI drew or presented a scene during the current
     /// `draw_window`, so the frame loop knows whether the window is idle.
     pub drew_frame: Cell<bool>,
+    /// rmac: parks the frame loop while the window draws nothing.
+    pub(crate) frame_loop: crate::rmac_frame_loop::FrameLoop,
 
     pub click_state: ClickState,
     pub current_cursor: Cell<Option<HCURSOR>>,
@@ -175,6 +177,7 @@ impl WindowsWindowState {
             renderer: RefCell::new(renderer),
             force_render_after_recovery: Cell::new(false),
             drew_frame: Cell::new(false),
+            frame_loop: crate::rmac_frame_loop::FrameLoop::new(hwnd),
             click_state,
             current_cursor: Cell::new(current_cursor),
             cursor_visible,

@@ -178,6 +178,8 @@ impl WindowsWindowInner {
             self.state
                 .restore_from_minimized
                 .set(self.state.callbacks.request_frame.take());
+            // rmac: a minimised window draws nothing; stop asking for vblanks.
+            self.state.frame_loop.suspend();
             return Some(0);
         }
 
@@ -192,6 +194,7 @@ impl WindowsWindowInner {
                 .callbacks
                 .request_frame
                 .set(Some(restore_from_minimized));
+            self.state.frame_loop.resume();
         } else {
             should_resize_renderer = true;
         }
@@ -216,6 +219,8 @@ impl WindowsWindowInner {
             self.state
                 .invalidate_devices
                 .store(true, std::sync::atomic::Ordering::Release);
+            // rmac: the vsync thread may be asleep with every window parked.
+            crate::rmac_frame_loop::vsync_demand().request_device_check();
         }
         if let Some(mut callback) = self.state.callbacks.resize.take() {
             callback(new_logical_size, scale_factor);
@@ -249,6 +254,13 @@ impl WindowsWindowInner {
     }
 
     fn handle_timer_msg(&self, handle: HWND, wparam: WPARAM) -> Option<isize> {
+        if wparam.0 == crate::rmac_frame_loop::THROTTLE_RETRY_TIMER_ID {
+            unsafe {
+                KillTimer(Some(handle), wparam.0).log_err();
+            }
+            self.state.frame_loop.throttle_retry_fired();
+            return self.draw_window(handle, false);
+        }
         if wparam.0 == SIZE_MOVE_LOOP_TIMER_ID {
             let mut runnables = self.main_receiver.clone().try_iter();
             while let Some(Ok(runnable)) = runnables.next() {
@@ -273,6 +285,7 @@ impl WindowsWindowInner {
     }
 
     fn handle_destroy_msg(&self, handle: HWND) -> Option<isize> {
+        self.state.frame_loop.suspend();
         let callback = { self.state.callbacks.close.take() };
         // Re-enable parent window if this was a modal dialog
         if let Some(parent_hwnd) = self.parent_hwnd {
@@ -1221,12 +1234,22 @@ impl WindowsWindowInner {
 
     fn handle_dm_pointer_hit_test(&self, wparam: WPARAM) -> Option<isize> {
         self.state.direct_manipulation.on_pointer_hit_test(wparam);
+        // rmac: Direct Manipulation only advances when `update` runs each frame.
+        self.state.frame_loop.wake();
         None
+    }
+
+    /// rmac: run a frame now if the frame loop is parked (rmac_frame_loop).
+    pub(crate) fn check_parked(&self, handle: HWND) {
+        if self.state.frame_loop.is_parked() {
+            self.draw_window(handle, false);
+        }
     }
 
     #[inline]
     fn draw_window(&self, handle: HWND, force_render: bool) -> Option<isize> {
         let mut request_frame = self.state.callbacks.request_frame.take()?;
+        let since_previous = self.state.frame_loop.begin_frame();
 
         self.state.direct_manipulation.update();
 
@@ -1256,6 +1279,28 @@ impl WindowsWindowInner {
         if drew {
             static FIRST_DRAW: std::sync::Once = std::sync::Once::new();
             FIRST_DRAW.call_once(|| crate::rmac_trace::startup("first_frame_drawn"));
+        }
+        let keeps_drawing = drew
+            || self.state.force_render_after_recovery.get()
+            || self.state.direct_manipulation.is_gesture_active();
+        let active = unsafe { GetActiveWindow() } == handle;
+        if self
+            .state
+            .frame_loop
+            .end_frame(keeps_drawing, drew, active, since_previous)
+            == crate::rmac_frame_loop::AfterFrame::ArmThrottleRetry
+        {
+            let armed = unsafe {
+                SetTimer(
+                    Some(handle),
+                    crate::rmac_frame_loop::THROTTLE_RETRY_TIMER_ID,
+                    crate::rmac_frame_loop::THROTTLE_RETRY_DELAY_MS,
+                    None,
+                )
+            };
+            if armed == 0 {
+                self.state.frame_loop.throttle_retry_fired();
+            }
         }
 
         self.state.callbacks.request_frame.set(Some(request_frame));

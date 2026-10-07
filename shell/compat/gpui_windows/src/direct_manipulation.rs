@@ -26,6 +26,9 @@ pub(crate) struct DirectManipulationHandler {
     window: HWND,
     scale_factor: Rc<Cell<f32>>,
     pending_events: Rc<RefCell<Vec<PlatformInput>>>,
+    /// rmac: a gesture or its inertia is running, so frames must keep
+    /// calling `update` even when nothing is dirty.
+    gesture_active: Rc<Cell<bool>>,
 }
 
 impl DirectManipulationHandler {
@@ -65,12 +68,14 @@ impl DirectManipulationHandler {
 
             let scale_factor = Rc::new(Cell::new(scale_factor));
             let pending_events = Rc::new(RefCell::new(Vec::new()));
+            let gesture_active = Rc::new(Cell::new(false));
 
             let event_handler: IDirectManipulationViewportEventHandler =
                 DirectManipulationEventHandler::new(
                     window,
                     Rc::clone(&scale_factor),
                     Rc::clone(&pending_events),
+                    Rc::clone(&gesture_active),
                 )
                 .into();
 
@@ -86,8 +91,14 @@ impl DirectManipulationHandler {
                 window,
                 scale_factor,
                 pending_events,
+                gesture_active,
             })
         }
+    }
+
+    /// rmac: whether a touchpad gesture or its inertia is running.
+    pub fn is_gesture_active(&self) -> bool {
+        self.gesture_active.get()
     }
 
     pub fn set_scale_factor(&self, scale_factor: f32) {
@@ -143,6 +154,7 @@ struct DirectManipulationEventHandler {
     last_y_offset: Cell<f32>,
     scroll_phase: Cell<TouchPhase>,
     pending_events: Rc<RefCell<Vec<PlatformInput>>>,
+    gesture_active: Rc<Cell<bool>>,
 }
 
 impl DirectManipulationEventHandler {
@@ -150,6 +162,7 @@ impl DirectManipulationEventHandler {
         window: HWND,
         scale_factor: Rc<Cell<f32>>,
         pending_events: Rc<RefCell<Vec<PlatformInput>>>,
+        gesture_active: Rc<Cell<bool>>,
     ) -> Self {
         Self {
             window,
@@ -160,6 +173,7 @@ impl DirectManipulationEventHandler {
             last_y_offset: Cell::new(0.0),
             scroll_phase: Cell::new(TouchPhase::Started),
             pending_events,
+            gesture_active,
         }
     }
 
@@ -213,6 +227,8 @@ impl IDirectManipulationViewportEventHandler_Impl for DirectManipulationEventHan
         if current == previous {
             return Ok(());
         }
+        self.gesture_active
+            .set(current == DIRECTMANIPULATION_RUNNING || current == DIRECTMANIPULATION_INERTIA);
 
         // A new gesture interrupted inertia, so end the old sequence.
         if current == DIRECTMANIPULATION_RUNNING && previous == DIRECTMANIPULATION_INERTIA {

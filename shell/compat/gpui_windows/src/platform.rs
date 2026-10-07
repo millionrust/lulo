@@ -320,7 +320,11 @@ impl WindowsPlatform {
             .name("VSyncProvider".to_owned())
             .spawn(move || {
                 let vsync_provider = VSyncProvider::new();
+                let demand = crate::rmac_frame_loop::vsync_demand();
                 loop {
+                    // rmac: sleep until a window wants frames instead of
+                    // waking every vblank for windows that draw nothing.
+                    demand.wait();
                     vsync_provider.wait_for_vsync();
                     crate::rmac_trace::wake("vsync", "tick");
                     if check_device_lost(&directx_device.device)
@@ -340,6 +344,9 @@ impl WindowsPlatform {
                         break;
                     };
                     for hwnd in all_windows.read().iter() {
+                        if !demand.wants(hwnd.as_raw()) {
+                            continue;
+                        }
                         unsafe {
                             let _ = RedrawWindow(Some(hwnd.as_raw()), None, None, RDW_INVALIDATE);
                         }
@@ -347,6 +354,21 @@ impl WindowsPlatform {
                 }
             })
             .unwrap();
+    }
+}
+
+/// rmac: run a frame for each parked window, after the main thread did
+/// something that may have made it dirty (rmac_frame_loop).
+fn check_parked_windows(all_windows: &RwLock<SmallVec<[SafeHwnd; 4]>>) {
+    let handles: SmallVec<[HWND; 4]> = all_windows
+        .read()
+        .iter()
+        .map(|hwnd| hwnd.as_raw())
+        .collect();
+    for hwnd in handles {
+        if let Some(window) = window_from_hwnd(hwnd) {
+            window.check_parked(hwnd);
+        }
     }
 }
 
@@ -421,6 +443,7 @@ impl Platform for WindowsPlatform {
                     _ = TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 }
+                check_parked_windows(&self.raw_window_handles);
             }
         }
 
@@ -1031,6 +1054,11 @@ impl WindowsPlatformInner {
             }
         }
 
+        // rmac: a task may have dirtied a parked window. The main loop checks
+        // after this message too, but a modal loop (a native dialog) does not.
+        if let Some(all_windows) = self.raw_window_handles.upgrade() {
+            check_parked_windows(&all_windows);
+        }
         Some(0)
     }
 

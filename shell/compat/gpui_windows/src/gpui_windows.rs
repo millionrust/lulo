@@ -12,6 +12,7 @@ mod display;
 mod events;
 mod keyboard;
 mod platform;
+mod rmac_frame_loop;
 mod rmac_trace;
 mod system_settings;
 mod util;

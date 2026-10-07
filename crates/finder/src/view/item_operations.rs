@@ -136,7 +136,7 @@ impl FinderView {
                 // FILES-05: keep the Linux tag index (there is no Spotlight
                 // here) exactly in step with what Files itself just wrote,
                 // without waiting for this folder to be listed again.
-                #[cfg(any(target_os = "linux", test))]
+                #[cfg(any(target_os = "linux", all(test, unix)))]
                 rmac_search::tag_index::record(&path, (!remove_tag).then_some(tag));
             }
         }
@@ -374,7 +374,7 @@ impl FinderView {
             let destination_dir = src.parent().unwrap_or(self.cwd.as_path());
             let dst = unique_path_avoiding(destination_dir.join(alias_name), &destinations);
             destinations.insert(dst.clone());
-            match std::os::unix::fs::symlink(&src, &dst) {
+            match make_alias(&src, &dst) {
                 Ok(()) => last_destination = Some(dst),
                 Err(error) => failures.push(file_ops::Failure::message(
                     file_ops::Operation::CreateAlias,
@@ -405,6 +405,25 @@ impl FinderView {
         self.operation_error =
             Some("Delete Immediately needs a confirmation step that isn't available yet".into());
         cx.notify();
+    }
+}
+
+/// File ▸ Make Alias: a real symlink everywhere, including Windows, where
+/// creating one needs Developer Mode or an administrator (pre-Windows 11)
+/// — an honest, specific error from `symlink_file`/`_dir` either way,
+/// rather than a copy silently standing in for an alias (ADR 0023 phase 4).
+#[cfg(not(windows))]
+fn make_alias(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(source, destination)
+}
+
+#[cfg(windows)]
+fn make_alias(source: &Path, destination: &Path) -> std::io::Result<()> {
+    let is_dir = std::fs::metadata(source).map(|m| m.is_dir()).unwrap_or(false);
+    if is_dir {
+        std::os::windows::fs::symlink_dir(source, destination)
+    } else {
+        std::os::windows::fs::symlink_file(source, destination)
     }
 }
 

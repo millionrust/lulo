@@ -4,9 +4,9 @@ impl FinderView {
     /// The strip Finder shows above the Trash's contents: its name and an
     /// Empty button (geometry S: the owner's Trash was not opened to measure).
     pub(super) fn render_trash_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         let empty = self.trash_items.is_empty();
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         let empty = true;
         div()
             .id("trash-bar")
@@ -48,7 +48,7 @@ impl FinderView {
             return;
         }
 
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         {
             if self.trash_loading {
                 self.operation_error = Some("Files is still verifying Trash recovery".into());
@@ -139,7 +139,7 @@ impl FinderView {
             self.receive_trash_events(event_rx, cx);
         }
 
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         {
             let failures = trash::delete_all(&paths)
                 .err()
@@ -158,7 +158,7 @@ impl FinderView {
         }
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(super) fn selected_trash_items(&self) -> Vec<trash_store::TrashedItem> {
         let selected_paths = self.selected_paths().into_iter().collect::<BTreeSet<_>>();
         self.trash_items
@@ -174,7 +174,7 @@ impl FinderView {
             cx.notify();
             return;
         }
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         {
             if self.transfer.is_some()
                 || self.undo_operation.is_some()
@@ -269,7 +269,7 @@ impl FinderView {
                 .detach();
             self.receive_trash_events(event_rx, cx);
         }
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         {
             self.operation_error = Some("Trash restore is available on Linux".into());
             cx.notify();

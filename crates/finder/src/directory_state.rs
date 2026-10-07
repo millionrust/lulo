@@ -1,13 +1,16 @@
 use std::io;
+#[cfg(not(windows))]
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 
+#[cfg(not(windows))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Identity {
     device: u64,
     inode: u64,
 }
 
+#[cfg(not(windows))]
 impl Identity {
     pub fn capture(path: &Path) -> io::Result<Self> {
         let metadata = std::fs::metadata(path)?;
@@ -25,6 +28,35 @@ impl Identity {
 
     pub fn still_matches(self, path: &Path) -> io::Result<bool> {
         Ok(Self::capture(path)? == self)
+    }
+}
+
+/// Windows has no inode, and the real per-directory identity that would
+/// stand in for one (`MetadataExt::file_index`) is still the unstable
+/// `windows_by_handle` feature (rust-lang/rust#63010) on this pinned
+/// stable toolchain. The canonical (symlink/junction-resolved) path is the
+/// real, stable alternative: two paths naming the same directory resolve
+/// to the same canonical path, which is exactly what "did this survive a
+/// rename" needs (ADR 0023 phase 4).
+#[cfg(windows)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Identity(PathBuf);
+
+#[cfg(windows)]
+impl Identity {
+    pub fn capture(path: &Path) -> io::Result<Self> {
+        let metadata = std::fs::metadata(path)?;
+        if !metadata.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotADirectory,
+                "the location is no longer a directory",
+            ));
+        }
+        Ok(Self(path.canonicalize()?))
+    }
+
+    pub fn still_matches(&self, path: &Path) -> io::Result<bool> {
+        Ok(&Self::capture(path)? == self)
     }
 }
 

@@ -3,7 +3,6 @@
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io;
-use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -125,7 +124,7 @@ impl FinderState {
             && self.tabs.iter().all(|path| {
                 path.is_absolute()
                     && path.to_str().is_some()
-                    && path.as_os_str().as_bytes().len() <= MAX_PATH_BYTES
+                    && path.as_os_str().as_encoded_bytes().len() <= MAX_PATH_BYTES
             })
     }
 }

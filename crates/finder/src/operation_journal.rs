@@ -3,7 +3,7 @@ use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
 #[cfg(not(windows))]
-use std::os::unix::fs::MetadataExt as _;
+use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 // Only `journal_round_trips_non_utf8_paths` (below) still needs the raw byte
 // constructor, to build a deliberately non-UTF-8 Unix path fixture.
 #[cfg(all(test, unix))]
@@ -152,7 +152,7 @@ impl TreeManifest {
         Self::capture_inner(root, None)
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) fn capture_cancellable(root: &Path, cancel: &AtomicBool) -> io::Result<Self> {
         Self::capture_inner(root, Some(cancel))
     }
@@ -820,6 +820,7 @@ impl Journal {
                 "file-operation journal root is not a real directory",
             ));
         }
+        #[cfg(not(windows))]
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         let undo = UndoStore::open(root.join("undo"))?;
         let journal = Self { root, undo };
@@ -1696,7 +1697,9 @@ impl Journal {
             .join(format!(".{}.{}.tmp", record.id, Uuid::new_v4()));
         let result = (|| {
             let mut options = OpenOptions::new();
-            options.write(true).create_new(true).mode(0o600);
+            options.write(true).create_new(true);
+            #[cfg(not(windows))]
+            options.mode(0o600);
             let mut file = options.open(&temp)?;
             file.write_all(&bytes)?;
             file.sync_all()?;
@@ -2605,12 +2608,11 @@ mod tests {
         let temporary = first
             .root
             .join(format!(".{}.{}.tmp", ticket.record.id, Uuid::new_v4()));
-        let mut temporary_file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)
-            .unwrap();
+        let mut temporary_options = OpenOptions::new();
+        temporary_options.write(true).create_new(true);
+        #[cfg(not(windows))]
+        temporary_options.mode(0o600);
+        let mut temporary_file = temporary_options.open(&temporary).unwrap();
         temporary_file.write_all(b"active atomic update").unwrap();
         temporary_file.sync_all().unwrap();
         drop(temporary_file);
@@ -2670,6 +2672,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn symlinked_record_lock_fails_closed() {
         let root = TestDirectory::new("symlink-lock");
         let source = root.0.join("source");
@@ -3092,6 +3095,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn replacement_recovery_resumes_partial_directory_cleanup_without_following_symlinks() {
         let root = TestDirectory::new("replace-partial-directory");
         let source = root.0.join("source");
@@ -3391,6 +3395,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn source_manifest_is_deterministic_and_never_follows_symlink_target() {
         let root = TestDirectory::new("manifest-symlink");
         let source = root.0.join("source");

@@ -318,9 +318,8 @@ pub(super) fn scan_folder_size(
     cancel: &AtomicBool,
     max_entries: usize,
 ) -> Option<FolderSize> {
-    use std::os::unix::fs::MetadataExt as _;
-
-    let device = std::fs::symlink_metadata(root).ok()?.dev();
+    let root_metadata = std::fs::symlink_metadata(root).ok()?;
+    let device = crate::file_ops::device_of(root, &root_metadata);
     let mut stack = vec![root.to_path_buf()];
     let mut size = FolderSize::default();
     while let Some(folder) = stack.pop() {
@@ -357,7 +356,7 @@ pub(super) fn scan_folder_size(
                     continue;
                 }
             };
-            if metadata.dev() != device {
+            if crate::file_ops::device_of(&entry.path(), &metadata) != device {
                 size.incomplete = true;
             } else if metadata.is_dir() {
                 stack.push(entry.path());
@@ -849,6 +848,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn folder_info_counts_nested_files_without_following_symlinks() {
         use std::os::unix::fs::symlink;
 

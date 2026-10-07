@@ -2,7 +2,7 @@ use super::*;
 
 impl FinderView {
     pub(super) fn reload_trash(&mut self, cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         {
             self.cancel_search();
             self.result_title = Some(self.file_words.bin().into());
@@ -97,7 +97,7 @@ impl FinderView {
             })
             .detach();
         }
-        #[cfg(not(any(target_os = "linux", test)))]
+        #[cfg(not(any(target_os = "linux", all(test, unix))))]
         {
             self.entries.clear();
             self.operation_error = Some("Trash browsing is available on Linux".into());

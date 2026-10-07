@@ -80,7 +80,7 @@ pub(crate) struct UndoSeed {
     pub(crate) forward_record: PathBuf,
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(crate) struct TrashUndoSeed {
     pub(crate) id: String,
     pub(crate) kind: UndoKind,
@@ -169,7 +169,7 @@ impl UndoRecord {
         Ok(record)
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     fn from_trash_seed(seed: TrashUndoSeed) -> io::Result<Self> {
         if !matches!(seed.kind, UndoKind::Trash | UndoKind::Restore) {
             return Err(invalid_data("Trash Undo seed has an invalid operation"));
@@ -274,7 +274,7 @@ impl UndoRecord {
                 || self.forward_record_path_bytes == seed.forward_record.as_os_str().as_encoded_bytes())
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     fn matches_trash_seed(&self, seed: &TrashUndoSeed) -> bool {
         self.id == seed.id
             && self.kind == seed.kind
@@ -493,7 +493,7 @@ pub(crate) struct UndoStore {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UndoAvailability {
     pub(crate) label: String,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) uses_trash: bool,
 }
 
@@ -517,6 +517,7 @@ impl UndoStore {
         if !metadata.is_dir() || metadata.file_type().is_symlink() {
             return Err(invalid_data("undo root is not a real directory"));
         }
+        #[cfg(not(windows))]
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         let store = Self { root };
         let _lock = store.acquire_lock()?;
@@ -592,7 +593,7 @@ impl UndoStore {
         self.activate(&id)
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) fn archive_trash(&self, seed: TrashUndoSeed) -> io::Result<()> {
         let _lock = self.acquire_lock()?;
         let path = self.record_path(&seed.id);
@@ -620,7 +621,7 @@ impl UndoStore {
         self.prune_ready()
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) fn has_receipt(&self, id: &str) -> io::Result<bool> {
         let _lock = self.acquire_lock()?;
         match self.read_record_path(&self.record_path(id)) {
@@ -630,7 +631,7 @@ impl UndoStore {
         }
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) fn discard_trash_item(&self, data: &Path, info: &Path) -> io::Result<()> {
         let _lock = self.acquire_lock()?;
         let mut changed = false;
@@ -657,7 +658,7 @@ impl UndoStore {
         };
         Ok(Some(UndoAvailability {
             label: undo_label(&record),
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             uses_trash: matches!(record.kind, UndoKind::Trash | UndoKind::Restore),
         }))
     }
@@ -1368,6 +1369,7 @@ impl UndoStore {
             record.restored_snapshot = None;
             self.persist(record, false)?;
             let container = record.restore_staging();
+            #[cfg_attr(windows, allow(unused_mut))]
             let mut builder = fs::DirBuilder::new();
             #[cfg(not(windows))]
             builder.mode(0o700);
@@ -2261,6 +2263,7 @@ mod tests {
         ticket.commit().unwrap();
     }
 
+    #[cfg(unix)]
     struct TrashUndoFixture {
         store: UndoStore,
         source: PathBuf,
@@ -2270,6 +2273,7 @@ mod tests {
         forward: PathBuf,
     }
 
+    #[cfg(unix)]
     fn trash_undo_fixture(
         root: &TestDirectory,
         kind: UndoKind,
@@ -2340,6 +2344,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn trash_receipt_stays_hidden_until_its_exact_forward_record_is_removed() {
         let root = TestDirectory::new("trash-two-phase");
         let fixture = trash_undo_fixture(&root, UndoKind::Trash, true);
@@ -2353,6 +2358,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn trash_undo_infers_a_data_rename_before_stage_persistence() {
         let root = TestDirectory::new("trash-rename-crash");
         let fixture = trash_undo_fixture(&root, UndoKind::Trash, false);
@@ -2372,6 +2378,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn restore_undo_infers_metadata_publication_before_stage_persistence() {
         let root = TestDirectory::new("restore-info-crash");
         let fixture = trash_undo_fixture(&root, UndoKind::Restore, false);
@@ -2390,6 +2397,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn restore_undo_infers_data_movement_before_stage_persistence() {
         let root = TestDirectory::new("restore-rename-crash");
         let fixture = trash_undo_fixture(&root, UndoKind::Restore, false);
@@ -2410,6 +2418,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn restore_undo_never_replaces_racing_trash_metadata() {
         let root = TestDirectory::new("restore-info-race");
         let fixture = trash_undo_fixture(&root, UndoKind::Restore, false);

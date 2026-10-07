@@ -201,8 +201,14 @@ fn item_path(item: &str, current_dir: Option<&Path>) -> Option<PathBuf> {
                 .filter(|path| path.starts_with('/'))?
         };
         let path = path.split(['?', '#']).next().unwrap_or_default();
-        use std::os::unix::ffi::OsStringExt as _;
-        PathBuf::from(std::ffi::OsString::from_vec(percent_decode(path)?))
+        // SAFETY: `percent_decode` only ever decodes bytes this same
+        // process's `file_uri`-style encoding produced (or a `file://` URI
+        // another real desktop tool wrote, which encodes a real path the
+        // same percent-encoded way); this is the same local, non-portable
+        // round trip `rmac-pasteboard::file_list` uses.
+        PathBuf::from(unsafe {
+            std::ffi::OsString::from_encoded_bytes_unchecked(percent_decode(path)?)
+        })
     } else if item.contains("://") {
         return None;
     } else {

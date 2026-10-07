@@ -496,7 +496,7 @@ impl FinderView {
         }
         if let Some(error) = &self.operation_error {
             let recovery_pending = self.pending_operations != 0;
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             let recovery_pending = recovery_pending || self.trash_pending != 0;
             regions.push(AccessibleLiveRegion {
                 id: "operation-error".to_string(),
@@ -530,7 +530,7 @@ impl FinderView {
                 )],
             });
         }
-        #[cfg(any(target_os = "linux", test))]
+        #[cfg(any(target_os = "linux", all(test, unix)))]
         if let Some(operation) = &self.trash_operation {
             let cancelling = operation.cancelling;
             regions.push(AccessibleLiveRegion {

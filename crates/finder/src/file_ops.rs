@@ -22,13 +22,13 @@ use crate::operation_journal;
 /// number) reaches the same real value from a root path with no file
 /// handle and no unstable feature.
 #[cfg(unix)]
-fn device_of(_path: &Path, metadata: &std::fs::Metadata) -> u64 {
+pub(crate) fn device_of(_path: &Path, metadata: &std::fs::Metadata) -> u64 {
     use std::os::unix::fs::MetadataExt as _;
     metadata.dev()
 }
 
 #[cfg(windows)]
-fn device_of(path: &Path, _metadata: &std::fs::Metadata) -> u64 {
+pub(crate) fn device_of(path: &Path, _metadata: &std::fs::Metadata) -> u64 {
     use windows::Win32::Storage::FileSystem::{GetVolumeInformationW, GetVolumePathNameW};
     use windows::core::HSTRING;
 
@@ -86,9 +86,9 @@ pub(crate) enum Operation {
     Move,
     Rename,
     Replace,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     PermanentDelete,
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", all(test, unix)))]
     Restore,
     Trash,
 }
@@ -102,9 +102,9 @@ impl Operation {
             Self::Move => "move",
             Self::Rename => "rename",
             Self::Replace => "replace",
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             Self::PermanentDelete => "permanently delete",
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", all(test, unix)))]
             Self::Restore => "restore",
             Self::Trash => "move to Trash",
         }
@@ -361,14 +361,19 @@ fn validate_copy_destination(source: &Path, destination: &Path) -> io::Result<()
 
 /// Open `path` for reading only if it is a regular file and not a symlink,
 /// and return the opened file's own metadata. A FIFO swapped in does not
-/// block the open (`O_NONBLOCK`), and is refused.
+/// block the open (`O_NONBLOCK`), and is refused. Windows has no
+/// `O_NOFOLLOW`/`O_NONBLOCK`; the `metadata.is_file()` check below still
+/// refuses a non-regular target, just not the symlink-race window itself
+/// (ADR 0023 phase 1's "Unix process and file plumbing" seam).
 fn open_regular_nofollow(path: &Path) -> io::Result<(std::fs::File, std::fs::Metadata)> {
-    use std::os::unix::fs::OpenOptionsExt as _;
-
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
     let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(io::Error::new(
@@ -377,6 +382,36 @@ fn open_regular_nofollow(path: &Path) -> io::Result<(std::fs::File, std::fs::Met
         ));
     }
     Ok((file, metadata))
+}
+
+#[cfg(not(windows))]
+fn copy_symlink(source: &Path, destination: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(std::fs::read_link(source)?, destination)
+}
+
+/// Windows symlinks are typed (a file symlink and a directory symlink are
+/// different calls), unlike Unix's single `symlink`; the target's own type
+/// decides which one to create. Creating either needs Developer Mode or
+/// admin rights pre-Windows 11 — an honest, specific error either way
+/// rather than a copy that silently became a different kind of item.
+#[cfg(windows)]
+fn copy_symlink(source: &Path, destination: &Path) -> io::Result<()> {
+    let target = std::fs::read_link(source)?;
+    let target_is_dir = std::fs::metadata(source).map(|m| m.is_dir()).unwrap_or(false);
+    if target_is_dir {
+        std::os::windows::fs::symlink_dir(&target, destination)
+    } else {
+        std::os::windows::fs::symlink_file(&target, destination)
+    }
+    .map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "could not create a symbolic link ({error}); creating one needs Developer \
+                 Mode or an administrator on this Windows version"
+            ),
+        )
+    })
 }
 
 fn copy_recursive_cancellable(
@@ -392,7 +427,7 @@ fn copy_recursive_cancellable(
     }
     let metadata = std::fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() {
-        std::os::unix::fs::symlink(std::fs::read_link(source)?, destination)?;
+        copy_symlink(source, destination)?;
     } else if metadata.is_dir() {
         std::fs::create_dir(destination)?;
         for entry in std::fs::read_dir(source)? {
@@ -1629,6 +1664,7 @@ pub(crate) fn execute_transfers(
 #[cfg(test)]
 mod tests {
     #[test]
+    #[cfg(unix)]
     fn copy_sources_are_opened_without_following_a_swapped_in_link() {
         let root = std::env::temp_dir().join(format!("rmac-nofollow-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
@@ -1899,6 +1935,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn restore_failure_names_the_original_item_without_a_trash_storage_path() {
         let failure = Failure::message(
             Operation::Restore,
@@ -1917,6 +1954,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn permanent_delete_failure_states_the_irreversible_operation() {
         let failure = Failure::message(
             Operation::PermanentDelete,
@@ -2878,6 +2916,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn sparse_files_use_their_logical_copy_size_and_symlinks_are_not_followed() {
         let root = TestDirectory::new("sparse-plan");
         let source = root.0.join("source");

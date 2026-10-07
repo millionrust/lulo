@@ -134,6 +134,13 @@ pub(crate) struct FrameLoop {
     suspended: Cell<bool>,
     previous_frame: Cell<Option<Instant>>,
     throttle_retry_armed: Cell<bool>,
+    /// The retry fired and nothing has drawn since: another idle frame
+    /// soon after must not arm it again. Several inactive windows in one
+    /// process (the Lulo layer's bar, Dock and panels) otherwise kept each
+    /// other awake: each retry's message re-checked the other parked
+    /// windows, whose idle checks then counted as "soon after" a frame and
+    /// armed their own retries, about 40 timers a second for ever.
+    throttle_retry_spent: Cell<bool>,
 }
 
 impl FrameLoop {
@@ -147,6 +154,7 @@ impl FrameLoop {
             suspended: Cell::new(false),
             previous_frame: Cell::new(None),
             throttle_retry_armed: Cell::new(false),
+            throttle_retry_spent: Cell::new(false),
         }
     }
 
@@ -168,6 +176,9 @@ impl FrameLoop {
         active: bool,
         since_previous: Option<Duration>,
     ) -> AfterFrame {
+        if drew {
+            self.throttle_retry_spent.set(false);
+        }
         let streak = next_idle_streak(self.idle_streak.get(), keeps_drawing);
         self.idle_streak.set(streak);
         if self.suspended.get() {
@@ -178,7 +189,10 @@ impl FrameLoop {
         } else {
             vsync_demand().request(self.hwnd);
         }
-        if may_have_throttled(drew, active, since_previous) && !self.throttle_retry_armed.get() {
+        if may_have_throttled(drew, active, since_previous)
+            && !self.throttle_retry_armed.get()
+            && !self.throttle_retry_spent.get()
+        {
             self.throttle_retry_armed.set(true);
             return AfterFrame::ArmThrottleRetry;
         }
@@ -188,6 +202,7 @@ impl FrameLoop {
     /// The throttle retry timer fired.
     pub(crate) fn throttle_retry_fired(&self) {
         self.throttle_retry_armed.set(false);
+        self.throttle_retry_spent.set(true);
     }
 
     /// Whether a frame should run now because the loop is parked and the
@@ -202,6 +217,7 @@ impl FrameLoop {
             return;
         }
         self.idle_streak.set(0);
+        self.throttle_retry_spent.set(false);
         vsync_demand().request(self.hwnd);
     }
 
@@ -282,6 +298,13 @@ mod tests {
             AfterFrame::Nothing
         );
         frame_loop.throttle_retry_fired();
+        // The retry's own frame drew nothing: no second retry until
+        // something draws.
+        assert_eq!(
+            frame_loop.end_frame(false, false, false, soon),
+            AfterFrame::Nothing
+        );
+        frame_loop.end_frame(true, true, false, soon);
         assert_eq!(
             frame_loop.end_frame(false, false, false, soon),
             AfterFrame::ArmThrottleRetry

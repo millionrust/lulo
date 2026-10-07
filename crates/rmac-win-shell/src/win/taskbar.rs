@@ -85,6 +85,12 @@ pub fn take_over() {
         return;
     }
     set_state(ABS_AUTOHIDE | (current & ABS_ALWAYSONTOP));
+    hide_windows();
+}
+
+/// Hide the taskbar windows again: Explorer shows an auto-hidden taskbar
+/// once more after it applies the state change.
+pub fn hide_windows() {
     for taskbar in taskbar_windows() {
         // SAFETY: hides Explorer's window until Lulo shows it again or
         // Explorer restarts.

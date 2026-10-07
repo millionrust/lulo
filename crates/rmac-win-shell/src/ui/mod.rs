@@ -372,7 +372,13 @@ pub(crate) fn open_surface<V: gpui::Render + 'static>(
         .flatten()?;
     let raw = hwnd.0 as isize;
     later(cx, move || {
-        surface::make_shell_surface(windows_list::handle(raw), activatable)
+        let hwnd = windows_list::handle(raw);
+        surface::make_shell_surface(hwnd, activatable);
+        if activatable {
+            // A panel waits cloaked off screen, painted and parked, until
+            // it is first shown (see `surface::hide`).
+            surface::hide(hwnd);
+        }
     });
     Some(Surface {
         handle: any,
@@ -428,7 +434,11 @@ fn place_bars(cx: &mut App) {
         return;
     };
     let (current_bar, current_strip) = (runtime.bar_rect, runtime.dock_strip);
+    let took_taskbar = runtime.took_taskbar;
     cx.spawn(async move |cx| {
+        if took_taskbar {
+            taskbar::hide_windows();
+        }
         let (monitor, _) = surface::primary_monitor();
         let scale = surface::scale_factor(windows_list::handle(bar.hwnd));
         let thickness = (BAR_HEIGHT * scale).round() as i32;
@@ -439,8 +449,12 @@ fn place_bars(cx: &mut App) {
             monitor,
             current_bar,
         );
-        surface::show_at(windows_list::handle(bar.hwnd), rect);
-        appbar::moved(windows_list::handle(bar.hwnd));
+        // Moving an AppBar notifies the others, whose answer must not
+        // move it again: only a changed strip is applied.
+        if rect != current_bar {
+            surface::show_at(windows_list::handle(bar.hwnd), rect);
+            appbar::moved(windows_list::handle(bar.hwnd));
+        }
         let mut strip = RECT::default();
         if let Some(dock) = dock {
             let thickness = (dock::DOCK_HEIGHT * scale).round() as i32;
@@ -451,7 +465,12 @@ fn place_bars(cx: &mut App) {
                 monitor,
                 current_strip,
             );
-            appbar::moved(windows_list::handle(dock.hwnd));
+            if strip != current_strip {
+                appbar::moved(windows_list::handle(dock.hwnd));
+            }
+        }
+        if rect == current_bar && strip == current_strip {
+            return;
         }
         trace(|| {
             format!(

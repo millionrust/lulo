@@ -408,9 +408,9 @@ def check_shell(
                     time.sleep(1.0)
                     save(screenshots, "calculator-about")
                     if not about:
-                        failures.append("Calculator ▸ About Calculator in the bar opened no About panel")
+                        failures.append("Calculator > About Calculator in the bar opened no About panel")
                     else:
-                        print("shell: the bar's Calculator ▸ About Calculator opened Calculator's About panel")
+                        print("shell: the bar's Calculator > About Calculator opened Calculator's About panel")
 
         # 5. A maximised window stays between the bar and the Dock.
         subprocess.Popen(["notepad.exe"])

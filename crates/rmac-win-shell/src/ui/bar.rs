@@ -14,10 +14,13 @@ use rmac_ui::mac;
 use super::{assets, ShellState, BAR_HEIGHT};
 use crate::win::trace;
 
+/// The titles last reported to the CI trace, with where they were.
+type TracedTitles = Rc<RefCell<Vec<(SharedString, Bounds<Pixels>)>>>;
+
 pub(crate) struct BarView {
     shell: Entity<ShellState>,
     title_bounds: Rc<RefCell<Vec<Bounds<Pixels>>>>,
-    traced: Rc<RefCell<Vec<(SharedString, Bounds<Pixels>)>>>,
+    traced: TracedTitles,
     _observe: Subscription,
 }
 

@@ -7,15 +7,17 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, DefWindowProcW, GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, GWLP_WNDPROC, GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE,
-    SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WM_MOUSEACTIVATE, WM_NCDESTROY, WNDPROC,
+    SetWindowPos, GWLP_WNDPROC, GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_NOACTIVATE,
+    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, WM_MOUSEACTIVATE, WM_NCDESTROY, WNDPROC,
     WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
@@ -73,13 +75,42 @@ pub fn show_at(hwnd: HWND, rect: RECT) {
 /// lets it take the foreground.
 pub fn show_focused_at(hwnd: HWND, rect: RECT) {
     show_at(hwnd, rect);
+    set_cloaked(hwnd, false);
     // SAFETY: as above.
     let _ = unsafe { SetForegroundWindow(hwnd) };
 }
 
+fn set_cloaked(hwnd: HWND, cloaked: bool) {
+    let value = BOOL::from(cloaked);
+    // SAFETY: a BOOL-sized attribute of a window this process owns.
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAK,
+            &value as *const BOOL as *const core::ffi::c_void,
+            std::mem::size_of::<BOOL>() as u32,
+        )
+    };
+}
+
+/// Put away a panel (Spotlight, a menu) until it is shown again. It is
+/// cloaked and moved off screen rather than hidden: a hidden window gets no
+/// `WM_PAINT`, so a frame it asked for would keep GPUI's vsync loop
+/// running for ever, while a cloaked one still paints, parks and idles.
 pub fn hide(hwnd: HWND) {
+    set_cloaked(hwnd, true);
     // SAFETY: as above.
-    let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
+    let _ = unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            -32000,
+            -32000,
+            0,
+            0,
+            SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW,
+        )
+    };
 }
 
 /// Physical pixels per GPUI pixel for `hwnd`.
@@ -142,7 +173,7 @@ pub fn subclass(hwnd: HWND, hook: Hook) {
     // SAFETY: replaces this process's own window procedure with one that
     // forwards to the previous one.
     let previous =
-        unsafe { SetWindowLongPtrW(hwnd, GWLP_WNDPROC, subclass_proc as usize as isize) };
+        unsafe { SetWindowLongPtrW(hwnd, GWLP_WNDPROC, subclass_proc as *const () as isize) };
     SUBCLASSES.with(|subclasses| {
         subclasses.borrow_mut().insert(
             key,

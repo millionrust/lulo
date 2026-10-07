@@ -107,10 +107,13 @@ impl Identity {
         }
     }
 
-    /// Windows has no inode or device number; the volume serial number and
-    /// file index (`GetFileInformationByHandle`) are the closest real
-    /// per-volume/per-file identities, and file attributes stand in for
-    /// mode (ADR 0023 phase 4, matching `rmac-finder`'s `EntryIdentity`).
+    /// Windows has no inode or device number, and the real per-volume/
+    /// per-file identities that would stand in for them
+    /// (`MetadataExt::{volume_serial_number, file_index}`) are still the
+    /// unstable `windows_by_handle` feature (rust-lang/rust#63010) on this
+    /// pinned stable toolchain; `device`/`inode` are left `0` (matching
+    /// `rmac-finder::operation_journal::EntryIdentity`'s own Windows
+    /// fallback), and file attributes stand in for mode (ADR 0023 phase 4).
     #[cfg(windows)]
     fn capture(metadata: &std::fs::Metadata) -> Self {
         use std::os::windows::fs::MetadataExt as _;
@@ -121,8 +124,8 @@ impl Identity {
             .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
             .unwrap_or_default();
         Self {
-            device: metadata.volume_serial_number().unwrap_or(0) as u64,
-            inode: metadata.file_index().unwrap_or(0),
+            device: 0,
+            inode: 0,
             mode: metadata.file_attributes(),
             size: metadata.len(),
             modified_seconds: modified.as_secs() as i64,

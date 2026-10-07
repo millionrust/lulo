@@ -8,21 +8,48 @@ use crate::operation_journal;
 
 /// The volume identity used to tell a same-volume move from a cross-volume
 /// copy. Unix's device number and Windows' volume serial number are both
-/// real per-volume identities (not a path heuristic); Windows' is `None` only
+/// real per-volume identities (not a path heuristic); either is `0` only
 /// for a filesystem that does not report one (rare virtual filesystems), in
 /// which case every path reports the same placeholder, which conservatively
 /// treats such a volume as "crosses devices" with everything else rather
 /// than silently skipping the check.
+///
+/// Windows takes the path rather than the metadata `MetadataExt` already
+/// has in hand everywhere else in this file: `MetadataExt::volume_serial_
+/// number` is still the unstable `windows_by_handle` feature
+/// (rust-lang/rust#63010) on this pinned stable toolchain, but
+/// `GetVolumeInformationW` (already used in `rmac-mounts` for the same
+/// number) reaches the same real value from a root path with no file
+/// handle and no unstable feature.
 #[cfg(unix)]
-fn device_of(metadata: &std::fs::Metadata) -> u64 {
+fn device_of(_path: &Path, metadata: &std::fs::Metadata) -> u64 {
     use std::os::unix::fs::MetadataExt as _;
     metadata.dev()
 }
 
 #[cfg(windows)]
-fn device_of(metadata: &std::fs::Metadata) -> u64 {
-    use std::os::windows::fs::MetadataExt as _;
-    metadata.volume_serial_number().unwrap_or(0) as u64
+fn device_of(path: &Path, _metadata: &std::fs::Metadata) -> u64 {
+    use windows::Win32::Storage::FileSystem::{GetVolumeInformationW, GetVolumePathNameW};
+    use windows::core::HSTRING;
+
+    let wide = HSTRING::from(path.as_os_str());
+    let mut root = [0u16; 261];
+    // SAFETY: `wide` is a valid wide string; `root` is large enough for any
+    // volume mount point path (`MAX_PATH`).
+    if unsafe { GetVolumePathNameW(&wide, &mut root) }.is_err() {
+        return 0;
+    }
+    let mut serial = 0u32;
+    // SAFETY: `root` holds a valid, null-terminated root path from
+    // `GetVolumePathNameW` above; every other output parameter is `None`,
+    // which the API accepts.
+    let root_wide = windows::core::PCWSTR(root.as_ptr());
+    if unsafe { GetVolumeInformationW(root_wide, None, Some(&mut serial), None, None, None) }
+        .is_err()
+    {
+        return 0;
+    }
+    serial as u64
 }
 
 /// `statvfs`'s two numbers Files actually needs: total and available bytes.
@@ -467,7 +494,7 @@ impl FileSystem for RealFileSystem {
         if cancel.load(Ordering::Acquire) {
             return Err(io::Error::new(io::ErrorKind::Interrupted, "scan cancelled"));
         }
-        Ok(device_of(&std::fs::symlink_metadata(path)?))
+        Ok(device_of(path, &std::fs::symlink_metadata(path)?))
     }
 
     #[cfg(not(windows))]
@@ -486,7 +513,7 @@ impl FileSystem for RealFileSystem {
             io::Error::new(io::ErrorKind::InvalidData, "free-space value is too large")
         })?;
         Ok(VolumeSpace {
-            device: device_of(&metadata),
+            device: device_of(parent, &metadata),
             total_bytes,
             available_bytes,
         })
@@ -497,7 +524,7 @@ impl FileSystem for RealFileSystem {
         let metadata = std::fs::metadata(parent)?;
         let (total_bytes, available_bytes) = volume_space_bytes(parent)?;
         Ok(VolumeSpace {
-            device: device_of(&metadata),
+            device: device_of(parent, &metadata),
             total_bytes,
             available_bytes,
         })
@@ -506,7 +533,7 @@ impl FileSystem for RealFileSystem {
 
 fn measure_source(path: &Path, cancel: &AtomicBool) -> io::Result<SourceUsage> {
     let metadata = std::fs::symlink_metadata(path)?;
-    let device = device_of(&metadata);
+    let device = device_of(path, &metadata);
     let mut usage = SourceUsage {
         logical_bytes: 0,
         entries: 0,

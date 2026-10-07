@@ -86,14 +86,18 @@ impl EntryIdentity {
         }
     }
 
-    /// Windows has no inode or ctime. The volume serial number and file
-    /// index (`GetFileInformationByHandle`) stand in for device/inode — both
-    /// are real per-volume/per-file identities, not a path heuristic — file
-    /// attributes stand in for mode, and file creation time stands in for
-    /// ctime: not the same guarantee ("was renamed into place" can leave
-    /// creation time unchanged where Linux's ctime would move), but still a
-    /// real signal that something about the entry changed, documented here
-    /// rather than left looking like the Unix guarantee (ADR 0023 phase 4).
+    /// Windows has no inode, device number or ctime, and
+    /// `MetadataExt::{volume_serial_number, file_index}` (the real
+    /// per-volume/per-file identities that would stand in for them) are
+    /// still the unstable `windows_by_handle` feature (rust-lang/rust#63010)
+    /// on this pinned stable toolchain. `device`/`inode` are left `0`
+    /// (matching rmac-search's own `cfg(not(unix))` identity, which already
+    /// drops them the same way); file attributes stand in for mode, and
+    /// file creation time stands in for ctime — not the same guarantee
+    /// ("renamed into place" can leave creation time unchanged where
+    /// Linux's ctime would move), but still a real changed-since signal,
+    /// documented here rather than left looking like the Unix guarantee
+    /// (ADR 0023 phase 4).
     #[cfg(windows)]
     fn from_metadata(metadata: &fs::Metadata) -> Self {
         use std::os::windows::fs::MetadataExt as _;
@@ -107,8 +111,8 @@ impl EntryIdentity {
         let modified = since_epoch(metadata.modified());
         let created = since_epoch(metadata.created());
         Self {
-            device: metadata.volume_serial_number().unwrap_or(0) as u64,
-            inode: metadata.file_index().unwrap_or(0),
+            device: 0,
+            inode: 0,
             mode: metadata.file_attributes(),
             size: metadata.len(),
             modified_seconds: modified.as_secs() as i64,

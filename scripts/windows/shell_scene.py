@@ -121,6 +121,10 @@ def main() -> int:
     parser.add_argument("--bin-dir", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--settle", type=float, default=8.0)
+    parser.add_argument("--normal", action="store_true",
+                        help="a memory probe: start Lulo as a user would, not in the fixed scene")
+    parser.add_argument("--no-windows-apps", action="store_true",
+                        help="a memory probe: leave out Windows' own apps (LULO_NO_WINDOWS_APPS)")
     parser.add_argument("--real-status", action="store_true",
                         help="a memory probe: the machine's own Wi-Fi, sound and battery readings")
     parser.add_argument("--desktop", default="", help="a memory probe: show this folder on the desktop")
@@ -144,6 +148,11 @@ def main() -> int:
     }
     if args.open:
         environment["RMAC_SHELL_SCENE_OPEN"] = args.open
+    if args.normal:
+        environment.pop("RMAC_SHELL_SCENE", None)
+        environment.pop("RMAC_SHELL_SCENE_TIME", None)
+    if args.no_windows_apps:
+        environment["LULO_NO_WINDOWS_APPS"] = "1"
     if args.real_status:
         environment["RMAC_SHELL_SCENE_STATUS"] = "real"
     if args.desktop:

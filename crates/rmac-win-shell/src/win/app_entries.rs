@@ -209,7 +209,10 @@ pub fn refresh() {
         return;
     };
     let chosen = chosen(&apps);
-    let icons = applications.join("lulo-windows-icons");
+    // Beside the entries, not among them: the catalogue watches that folder.
+    let icons = applications
+        .parent()
+        .map_or_else(|| applications.join("..").join("lulo-windows-icons"), |data| data.join("lulo-windows-icons"));
     fetch_icons(&icons, &chosen);
     let entries: BTreeMap<String, String> = chosen
         .iter()

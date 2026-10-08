@@ -84,7 +84,9 @@ fn placed_for_ready(surface: Placed) {
         // Windows' own apps for Spotlight and the Dock, read by a helper
         // process off the UI thread (not in the fixed scene: the runner's
         // apps are not Lulo OS's).
-        if std::env::var_os("RMAC_SHELL_SCENE").is_none() {
+        if std::env::var_os("RMAC_SHELL_SCENE").is_none()
+            && std::env::var_os("LULO_NO_WINDOWS_APPS").is_none()
+        {
             crate::win::app_entries::start();
         }
         for ready in READY.with(|ready| std::mem::take(&mut *ready.borrow_mut())) {

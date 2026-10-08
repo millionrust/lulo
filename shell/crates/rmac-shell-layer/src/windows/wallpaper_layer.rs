@@ -1,5 +1,7 @@
 //! Lulo mode's wallpaper as a layered window right below the desktop
-//! window (ADR 0023 "Lulo mode", WIN-OS-53).
+//! window (ADR 0023 "Lulo mode", WIN-OS-53; "Phase 3 revised: shared shell
+//! views": Lulo OS's desktop view hands its decoded picture over with
+//! [`show_picture`] and draws only its icons).
 //!
 //! Drawn by GPUI, the wallpaper cost lulo-shell about 18 MB of private
 //! memory on the owner's PC (Radeon, 1366 × 768): the picture's pixels kept
@@ -10,7 +12,7 @@
 //! is transparent where it draws nothing, so the picture shows under the
 //! icons. The layer takes no input (`WS_EX_TRANSPARENT`, never activated),
 //! is out of Alt+Tab and the taskbar, and is put back directly below the
-//! desktop window whenever that is placed (`win::desktop`).
+//! desktop window whenever that is placed (`desktop_layer`).
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::OnceLock;
@@ -230,5 +232,59 @@ impl Layer {
             );
             shown
         }
+    }
+}
+
+thread_local! {
+    /// The layer, made with the first picture.
+    static INSTANCE: std::cell::RefCell<Option<Layer>> = const { std::cell::RefCell::new(None) };
+    /// A picture that came before its desktop window was placed.
+    static PENDING: std::cell::RefCell<Option<(uuid::Uuid, std::sync::Arc<gpui::RenderImage>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Show the desktop's decoded wallpaper for display `output` (a BGRA image
+/// of the screen's physical size) in the layer under its desktop window,
+/// now or once that window is placed. Called on the UI thread. False when
+/// Windows cannot make the layer: the desktop view then draws the picture
+/// itself.
+pub fn show_picture(output: uuid::Uuid, image: std::sync::Arc<gpui::RenderImage>) -> bool {
+    let made = INSTANCE.with(|instance| {
+        let mut instance = instance.borrow_mut();
+        if instance.is_none() {
+            *instance = Layer::new();
+        }
+        instance.is_some()
+    });
+    if !made {
+        return false;
+    }
+    PENDING.with(|pending| *pending.borrow_mut() = Some((output, image)));
+    flush();
+    true
+}
+
+/// Show a pending picture if its desktop window is placed (`super::place`
+/// calls this after placing a background surface).
+pub(crate) fn flush() {
+    let Some((output, image)) = PENDING.with(|pending| pending.borrow().clone()) else {
+        return;
+    };
+    let Some((desktop, screen)) = super::background_window(output) else {
+        return;
+    };
+    let size = image.size(0);
+    let (width, height) = (size.width.0.max(0) as u32, size.height.0.max(0) as u32);
+    let Some(bytes) = image.as_bytes(0) else {
+        return;
+    };
+    let shown = INSTANCE.with(|instance| {
+        instance.borrow().as_ref().is_some_and(|layer| {
+            layer.show(desktop, screen, 0, 0, width, height, bytes, [0, 0, 0])
+        })
+    });
+    if shown {
+        // Windows keeps its own copy: the pixels go now.
+        PENDING.with(|pending| *pending.borrow_mut() = None);
     }
 }

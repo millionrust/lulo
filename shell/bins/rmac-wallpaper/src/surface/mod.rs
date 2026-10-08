@@ -143,6 +143,10 @@ impl AssetSource for WallpaperAssets {
 struct PreparedSurface {
     image: Arc<RenderImage>,
     layout: rmac_wallpaper::Layout,
+    /// Windows shows the picture in a layered window under the desktop
+    /// (`rmac_shell_layer::windows::wallpaper_layer`, WIN-OS-53): the view
+    /// draws only the icons, and keeps no pixels.
+    layered: bool,
 }
 
 enum PreparedUpdate {
@@ -197,6 +201,8 @@ impl WallpaperStatus {
                     .update(cx, |this, cx| {
                         match update {
                             PreparedUpdate::Render(surfaces) => {
+                                #[cfg(windows)]
+                                let surfaces = layer_surfaces(surfaces);
                                 this.surfaces = surfaces;
                                 // The Dock's and the menus' materials show
                                 // the new wallpaper's blur on Windows.
@@ -528,7 +534,12 @@ impl Render for Wallpaper {
             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                 this.drop_external_files(paths.paths().to_vec(), window, cx);
             }))
-            .overflow_hidden()
+            .overflow_hidden();
+        // On Windows the picture may be in the layer under this window: the
+        // view then draws only the icons over it.
+        let layered = surface.as_ref().is_some_and(|surface| surface.layered);
+        if !layered {
+            root = root
             .bg(linear_gradient(
                 145.0,
                 linear_color_stop(rgba((palette[0] << 8) | 0xff), 0.0),
@@ -551,7 +562,8 @@ impl Render for Wallpaper {
                 )
                 .color_space(gpui::ColorSpace::Oklab)),
             );
-        if let Some(surface) = surface {
+        }
+        if let Some(surface) = surface.filter(|surface| !surface.layered) {
             root = root
                 .child(
                     div()
@@ -584,6 +596,34 @@ impl Render for Wallpaper {
         }
         root
     }
+}
+
+/// Hand each picture that fills its screen to the wallpaper layer under the
+/// desktop window; the view then holds a one-pixel stand-in, and the layer
+/// (Windows' own copy) shows the picture.
+#[cfg(windows)]
+fn layer_surfaces(surfaces: BTreeMap<Uuid, PreparedSurface>) -> BTreeMap<Uuid, PreparedSurface> {
+    surfaces
+        .into_iter()
+        .map(|(output, mut surface)| {
+            let destination = surface.layout.destination;
+            let fills = !surface.layout.tiled
+                && destination.x.abs() < 0.5
+                && destination.y.abs() < 0.5;
+            if fills
+                && rmac_shell_layer::windows::wallpaper_layer::show_picture(
+                    output,
+                    surface.image.clone(),
+                )
+            {
+                surface.layered = true;
+                if let Some(blank) = image::RgbaImage::from_raw(1, 1, vec![0; 4]) {
+                    surface.image = Arc::new(RenderImage::new(vec![image::Frame::new(blank)]));
+                }
+            }
+            (output, surface)
+        })
+        .collect()
 }
 
 fn render_surface(surface: PreparedSurface) -> Vec<AnyElement> {
@@ -676,6 +716,7 @@ fn prepare_surface(
         PreparedSurface {
             image,
             layout: surface.layout,
+            layered: false,
         },
     ))
 }
@@ -1067,7 +1108,13 @@ fn open_wallpaper(
             })),
             display_id: Some(display_id),
             app_id: Some("dev.rmac.Wallpaper".to_owned()),
-            window_background: WindowBackgroundAppearance::Opaque,
+            // Windows shows the picture in a layer under this window
+            // (`layer_surfaces`), which must let it show through.
+            window_background: if cfg!(windows) {
+                WindowBackgroundAppearance::Transparent
+            } else {
+                WindowBackgroundAppearance::Opaque
+            },
             ..Default::default()
         },
         LayerShellOptions {

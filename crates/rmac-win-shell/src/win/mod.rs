@@ -12,7 +12,6 @@ pub mod registry;
 pub mod session;
 pub mod taskbar;
 pub mod wallpaper;
-pub mod wallpaper_layer;
 
 /// `s` as a NUL-terminated UTF-16 string.
 pub fn wide(s: &str) -> Vec<u16> {

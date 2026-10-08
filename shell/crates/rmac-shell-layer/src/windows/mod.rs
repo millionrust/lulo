@@ -31,6 +31,7 @@ pub mod material;
 pub mod power;
 pub mod surface;
 pub mod trace;
+pub mod wallpaper_layer;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -661,6 +662,28 @@ fn raise_overlays() {
 }
 
 /// Style (once), size and place one surface, and hold its strip.
+/// The placed background surface (the desktop) on the display whose
+/// stable output id is `output`, and that display's whole area in
+/// physical pixels.
+pub(crate) fn background_window(output: Uuid) -> Option<(HWND, RECT)> {
+    let (raw, display) = WINDOWS.with(|windows| {
+        windows
+            .borrow()
+            .iter()
+            .find(|window| {
+                window.styled
+                    && matches!(window.layer.layer, Layer::Background)
+                    && monitor_device_name(HMONITOR(window.display as isize as *mut core::ffi::c_void))
+                        .is_some_and(|name| {
+                            crate::stable_output_uuid(&rmac_compositor::OutputId(name)) == output
+                        })
+            })
+            .map(|window| (window.hwnd, window.display))
+    })?;
+    let (area, _) = monitor_area(HMONITOR(display as isize as *mut core::ffi::c_void))?;
+    Some((handle(raw), area))
+}
+
 /// `display` less the exclusive zones the other surfaces on it hold.
 fn usable_area(raw: isize, display: u64, mut area: Bounds<Pixels>) -> Bounds<Pixels> {
     let zones: Vec<(appbar::Edge, Pixels)> = WINDOWS.with(|windows| {
@@ -778,6 +801,7 @@ fn place(raw: isize) {
                 };
             }
             desktop_layer::place_above_desktop_layer(hwnd);
+            wallpaper_layer::flush();
         }
         Layer::Top | Layer::Overlay => {
             // The first placement stacks the surface (newest on top, as

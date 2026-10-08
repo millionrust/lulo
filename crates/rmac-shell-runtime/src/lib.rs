@@ -3,6 +3,7 @@
 mod coordinator;
 mod model;
 mod runtime;
+pub mod scene;
 #[cfg(windows)]
 mod windows;
 

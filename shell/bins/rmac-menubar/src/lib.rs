@@ -3911,7 +3911,7 @@ mod bar {
                         .collect();
                 }
             }
-            let now = Local::now();
+            let now = clock_now();
             let status = self.status.read(cx);
             let snapshot = &status.update.snapshot.status;
             // macOS leaves a wider gap between the date and the time.
@@ -4978,6 +4978,17 @@ mod bar {
 
     /// The widest item's title and shortcut plus the measured columns,
     /// never narrower than the macOS minimum menu width.
+    /// The time the clock shows: now, or the fixed time the shared-view
+    /// checks give both platforms (`RMAC_SHELL_SCENE_TIME`, local
+    /// `YYYY-MM-DDTHH:MM`), so Lulo OS and Windows draw the same bar.
+    fn clock_now() -> chrono::DateTime<Local> {
+        std::env::var("RMAC_SHELL_SCENE_TIME")
+            .ok()
+            .and_then(|text| chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%dT%H:%M").ok())
+            .and_then(|naive| naive.and_local_timezone(Local).single())
+            .unwrap_or_else(Local::now)
+    }
+
     fn menu_panel_width(menu: &rmac_app_menu::Menu, window: &Window) -> f32 {
         items_panel_width(&menu.items, window)
     }

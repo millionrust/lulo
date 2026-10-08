@@ -1,7 +1,7 @@
 //! The Lulo apps' desktop entries and artwork, laid out on Windows as Lulo
 //! OS lays them out under `/usr/share` (ADR 0023, "Phase 3 revised: shared
 //! shell views"), in `rmac_apps::windows_apps::data_home()`
-//! (`%LOCALAPPDATA%\Lulo\share`). The Dock, the desktop and the app
+//! (`%APPDATA%\Lulo\Data`, the XDG data home). The Dock, the desktop and the app
 //! catalogue then read them exactly as on Lulo OS: the same names, the same
 //! icons, the same categories.
 //!
@@ -118,23 +118,33 @@ pub fn install(install_dir: &Path) {
     let Some(share) = rmac_apps::windows_apps::data_home() else {
         return;
     };
-    install_into(&share, install_dir);
+    // The shared-view checks' fixed scene draws the Dock from every entry,
+    // whichever apps the check built.
+    let scene = std::env::var_os("RMAC_SHELL_SCENE").is_some_and(|value| value == "1");
+    install_into(&share, install_dir, scene);
 }
 
-pub fn install_into(share: &Path, install_dir: &Path) {
+pub fn install_into(share: &Path, install_dir: &Path, scene: bool) {
     let applications = share.join("applications");
     for (id, contents) in ENTRIES {
         let path = applications.join(format!("{id}.desktop"));
         let Some(app) = rmac_apps::windows_apps::app(id) else {
             continue;
         };
-        if !install_dir.join(app.exe).is_file() {
+        if !scene && !install_dir.join(app.exe).is_file() {
             // Not installed on this PC: no entry, so the Dock and Spotlight
             // never offer an app that cannot start.
             let _ = std::fs::remove_file(&path);
             continue;
         }
-        let entry = windows_entry(&String::from_utf8_lossy(contents), install_dir);
+        let mut entry = windows_entry(&String::from_utf8_lossy(contents), install_dir);
+        if scene {
+            entry = entry
+                .lines()
+                .filter(|line| !line.starts_with("TryExec="))
+                .map(|line| format!("{line}\n"))
+                .collect();
+        }
         write_if_changed(&path, entry.as_bytes());
     }
     let icons = share.join("icons").join("hicolor");
@@ -190,7 +200,7 @@ mod tests {
         std::fs::create_dir_all(&install_dir).unwrap();
         std::fs::write(install_dir.join("rmac-files.exe"), b"").unwrap();
         let share = root.join("share");
-        install_into(&share, &install_dir);
+        install_into(&share, &install_dir, false);
         assert!(share.join("applications/org.rmac.Files.desktop").is_file());
         assert!(!share.join("applications/org.rmac.Notes.desktop").exists());
         assert!(share

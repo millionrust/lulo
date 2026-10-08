@@ -68,13 +68,20 @@ pub const WINDOWS_APPS: [WindowsApp; 9] = [
 /// Where the Windows shell keeps the Lulo apps' desktop entries and icons,
 /// laid out as Lulo OS's `/usr/share` (`applications/`,
 /// `icons/hicolor/scalable/apps/`, `rmac/dock/icons/`), so the Dock,
-/// Spotlight and the app catalogue read them exactly as on Lulo OS:
-/// `%LOCALAPPDATA%\Lulo\share`. `lulo-shell` writes it as it starts.
+/// Spotlight and the app catalogue read them exactly as on Lulo OS: the XDG
+/// data home every Lulo app on Windows has (`XDG_DATA_HOME`, which
+/// `rmac_ui::application` sets to `%APPDATA%\Lulo\Data`). `lulo-shell`
+/// writes it as it starts.
 pub fn data_home() -> Option<std::path::PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
+    std::env::var_os("XDG_DATA_HOME")
         .map(std::path::PathBuf::from)
         .filter(|path| path.is_absolute())
-        .map(|path| path.join("Lulo").join("share"))
+        .or_else(|| {
+            std::env::var_os("APPDATA")
+                .map(std::path::PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .map(|path| path.join("Lulo").join("Data"))
+        })
 }
 
 /// The program a desktop entry starts (its `Exec`'s first word), for

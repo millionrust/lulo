@@ -106,6 +106,41 @@ pub struct Watcher {
 }
 
 pub fn directory_from_environment() -> Result<PathBuf, Error> {
+    // Windows: the user's Desktop known folder (OneDrive may have moved
+    // it), or `RMAC_DESKTOP_DIR` (the shared-view checks give the desktop
+    // an empty folder of its own).
+    #[cfg(windows)]
+    {
+        if let Some(directory) = std::env::var_os("RMAC_DESKTOP_DIR")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+        {
+            return Ok(directory);
+        }
+        windows_desktop_directory().ok_or(Error::MissingHome)
+    }
+    #[cfg(not(windows))]
+    {
+        unix_directory_from_environment()
+    }
+}
+
+/// The Desktop known folder (`FOLDERID_Desktop`).
+#[cfg(windows)]
+fn windows_desktop_directory() -> Option<PathBuf> {
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+    // SAFETY: the returned string is copied, then freed with CoTaskMemFree.
+    unsafe {
+        let path = SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None).ok()?;
+        let copied = path.to_string().ok();
+        CoTaskMemFree(Some(path.0 as *const core::ffi::c_void));
+        copied.map(PathBuf::from)
+    }
+}
+
+#[cfg(not(windows))]
+fn unix_directory_from_environment() -> Result<PathBuf, Error> {
     let home = std::env::var_os("HOME")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
@@ -177,6 +212,16 @@ pub fn scan(directory: &Path, sort: SortOrder) -> Result<Snapshot, Error> {
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
             Err(error) => return Err(Error::Io(error.kind())),
         };
+        // Windows hides by attribute (`desktop.ini` is hidden and system),
+        // as Explorer's desktop does.
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt as _;
+            const HIDDEN_OR_SYSTEM: u32 = 0x2 | 0x4;
+            if metadata.file_attributes() & HIDDEN_OR_SYSTEM != 0 {
+                continue;
+            }
+        }
         let kind = if metadata.file_type().is_symlink() {
             ItemKind::SymbolicLink
         } else if metadata.is_dir() {
@@ -425,9 +470,27 @@ pub fn move_item_no_replace(source: &Path, destination: &Path) -> io::Result<()>
     rename_noreplace(source, destination)
 }
 
+/// Windows' `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING` refuses an
+/// existing destination atomically (ERROR_ALREADY_EXISTS), and a move to
+/// another volume (ERROR_NOT_SAME_DEVICE, which callers copy instead).
+#[cfg(windows)]
+fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS};
+    // SAFETY: NUL-terminated paths that outlive the call.
+    unsafe {
+        MoveFileExW(
+            &HSTRING::from(source.as_os_str()),
+            &HSTRING::from(destination.as_os_str()),
+            MOVE_FILE_FLAGS(0),
+        )
+    }
+    .map_err(|error| io::Error::from_raw_os_error(error.code().0 & 0xFFFF))
+}
+
 /// Without an atomic no-replace rename, refuse rather than risk replacing
 /// an item that appeared after the check.
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn rename_noreplace(_: &Path, _: &Path) -> io::Result<()> {
     Err(io::Error::from(io::ErrorKind::Unsupported))
 }

@@ -317,7 +317,8 @@ jobs:
         -p rmac-finder -p rmac-mounts -p rmac-search -p rmac-app-launch
         -p rmac-pasteboard -p rmac-archive -p rmac-quick-look
         -p rmac-system-settings -p rmac-appearance-portal
-        -p rmac-app-menu -p rmac-win-shell
+        -p rmac-app-menu -p rmac-win-shell -p rmac-compositor-system
+        -p rmac-shell-runtime
     defaults:
       run:
         shell: bash
@@ -358,10 +359,18 @@ jobs:
         continue-on-error: true
         run: bash scripts/windows/make_icons.sh
 
+      # The shell's views (shell/bins, shell/crates; ADR 0023, "Phase 3
+      # revised: shared shell views") are libraries of the shell workspace
+      # that lulo-shell links, so Clippy checks their Windows code there,
+      # with the same target directory.
       - name: Run Clippy
         id: clippy
         continue-on-error: true
-        run: cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
+        run: |
+          cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
+          (cd shell && CARGO_TARGET_DIR=../target cargo clippy --locked --keep-going \
+            -p rmac-shell-layer -p rmac-shell-menubar -p rmac-shell-dock -p rmac-shell-wallpaper \
+            --lib -- -D warnings)
 
       # The remaining steps still run after a Clippy failure, so one run
       # reports every kind of Windows breakage.

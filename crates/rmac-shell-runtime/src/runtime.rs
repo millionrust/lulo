@@ -55,6 +55,9 @@ impl ServiceReader for SystemServiceReader {
 /// Publish coherent shell snapshots until the receiving side closes.
 #[cfg(not(windows))]
 pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
+    if crate::scene::active() {
+        return watch_scene(sender).await;
+    }
     let (compositor_tx, compositor_rx) = async_channel::bounded(64);
     let (service_tx, service_rx) = async_channel::bounded(8);
     let (settings_tx, settings_rx) = async_channel::bounded(2);
@@ -97,6 +100,9 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
 /// two inputs stay open and quiet.
 #[cfg(windows)]
 pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
+    if crate::scene::active() {
+        return watch_scene(sender).await;
+    }
     let (compositor_tx, compositor_rx) = async_channel::bounded(64);
     let (service_tx, service_rx) = async_channel::bounded(8);
     let (settings_tx, settings_rx) = async_channel::bounded(2);
@@ -120,6 +126,42 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
 }
 
 #[cfg(not(windows))]
+/// The shared-view checks' fixed scene (`RMAC_SHELL_SCENE=1`): the real
+/// window list and settings, with the status items' fixed readings
+/// (`crate::scene`), so Lulo OS and Windows draw the same bar.
+async fn watch_scene(sender: Sender<Update>) -> Result<(), Error> {
+    let (compositor_tx, compositor_rx) = async_channel::bounded(64);
+    let (service_tx, service_rx) = async_channel::bounded(8);
+    let (settings_tx, settings_rx) = async_channel::bounded(2);
+    let (_focus_tx, focus_rx) = async_channel::bounded(1);
+    let (_notification_tx, notification_rx) = async_channel::bounded(1);
+    let services = async {
+        let _ = service_tx
+            .send(rmac_shell_status_linux::Event::Refresh(
+                rmac_shell_status_linux::Sources::all(),
+            ))
+            .await;
+        service_tx.closed().await;
+        Ok::<(), Error>(())
+    };
+    let consumer = consume(
+        sender,
+        compositor_rx,
+        service_rx,
+        settings_rx,
+        focus_rx,
+        notification_rx,
+        crate::scene::SceneServiceReader,
+    );
+    futures_util::try_join!(
+        watch_compositor(compositor_tx),
+        services,
+        watch_settings(settings_tx),
+        consumer
+    )?;
+    Ok(())
+}
+
 async fn watch_notifications(
     sender: Sender<Result<rmac_notifications::Indicator, String>>,
 ) -> Result<(), Error> {

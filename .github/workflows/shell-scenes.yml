@@ -1,0 +1,149 @@
+name: Shell scenes
+
+# ADR 0023, "Phase 3 revised: shared shell views": Lulo on Windows runs Lulo
+# OS's own menu bar, Dock and desktop. Each push draws the same fixed scene
+# (the same wallpaper, clock, status readings, Dock pins and empty desktop,
+# 1024 x 768 at scale 1) on Lulo OS (nested niri, scripts/behavior/
+# run_shell_scene.py) and on windows-latest (scripts/windows/shell_scene.py),
+# then compares the two screens perceptually (scripts/compare_shell_scenes.py)
+# and fails when they drift apart. The two screens and a diff image are in
+# the `shell-scene-diff` artifact.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shell-scenes-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Lulo OS scene
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_BUILD_JOBS: 4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install GPUI build dependencies, a private Wayland runtime and pinned niri
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            binutils clang cmake libclang-dev libfontconfig1-dev libfreetype-dev libpam0g-dev libssl-dev \
+            libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            curl dbus fonts-inter grim libdisplay-info3 libgbm1 libinput10 libpango-1.0-0 \
+            libpangocairo-1.0-0 libpipewire-0.3-0t64 libseat1 libxkbcommon-x11-0 \
+            mesa-vulkan-drivers sway
+          curl --fail --silent --show-error --location --retry 3 \
+            https://ppa.launchpadcontent.net/avengemedia/danklinux/ubuntu/pool/main/n/niri/niri_26.04ppa3_amd64.deb \
+            --output "$RUNNER_TEMP/niri.deb"
+          printf '%s  %s\n' \
+            f44c5b1c9cb8838c538618caccbbed5a5173ba04569983beae61c59ec0e38cb0 \
+            "$RUNNER_TEMP/niri.deb" | sha256sum --check
+          dpkg-deb --extract "$RUNNER_TEMP/niri.deb" "$RUNNER_TEMP/niri-package"
+      - name: Install pinned Rust toolchain
+        working-directory: shell
+        run: rustup show active-toolchain
+      - name: Cache Cargo data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            shell/target
+          key: ${{ runner.os }}-shell-scene-${{ hashFiles('shell/Cargo.lock', 'shell/rust-toolchain.toml') }}
+      - name: Build the menu bar, the Dock and the desktop
+        working-directory: shell
+        run: cargo build --locked -p rmac-shell-menubar -p rmac-shell-dock -p rmac-shell-wallpaper --bins --features wayland
+      - name: Draw the scene
+        run: |
+          niri="$RUNNER_TEMP/niri-package/usr/bin/niri"
+          export PATH="$(dirname "$niri"):$PATH"
+          /usr/bin/python3 scripts/behavior/run_shell_scene.py --niri "$niri" \
+            --bin-dir shell/target/debug --output scenes/linux.png
+      - name: Upload the scene
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shell-scene-linux
+          path: scenes/
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: Windows scene
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # The `windows` job in ci.yml saves this cache; this job only reads it.
+      - name: Restore Cargo data
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - name: Build the Lulo layer
+        run: cargo build --locked -p rmac-win-shell --bins
+      - name: Draw the scene
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==12.1.1
+          python scripts/windows/shell_scene.py --bin-dir target/debug --output scenes/windows.png
+      - name: Upload the scene
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shell-scene-windows
+          path: scenes/
+          if-no-files-found: error
+          retention-days: 7
+
+  compare:
+    name: Lulo OS and Windows draw the same shell
+    needs: [linux, windows]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: shell-scene-*
+          path: scenes
+          merge-multiple: true
+      - name: Compare the scenes
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==12.1.1
+          python scripts/compare_shell_scenes.py scenes/linux.png scenes/windows.png \
+            --diff scenes/diff.png --report scenes/report.json
+      - name: Upload the comparison
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shell-scene-diff
+          path: scenes/
+          if-no-files-found: warn
+          retention-days: 14

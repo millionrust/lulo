@@ -17,3 +17,13 @@ serde_json.workspace = true
 # MoveFileExW instead.
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
+
+# The Desktop known folder, attributes and the no-replace move on Windows
+# (the shared desktop view; ADR 0023, "Phase 3 revised: shared shell views").
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+] }

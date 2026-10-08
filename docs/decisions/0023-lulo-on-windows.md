@@ -8,7 +8,8 @@
   rendering, and the CI proof for all of it) is on `op/win-phase2c`. A follow-up pass using
   the reference laptop's first numbers (idle CPU and launch time measured in CI, a real
   foreground fix, Clock's alarms scheduled through Task Scheduler, a cross-platform
-  format-bar clipping fix) is on `op/win-polish`. Phase 3's design and first slice (the
+  format-bar clipping fix) is on `op/win-polish`. Files is on `op/win-phase2d`;
+  System Settings and a cheap Clock minute tick are on `op/win-settings`. Phase 3's design and first slice (the
   Lulo layer: menu bar, Dock and Spotlight over the Windows desktop) are on
   `op/win-shell`. A real per-user installer -- a WiX MSI, an AppUserModelID for every
   app, file associations offered but not forced, version info resources, Files and the
@@ -911,6 +912,135 @@ the only verification available.
   every second or fails to re-park, still fails at the standard one-tick
   budget — see WIN-OS-17.
 
+## Phase 2e as built (branch `op/win-settings`)
+
+Branch `op/win-settings` brought System Settings to Windows (WIN-OS-22)
+and made Clock's minute tick cheap (WIN-OS-17), with CI and the owner's
+laptop (SSH, session 0, serial builds in `E:\lulo`) as the only places to
+verify.
+
+- **System Settings, restructured rather than gated file by file.** Lulo
+  OS's Settings (`src/controller`, about 25,000 lines) drives a Linux
+  service on nearly every pane and keeps all of them in one `Settings`
+  struct, so phase 2d's 700 errors were the shape of the design, not 700
+  small gaps. `main.rs` now puts that whole controller, and every
+  top-level module only it uses (connectivity, focus, power, input,
+  notifications, the system snapshot, the service-update plumbing, …),
+  behind `cfg(unix)`, so Linux and the macOS developer build compile
+  exactly what they did before. Windows gets its own small Settings in
+  `src/win` (about 3,400 lines with its tests) that shares the
+  platform-neutral pieces as they are: the pane inventory
+  (`navigation.rs`), the theme-store logic (`appearance.rs`), the
+  wallpaper store, preview and validation (`shell_settings.rs`), and the
+  measured geometry and colours (`controller/settings_style.rs`, included
+  by `#[path]`), so its window, sidebar, toolbar and grouped forms are
+  drawn to the same numbers as on Lulo OS. Everything Windows-specific
+  goes through one facade, `win::host::Host` (`about`, `displays`,
+  `output_volume`, `set_desktop_wallpaper`); `WindowsHost` answers it with
+  Win32 calls and tests with fixed facts. Nothing in it polls: each pane
+  reads once when it opens, and volume and displays are read again when
+  the window becomes active.
+- **The six panes, all real.**
+  - *Appearance:* Auto, Light or Dark and the accent colour (Multicolour
+    plus the eight Mac accents), saved through the same authoritative
+    theme-store path Lulo OS uses. Every Lulo app now follows the file on
+    Windows too: `rmac-ui` watches it with one thread parked in
+    `ReadDirectoryChangesW` (`file_watch_windows.rs`; notify's Windows
+    backend wakes ten times a second, WIN-OS-15), so a change repaints
+    every open Lulo app at once. Auto follows Windows' own app mode:
+    `rmac-appearance-portal` reads `AppsUseLightTheme` and watches it with
+    `RegNotifyChangeKeyValue`, again a parked thread.
+  - *Wallpaper:* the Lulo gallery (artwork, the user's photos, gradients)
+    and placement, saved in `rmac-shell-settings` for the Lulo shell; the
+    Windows desktop changes only on "Use as Windows Desktop Picture",
+    which hands Windows the packaged JPEG, the user's own JPEG/PNG/BMP, or
+    a PNG rendered once into Lulo's cache, sets `WallpaperStyle`/
+    `TileWallpaper` for the placement and calls
+    `SystemParametersInfoW(SPI_SETDESKWALLPAPER)`. The preview build now
+    ships the wallpapers beside the apps (`rmac-wallpaper` looks in
+    `<exe>\wallpapers` on Windows).
+  - *Sound:* Lulo's alert sound (Alert, Error, Notification), played on
+    choosing, and the default output device's name and volume from Core
+    Audio (`IAudioEndpointVolume`), read-only.
+  - *Displays:* each display's resolution, refresh rate, Windows scale and
+    the resulting desktop size (`EnumDisplayMonitors`,
+    `EnumDisplaySettingsW`, `GetDpiForMonitor`; friendly names and the
+    built-in panel from `QueryDisplayConfig`), with a button to Windows'
+    own Display settings.
+  - *General ▸ About This PC:* computer name, maker and model, processor,
+    cores and threads, installed memory, graphics adapters, the Windows
+    edition, release and build (named Windows 11 from build 22000, since
+    `ProductName` still says 10), and each fixed drive's free space
+    (`rmac-mounts`).
+  - *Keyboard:* the shortcuts Lulo apps answer, shown with Ctrl.
+- **Menus and keys.** The Windows module registers only the six panes'
+  `system_settings::Show…` actions, so the shared menu table's View menu
+  lists exactly those; ⌘[ ⌘] ⌘F ⌘W ⌘Q ⌘M go through `rmac_ui::bind_keys`
+  and so answer Ctrl. The Lulo layer's Lulo ▸ System Settings… now opens
+  this exe when it sits beside the layer (Windows' Settings otherwise).
+- **Proof.** `rmac-system-settings` and `rmac-appearance-portal` joined
+  the Windows CI package list (Clippy `-D warnings`, 19
+  Settings unit tests on Windows), the app build, `launch_smoke.py`
+  (window, menu strip with Alt, App ▸ About, Ctrl+N), the idle gate,
+  `windows-preview.yml` (with Lulo's wallpapers beside the exes) and the
+  installer's app list (`packaging/windows/apps.json`, its Start Menu
+  shortcut and exe icon). CI run 37711054714: Settings visible
+  203 ms after start, 0.00 ticks over the 20 s
+  idle window.
+
+- **Clock's minute tick, made cheap.** Every World Clock redraw
+  re-rasterised the whole map on the CPU (the land mask, then each
+  pixel's day or night colour: 47 ms on the laptop's Ryzen 3 in a debug
+  build at 1×, 71 ms at 1.25×), uploaded a new 2–3 MB texture and drew two
+  frames, one for the time and one when the late map arrived. To measure
+  it rather than wait for a minute boundary, `RMAC_CLOCK_WORLD_TICK_MS`
+  shortens the redraw period and `launch_smoke.py --world-tick-check`
+  charges the idle window's CPU to the ten redraws inside it: 15.83 ticks
+  per minute tick before (run 37678918002, 20 frames for 10 ticks). Now the
+  land, ocean and meridians are rasterised once per size; each minute's
+  map is that layer with the night side darkened through a lookup table
+  and the terminator drawn in (`map::paint_night`, 9 ms in a debug build
+  on the laptop at 1×), made on a background thread a
+  minute ahead and swapped in on the tick, so a tick draws one frame and
+  re-rasterises nothing. (A vector night overlay was tried first: drawing
+  a path costs GPUI a full-window multisampled layer, and per-column
+  rectangles cost more than the image.) After: 8.11 ticks per tick in
+  all, of which 0.90 are Clock's own and 7.21 are WARP drawing the one
+  frame (run 37711054714). That 7 to 9 ticks is the runner's software
+  rasteriser drawing any full frame of a 1024 × 768 window: removing the
+  map, the cards, the pins and the clock faces, separately and together,
+  left it at 9.2 to 10.5 ticks per frame (profiling run 37703039321). WARP
+  runs on the same system thread pool as GPUI's background tasks, so
+  `gpui_windows`' wake trace now reports each pool task's CPU (ADR 0025)
+  and `launch_smoke.py` counts the pool's remaining time as the
+  rasteriser's; on a real PC that is the GPU's work. The idle gate now
+  judges each app on its own CPU, fails a World Clock tick over 3 own
+  ticks (`--max-world-tick-ticks 3`), and Clock's special idle budget
+  drops from 48 ticks to 3, room for the one minute boundary a 20 s window
+  can hold. 3 rather than 2 because a reading swings by about a tick:
+  thread times move a whole tick at a time and WARP's share is a
+  difference of two such sums (four runs read 0.90, 0.90, 1.10 and 2.00
+  per redraw); the old map re-rasterisation alone was 4 to 5 own ticks.
+  The Lulo bar (`lulo-shell`), whose clock also redraws once a minute,
+  gets 2 (run 37713970007 caught it at 2.00 before WARP was left out of
+  its reading too, 1.00 since). Lulo OS
+  runs the same Clock code, so its minute tick sheds the same
+  rasterisation; its runtime `idle-cpu` soak keeps Clock's window
+  inactive, where it does not tick (0.01 % before and after, runs
+  37678917994 and 37711054692).
+
+What is stubbed or left out on Windows, honestly rather than faked: every
+pane that needs a Linux service (network, Bluetooth, users, printers,
+sharing, VPN, accounts, focus, notifications, power, input devices, date
+and time, language, login items, privacy, updates, Lulo Intelligence) is
+not compiled or listed; the output volume, display modes and Windows
+scale are read-only (Windows' own controls change them); Lulo's alerts
+play Windows' system sounds at the Windows volume, so there is no alert
+volume slider (WIN-OS-07); per-display wallpapers and wallpaper tinting
+need the Lulo shell's renderer on Windows; Settings has no compact
+(single-column) layout and no Search results beyond the six panes' own
+names and terms.
+
 ## Phase 3 design: the Lulo layer
 
 Phase 3 puts Lulo's shell on top of the Windows desktop as a layer the user
@@ -1096,9 +1226,9 @@ each; Lulo apps staying open without windows now that a bar can reach them
 ## Phase 3 on a real PC (branch `op/win-realpc`)
 
 The owner installed the MSI on a Windows 11 Home laptop (1366×768, dark mode, Ryzen 3,
-8 GB) and found it "feels weird". The fixes (parity rows WIN-OS-30 to WIN-OS-38):
+8 GB) and found it "feels weird". The fixes (parity rows WIN-OS-32 to WIN-OS-40):
 
-**Spotlight's hotkey when another app holds it (WIN-OS-30).** The ChatGPT app had already
+**Spotlight's hotkey when another app holds it (WIN-OS-32).** The ChatGPT app had already
 registered Alt+Space (PowerToys Run does too), so `RegisterHotKey` failed and Spotlight
 never opened. Lulo never unregisters or takes another app's hotkey; it walks a fixed list
 instead (`model::hotkey`): Alt+Space, then Win+Space, then Ctrl+Alt+Space, then
@@ -1116,7 +1246,7 @@ opens Spotlight. Because a key taken by the hook does not count as input this pr
 received, Spotlight briefly attaches to the front window's input queue to take the
 foreground when `SetForegroundWindow` alone is refused.
 
-**Desktop icons under the bar (WIN-OS-31).** Explorer keeps hand-placed desktop icons where
+**Desktop icons under the bar (WIN-OS-33).** Explorer keeps hand-placed desktop icons where
 they are when an AppBar takes the top strip. While Lulo runs, Explorer's icon list view
 (`SHELLDLL_DefView` ▸ `SysListView32`, in `Progman` or a `WorkerW`) is moved down by the
 bar's depth and made as much shorter. Icon positions are stored relative to the list view,
@@ -1127,7 +1257,7 @@ quit, session end, and `lulo-session` after a crash or at its next start). It is
 off the UI thread, and again 2 s later once Explorer has handled the new work area. A
 restarted Explorer makes a new list view, which gets moved again.
 
-**Looks (WIN-OS-36).** The bar and the Dock get an acrylic accent blur
+**Looks (WIN-OS-38).** The bar and the Dock get an acrylic accent blur
 (`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND`) with the `mac`
 material tint drawn over it at a lighter alpha, so they follow light and dark like
 everything else. `DWMWA_SYSTEMBACKDROP_TYPE` was rejected: Windows 11's system backdrops
@@ -1141,7 +1271,7 @@ fixed drive's `$Recycle.Bin`, with no polling. A click opens `shell:RecycleBinFo
 right-click opens Open and Empty Recycle Bin, and `SHEmptyRecycleBinW` keeps Windows' own
 confirmation.
 
-**Dock icons and exe resources (WIN-OS-38).** Files ran with Preview's icon. Files was not
+**Dock icons and exe resources (WIN-OS-40).** Files ran with Preview's icon. Files was not
 a known Lulo app, so its running tile used its exe's icon, and that icon really was
 Preview's: `winres` linked resources as a native library, which Cargo passes on to
 dependents (see "What the installer does"). Resources are now per binary, so Files,
@@ -1150,7 +1280,7 @@ first in the Dock where the Finder sits. A running Lulo app is identified by its
 executable, by the app id it gives the menu bar over the pipe, or by its window's
 AppUserModelID (`Lulo.<Name>`), and shows its own artwork whatever its exe is called.
 
-**Memory (WIN-OS-37).** The owner's PC showed `lulo-shell` at about 114 MB working set
+**Memory (WIN-OS-39).** The owner's PC showed `lulo-shell` at about 114 MB working set
 at idle (release build). Traced in CI (debug build, WARP): 22.6 MB once GPUI starts, 47.5
 MB with the bar and the Dock open, 51.1 MB when ready, and 58.8 MB after the first frames,
 of which 44.8 MB is private. The rest is shared images: the Direct3D, DirectWrite and
@@ -1169,7 +1299,7 @@ shell DLLs. The cuts:
 CI gates the idle working set at 60 MB (`idle_gate.py --shell-memory-mb 60`, blocking). The
 owner's release build on real hardware is still to be measured.
 
-**Files and the keys (WIN-OS-32 to WIN-OS-35).**
+**Files and the keys (WIN-OS-34 to WIN-OS-37).**
 
 - Files hides hidden and protected items as Explorer does, following Explorer's `Hidden`
   and `ShowSuperHidden` settings and Lulo's ⇧⌘. toggle.

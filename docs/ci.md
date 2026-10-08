@@ -297,7 +297,7 @@ failed. Since `gpui_windows` is vendored and parks idle windows (ADR 0025),
 `launch_smoke.py --results` records each app's idle CPU and `idle_gate.py`
 fails the job when any app but Terminal used more than one 15.6 ms tick
 over the 20 s idle window, naming the wake-ups and threads that did it,
-when lulo-shell's idle working set is over 60 MB (WIN-OS-37), when the
+when lulo-shell's idle working set is over 60 MB (WIN-OS-39), when the
 results file is missing, or when an app named with `--expect` has no
 reading. No Windows check is non-blocking today: the launch and Lulo layer
 checks (real input on the runner's desktop) have run clean, and one that

@@ -62,12 +62,13 @@ jobs:
         run: |
           cargo build --locked --release -p rmac-calculator -p rmac-notes \
             -p rmac-text-editor -p rmac-preview -p rmac-clock -p rmac-weather \
-            -p rmac-terminal -p rmac-finder -p rmac-win-shell --bins
+            -p rmac-terminal -p rmac-finder -p rmac-system-settings \
+            -p rmac-win-shell --bins
 
       - name: Collect the built exes
         run: |
           mkdir -p exes
-          for app in calculator notes text-editor preview clock weather terminal files; do
+          for app in calculator notes text-editor preview clock weather terminal files system-settings; do
             cp "target/release/rmac-$app.exe" exes/
           done
           cp target/release/lulo-session.exe target/release/lulo-shell.exe exes/
@@ -85,6 +86,11 @@ jobs:
           out=lulo-windows-preview
           mkdir -p "$out"
           cp exes/*.exe "$out/"
+          # Lulo's wallpapers, which Settings ▸ Wallpaper shows and can set
+          # as the Windows desktop picture; on Windows they live beside the
+          # executables (rmac-wallpaper's `packaged_wallpaper_dir`).
+          mkdir -p "$out/wallpapers"
+          cp packaging/rmac-session/wallpapers/*.jpg "$out/wallpapers/"
           cat > "$out/README.txt" <<'EOF'
           Lulo apps for Windows - preview build (${{ github.sha }})
 
@@ -96,6 +102,10 @@ jobs:
           Start Menu install with an uninstaller. Shortcuts use Ctrl where
           the Mac uses Cmd (Ctrl+N, Ctrl+S, Ctrl+Q...). Press Alt to open
           the menu bar at the top of each window.
+
+          rmac-system-settings.exe sets the appearance, accent colour,
+          wallpaper and alert sound every Lulo app uses. Keep the
+          wallpapers folder next to the apps.
 
           The Lulo layer: double-click lulo-session.exe to put Lulo's menu
           bar, Dock and Spotlight (Alt+Space) over the Windows desktop. The

@@ -685,6 +685,9 @@ pub(crate) fn load_catalog(cx: &mut App) {
     .detach();
 }
 
+/// Lulo's System Settings for Windows, shipped beside the layer.
+const SYSTEM_SETTINGS_EXE: &str = "rmac-system-settings.exe";
+
 /// Run a command chosen in the Lulo menu or a Windows app's menus.
 pub(crate) fn run_shell_command(action: &str, cx: &mut App) {
     let shell = shell(cx);
@@ -702,7 +705,15 @@ pub(crate) fn run_shell_command(action: &str, cx: &mut App) {
         .unwrap_or_default();
     match action {
         menus::ABOUT => launch::open(launch::Request::Shell("ms-settings:about".into())),
-        menus::SYSTEM_SETTINGS => launch::open(launch::Request::Shell("ms-settings:".into())),
+        // Lulo's own Settings (ADR 0023 phase 2e) when it is installed
+        // beside the layer, Windows' Settings otherwise.
+        menus::SYSTEM_SETTINGS => launch::open(
+            if launch::install_dir().join(SYSTEM_SETTINGS_EXE).is_file() {
+                launch::Request::Lulo(SYSTEM_SETTINGS_EXE.into())
+            } else {
+                launch::Request::Shell("ms-settings:".into())
+            },
+        ),
         menus::FORCE_QUIT => launch::open(launch::Request::Shell("taskmgr.exe".into())),
         menus::SLEEP => power::run(power::Command::Sleep),
         menus::LOCK_SCREEN => power::run(power::Command::LockScreen),

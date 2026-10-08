@@ -207,6 +207,21 @@ pub fn packaged_wallpaper_dir() -> PathBuf {
     std::env::var_os(PACKAGED_WALLPAPER_DIR_ENV)
         .map(PathBuf::from)
         .and_then(|path| validated_path(path).ok())
+        .unwrap_or_else(installed_wallpaper_dir)
+}
+
+#[cfg(not(windows))]
+fn installed_wallpaper_dir() -> PathBuf {
+    PathBuf::from(PACKAGED_WALLPAPER_DIR)
+}
+
+/// Windows has no `/usr/share`: the Lulo apps ship the images in a
+/// `wallpapers` folder beside their executables (ADR 0023).
+#[cfg(windows)]
+fn installed_wallpaper_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|folder| folder.join("wallpapers")))
         .unwrap_or_else(|| PathBuf::from(PACKAGED_WALLPAPER_DIR))
 }
 

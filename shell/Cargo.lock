@@ -5545,6 +5545,7 @@ dependencies = [
  "futures-lite",
  "futures-util",
  "rmac-appearance",
+ "windows 0.61.3",
 ]
 
 [[package]]

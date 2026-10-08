@@ -46,6 +46,25 @@ const SECOND_TICK: Duration = Duration::from_secs(1);
 /// The World Clock shows minute precision. A second hand would force a full
 /// software-rendered window repaint every second while otherwise idle.
 const SHOW_SECOND_HAND: bool = false;
+/// The World Clock's redraw period: a minute, as it shows minute precision.
+const WORLD_TICK_MS: u64 = 60_000;
+/// Shortens [`WORLD_TICK_MS`] so the Windows launch check can time many
+/// World Clock redraws in one idle window and charge each one its share
+/// (scripts/windows/launch_smoke.py `--world-tick-check`). Never set by
+/// Lulo itself.
+const WORLD_TICK_ENV: &str = "RMAC_CLOCK_WORLD_TICK_MS";
+
+/// The World Clock's redraw period in milliseconds, read once.
+fn world_tick_ms() -> u64 {
+    static PERIOD: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *PERIOD.get_or_init(|| {
+        std::env::var(WORLD_TICK_ENV)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|period| (500..=WORLD_TICK_MS).contains(period))
+            .unwrap_or(WORLD_TICK_MS)
+    })
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Tab {
@@ -83,7 +102,11 @@ fn ticker_delay(
     if tab == Tab::Stopwatch && stopwatch_running {
         Some(FAST_TICK)
     } else if tab == Tab::World {
-        let period = if SHOW_SECOND_HAND { 1_000 } else { 60_000 };
+        let period = if SHOW_SECOND_HAND {
+            1_000
+        } else {
+            world_tick_ms()
+        };
         Some(Duration::from_millis(period - now % period))
     } else if tab == Tab::Timers && timers_running {
         Some(SECOND_TICK)
@@ -117,9 +140,17 @@ fn should_reload_state(event: &notify::Result<notify::Event>, state_path: &Path)
     }
 }
 
-/// A rendered map and what it was rendered for.
+/// The map's fixed layer (land, ocean, meridians) for one pixel size,
+/// rasterised once per size.
+struct BaseMap {
+    key: (usize, usize),
+    pixels: Arc<Vec<u8>>,
+}
+
+/// A shown map: the fixed layer with one minute's night side, and the pixel
+/// size and minute it was made for.
 struct MapImage {
-    key: (usize, usize, i64),
+    key: (usize, usize, u64),
     image: Arc<RenderImage>,
 }
 
@@ -142,8 +173,12 @@ pub(crate) struct ClockView {
     zone: Zone,
     zones: HashMap<&'static str, Zone>,
     land: Option<Arc<Land>>,
+    base: Option<BaseMap>,
+    base_pending: Option<(usize, usize)>,
     map: Option<MapImage>,
-    map_pending: Option<(usize, usize, i64)>,
+    /// The next minute's map, made ahead so its tick draws one frame.
+    next_map: Option<MapImage>,
+    map_pending: Option<(usize, usize, u64)>,
     garbage: Vec<Arc<RenderImage>>,
     picker: Option<Entity<InputState>>,
     editor: Option<AlarmEditor>,
@@ -205,7 +240,10 @@ impl ClockView {
             zone: tz::local_zone(),
             zones: HashMap::new(),
             land: Land::parse(LAND_SVG).map(Arc::new),
+            base: None,
+            base_pending: None,
             map: None,
+            next_map: None,
             map_pending: None,
             garbage: Vec::new(),
             picker: None,
@@ -816,22 +854,90 @@ impl ClockView {
 
     // ------------------------------------------------------------ world clock
 
+    /// Keep the shown map current for this size and minute.
+    ///
+    /// The land is rasterised once per size (`BaseMap`). Each minute's map
+    /// is that layer with the minute's night side painted over it, made off
+    /// the UI thread a minute ahead (`next_map`), so a minute tick swaps in
+    /// a finished image and draws one frame: no land re-rasterised, no
+    /// second frame when a late image lands, no vector layer to draw.
     fn ensure_map(&mut self, width: f32, scale: f32, now: u64, cx: &mut Context<Self>) {
         let Some(land) = self.land.clone() else {
             return;
         };
         let pixel_width = (width * scale).round().max(1.0) as usize;
         let pixel_height = (map::height_for(width) * scale).round().max(1.0) as usize;
-        let minute = (now / 60_000) as i64;
+        let size = (pixel_width, pixel_height);
+        let Some(base) = self
+            .base
+            .as_ref()
+            .filter(|base| base.key == size)
+            .map(|base| base.pixels.clone())
+        else {
+            if self.base_pending == Some(size) {
+                return;
+            }
+            self.base_pending = Some(size);
+            let task = cx.background_executor().spawn(async move {
+                let mask = land.mask(width, pixel_width, pixel_height, scale);
+                Arc::new(map::paint_base(&mask, pixel_width, pixel_height, scale))
+            });
+            cx.spawn(async move |this, cx| {
+                let pixels = task.await;
+                let _ = this.update(cx, |view, cx| {
+                    if view.base_pending == Some(size) {
+                        view.base_pending = None;
+                    }
+                    view.base = Some(BaseMap { key: size, pixels });
+                    cx.notify();
+                });
+            })
+            .detach();
+            return;
+        };
+        let minute = now / world_tick_ms();
         let key = (pixel_width, pixel_height, minute);
-        if self.map.as_ref().is_some_and(|map| map.key == key) || self.map_pending == Some(key) {
+        let current = |view: &Self| view.map.as_ref().is_some_and(|map| map.key == key);
+        if !current(self) {
+            match self.next_map.take() {
+                Some(next) if next.key == key => {
+                    if let Some(old) = self.map.replace(next) {
+                        self.garbage.push(old.image);
+                    }
+                }
+                Some(stale) => self.garbage.push(stale.image),
+                None => {}
+            }
+        }
+        if !current(self) {
+            self.prepare_map(&base, width, scale, minute, cx);
+        } else if self.next_map.is_none() {
+            self.prepare_map(&base, width, scale, minute + 1, cx);
+        }
+    }
+
+    /// Paint `minute`'s map off the UI thread: shown at once when it is the
+    /// current minute, kept for the next tick otherwise (and then the
+    /// minute after that is prepared in turn).
+    fn prepare_map(
+        &mut self,
+        base: &Arc<Vec<u8>>,
+        width: f32,
+        scale: f32,
+        minute: u64,
+        cx: &mut Context<Self>,
+    ) {
+        let pixel_width = (width * scale).round().max(1.0) as usize;
+        let pixel_height = (map::height_for(width) * scale).round().max(1.0) as usize;
+        let key = (pixel_width, pixel_height, minute);
+        if self.map_pending == Some(key) {
             return;
         }
         self.map_pending = Some(key);
+        let base = base.clone();
         let task = cx.background_executor().spawn(async move {
-            let mask = land.mask(width, pixel_width, pixel_height, scale);
-            let sun = solar::subsolar((minute * 60) as f64);
-            let pixels = map::paint(&mask, &sun, width, pixel_width, pixel_height, scale);
+            let sun = solar::subsolar((minute * world_tick_ms() / 1000) as f64);
+            let pixels = map::paint_night(&base, &sun, width, pixel_width, pixel_height, scale);
             image::RgbaImage::from_raw(pixel_width as u32, pixel_height as u32, pixels)
                 .map(|buffer| Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
         });
@@ -841,11 +947,19 @@ impl ClockView {
                 if view.map_pending == Some(key) {
                     view.map_pending = None;
                 }
-                if let Some(image) = image {
+                let Some(image) = image else {
+                    return;
+                };
+                let current = now_millis() / world_tick_ms();
+                if minute <= current {
                     if let Some(old) = view.map.replace(MapImage { key, image }) {
                         view.garbage.push(old.image);
                     }
+                    // Shown now; the frame this asks for also starts the
+                    // next minute's map (`ensure_map`).
                     cx.notify();
+                } else if let Some(old) = view.next_map.replace(MapImage { key, image }) {
+                    view.garbage.push(old.image);
                 }
             });
         })
@@ -971,7 +1085,9 @@ impl ClockView {
                     .relative()
                     .w_full()
                     .h(px(map_height))
-                    .bg(rgb(map::OCEAN))
+                    // The ocean colour only until the opaque map is ready: no
+                    // second full-band fill under it on every frame.
+                    .when(map_image.is_none(), |band| band.bg(rgb(map::OCEAN)))
                     .when_some(map_image, |band, image| {
                         band.child(img(image).absolute().top_0().left_0().w_full().h_full())
                     })

@@ -56,6 +56,13 @@
     "extensions": []
   },
   {
+    "id": "system-settings",
+    "app_id": "org.rmac.SystemSettings",
+    "display_name": "System Settings",
+    "bin": "rmac-system-settings",
+    "extensions": []
+  },
+  {
     "id": "lulo-session",
     "display_name": "Lulo",
     "bin": "lulo-session",

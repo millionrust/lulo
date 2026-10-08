@@ -307,7 +307,7 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

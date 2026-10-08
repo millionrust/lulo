@@ -394,5 +394,9 @@ mod aumid_tests {
             app_user_model_id(rmac_apps::identity::TERMINAL),
             "Lulo.Terminal"
         );
+        assert_eq!(
+            app_user_model_id(rmac_apps::identity::SYSTEM_SETTINGS),
+            "Lulo.SystemSettings"
+        );
     }
 }

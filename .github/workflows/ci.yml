@@ -310,6 +310,7 @@ jobs:
         -p rmac-portal -p rmac-print-linux -p rmac-spelling -p rmac-sound
         -p rmac-finder -p rmac-mounts -p rmac-search -p rmac-app-launch
         -p rmac-pasteboard -p rmac-archive -p rmac-quick-look
+        -p rmac-system-settings -p rmac-appearance-portal
         -p rmac-app-menu -p rmac-win-shell
     defaults:
       run:
@@ -373,7 +374,7 @@ jobs:
         run: |
           cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
             -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal \
-            -p rmac-finder -p rmac-win-shell --bins
+            -p rmac-finder -p rmac-system-settings -p rmac-win-shell --bins
 
       - name: Launch each app
         id: launch
@@ -385,20 +386,26 @@ jobs:
             export LULO_EXPECT_EXE_ICONS=1
           fi
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
-            --foreground-check rmac-calculator --results windows-results.json --shell \
+            --foreground-check rmac-calculator --world-tick-check \
+            --results windows-results.json --shell \
             target/debug rmac-calculator rmac-notes rmac-text-editor \
-            rmac-preview rmac-clock rmac-weather rmac-terminal rmac-files
+            rmac-preview rmac-clock rmac-weather rmac-terminal rmac-files \
+            rmac-system-settings
 
       # Blocking: no app but Terminal, and neither Lulo layer process, may
       # use more than one 15.6 ms tick of CPU over 20 s with no input (ADR
-      # 0025's parked frame loop; ADR 0023 phase 3), and lulo-shell's
-      # working set at idle must stay within 60 MB (8 GB PCs; WIN-OS-37).
+      # 0025's parked frame loop; ADR 0023 phase 3), one World Clock minute
+      # tick may cost Clock at most 3 (ADR 0023 phase 2e), and lulo-shell's
+      # working set at idle must stay within 60 MB (8 GB PCs; WIN-OS-39).
+      # The runner's software GPU (WARP) is counted apart: idle_gate.py. A
+      # missing results file or an expected app without a reading fails.
       - name: Idle gate
         if: ${{ !cancelled() }}
-        run: |
-          python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1 --exempt rmac-terminal --shell-memory-mb 60 \
-            --expect rmac-calculator rmac-notes rmac-text-editor rmac-preview rmac-clock \
-            rmac-weather rmac-terminal rmac-files lulo-shell lulo-session
+        run: >-
+          python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1
+          --exempt rmac-terminal --max-world-tick-ticks 3 --shell-memory-mb 60
+          --expect rmac-calculator rmac-notes rmac-text-editor rmac-preview rmac-clock
+          rmac-weather rmac-terminal rmac-files rmac-system-settings lulo-shell lulo-session
 
       - name: Upload app screenshots
         if: ${{ !cancelled() }}

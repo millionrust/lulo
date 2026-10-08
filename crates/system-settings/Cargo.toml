@@ -18,7 +18,9 @@ gpui-component.workspace = true
 gpui-component-assets.workspace = true
 image = { workspace = true, features = ["jpeg", "png", "webp"] }
 rmac-appearance.workspace = true
+rmac-appearance-portal.workspace = true
 rmac-app-launch.workspace = true
+rmac-compositor.workspace = true
 rmac-apps.workspace = true
 rmac-display.workspace = true
 rmac-locale.workspace = true
@@ -55,9 +57,7 @@ rmac-audio.workspace = true
 rmac-accounts.workspace = true
 rmac-accounts-linux.workspace = true
 rmac-accounts-ui.workspace = true
-rmac-appearance-portal.workspace = true
 rmac-bluetooth.workspace = true
-rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-focus.workspace = true
 rmac-focus-linux.workspace = true
@@ -90,3 +90,28 @@ rmac-time-linux.workspace = true
 rmac-updates.workspace = true
 rmac-updates-linux.workspace = true
 rmac-users-linux.workspace = true
+
+# The exe's icon and version resource on Windows (ADR 0023 "Installer").
+[target.'cfg(windows)'.build-dependencies]
+rmac-windows-resource-build.workspace = true
+
+# The Windows Settings (src/win, ADR 0023 phase 2e): About This PC's
+# hardware facts, display modes, the output volume read-out and the
+# desktop wallpaper.
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Devices_Display",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Variant",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
+] }

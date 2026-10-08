@@ -51,10 +51,10 @@ class IdleGateTests(unittest.TestCase):
         failures = idle_gate.idle_failures(results, 1.0, ("rmac-terminal",))
         self.assertEqual(failures, ["rmac-weather: no idle CPU reading"])
 
-    def test_clocks_per_app_budget_tolerates_one_legitimate_minute_redraw(self) -> None:
-        # Run 37633070594: a real per-minute World Clock redraw landing
-        # inside the 20 s window, not a regression (see PER_APP_BUDGET_TICKS).
-        results = {"rmac-clock": {"idle_ticks": 19.03}}
+    def test_one_minute_tick_fits_clocks_budget_once_the_rasteriser_is_left_out(self) -> None:
+        # A World Clock minute boundary inside the window: one frame, about
+        # nine ticks of it in WARP, the runner's software GPU.
+        results = {"rmac-clock": {"idle_ticks": 10.4, "idle_renderer_ticks": 8.9}}
         self.assertEqual(
             idle_gate.idle_failures(
                 results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
@@ -62,17 +62,44 @@ class IdleGateTests(unittest.TestCase):
             [],
         )
 
-    def test_clocks_per_app_budget_tolerates_a_noisier_runner_too(self) -> None:
-        # Run 37657567719: the same redraw, same wake-source shape, but a
-        # busier CI runner made the settle cost more ticks (see
-        # PER_APP_BUDGET_TICKS) — still nowhere near a real regression.
-        results = {"rmac-clock": {"idle_ticks": 28.05}}
-        self.assertEqual(
-            idle_gate.idle_failures(
-                results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
-            ),
-            [],
+    def test_the_old_minute_tick_no_longer_fits(self) -> None:
+        # Runs 37633070594 / 37657567719 before op/win-settings: 19 and 28
+        # ticks for one tick, most of it re-rasterising the map on the CPU.
+        results = {"rmac-clock": {"idle_ticks": 28.05, "idle_renderer_ticks": 9.0}}
+        failures = idle_gate.idle_failures(
+            results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS
         )
+        self.assertEqual(len(failures), 1)
+
+    def test_rasteriser_time_does_not_hide_an_apps_own_cpu(self) -> None:
+        results = {"rmac-notes": {"idle_ticks": 12.0, "idle_renderer_ticks": 9.0}}
+        failures = idle_gate.idle_failures(results, 1.0, ())
+        self.assertEqual(failures, ["rmac-notes: 3.00 ticks idle over the budget of 1"])
+
+    def test_a_world_clock_redraw_is_gated_on_clocks_own_cost(self) -> None:
+        cheap = {"rmac-clock": {"world_tick": {"own_ticks_per_redraw": 1.1, "ticks_per_redraw": 9.9}}}
+        self.assertEqual(idle_gate.world_tick_failures(cheap, 2.0), [])
+        dear = {"rmac-clock": {"world_tick": {"own_ticks_per_redraw": 6.4, "ticks_per_redraw": 15.8}}}
+        self.assertEqual(len(idle_gate.world_tick_failures(dear, 2.0)), 1)
+        self.assertEqual(idle_gate.world_tick_failures(dear, None), [])
+        self.assertEqual(idle_gate.world_tick_failures({}, 2.0), [])
+
+    def test_the_rasteriser_is_the_thread_pool_less_the_apps_own_tasks(self) -> None:
+        threads = [
+            ("unnamed (4) [ntdll.dll]", 8.0),
+            ("unnamed (5) [ntdll.dll]", 3.0),
+            ("main (1) [rmac-clock.exe]", 0.5),
+        ]
+        tick = launch_smoke.TICK_100NS
+        trace = "\n".join(
+            [
+                f"gpui_windows cpu: pool crates\\clock\\src\\view.rs:9:1 {tick} at 10.0 ms",
+                f"gpui_windows cpu: timer crates\\clock\\src\\view.rs:3:2 {tick} at 12.0 ms",
+                "gpui_windows wake: pool crates\\clock\\src\\view.rs:9:1 at 10.0 ms",
+            ]
+        )
+        self.assertAlmostEqual(launch_smoke.pool_task_ticks(trace), 2.0)
+        self.assertAlmostEqual(launch_smoke.software_renderer_ticks(threads, trace), 9.0)
 
     def test_clocks_per_app_budget_still_catches_a_real_regression(self) -> None:
         results = {
@@ -95,6 +122,14 @@ class IdleGateTests(unittest.TestCase):
         failures = idle_gate.idle_failures(results, 1.0, ("rmac-terminal",))
         self.assertEqual(len(failures), 1)
         self.assertIn("lulo-shell", failures[0])
+
+    def test_the_lulo_bars_minute_clock_fits_its_budget(self) -> None:
+        # Run 37713970007: the bar's once-a-minute clock update.
+        results = {"lulo-shell": {"idle_ticks": 2.0, "idle_renderer_ticks": 0.0}}
+        self.assertEqual(
+            idle_gate.idle_failures(results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS),
+            [],
+        )
 
 
 class MissingReadingTests(unittest.TestCase):

@@ -19,7 +19,7 @@ and private profile folders, then checks, with real input:
 7. `lulo-session --stop` turns the layer off, and the work area, the
    taskbar's visibility and its auto-hide setting are as before.
 
-and, for the fixes after the first real-PC test (ADR 0023, WIN-OS-30 on):
+and, for the fixes after the first real-PC test (ADR 0023, WIN-OS-32 on):
 
 - each exe names itself (`FileDescription`: Files is "Files", not
   Preview's) and, when `LULO_EXPECT_EXE_ICONS=1`, carries an icon;
@@ -588,6 +588,7 @@ def check_shell(
     startup_phases,
     wake_prefix: str,
     tick_100ns: int,
+    software_renderer_ticks=None,
 ) -> list[str]:
     """Run every check; return the failures."""
     failures: list[str] = []
@@ -724,6 +725,10 @@ def check_shell(
             measurements[name].update(
                 {
                     "idle_ticks": round(ticks, 3),
+                    # WARP, the runner's software GPU (launch_smoke.py).
+                    "idle_renderer_ticks": round(software_renderer_ticks(threads, trace), 3)
+                    if software_renderer_ticks and name == "lulo-shell"
+                    else 0.0,
                     "idle_wakes": total if name == "lulo-shell" else 0,
                     "idle_wake_sources": [{"count": count, "source": source} for count, source in wakes],
                     "idle_busy_threads": [

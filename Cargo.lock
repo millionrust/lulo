@@ -6072,6 +6072,7 @@ dependencies = [
  "futures-lite",
  "futures-util",
  "rmac-appearance",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -7576,9 +7577,11 @@ dependencies = [
  "rmac-wallpaper",
  "rmac-wallpaper-image",
  "rmac-wallpaper-system",
+ "rmac-windows-resource-build",
  "rust-embed",
  "serde",
  "serde_json",
+ "windows 0.61.3",
 ]
 
 [[package]]

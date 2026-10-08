@@ -1,5 +1,10 @@
 //! Version-aware global shortcut boundary with an explicit niri fallback.
 
+// Windows builds the shared model for Files and Settings, but its socket
+// dispatch and broker control are stubbed there until phase 3's keyboard
+// hook (docs/parity.md WIN-OS-21), which leaves their wire types unused.
+#![cfg_attr(windows, allow(dead_code))]
+
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};

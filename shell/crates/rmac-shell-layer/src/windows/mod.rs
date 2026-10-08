@@ -49,7 +49,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, RegisterWindowMessageW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE,
+    GetWindowLongPtrW, GetWindowRect, IsWindowVisible, RegisterWindowMessageW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE,
     HWND_TOPMOST, MA_NOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     SWP_SHOWWINDOW, WINDOWPOS, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_MOUSEACTIVATE, WM_NCDESTROY,
     WM_SETTINGCHANGE, WM_WINDOWPOSCHANGING, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
@@ -770,12 +770,12 @@ fn place(raw: isize) {
     // As on wlr-layer-shell, a surface with no exclusive zone of its own
     // (0) keeps out of the others' zones: Spotlight's and Control Centre's
     // margins count from below the menu bar. A negative zone ignores them.
-    let display_bounds = if layer.exclusive_zone.is_none_or(|zone| zone.as_f32() == 0.0) {
+    let area = if layer.exclusive_zone.is_none_or(|zone| zone.as_f32() == 0.0) {
         usable_area(raw, display, display_bounds)
     } else {
         display_bounds
     };
-    let logical = logical_bounds(&layer, requested, display_bounds);
+    let logical = logical_bounds(&layer, requested, area);
     let physical = |value: Pixels| (value.as_f32() * scale).round() as i32;
     let left = monitor.left + physical(logical.origin.x - display_bounds.origin.x);
     let top = monitor.top + physical(logical.origin.y - display_bounds.origin.y);
@@ -785,9 +785,18 @@ fn place(raw: isize) {
         right: left + physical(logical.size.width),
         bottom: top + physical(logical.size.height),
     };
+    // Placing a surface again where it already is would still tell Windows
+    // its window moved, and the AppBars would tell each other in turn: a
+    // surface already in place stays untouched.
+    let mut current = RECT::default();
+    // SAFETY: reads the rectangle of a window this process owns.
+    let in_place = styled
+        && unsafe { IsWindowVisible(hwnd) }.as_bool()
+        && unsafe { GetWindowRect(hwnd, &mut current) }.is_ok()
+        && current == rect;
     match layer.layer {
         Layer::Background | Layer::Bottom => {
-            {
+            if !in_place {
                 let _guard = desktop_layer::OwnPlacement::begin();
                 // SAFETY: positions a window this process owns.
                 let _ = unsafe {
@@ -805,6 +814,7 @@ fn place(raw: isize) {
             desktop_layer::place_above_desktop_layer(hwnd);
             wallpaper_layer::flush();
         }
+        Layer::Top | Layer::Overlay if in_place => {}
         Layer::Top | Layer::Overlay => {
             // The first placement stacks the surface (newest on top, as
             // layer surfaces of one layer stack); placing it again (a
@@ -844,7 +854,7 @@ fn place(raw: isize) {
         };
         let thickness = (zone.as_f32() * scale).round() as i32;
         let held = appbar::reserve(hwnd, edge, thickness, monitor, current);
-        trace::trace(|| {
+        trace::trace_changed_for(raw, || {
             format!(
                 "strip {} at {},{},{},{}",
                 layer.namespace, held.left, held.top, held.right, held.bottom
@@ -866,12 +876,14 @@ fn place(raw: isize) {
             run_hooks(&STRIP_HOOKS, raw, &layer.namespace);
         }
     }
-    trace::trace(|| {
-        format!(
-            "layer {} at {},{},{},{}",
-            layer.namespace, rect.left, rect.top, rect.right, rect.bottom
-        )
-    });
+    if !in_place {
+        trace::trace(|| {
+            format!(
+                "layer {} at {},{},{},{}",
+                layer.namespace, rect.left, rect.top, rect.right, rect.bottom
+            )
+        });
+    }
     if !styled && (focus || layer.keyboard_interactivity == KeyboardInteractivity::Exclusive) {
         surface::take_foreground(hwnd);
     }

@@ -1,6 +1,7 @@
 //! The Win32 side of the Lulo layer that only Windows has.
 
 pub use rmac_shell_layer::windows::{appbar, power, surface};
+pub mod app_entries;
 pub mod catalog;
 pub mod desktop;
 pub mod events;

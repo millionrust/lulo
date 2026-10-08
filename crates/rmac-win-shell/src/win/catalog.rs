@@ -144,6 +144,36 @@ fn apps_folder_from_helper() -> Option<Vec<Entry>> {
     Some(parse_helper_apps(&String::from_utf8_lossy(&output.stdout)))
 }
 
+/// The Apps folder's apps as the helper reads them (`None` if it cannot
+/// run), for Lulo's desktop entries (`app_entries`).
+pub fn apps_folder_apps() -> Option<Vec<super::app_entries::App>> {
+    use std::os::windows::process::CommandExt as _;
+    use windows::Win32::System::Threading::CREATE_NO_WINDOW;
+
+    let exe = std::env::current_exe().ok()?;
+    let output = std::process::Command::new(exe)
+        .arg(APPS_HELPER_SWITCH)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW.0)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.split_once('\t'))
+            .filter(|(name, parsing)| !name.is_empty() && !parsing.is_empty())
+            .map(|(name, parsing)| super::app_entries::App {
+                name: name.to_owned(),
+                parsing: parsing.to_owned(),
+            })
+            .collect(),
+    )
+}
+
 /// The helper's lines, `<name>\t<parsing name>`, as Spotlight entries.
 fn parse_helper_apps(text: &str) -> Vec<Entry> {
     text.lines()

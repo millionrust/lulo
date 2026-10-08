@@ -48,6 +48,24 @@ pub fn trace_changed(key: &'static str, message: impl FnOnce() -> String) {
     }
 }
 
+thread_local! {
+    static LAST_FOR: RefCell<HashMap<isize, String>> = RefCell::new(HashMap::new());
+}
+
+/// [`trace_changed`] keyed by a window rather than a name.
+pub fn trace_changed_for(window: isize, message: impl FnOnce() -> String) {
+    if !enabled() {
+        return;
+    }
+    let message = message();
+    let changed = LAST_FOR.with(|last| {
+        last.borrow_mut().insert(window, message.clone()).as_ref() != Some(&message)
+    });
+    if changed {
+        trace(|| message);
+    }
+}
+
 /// A point in `window`'s own logical coordinates as physical screen pixels.
 pub fn screen_point(window: &gpui::Window, x: f32, y: f32) -> (i32, i32) {
     let origin = window.bounds().origin;

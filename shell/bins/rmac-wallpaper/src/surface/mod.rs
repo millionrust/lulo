@@ -422,7 +422,11 @@ pub(crate) fn spawn_item_action(path: PathBuf, action: ItemAction, cx: &mut App)
             #[cfg(windows)]
             if matches!(action, ItemAction::Open) && path.is_dir() {
                 let files = rmac_shell_layer::system::program("/usr/bin/rmac-files");
-                if let Err(error) = std::process::Command::new(files).arg(&path).spawn() {
+                let opened = blocking::unblock(move || {
+                    std::process::Command::new(files).arg(&path).spawn().map(|_| ())
+                })
+                .await;
+                if let Err(error) = opened {
                     eprintln!("Files could not open a Desktop folder: {error}");
                 }
                 return;

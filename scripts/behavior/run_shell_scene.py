@@ -199,8 +199,13 @@ class Run:
             if self.args.open:
                 # The panel's own process opens it at start-up
                 # (RMAC_SHELL_SCENE_OPEN), as lulo-shell does on Windows.
+                # Only the profile's apps, as on Windows: not the runner's
+                # own /usr/share/applications (vim and the like).
+                empty = self.work / "no-system-data"
+                empty.mkdir(exist_ok=True)
                 panel_env = {**surface_env, "RMAC_SHELL_SCENE_OPEN": self.args.open,
-                             "RMAC_SPOTLIGHT_FRAME_DIR": str(ready)}
+                             "RMAC_SPOTLIGHT_FRAME_DIR": str(ready),
+                             "XDG_DATA_DIRS": str(empty)}
                 apps = Path(self.args.app_bin_dir or self.args.bin_dir)
                 if self.args.open.startswith("spotlight:"):
                     self.spawn([str(apps / "rmac-launcher")], "launcher", panel_env)

@@ -6,6 +6,14 @@
 //! Everything that reads the disk, starts the downloader or talks to the
 //! service runs on the blocking pool; nothing here polls. Download progress
 //! arrives line by line from the `rmac-intelligence-fetch` helper.
+//!
+//! The first request after a download would otherwise pay the one-time
+//! evaluation of the prompt prefix (about 15 s on the reference laptop).
+//! Settings pays it instead, in the background, whenever Lulo Intelligence
+//! is on, the model is on disk and its saved prefix state is missing (after
+//! the download, after turning it on, or after an update changed the
+//! prompt or the model): the pane says "Getting ready…" until the service
+//! has written the state, and Spotlight's first request is warm.
 
 mod render;
 
@@ -30,6 +38,11 @@ pub(in crate::controller) struct IntelligencePane {
     pub(in crate::controller) partial: [u64; 2],
     pub(in crate::controller) download: Option<Download>,
     pub(in crate::controller) calibrating: bool,
+    /// Whether each tier's prompt-prefix state is saved, so its first
+    /// request is warm ([`rmac_intelligence::prefix_state`]).
+    pub(in crate::controller) ready: [bool; 2],
+    /// The service is evaluating and saving the prefix state now.
+    pub(in crate::controller) preparing: bool,
     pub(in crate::controller) busy: bool,
     pub(in crate::controller) error: Option<SharedString>,
 }
@@ -53,6 +66,7 @@ struct Loaded {
     facts: Facts,
     present: [bool; 2],
     partial: [u64; 2],
+    ready: [bool; 2],
 }
 
 fn load() -> Loaded {
@@ -70,7 +84,12 @@ fn load() -> Loaded {
         facts,
         present,
         partial,
+        ready: prefix_states(),
     }
+}
+
+fn prefix_states() -> [bool; 2] {
+    Tier::ALL.map(|tier| rmac_intelligence::prefix_state::is_ready(tier.model()))
 }
 
 /// What a line from `rmac-intelligence-fetch` says.
@@ -119,6 +138,8 @@ impl Settings {
                 pane.facts = loaded.facts;
                 pane.present = loaded.present;
                 pane.partial = loaded.partial;
+                pane.ready = loaded.ready;
+                this.warm_intelligence(cx);
                 cx.notify();
             });
         })
@@ -136,14 +157,8 @@ impl Settings {
                 this.intelligence.busy = false;
                 match result {
                     Ok(()) => {
-                        let wants_calibration = config.enabled
-                            && config.calibration_for(&this.intelligence.facts).is_none();
                         this.intelligence.config = config;
-                        if wants_calibration
-                            && this.intelligence.present[tier_index(this.intelligence_tier())]
-                        {
-                            this.calibrate_intelligence(cx);
-                        }
+                        this.warm_intelligence(cx);
                     }
                     Err(_) => {
                         this.intelligence.error =
@@ -278,16 +293,8 @@ impl Settings {
             }
             FetchLine::Done => {
                 self.intelligence.download = None;
+                // The refresh sees the model and warms it up.
                 self.refresh_intelligence(cx);
-                if self.intelligence.config.enabled
-                    && self
-                        .intelligence
-                        .config
-                        .calibration_for(&self.intelligence.facts)
-                        .is_none()
-                {
-                    self.calibrate_intelligence(cx);
-                }
             }
             FetchLine::Failed(message) => {
                 self.intelligence.download = None;
@@ -331,6 +338,58 @@ impl Settings {
         .detach();
     }
 
+    /// Make the next Spotlight request warm: when Lulo Intelligence is on
+    /// and the chosen model is on disk, measure this PC's speed if that was
+    /// never done (which also loads the model and saves its prompt state),
+    /// or else ask the service to load and save the state (`Prepare`) if it
+    /// is missing. Nothing happens when the state is already saved.
+    pub(in crate::controller) fn warm_intelligence(&mut self, cx: &mut Context<Self>) {
+        let pane = &self.intelligence;
+        let index = tier_index(self.intelligence_tier());
+        let offered = !matches!(
+            pane.config.decision(&pane.facts),
+            rmac_intelligence::gate::Decision::NotOffered(_)
+        );
+        if !pane.loaded
+            || !pane.config.enabled
+            || !offered
+            || !pane.present[index]
+            || pane.download.is_some()
+            || pane.preparing
+            || pane.calibrating
+        {
+            return;
+        }
+        if pane.config.calibration_for(&pane.facts).is_none() {
+            self.calibrate_intelligence(cx);
+        } else if !pane.ready[index] {
+            self.prepare_intelligence(cx);
+        }
+    }
+
+    fn prepare_intelligence(&mut self, cx: &mut Context<Self>) {
+        self.intelligence.preparing = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(|| {
+                let prepared = rmac_intelligence::client::prepare();
+                (prepared, prefix_states())
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                let (prepared, ready) = result;
+                this.intelligence.preparing = false;
+                this.intelligence.ready = ready;
+                if let Err(error) = prepared {
+                    this.intelligence.error =
+                        Some(format!("Lulo Intelligence could not get ready: {error}.").into());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Measure this PC's decode speed once (the hardware gate's floor), and
     /// keep it with the hardware it was measured on.
     pub(in crate::controller) fn calibrate_intelligence(&mut self, cx: &mut Context<Self>) {
@@ -363,8 +422,11 @@ impl Settings {
                 Ok::<_, String>(config)
             })
             .await;
+            // Calibrating loaded the model, so its prompt state is saved now.
+            let ready = blocking::unblock(prefix_states).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.intelligence.calibrating = false;
+                this.intelligence.ready = ready;
                 match result {
                     Ok(config) => this.intelligence.config = config,
                     Err(message) => {

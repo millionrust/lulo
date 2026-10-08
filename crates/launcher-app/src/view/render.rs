@@ -741,6 +741,7 @@ impl LauncherView {
 
 impl Render for LauncherView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        rmac_ui::trace_mark("launcher_render");
         self.scale_factor = window.scale_factor();
         let snapshot = self.coordinator.snapshot();
         let phase_message: SharedString = visible_phase_label(&snapshot).into();

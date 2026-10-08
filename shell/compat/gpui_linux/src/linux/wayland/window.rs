@@ -2469,6 +2469,13 @@ impl PlatformWindow for WaylandWindow {
     fn draw(&self, scene: &Scene) {
         super::frame_trace::record("draw_start");
         let mut state = self.borrow_mut();
+        if super::frame_trace::enabled() {
+            // Which surface drew: one process may own several.
+            super::frame_trace::record(&format!(
+                "draw_window:{}",
+                state.app_id.as_deref().unwrap_or("-")
+            ));
+        }
         if state.hidden {
             // Never attach a buffer to the unmapped surface: that would map
             // it without a configure. Redraw the whole scene once shown.

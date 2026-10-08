@@ -133,7 +133,15 @@ impl Settings {
         } else if pane.present[index] {
             let remove_view = view.clone();
             (
-                format!("Downloaded · {size}"),
+                if getting_ready(pane, index) {
+                    // For scripts/behavior/run_spotlight_intents.py
+                    // --warm-first: the text on screen, on the frame clock.
+                    rmac_ui::trace_mark("intelligence_status:getting_ready");
+                    format!("Downloaded · {size} · Getting ready…")
+                } else {
+                    rmac_ui::trace_mark("intelligence_status:downloaded");
+                    format!("Downloaded · {size}")
+                },
                 push_button("intelligence-remove", "Remove Model")
                     .disabled(pane.busy)
                     .on_click(move |_, _, cx| {
@@ -171,9 +179,33 @@ impl Settings {
     }
 }
 
+/// Whether the pane says "Getting ready…": the model is on disk and Lulo is
+/// loading it and saving its prompt state, so the first request is warm.
+pub(in crate::controller) fn getting_ready(pane: &IntelligencePane, index: usize) -> bool {
+    pane.config.enabled && !pane.ready[index] && (pane.preparing || pane.calibrating)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn getting_ready_shows_only_while_the_state_is_being_saved() {
+        let mut pane = IntelligencePane::default();
+        pane.config.enabled = true;
+        pane.present = [true, false];
+        assert!(!getting_ready(&pane, 0));
+        pane.preparing = true;
+        assert!(getting_ready(&pane, 0));
+        pane.ready = [true, false];
+        assert!(!getting_ready(&pane, 0));
+        pane.ready = [false, false];
+        pane.preparing = false;
+        pane.calibrating = true;
+        assert!(getting_ready(&pane, 0));
+        pane.config.enabled = false;
+        assert!(!getting_ready(&pane, 0));
+    }
 
     #[test]
     fn sizes_read_like_finder() {

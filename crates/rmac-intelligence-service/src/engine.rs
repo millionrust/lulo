@@ -20,6 +20,14 @@ pub struct Timing {
     pub cached_prefix_tokens: u32,
     pub request_tokens: u32,
     pub passes: u32,
+    /// Waiting behind an earlier request in the worker.
+    pub queued_ms: f64,
+    /// Restoring the saved prefix state.
+    pub rewind_ms: f64,
+    /// Evaluating the request's own tokens.
+    pub prefill_ms: f64,
+    /// The schema-guided decode after the request.
+    pub decode_ms: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,6 +63,8 @@ pub enum EngineError {
     NotSupported(String),
     NotDownloaded,
     LowMemory,
+    /// A newer request from the same caller replaced this one.
+    Cancelled,
     Failed(String),
 }
 
@@ -65,6 +75,7 @@ impl fmt::Display for EngineError {
             Self::NotSupported(reason) => formatter.write_str(reason),
             Self::NotDownloaded => formatter.write_str("the model is not downloaded"),
             Self::LowMemory => formatter.write_str("not enough free memory right now"),
+            Self::Cancelled => formatter.write_str("a newer request replaced this one"),
             Self::Failed(detail) => formatter.write_str(detail),
         }
     }
@@ -74,8 +85,15 @@ impl std::error::Error for EngineError {}
 
 pub trait Engine {
     /// The intent for one request. `received` is when the request arrived,
-    /// so the timings include any queueing.
-    fn intent(&mut self, text: &str, received: Instant) -> Result<IntentOutcome, EngineError>;
+    /// so the timings include any queueing. `cancelled` is asked before
+    /// every forward pass; once it says yes the request stops with
+    /// [`EngineError::Cancelled`].
+    fn intent(
+        &mut self,
+        text: &str,
+        received: Instant,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<IntentOutcome, EngineError>;
     fn calibrate(&mut self) -> Result<Calibration, EngineError>;
     fn load_report(&self) -> LoadReport;
 }
@@ -142,6 +160,7 @@ fn load_llama(
             threads,
             style: rmac_intelligence::prompt::PromptStyle::DEFAULT,
             state_cache: paths::cache_dir(),
+            guard: true,
         },
     )?;
     Ok(Box::new(engine))

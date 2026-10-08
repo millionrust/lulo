@@ -221,7 +221,24 @@ def process_cpu_ticks(runtime_dir: Path) -> int:
     return total
 
 
-def input_to_present_latencies(path: Path) -> list[int]:
+def trace_events(path: Path) -> list[tuple[int, str]]:
+    """`(micros, event)` rows of a `RMAC_FRAME_TRACE` CSV, in time order;
+    empty if the trace was never written."""
+
+    if not path.exists():
+        return []
+    events = []
+    for line in path.read_text().splitlines()[1:]:
+        event, _, moment = line.rpartition(",")
+        try:
+            events.append((int(moment), event))
+        except ValueError:
+            continue
+    events.sort(key=lambda pair: pair[0])
+    return events
+
+
+def input_to_present_latencies(path: Path, actions: list[float] | None = None) -> list[int]:
     """Microseconds from each keystroke (`input`) to the next presented
     frame (`present`), from a `RMAC_FRAME_TRACE` CSV: this scenario's
     "typing never stutters" measurement, matching the input-to-visible-
@@ -239,31 +256,204 @@ def input_to_present_latencies(path: Path) -> list[int]:
     that same next `present`, so an earlier key in the batch correctly
     shows a longer wait than the last one.
 
+    A key that *closes* Spotlight (each request ends with Escape) draws no
+    frame of its own: the window is gone. Its next `present` is the first
+    frame of the next request's new window, opened half a second later by
+    this script, so pairing the two measured the script's own pause, not
+    a stutter (ADR 0024 "Phase 1.1": the 400-620 ms "hitch" once per
+    request was exactly this). An input followed by `open_window` before
+    any `present` is therefore not counted.
+
+    Nor is a key that carries out a picked row (`actions`: time.monotonic()
+    just before this script pressed it): its next frame waits for the
+    action itself (switching the whole session to Dark), which is not
+    typing; [`action_latencies`] reports those on their own.
+
     Empty (never a hard failure) if the trace was never written: some
     builds or renderers may not emit it, and typing is still the
     scenario's real test."""
 
-    if not path.exists():
-        return []
-    events = []
-    for line in path.read_text().splitlines()[1:]:
-        parts = line.split(",")
-        if len(parts) != 2 or parts[0] not in ("input", "present"):
-            continue
-        try:
-            events.append((int(parts[1]), parts[0]))
-        except ValueError:
-            continue
-    events.sort(key=lambda pair: pair[0])
     latencies = []
     pending: list[int] = []
-    for moment, event in events:
+    skip = action_inputs(path, actions or [])
+    for moment, event in trace_events(path):
+        if event == "input" and moment in skip:
+            continue
         if event == "input":
             pending.append(moment)
-        elif pending:
+        elif event == "open_window":
+            pending = []
+        elif event == "present" and pending:
             latencies.extend(moment - input_moment for input_moment in pending)
             pending = []
     return latencies
+
+
+def action_inputs(path: Path, actions: list[float]) -> set[int]:
+    """The trace times of the first `input` after each of `actions`."""
+
+    events = trace_events(path)
+    origin = next((moment for moment, event in events if event == "monotonic_origin"), None)
+    if origin is None:
+        return set()
+    inputs = [moment for moment, event in events if event == "input"]
+    found = set()
+    for action in actions:
+        start = action * 1e6 - origin
+        later = [moment for moment in inputs if moment >= start]
+        if later:
+            found.add(later[0])
+    return found
+
+
+def action_latencies(path: Path, actions: list[float]) -> list[int]:
+    """Microseconds from each action key (see `input_to_present_latencies`)
+    to the next presented frame."""
+
+    skip = action_inputs(path, actions)
+    out = []
+    pending = None
+    for moment, event in trace_events(path):
+        if event == "input" and moment in skip:
+            pending = moment
+        elif event == "present" and pending is not None:
+            out.append(moment - pending)
+            pending = None
+        elif event == "open_window":
+            pending = None
+    return out
+
+
+def assist_frames(path: Path) -> list[dict[str, float]]:
+    """For every "Lulo can do this" row Spotlight inserted
+    (`assist_row_applied`, crates/launcher-app/src/view/assist.rs), the
+    frame that showed it: milliseconds from the row being applied to the
+    view's `launcher_render`, from there to `draw_start` (layout, text
+    shaping and paint on the UI thread) and to `present`."""
+
+    events = trace_events(path)
+    frames = []
+    for index, (moment, event) in enumerate(events):
+        if event != "assist_row_applied":
+            continue
+        render = draw = None
+        for later, kind in events[index + 1:]:
+            if kind == "launcher_render" and render is None:
+                render = later
+            elif kind == "draw_start" and render is not None and draw is None:
+                draw = later
+            elif kind == "present" and draw is not None:
+                frames.append({
+                    "to_render_ms": (render - moment) / 1000,
+                    "render_ms": (draw - render) / 1000,
+                    "present_ms": (later - draw) / 1000,
+                    "total_ms": (later - moment) / 1000,
+                })
+                break
+    return frames
+
+
+def keystroke_to_row(path: Path, typed_at: list[float]) -> list[float | None]:
+    """For each request (`typed_at`: `time.monotonic()` when this script
+    finished typing it), milliseconds from the request's last keystroke
+    reaching Spotlight (`input`) to the frame that showed its row
+    (`present` after `assist_row_applied`), on the trace's own clock: no
+    AT-SPI polling in it. `None` where no row was shown."""
+
+    events = trace_events(path)
+    origin = next((moment for moment, event in events if event == "monotonic_origin"), None)
+    if origin is None:
+        return [None for _ in typed_at]
+    events = [(moment, event) for moment, event in events if event != "monotonic_origin"]
+    results: list[float | None] = []
+    for index, typed in enumerate(typed_at):
+        start = typed * 1e6 - origin
+        end = typed_at[index + 1] * 1e6 - origin if index + 1 < len(typed_at) else float("inf")
+        last_input = None
+        latency = None
+        applied = False
+        for moment, event in events:
+            if moment > end:
+                break
+            if event == "input" and not applied and moment <= start + 50_000:
+                last_input = moment
+            elif event == "assist_row_applied" and moment >= start and last_input is not None:
+                applied = True
+            elif event == "present" and applied:
+                latency = (moment - last_input) / 1000
+                break
+        results.append(latency)
+    return results
+
+
+def service_timings(path: Path) -> list[dict[str, float]]:
+    """What the service measured for each answer Spotlight received, from
+    the launcher's `assist_timing:` trace rows (assist.rs)."""
+
+    timings = []
+    for _moment, event in trace_events(path):
+        if not event.startswith("assist_timing:"):
+            continue
+        fields = {}
+        for pair in event.split(":")[1:]:
+            key, _, value = pair.partition("=")
+            try:
+                fields[key] = float(value)
+            except ValueError:
+                continue
+        timings.append(fields)
+    return timings
+
+
+class TraceWatcher:
+    """Follows Spotlight's own `RMAC_FRAME_TRACE` file, so a request's
+    answer is noticed from the launcher's `assist_reply` mark (a few file
+    reads) instead of by walking the whole accessibility tree five times a
+    second. That polling ran on the same two cores as the model and roughly
+    doubled the service's measured time (ADR 0024 "Phase 1.1"); a user's
+    session has no such poller. The row's text is still read from the
+    accessibility tree, once, after the answer arrived."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.offset = 0
+        self.buffer = ""
+        self.origin: int | None = None
+        self.events: list[tuple[float, str]] = []
+
+    def _read(self) -> None:
+        try:
+            with self.path.open() as handle:
+                handle.seek(self.offset)
+                chunk = handle.read()
+                self.offset = handle.tell()
+        except OSError:
+            return
+        self.buffer += chunk
+        *lines, self.buffer = self.buffer.split("\n")
+        for line in lines:
+            event, _, moment = line.rpartition(",")
+            try:
+                micros = int(moment)
+            except ValueError:
+                continue
+            if event == "monotonic_origin":
+                self.origin = micros
+            elif self.origin is not None:
+                self.events.append(((self.origin + micros) / 1e6, event))
+
+    def wait_for(self, prefix: str, after: float, timeout: float) -> bool:
+        """Whether an event starting with `prefix` happened after `after`
+        (time.monotonic()), waiting up to `timeout` seconds."""
+
+        deadline = time.monotonic() + timeout
+        while True:
+            self._read()
+            if any(moment >= after and event.startswith(prefix) for moment, event in self.events):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
 
 
 def wait_until(predicate, timeout: float, interval: float = 0.2):
@@ -305,9 +495,17 @@ class BaseScenario:
         return sorted(name for name in self.showing() if name.endswith(ASSIST_SUFFIX))
 
     def open_and_type(self, text: str = QUERY) -> None:
+        opened = time.monotonic()
         self.driver.action({"key": "cmd-space"})
         if not wait_until(lambda: "Spotlight Search" in self.showing(), 10):
             raise RuntimeError("Spotlight did not open")
+        watcher = getattr(self, "watcher", None)
+        if watcher is not None:
+            # Keys sent before the compositor gives Spotlight keyboard focus
+            # are lost ("open notes" arrived as "en notes"): wait for the
+            # launcher's own focus_in on its trace first.
+            watcher.wait_for("focus_window:org.rmac.Launcher", opened, 5)
+            time.sleep(0.05)
         self.driver.session.pointer.type_text(text)
 
     def close(self) -> None:
@@ -417,6 +615,7 @@ class RealModelScenario(BaseScenario):
             return
         time.sleep(0.3)
         before = theme_scheme(self.config_home)
+        self.actions.append(time.monotonic())
         self.driver.session.pointer.key("return")
         dark = wait_until(lambda: theme_scheme(self.config_home) == "dark", 10)
         record["end_to_end"] = {"scheme_before": before, "scheme_after": theme_scheme(self.config_home)}
@@ -425,6 +624,7 @@ class RealModelScenario(BaseScenario):
 
     def _confirm_timer(self, record: dict) -> None:
         before = len(clock_timers(self.config_home))
+        self.actions.append(time.monotonic())
         self.driver.session.pointer.key("return")
         created = wait_until(
             lambda: any(timer.get("duration") == 600_000 for timer in clock_timers(self.config_home)),
@@ -434,6 +634,55 @@ class RealModelScenario(BaseScenario):
         record["end_to_end"] = {"timers_before": before, "timers_after": len(timers)}
         if not created:
             record["bug"] = f"no 10-minute timer in the nested Clock store: {timers}"
+
+    watcher: "TraceWatcher | None" = None
+    actions: list[float] = []
+
+    def _warm_through_settings(self) -> None:
+        """The product's own warm-up (ADR 0024 "Phase 1.1"): open System
+        Settings ▸ Lulo Intelligence with the feature on and the model on
+        disk, as a user does after the download; it says "Getting ready…"
+        and has the service evaluate and save the prompt-prefix state. Then
+        close Settings and let the service exit, so the first Spotlight
+        request starts a fresh service that reads the state from disk."""
+
+        cache = Path(self.driver.session.env["XDG_CACHE_HOME"]) / "lulo" / "intelligence"
+        settings = Path(self.args.bin_dir) / "rmac-system-settings"
+        if not settings.exists():
+            settings = Path("/usr/bin/rmac-system-settings")
+        # The pane's status text, as it renders it (render.rs marks each
+        # frame's "Getting ready…" or "Downloaded"), on Settings' own trace.
+        settings_trace = Path(self.args.inner) / "settings-frame-trace.csv"
+        watcher = TraceWatcher(settings_trace)
+        started = time.monotonic()
+        process = self.driver.session.spawn([str(settings), "--pane", "intelligence"],
+                                            "rmac-system-settings",
+                                            {"RMAC_FRAME_TRACE": str(settings_trace)})
+        saw = watcher.wait_for("intelligence_status:getting_ready", started, 30)
+        states = wait_until(lambda: sorted(cache.glob("prefix-*.state")), 120, 0.5)
+        warm_seconds = time.monotonic() - started
+        record: dict[str, object] = {
+            "showed_getting_ready": bool(saw),
+            "state_saved": bool(states),
+            "seconds": round(warm_seconds, 1),
+        }
+        if states:
+            record["state_file_mode"] = oct(states[0].stat().st_mode & 0o777)
+            record["cache_dir_mode"] = oct(cache.stat().st_mode & 0o777)
+            record["state_mib"] = round(states[0].stat().st_size / 2**20, 1)
+            # "Getting ready…" goes away once the state is saved.
+            record["getting_ready_cleared"] = watcher.wait_for(
+                "intelligence_status:downloaded", time.monotonic() - 1, 60)
+            record["state_owner_only"] = record["state_file_mode"] == "0o600"
+        process.terminate()
+        try:
+            process.wait(10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        idle_timeout = getattr(self.args, "idle_seconds", None) or REAL_IDLE_SECONDS
+        record["service_exited_after"] = bool(
+            wait_until(lambda: not service_pids(self.service), idle_timeout + 15, 0.5))
+        self.facts["warm_up"] = record
 
     def probe(self, spec: dict, cold: bool) -> dict:
         text = str(spec["text"])
@@ -461,18 +710,32 @@ class RealModelScenario(BaseScenario):
             timeout = 40.0 if cold else 8.0
             self.open_and_type(text)
             t_key = time.monotonic()
+            record["typed_at"] = t_key
+            watcher = self.watcher
             if not expect_row:
-                # Unsupported: give it the same wait a real row would need,
-                # then require that none ever showed.
-                wait_until(lambda: bool(self.assist_rows()), min(timeout, 6))
+                # Unsupported: wait for the answer (or the time a real row
+                # would need), then require that no row showed.
+                if watcher is not None:
+                    watcher.wait_for("assist_reply", t_key, min(timeout, 6))
+                    time.sleep(0.3)
+                else:
+                    wait_until(lambda: bool(self.assist_rows()), min(timeout, 6))
                 rows = self.assist_rows()
                 record.update(row=(rows[0] if rows else None), latency_ms=None, correct=not rows)
                 if rows:
                     record["bug"] = f"a row appeared for an unsupported request: {rows}"
                 return record
 
-            shown = wait_until(lambda: bool(self.assist_rows()), timeout)
-            latency_ms = (time.monotonic() - t_key) * 1000 if shown else None
+            if watcher is not None:
+                applied = watcher.wait_for("assist_row_applied", t_key, timeout)
+                latency_ms = (time.monotonic() - t_key) * 1000 if applied else None
+                # The row reaches the accessibility tree with its frame.
+                shown = applied and wait_until(lambda: bool(self.assist_rows()), 3, 0.1)
+                if not shown:
+                    latency_ms = None
+            else:
+                shown = wait_until(lambda: bool(self.assist_rows()), timeout)
+                latency_ms = (time.monotonic() - t_key) * 1000 if shown else None
             rows = self.assist_rows()
             row_text = rows[0] if rows else None
             title = row_text[: -len(ASSIST_SUFFIX)] if row_text else None
@@ -508,7 +771,15 @@ class RealModelScenario(BaseScenario):
         set_enabled(self.config_home, True)
         trace_path = Path(self.args.inner) / "launcher-frame-trace.csv"
         self._enable_frame_trace(trace_path)
+        self.watcher = TraceWatcher(trace_path)
+        self.actions = []
         self.driver.start()
+        if self.args.warm_first:
+            self._warm_through_settings()
+            warm = self.facts["warm_up"]
+            if not (warm.get("state_saved") and warm.get("showed_getting_ready")
+                    and warm.get("getting_ready_cleared") and warm.get("state_owner_only")):
+                errors.append(f"System Settings did not warm the model up: {warm}")
 
         for index, spec in enumerate(REQUESTS):
             try:
@@ -533,8 +804,55 @@ class RealModelScenario(BaseScenario):
             "count": len(warm),
         }
 
-        latencies = input_to_present_latencies(trace_path)
+        latencies = input_to_present_latencies(trace_path, self.actions)
         self.facts["frame_trace_present"] = trace_path.exists()
+        self.facts["action_key_to_present_ms"] = [
+            round(latency / 1000) for latency in action_latencies(trace_path, self.actions)]
+        typed = [row for row in results if isinstance(row.get("typed_at"), float)]
+        for row, exact in zip(typed, keystroke_to_row(trace_path, [row["typed_at"] for row in typed])):
+            row["keystroke_to_row_ms"] = None if exact is None else round(exact)
+        exact_warm = sorted(row["keystroke_to_row_ms"] for row in typed[1:]
+                            if isinstance(row.get("keystroke_to_row_ms"), (int, float)))
+        self.facts["warm_keystroke_to_row_ms"] = {
+            "min": exact_warm[0] if exact_warm else None,
+            "p50": exact_warm[len(exact_warm) // 2] if exact_warm else None,
+            "max": exact_warm[-1] if exact_warm else None,
+            "count": len(exact_warm),
+        }
+        self.facts["cold_keystroke_to_row_ms"] = typed[0].get("keystroke_to_row_ms") if typed else None
+        timings = service_timings(trace_path)
+        self.facts["service_timing_ms"] = {
+            key: (lambda values: {
+                "p50": values[len(values) // 2] if values else None,
+                "max": values[-1] if values else None,
+            })(sorted(timing.get(key, 0.0) for timing in timings[1:]))
+            for key in ("total_ms", "queued_ms", "rewind_ms", "prefill_ms", "decode_ms",
+                        "request_tokens", "passes")
+        }
+        self.facts["service_timing_ms"]["warm_count"] = max(len(timings) - 1, 0)
+        self.facts["service_timing_ms"]["first"] = timings[0] if timings else None
+        frames = assist_frames(trace_path)
+
+        def summary(values: list[float]) -> dict[str, float | None]:
+            ordered = sorted(values)
+            return {
+                "count": len(ordered),
+                "p50": ordered[len(ordered) // 2] if ordered else None,
+                "max": ordered[-1] if ordered else None,
+            }
+
+        self.facts["assist_frame_ms"] = {
+            key: summary([frame[key] for frame in frames])
+            for key in ("to_render_ms", "render_ms", "present_ms", "total_ms")
+        }
+        # The frame that inserts the row is an ordinary frame: its UI-thread
+        # work (layout, shaping, paint) stays inside one 60 Hz frame.
+        slow_rows = [frame for frame in frames if frame["render_ms"] > 16.0]
+        if slow_rows:
+            errors.append(
+                f"{len(slow_rows)} of {len(frames)} row insertions took over 16 ms of UI-thread "
+                f"work (max {max(frame['render_ms'] for frame in slow_rows):.1f} ms)"
+            )
         self.facts["input_to_present_us"] = {
             "count": len(latencies),
             "p50": sorted(latencies)[len(latencies) // 2] if latencies else None,
@@ -643,6 +961,8 @@ def outer(args) -> int:
                    "--niri", args.niri, "--idle-seconds", str(idle_seconds)]
         if args.real_model:
             command.append("--real-model")
+        if args.warm_first:
+            command.append("--warm-first")
         return subprocess.call(command, env=env, close_fds=True)
     finally:
         if run_lulo.reap(work / "runtime"):
@@ -672,6 +992,10 @@ def main() -> int:
                         help="the verified model directory to link read-only (--real-model only); "
                              "default $XDG_DATA_HOME/lulo/intelligence/models, or "
                              "~/.local/share/lulo/intelligence/models")
+    parser.add_argument("--warm-first", action="store_true",
+                        help="--real-model only: before the first request, open System Settings "
+                             "> Lulo Intelligence so it warms the model up (\"Getting ready…\") "
+                             "and wait for the service to exit, as after a download")
     parser.add_argument("--idle-seconds", type=int, default=None,
                         help="override the service's idle-exit timeout for this run")
     parser.add_argument("--inner", help=argparse.SUPPRESS)

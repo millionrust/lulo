@@ -5061,7 +5061,10 @@ mod bar {
             let (label, slot) = if index == 1 {
                 (active_app, title_slot(active_app, FontWeight::BOLD))
             } else {
-                (menu.label.as_str(), title_slot(&menu.label, FontWeight::MEDIUM))
+                (
+                    menu.label.as_str(),
+                    title_slot(&menu.label, FontWeight::MEDIUM),
+                )
             };
             let (x, y) = trace::screen_point(window, left + slot / 2.0, row);
             lines.push(format!("bar title {index} {label} at {x},{y}"));
@@ -5079,8 +5082,7 @@ mod bar {
             canvas(
                 move |bounds, window, _| {
                     let centre = bounds.center();
-                    let (x, y) =
-                        trace::screen_point(window, centre.x.as_f32(), centre.y.as_f32());
+                    let (x, y) = trace::screen_point(window, centre.x.as_f32(), centre.y.as_f32());
                     trace::trace_changed(name, || format!("{name} at {x},{y}"));
                 },
                 |_, _, _, _| {},

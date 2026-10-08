@@ -1583,7 +1583,10 @@ impl Wallpaper {
             });
             let renaming = self.desk.rename.is_some();
             trace_changed("desktop rename", || {
-                format!("desktop rename {}", if renaming { "editing" } else { "idle" })
+                format!(
+                    "desktop rename {}",
+                    if renaming { "editing" } else { "idle" }
+                )
             });
         }
         let mut children = Vec::new();

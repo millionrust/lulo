@@ -2633,7 +2633,8 @@ mod dock {
             // they are (`scripts/windows/shell_smoke.py`).
             #[cfg(windows)]
             if horizontal && rmac_shell_layer::windows::trace::enabled() {
-                let row = surface_height - metrics.shelf_bottom_margin - metrics.shelf_thickness / 2.0;
+                let row =
+                    surface_height - metrics.shelf_bottom_margin - metrics.shelf_thickness / 2.0;
                 let point = |along: f32| {
                     rmac_shell_layer::windows::trace::screen_point(window, shelf_start + along, row)
                 };

@@ -284,10 +284,12 @@ impl Render for NotificationCenterView {
 
         // Shrinks (or grows) the layer surface to the column's natural
         // height after layout, as macOS sizes Notification Center to its
-        // cards. The outside-click catcher is another window: move its hole
-        // with the new height once the resize lands, or a press on a card
-        // revealed by growth closes the panel instead of reaching it
-        // (the Control Centre Sound-module bug, UIA catcher audit).
+        // cards; the surface opens at the tallest height and shrinks from
+        // there (main.rs's `follow_panel_height`). The outside-click
+        // catcher is another window: move its hole with the new height
+        // once the resize lands, or the gap left between the shrunk panel
+        // and the hole's stale, taller edge swallows a wallpaper click
+        // instead of dismissing the panel (UIA catcher audit).
         #[cfg(target_os = "linux")]
         let token = self.token;
         let measure = canvas(

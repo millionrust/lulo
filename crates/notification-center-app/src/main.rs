@@ -166,12 +166,19 @@ fn dismiss_active(cx: &mut App) -> bool {
 }
 
 /// The panel `token` is now `height` tall: move the catcher's hole with it.
-/// Notification Center sizes its surface to the column's natural height
-/// (`render.rs`'s `panel_height`), which grows and shrinks as notifications
-/// arrive, are dismissed, or stacks expand and collapse, so a hole kept at
-/// the first size left the bottom of a taller column covered by the
-/// catcher: a press there closed Notification Center instead of reaching a
-/// card (the same bug as Control Centre's Sound module).
+/// Notification Center opens its surface at the tallest height
+/// (`center_surface::LOGICAL_HEIGHT`, 720 pt) and `render.rs`'s
+/// `panel_height` then shrinks (or later regrows) it to the column's
+/// natural height as notifications arrive, are dismissed, or stacks expand
+/// and collapse. The catcher's hole was set once, at that first (tallest)
+/// request, and never followed the surface back down: with only one or two
+/// cards the real window is much shorter than 720 pt, so a press in the
+/// wallpaper now showing through the gap between the shrunk panel and the
+/// hole's still-720-pt bottom edge fell through both the panel and the
+/// catcher and did nothing, instead of dismissing Notification Center as a
+/// wallpaper click elsewhere does (MENU-15). Keeping the hole in step
+/// fixes that gap and keeps later regrowth (a new notification arriving)
+/// from opening the same gap in the other direction.
 #[cfg(target_os = "linux")]
 pub(crate) fn follow_panel_height(token: u64, height: f32, cx: &mut App) {
     let update = cx.update_global::<NotificationCenterService, _>(|service, _| {

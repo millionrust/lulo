@@ -935,7 +935,7 @@ def check_shell(
                 failures.append(f"the {surface} reported no backdrop")
             elif traced.group(1) != kind:
                 failures.append(f"the {surface} backdrop is {traced.group(1)}, not {kind}")
-        check_dock_corners(failures)
+        check_dock_corners(log, failures)
 
         # 1d. The Spotlight hotkey (free here) and the Dock's tiles.
         hotkey = log.wait_for(r"^spotlight hotkey (.+) \((first choice|fallback)\)", 5.0)
@@ -1352,16 +1352,16 @@ def check_lulo_desktop(log: Log, shell_pid: int, failures: list[str]) -> int:
     return hwnd
 
 
-def check_dock_corners(failures: list[str]) -> None:
-    """Outside its rounded shelf the Dock's window must be clear: the
-    pixel in each corner of the window matches the wallpaper just beside
-    the window (WIN-OS-49: a dark box showed there on a real PC)."""
-    hwnd = shell_window("DockWindow")
-    if not hwnd:
-        failures.append("no Dock window recorded for the corner check")
+def check_dock_corners(log: "Log", failures: list[str]) -> None:
+    """Outside its rounded shelf the Dock's material must be clear: the
+    pixel in each corner of the shelf's rectangle matches the wallpaper just
+    beside it (WIN-OS-49: a dark box showed there on a real PC)."""
+    placed = log.last(r"^layer rmac-dock-material-\d+ at (-?\d+),(-?\d+),(-?\d+),(-?\d+)")
+    if placed is None:
+        failures.append("the Dock's shelf material was not placed")
         return
     time.sleep(1.0)
-    left, top, right, bottom = window_rect(hwnd)
+    left, top, right, bottom = (int(placed.group(index)) for index in range(1, 5))
     corners = {
         "top left": ((left + 1, top + 1), (left - 3, top + 1)),
         "top right": ((right - 2, top + 1), (right + 2, top + 1)),
@@ -1373,9 +1373,7 @@ def check_dock_corners(failures: list[str]) -> None:
         difference = max(abs(a - b) for a, b in zip(corner, beside))
         print(f"shell: Dock {name} corner {corner}, wallpaper beside it {beside}")
         if difference > 28:
-            failures.append(
-                f"the Dock's {name} corner is {corner}, not the wallpaper beside it {beside}"
-            )
+            failures.append(f"the Dock's {name} corner is {corner}, not the wallpaper beside it {beside}")
 
 
 def check_window_shadow(hwnd: int, name: str, screenshots: Path | None, failures: list[str]) -> None:

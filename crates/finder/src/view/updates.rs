@@ -308,6 +308,13 @@ impl FinderView {
                         if let Some(tab) = this.tabs.get_mut(this.active) {
                             tab.identity = Some(identity);
                         }
+                        super::files_trace(|| {
+                            format!(
+                                "listed {}: {}",
+                                read_path.display(),
+                                super::traced_names(&entries)
+                            )
+                        });
                         this.root_entries = entries;
                         this.child_entries = children;
                         // A full directory reload replaces every cached child

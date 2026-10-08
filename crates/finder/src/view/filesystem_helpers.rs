@@ -202,11 +202,13 @@ pub(super) fn suppress_replaced_applications(
 }
 
 pub(super) fn read_entries(dir: &Path, show_hidden: bool) -> Vec<Entry> {
+    let (_, show_protected) = rmac_finder::listing::explorer_hidden_settings();
     let mut v: Vec<Entry> = Vec::new();
     if let Ok(rd) = std::fs::read_dir(dir) {
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            if !show_hidden && name.starts_with('.') {
+            let attributes = rmac_finder::listing::entry_attributes(&e);
+            if !rmac_finder::listing::is_listed(&name, attributes, show_hidden, show_protected) {
                 continue;
             }
             if let Some(entry) = entry_for(&e.path()) {
@@ -229,6 +231,7 @@ pub(super) fn read_entries_checked(
             "the directory identity changed",
         ));
     }
+    let (_, show_protected) = rmac_finder::listing::explorer_hidden_settings();
     let mut entries = Vec::new();
     for result in std::fs::read_dir(directory)? {
         let entry = match result {
@@ -237,7 +240,8 @@ pub(super) fn read_entries_checked(
             Err(error) => return Err(error),
         };
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !show_hidden && name.starts_with('.') {
+        let attributes = rmac_finder::listing::entry_attributes(&entry);
+        if !rmac_finder::listing::is_listed(&name, attributes, show_hidden, show_protected) {
             continue;
         }
         if let Some(entry) = entry_for(&entry.path()) {

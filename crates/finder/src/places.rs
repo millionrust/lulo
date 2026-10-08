@@ -23,8 +23,8 @@ impl Default for SidebarVisibility {
         Self {
             recents: true,
             applications: true,
-            desktop: false,
-            documents: false,
+            desktop: cfg!(windows),
+            documents: cfg!(windows),
             downloads: true,
             home: false,
             hard_disks: true,
@@ -105,7 +105,8 @@ pub fn shared_folder(home: &Path) -> Option<PlaceSpec> {
 /// and the root volume from the sidebar by default, so rmac does too;
 /// ⇧⌘C and the path bar still reach the root.
 pub fn favourite_folders(home: &Path) -> Vec<PlaceSpec> {
-    let favourites = vec![
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+    let mut favourites = vec![
         place(
             "Downloads",
             known_or_home_folder(KnownFolder::Downloads, home, "Downloads"),
@@ -125,6 +126,22 @@ pub fn favourite_folders(home: &Path) -> Vec<PlaceSpec> {
             false,
         ),
     ];
+    // Explorer's own set on Windows: Pictures, Music and Videos (each where
+    // the user's known folder really is), and OneDrive when it syncs here.
+    #[cfg(target_os = "windows")]
+    favourites.extend(
+        [
+            ("Pictures", KnownFolder::Pictures, "icons/photo.svg"),
+            ("Music", KnownFolder::Music, "icons/music.svg"),
+            ("Videos", KnownFolder::Videos, "icons/movie.svg"),
+            ("OneDrive", KnownFolder::OneDrive, "icons/cloud.svg"),
+        ]
+        .into_iter()
+        .filter_map(|(name, folder, icon)| {
+            let path = known_or_home_folder(folder, home, name);
+            path.is_dir().then(|| place(name, path, icon, false))
+        }),
+    );
     favourites
 }
 
@@ -138,12 +155,21 @@ enum KnownFolder {
     Desktop,
     Documents,
     Downloads,
+    #[cfg(target_os = "windows")]
+    Pictures,
+    #[cfg(target_os = "windows")]
+    Music,
+    #[cfg(target_os = "windows")]
+    Videos,
+    #[cfg(target_os = "windows")]
+    OneDrive,
 }
 
 #[cfg(target_os = "windows")]
 fn known_or_home_folder(folder: KnownFolder, home: &Path, fallback_name: &str) -> PathBuf {
     use windows::Win32::UI::Shell::{
-        FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, SHGetKnownFolderPath,
+        FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, FOLDERID_Music,
+        FOLDERID_Pictures, FOLDERID_SkyDrive, FOLDERID_Videos, SHGetKnownFolderPath,
         KF_FLAG_DEFAULT,
     };
 
@@ -151,6 +177,10 @@ fn known_or_home_folder(folder: KnownFolder, home: &Path, fallback_name: &str) -
         KnownFolder::Desktop => &FOLDERID_Desktop,
         KnownFolder::Documents => &FOLDERID_Documents,
         KnownFolder::Downloads => &FOLDERID_Downloads,
+        KnownFolder::Pictures => &FOLDERID_Pictures,
+        KnownFolder::Music => &FOLDERID_Music,
+        KnownFolder::Videos => &FOLDERID_Videos,
+        KnownFolder::OneDrive => &FOLDERID_SkyDrive,
     };
     // SAFETY: `id` is one of the well-known folder GUIDs above; no token
     // (the current user) and the default flags ask for no extra behaviour.
@@ -224,7 +254,12 @@ mod tests {
             .into_iter()
             .map(|place| place.name)
             .collect();
-        assert_eq!(names, ["Downloads", "Documents", "Desktop"]);
+        assert_eq!(names[..3], ["Downloads", "Documents", "Desktop"]);
+        // Windows adds the known folders that exist there.
+        for name in &names[3..] {
+            assert!(cfg!(windows), "{name}");
+            assert!(["Pictures", "Music", "Videos", "OneDrive"].contains(&name.as_str()));
+        }
         let locations = standard_locations(home);
         assert_eq!(locations.len(), 1);
         assert_eq!(locations[0].name, "jake");

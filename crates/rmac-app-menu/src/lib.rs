@@ -27,6 +27,7 @@ use zbus::{interface, Connection};
 pub mod pipe;
 pub mod recent;
 pub mod unsaved;
+pub mod windows_keys;
 mod wire;
 
 pub use wire::{flags, WireItem, WireItemV2, WireLayout, WireMenu, WireMenuV2, WireMenus};
@@ -2657,6 +2658,24 @@ pub fn static_definition(app_id: &str) -> Option<Vec<Menu>> {
     (!menus.is_empty()).then_some(menus)
 }
 
+/// Commands whose key on Windows is Explorer's rather than the Mac's
+/// (ADR 0023), as Mac-style hints that `windows_keys::windows_hint` shows
+/// in Windows' form ("⌦" → "Delete"). Files binds the same keys on Windows
+/// (`crates/finder/src/view/startup/shortcuts.rs`); the Mac keys still work.
+pub const WINDOWS_SHORTCUTS: &[(&str, &str)] = &[
+    ("finder::MoveToTrash", "⌦"),
+    ("finder::DeletePermanently", "⇧⌦"),
+    ("finder::RenameItem", "F2"),
+    ("finder::GoUp", "⌥↑"),
+];
+
+fn windows_shortcut(action: &str) -> Option<&'static str> {
+    WINDOWS_SHORTCUTS
+        .iter()
+        .find(|(name, _)| *name == action)
+        .map(|(_, hint)| *hint)
+}
+
 /// The spec rows whose commands `available` accepts. A submenu stays while
 /// any of its rows does, and a separator stays with its group even when the
 /// group's first row is gone.
@@ -2687,10 +2706,19 @@ fn resolve_items(
                 "finder::GoTrash" => file_words.bin().to_owned(),
                 "finder::EmptyTrash" => format!("Empty {}…", file_words.bin()),
                 "finder::EmptyTrashImmediately" => format!("Empty {}", file_words.bin()),
-                _ => spec.label.to_owned(),
+                // Preview's document goes to the Recycle Bin on Windows.
+                "preview::MoveToTrash" if file_words.is_windows() => {
+                    format!("Move to {}", file_words.bin())
+                }
+                _ => file_words.label(spec.label).to_owned(),
             },
             action: spec.action.to_owned(),
-            shortcut: spec.shortcut.to_owned(),
+            shortcut: if file_words.is_windows() {
+                windows_shortcut(spec.action).unwrap_or(spec.shortcut)
+            } else {
+                spec.shortcut
+            }
+            .to_owned(),
             enabled: true,
             separator_before: separate && !items.is_empty(),
             checked: CheckState::Off,
@@ -4131,6 +4159,125 @@ mod tests {
         .unwrap();
         assert_eq!(menus[0].items[0].label, "Move to Bin");
         assert_eq!(menus[1].items[0].label, "Bin");
+    }
+
+    /// Every label and hint the Files menus show, by action.
+    fn files_rows(windows: bool) -> std::collections::BTreeMap<String, (String, String)> {
+        let menus = definition_for_vocabulary(
+            rmac_apps::identity::FILES,
+            &spec_actions(FILES_MENUS),
+            rmac_locale::FileVocabulary::for_locale_on("en_US.UTF-8", windows),
+        )
+        .unwrap();
+        fn walk(items: &[Item], out: &mut std::collections::BTreeMap<String, (String, String)>) {
+            for item in items {
+                out.insert(
+                    item.action.clone(),
+                    (item.label.clone(), item.shortcut.clone()),
+                );
+                walk(&item.children, out);
+                if let Some(alternate) = &item.alternate {
+                    walk(std::slice::from_ref(alternate.as_ref()), out);
+                }
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        for menu in &menus {
+            walk(&menu.items, &mut out);
+        }
+        out
+    }
+
+    #[test]
+    fn files_menus_use_windows_words_and_keys_on_windows_only() {
+        let windows = files_rows(true);
+        let mac = files_rows(false);
+        for (action, label, hint) in [
+            ("finder::MoveToTrash", "Move to Recycle Bin", "⌦"),
+            ("finder::GoTrash", "Recycle Bin", ""),
+            ("finder::EmptyTrash", "Empty Recycle Bin…", "⇧⌘⌫"),
+            ("finder::EmptyTrashImmediately", "Empty Recycle Bin", "⌥⇧⌘⌫"),
+            ("finder::MakeAlias", "Create Shortcut", "⌘L"),
+            ("finder::ShowOriginal", "Open File Location", "⌘R"),
+            ("finder::CopyAsPathname", "Copy as Path", "⌥⌘C"),
+            ("finder::GoComputer", "This PC", "⇧⌘C"),
+            ("finder::RenameItem", "Rename", "F2"),
+            ("finder::GoUp", "Enclosing Folder", "⌥↑"),
+            ("finder::DeletePermanently", "Delete Immediately…", "⇧⌦"),
+            // The Mac's own label, on every platform (Linux keeps it too).
+            ("finder::NewWindow", "New Finder Window", "⌘N"),
+        ] {
+            assert_eq!(
+                windows[action],
+                (label.to_owned(), hint.to_owned()),
+                "{action}"
+            );
+        }
+        assert_eq!(
+            windows_keys::windows_hint(&windows["finder::MoveToTrash"].1),
+            "Delete"
+        );
+        assert_eq!(
+            windows_keys::windows_hint(&windows["finder::GoUp"].1),
+            "Alt+Up"
+        );
+        // Off Windows nothing changes.
+        assert_eq!(mac["finder::MoveToTrash"].0, "Move to Trash");
+        assert_eq!(mac["finder::MoveToTrash"].1, "⌘⌫");
+        assert_eq!(mac["finder::MakeAlias"].0, "Make Alias");
+        assert_eq!(mac["finder::ShowOriginal"].0, "Show Original");
+        assert_eq!(mac["finder::GoComputer"].0, "Computer");
+        assert_eq!(mac["finder::RenameItem"].1, "");
+        for (action, (label, _)) in &mac {
+            let words = rmac_locale::FileVocabulary::for_locale("en_US.UTF-8");
+            assert_eq!(words.label(label), label.as_str(), "{action}");
+        }
+    }
+
+    #[test]
+    fn windows_chords_are_never_reserved_and_never_clash_within_an_app() {
+        fn walk(items: &[Item], out: &mut Vec<(String, String)>) {
+            for item in items {
+                if !item.shortcut.is_empty() {
+                    out.push((item.label.clone(), item.shortcut.clone()));
+                }
+                walk(&item.children, out);
+                if let Some(alternate) = &item.alternate {
+                    walk(std::slice::from_ref(alternate.as_ref()), out);
+                }
+            }
+        }
+        let words = rmac_locale::FileVocabulary::for_locale_on("en_US.UTF-8", true);
+        let mut checked = 0;
+        for app_id in MENU_APPS {
+            let specs = specs(app_id).unwrap();
+            let menus = definition_for_vocabulary(app_id, &spec_actions(specs), words).unwrap();
+            let mut rows = Vec::new();
+            for menu in &menus {
+                walk(&menu.items, &mut rows);
+            }
+            let mut chords = std::collections::BTreeMap::<String, String>::new();
+            for (label, hint) in rows {
+                let Some(chord) = windows_keys::hint_chord(&hint) else {
+                    continue;
+                };
+                checked += 1;
+                assert!(!chord.win, "{app_id} {label} {hint}");
+                assert!(
+                    !windows_keys::is_reserved(&chord),
+                    "{app_id} {label} {hint}"
+                );
+                if let Some(other) = chords.insert(chord.unparse(), hint.clone()) {
+                    assert_eq!(
+                        other,
+                        hint,
+                        "{app_id}: {label} ({hint}) and {other} are both {}",
+                        chord.display()
+                    );
+                }
+            }
+        }
+        assert!(checked > 200, "{checked}");
     }
 
     #[test]

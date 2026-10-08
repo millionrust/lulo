@@ -6,8 +6,9 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
     if BOUND.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
-    // Keyboard shortcuts → actions (handled on the focused list).
-    cx.bind_keys([
+    // Keyboard shortcuts → actions (handled on the focused list), written
+    // with ⌘ and bound with Ctrl in its place on Windows.
+    let mut bindings = vec![
         KeyBinding::new("tab", RenameNextItem, Some("FinderRename > Input")),
         KeyBinding::new(
             rmac_ui::shortcuts::SELECT_ALL.keystroke,
@@ -86,11 +87,21 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             OpenItems,
             Some("Finder"),
         ),
-        KeyBinding::new(
-            rmac_ui::shortcuts::ENTER.keystroke,
-            RenameItem,
-            Some("Finder"),
-        ),
+        // Return renames on the Mac; Enter opens in Explorer, where F2
+        // renames (below).
+        if WINDOWS_KEYS {
+            KeyBinding::new(
+                rmac_ui::shortcuts::ENTER.keystroke,
+                OpenItems,
+                Some("Finder"),
+            )
+        } else {
+            KeyBinding::new(
+                rmac_ui::shortcuts::ENTER.keystroke,
+                RenameItem,
+                Some("Finder"),
+            )
+        },
         KeyBinding::new(
             rmac_ui::shortcuts::TOGGLE_HIDDEN.keystroke,
             ToggleHidden,
@@ -185,5 +196,65 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             ShowSettings,
             Some("Finder"),
         ),
-    ]);
+    ];
+    if WINDOWS_KEYS {
+        bindings.extend(windows_native_bindings());
+    }
+    rmac_ui::shortcuts::bind_keys(cx, bindings);
+}
+
+/// Explorer's own keys, which Windows users expect from a file browser.
+const WINDOWS_KEYS: bool = rmac_ui::shortcuts::PRIMARY_IS_CONTROL;
+
+/// Explorer's keys on Windows, beside the Mac ones (ADR 0023): Delete moves
+/// to the Recycle Bin, Shift+Delete deletes immediately (which asks first),
+/// F2 renames, Alt+↑ goes to the enclosing folder, and Alt+←/→ and
+/// Backspace go back and forward. A rename field or the search field takes
+/// its own Delete and Backspace first: their context is deeper.
+fn windows_native_bindings() -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("delete", MoveToTrash, Some("Finder")),
+        KeyBinding::new("shift-delete", DeletePermanently, Some("Finder")),
+        KeyBinding::new("f2", RenameItem, Some("Finder")),
+        KeyBinding::new("alt-up", GoUp, Some("Finder")),
+        KeyBinding::new("alt-left", GoBack, Some("Finder")),
+        KeyBinding::new("alt-right", GoForward, Some("Finder")),
+        KeyBinding::new("backspace", GoBack, Some("Finder")),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explorer_keys_reach_their_file_commands() {
+        let names = windows_native_bindings()
+            .iter()
+            .map(|binding| {
+                (
+                    binding.keystrokes()[0].inner().unparse(),
+                    binding.action().name(),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (key, action) in [
+            ("delete", "finder::MoveToTrash"),
+            ("shift-delete", "finder::DeletePermanently"),
+            ("f2", "finder::RenameItem"),
+            ("alt-up", "finder::GoUp"),
+            ("backspace", "finder::GoBack"),
+        ] {
+            assert!(
+                names.iter().any(|(k, a)| k == key && *a == action),
+                "{key} -> {action}: {names:?}"
+            );
+        }
+        // None of them is a chord Windows keeps for itself.
+        for binding in windows_native_bindings() {
+            assert!(!rmac_ui::shortcuts::is_reserved_on_windows(
+                binding.keystrokes()[0].inner()
+            ));
+        }
+    }
 }

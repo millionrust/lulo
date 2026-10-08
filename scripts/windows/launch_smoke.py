@@ -686,6 +686,166 @@ def launch(
             process.wait(timeout=30)
 
 
+FILE_ATTRIBUTE_HIDDEN = 0x2
+FILE_ATTRIBUTE_SYSTEM = 0x4
+
+
+def explorer_advanced(name: str) -> int | None:
+    """A DWORD under Explorer's Advanced key in this user's registry."""
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, name)
+            return int(value)
+    except OSError:
+        return None
+
+
+def create_shortcut(link: Path, target: Path) -> bool:
+    """A real shell link, as Explorer records an opened file under Recent."""
+    script = (
+        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:LULO_LINK); "
+        "$s.TargetPath = $env:LULO_TARGET; $s.Save()"
+    )
+    environment = dict(os.environ, LULO_LINK=str(link), LULO_TARGET=str(target))
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        env=environment,
+        capture_output=True,
+        timeout=60,
+    )
+    return result.returncode == 0 and link.exists()
+
+
+def run_files_until(
+    binary: Path, profile: Path, arguments: list[str], pattern: str, name: str
+) -> tuple[str, "re.Match | None"]:
+    """Run Files with its traces on until a stderr line matches `pattern`
+    (or the window timeout passes); return the log and the match."""
+    import re
+
+    environment = dict(os.environ)
+    environment["APPDATA"] = str(profile / "Roaming")
+    environment["LOCALAPPDATA"] = str(profile / "Local")
+    environment["RMAC_FILES_TRACE"] = "1"
+    environment["RMAC_MENU_STRIP_TRACE"] = "1"
+    log = profile / f"files-{name}.log"
+    expression = re.compile(pattern, re.MULTILINE)
+    with log.open("wb") as output:
+        process = subprocess.Popen(
+            [str(binary), *arguments], env=environment, stdout=output, stderr=subprocess.STDOUT
+        )
+    match = None
+    try:
+        deadline = time.monotonic() + WINDOW_TIMEOUT_SECONDS
+        while time.monotonic() < deadline and process.poll() is None:
+            match = expression.search(log.read_text(encoding="utf-8", errors="replace"))
+            if match:
+                break
+            time.sleep(0.1)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=30)
+    return log.read_text(encoding="utf-8", errors="replace"), match
+
+
+def check_files(binary: Path) -> list[str]:
+    """Files on Windows (ADR 0023): hidden and protected items stay out as
+    Explorer keeps them out, a fresh window opens on Recents (which lists a
+    file Windows recorded as recently opened), and the menus use Windows'
+    words and keys."""
+    failures: list[str] = []
+    kernel32 = ctypes.windll.kernel32
+    with tempfile.TemporaryDirectory(prefix="rmac-files-check-", ignore_cleanup_errors=True) as directory:
+        profile = Path(directory)
+        for folder in ("Roaming", "Local"):
+            (profile / folder).mkdir(parents=True, exist_ok=True)
+
+        # 1. A fresh window opens on Recents, and the menus' wording.
+        document = profile / "recent-report.txt"
+        document.write_text("opened recently", encoding="utf-8")
+        recent = profile / "Roaming" / "Microsoft" / "Windows" / "Recent"
+        recent.mkdir(parents=True, exist_ok=True)
+        if not create_shortcut(recent / "recent-report.txt.lnk", document):
+            failures.append("could not make the Recent shortcut fixture")
+        text, match = run_files_until(binary, profile, [], r"^files: recents (\d+): (.*)$", "default")
+        if match is None:
+            failures.append("a fresh Files window did not open on Recents")
+        else:
+            names = match.group(2).split(" | ")
+            print(f"rmac-files: a fresh window opened on Recents with {match.group(1)} items: {names[:8]}")
+            if "recent-report.txt" not in names:
+                failures.append(f"Recents does not list the file Windows recorded as recent: {names}")
+        menus = [line for line in text.splitlines() if line.startswith("menu strip: menu ")]
+        for line in menus:
+            print(f"rmac-files: {line}")
+        file_menu = next((line for line in menus if line.startswith("menu strip: menu File: ")), "")
+        go_menu = next((line for line in menus if line.startswith("menu strip: menu Go: ")), "")
+        for expected in (
+            "Move to Recycle Bin [Delete]",
+            "Create Shortcut [Ctrl+L]",
+            "Open File Location [Ctrl+R]",
+            "Rename [F2]",
+            "New Folder with Selection [Alt+Shift+N]",
+            "Delete Immediately… [Shift+Delete]",
+        ):
+            if expected not in file_menu:
+                failures.append(f"Files' File menu has no {expected!r}")
+        for expected in ("Enclosing Folder [Alt+Up]", "This PC [Ctrl+Shift+C]", "Recycle Bin"):
+            if expected not in go_menu:
+                failures.append(f"Files' Go menu has no {expected!r}")
+        for line in menus:
+            for mac_word in ("Move to Trash", "Make Alias", "Show Original", "Win+"):
+                if mac_word in line:
+                    failures.append(f"a Files menu still says {mac_word!r}: {line}")
+
+        # 2. Hidden and protected files, as Explorer's own setting shows them.
+        fixture = profile / "fixture"
+        fixture.mkdir()
+        files = {
+            "normal.txt": 0,
+            "hidden.txt": FILE_ATTRIBUTE_HIDDEN,
+            "protected.txt": FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM,
+        }
+        for name, attributes in files.items():
+            (fixture / name).write_text(name, encoding="utf-8")
+            if attributes and not kernel32.SetFileAttributesW(str(fixture / name), attributes):
+                failures.append(f"could not set the attributes of {name}")
+        (fixture / ".dotfile").write_text("dot", encoding="utf-8")
+        show_hidden = explorer_advanced("Hidden") == 1
+        show_protected = explorer_advanced("ShowSuperHidden") == 1
+        expected = {"normal.txt"}
+        if show_hidden:
+            expected |= {"hidden.txt", ".dotfile"}
+            if show_protected:
+                expected.add("protected.txt")
+        print(
+            f"rmac-files: Explorer shows hidden items: {show_hidden}, protected files: "
+            f"{show_protected}; expecting {sorted(expected)}"
+        )
+        _, match = run_files_until(
+            binary, profile, ["--path", str(fixture)], r"^files: listed .*fixture: (.*)$", "fixture"
+        )
+        if match is None:
+            failures.append("Files did not list the hidden-file fixture")
+        else:
+            listed = {name for name in match.group(1).split(" | ") if name}
+            print(f"rmac-files: the fixture lists {sorted(listed)}")
+            if listed != expected:
+                failures.append(f"the fixture lists {sorted(listed)}, not {sorted(expected)}")
+        for name, attributes in files.items():
+            if attributes:
+                kernel32.SetFileAttributesW(str(fixture / name), 0)
+    if not failures:
+        print("rmac-files: every Windows Files check passed")
+    return failures
+
+
 def wait_for_window(pid: int, timeout: float = WINDOW_TIMEOUT_SECONDS) -> tuple[int, str] | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -817,6 +977,11 @@ def main() -> int:
                         line for line in text.splitlines() if not line.startswith(WAKE_PREFIX)
                     ]
                     print("\n".join(lines)[-4000:])
+
+    if "rmac-files" in arguments.apps:
+        for failure in check_files(arguments.bin_dir / "rmac-files.exe"):
+            failures += 1
+            print(f"rmac-files: FAIL: {failure}")
 
     if arguments.foreground_check:
         second_app = next(

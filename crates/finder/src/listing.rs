@@ -66,9 +66,92 @@ impl Item {
     }
 }
 
+/// `FILE_ATTRIBUTE_HIDDEN`: Explorer hides the item unless "Show hidden
+/// files" is on.
+pub const ATTRIBUTE_HIDDEN: u32 = 0x2;
+/// `FILE_ATTRIBUTE_SYSTEM`: with [`ATTRIBUTE_HIDDEN`] it marks a protected
+/// operating-system file (NTUSER.DAT, desktop.ini), which Explorer hides
+/// even then unless "Hide protected operating system files" is off.
+pub const ATTRIBUTE_SYSTEM: u32 = 0x4;
+
+/// Whether a folder lists an entry, as Explorer decides on Windows and the
+/// Mac (a leading dot) everywhere: with hidden items off, dot-names and
+/// hidden items stay out; with them on (⇧⌘., or Explorer's own setting),
+/// protected system files still stay out unless `show_protected`.
+pub fn is_listed(name: &str, attributes: u32, show_hidden: bool, show_protected: bool) -> bool {
+    let hidden = attributes & ATTRIBUTE_HIDDEN != 0;
+    let protected = hidden && attributes & ATTRIBUTE_SYSTEM != 0;
+    if !show_hidden {
+        return !name.starts_with('.') && !hidden;
+    }
+    !protected || show_protected
+}
+
+/// The entry's Windows file attributes (0 elsewhere), from the directory
+/// read itself: no extra system call.
+pub fn entry_attributes(entry: &std::fs::DirEntry) -> u32 {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt as _;
+        entry
+            .metadata()
+            .map(|metadata| metadata.file_attributes())
+            .unwrap_or(0)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = entry;
+        0
+    }
+}
+
+/// Explorer's own choices, read once: whether it shows hidden items, and
+/// whether it shows protected operating-system files
+/// (`HKCU\…\Explorer\Advanced` `Hidden` = 1, `ShowSuperHidden` = 1).
+/// Elsewhere hidden items start hidden and nothing is protected.
+pub fn explorer_hidden_settings() -> (bool, bool) {
+    static SETTINGS: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
+    *SETTINGS.get_or_init(|| {
+        #[cfg(windows)]
+        {
+            (
+                explorer_advanced("Hidden") == Some(1),
+                explorer_advanced("ShowSuperHidden") == Some(1),
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            (false, true)
+        }
+    })
+}
+
+#[cfg(windows)]
+fn explorer_advanced(name: &str) -> Option<u32> {
+    use windows::core::HSTRING;
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let mut value = 0u32;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: a DWORD-sized buffer with its size; the key and value names
+    // live for the call.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            &HSTRING::from(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"),
+            &HSTRING::from(name),
+            RRF_RT_REG_DWORD,
+            None,
+            Some(&mut value as *mut u32 as *mut core::ffi::c_void),
+            Some(&mut size),
+        )
+    };
+    status.is_ok().then_some(value)
+}
+
 /// List one directory. Entries that vanish while reading are skipped; any
 /// other failure is returned so the caller can say why the folder is empty.
 pub fn read_directory(directory: &Path, show_hidden: bool) -> std::io::Result<Vec<Item>> {
+    let (_, show_protected) = explorer_hidden_settings();
     let mut items = Vec::new();
     for entry in std::fs::read_dir(directory)? {
         let entry = match entry {
@@ -76,7 +159,12 @@ pub fn read_directory(directory: &Path, show_hidden: bool) -> std::io::Result<Ve
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error),
         };
-        if !show_hidden && entry.file_name().to_string_lossy().starts_with('.') {
+        if !is_listed(
+            &entry.file_name().to_string_lossy(),
+            entry_attributes(&entry),
+            show_hidden,
+            show_protected,
+        ) {
             continue;
         }
         if let Some(item) = Item::from_path(&entry.path()) {
@@ -183,6 +271,48 @@ pub fn date_label(t: SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_and_protected_items_follow_explorer() {
+        let hidden = ATTRIBUTE_HIDDEN;
+        let protected = ATTRIBUTE_HIDDEN | ATTRIBUTE_SYSTEM;
+        // Hidden items off (Explorer's default): only plain items show.
+        assert!(is_listed("report.txt", 0, false, false));
+        assert!(!is_listed(".profile", 0, false, false));
+        assert!(!is_listed("AppData", hidden, false, false));
+        assert!(!is_listed("NTUSER.DAT", protected, false, true));
+        // A system-only item is not hidden in Explorer either.
+        assert!(is_listed("pagefile-like", ATTRIBUTE_SYSTEM, false, false));
+        // Hidden items on (⇧⌘. or Explorer's "Show hidden files").
+        assert!(is_listed(".profile", 0, true, false));
+        assert!(is_listed("AppData", hidden, true, false));
+        assert!(!is_listed("desktop.ini", protected, true, false));
+        assert!(is_listed("desktop.ini", protected, true, true));
+    }
+
+    #[test]
+    fn listing_hides_dot_names_and_shows_them_on_request() {
+        let root = std::env::temp_dir().join(format!(
+            "rmac-listing-hidden-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("plain.txt"), b"x").unwrap();
+        std::fs::write(root.join(".dot"), b"x").unwrap();
+        let names = |show| {
+            let mut names = read_directory(&root, show)
+                .unwrap()
+                .into_iter()
+                .map(|item| item.name)
+                .collect::<Vec<_>>();
+            names.sort();
+            names
+        };
+        assert_eq!(names(false), ["plain.txt"]);
+        assert_eq!(names(true), [".dot", "plain.txt"]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn sizes_and_kinds_match_files() {

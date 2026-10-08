@@ -39,10 +39,15 @@ impl FinderView {
     /// folder by default), falling back to the home folder itself when that
     /// target does not exist on this machine.
     pub(super) fn new_window(&mut self, cx: &mut Context<Self>) {
-        let target = super::settings::current()
-            .general
-            .new_window_target
-            .resolve(&self.home);
+        let choice = super::settings::current().general.new_window_target;
+        if choice == super::settings::NewWindowTarget::Recents {
+            if !rmac_ui::open_another_window(vec!["--recents".to_owned()], cx) {
+                self.operation_error = Some("Files could not open another window".into());
+                cx.notify();
+            }
+            return;
+        }
+        let target = choice.resolve(&self.home);
         let target = if target.is_dir() {
             target
         } else {

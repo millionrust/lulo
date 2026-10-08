@@ -76,17 +76,7 @@ impl FinderView {
             return;
         };
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let target = blocking::unblock(move || {
-                let metadata = std::fs::symlink_metadata(&path)?;
-                if !metadata.file_type().is_symlink() {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "The selected item is not an alias",
-                    ));
-                }
-                std::fs::canonicalize(path)
-            })
-            .await;
+            let target = blocking::unblock(move || alias_target(&path)).await;
             let _ = this.update(cx, |this: &mut FinderView, cx| match target {
                 Ok(target) => {
                     if let Some(parent) = target.parent() {
@@ -360,17 +350,9 @@ impl FinderView {
         let mut failures = Vec::new();
         let mut last_destination = None;
         for src in paths {
-            let stem = src
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let ext = src.extension().map(|e| e.to_string_lossy().into_owned());
-            let alias_name = match &ext {
-                Some(e) => format!("{stem} alias.{e}"),
-                None => format!("{stem} alias"),
-            };
+            let name = alias_name(&src);
             let destination_dir = src.parent().unwrap_or(self.cwd.as_path());
-            let dst = unique_path_avoiding(destination_dir.join(alias_name), &destinations);
+            let dst = unique_path_avoiding(destination_dir.join(name), &destinations);
             destinations.insert(dst.clone());
             match make_alias(&src, &dst) {
                 Ok(()) => last_destination = Some(dst),
@@ -406,25 +388,136 @@ impl FinderView {
     }
 }
 
-/// File ▸ Make Alias: a real symlink everywhere, including Windows, where
-/// creating one needs Developer Mode or an administrator (pre-Windows 11)
-/// — an honest, specific error from `symlink_file`/`_dir` either way,
-/// rather than a copy silently standing in for an alias (ADR 0023 phase 4).
+/// The new alias's name: "<name> alias" as Finder names one, or on Windows
+/// "<name> - Shortcut.lnk" as Explorer's Create Shortcut does.
+fn alias_name(source: &Path) -> String {
+    if cfg!(windows) {
+        let name = source
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        return format!("{name} - Shortcut.lnk");
+    }
+    let stem = source
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    match source.extension().map(|e| e.to_string_lossy().into_owned()) {
+        Some(e) => format!("{stem} alias.{e}"),
+        None => format!("{stem} alias"),
+    }
+}
+
+/// File ▸ Make Alias: a symbolic link, the Linux equivalent of an alias.
 #[cfg(not(windows))]
 fn make_alias(source: &Path, destination: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(source, destination)
 }
 
+/// File ▸ Create Shortcut on Windows: a real shell link (`.lnk`), as
+/// Explorer makes — a symbolic link would need Developer Mode or an
+/// administrator, and Explorer and every Windows app follow a shortcut.
 #[cfg(windows)]
 fn make_alias(source: &Path, destination: &Path) -> std::io::Result<()> {
-    let is_dir = std::fs::metadata(source)
-        .map(|m| m.is_dir())
-        .unwrap_or(false);
-    if is_dir {
-        std::os::windows::fs::symlink_dir(source, destination)
-    } else {
-        std::os::windows::fs::symlink_file(source, destination)
+    use windows::core::HSTRING;
+    with_shell_link(|link, file| {
+        // SAFETY: COM calls on objects `with_shell_link` owns; the strings
+        // live for each call.
+        unsafe {
+            link.SetPath(&HSTRING::from(source))?;
+            if let Some(folder) = source.parent() {
+                link.SetWorkingDirectory(&HSTRING::from(folder))?;
+            }
+            file.Save(&HSTRING::from(destination), true)
+        }
+    })
+}
+
+/// Run `work` on a new shell link object, with COM initialised on this
+/// thread for the call (and that balanced after it).
+#[cfg(windows)]
+fn with_shell_link<T>(
+    work: impl FnOnce(
+        &windows::Win32::UI::Shell::IShellLinkW,
+        &windows::Win32::System::Com::IPersistFile,
+    ) -> windows::core::Result<T>,
+) -> std::io::Result<T> {
+    use windows::core::Interface as _;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+
+    // SAFETY: plain COM set-up; S_FALSE (already initialised here) also
+    // counts and is balanced below.
+    let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
+    // SAFETY: creates an in-process object this function owns and drops
+    // before COM is uninitialised.
+    let result = unsafe {
+        CoCreateInstance::<_, IShellLinkW>(
+            &ShellLink,
+            None::<&windows::core::IUnknown>,
+            CLSCTX_INPROC_SERVER,
+        )
     }
+    .and_then(|link| {
+        let file: IPersistFile = link.cast()?;
+        work(&link, &file)
+    });
+    if initialized {
+        // SAFETY: balances the successful CoInitializeEx above.
+        unsafe { CoUninitialize() };
+    }
+    result.map_err(|error| std::io::Error::other(error.message()))
+}
+
+/// File ▸ Show Original (Open File Location on Windows): what an alias
+/// points at — a symbolic link anywhere, or a Windows shortcut.
+fn alias_target(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    #[cfg(windows)]
+    if path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("lnk"))
+    {
+        return shortcut_target(path);
+    }
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_symlink() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "The selected item is not an alias",
+        ));
+    }
+    std::fs::canonicalize(path)
+}
+
+/// The file or folder a Windows shortcut points at (`IShellLinkW::GetPath`).
+#[cfg(windows)]
+fn shortcut_target(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
+    use windows::Win32::System::Com::STGM_READ;
+
+    let target = with_shell_link(|link, file| {
+        let mut buffer = vec![0u16; 32_768];
+        let mut data = WIN32_FIND_DATAW::default();
+        // SAFETY: COM calls on objects `with_shell_link` owns; `buffer` is
+        // writable for its whole length and `data` is a valid out-parameter.
+        unsafe {
+            file.Load(&HSTRING::from(path), STGM_READ)?;
+            link.GetPath(&mut buffer, &mut data, 0)?;
+        }
+        let end = buffer.iter().position(|&unit| unit == 0).unwrap_or(0);
+        Ok(String::from_utf16_lossy(&buffer[..end]))
+    })?;
+    if target.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "The shortcut does not point at a file or folder",
+        ));
+    }
+    Ok(std::path::PathBuf::from(target))
 }
 
 #[cfg(not(windows))]
@@ -488,6 +581,52 @@ pub(super) fn file_tag_label(path: &Path) -> Option<SharedString> {
         .iter()
         .find(|tag| tag.as_bytes() == raw.as_slice())
         .map(|tag| SharedString::from(*tag))
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use super::{alias_name, alias_target, make_alias};
+    use std::path::Path;
+
+    #[test]
+    fn aliases_are_named_as_the_platform_names_them() {
+        if cfg!(windows) {
+            assert_eq!(
+                alias_name(Path::new("C:/Users/me/report.txt")),
+                "report.txt - Shortcut.lnk"
+            );
+        } else {
+            assert_eq!(
+                alias_name(Path::new("/home/me/report.txt")),
+                "report alias.txt"
+            );
+            assert_eq!(alias_name(Path::new("/home/me/Folder")), "Folder alias");
+        }
+    }
+
+    /// Make Alias (a `.lnk` on Windows, a symlink elsewhere) and Show
+    /// Original (Open File Location) lead back to the original.
+    #[test]
+    fn an_alias_leads_back_to_its_original() {
+        let root = std::env::temp_dir().join(format!(
+            "rmac-alias-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let original = root.join("report.txt");
+        std::fs::write(&original, b"x").unwrap();
+        let alias = root.join(alias_name(&original));
+        make_alias(&original, &alias).unwrap();
+        assert!(alias.exists());
+        let target = alias_target(&alias).unwrap();
+        assert_eq!(
+            std::fs::canonicalize(target).unwrap(),
+            std::fs::canonicalize(&original).unwrap()
+        );
+        assert!(alias_target(&original).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[cfg(all(test, not(windows)))]

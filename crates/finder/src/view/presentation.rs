@@ -551,7 +551,9 @@ impl Render for FinderView {
                         state.position(),
                         sort_key,
                         compress_label,
-                        SelectionMenuLabels::from_paths(&self.selected_paths()).copy_as_pathname,
+                        SelectionMenuLabels::from_paths(&self.selected_paths())
+                            .in_words(self.file_words)
+                            .copy_as_pathname,
                         slideshow_label(&self.selected_paths()),
                         self.selection_count(),
                         self.selected_entry().is_some_and(|entry| entry.is_dir),
@@ -616,7 +618,7 @@ impl FinderView {
         } else {
             self.selected_paths()
         };
-        let labels = SelectionMenuLabels::from_paths(&selection);
+        let labels = SelectionMenuLabels::from_paths(&selection).in_words(self.file_words);
         let compress_label = archive_controller::compress_menu_label(&selection);
         rmac_ui::set_menu_label("finder::CopyItems", &labels.copy, cx);
         rmac_ui::set_menu_label("finder::CopyAsPathname", &labels.copy_as_pathname, cx);
@@ -831,6 +833,18 @@ impl SelectionMenuLabels {
             },
         }
     }
+
+    /// "… as Pathname" in this platform's words: "… as Path" on Windows,
+    /// following `rmac_locale::WINDOWS_WORDS`' "Copy as Path".
+    fn in_words(mut self, words: rmac_locale::FileVocabulary) -> Self {
+        let noun = words
+            .label("Copy as Pathname")
+            .trim_start_matches("Copy as ");
+        if let Some(stem) = self.copy_as_pathname.strip_suffix("Pathname") {
+            self.copy_as_pathname = format!("{stem}{noun}");
+        }
+        self
+    }
 }
 
 struct FinderMenuState {
@@ -950,6 +964,27 @@ mod app_menu_tests {
         // including the newer keys.
         let state = FinderMenuState::new(1, true, false, SortKey::Added, true);
         assert!(!state.sort_added);
+    }
+
+    #[test]
+    fn copy_as_path_uses_windows_words_on_windows_only() {
+        let windows = rmac_locale::FileVocabulary::for_locale_on("en_US.UTF-8", true);
+        let mac = rmac_locale::FileVocabulary::for_locale("en_US.UTF-8");
+        let one = || SelectionMenuLabels::from_paths(&["/Users/me/test.txt".into()]);
+        assert_eq!(
+            one().in_words(windows).copy_as_pathname,
+            "Copy “test.txt” as Path"
+        );
+        assert_eq!(
+            one().in_words(mac).copy_as_pathname,
+            "Copy “test.txt” as Pathname"
+        );
+        assert_eq!(
+            SelectionMenuLabels::from_paths(&[])
+                .in_words(windows)
+                .copy_as_pathname,
+            "Copy as Path"
+        );
     }
 
     #[test]

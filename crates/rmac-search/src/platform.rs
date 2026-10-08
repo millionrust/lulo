@@ -100,6 +100,14 @@ impl SearchProvider for SystemSearchProvider {
             )?,
             None => Vec::new(),
         };
+        // Windows keeps its own list of recently opened files, which every
+        // app (Explorer, Office, Lulo's own) adds to.
+        #[cfg(windows)]
+        let desktop_recents = {
+            let mut recents = desktop_recents;
+            recents.extend(crate::windows_recent::recent_files(options.limit));
+            recents
+        };
         merge_recent_paths(rmac_snapshot.paths, desktop_recents, options)
     }
 

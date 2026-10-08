@@ -20,12 +20,18 @@ use windows::Win32::System::Threading::{WaitForSingleObject, INFINITE};
 
 use super::trace;
 
-/// A decoded wallpaper, as GPUI draws images: BGRA, straight alpha.
+/// A decoded wallpaper, as GPUI draws images: BGRA, straight alpha. It is
+/// only the part of the picture the screen shows, already at the size it
+/// is drawn (`left`, `top`, `width` × `height` physical pixels on the
+/// screen), so nothing larger than the screen is kept: the Lulo artwork
+/// was held at 1920 × 1080 for a 1366 × 768 screen, and a 12-megapixel
+/// photo would have been 48 MB (WIN-OS-53).
 pub struct Picture {
+    pub left: u32,
+    pub top: u32,
     pub width: u32,
     pub height: u32,
     pub bgra: Vec<u8>,
-    pub fit: WallpaperFit,
     /// Mean relative luminance (0–1) of the strip the menu bar covers, so
     /// the bar's text can be light on a dark picture and dark on a light one.
     pub bar_luminance: f32,
@@ -74,6 +80,76 @@ fn mapping(fit: WallpaperFit, picture: (u32, u32), screen: (u32, u32)) -> Mappin
             offset_y: 0.0,
         },
     }
+}
+
+/// A rectangle of the picture, in picture pixels: `x0, y0, x1, y1`.
+type SourceRect = (f32, f32, f32, f32);
+/// A rectangle of the screen, in physical pixels: `left, top, width, height`.
+type ScreenRect = (u32, u32, u32, u32);
+
+/// Where the picture lands on the screen, clipped to it: the source
+/// rectangle and the screen rectangle it fills.
+fn visible(fit: WallpaperFit, picture: (u32, u32), screen: (u32, u32)) -> (SourceRect, ScreenRect) {
+    let map = mapping(fit, picture, screen);
+    let (pw, ph) = (picture.0 as f32, picture.1 as f32);
+    let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+    let left = (-map.offset_x).max(0.0);
+    let top = (-map.offset_y).max(0.0);
+    let right = (pw * map.scale_x - map.offset_x).min(sw);
+    let bottom = (ph * map.scale_y - map.offset_y).min(sh);
+    let source = (
+        ((left + map.offset_x) / map.scale_x).clamp(0.0, pw),
+        ((top + map.offset_y) / map.scale_y).clamp(0.0, ph),
+        ((right + map.offset_x) / map.scale_x).clamp(0.0, pw),
+        ((bottom + map.offset_y) / map.scale_y).clamp(0.0, ph),
+    );
+    let (left, top) = (left.round() as u32, top.round() as u32);
+    let width = (right.round() as u32).saturating_sub(left).max(1);
+    let height = (bottom.round() as u32).saturating_sub(top).max(1);
+    (source, (left, top, width, height))
+}
+
+/// The visible part of the picture at the size it is drawn, as BGRA.
+fn render_visible(
+    rgba: &[u8],
+    picture: (u32, u32),
+    fit: WallpaperFit,
+    screen: (u32, u32),
+) -> Option<(u32, u32, u32, u32, Vec<u8>)> {
+    let ((x0, y0, x1, y1), (left, top, width, height)) = visible(fit, picture, screen);
+    let stride = picture.0 as usize * 4;
+    if rgba.len() < stride * picture.1 as usize {
+        return None;
+    }
+    let crop_x = (x0.floor() as u32).min(picture.0.saturating_sub(1));
+    let crop_y = (y0.floor() as u32).min(picture.1.saturating_sub(1));
+    let crop_width = ((x1.ceil() as u32).min(picture.0))
+        .saturating_sub(crop_x)
+        .max(1);
+    let crop_height = ((y1.ceil() as u32).min(picture.1))
+        .saturating_sub(crop_y)
+        .max(1);
+    let mut cropped = Vec::with_capacity(crop_width as usize * crop_height as usize * 4);
+    for row in crop_y..crop_y + crop_height {
+        let start = row as usize * stride + crop_x as usize * 4;
+        cropped.extend_from_slice(&rgba[start..start + crop_width as usize * 4]);
+    }
+    let cropped = image::RgbaImage::from_raw(crop_width, crop_height, cropped)?;
+    let mut drawn = if (crop_width, crop_height) == (width, height) {
+        cropped
+    } else {
+        image::imageops::resize(
+            &cropped,
+            width,
+            height,
+            image::imageops::FilterType::Triangle,
+        )
+    }
+    .into_raw();
+    for pixel in drawn.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    Some((left, top, width, height, drawn))
 }
 
 /// The band of screen rows `top..bottom` as an `out_width` × `out_height`
@@ -168,6 +244,35 @@ pub fn settings_path() -> Option<PathBuf> {
         .map(|store| store.path().to_path_buf())
 }
 
+/// `strip` with a one-texel border copied from its own edge texels. GPUI
+/// draws a stretched image with linear filtering, which blended the tiny
+/// strip's outermost texels with the empty atlas round it: the bar showed
+/// a dark rim at its top and bottom and read as a thin navy strip
+/// (WIN-OS-55). The surfaces draw the padded strip one cell larger on
+/// every side, so the blended border falls outside them. (Scaling the
+/// strip up to the screen's size instead would cost each surface an atlas
+/// page as wide as the screen.)
+pub fn pad(strip: &Strip) -> Strip {
+    let (width, height) = (strip.width as usize, strip.height as usize);
+    if width == 0 || height == 0 || strip.bgra.len() < width * height * 4 {
+        return strip.clone();
+    }
+    let mut bgra = Vec::with_capacity((width + 2) * (height + 2) * 4);
+    for row in 0..height + 2 {
+        let source_row = row.saturating_sub(1).min(height - 1);
+        for column in 0..width + 2 {
+            let source_column = column.saturating_sub(1).min(width - 1);
+            let at = (source_row * width + source_column) * 4;
+            bgra.extend_from_slice(&strip.bgra[at..at + 4]);
+        }
+    }
+    Strip {
+        width: strip.width + 2,
+        height: strip.height + 2,
+        bgra,
+    }
+}
+
 /// How much smaller than the screen the bar's and the Dock's strips are:
 /// drawn at full size they are the band blurred over this many pixels.
 const STRIP_SHRINK: u32 = 12;
@@ -219,23 +324,25 @@ pub fn load(width: u32, height: u32, bar: u32, dock: u32, dark: bool) -> Option<
         strip_width,
         (dock / STRIP_SHRINK).max(2),
     );
-    let bar_luminance = bgra_luminance(&bar_strip);
-    let mut bgra = rgba.to_vec();
+    let visible = render_visible(&rgba, picture, selection.fit, screen);
     drop(rgba);
-    for pixel in bgra.chunks_exact_mut(4) {
-        pixel.swap(0, 2);
-    }
+    let (left, top, drawn_width, drawn_height, bgra) = visible?;
+    let bar_luminance = bgra_luminance(&bar_strip);
+    let bar_strip = pad(&bar_strip);
+    let dock_strip = pad(&dock_strip);
     trace(|| {
         format!(
-            "wallpaper {}x{} for {width}x{height}, bar luminance {bar_luminance:.2}",
+            "wallpaper {}x{} for {width}x{height}, bar luminance {bar_luminance:.2}, \
+             kept {drawn_width}x{drawn_height}",
             picture_width, picture_height
         )
     });
     Some(Picture {
-        width: picture_width,
-        height: picture_height,
+        left,
+        top,
+        width: drawn_width,
+        height: drawn_height,
         bgra,
-        fit: selection.fit,
         bar_luminance,
         bar_strip,
         dock_strip,
@@ -401,5 +508,50 @@ mod tests {
             1,
         );
         assert_eq!(&letterbox.bgra[..4], &[0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn only_the_visible_picture_is_kept_at_the_size_it_is_drawn() {
+        // The 1920 × 1080 artwork on a 1366 × 768 screen fills it exactly.
+        let (source, placed) = visible(WallpaperFit::Fill, (1920, 1080), (1366, 768));
+        assert_eq!(placed, (0, 0, 1366, 768));
+        assert!(source.0 < 1.0 && source.2 > 1919.0);
+        // A 4:3 photo filling a 16:9 screen loses its top and bottom.
+        let (source, placed) = visible(WallpaperFit::Fill, (4000, 3000), (1366, 768));
+        assert_eq!(placed, (0, 0, 1366, 768));
+        assert!((source.1 - 375.0).abs() < 1.0 && (source.3 - 2625.0).abs() < 1.0);
+        // Fitted, it is letterboxed at the sides.
+        let (_, placed) = visible(WallpaperFit::Fit, (4000, 3000), (1366, 768));
+        assert_eq!(placed, (171, 0, 1024, 768));
+        // Centred at its own size, a small picture stays small.
+        let (_, placed) = visible(WallpaperFit::Center, (200, 100), (1366, 768));
+        assert_eq!(placed, (583, 334, 200, 100));
+        // The rendered pixels are the picture's, in BGRA, at that size.
+        let rgba = [10u8, 20, 30, 255].repeat(400 * 200);
+        let (left, top, width, height, bgra) =
+            render_visible(&rgba, (400, 200), WallpaperFit::Fill, (100, 50)).unwrap();
+        assert_eq!(
+            (left, top, width, height, bgra.len()),
+            (0, 0, 100, 50, 100 * 50 * 4)
+        );
+        assert_eq!(&bgra[..4], &[30, 20, 10, 255]);
+    }
+
+    #[test]
+    fn a_padded_strip_repeats_its_edge_texels() {
+        let strip = Strip {
+            width: 2,
+            height: 1,
+            bgra: vec![10, 20, 30, 255, 40, 50, 60, 255],
+        };
+        let padded = pad(&strip);
+        assert_eq!((padded.width, padded.height), (4, 3));
+        let texel = |x: usize, y: usize| &padded.bgra[(y * 4 + x) * 4..(y * 4 + x) * 4 + 4];
+        for y in 0..3 {
+            assert_eq!(texel(0, y), &[10, 20, 30, 255]);
+            assert_eq!(texel(1, y), &[10, 20, 30, 255]);
+            assert_eq!(texel(2, y), &[40, 50, 60, 255]);
+            assert_eq!(texel(3, y), &[40, 50, 60, 255]);
+        }
     }
 }

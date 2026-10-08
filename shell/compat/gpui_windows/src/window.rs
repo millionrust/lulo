@@ -220,12 +220,13 @@ impl WindowsWindowState {
                 .log_err();
             placement
         };
+        // rmac: back from workspace to screen coordinates, the ones
+        // `retrieve_window_placement` is given when the window opens again.
+        let normal = window_monitor_and_work_area(self.hwnd)
+            .map(|(monitor, work)| workspace_to_screen(placement.rcNormalPosition, monitor, work))
+            .unwrap_or(placement.rcNormalPosition);
         (
-            calculate_client_rect(
-                placement.rcNormalPosition,
-                &self.border_offset,
-                self.scale_factor.get(),
-            ),
+            calculate_client_rect(normal, &self.border_offset, self.scale_factor.get()),
             placement.showCmd == SW_SHOWMAXIMIZED.0 as u32,
         )
     }
@@ -561,6 +562,7 @@ impl WindowsWindow {
             params.bounds,
             this.state.scale_factor.get(),
             &this.state.border_offset,
+            params.kind != WindowKind::PopUp,
         )?;
         crate::rmac_trace::startup("window_created");
         if params.show {
@@ -1509,6 +1511,7 @@ fn retrieve_window_placement(
     initial_bounds: Bounds<Pixels>,
     scale_factor: f32,
     border_offset: &WindowBorderOffset,
+    fit_to_work_area: bool,
 ) -> Result<WINDOWPLACEMENT> {
     let mut placement = WINDOWPLACEMENT {
         length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
@@ -1522,8 +1525,118 @@ fn retrieve_window_placement(
         display.default_bounds()
     };
     let bounds = bounds.to_device_pixels(scale_factor);
-    placement.rcNormalPosition = calculate_window_rect(bounds, border_offset);
+    let mut rect = calculate_window_rect(bounds, border_offset);
+    // rmac: `rcNormalPosition` is in workspace coordinates, whose origin is
+    // the work area's corner, not the screen's: with Lulo's menu bar
+    // reserving the top of the screen, every window opened that much lower
+    // than asked, and a tall one ran under the Dock. App windows are also
+    // fitted into the work area (ADR 0023 "Lulo mode", WIN-OS-50).
+    if let Some((monitor, work)) = display.monitor_and_work_area() {
+        if fit_to_work_area {
+            let margin = (BREATHING_ROOM * scale_factor).round() as i32;
+            let minimum = (
+                (MIN_FITTED_WIDTH * scale_factor).round() as i32,
+                (MIN_FITTED_HEIGHT * scale_factor).round() as i32,
+            );
+            rect = fit_rect_to_work_area(rect, monitor, work, margin, minimum);
+        }
+        rect = screen_to_workspace(rect, monitor, work);
+    }
+    placement.rcNormalPosition = rect;
     Ok(placement)
+}
+
+/// rmac: the air left round a window shrunk to fit the work area (as
+/// `rmac_ui::fit_to_usable_area` on Lulo OS).
+const BREATHING_ROOM: f32 = 16.0;
+/// rmac: never shrink an app window below this (Lulo's minimum window).
+const MIN_FITTED_WIDTH: f32 = 640.0;
+const MIN_FITTED_HEIGHT: f32 = 360.0;
+
+/// rmac: fit an app window's frame (`rect`, screen pixels) into `work`, the
+/// monitor's area less the taskbar and AppBars, as macOS keeps a new window
+/// between the menu bar and the Dock. A frame too large for it shrinks to
+/// the work area less `margin`. A frame centred on the whole monitor
+/// (GPUI's `WindowBounds::centered`), or one that reaches outside the work
+/// area, is centred in the work area; any other frame keeps its place.
+pub(crate) fn fit_rect_to_work_area(
+    rect: RECT,
+    monitor: RECT,
+    work: RECT,
+    margin: i32,
+    minimum: (i32, i32),
+) -> RECT {
+    let work_width = work.right - work.left;
+    let work_height = work.bottom - work.top;
+    if work_width <= 0 || work_height <= 0 {
+        return rect;
+    }
+    let mut width = rect.right - rect.left;
+    let mut height = rect.bottom - rect.top;
+    let shrunk = width > work_width || height > work_height;
+    if width > work_width {
+        width = (work_width - 2 * margin).max(minimum.0).min(work_width);
+    }
+    if height > work_height {
+        height = (work_height - 2 * margin).max(minimum.1).min(work_height);
+    }
+    let centre_of = |low: i32, high: i32| low + (high - low) / 2;
+    let centred_on_monitor =
+        (centre_of(rect.left, rect.right) - centre_of(monitor.left, monitor.right)).abs() <= 2
+            && (centre_of(rect.top, rect.bottom) - centre_of(monitor.top, monitor.bottom)).abs()
+                <= 2;
+    let outside = rect.left < work.left
+        || rect.top < work.top
+        || rect.right > work.right
+        || rect.bottom > work.bottom;
+    if !(shrunk || outside || centred_on_monitor) {
+        return rect;
+    }
+    let left = work.left + (work_width - width) / 2;
+    let top = work.top + (work_height - height) / 2;
+    RECT {
+        left,
+        top,
+        right: left + width,
+        bottom: top + height,
+    }
+}
+
+/// rmac: workspace coordinates (`GetWindowPlacement`) to screen ones.
+pub(crate) fn workspace_to_screen(rect: RECT, monitor: RECT, work: RECT) -> RECT {
+    let dx = work.left - monitor.left;
+    let dy = work.top - monitor.top;
+    RECT {
+        left: rect.left + dx,
+        top: rect.top + dy,
+        right: rect.right + dx,
+        bottom: rect.bottom + dy,
+    }
+}
+
+/// rmac: the area and work area of the monitor `hwnd` is on.
+fn window_monitor_and_work_area(hwnd: HWND) -> Option<(RECT, RECT)> {
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    unsafe { GetMonitorInfoW(monitor, &mut info) }
+        .as_bool()
+        .then_some((info.rcMonitor, info.rcWork))
+}
+
+/// rmac: screen coordinates to the workspace coordinates
+/// `SetWindowPlacement` takes.
+pub(crate) fn screen_to_workspace(rect: RECT, monitor: RECT, work: RECT) -> RECT {
+    let dx = work.left - monitor.left;
+    let dy = work.top - monitor.top;
+    RECT {
+        left: rect.left - dx,
+        top: rect.top - dy,
+        right: rect.right - dx,
+        bottom: rect.bottom - dy,
+    }
 }
 
 fn dwm_set_window_composition_attribute(hwnd: HWND, backdrop_type: u32) {
@@ -1638,7 +1751,9 @@ fn set_non_rude_hwnd(hwnd: HWND, non_rude: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::ClickState;
+    use super::{
+        ClickState, RECT, fit_rect_to_work_area, screen_to_workspace, workspace_to_screen,
+    };
     use gpui::{DevicePixels, MouseButton, point};
     use std::time::Duration;
 
@@ -1688,6 +1803,66 @@ mod tests {
         assert_eq!(
             state.update(MouseButton::Right, point(DevicePixels(10), DevicePixels(0))),
             1
+        );
+    }
+
+    fn rect(left: i32, top: i32, right: i32, bottom: i32) -> RECT {
+        RECT {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    /// The owner's 1366×768 laptop with Lulo's 24 px bar and 67 px Dock.
+    const MONITOR: RECT = RECT {
+        left: 0,
+        top: 0,
+        right: 1366,
+        bottom: 768,
+    };
+    const WORK: RECT = RECT {
+        left: 0,
+        top: 24,
+        right: 1366,
+        bottom: 701,
+    };
+
+    #[test]
+    fn a_window_centred_on_the_screen_is_centred_in_the_work_area() {
+        // Settings' 900 × 632 window, centred by GPUI on the whole screen.
+        let fitted = fit_rect_to_work_area(rect(233, 68, 1133, 700), MONITOR, WORK, 16, (640, 360));
+        assert_eq!(fitted, rect(233, 46, 1133, 678));
+    }
+
+    #[test]
+    fn a_window_taller_than_the_work_area_shrinks_and_centres() {
+        let fitted = fit_rect_to_work_area(rect(183, 0, 1183, 768), MONITOR, WORK, 16, (640, 360));
+        assert_eq!(fitted.bottom - fitted.top, 677 - 32);
+        assert_eq!(fitted.top, 24 + 16);
+        assert!(fitted.bottom <= WORK.bottom);
+        assert_eq!(fitted.right - fitted.left, 1000);
+    }
+
+    #[test]
+    fn a_window_placed_inside_the_work_area_keeps_its_place() {
+        let placed = rect(40, 100, 640, 500);
+        assert_eq!(
+            fit_rect_to_work_area(placed, MONITOR, WORK, 16, (640, 360)),
+            placed
+        );
+    }
+
+    #[test]
+    fn workspace_coordinates_start_at_the_work_area() {
+        assert_eq!(
+            screen_to_workspace(rect(233, 46, 1133, 678), MONITOR, WORK),
+            rect(233, 22, 1133, 654)
+        );
+        assert_eq!(
+            workspace_to_screen(rect(233, 22, 1133, 654), MONITOR, WORK),
+            rect(233, 46, 1133, 678)
         );
     }
 }

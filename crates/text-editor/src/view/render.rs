@@ -27,8 +27,8 @@ use crate::{
     RenameDocument, RevertToLastSaved, SaveFile, SaveFileAs, SaveGoToFolder, SelectLine,
     SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr,
     SetLineEndingCrLf, SetLineEndingLf, SheetFileFormatPlainText, SheetFileFormatRtf, ShowColours,
-    ShowFonts, ShowLists, ShowRuler, ShowSettings, ShowSpellingAndGrammar, ShowSubstitutions,
-    StartSpeaking, StopSpeaking, ToggleBold, ToggleCheckGrammarWithSpelling,
+    ShowFonts, ShowHighlightColours, ShowLists, ShowRuler, ShowSettings, ShowSpellingAndGrammar,
+    ShowSubstitutions, StartSpeaking, StopSpeaking, ToggleBold, ToggleCheckGrammarWithSpelling,
     ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleDarkBackground,
     ToggleDataDetectors, ToggleFind, ToggleItalic, ToggleMono, ToggleReplace, ToggleRichText,
     ToggleSmartCopyPaste, ToggleSmartDashes, ToggleSmartLinks, ToggleSmartQuotes,
@@ -105,6 +105,7 @@ impl EditorView {
     /// the plain body.
     fn render_rich_body(
         &self,
+        bar_width: f32,
         filename: SharedString,
         accessible_value: Option<SharedString>,
         cx: &mut Context<Self>,
@@ -141,7 +142,7 @@ impl EditorView {
             // The format bar (UIA-07) is always shown for a rich document,
             // like TextEdit's own; only the ruler underneath it is the part
             // Format ▸ Text ▸ Show Ruler toggles.
-            .child(self.render_format_bar(cx))
+            .child(self.render_format_bar(bar_width, cx))
             .when(self.show_ruler, |body| body.child(self.render_ruler(cx)))
             .child(div().flex_1().min_h(px(0.0)).child(self.rich.clone()))
             .when(editable, |body| {
@@ -406,6 +407,9 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &ToggleItalic, _, cx| this.toggle_italic(cx)))
             .on_action(cx.listener(|this, _: &ToggleUnderline, _, cx| this.toggle_underline(cx)))
             .on_action(cx.listener(|this, _: &ShowColours, _, cx| this.show_colours(cx)))
+            .on_action(cx.listener(|this, _: &ShowHighlightColours, _, cx| {
+                this.show_colours_for(super::format_text::ColourTarget::Highlight, cx)
+            }))
             .on_action(cx.listener(|this, _: &CopyStyle, _, cx| this.copy_style(cx)))
             .on_action(cx.listener(|this, _: &PasteStyle, _, cx| this.paste_style(cx)))
             .on_action(cx.listener(|this, _: &HighlightNone, _, cx| {
@@ -702,7 +706,12 @@ impl Render for EditorView {
                 d.child(self.render_find_bar(layout, cx))
             })
             .child(if self.rich_text {
-                self.render_rich_body(filename.clone(), accessible_value.clone(), cx)
+                self.render_rich_body(
+                    f32::from(rmac_ui::window_content_size(window).width),
+                    filename.clone(),
+                    accessible_value.clone(),
+                    cx,
+                )
                     .into_any_element()
             } else if let Some(body) = long_line_body {
                 div()

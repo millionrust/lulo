@@ -23,13 +23,12 @@ use gpui::{
 };
 use rmac_desktop::grid::{Grid, Placement, LABEL_GAP, LABEL_LINES, LABEL_MAX_WIDTH};
 use rmac_desktop::settings::{Arrangement, DesktopSettings};
-use rmac_shell_settings::WallpaperFit;
 use rmac_ui::{mac, IconSource, InputEvent, InputState, TextField};
 
 use super::{dock, later, runtime, shell, ShellState, BAR_HEIGHT};
 use crate::model::menus;
 use crate::win::desktop_files::{self, DesktopItem};
-use crate::win::{icons, launch, surface, trace, wallpaper, windows_list};
+use crate::win::{icons, launch, surface, trace, wallpaper, wallpaper_layer, windows_list};
 
 /// A press moves this far before it becomes a drag (as the Mac's 3 pt).
 const DRAG_THRESHOLD: f32 = 3.0;
@@ -80,7 +79,14 @@ pub(crate) struct DesktopView {
     rename: Option<Rename>,
     active: bool,
     wallpaper: Option<Arc<RenderImage>>,
-    fit: WallpaperFit,
+    /// The wallpaper as a layered child window under the icons
+    /// (`win::wallpaper_layer`); `wallpaper` is only the fallback when the
+    /// layer cannot show it.
+    layer: Option<wallpaper_layer::Layer>,
+    layer_shown: bool,
+    /// Where the wallpaper image goes on the screen, in physical pixels
+    /// (`win::wallpaper::Picture`): left, top, width, height.
+    wallpaper_place: (u32, u32, u32, u32),
     /// The appearance and size the wallpaper was decoded for, and whether a
     /// decode is under way.
     wallpaper_for: Option<(bool, u32, u32)>,
@@ -94,15 +100,6 @@ pub(crate) struct DesktopView {
 struct DesktopEntity(Entity<DesktopView>);
 
 impl Global for DesktopEntity {}
-
-fn fit(fit: WallpaperFit) -> ObjectFit {
-    match fit {
-        WallpaperFit::Fill | WallpaperFit::Tile => ObjectFit::Cover,
-        WallpaperFit::Fit => ObjectFit::Contain,
-        WallpaperFit::Stretch => ObjectFit::Fill,
-        WallpaperFit::Center => ObjectFit::None,
-    }
-}
 
 impl DesktopView {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -136,7 +133,9 @@ impl DesktopView {
             rename: None,
             active: false,
             wallpaper: None,
-            fit: WallpaperFit::Fill,
+            layer: None,
+            layer_shown: false,
+            wallpaper_place: (0, 0, 0, 0),
             wallpaper_for: None,
             wallpaper_loading: false,
             traced: Vec::new(),
@@ -336,12 +335,52 @@ impl DesktopView {
                 let Some(picture) = picture else {
                     return;
                 };
-                let image = image::RgbaImage::from_raw(picture.width, picture.height, picture.bgra)
+                // Windows keeps the layer's pixels; the picture is freed
+                // here. Only if the layer cannot show it does GPUI draw it.
+                if this.layer.is_none() {
+                    this.layer = wallpaper_layer::Layer::new();
+                }
+                let backdrop = mac::window().to_rgb();
+                let channel = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+                let desktop = surface::hwnd(window);
+                let (monitor, _) = surface::primary_monitor();
+                this.layer_shown =
+                    this.layer
+                        .as_ref()
+                        .zip(desktop)
+                        .is_some_and(|(layer, desktop)| {
+                            layer.show(
+                                desktop,
+                                monitor,
+                                picture.left,
+                                picture.top,
+                                picture.width,
+                                picture.height,
+                                &picture.bgra,
+                                [
+                                    channel(backdrop.b),
+                                    channel(backdrop.g),
+                                    channel(backdrop.r),
+                                ],
+                            )
+                        });
+                let shown = this.layer_shown;
+                trace(|| {
+                    format!(
+                        "desktop wallpaper drawn by {}",
+                        if shown { "its layer" } else { "GPUI" }
+                    )
+                });
+                let image = (!shown)
+                    .then(|| {
+                        image::RgbaImage::from_raw(picture.width, picture.height, picture.bgra)
+                    })
+                    .flatten()
                     .map(|buffer| Arc::new(RenderImage::new([image::Frame::new(buffer)])));
                 if let Some(old) = std::mem::replace(&mut this.wallpaper, image) {
                     cx.drop_image(old, Some(window));
                 }
-                this.fit = picture.fit;
+                this.wallpaper_place = (picture.left, picture.top, picture.width, picture.height);
                 let dark_text = wallpaper::dark_text_on(picture.bar_luminance);
                 let strip_image = |strip: wallpaper::Strip| {
                     image::RgbaImage::from_raw(strip.width, strip.height, strip.bgra)
@@ -1088,19 +1127,25 @@ impl Render for DesktopView {
             .size_full()
             .relative()
             .overflow_hidden()
-            .bg(mac::window())
+            // Until the wallpaper layer shows, the window's own colour.
+            .when(!self.layer_shown, |desktop| desktop.bg(mac::window()))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_down(MouseButton::Right, cx.listener(Self::right_mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_key_down(cx.listener(Self::key_down))
             .when_some(self.wallpaper.clone(), |desktop, image| {
+                // Already the visible part at its drawn size: drawn 1:1.
+                let (left, top, width, height) = self.wallpaper_place;
+                let scale = window.scale_factor().max(0.5);
                 desktop.child(
                     img(image)
                         .absolute()
-                        .inset_0()
-                        .size_full()
-                        .object_fit(fit(self.fit)),
+                        .left(px(left as f32 / scale))
+                        .top(px(top as f32 / scale))
+                        .w(px(width as f32 / scale))
+                        .h(px(height as f32 / scale))
+                        .object_fit(ObjectFit::Fill),
                 )
             })
             .children(tiles)
@@ -1214,10 +1259,7 @@ mod tests {
     }
 
     #[test]
-    fn wallpaper_placements_map_to_image_fits() {
-        assert!(matches!(fit(WallpaperFit::Fill), ObjectFit::Cover));
-        assert!(matches!(fit(WallpaperFit::Fit), ObjectFit::Contain));
-        assert!(matches!(fit(WallpaperFit::Stretch), ObjectFit::Fill));
+    fn extensions_are_compared_in_lower_case() {
         assert_eq!(extension("Report.PDF"), "pdf");
         assert_eq!(extension("folder"), "");
     }

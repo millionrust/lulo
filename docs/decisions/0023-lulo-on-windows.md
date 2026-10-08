@@ -760,13 +760,14 @@ Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows
 - **Upgrade in place:** a fixed `UpgradeCode` (never change it) plus WiX's default
   `MajorUpgrade` strategy removes the previous version's files and installs the new ones in
   one transaction; `ProductCode` stays `*` (a fresh GUID each build), which `MajorUpgrade`
-  does not need to be fixed.
+  does not need to be fixed. Every build has its own MSI version (WIN-OS-54, below), and
+  `AllowSameVersionUpgrades` replaces a build installed over one with the same number.
 - **Version info resources** (`rmac-windows-resource-build`, above): `FileVersion` and
   `ProductVersion` carry the exact Cargo version string (e.g. `0.9.0-beta.1`); Win32's
   numeric `VS_FIXEDFILEINFO` fields, which have no room for a pre-release tag, carry its
-  numeric prefix (`0.9.0.0`). The MSI's own `Version` property is the same numeric prefix
-  (`build-installer.sh` strips the suffix); the pre-release tag lives in the installer's
-  filename (`Lulo-Setup-0.9.0-beta.1-x64.msi`) instead.
+  numeric prefix (`0.9.0.0`). The MSI's own `Version` is `<major>.<minor>.<build>`, the
+  build number being the commit count (`packaging/windows/msi_version.py`, WIN-OS-54); the
+  pre-release tag lives in the installer's filename (`Lulo-Setup-0.9.0-beta.1-x64.msi`).
 
 ### Signing
 
@@ -1534,6 +1535,132 @@ DWM settings are for the coordinator's re-test. Several monitors (Lulo's desktop
 the primary one only), Stacks, desktop widgets, View Options and dragging desktop items
 out to other apps are later slices. On Windows 10 the corners stay square and there is no
 hairline (the two attributes are Windows 11's).
+
+## Lulo mode on the owner's PC (branch `op/win-realpc2`)
+
+The coordinator installed the release MSI on the owner's laptop (Windows 11 Home, Ryzen 3
+7320U with Radeon graphics, 1366 × 768) and toured Lulo mode. It looked much better, with
+seven real defects (parity rows WIN-OS-49 to WIN-OS-56). Every number below was measured on
+that laptop over SSH, with Lulo mode started and toured in the interactive session through
+the coordinator's scheduled-task runner (Spotlight, the Lulo menu, Text Editor from
+Spotlight, System Settings and Files, the same tour each time).
+
+**The Dock's corners (WIN-OS-49).** A dark box showed behind both rounded ends of the
+shelf. The Dock's window is cut to its rounded shelf with a window region, but the acrylic
+accent ignored the region on this PC. In Lulo mode the Dock already draws Lulo's wallpaper
+under its shelf itself, so it now has no accent at all: outside the shelf its transparent
+swap chain shows the desktop. `shell_smoke.py` checks each corner pixel of the Dock's
+window against the wallpaper just beside it.
+
+**Windows under the Dock (WIN-OS-50).** System Settings opened with its bottom at y 720,
+under the Dock (work area bottom 701). `SetWindowPlacement`'s `rcNormalPosition` is in
+workspace coordinates, whose origin is the work area's corner, so with Lulo's bar reserving
+the top 24 px every window opened 24 px lower than asked; and nothing fitted a new window
+into the work area, which Linux does after the first frame (`fit_to_display`). The vendored
+`gpui_windows` now converts to workspace coordinates and back (`window_bounds`, which the
+apps save, reads screen coordinates again), and fits every app window (not shell popups)
+into the work area when it opens: too large, it shrinks to the work area less 16 px of air;
+centred on the monitor (`WindowBounds::centered`) or reaching outside the work area, it is
+centred in the work area; anywhere else it keeps its place. It works for every app,
+whatever opens its window. `shell_smoke.py` opens all nine Lulo apps with the bar and the
+Dock up and checks each window's frame lies inside the work area.
+
+**Text Editor's format bar (WIN-OS-51).** The bar ran past the right edge after "List" at
+TextEdit's 586 pt window: Inter is not installed on Windows, the fallback font is wider,
+and the bar's controls sized to their labels. Every control now has the Mac's fixed width
+(the x positions measured in `design-lab/text-editor-format-bar.html`): the whole bar is
+567 pt, so it fits 586 whatever the font, and when the window is narrower the groups that
+do not fit move from the right into a » menu with the same commands (as TextEdit's
+toolbar does). The style pop-up is a small fixed-width button like the others.
+
+**Framed desktop icons (WIN-OS-52).** "Google Play Games" and "Need For Speed Most Wanted"
+(public-desktop shortcuts to games) showed as their small
+icon inside a square framed box. The desktop asked `IShellItemImageFactory` for a
+thumbnail at 64 px, and the shell frames a low-resolution icon that way. Desktop items now
+get the icon Explorer's desktop draws: the system image list's jumbo image, or its 48 px
+image when the jumbo canvas only holds a small icon in its corner, drawn over black and
+white to recover alpha (old masked icons included). Only pictures and videos show their
+contents. `IShellItemImageFactory` remains for `shell:AppsFolder` items.
+
+**Memory (WIN-OS-53).** lulo-shell's private bytes on the laptop (release build):
+
+| | at start (10 s) | right after use | 35 s after use |
+|---|---|---|---|
+| installed build (before) | 109.7 MB | 155.6 MB | 119.8 MB |
+| this branch | 55.8 MB | 64.6 MB | 59.0 MB |
+
+(The coordinator's own tour read 107.8 and 119.7 MB.) The start-up trace now prints private
+bytes at each GPUI phase (`RMAC_GPUI_STARTUP_TRACE=1`), which showed where it went:
+
+- **Direct3D on a real GPU.** Creating the device costs 22 MB of private bytes on the
+  Radeon driver before any window exists (WARP: far less), so a CI reading on the runner
+  is not the PC's.
+- **Path textures.** Every GPUI window made two window-sized path textures at creation,
+  one of them 4× multisampled: five window-sized BGRA buffers, 21 MB for the 1366 × 768
+  desktop window and about 14 MB for a typical app window. They are now made the first time
+  a window draws a path and dropped on resize; the shell's surfaces never draw one, and
+  most app windows do not either.
+- **The wallpaper (18 MB).** Drawn by GPUI, the wallpaper kept its pixels for the image, a
+  screen-sized atlas texture and the driver's copies of the upload. It is now decoded to
+  the part of the picture the screen shows at the size it is drawn (a 12-megapixel photo
+  would otherwise have been kept whole), handed to Windows once in a layered window right
+  below the desktop window (`win::wallpaper_layer`, `UpdateLayeredWindow`), and freed. The
+  desktop window is transparent where it draws nothing. The layer takes no input, is out of
+  Alt+Tab and moves with the desktop window in the z-order.
+- **The Windows shell (about 5 MB).** Reading icons (`IShellItemImageFactory`, icon handlers,
+  thumbnail providers) and enumerating the Apps folder for Spotlight load a large part of
+  the Windows shell, which stayed in lulo-shell's memory for good. Both now run in
+  short-lived helper processes, as Explorer reads thumbnails out of process:
+  `lulo-shell --icon-helper` starts with the first icon asked for and ends 4 s after the
+  last, and `lulo-shell --apps-helper` prints the Apps folder and exits. A crashing
+  third-party icon handler can no longer take the layer down. If a helper cannot run, the
+  work is done in-process as before.
+- **Jumbo icons.** An icon read "bigger size OK" could come back at 256 px for a 64 px tile
+  (256 KiB of pixels and atlas each); icons are now shrunk to the size they are drawn.
+
+The rest is GPUI, DirectWrite's font collection and the bar, Dock and desktop windows.
+CI's `windows` job (debug build, WARP) now gates lulo-shell's private bytes at idle as well
+as after use, both at 60 MB (`idle_gate.py --shell-idle-private-mb 60
+--shell-after-use-private-mb 60`). WARP keeps swap chains and textures in the process and a
+debug build is larger, while the Radeon driver adds its own 22 MB, so the runner's reading
+and the PC's differ; the PC's reading above is the GPU-backed number the gate is checked
+against, and it is under 60 MB too.
+
+**MSI upgrades (WIN-OS-54).** Every build had MSI version 0.9.0, so installing a newer MSI
+over an older one was a same-version install: `msiexec` exited 0 and left the old exes.
+The MSI version is now `<major>.<minor>.<build>`, where the build number is the commit
+count of the build's history (`git rev-list --count HEAD`; the installer jobs check out
+full history without trees). Windows Installer compares only those three fields (major and
+minor at most 255, build at most 65535), so the semver patch and pre-release tag are not
+in it; the exes' version strings and the MSI's file name carry them. The count only grows
+along the branches builds are made from, so 0.9.0-beta.1 at commit 3947 installs as
+0.9.3947 and a later 0.9.1 at commit 4100 as 0.9.4100, and a new minor or major version
+sorts above every build before it. `MajorUpgrade` gained `AllowSameVersionUpgrades`, so a
+rebuilt or re-stamped MSI with the same number also replaces the installed one. The old
+product is removed before the new one's files go in (the default schedule), so every file
+is the new build's. `scripts/windows/upgrade_smoke.py` (CI `windows` job, "Installer
+upgrade") builds MSIs 0.9.100, 0.9.101 and 0.9.101 re-stamped, each with its own marker in
+`rmac-calculator.exe`, installs them one over the other, and checks after each that the
+installed file is that MSI's, that exactly one Lulo product is registered and that its
+version is the one installed; then it uninstalls.
+
+**The menu bar (WIN-OS-55).** On Lulo's wallpaper the bar read as a thin dark navy strip,
+where the Mac's is the wallpaper itself, lighter and translucent. The bar draws a 12×
+shrunk strip of the wallpaper stretched to its size, and GPUI's linear filtering blended
+the strip's outermost texels with the empty atlas round them: its top and bottom four
+pixels were nearly black. The strips now carry a copied one-texel border drawn just
+outside the bar and the Dock, and the veil over the bar is the Mac's faintest (5 % black
+under light text, 12 % white under dark).
+
+**Files' console window (WIN-OS-56).** Files was the one Lulo app without
+`windows_subsystem = "windows"`, so it opened with a console window behind it.
+
+**The "Use Files for Folders" check (CI).** `shell_smoke.py` failed once (run
+37778088255) because it clicked the Lulo menu's title where the bar's first frame had
+traced it: the bar's window is laid out at its opening size (1009 × 511) before it is
+placed in its strip, so title 0 was traced at y 244, the click landed on the desktop and
+the menu never opened. The bar now traces its titles and the Spotlight icon only once the
+window has the bar's height.
 
 ## Phase plan
 

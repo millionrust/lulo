@@ -169,6 +169,19 @@ class ShellMemoryGateTests(unittest.TestCase):
             ["lulo-shell: no idle memory reading"],
         )
 
+    def test_private_memory_at_idle_is_gated(self) -> None:
+        results = {"lulo-shell": {"idle_private_mb": 55.8}}
+        self.assertEqual(idle_gate.idle_private_failures(results, 60.0), [])
+        self.assertEqual(idle_gate.idle_private_failures(results, None), [])
+        failures = idle_gate.idle_private_failures({"lulo-shell": {"idle_private_mb": 77.8}}, 60.0)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("77.8 MB private at idle", failures[0])
+        self.assertEqual(
+            idle_gate.idle_private_failures({"lulo-shell": {}}, 60.0),
+            ["lulo-shell: no idle private-memory reading"],
+        )
+        self.assertEqual(idle_gate.idle_private_failures({}, 60.0), [])
+
     def test_memory_given_back_after_use_passes(self) -> None:
         results = {"lulo-shell": {"idle_private_mb": 38.0, "after_use_private_mb": 40.5}}
         self.assertEqual(idle_gate.after_use_failures(results, 50.0, 5.0), [])

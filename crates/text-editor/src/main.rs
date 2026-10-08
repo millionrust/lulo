@@ -123,6 +123,9 @@ gpui::actions!(
         ToggleItalic,
         ToggleUnderline,
         ShowColours,
+        // The format bar's highlight well, from its » overflow menu when
+        // the window is too narrow to show the well itself.
+        ShowHighlightColours,
         CopyStyle,
         PasteStyle,
         // Format ▸ Font ▸ Highlight ▸ …

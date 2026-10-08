@@ -194,7 +194,17 @@ pub fn place_above_desktop_layer(ours: HWND) -> bool {
     let after = match top_desktop_layer_window() {
         // SAFETY: reads the window just above Explorer's desktop.
         Some(layer) => match unsafe { GetWindow(layer, GW_HWNDPREV) } {
+            // Already right above the desktop layer, or above the wallpaper
+            // layer that is.
             Ok(previous) if previous == ours => return false,
+            Ok(previous) if super::wallpaper_layer::is_layer(previous) => {
+                // SAFETY: reads the window above the wallpaper layer.
+                match unsafe { GetWindow(previous, GW_HWNDPREV) } {
+                    Ok(above) if above == ours => return false,
+                    Ok(above) if !above.is_invalid() => above,
+                    _ => HWND::default(),
+                }
+            }
             Ok(previous) if !previous.is_invalid() => previous,
             // Nothing above the desktop layer: ours goes on top of the
             // non-topmost band, which is right above it.
@@ -215,6 +225,8 @@ pub fn place_above_desktop_layer(ours: HWND) -> bool {
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         )
     };
+    // Lulo's wallpaper layer goes with it, just below.
+    super::wallpaper_layer::keep_below(ours);
     true
 }
 

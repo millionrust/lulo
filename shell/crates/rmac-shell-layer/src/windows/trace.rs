@@ -58,9 +58,8 @@ pub fn trace_changed_for(window: isize, message: impl FnOnce() -> String) {
         return;
     }
     let message = message();
-    let changed = LAST_FOR.with(|last| {
-        last.borrow_mut().insert(window, message.clone()).as_ref() != Some(&message)
-    });
+    let changed = LAST_FOR
+        .with(|last| last.borrow_mut().insert(window, message.clone()).as_ref() != Some(&message));
     if changed {
         trace(|| message);
     }

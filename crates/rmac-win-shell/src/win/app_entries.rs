@@ -177,8 +177,11 @@ mod tests {
     #[test]
     fn apps_are_named_by_the_id_their_windows_get() {
         assert_eq!(
-            window_app_id(&app("Calculator", "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"))
-                .as_deref(),
+            window_app_id(&app(
+                "Calculator",
+                "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"
+            ))
+            .as_deref(),
             Some("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App")
         );
         assert_eq!(
@@ -189,14 +192,19 @@ mod tests {
             .as_deref(),
             Some("notepad.exe")
         );
-        assert_eq!(window_app_id(&app("Help", "https://example.com/help")), None);
+        assert_eq!(
+            window_app_id(&app("Help", "https://example.com/help")),
+            None
+        );
     }
 
     #[test]
     fn entries_open_the_app_through_the_apps_folder() {
         let entry = entry(&app("Notepad", "{1AC14E77}\\Notepad.exe"));
         assert!(entry.contains("Name=Notepad\n"));
-        assert!(entry.contains("Exec=explorer.exe \"shell:AppsFolder\\\\{1AC14E77}\\\\Notepad.exe\"\n"));
+        assert!(
+            entry.contains("Exec=explorer.exe \"shell:AppsFolder\\\\{1AC14E77}\\\\Notepad.exe\"\n")
+        );
         assert!(entry.contains(MARKER));
     }
 
@@ -219,9 +227,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::write(folder.join("org.rmac.Notes.desktop"), "[Desktop Entry]\n").unwrap();
-        std::fs::write(folder.join("old.exe.desktop"), format!("[Desktop Entry]\n{MARKER}\n")).unwrap();
+        std::fs::write(
+            folder.join("old.exe.desktop"),
+            format!("[Desktop Entry]\n{MARKER}\n"),
+        )
+        .unwrap();
         let mut wanted = BTreeMap::new();
-        wanted.insert("paint.exe.desktop".to_owned(), entry(&app("Paint", "C:\\paint.exe")));
+        wanted.insert(
+            "paint.exe.desktop".to_owned(),
+            entry(&app("Paint", "C:\\paint.exe")),
+        );
         assert_eq!(sync(&folder, &wanted).unwrap(), 1);
         assert_eq!(sync(&folder, &wanted).unwrap(), 0);
         assert!(folder.join("org.rmac.Notes.desktop").exists());

@@ -423,7 +423,10 @@ pub(crate) fn spawn_item_action(path: PathBuf, action: ItemAction, cx: &mut App)
             if matches!(action, ItemAction::Open) && path.is_dir() {
                 let files = rmac_shell_layer::system::program("/usr/bin/rmac-files");
                 let opened = blocking::unblock(move || {
-                    std::process::Command::new(files).arg(&path).spawn().map(|_| ())
+                    std::process::Command::new(files)
+                        .arg(&path)
+                        .spawn()
+                        .map(|_| ())
                 })
                 .await;
                 if let Err(error) = opened {

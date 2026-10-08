@@ -8,7 +8,7 @@ mod service;
 mod view;
 
 pub use assets::{asset, asset_names};
-pub use service::start;
+pub use service::{open_scene, start};
 #[cfg(not(target_os = "linux"))]
 pub use service::toggle;
 

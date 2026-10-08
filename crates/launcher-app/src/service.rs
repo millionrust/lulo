@@ -134,6 +134,7 @@ pub(crate) fn run() {
             rmac_ui::init_application(cx);
             start(cx);
             watch_endpoint(cx);
+            open_scene(cx);
 
             #[cfg(not(target_os = "linux"))]
             if std::env::args().any(|argument| argument == "--show") {
@@ -285,6 +286,25 @@ fn watch_endpoint(cx: &mut App) {
             }
         })
         .detach();
+    }
+}
+
+/// The cross-platform shell scene (`scripts/compare_shell_scenes.py`):
+/// with `RMAC_SHELL_SCENE_OPEN=spotlight:<query>`, open Spotlight with that
+/// query once the service runs. Anything else does nothing.
+pub fn open_scene(cx: &mut App) {
+    let Some(query) = std::env::var("RMAC_SHELL_SCENE_OPEN")
+        .ok()
+        .and_then(|value| value.strip_prefix("spotlight:").map(str::to_owned))
+    else {
+        return;
+    };
+    #[cfg(target_os = "linux")]
+    overlay::open_scene(query, cx);
+    #[cfg(not(target_os = "linux"))]
+    {
+        toggle(cx);
+        overlay::set_scene_query(query, cx);
     }
 }
 

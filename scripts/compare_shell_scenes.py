@@ -125,9 +125,9 @@ def main() -> int:
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n")
     for name, values in scores.items():
-        print(f"{name}: mean {values['mean']}, changed {values['changed']:.2%}")
+        print(f"{args.linux.stem}: {name}: mean {values['mean']}, changed {values['changed']:.2%}")
     for problem in problems:
-        print(f"::error::shell scenes drifted apart: {problem}")
+        print(f"::error::shell scenes drifted apart ({args.linux.stem}): {problem}")
     return 1 if problems else 0
 
 

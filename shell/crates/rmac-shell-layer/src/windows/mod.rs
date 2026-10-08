@@ -174,6 +174,19 @@ pub fn open_layer_window<V: 'static + Render>(
             })
         });
         hook(hwnd, signals);
+        if trace::enabled() {
+            let namespace = WINDOWS.with(|windows| {
+                windows
+                    .borrow()
+                    .iter()
+                    .find(|window| window.hwnd == raw)
+                    .map(|window| window.layer.namespace.clone())
+                    .unwrap_or_default()
+            });
+            let _ = any.update(cx, |_, window, _| {
+                window.on_next_frame(move |_, _| trace::memory(&format!("{namespace} drawn")));
+            });
+        }
         // Win32 calls that send messages to this process's own windows run
         // outside GPUI's update, as `gpui_windows` does for its own.
         cx.spawn(async move |_| place(raw)).detach();
@@ -182,6 +195,29 @@ pub fn open_layer_window<V: 'static + Render>(
         }
     }
     Ok(handle)
+}
+
+/// Give the open surface `handle` a new requested size and place it again,
+/// as a layer surface's `set_size` does. Windows can resize a window in
+/// place, so a view whose surface only changes size keeps its window (and
+/// any strip it holds) instead of opening another.
+pub fn resize_layer(cx: &mut App, handle: AnyWindowHandle, requested: Size<Pixels>) {
+    let Some(raw) = handle
+        .update(cx, |_, window, _| surface::hwnd(window))
+        .ok()
+        .flatten()
+        .map(|hwnd| hwnd.0 as isize)
+    else {
+        return;
+    };
+    let changed = WINDOWS.with(|windows| {
+        let mut windows = windows.borrow_mut();
+        let window = windows.iter_mut().find(|window| window.hwnd == raw)?;
+        (window.requested != requested).then(|| window.requested = requested)
+    });
+    if changed.is_some() {
+        cx.spawn(async move |_| place(raw)).detach();
+    }
 }
 
 /// Where a layer surface goes on a display whose logical bounds are
@@ -745,6 +781,10 @@ fn place(raw: isize) {
             desktop_layer::place_above_desktop_layer(hwnd);
         }
         Layer::Top | Layer::Overlay => {
+            // The first placement stacks the surface (newest on top, as
+            // layer surfaces of one layer stack); placing it again (a
+            // display change, a new size) keeps its place.
+            let order = if styled { SWP_NOZORDER } else { Default::default() };
             // SAFETY: positions a window this process owns.
             let _ = unsafe {
                 SetWindowPos(
@@ -754,10 +794,10 @@ fn place(raw: isize) {
                     rect.top,
                     rect.right - rect.left,
                     rect.bottom - rect.top,
-                    SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                    SWP_NOACTIVATE | SWP_SHOWWINDOW | order,
                 )
             };
-            if layer.layer == Layer::Top {
+            if layer.layer == Layer::Top && !styled {
                 raise_overlays();
             }
         }

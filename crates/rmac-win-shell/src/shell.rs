@@ -46,6 +46,47 @@ const TURN_OFF_ACTION: &str = "lulo::turn-off";
 
 static CLEANED_UP: AtomicBool = AtomicBool::new(false);
 
+/// The surfaces that make the layer ready once each is placed.
+#[derive(Clone, Copy)]
+enum Placed {
+    Bar = 1,
+    Dock = 2,
+    Desktop = 4,
+}
+
+thread_local! {
+    /// The bar windows already watched for the session ending.
+    static WATCHED: std::cell::RefCell<std::collections::HashSet<isize>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+    static PLACED: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    /// Who waits for the layer to be ready.
+    static READY: std::cell::RefCell<Vec<async_channel::Sender<()>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The Dock's own surface (`rmac-dock-<display>`), not its material or
+/// keyboard surfaces.
+fn is_dock(namespace: &str) -> bool {
+    namespace
+        .strip_prefix("rmac-dock-")
+        .is_some_and(|rest| rest.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// Say the layer is ready (the CI checks and `lulo-session` wait for it)
+/// the first time the bar, the Dock and the desktop have all been placed.
+fn placed_for_ready(surface: Placed) {
+    let before = PLACED.with(|placed| placed.get());
+    let after = before | surface as u8;
+    PLACED.with(|placed| placed.set(after));
+    if before != 7 && after == 7 {
+        trace(|| format!("ready at {:.0} ms", crate::win::process_millis()));
+        memory::report("ready");
+        for ready in READY.with(|ready| std::mem::take(&mut *ready.borrow_mut())) {
+            let _ = ready.try_send(());
+        }
+    }
+}
+
 /// What the shell keeps for its life.
 struct Runtime {
     took_taskbar: bool,
@@ -250,19 +291,35 @@ pub fn run() -> i32 {
             explorer_desktop::hide_icons();
             rmac_shell_layer::system::before_session_end(move || restore_desktop(took_taskbar));
             rmac_shell_layer::windows::on_strip(move |hwnd, namespace| {
-                // A crash leaves these for `lulo-session` to remove.
-                if namespace.starts_with("rmac-top-bar") {
-                    registry::set_dword("BarWindow", hwnd as u32);
-                    watch_session_end(HWND(hwnd as *mut core::ffi::c_void), took_taskbar);
-                    trace(|| format!("bar window {hwnd}"));
-                } else if namespace.starts_with("rmac-dock") {
+                // Explorer shows the taskbar again as AppBars come and go
+                // (and a restarted Explorer forgets the setting): put it
+                // away each time the bar takes its strip.
+                if namespace.starts_with("rmac-top-bar") && took_taskbar {
+                    taskbar::take_over();
+                } else if is_dock(namespace) {
+                    // A crash leaves this for `lulo-session` to remove.
                     registry::set_dword("DockWindow", hwnd as u32);
                     trace(|| format!("dock window {hwnd}"));
                 }
             });
             rmac_shell_layer::windows::on_placed(move |hwnd, namespace| {
-                if namespace.starts_with("rmac-wallpaper") {
+                if namespace.starts_with("rmac-top-bar") {
+                    if took_taskbar {
+                        taskbar::hide_windows();
+                    }
+                    if WATCHED.with(|watched| watched.borrow_mut().insert(hwnd)) {
+                        // A crash leaves this for `lulo-session` to remove;
+                        // the session ending reaches the bar's window.
+                        registry::set_dword("BarWindow", hwnd as u32);
+                        watch_session_end(HWND(hwnd as *mut core::ffi::c_void), took_taskbar);
+                        trace(|| format!("bar window {hwnd}"));
+                    }
+                    placed_for_ready(Placed::Bar);
+                } else if namespace.starts_with("rmac-wallpaper") {
                     trace(|| format!("desktop window {hwnd}"));
+                    placed_for_ready(Placed::Desktop);
+                } else if is_dock(namespace) {
+                    placed_for_ready(Placed::Dock);
                 }
             });
             add_menu_rows();
@@ -295,22 +352,37 @@ pub fn run() -> i32 {
             let hooks = start_hotkey(cx);
             cx.global_mut::<Runtime>().hooks = hooks;
 
-            // Once the layer is up and idle, what setup touched is given
-            // back.
+            // Once the bar, the Dock and the desktop are placed the layer
+            // is ready; once it is idle, what setup touched is given back.
             {
                 let executor = cx.background_executor().clone();
+                let (ready_tx, ready_rx) = async_channel::bounded::<()>(1);
+                READY.with(|ready| ready.borrow_mut().push(ready_tx));
                 cx.background_executor()
                     .spawn(async move {
-                        executor.timer(Duration::from_secs(1)).await;
-                        memory::trim("idle after start-up");
+                        if ready_rx.recv().await.is_ok() {
+                            executor.timer(Duration::from_secs(2)).await;
+                            memory::trim("idle after start-up");
+                        }
                     })
                     .detach();
             }
-            cx.spawn(async move |_| {
-                trace(|| format!("ready at {:.0} ms", crate::win::process_millis()));
-                memory::report("ready");
-            })
-            .detach();
+
+            // The cross-platform shell scene's Spotlight or Control
+            // Centre (`RMAC_SHELL_SCENE_OPEN`), once the layer is ready.
+            if std::env::var_os("RMAC_SHELL_SCENE_OPEN").is_some() {
+                let (scene_tx, scene_rx) = async_channel::bounded::<()>(1);
+                READY.with(|ready| ready.borrow_mut().push(scene_tx));
+                cx.spawn(async move |cx| {
+                    if scene_rx.recv().await.is_ok() {
+                        cx.update(|cx| {
+                            rmac_launcher_app::open_scene(cx);
+                            rmac_quick_settings_app::open_scene(cx);
+                        });
+                    }
+                })
+                .detach();
+            }
 
             // Any other way out (Windows ending the session) gives the
             // desktop back as well; `run` checks again once GPUI stops.

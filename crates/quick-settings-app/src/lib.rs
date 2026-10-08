@@ -451,6 +451,23 @@ pub fn start(cx: &mut App) {
     });
 }
 
+/// The cross-platform shell scene (`scripts/compare_shell_scenes.py`):
+/// with `RMAC_SHELL_SCENE_OPEN=control-centre`, open Control Centre once
+/// the service runs. Anything else does nothing.
+pub fn open_scene(cx: &mut App) {
+    if std::env::var("RMAC_SHELL_SCENE_OPEN").as_deref() != Ok("control-centre") {
+        return;
+    }
+    let bounds = Bounds::new(
+        point(px(0.0), px(0.0)),
+        size(
+            px(rmac_quick_settings::surface::LOGICAL_WIDTH as f32),
+            px(rmac_quick_settings::surface::LOGICAL_HEIGHT as f32),
+        ),
+    );
+    open_popover(bounds, None, cx);
+}
+
 /// Open Control Centre, or close the one already open, as its shortcut
 /// and the menu bar's button do.
 #[cfg(not(target_os = "linux"))]
@@ -466,6 +483,7 @@ pub fn run() {
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
             start(cx);
+            open_scene(cx);
 
             #[cfg(target_os = "linux")]
             let (activation_tx, activation_rx) = async_channel::bounded(8);

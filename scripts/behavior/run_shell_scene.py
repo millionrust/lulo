@@ -196,6 +196,20 @@ class Run:
             for surface in ("wallpaper", "top-bar", "dock"):
                 if not self.wait_for(lambda surface=surface: (ready / surface).exists(), 60):
                     print(f"FAIL {surface} did not report a configured surface", flush=True)
+            if self.args.open:
+                # The panel's own process opens it at start-up
+                # (RMAC_SHELL_SCENE_OPEN), as lulo-shell does on Windows.
+                panel_env = {**surface_env, "RMAC_SHELL_SCENE_OPEN": self.args.open,
+                             "RMAC_SPOTLIGHT_FRAME_DIR": str(ready)}
+                apps = Path(self.args.app_bin_dir or self.args.bin_dir)
+                if self.args.open.startswith("spotlight:"):
+                    self.spawn([str(apps / "rmac-launcher")], "launcher", panel_env)
+                    if not self.wait_for(lambda: next(ready.glob("show-*.ready"), None), 60):
+                        print("FAIL Spotlight did not draw", flush=True)
+                elif self.args.open == "control-centre":
+                    self.spawn([str(apps / "rmac-quick-settings")], "quick-settings", panel_env)
+                else:
+                    raise SystemExit(f"unknown --open {self.args.open!r}")
             # Icons and the wallpaper decode off the UI thread; let them land.
             time.sleep(self.args.settle)
             output = Path(self.args.output)
@@ -263,11 +277,17 @@ def main() -> int:
     parser.add_argument("--bin-dir", required=True, help="directory with wallpaper, top-bar and dock")
     parser.add_argument("--output", required=True, help="where the scene's PNG goes")
     parser.add_argument("--settle", type=float, default=6.0, help="seconds after the surfaces are up")
+    parser.add_argument("--open", default="",
+                        help="spotlight:<query> or control-centre: open that panel in the scene")
+    parser.add_argument("--app-bin-dir", default="",
+                        help="directory with rmac-launcher and rmac-quick-settings (for --open)")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.output = str(Path(args.output).resolve())
     args.bin_dir = str(Path(args.bin_dir).resolve())
+    if args.app_bin_dir:
+        args.app_bin_dir = str(Path(args.app_bin_dir).resolve())
     if args.inner:
         return Run(args, args.inner).run()
     argv = [a for a in sys.argv[1:] if a != "--keep"]

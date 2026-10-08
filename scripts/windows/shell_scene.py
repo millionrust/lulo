@@ -121,6 +121,8 @@ def main() -> int:
     parser.add_argument("--bin-dir", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--settle", type=float, default=8.0)
+    parser.add_argument("--open", default="",
+                        help="spotlight:<query> or control-centre: open that panel in the scene")
     args = parser.parse_args()
 
     from PIL import ImageGrab
@@ -137,6 +139,8 @@ def main() -> int:
         "RMAC_SHELL_SCENE_TIME": SCENE_TIME,
         "LULO_SHELL_TRACE": "1",
     }
+    if args.open:
+        environment["RMAC_SHELL_SCENE_OPEN"] = args.open
     log = work / "session.log"
     hidden = hide_other_windows()
     session = subprocess.Popen(

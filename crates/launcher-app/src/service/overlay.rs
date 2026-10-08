@@ -472,3 +472,75 @@ pub(super) fn route_activation(
         cx,
     );
 }
+
+/// Type `query` into the open Spotlight (the shell scene).
+pub(super) fn set_scene_query(query: String, cx: &mut App) {
+    let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+    let Some(active) = active else {
+        return;
+    };
+    if let Some(view) = active.view.upgrade() {
+        let _ = cx.update_window(active.window, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.set_query_from_assistive_technology(query, window, cx)
+            });
+        });
+    }
+}
+
+/// Open Spotlight on the first output without a shortcut activation, as
+/// the shell scene shows it, with `query` typed.
+#[cfg(target_os = "linux")]
+pub(super) fn open_scene(query: String, cx: &mut App) {
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        let snapshot = match rmac_compositor_system::snapshot().await {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                eprintln!("Spotlight scene: no compositor snapshot: {error}");
+                return;
+            }
+        };
+        cx.update(|cx| {
+            let Some(output) = snapshot.outputs.iter().find(|output| output.enabled()) else {
+                eprintln!("Spotlight scene: no output");
+                return;
+            };
+            let description = match rmac_launcher::surface::SeatId::new("seat0")
+                .and_then(|seat| rmac_launcher::surface::plan(&output.id, seat, &snapshot))
+            {
+                Ok(description) => description,
+                Err(error) => {
+                    eprintln!("Spotlight scene: {error}");
+                    return;
+                }
+            };
+            let bar = Bounds::new(
+                point(px(0.0), px(0.0)),
+                size(
+                    px(description.logical_width as f32),
+                    px(description.logical_height as f32),
+                ),
+            );
+            let surface = Bounds::new(
+                bar.origin,
+                size(
+                    bar.size.width,
+                    px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32),
+                ),
+            );
+            let event = rmac_shortcuts::Event::Activated {
+                id: rmac_shortcuts::ShortcutId("launcher".into()),
+                timestamp_ms: 1,
+            };
+            open_launcher(
+                event,
+                overlay_options(WindowBounds::Windowed(surface), description.margin_top),
+                Some(bar),
+                None,
+                cx,
+            );
+            set_scene_query(query, cx);
+        });
+    })
+    .detach();
+}

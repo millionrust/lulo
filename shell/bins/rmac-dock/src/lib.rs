@@ -5320,6 +5320,41 @@ mod dock {
                         (!current.needs_new_surface(&surface))
                             .then_some((current.overview_visible, *foreground))
                     });
+                // Windows resizes the shelf's material in place when only
+                // the shelf's length changed (an app opened or quit): the
+                // Dock's own window, and the work-area strip it holds as an
+                // AppBar, stay, so maximised windows do not jump.
+                #[cfg(windows)]
+                {
+                    let resized = self.windows.get(&uuid).and_then(|(current, _, backdrop)| {
+                        let mut same_length = surface.clone();
+                        same_length.shelf_extent = current.shelf_extent;
+                        (current.shelf_extent != surface.shelf_extent
+                            && !current.needs_new_surface(&same_length))
+                        .then_some(*backdrop)
+                    });
+                    if let Some(backdrop) = resized {
+                        let metrics = TileMetrics::new(surface.tile_size);
+                        let size = match surface.placement {
+                            rmac_shell_settings::DockPlacement::Bottom => {
+                                Size::new(px(surface.shelf_extent), px(metrics.shelf_thickness))
+                            }
+                            _ => Size::new(px(metrics.shelf_thickness), px(surface.shelf_extent)),
+                        };
+                        rmac_shell_layer::windows::resize_layer(cx, backdrop, size);
+                        if let Some((current, _, _)) = self.windows.get_mut(&uuid) {
+                            current.shelf_extent = surface.shelf_extent;
+                        }
+                    }
+                }
+                let kept = if cfg!(windows) {
+                    self.windows.get(&uuid).and_then(|(current, foreground, _)| {
+                        (!current.needs_new_surface(&surface))
+                            .then_some((current.overview_visible, *foreground))
+                    })
+                } else {
+                    kept
+                };
                 if let Some((current_overview_visible, foreground)) = kept {
                     if current_overview_visible != surface.overview_visible {
                         let overview_visible = surface.overview_visible;

@@ -6,8 +6,9 @@ name: Shell scenes
 # 1024 x 768 at scale 1) on Lulo OS (nested niri, scripts/behavior/
 # run_shell_scene.py) and on windows-latest (scripts/windows/shell_scene.py),
 # then compares the two screens perceptually (scripts/compare_shell_scenes.py)
-# and fails when they drift apart. The two screens and a diff image are in
-# the `shell-scene-diff` artifact.
+# and fails when they drift apart. Three scenes: the desktop alone, Spotlight
+# with a query typed, and Control Centre open. The screens and a diff image
+# for each are in the `shell-scene-diff` artifact.
 on:
   push:
   pull_request:
@@ -60,16 +61,24 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             shell/target
-          key: ${{ runner.os }}-shell-scene-${{ hashFiles('shell/Cargo.lock', 'shell/rust-toolchain.toml') }}
+            target
+          key: ${{ runner.os }}-shell-scene-${{ hashFiles('Cargo.lock', 'shell/Cargo.lock', 'shell/rust-toolchain.toml') }}
       - name: Build the menu bar, the Dock and the desktop
         working-directory: shell
         run: cargo build --locked -p rmac-shell-menubar -p rmac-shell-dock -p rmac-shell-wallpaper --bins --features wayland
-      - name: Draw the scene
+      - name: Build Spotlight and Control Centre
+        run: cargo build --locked -p rmac-launcher-app -p rmac-quick-settings-app --bins
+      - name: Draw the scenes
         run: |
           niri="$RUNNER_TEMP/niri-package/usr/bin/niri"
           export PATH="$(dirname "$niri"):$PATH"
-          /usr/bin/python3 scripts/behavior/run_shell_scene.py --niri "$niri" \
-            --bin-dir shell/target/debug --output scenes/linux.png
+          scene() {
+            /usr/bin/python3 scripts/behavior/run_shell_scene.py --niri "$niri" \
+              --bin-dir shell/target/debug --app-bin-dir target/debug "$@"
+          }
+          scene --output scenes/linux.png
+          scene --output scenes/linux-spotlight.png --open "spotlight:text editor"
+          scene --output scenes/linux-control-centre.png --open control-centre
       - name: Upload the scene
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -105,10 +114,14 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
       - name: Build the Lulo layer
         run: cargo build --locked -p rmac-win-shell --bins
-      - name: Draw the scene
+      - name: Draw the scenes
         run: |
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/shell_scene.py --bin-dir target/debug --output scenes/windows.png
+          python scripts/windows/shell_scene.py --bin-dir target/debug \
+            --output scenes/windows-spotlight.png --open "spotlight:text editor"
+          python scripts/windows/shell_scene.py --bin-dir target/debug \
+            --output scenes/windows-control-centre.png --open control-centre
       - name: Upload the scene
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -137,8 +150,12 @@ jobs:
       - name: Compare the scenes
         run: |
           python -m pip install --disable-pip-version-check Pillow==12.1.1
-          python scripts/compare_shell_scenes.py scenes/linux.png scenes/windows.png \
-            --diff scenes/diff.png --report scenes/report.json
+          status=0
+          for scene in "" -spotlight -control-centre; do
+            python scripts/compare_shell_scenes.py "scenes/linux$scene.png" "scenes/windows$scene.png" \
+              --diff "scenes/diff$scene.png" --report "scenes/report$scene.json" || status=1
+          done
+          exit $status
       - name: Upload the comparison
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

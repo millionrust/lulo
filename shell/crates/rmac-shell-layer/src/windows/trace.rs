@@ -57,3 +57,43 @@ pub fn screen_point(window: &gpui::Window, x: f32, y: f32) -> (i32, i32) {
         ((origin.y.as_f32() + y) * scale).round() as i32,
     )
 }
+
+/// This process's (working set, private bytes), in MB.
+pub fn memory_mb() -> Option<(f64, f64)> {
+    use windows::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
+    };
+    use windows::Win32::System::Threading::GetCurrentProcess;
+
+    let mut counters = PROCESS_MEMORY_COUNTERS_EX {
+        cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: the EX structure is passed with its own size, as the call
+    // allows; this process's pseudo-handle needs no closing.
+    let ok = unsafe {
+        K32GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            &mut counters as *mut PROCESS_MEMORY_COUNTERS_EX as *mut PROCESS_MEMORY_COUNTERS,
+            counters.cb,
+        )
+    }
+    .as_bool();
+    ok.then(|| {
+        (
+            counters.WorkingSetSize as f64 / 1_048_576.0,
+            counters.PrivateUsage as f64 / 1_048_576.0,
+        )
+    })
+}
+
+/// Trace this process's memory at `phase` (the start-up trace and the CI
+/// memory gate read these lines).
+pub fn memory(phase: &str) {
+    if !enabled() {
+        return;
+    }
+    if let Some((working_set, private)) = memory_mb() {
+        trace(|| format!("memory {phase}: working set {working_set:.1} MB, private {private:.1} MB"));
+    }
+}

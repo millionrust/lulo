@@ -77,6 +77,10 @@ pub(crate) struct QuickSettingsService {
     /// open only while `active` is `Some`.
     #[cfg(target_os = "linux")]
     catcher: Option<AnyWindowHandle>,
+    /// The popover's rectangle in display coordinates, which the catcher
+    /// leaves click-through; its height follows the surface.
+    #[cfg(target_os = "linux")]
+    hole: Option<Bounds<Pixels>>,
 }
 
 impl Global for QuickSettingsService {}
@@ -215,6 +219,32 @@ pub(crate) fn clear_active_popover(token: u64, cx: &mut App) {
     }
 }
 
+/// The popover `token` is now `height` tall: move the catcher's hole with
+/// it. The surface opens at its smallest grid and grows once the backlight
+/// and media reads arrive, and the detail views are taller or shorter than
+/// the grid, so a hole kept at the first size left the bottom of a taller
+/// Control Centre (the Sound module under Display, a long Wi-Fi list)
+/// covered by the catcher: a press there closed Control Centre instead of
+/// reaching the control.
+#[cfg(target_os = "linux")]
+pub(crate) fn follow_popover_height(token: u64, height: f32, cx: &mut App) {
+    let update = cx.update_global::<QuickSettingsService, _>(|service, _| {
+        if !service
+            .active
+            .as_ref()
+            .is_some_and(|active| active.token == token)
+        {
+            return None;
+        }
+        let hole = service.hole.as_mut()?;
+        hole.size.height = px(height);
+        Some((service.catcher?, *hole))
+    });
+    if let Some((catcher, hole)) = update {
+        rmac_ui::set_outside_click_catcher_hole(catcher, hole, cx);
+    }
+}
+
 fn open_popover(
     bounds: Bounds<Pixels>,
     previous_window: Option<rmac_compositor::WindowId>,
@@ -261,7 +291,10 @@ fn open_popover(
                     cx,
                 )
             });
-            cx.update_global::<QuickSettingsService, _>(|service, _| service.catcher = catcher);
+            cx.update_global::<QuickSettingsService, _>(|service, _| {
+                service.catcher = catcher;
+                service.hole = Some(bounds);
+            });
         }
         cx.activate(true);
     }
@@ -349,6 +382,8 @@ fn main() {
                 next_token: 0,
                 #[cfg(target_os = "linux")]
                 catcher: None,
+                #[cfg(target_os = "linux")]
+                hole: None,
             });
 
             #[cfg(target_os = "linux")]

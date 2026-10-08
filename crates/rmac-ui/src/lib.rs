@@ -77,6 +77,8 @@ pub use runtime::open_outside_click_catcher;
 pub use runtime::open_outside_click_catcher_around;
 #[cfg(target_os = "linux")]
 pub use runtime::open_outside_click_catcher_around_with_escape;
+#[cfg(target_os = "linux")]
+pub use runtime::set_outside_click_catcher_hole;
 pub use runtime::{
     defer_content_ready, init_application, install_app_instance, install_app_menu,
     install_surface_idle_exit, mark_content_ready, prepare_surface_window, shell_surface_root,

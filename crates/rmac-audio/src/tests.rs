@@ -493,3 +493,29 @@ fn real_pw_dump_fixture_parses_into_the_expected_defaults_volumes_and_profile() 
     assert!(outputs[0].routes[0].is_active);
     assert_eq!(outputs[0].routes[0].name, "Speakers");
 }
+
+/// The reference laptop's whole `pw-dump` (67 objects: modules, factories,
+/// clients, MIDI and camera nodes, ports, two ALSA devices, one sink and
+/// one source), captured read-only on 2026-10-08 with the account and host
+/// names replaced. The behaviour runs replay this exact graph
+/// (`scripts/behavior/fake_audio.py` "laptop").
+#[test]
+fn full_laptop_dump_has_exactly_one_default_output_at_its_real_level() {
+    let dump = include_str!("fixtures/pw-dump-laptop-full.json");
+    let graph = parse_pw_dump_metadata(dump).unwrap();
+    let mut outputs = graph_devices(&graph, DeviceKind::Output);
+    apply_graph_metadata(&mut outputs, &graph, DeviceKind::Output);
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(outputs[0].id, "52");
+    assert_eq!(outputs[0].name, "Built-in Audio Analog Stereo");
+    assert!(outputs[0].is_default);
+    // wpctl shows 0.30; the first Props entry carries linear 0.027001 and
+    // a second one, for the ALSA device, has no volume at all.
+    let level = graph.nodes.get("52").and_then(|node| node.level).unwrap();
+    assert_eq!(level.volume, 30);
+    assert!(!level.muted);
+    // MIDI bridges, the camera and the Dummy/Freewheel drivers are neither
+    // outputs nor inputs.
+    assert_eq!(graph_devices(&graph, DeviceKind::Input).len(), 1);
+    assert_eq!(graph.nodes.len(), 2);
+}

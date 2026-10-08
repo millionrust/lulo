@@ -515,6 +515,12 @@ impl QuickSettingsView {
                                 mac::SEMIBOLD,
                                 heading_text(),
                             )
+                            // Announced, as VoiceOver reads "Output"
+                            // before the Mac's list of outputs.
+                            .id(("control-center-detail-heading", index))
+                            .role(Role::Heading)
+                            .aria_label(heading)
+                            .aria_level(2)
                             .child(heading)
                             .into_any_element(),
                         );
@@ -558,6 +564,10 @@ impl QuickSettingsView {
                                 mac::REGULAR,
                                 subtitle_text(),
                             )
+                            .id("control-center-detail-empty")
+                            .role(Role::Label)
+                            // AccessKit names a label from its value.
+                            .aria_value(empty)
                             .child(empty)
                             .into_any_element(),
                         );

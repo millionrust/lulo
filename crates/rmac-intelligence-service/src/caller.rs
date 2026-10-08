@@ -337,7 +337,12 @@ mod tests {
                 Err(Refusal::NoCredentials(_))
             ));
             assert_eq!(
-                check(own, Some(me + 1), Some(pidfd.as_fd()), std::slice::from_ref(&exe)),
+                check(
+                    own,
+                    Some(me + 1),
+                    Some(pidfd.as_fd()),
+                    std::slice::from_ref(&exe)
+                ),
                 Err(Refusal::ProcessMismatch {
                     reported: me + 1,
                     pidfd: me

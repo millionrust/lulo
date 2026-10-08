@@ -21,6 +21,11 @@
 //! closing `}` is never fed at all. "turn on dark mode" costs the prompt's
 //! request tokens plus two forward passes.
 //!
+//! Two syntaxes ([`Syntax`]): the model either writes the wire JSON itself,
+//! or a short action line (" appearance dark") that the decoder turns into
+//! the same JSON. The short form needs far fewer tokens per request and per
+//! pass, and every token costs evaluation time on an old CPU.
+//!
 //! Because the decoder only ever emits text the schema allows, the result
 //! always parses ([`Intent::parse`]); a unit test drives it with random
 //! logits to hold that.
@@ -115,13 +120,30 @@ pub struct Decoded {
     pub tokens: u32,
 }
 
-/// Continue an answer whose prompt ended with [`ANSWER_PREFIX`].
-/// `logits` are the model's logits after that prompt.
+/// How the model writes its answer. The decoder always builds the same
+/// strict JSON wire form ([`Intent::parse`]); only what the model reads and
+/// writes differs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Syntax {
+    /// The wire JSON itself, after a prompt ending `{"intent":"`.
+    Json,
+    /// A short action line after a prompt ending ` =>`: ` appearance dark`,
+    /// ` volume 30`, ` timer 10 minutes`, ` open_app Notes`. Every JSON key
+    /// and quote the model would read back costs a token of evaluation
+    /// (about 20 ms each on the reference laptop); this spells the same
+    /// choices in a third of the tokens (ADR 0024 "Phase 1.1").
+    Compact,
+}
+
+/// Continue an answer. `logits` are the model's logits after the prompt,
+/// which ends with [`ANSWER_PREFIX`] ([`Syntax::Json`]) or ` =>`
+/// ([`Syntax::Compact`]).
 pub fn decode(
     model: &mut impl Model,
     vocabulary: &impl Vocabulary,
     tables: &Tables,
     logits: Vec<f32>,
+    syntax: Syntax,
 ) -> Result<Decoded, DecodeError> {
     let mut run = Run {
         model,
@@ -133,7 +155,29 @@ pub fn decode(
         passes: 0,
         tokens: 0,
     };
-    let names = [
+    match syntax {
+        Syntax::Json => json(&mut run)?,
+        Syntax::Compact => compact(&mut run)?,
+    }
+    let intent = Intent::parse(&run.json).map_err(DecodeError::Intent)?;
+    Ok(Decoded {
+        intent,
+        json: run.json,
+        passes: run.passes,
+        tokens: run.tokens,
+    })
+}
+
+/// The same literal for the model and the wire.
+fn same<'a>(literals: &[&'a str]) -> Vec<(&'a str, &'a str)> {
+    literals
+        .iter()
+        .map(|literal| (*literal, *literal))
+        .collect()
+}
+
+fn json<M: Model, V: Vocabulary>(run: &mut Run<'_, M, V>) -> Result<(), DecodeError> {
+    let names = same(&[
         "open_app\",\"app\":\"",
         "appearance\",\"mode\":\"",
         "volume\",\"",
@@ -144,46 +188,115 @@ pub fn decode(
         "timer\",\"amount\":",
         "search_files\",\"query\":\"",
         "none\"}",
-    ];
+    ]);
+    let text_ends = ["\"}", "\""];
     match run.choose(&names)? {
-        0 | 8 => run.text()?,
+        0 | 8 => run.text(&text_ends, "\"}")?,
         1 => {
-            run.choose(&["dark\"}", "light\"}"])?;
+            run.choose(&same(&["dark\"}", "light\"}"]))?;
         }
         2 => {
-            if run.choose(&["level\":", "change\":\""])? == 0 {
-                run.number(0, 100, "}")?;
+            if run.choose(&same(&["level\":", "change\":\""]))? == 0 {
+                run.number(0, 100, &["}"])?;
+                run.force("}", "}")?;
             } else {
-                run.choose(&["up\"}", "down\"}", "mute\"}", "unmute\"}"])?;
+                run.choose(&same(&["up\"}", "down\"}", "mute\"}", "unmute\"}"]))?;
             }
         }
         3 => {
-            if run.choose(&["level\":", "change\":\""])? == 0 {
-                run.number(0, 100, "}")?;
+            if run.choose(&same(&["level\":", "change\":\""]))? == 0 {
+                run.number(0, 100, &["}"])?;
+                run.force("}", "}")?;
             } else {
-                run.choose(&["up\"}", "down\"}"])?;
+                run.choose(&same(&["up\"}", "down\"}"]))?;
             }
         }
         4..=6 => {
-            run.choose(&["true}", "false}"])?;
+            run.choose(&same(&["true}", "false}"]))?;
         }
         7 => {
+            let follower = ",\"unit\":\"";
+            let amount = run.number(1, 999, &[follower])?;
+            run.force(follower, follower)?;
             // Clock's limit is just under a day: no more than 23 hours.
-            if run.number(1, 999, ",\"unit\":\"")? <= 23 {
-                run.choose(&["seconds\"}", "minutes\"}", "hours\"}"])?;
+            if amount <= 23 {
+                run.choose(&same(&["seconds\"}", "minutes\"}", "hours\"}"]))?;
             } else {
-                run.choose(&["seconds\"}", "minutes\"}"])?;
+                run.choose(&same(&["seconds\"}", "minutes\"}"]))?;
             }
         }
         _ => {}
     }
-    let intent = Intent::parse(&run.json).map_err(DecodeError::Intent)?;
-    Ok(Decoded {
-        intent,
-        json: run.json,
-        passes: run.passes,
-        tokens: run.tokens,
-    })
+    Ok(())
+}
+
+fn compact<M: Model, V: Vocabulary>(run: &mut Run<'_, M, V>) -> Result<(), DecodeError> {
+    let names = [
+        (" open_app", "open_app\",\"app\":\""),
+        (" appearance", "appearance\",\"mode\":\""),
+        (" volume", "volume\",\""),
+        (" brightness", "brightness\",\""),
+        (" wifi", "wifi\",\"on\":"),
+        (" bluetooth", "bluetooth\",\"on\":"),
+        (" do_not_disturb", "do_not_disturb\",\"on\":"),
+        (" timer", "timer\",\"amount\":"),
+        (" search_files", "search_files\",\"query\":\""),
+        (" none", "none\"}"),
+    ];
+    let line_end = ["\n"];
+    match run.choose(&names)? {
+        0 | 8 => run.text(&line_end, "\"}")?,
+        1 => {
+            run.choose(&[(" dark", "dark\"}"), (" light", "light\"}")])?;
+        }
+        2 => {
+            // A bare space starts a number (the tokenizer writes digits on
+            // their own): " volume 30" or " volume up".
+            let choice = run.choose(&[
+                (" ", "level\":"),
+                (" up", "change\":\"up\"}"),
+                (" down", "change\":\"down\"}"),
+                (" mute", "change\":\"mute\"}"),
+                (" unmute", "change\":\"unmute\"}"),
+            ])?;
+            if choice == 0 {
+                run.number(0, 100, &line_end)?;
+                run.force("\n", "}")?;
+            }
+        }
+        3 => {
+            let choice = run.choose(&[
+                (" ", "level\":"),
+                (" up", "change\":\"up\"}"),
+                (" down", "change\":\"down\"}"),
+            ])?;
+            if choice == 0 {
+                run.number(0, 100, &line_end)?;
+                run.force("\n", "}")?;
+            }
+        }
+        4..=6 => {
+            run.choose(&[(" on", "true}"), (" off", "false}")])?;
+        }
+        7 => {
+            run.force(" ", "")?;
+            let units = [
+                (" seconds", "seconds\"}"),
+                (" minutes", "minutes\"}"),
+                (" hours", "hours\"}"),
+            ];
+            let amount = run.number(1, 999, &[" seconds", " minutes", " hours"])?;
+            run.json.push_str(",\"unit\":\"");
+            // Clock's limit is just under a day: no more than 23 hours.
+            if amount <= 23 {
+                run.choose(&units)?;
+            } else {
+                run.choose(&units[..2])?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 struct Run<'a, M, V> {
@@ -219,22 +332,23 @@ impl<M: Model, V: Vocabulary> Run<'_, M, V> {
         Ok(())
     }
 
-    fn force(&mut self, literal: &str) -> Result<(), DecodeError> {
-        let tokens = self.vocabulary.tokenize(literal);
-        if tokens.is_empty() && !literal.is_empty() {
+    /// Queue `model` for the model and write `json` to the answer.
+    fn force(&mut self, model: &str, json: &str) -> Result<(), DecodeError> {
+        let tokens = self.vocabulary.tokenize(model);
+        if tokens.is_empty() && !model.is_empty() {
             return Err(DecodeError::Vocabulary);
         }
         self.pending.extend(tokens);
-        self.json.push_str(literal);
+        self.json.push_str(json);
         Ok(())
     }
 
-    /// Pick one of `alternatives` (each the full literal up to the next free
-    /// slot). Returns its index.
-    fn choose(&mut self, alternatives: &[&str]) -> Result<usize, DecodeError> {
+    /// Pick one of `alternatives`, each `(what the model writes, what the
+    /// answer gets)`, up to the next free slot. Returns its index.
+    fn choose(&mut self, alternatives: &[(&str, &str)]) -> Result<usize, DecodeError> {
         let spelled: Vec<Vec<Token>> = alternatives
             .iter()
-            .map(|alternative| self.vocabulary.tokenize(alternative))
+            .map(|(model, _)| self.vocabulary.tokenize(model))
             .collect();
         if spelled.iter().any(Vec::is_empty) {
             return Err(DecodeError::Vocabulary);
@@ -244,7 +358,7 @@ impl<M: Model, V: Vocabulary> Run<'_, M, V> {
         loop {
             if let [only] = alive[..] {
                 self.pending.extend_from_slice(&spelled[only][position..]);
-                self.json.push_str(alternatives[only]);
+                self.json.push_str(alternatives[only].1);
                 return Ok(only);
             }
             // Alternatives that are a token prefix of another end here; the
@@ -254,7 +368,7 @@ impl<M: Model, V: Vocabulary> Run<'_, M, V> {
                 .iter()
                 .find(|&&index| spelled[index].len() == position)
             {
-                self.json.push_str(alternatives[ended]);
+                self.json.push_str(alternatives[ended].1);
                 return Ok(ended);
             }
             self.flush()?;
@@ -269,10 +383,21 @@ impl<M: Model, V: Vocabulary> Run<'_, M, V> {
         }
     }
 
-    /// An integer from `minimum` to `maximum`, then `follower`.
-    fn number(&mut self, minimum: u32, maximum: u32, follower: &str) -> Result<u32, DecodeError> {
-        let follower_tokens = self.vocabulary.tokenize(follower);
-        let end = *follower_tokens.first().ok_or(DecodeError::Vocabulary)?;
+    /// An integer from `minimum` to `maximum`, written to the answer and
+    /// queued for the model. It ends when the first token of one of `ends`
+    /// (what may follow it) scores better than every digit that still
+    /// fits; the caller then writes what follows.
+    fn number(&mut self, minimum: u32, maximum: u32, ends: &[&str]) -> Result<u32, DecodeError> {
+        let mut end_tokens = Vec::new();
+        for end in ends {
+            end_tokens.push(
+                *self
+                    .vocabulary
+                    .tokenize(end)
+                    .first()
+                    .ok_or(DecodeError::Vocabulary)?,
+            );
+        }
         let mut value: Option<u32> = None;
         loop {
             self.flush()?;
@@ -296,9 +421,11 @@ impl<M: Model, V: Vocabulary> Run<'_, M, V> {
                 }
             }
             if value.is_some_and(|value| value >= minimum) {
-                let score = self.logit(end);
-                if best.is_none_or(|(top, _, _)| score > top) {
-                    best = Some((score, None, end));
+                for &end in &end_tokens {
+                    let score = self.logit(end);
+                    if best.is_none_or(|(top, _, _)| score > top) {
+                        best = Some((score, None, end));
+                    }
                 }
             }
             match best {
@@ -307,26 +434,24 @@ impl<M: Model, V: Vocabulary> Run<'_, M, V> {
                     value = Some(next);
                     self.json.push_str(&digit.to_string());
                     self.pending.push(token);
-                    // No longer number fits: the follower is forced.
+                    // No longer number fits: what follows is the caller's.
                     if next * 10 > maximum {
-                        self.force(follower)?;
                         return Ok(next);
                     }
                 }
-                Some((_, None, _)) => {
-                    self.force(follower)?;
-                    return value.ok_or(DecodeError::Vocabulary);
-                }
+                Some((_, None, _)) => return value.ok_or(DecodeError::Vocabulary),
                 None => return Err(DecodeError::Vocabulary),
             }
         }
     }
 
-    /// A JSON string's contents, then `"}`.
-    fn text(&mut self) -> Result<(), DecodeError> {
-        let close_all = self.vocabulary.tokenize("\"}");
-        let close_quote = self.vocabulary.tokenize("\"");
-        let ends = [close_all.first().copied(), close_quote.first().copied()];
+    /// A JSON string's contents, ended by the first token of one of `ends`
+    /// (model side), then `close` on the wire.
+    fn text(&mut self, ends: &[&str], close: &str) -> Result<(), DecodeError> {
+        let ends: Vec<Option<Token>> = ends
+            .iter()
+            .map(|end| self.vocabulary.tokenize(end).first().copied())
+            .collect();
         let mut written = String::new();
         loop {
             self.flush()?;
@@ -346,10 +471,10 @@ impl<M: Model, V: Vocabulary> Run<'_, M, V> {
             }
             let Some((_, token)) = best else {
                 // Nothing fits any more: close the string.
-                return self.close_text(&written);
+                return self.close_text(&written, close);
             };
             if ends.contains(&Some(token)) {
-                return self.close_text(&written);
+                return self.close_text(&written, close);
             }
             let piece = String::from_utf8_lossy(self.vocabulary.piece(token)).into_owned();
             // A leading space before the first word is not part of a name.
@@ -362,12 +487,12 @@ impl<M: Model, V: Vocabulary> Run<'_, M, V> {
             self.json.push_str(&piece);
             self.pending.push(token);
             if written.len() >= MAX_TEXT_BYTES {
-                return self.close_text(&written);
+                return self.close_text(&written, close);
             }
         }
     }
 
-    fn close_text(&mut self, written: &str) -> Result<(), DecodeError> {
+    fn close_text(&mut self, written: &str, close: &str) -> Result<(), DecodeError> {
         if written.trim().is_empty() {
             return Err(DecodeError::Intent(IntentError::InvalidValue("text")));
         }
@@ -376,7 +501,9 @@ impl<M: Model, V: Vocabulary> Run<'_, M, V> {
         let trimmed = written.trim_end().len();
         let cut = written.len() - trimmed;
         self.json.truncate(self.json.len() - cut);
-        self.force("\"}")
+        // Never fed: the answer is complete.
+        self.json.push_str(close);
+        Ok(())
     }
 }
 
@@ -419,6 +546,30 @@ mod tests {
                 "minutes",
                 "\n",
                 "<|im_end|>",
+                // The compact syntax's words carry their leading space, as
+                // in a real BPE vocabulary.
+                " open_app",
+                " appearance",
+                " volume",
+                " brightness",
+                " wifi",
+                " bluetooth",
+                " do_not_disturb",
+                " timer",
+                " search_files",
+                " none",
+                " dark",
+                " light",
+                " up",
+                " down",
+                " mute",
+                " unmute",
+                " on",
+                " off",
+                " seconds",
+                " minutes",
+                " hours",
+                " tax",
             ] {
                 pieces.push(extra.as_bytes().to_vec());
             }
@@ -499,7 +650,7 @@ mod tests {
             passes: 0,
         };
         let logits = model.logits();
-        decode(&mut model, &toy, &tables, logits).unwrap()
+        decode(&mut model, &toy, &tables, logits, Syntax::Json).unwrap()
     }
 
     #[test]
@@ -523,6 +674,77 @@ mod tests {
             let decoded = decode_towards(json);
             assert_eq!(decoded.json, json);
             assert_eq!(decoded.intent, Intent::parse(json).unwrap());
+        }
+    }
+
+    /// Decode in the compact syntax towards `model_text` (what the model
+    /// would write after ` =>`).
+    fn compact_towards(model_text: &str) -> Decoded {
+        let toy = Toy::new();
+        let tables = Tables::new(&toy);
+        let mut model = Scripted {
+            vocabulary: &toy,
+            target: toy.tokenize(model_text),
+            fed: 0,
+            passes: 0,
+        };
+        let logits = model.logits();
+        decode(&mut model, &toy, &tables, logits, Syntax::Compact).unwrap()
+    }
+
+    #[test]
+    fn the_compact_syntax_writes_the_same_wire_json() {
+        for (line, json) in [
+            (
+                " appearance dark\n",
+                r#"{"intent":"appearance","mode":"dark"}"#,
+            ),
+            (
+                " appearance light\n",
+                r#"{"intent":"appearance","mode":"light"}"#,
+            ),
+            (
+                " open_app Notes\n",
+                r#"{"intent":"open_app","app":"Notes"}"#,
+            ),
+            (" volume 30\n", r#"{"intent":"volume","level":30}"#),
+            (" volume 100\n", r#"{"intent":"volume","level":100}"#),
+            (" volume 0\n", r#"{"intent":"volume","level":0}"#),
+            (
+                " volume unmute\n",
+                r#"{"intent":"volume","change":"unmute"}"#,
+            ),
+            (" volume up\n", r#"{"intent":"volume","change":"up"}"#),
+            (
+                " brightness down\n",
+                r#"{"intent":"brightness","change":"down"}"#,
+            ),
+            (" brightness 45\n", r#"{"intent":"brightness","level":45}"#),
+            (" wifi off\n", r#"{"intent":"wifi","on":false}"#),
+            (" bluetooth on\n", r#"{"intent":"bluetooth","on":true}"#),
+            (
+                " do_not_disturb on\n",
+                r#"{"intent":"do_not_disturb","on":true}"#,
+            ),
+            (
+                " timer 25 minutes\n",
+                r#"{"intent":"timer","amount":25,"unit":"minutes"}"#,
+            ),
+            (
+                " timer 2 hours\n",
+                r#"{"intent":"timer","amount":2,"unit":"hours"}"#,
+            ),
+            (
+                " search_files tax 2025\n",
+                r#"{"intent":"search_files","query":"tax 2025"}"#,
+            ),
+            (" none\n", r#"{"intent":"none"}"#),
+        ] {
+            let decoded = compact_towards(line);
+            assert_eq!(decoded.json, json, "{line:?}");
+            assert_eq!(decoded.intent, Intent::parse(json).unwrap());
+            // Stopping at the end of the answer: the line end is never fed.
+            assert!(decoded.tokens as usize <= Toy::new().tokenize(line).len());
         }
     }
 
@@ -572,13 +794,16 @@ mod tests {
                 size: toy.len(),
             };
             let logits = model.logits();
-            let decoded = decode(&mut model, &toy, &tables, logits)
-                .unwrap_or_else(|error| panic!("seed {seed}: {error}"));
-            assert_eq!(Intent::parse(&decoded.json), Ok(decoded.intent.clone()));
-            seen.insert(decoded.intent.name());
+            for syntax in [Syntax::Json, Syntax::Compact] {
+                let decoded = decode(&mut model, &toy, &tables, logits.clone(), syntax)
+                    .unwrap_or_else(|error| panic!("seed {seed} {syntax:?}: {error}"));
+                assert_eq!(Intent::parse(&decoded.json), Ok(decoded.intent.clone()));
+                seen.insert((syntax == Syntax::Compact, decoded.intent.name()));
+            }
         }
-        // Random logits reach every intent, so every branch was exercised.
-        assert_eq!(seen.len(), crate::INTENT_NAMES.len());
+        // Random logits reach every intent in both syntaxes, so every branch
+        // was exercised.
+        assert_eq!(seen.len(), 2 * crate::INTENT_NAMES.len());
     }
 
     #[test]

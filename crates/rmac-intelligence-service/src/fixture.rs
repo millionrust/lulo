@@ -34,7 +34,15 @@ pub fn answer(text: &str) -> &'static str {
 }
 
 impl Engine for FixtureEngine {
-    fn intent(&mut self, text: &str, received: Instant) -> Result<IntentOutcome, EngineError> {
+    fn intent(
+        &mut self,
+        text: &str,
+        received: Instant,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<IntentOutcome, EngineError> {
+        if cancelled() {
+            return Err(EngineError::Cancelled);
+        }
         let json = answer(text);
         let intent = Intent::parse(json).map_err(|error| EngineError::Failed(error.to_string()))?;
         let elapsed = received.elapsed().as_secs_f64() * 1000.0;

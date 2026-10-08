@@ -8,16 +8,21 @@
 //!   schema-guided decoder that makes invalid output impossible.
 //! - [`manifest`]: the checksum-pinned models; [`gate`]: which one a PC
 //!   gets; [`config`]: the user's choice; [`fetch`]: the verified download.
+//! - [`guard`]: deterministic checks on the model's answer; [`fuzzy`]:
+//!   light typo correction for app names.
 //! - `client` (feature `client`): the session-bus client.
 
 pub mod config;
 pub mod decode;
 pub mod eval;
 pub mod fetch;
+pub mod fuzzy;
 pub mod gate;
+pub mod guard;
 mod intent;
 pub mod manifest;
 pub mod paths;
+pub mod prefix_state;
 pub mod prompt;
 mod task;
 pub mod verify;

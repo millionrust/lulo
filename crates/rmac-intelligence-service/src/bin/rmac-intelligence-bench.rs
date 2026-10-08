@@ -2,8 +2,9 @@
 //! model. Not packaged; run on the reference laptop:
 //!
 //! ```text
-//! rmac-intelligence-bench eval    --model M.gguf [--set dev|heldout|all] [--style list|chat]
-//!                                 [--decoder schema|gbnf] [--threads N] [--state-cache DIR|none]
+//! rmac-intelligence-bench eval    --model M.gguf [--set dev|heldout|all] [--style compact|list|chat]
+//!                                 [--decoder schema|gbnf (JSON styles)] [--threads N] [--state-cache DIR|none]
+//!                                 [--no-guard]   # the model alone, without guard::check
 //! rmac-intelligence-bench latency --model M.gguf [--runs N] [--threads N] [--state-cache DIR|none]
 //! rmac-intelligence-bench service [--runs N] [QUERY ...]   # through the real service
 //! ```
@@ -40,6 +41,7 @@ mod bench {
         runs: usize,
         rest: Vec<String>,
         verbose: bool,
+        guard: bool,
     }
 
     fn arguments() -> Arguments {
@@ -56,6 +58,7 @@ mod bench {
             runs: 20,
             rest: Vec::new(),
             verbose: false,
+            guard: true,
         };
         while let Some(argument) = iter.next() {
             let mut value = || iter.next().unwrap_or_default();
@@ -74,6 +77,7 @@ mod bench {
                     parsed.state_cache = (directory != "none").then(|| PathBuf::from(directory));
                 }
                 "--verbose" => parsed.verbose = true,
+                "--no-guard" => parsed.guard = false,
                 _ => parsed.rest.push(argument),
             }
         }
@@ -118,6 +122,7 @@ mod bench {
                 threads: arguments.threads,
                 style: arguments.style,
                 state_cache: arguments.state_cache.clone(),
+                guard: arguments.guard,
             },
         )
         .unwrap_or_else(|error| {
@@ -156,7 +161,7 @@ mod bench {
                 let outcome = if arguments.gbnf {
                     engine.intent_gbnf(&case.request)
                 } else {
-                    engine.intent(&case.request, Instant::now())
+                    engine.intent(&case.request, Instant::now(), &|| false)
                 };
                 match outcome {
                     Ok(outcome) => {
@@ -214,7 +219,7 @@ mod bench {
         let (mut engine, load_ms) = load(arguments);
         let started = Instant::now();
         let first = engine
-            .intent(BRIEF[0], started)
+            .intent(BRIEF[0], started, &|| false)
             .expect("the first request decodes");
         println!(
             "first request after load: first token {:.0} ms, total {:.0} ms, {} request tokens, {} passes",
@@ -225,17 +230,38 @@ mod bench {
         );
         let mut first_ms = Vec::new();
         let mut total_ms = Vec::new();
+        let mut rewind_ms = Vec::new();
+        let mut prefill_ms = Vec::new();
+        let mut decode_ms = Vec::new();
+        let mut prefill_rate = Vec::new();
+        let mut pass_ms = Vec::new();
         for run in 0..arguments.runs {
             let query = BRIEF[run % BRIEF.len()];
             let outcome = engine
-                .intent(query, Instant::now())
+                .intent(query, Instant::now(), &|| false)
                 .expect("a warm request decodes");
-            first_ms.push(outcome.timing.first_token_ms);
-            total_ms.push(outcome.timing.total_ms);
+            let timing = &outcome.timing;
+            first_ms.push(timing.first_token_ms);
+            total_ms.push(timing.total_ms);
+            rewind_ms.push(timing.rewind_ms);
+            prefill_ms.push(timing.prefill_ms);
+            decode_ms.push(timing.decode_ms);
+            prefill_rate
+                .push(f64::from(timing.request_tokens) * 1000.0 / timing.prefill_ms.max(1e-3));
+            if timing.passes > 0 {
+                pass_ms.push(timing.decode_ms / f64::from(timing.passes));
+            }
             if arguments.verbose {
                 println!(
-                    "{query:<28} {} first {:.0} ms total {:.0} ms",
-                    outcome.json, outcome.timing.first_token_ms, outcome.timing.total_ms
+                    "{query:<28} {} first {:.0} ms total {:.0} ms (rewind {:.0}, prefill {:.0} for {} tokens, decode {:.0} in {} passes)",
+                    outcome.json,
+                    timing.first_token_ms,
+                    timing.total_ms,
+                    timing.rewind_ms,
+                    timing.prefill_ms,
+                    timing.request_tokens,
+                    timing.decode_ms,
+                    timing.passes
                 );
             }
         }
@@ -253,6 +279,11 @@ mod bench {
                 "warm_first_token_ms_p90": percentile(&first_ms, 0.9).round(),
                 "warm_total_ms_p50": percentile(&total_ms, 0.5).round(),
                 "warm_total_ms_p90": percentile(&total_ms, 0.9).round(),
+                "warm_rewind_ms_p50": percentile(&rewind_ms, 0.5).round(),
+                "warm_prefill_ms_p50": percentile(&prefill_ms, 0.5).round(),
+                "warm_prefill_tok_s_p50": percentile(&prefill_rate, 0.5).round(),
+                "warm_decode_ms_p50": percentile(&decode_ms, 0.5).round(),
+                "warm_ms_per_pass_p50": percentile(&pass_ms, 0.5).round(),
                 "peak_rss_mib": peak_rss_mib().round(),
             })
         );

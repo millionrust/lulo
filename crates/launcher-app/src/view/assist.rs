@@ -11,7 +11,10 @@
 //! - typing paused for [`DEBOUNCE`].
 //!
 //! The request runs on the blocking pool and a newer keystroke drops it, so
-//! typing and drawing never wait for the model. The answer becomes one
+//! typing and drawing never wait for the model; the service also stops a
+//! request of ours that a newer one replaced, at its next forward pass. An
+//! "open <app>" request whose app name is an installed app's, a light typo
+//! allowed ("opn notse"), is answered at once without the model. The answer becomes one
 //! ordinary result row. Nothing changes until the row is picked, and a
 //! Settings change asks for a second Return (or click) on the row itself.
 
@@ -24,8 +27,12 @@ use rmac_launcher::{Action, Category, ResultId, SearchResult, INTELLIGENCE_PROVI
 
 use super::LauncherView;
 
-/// Typing pause before the model is asked (ADR 0024 §7).
-pub(crate) const DEBOUNCE: Duration = Duration::from_millis(250);
+/// Typing pause before the model is asked (ADR 0024 §7). 150 ms, down from
+/// 250 ms in phase 1.1: a request the user types past is replaced in the
+/// service and stops at its next forward pass, so a pause mid-word costs
+/// the next request at most one prefill (p90 about 0.2 s on the reference
+/// laptop), no more than the longer pause cost every request before.
+pub(crate) const DEBOUNCE: Duration = Duration::from_millis(150);
 pub(crate) const SUBTITLE: &str = "Lulo can do this";
 pub(crate) const CONFIRM_SUBTITLE: &str = "Press Return again to confirm";
 
@@ -57,18 +64,55 @@ struct Shown {
 struct Answer {
     intent: Intent,
     app: Option<SearchResult>,
+    /// What the service measured; `None` when no model was asked.
+    timing: Option<rmac_intelligence::client::Timing>,
 }
 
 impl LauncherView {
-    /// Read the on/off setting off the UI thread when Spotlight opens.
+    /// Read the on/off setting off the UI thread when Spotlight opens. If
+    /// the model is on disk but its saved prompt state is not (an update
+    /// changed the prompt, and Settings has not warmed it yet), ask the
+    /// service to get ready at once, so the evaluation overlaps typing.
     pub(crate) fn load_assist_setting(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let enabled =
-                blocking::unblock(|| rmac_intelligence::config::Config::load().enabled).await;
+            let (enabled, cold) = blocking::unblock(|| {
+                let config = rmac_intelligence::config::Config::load();
+                if !config.enabled {
+                    return (false, false);
+                }
+                let facts = rmac_intelligence::gate::current_facts();
+                let Some(tier) = config.tier(&facts) else {
+                    return (true, false);
+                };
+                let model = tier.model();
+                let present = rmac_intelligence::paths::models_dir()
+                    .is_some_and(|models| rmac_intelligence::verify::is_present(&models, model));
+                (
+                    true,
+                    present && !rmac_intelligence::prefix_state::is_ready(model),
+                )
+            })
+            .await;
             let _ = this.update(cx, |this, cx| {
                 this.assist.enabled = Some(enabled);
+                if cold {
+                    this.prepare_assist();
+                }
                 this.consider_assist(cx);
             });
+        })
+        .detach();
+    }
+
+    /// Load the model now (once per Spotlight session), so it is ready by
+    /// the time typing pauses.
+    fn prepare_assist(&mut self) {
+        if self.assist.prepared {
+            return;
+        }
+        self.assist.prepared = true;
+        blocking::unblock(|| {
+            let _ = rmac_intelligence::client::prepare();
         })
         .detach();
     }
@@ -92,15 +136,9 @@ impl LauncherView {
         if !prompt::worth_asking(&query) || self.coordinator.has_confident_match() {
             return;
         }
-        if !self.assist.prepared {
-            // Load the model now so it is ready by the time typing pauses.
-            self.assist.prepared = true;
-            blocking::unblock(|| {
-                let _ = rmac_intelligence::client::prepare();
-            })
-            .detach();
-        }
+        self.prepare_assist();
         let applications = self.applications.clone();
+        rmac_ui::trace_mark("assist_considered");
         self.assist.pending = Some(cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             cx.background_executor().timer(DEBOUNCE).await;
             let still_current = this
@@ -109,15 +147,29 @@ impl LauncherView {
             if !still_current {
                 return;
             }
+            rmac_ui::trace_mark("assist_asked");
             let answer = blocking::unblock(move || {
+                // "opn notse": an open verb and an installed app's name,
+                // each with a light typo, needs no model at all.
+                if let Some(app) = crate::intelligence::open_request_app(&applications, &query) {
+                    return Ok(Answer {
+                        intent: Intent::OpenApp {
+                            app: app.title.clone(),
+                        },
+                        app: Some(app),
+                        timing: None,
+                    });
+                }
                 let reply = rmac_intelligence::client::intent(&query)?;
                 let app = match &reply.intent {
-                    Intent::OpenApp { app } => crate::intelligence::resolve_app(&applications, app),
+                    Intent::OpenApp { app } => crate::intelligence::resolve_app(&applications, app)
+                        .or_else(|| crate::intelligence::resolve_app_typo(&applications, app)),
                     _ => None,
                 };
                 Ok::<_, ClientError>(Answer {
                     intent: reply.intent,
                     app,
+                    timing: Some(reply.timing),
                 })
             })
             .await;
@@ -131,8 +183,11 @@ impl LauncherView {
         answer: Result<Answer, ClientError>,
         cx: &mut Context<Self>,
     ) {
+        rmac_ui::trace_mark("assist_reply");
         let answer = match answer {
             Ok(answer) => answer,
+            // A newer query already asked again.
+            Err(ClientError::Cancelled) => return,
             Err(error) => {
                 // The reason only, never what was typed.
                 if error != ClientError::Off {
@@ -150,6 +205,20 @@ impl LauncherView {
                 return;
             }
         };
+        if let Some(timing) = &answer.timing {
+            // For scripts/behavior/run_spotlight_intents.py: what the
+            // service spent, on the same clock as the frames.
+            rmac_ui::trace_mark(&format!(
+                "assist_timing:total_ms={:.0}:queued_ms={:.0}:rewind_ms={:.0}:prefill_ms={:.0}:decode_ms={:.0}:request_tokens={}:passes={}",
+                timing.total_ms,
+                timing.queued_ms,
+                timing.rewind_ms,
+                timing.prefill_ms,
+                timing.decode_ms,
+                timing.request_tokens,
+                timing.passes
+            ));
+        }
         let Some(result) = assist_row(&answer.intent, answer.app) else {
             return;
         };
@@ -163,6 +232,7 @@ impl LauncherView {
                 intent: answer.intent,
                 armed: false,
             });
+            rmac_ui::trace_mark("assist_row_applied");
             cx.notify();
         }
     }

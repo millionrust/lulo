@@ -177,9 +177,79 @@ pub(crate) fn resolve_app(
         .min_by_key(rank)
 }
 
+/// The installed app a name with a light typo means ("notse" → Notes,
+/// "calculater" → Calculator), matched against app names only, never
+/// keywords, so "a 25 minute timer" can never open Clock.
+pub(crate) fn resolve_app_typo(
+    applications: &rmac_launcher_providers::ApplicationProvider,
+    wanted: &str,
+) -> Option<SearchResult> {
+    let names = applications.names();
+    let name = rmac_intelligence::fuzzy::closest(wanted, names.iter().map(String::as_str))?;
+    resolve_app(applications, name).filter(|result| result.title.eq_ignore_ascii_case(name))
+}
+
+/// An "open …" request Spotlight can answer without the model: an open
+/// verb (one typo allowed) and an installed app's name (a light typo
+/// allowed). "opn notse" → Notes.
+pub(crate) fn open_request_app(
+    applications: &rmac_launcher_providers::ApplicationProvider,
+    query: &str,
+) -> Option<SearchResult> {
+    let wanted = rmac_intelligence::fuzzy::open_request(query)?;
+    resolve_app_typo(applications, &wanted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn installed() -> rmac_launcher_providers::ApplicationProvider {
+        let app = |id: &str, name: &str| rmac_apps::Application {
+            id: id.into(),
+            name: name.into(),
+            generic_name: None,
+            keywords: vec!["timer".into()],
+            source: std::path::PathBuf::from(format!("/apps/{id}.desktop")),
+            icon: None,
+            categories: vec!["Utility".into()],
+            mime_types: Vec::new(),
+            launch: rmac_apps::LaunchSpec::Command {
+                program: id.into(),
+                args: Vec::new(),
+                working_dir: None,
+                terminal: false,
+            },
+            actions: Vec::new(),
+        };
+        rmac_launcher_providers::ApplicationProvider::new(vec![
+            app("org.rmac.Notes", "Notes"),
+            app("org.rmac.Calculator", "Calculator"),
+            app("org.rmac.Clock", "Clock"),
+            app("org.rmac.Terminal", "Terminal"),
+        ])
+    }
+
+    #[test]
+    fn a_light_typo_still_opens_the_app() {
+        let applications = installed();
+        let notes = open_request_app(&applications, "opn notse").expect("Notes");
+        assert_eq!(notes.title, "Notes");
+        assert!(matches!(notes.primary, Action::LaunchApplication { .. }));
+        assert_eq!(
+            open_request_app(&applications, "open the calculater app").map(|result| result.title),
+            Some("Calculator".into())
+        );
+        assert_eq!(
+            resolve_app_typo(&applications, "Termnal").map(|result| result.title),
+            Some("Terminal".into())
+        );
+        // Not an app name: the model is asked instead.
+        assert!(open_request_app(&applications, "start a 25 minute timer").is_none());
+        assert!(open_request_app(&applications, "turn on dark mode").is_none());
+        assert!(open_request_app(&applications, "open bluetooth settings").is_none());
+        assert!(resolve_app_typo(&applications, "Mail").is_none());
+    }
 
     #[test]
     fn steps_stay_in_range() {

@@ -56,6 +56,17 @@ impl ApplicationProvider {
             .cloned()
     }
 
+    /// Every installed application's name, for typo-tolerant matching.
+    pub fn names(&self) -> Vec<String> {
+        self.state
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .catalog
+            .iter()
+            .map(|application| application.name.clone())
+            .collect()
+    }
+
     pub fn revision(&self) -> u64 {
         self.state
             .read()

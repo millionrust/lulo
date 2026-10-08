@@ -16,14 +16,16 @@
 //! Requests are untrusted text: they are cleaned of control characters and
 //! template markers, and capped, before they reach the model.
 
+use crate::decode::Syntax;
 use crate::MAX_REQUEST_BYTES;
+use crate::{AppearanceMode, BrightnessChange, Intent, Level, TimeUnit, VolumeChange};
 
 /// The start of every answer. The decoder writes the rest.
 pub const ANSWER_PREFIX: &str = "{\"intent\":\"";
 
 /// Bumped whenever any prompt text changes, so saved prefix states from an
 /// older prompt are never restored.
-pub const PROMPT_VERSION: u32 = 4;
+pub const PROMPT_VERSION: u32 = 5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PromptStyle {
@@ -33,17 +35,23 @@ pub enum PromptStyle {
     /// the assistant has already written; the request extends the list.
     /// Fewer template tokens per example and per request.
     List,
+    /// The List layout with short action lines instead of JSON
+    /// ([`Syntax::Compact`]): "switch to dark mode => appearance dark".
+    /// A request costs its own words plus one template token, and each
+    /// decoding pass feeds one or two tokens instead of a JSON fragment.
+    Compact,
 }
 
 impl PromptStyle {
     /// The style the service uses. Chosen from the phase 1 measurements in
     /// ADR 0024 ("Phase 1 results").
-    pub const DEFAULT: Self = Self::List;
+    pub const DEFAULT: Self = Self::Compact;
 
     pub fn parse(name: &str) -> Option<Self> {
         match name {
             "chat" => Some(Self::Chat),
             "list" => Some(Self::List),
+            "compact" => Some(Self::Compact),
             _ => None,
         }
     }
@@ -52,6 +60,15 @@ impl PromptStyle {
         match self {
             Self::Chat => "chat",
             Self::List => "list",
+            Self::Compact => "compact",
+        }
+    }
+
+    /// How the model writes its answer in this style.
+    pub fn syntax(self) -> Syntax {
+        match self {
+            Self::Chat | Self::List => Syntax::Json,
+            Self::Compact => Syntax::Compact,
         }
     }
 }
@@ -68,6 +85,69 @@ timer: a countdown. {\"intent\":\"timer\",\"amount\":<number>,\"unit\":\"seconds
 search_files: find files. {\"intent\":\"search_files\",\"query\":\"<words to find>\"}
 none: anything else: questions, chat, other settings, or anything these actions cannot do. {\"intent\":\"none\"}
 Use level only when the request gives a number; louder, quieter, brighter or dimmer is a change. Alarms and reminders at a clock time are none. Requests may have typos or be short. Answer with the JSON only.";
+
+const SYSTEM_COMPACT: &str = "You turn one request to Lulo OS into one action. Actions:
+open_app <name>: open an application.
+appearance dark or appearance light: dark or light mode.
+volume <0-100>, or volume up, down, mute or unmute: sound.
+brightness <0-100>, or brightness up or down: screen brightness.
+wifi on or wifi off
+bluetooth on or bluetooth off
+do_not_disturb on or do_not_disturb off: silence notifications.
+timer <number> seconds, minutes or hours: a countdown.
+search_files <words to find>: find files.
+none: anything else: questions, chat, other settings, or anything these actions cannot do.
+Use a number only when the request gives one; louder, quieter, brighter or dimmer is a change. Alarms and reminders at a clock time are none. Requests may have typos or be short. Answer with the action only.";
+
+/// What follows a request in the compact syntax.
+pub const COMPACT_ARROW: &str = " =>";
+
+/// An intent as the compact syntax writes it, with its leading space:
+/// " appearance dark", " timer 5 minutes".
+pub fn compact_line(intent: &Intent) -> String {
+    let on_off = |on: bool| if on { "on" } else { "off" };
+    match intent {
+        Intent::OpenApp { app } => format!(" open_app {app}"),
+        Intent::Appearance { mode } => format!(
+            " appearance {}",
+            match mode {
+                AppearanceMode::Dark => "dark",
+                AppearanceMode::Light => "light",
+            }
+        ),
+        Intent::Volume(Level::Percent(level)) => format!(" volume {level}"),
+        Intent::Volume(Level::Change(change)) => format!(
+            " volume {}",
+            match change {
+                VolumeChange::Up => "up",
+                VolumeChange::Down => "down",
+                VolumeChange::Mute => "mute",
+                VolumeChange::Unmute => "unmute",
+            }
+        ),
+        Intent::Brightness(Level::Percent(level)) => format!(" brightness {level}"),
+        Intent::Brightness(Level::Change(change)) => format!(
+            " brightness {}",
+            match change {
+                BrightnessChange::Up => "up",
+                BrightnessChange::Down => "down",
+            }
+        ),
+        Intent::Wifi { on } => format!(" wifi {}", on_off(*on)),
+        Intent::Bluetooth { on } => format!(" bluetooth {}", on_off(*on)),
+        Intent::DoNotDisturb { on } => format!(" do_not_disturb {}", on_off(*on)),
+        Intent::Timer { amount, unit } => format!(
+            " timer {amount} {}",
+            match unit {
+                TimeUnit::Seconds => "seconds",
+                TimeUnit::Minutes => "minutes",
+                TimeUnit::Hours => "hours",
+            }
+        ),
+        Intent::SearchFiles { query } => format!(" search_files {query}"),
+        Intent::None => " none".to_owned(),
+    }
+}
 
 /// Worked examples: (request, answer). None of these is in the evaluation
 /// sets (`tests/intelligence/`); a unit test holds that.
@@ -127,7 +207,11 @@ const THINK_OFF: &str = "<think>\n\n</think>\n\n";
 
 /// The fixed part of the prompt.
 pub fn prefix(style: PromptStyle) -> String {
-    let mut prompt = format!("<|im_start|>system\n{SYSTEM}<|im_end|>\n");
+    let system = match style {
+        PromptStyle::Chat | PromptStyle::List => SYSTEM,
+        PromptStyle::Compact => SYSTEM_COMPACT,
+    };
+    let mut prompt = format!("<|im_start|>system\n{system}<|im_end|>\n");
     match style {
         PromptStyle::Chat => {
             for (request, answer) in EXAMPLES {
@@ -147,6 +231,19 @@ pub fn prefix(style: PromptStyle) -> String {
             }
             prompt.push_str("Request: ");
         }
+        PromptStyle::Compact => {
+            prompt.push_str(
+                "<|im_start|>user\nConvert each request.<|im_end|>\n<|im_start|>assistant\n",
+            );
+            prompt.push_str(THINK_OFF);
+            for (request, answer) in EXAMPLES {
+                let intent = Intent::parse(answer).unwrap_or(Intent::None);
+                prompt.push_str(&format!(
+                    "{request}{COMPACT_ARROW}{}\n",
+                    compact_line(&intent)
+                ));
+            }
+        }
     }
     prompt
 }
@@ -159,6 +256,7 @@ pub fn request(style: PromptStyle, text: &str) -> String {
             format!("{text}<|im_end|>\n<|im_start|>assistant\n{THINK_OFF}{ANSWER_PREFIX}")
         }
         PromptStyle::List => format!("{text}\nJSON: {ANSWER_PREFIX}"),
+        PromptStyle::Compact => format!("{text}{COMPACT_ARROW}"),
     }
 }
 
@@ -210,13 +308,27 @@ mod tests {
 
     #[test]
     fn prompts_end_where_the_decoder_starts() {
-        for style in [PromptStyle::Chat, PromptStyle::List] {
+        for style in [PromptStyle::Chat, PromptStyle::List, PromptStyle::Compact] {
             let request = request(style, "turn on dark mode");
-            assert!(request.ends_with(ANSWER_PREFIX), "{style:?}");
+            match style.syntax() {
+                Syntax::Json => assert!(request.ends_with(ANSWER_PREFIX), "{style:?}"),
+                Syntax::Compact => assert!(request.ends_with(COMPACT_ARROW), "{style:?}"),
+            }
             assert!(request.starts_with("turn on dark mode"));
             assert!(prefix(style).starts_with("<|im_start|>system\n"));
             assert_eq!(PromptStyle::parse(style.as_str()), Some(style));
         }
+    }
+
+    #[test]
+    fn compact_examples_spell_every_example_answer() {
+        let prefix = prefix(PromptStyle::Compact);
+        assert!(prefix.contains("switch to dark mode => appearance dark\n"));
+        assert!(prefix.contains("timer for 5 mins => timer 5 minutes\n"));
+        assert!(prefix.contains("put the volume at 45 => volume 45\n"));
+        assert!(prefix.contains("wake me up at 6 am => none\n"));
+        assert!(!prefix.contains("{\"intent\""));
+        assert!(prefix.ends_with("bring up settings => open_app Settings\n"));
     }
 
     #[test]

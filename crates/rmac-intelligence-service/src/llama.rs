@@ -34,13 +34,12 @@ use llama_cpp_2::{LlamaStateSeqFlags, SeqState};
 use rmac_intelligence::decode::{self, Tables, Token, Vocabulary};
 use rmac_intelligence::manifest::Tier;
 use rmac_intelligence::prompt::{self, PromptStyle, ANSWER_PREFIX};
-use rmac_intelligence::Intent;
-use sha2::{Digest, Sha256};
+use rmac_intelligence::{guard, prefix_state, Intent};
 
 use crate::engine::{Calibration, Engine, EngineError, IntentOutcome, LoadReport, Timing};
 
 /// Prefix plus the longest request and answer, with room to spare.
-const CONTEXT_TOKENS: u32 = 1536;
+const CONTEXT_TOKENS: u32 = prefix_state::CONTEXT_TOKENS;
 const BATCH_TOKENS: usize = 1024;
 const SEQUENCE: i32 = 0;
 
@@ -51,6 +50,9 @@ pub struct Options {
     /// Where the evaluated prefix state is kept between runs; `None`
     /// evaluates it at every load.
     pub state_cache: Option<PathBuf>,
+    /// Apply [`guard::check`] to every answer (off only to measure the
+    /// model alone).
+    pub guard: bool,
 }
 
 /// The tokenizer, with every token's text read once at load.
@@ -93,6 +95,9 @@ pub struct LlamaEngine {
     prefix_tokens: i32,
     report: LoadReport,
     threads: i32,
+    guard: bool,
+    /// How long the last request's restore of the prefix state took.
+    last_rewind_ms: f64,
     /// Set once the first request has been answered.
     warm: bool,
 }
@@ -132,7 +137,7 @@ impl LlamaEngine {
         let state_file = options
             .state_cache
             .as_deref()
-            .map(|directory| state_file(directory, path, &prefix_text, options.style));
+            .map(|directory| prefix_state::file(directory, tier.model(), options.style));
         let restored = state_file
             .as_deref()
             .is_some_and(|file| restore(&mut context, file, &prefix_tokens));
@@ -165,6 +170,8 @@ impl LlamaEngine {
             prefix_tokens: prefix_tokens.len() as i32,
             report,
             threads: options.threads,
+            guard: options.guard,
+            last_rewind_ms: 0.0,
             warm: false,
         })
     }
@@ -184,7 +191,9 @@ impl LlamaEngine {
     /// Evaluate the request's tokens after the prefix; returns the logits
     /// for the first answer token and the request's token count.
     fn start_request(&mut self, text: &str) -> Result<(Vec<f32>, usize), EngineError> {
+        let started = Instant::now();
         self.rewind()?;
+        self.last_rewind_ms = started.elapsed().as_secs_f64() * 1000.0;
         let request = prompt::request(self.style, text);
         let tokens = self.model.vocab().tokenize(request.as_bytes(), false, true);
         let logits = feed(
@@ -200,6 +209,11 @@ impl LlamaEngine {
     /// one token per forward pass: the comparison `rmac-intelligence-bench
     /// --decoder gbnf` reports against the schema-guided decoder.
     pub fn intent_gbnf(&mut self, text: &str) -> Result<IntentOutcome, EngineError> {
+        if self.style.syntax() != decode::Syntax::Json {
+            return Err(failed(
+                "the GBNF comparison needs a JSON prompt style (--style list)",
+            ));
+        }
         let received = Instant::now();
         let (_, request_tokens) = self.start_request(text)?;
         let first_token_ms = received.elapsed().as_secs_f64() * 1000.0;
@@ -225,6 +239,11 @@ impl LlamaEngine {
             passes += 1;
         }
         let intent = Intent::parse(&json).map_err(|error| failed(format!("{error}: {json}")))?;
+        let intent = if self.guard {
+            guard::check(text, intent)
+        } else {
+            intent
+        };
         Ok(IntentOutcome {
             intent,
             json,
@@ -235,6 +254,8 @@ impl LlamaEngine {
                 cached_prefix_tokens: self.prefix_tokens as u32,
                 request_tokens: request_tokens as u32,
                 passes,
+                rewind_ms: self.last_rewind_ms,
+                ..Timing::default()
             },
         })
     }
@@ -274,15 +295,24 @@ fn feed(
     Ok(context.get_logits_ith(batch.n_tokens() - 1).to_vec())
 }
 
+/// What a [`Stepper`] reports when the request was superseded.
+const CANCELLED: &str = "cancelled";
+
 /// The running model as the decoder sees it.
 struct Stepper<'a> {
     context: &'a mut LlamaContext<'static>,
     batch: &'a mut LlamaBatch<'static>,
     position: i32,
+    /// Checked before every forward pass: a newer request from the same
+    /// caller stops this one at the next pass.
+    cancelled: &'a dyn Fn() -> bool,
 }
 
 impl decode::Model for Stepper<'_> {
     fn feed(&mut self, tokens: &[Token]) -> Result<Vec<f32>, String> {
+        if (self.cancelled)() {
+            return Err(CANCELLED.into());
+        }
         let tokens: Vec<LlamaToken> = tokens.iter().map(|token| LlamaToken(*token)).collect();
         let logits = feed(self.context, self.batch, &tokens, self.position)
             .map_err(|error| error.to_string())?;
@@ -292,20 +322,48 @@ impl decode::Model for Stepper<'_> {
 }
 
 impl Engine for LlamaEngine {
-    fn intent(&mut self, text: &str, received: Instant) -> Result<IntentOutcome, EngineError> {
+    fn intent(
+        &mut self,
+        text: &str,
+        received: Instant,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<IntentOutcome, EngineError> {
+        if cancelled() {
+            return Err(EngineError::Cancelled);
+        }
         let cold = !self.warm;
+        let started = Instant::now();
+        let queued_ms = started.duration_since(received).as_secs_f64() * 1000.0;
         let (logits, request_tokens) = self.start_request(text)?;
         let first_token_ms = received.elapsed().as_secs_f64() * 1000.0;
+        let prefill_ms = started.elapsed().as_secs_f64() * 1000.0 - self.last_rewind_ms;
+        let decode_started = Instant::now();
         let mut stepper = Stepper {
             context: &mut self.context,
             batch: &mut self.batch,
             position: self.prefix_tokens + request_tokens as i32,
+            cancelled,
         };
-        let decoded =
-            decode::decode(&mut stepper, &self.pieces, &self.tables, logits).map_err(failed)?;
+        let decoded = decode::decode(
+            &mut stepper,
+            &self.pieces,
+            &self.tables,
+            logits,
+            self.style.syntax(),
+        )
+        .map_err(|error| match error {
+            decode::DecodeError::Model(detail) if detail == CANCELLED => EngineError::Cancelled,
+            other => failed(other),
+        })?;
+        let decode_ms = decode_started.elapsed().as_secs_f64() * 1000.0;
         self.warm = true;
+        let intent = if self.guard {
+            guard::check(text, decoded.intent)
+        } else {
+            decoded.intent
+        };
         Ok(IntentOutcome {
-            intent: decoded.intent,
+            intent,
             json: decoded.json,
             timing: Timing {
                 first_token_ms,
@@ -314,6 +372,10 @@ impl Engine for LlamaEngine {
                 cached_prefix_tokens: self.prefix_tokens as u32,
                 request_tokens: request_tokens as u32,
                 passes: decoded.passes,
+                queued_ms,
+                rewind_ms: self.last_rewind_ms,
+                prefill_ms,
+                decode_ms,
             },
         })
     }
@@ -350,21 +412,6 @@ impl Engine for LlamaEngine {
     }
 }
 
-/// The state file for one model, prompt and context shape. Any change to
-/// them (or to llama.cpp, by crate version) names a different file.
-fn state_file(directory: &Path, model: &Path, prefix: &str, style: PromptStyle) -> PathBuf {
-    let mut hasher = Sha256::new();
-    hasher.update(model.as_os_str().as_encoded_bytes());
-    hasher.update(prompt::PROMPT_VERSION.to_le_bytes());
-    hasher.update(style.as_str().as_bytes());
-    hasher.update(prefix.as_bytes());
-    hasher.update(CONTEXT_TOKENS.to_le_bytes());
-    hasher.update(env!("CARGO_PKG_VERSION").as_bytes());
-    hasher.update(b"llama-cpp-2 0.1.158");
-    let digest = rmac_intelligence::verify::hex(&hasher.finalize());
-    directory.join(format!("prefix-{}.state", &digest[..24]))
-}
-
 /// Read a saved prefix state; true only if it holds exactly this prefix.
 fn restore(context: &mut LlamaContext<'static>, file: &Path, tokens: &[LlamaToken]) -> bool {
     if !file.is_file() {
@@ -389,11 +436,32 @@ fn save(context: &LlamaContext<'static>, file: &Path, tokens: &[LlamaToken]) {
         return;
     }
     let temporary = file.with_extension(format!("state.{}", std::process::id()));
+    // Owner-only whatever the umask (the unit sets 0077; a service started
+    // some other way may not): create the file 0600 before llama.cpp opens
+    // it for writing, which keeps the mode.
+    {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        if options.open(&temporary).is_err() {
+            return;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let _ = std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600));
+        }
+    }
     if context
         .state_seq_save_file(&temporary, SEQUENCE, tokens)
         .is_ok()
     {
-        let _ = std::fs::rename(&temporary, file);
+        if std::fs::rename(&temporary, file).is_ok() {
+            // An update changed the prompt or the model: the older states
+            // can never be restored again.
+            prefix_state::remove_others(directory, file);
+        }
     } else {
         let _ = std::fs::remove_file(&temporary);
     }

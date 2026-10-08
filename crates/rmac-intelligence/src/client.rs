@@ -22,6 +22,7 @@ pub mod error_names {
     pub const NOT_DOWNLOADED: &str = "org.rmac.Intelligence1.Error.NotDownloaded";
     pub const LOW_MEMORY: &str = "org.rmac.Intelligence1.Error.LowMemory";
     pub const REFUSED: &str = "org.rmac.Intelligence1.Error.Refused";
+    pub const CANCELLED: &str = "org.rmac.Intelligence1.Error.Cancelled";
     pub const FAILED: &str = "org.rmac.Intelligence1.Error.Failed";
 }
 
@@ -55,6 +56,8 @@ pub enum ClientError {
     NotSupported,
     /// The caller is not a Lulo program, or the task is not on the list.
     Refused,
+    /// A newer request from this program replaced this one.
+    Cancelled,
     Failed,
 }
 
@@ -67,6 +70,7 @@ impl std::fmt::Display for ClientError {
             Self::LowMemory => "not enough free memory right now",
             Self::NotSupported => "this PC cannot run Lulo Intelligence",
             Self::Refused => "the request was refused",
+            Self::Cancelled => "a newer request replaced this one",
             Self::Failed => "Lulo Intelligence could not answer",
         })
     }
@@ -82,6 +86,7 @@ fn map_error(error: zbus::Error) -> ClientError {
             error_names::LOW_MEMORY => ClientError::LowMemory,
             error_names::UNAVAILABLE => ClientError::NotSupported,
             error_names::REFUSED => ClientError::Refused,
+            error_names::CANCELLED => ClientError::Cancelled,
             "org.freedesktop.DBus.Error.ServiceUnknown"
             | "org.freedesktop.DBus.Error.NameHasNoOwner"
             | "org.freedesktop.DBus.Error.Spawn.ExecFailed"
@@ -125,6 +130,14 @@ pub struct Timing {
     pub request_tokens: u32,
     /// Forward passes after the request.
     pub passes: u32,
+    /// Waiting behind an earlier request.
+    pub queued_ms: f64,
+    /// Restoring the saved prefix state.
+    pub rewind_ms: f64,
+    /// Evaluating the request's own tokens.
+    pub prefill_ms: f64,
+    /// The schema-guided decode after the request.
+    pub decode_ms: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -23,7 +23,6 @@ futures-util.workspace = true
 rmac-intelligence = { workspace = true, features = ["client"] }
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 zbus.workspace = true
 
 # llama.cpp (MIT) through llama-cpp-2 (MIT OR Apache-2.0), CPU only, no

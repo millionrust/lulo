@@ -1,5 +1,7 @@
 //! The session-bus interface, the model worker and the idle exit.
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -19,6 +21,8 @@ pub enum ServiceError {
     NotDownloaded(String),
     LowMemory(String),
     Refused(String),
+    /// A newer request from the same caller replaced this one.
+    Cancelled(String),
     Failed(String),
 }
 
@@ -30,6 +34,7 @@ impl From<EngineError> for ServiceError {
             EngineError::NotSupported(_) => Self::Unavailable(detail),
             EngineError::NotDownloaded => Self::NotDownloaded(detail),
             EngineError::LowMemory => Self::LowMemory(detail),
+            EngineError::Cancelled => Self::Cancelled(detail),
             EngineError::Failed(_) => Self::Failed(detail),
         }
     }
@@ -37,8 +42,50 @@ impl From<EngineError> for ServiceError {
 
 enum JobKind {
     Prepare,
-    Intent(String),
+    Intent {
+        text: String,
+        /// The caller's unique bus name and this request's ticket, set once
+        /// the caller is authorised.
+        ticket: Option<(String, u64)>,
+    },
     Calibrate,
+}
+
+/// The newest intent request per caller. Spotlight asks again whenever the
+/// query changes, so an older request that is still queued or decoding is
+/// stale: the worker drops it before it starts, or at its next forward
+/// pass, and the newer one runs at once instead of waiting behind it.
+#[derive(Default)]
+struct Latest {
+    next: AtomicU64,
+    by_caller: Mutex<HashMap<String, u64>>,
+}
+
+impl Latest {
+    fn issue(&self, caller: &str) -> u64 {
+        let ticket = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        if let Ok(mut by_caller) = self.by_caller.lock() {
+            by_caller.insert(caller.to_owned(), ticket);
+        }
+        ticket
+    }
+
+    fn is_stale(&self, caller: &str, ticket: u64) -> bool {
+        self.by_caller.lock().is_ok_and(|by_caller| {
+            by_caller
+                .get(caller)
+                .is_some_and(|newest| *newest != ticket)
+        })
+    }
+
+    /// Forget a caller once its newest request is answered.
+    fn finish(&self, caller: &str, ticket: u64) {
+        if let Ok(mut by_caller) = self.by_caller.lock() {
+            if by_caller.get(caller) == Some(&ticket) {
+                by_caller.remove(caller);
+            }
+        }
+    }
 }
 
 struct Job {
@@ -62,6 +109,7 @@ struct Interface {
     jobs: async_channel::Sender<Job>,
     activity: async_channel::Sender<Activity>,
     state: Arc<Mutex<&'static str>>,
+    latest: Arc<Latest>,
 }
 
 impl Interface {
@@ -77,6 +125,20 @@ impl Interface {
             authorize(header, connection).await.inspect_err(|error| {
                 eprintln!("rmac-intelligence-service: {error}");
             })?;
+            let kind = match kind {
+                JobKind::Intent { text, .. } => {
+                    let caller = header
+                        .sender()
+                        .map(|sender| sender.to_string())
+                        .unwrap_or_default();
+                    let ticket = self.latest.issue(&caller);
+                    JobKind::Intent {
+                        text,
+                        ticket: Some((caller, ticket)),
+                    }
+                }
+                other => other,
+            };
             let (reply, answer) = async_channel::bounded(1);
             self.jobs
                 .send(Job {
@@ -137,8 +199,15 @@ impl Interface {
         }
         match task {
             Task::Intent => {
-                self.submit(JobKind::Intent(text.to_owned()), &header, connection)
-                    .await
+                self.submit(
+                    JobKind::Intent {
+                        text: text.to_owned(),
+                        ticket: None,
+                    },
+                    &header,
+                    connection,
+                )
+                .await
             }
         }
     }
@@ -213,10 +282,22 @@ fn set_state(state: &Arc<Mutex<&'static str>>, value: &'static str) {
 /// The model worker: owns the engine, answers jobs in order. The engine is
 /// built on the first job, so an activation that is never used loads
 /// nothing.
-fn work(jobs: async_channel::Receiver<Job>, state: Arc<Mutex<&'static str>>) {
+fn work(jobs: async_channel::Receiver<Job>, state: Arc<Mutex<&'static str>>, latest: Arc<Latest>) {
     let mut engine: Option<Box<dyn Engine>> = None;
     while let Ok(job) = jobs.recv_blocking() {
+        let ticket = match &job.kind {
+            JobKind::Intent { ticket, .. } => ticket.clone(),
+            _ => None,
+        };
+        let stale = || {
+            ticket
+                .as_ref()
+                .is_some_and(|(caller, ticket)| latest.is_stale(caller, *ticket))
+        };
         let result = (|| -> Result<String, ServiceError> {
+            if stale() {
+                return Err(EngineError::Cancelled.into());
+            }
             if !engine::enabled() {
                 return Err(EngineError::Off.into());
             }
@@ -231,7 +312,7 @@ fn work(jobs: async_channel::Receiver<Job>, state: Arc<Mutex<&'static str>>) {
             set_state(&state, "Working");
             let reply = match &job.kind {
                 JobKind::Prepare => Ok(String::new()),
-                JobKind::Intent(text) => loaded.intent(text, job.received).map(|mut outcome| {
+                JobKind::Intent { text, .. } => loaded.intent(text, job.received, &stale).map(|mut outcome| {
                     outcome.timing.cold = cold;
                     serde_json::json!({
                         "intent": serde_json::from_str::<serde_json::Value>(&outcome.intent.to_json())
@@ -247,9 +328,13 @@ fn work(jobs: async_channel::Receiver<Job>, state: Arc<Mutex<&'static str>>) {
             set_state(&state, "Ready");
             reply.map_err(ServiceError::from)
         })();
-        if let Err(error) = &result {
+        match &result {
+            Err(ServiceError::Cancelled(_)) | Ok(_) => {}
             // The reason only, never the request.
-            eprintln!("rmac-intelligence-service: {error}");
+            Err(error) => eprintln!("rmac-intelligence-service: {error}"),
+        }
+        if let Some((caller, ticket)) = &ticket {
+            latest.finish(caller, *ticket);
         }
         let _ = job.reply.send_blocking(result);
     }
@@ -266,9 +351,11 @@ pub async fn serve() -> zbus::Result<ServiceHandle> {
     let (activity_tx, activity) = async_channel::bounded(64);
     let state = Arc::new(Mutex::new("Idle"));
     let worker_state = state.clone();
+    let latest = Arc::new(Latest::default());
+    let worker_latest = latest.clone();
     std::thread::Builder::new()
         .name("rmac-intelligence-model".into())
-        .spawn(move || work(queue, worker_state))
+        .spawn(move || work(queue, worker_state, worker_latest))
         .map_err(|error| zbus::Error::Failure(error.to_string()))?;
     let connection = zbus::connection::Builder::session()?
         .name(BUS_NAME)?
@@ -278,6 +365,7 @@ pub async fn serve() -> zbus::Result<ServiceHandle> {
                 jobs,
                 activity: activity_tx,
                 state,
+                latest,
             },
         )?
         .build()
@@ -337,4 +425,30 @@ pub async fn run(handle: ServiceHandle) {
     // Give up the name first, so a request that races the exit activates a
     // fresh service instead of reaching this one.
     let _ = handle.connection.release_name(BUS_NAME).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_newest_request_per_caller_is_current() {
+        let latest = Latest::default();
+        let first = latest.issue(":1.10");
+        let other = latest.issue(":1.11");
+        assert!(!latest.is_stale(":1.10", first));
+        let second = latest.issue(":1.10");
+        assert!(latest.is_stale(":1.10", first));
+        assert!(!latest.is_stale(":1.10", second));
+        // Another caller's requests are never affected.
+        assert!(!latest.is_stale(":1.11", other));
+        // Finishing a stale request keeps the newer one current.
+        latest.finish(":1.10", first);
+        assert!(!latest.is_stale(":1.10", second));
+        latest.finish(":1.10", second);
+        latest.finish(":1.11", other);
+        assert!(latest.by_caller.lock().unwrap().is_empty());
+        // An unknown caller is never stale.
+        assert!(!latest.is_stale(":1.12", 99));
+    }
 }

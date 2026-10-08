@@ -119,6 +119,42 @@ pub fn set_corner_radius(window: &Window, radius: f32) {
     let _ = (window, radius);
 }
 
+/// The window background a blurred material asks for: the compositor's
+/// blur on Lulo OS; on Windows a transparent window that draws its blur
+/// itself ([`over_backdrop`]).
+pub fn blurred_background() -> gpui::WindowBackgroundAppearance {
+    if cfg!(windows) {
+        gpui::WindowBackgroundAppearance::Transparent
+    } else {
+        gpui::WindowBackgroundAppearance::Blurred
+    }
+}
+
+/// `surface` (a blurred material's tint and rim, sized to its window) over
+/// what the compositor's blur shows under it on Lulo OS. On Lulo OS that is
+/// niri's own blur and `surface` is drawn as it is; on Windows the blurred
+/// wallpaper under the window is drawn first, cut to `radius`
+/// (`windows::backdrop`).
+pub fn over_backdrop(
+    window: &Window,
+    cx: &gpui::App,
+    radius: f32,
+    surface: impl gpui::IntoElement,
+) -> gpui::AnyElement {
+    use gpui::{IntoElement as _, ParentElement as _, Styled as _};
+    #[cfg(windows)]
+    if let Some(backdrop) = windows::backdrop::element(window, cx, radius) {
+        return gpui::div()
+            .size_full()
+            .relative()
+            .child(backdrop)
+            .child(gpui::div().absolute().inset_0().child(surface))
+            .into_any_element();
+    }
+    let _ = (window, cx, radius);
+    surface.into_any_element()
+}
+
 /// A GPUI display's stable output id, as [`stable_output_uuid`] gives it for
 /// the compositor's output of the same screen.
 pub fn display_uuid(display: &dyn gpui::PlatformDisplay) -> Option<Uuid> {

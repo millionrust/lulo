@@ -24,6 +24,7 @@
 //! Windows reports a display, work-area or Explorer change.
 
 pub mod appbar;
+pub mod backdrop;
 pub mod desktop_layer;
 pub mod layer_types;
 pub mod material;
@@ -152,7 +153,12 @@ pub fn open_layer_window<V: 'static + Render>(
     options.is_resizable = false;
     options.is_minimizable = false;
     let background = matches!(layer.layer, Layer::Background | Layer::Bottom);
+    // Blurred materials draw their blur themselves (`backdrop`); asking
+    // GPUI for `Blurred` would give them acrylic, which paints a box.
     let blurred = options.window_background == gpui::WindowBackgroundAppearance::Blurred;
+    if blurred {
+        options.window_background = gpui::WindowBackgroundAppearance::Transparent;
+    }
     let handle = cx.open_window(options, build)?;
     let any: AnyWindowHandle = handle.into();
     if let Some(hwnd) = any
@@ -371,15 +377,8 @@ pub fn newest_displays(cx: &App) -> BTreeMap<Uuid, Rc<dyn PlatformDisplay>> {
 fn style(hwnd: HWND, layer: &LayerShellOptions, blurred: bool) {
     surface::make_borderless(hwnd);
     surface::plain_without_shadow(hwnd);
-    if blurred {
-        material::apply(hwnd);
-    }
     trace::trace(|| {
-        let kind = match (blurred, material::transparency_effects()) {
-            (false, _) => "none",
-            (true, true) => "blur",
-            (true, false) => "tint only",
-        };
+        let kind = if blurred { "wallpaper blur" } else { "none" };
         format!("backdrop {}: {kind}", layer.namespace)
     });
     let background = matches!(layer.layer, Layer::Background | Layer::Bottom);

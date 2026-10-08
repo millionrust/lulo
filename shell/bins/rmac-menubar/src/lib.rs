@@ -6363,12 +6363,17 @@ mod bar {
     }
 
     impl Render for MenuBackdrop {
-        fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             rmac_shell_layer::set_corner_radius(window, self.radius);
-            div()
-                .size_full()
-                .rounded(px(self.radius))
-                .bg(rgba(self.tint))
+            rmac_shell_layer::over_backdrop(
+                window,
+                cx,
+                self.radius,
+                div()
+                    .size_full()
+                    .rounded(px(self.radius))
+                    .bg(rgba(self.tint)),
+            )
         }
     }
 

@@ -196,7 +196,13 @@ impl WallpaperStatus {
                 if this
                     .update(cx, |this, cx| {
                         match update {
-                            PreparedUpdate::Render(surfaces) => this.surfaces = surfaces,
+                            PreparedUpdate::Render(surfaces) => {
+                                this.surfaces = surfaces;
+                                // The Dock's and the menus' materials show
+                                // the new wallpaper's blur on Windows.
+                                #[cfg(windows)]
+                                cx.defer(|cx| cx.refresh_windows());
+                            }
                             PreparedUpdate::Health(health) => this.health = health,
                             PreparedUpdate::Desktop { snapshot, error } => {
                                 this.desktop = snapshot;
@@ -405,6 +411,16 @@ pub(crate) enum ItemAction {
 pub(crate) fn spawn_item_action(path: PathBuf, action: ItemAction, cx: &mut App) {
     cx.background_executor()
         .spawn(async move {
+            // Lulo OS opens folders in Files (its default for directories);
+            // Windows would open them in Explorer.
+            #[cfg(windows)]
+            if matches!(action, ItemAction::Open) && path.is_dir() {
+                let files = rmac_shell_layer::system::program("/usr/bin/rmac-files");
+                if let Err(error) = std::process::Command::new(files).arg(&path).spawn() {
+                    eprintln!("Files could not open a Desktop folder: {error}");
+                }
+                return;
+            }
             let result = match action {
                 ItemAction::Open => rmac_app_launch::open_item(path).await,
             };
@@ -643,9 +659,18 @@ fn prepare_surface(
     if !pixels.remainder().is_empty() {
         return None;
     }
+    let uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, surface.output.0.as_bytes());
+    // Windows draws the blurred materials over this wallpaper itself
+    // (`rmac_shell_layer::windows::backdrop`).
+    #[cfg(windows)]
+    rmac_shell_layer::windows::backdrop::set_wallpaper(
+        uuid,
+        surface.image.width,
+        surface.image.height,
+        &bgra,
+    );
     let buffer = image::RgbaImage::from_raw(surface.image.width, surface.image.height, bgra)?;
     let image = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
-    let uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, surface.output.0.as_bytes());
     Some((
         uuid,
         PreparedSurface {

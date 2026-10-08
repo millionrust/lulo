@@ -641,7 +641,7 @@ fn desktop_overlays_are_linux_layer_surfaces_without_window_chrome() {
             "namespace: \"rmac-launcher\"",
         ),
         (
-            include_str!("../../quick-settings-app/src/main.rs"),
+            include_str!("../../quick-settings-app/src/lib.rs"),
             "fn popover_options(",
             "namespace: rmac_quick_settings::surface::NAMESPACE",
         ),

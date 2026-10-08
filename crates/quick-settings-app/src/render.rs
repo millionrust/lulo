@@ -239,7 +239,7 @@ impl Render for QuickSettingsView {
             modules.content_height() as f32
         };
 
-        div()
+        let surface = div()
             .id("control-center")
             .role(Role::Group)
             .aria_label("Control Centre")
@@ -284,7 +284,17 @@ impl Render for QuickSettingsView {
                     .h(px(content_height))
                     .children(children),
             )
-            .children(detail)
+            .children(detail);
+        // On Windows the blur under the tint is drawn here, not by the
+        // compositor (`rmac_shell_layer::over_backdrop`).
+        #[cfg(windows)]
+        let surface = rmac_shell_layer::over_backdrop(
+            window,
+            cx,
+            layout::SURFACE_RADIUS as f32,
+            surface,
+        );
+        surface
     }
 }
 

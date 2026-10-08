@@ -208,6 +208,10 @@ pub(crate) fn candidate_interests(
     for folder in trash_folders {
         contents.push(folder.join("files"));
         contents.push(folder.join("info"));
+        // A Windows Recycle Bin folder holds its `$R`/`$I` pairs itself.
+        if cfg!(windows) {
+            contents.push(folder.clone());
+        }
     }
     contents.extend(mounts_file.map(Path::to_path_buf));
     Interests {
@@ -243,6 +247,9 @@ pub(crate) fn candidate_watch_targets(
     for folder in trash_folders {
         candidates.push(folder.join("files"));
         candidates.push(folder.join("info"));
+        if cfg!(windows) {
+            candidates.push(folder.clone());
+        }
     }
     if let Some(mounts_file) = mounts_file {
         candidates.push(mounts_file.to_path_buf());

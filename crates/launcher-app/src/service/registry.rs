@@ -74,7 +74,7 @@ mod tests {
         let registry = build_registry_with_home(
             &rmac_launcher_providers::ApplicationProvider::default(),
             &rmac_shell_settings::ShellSettings::default(),
-            Some("/home/test".into()),
+            Some(if cfg!(windows) { r"C:\Users\test" } else { "/home/test" }.into()),
         )
         .unwrap();
         let mut categories = registry

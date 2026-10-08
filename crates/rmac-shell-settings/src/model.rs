@@ -467,6 +467,9 @@ impl Default for ShellSettings {
                 rmac_apps::identity::SYSTEM_SETTINGS,
             ]
             .into_iter()
+            // Lulo on Windows has no Apps window yet (ADR 0023): its Dock
+            // keeps the others.
+            .filter(|identity| !(cfg!(windows) && *identity == rmac_apps::identity::APP_DRAWER))
             .map(|identity| AppId(identity.into()))
             .collect(),
             dock_stacks: Vec::new(),

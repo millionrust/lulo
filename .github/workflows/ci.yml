@@ -318,7 +318,7 @@ jobs:
         -p rmac-pasteboard -p rmac-archive -p rmac-quick-look
         -p rmac-system-settings -p rmac-appearance-portal
         -p rmac-app-menu -p rmac-win-shell -p rmac-compositor-system
-        -p rmac-shell-runtime
+        -p rmac-shell-runtime -p rmac-launcher-app -p rmac-quick-settings-app
     defaults:
       run:
         shell: bash
@@ -370,7 +370,7 @@ jobs:
           cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
           (cd shell && CARGO_TARGET_DIR=../target cargo clippy --locked --keep-going \
             -p rmac-shell-layer -p rmac-shell-menubar -p rmac-shell-dock -p rmac-shell-wallpaper \
-            --lib -- -D warnings)
+            --lib --tests -- -D warnings)
 
       # The remaining steps still run after a Clippy failure, so one run
       # reports every kind of Windows breakage.
@@ -380,7 +380,9 @@ jobs:
         id: tests
         if: ${{ !cancelled() }}
         continue-on-error: true
-        run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
+        run: |
+          cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
+          (cd shell && CARGO_TARGET_DIR=../target cargo test --locked --no-fail-fast -p rmac-shell-layer --lib)
 
       - name: Build the apps
         id: build

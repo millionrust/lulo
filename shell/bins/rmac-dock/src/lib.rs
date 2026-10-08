@@ -5405,21 +5405,27 @@ mod dock {
                 window.set_background_appearance(if hidden {
                     WindowBackgroundAppearance::Transparent
                 } else {
-                    WindowBackgroundAppearance::Blurred
+                    rmac_shell_layer::blurred_background()
                 });
             }
             if hidden {
-                return div().size_full();
+                return div().size_full().into_any_element();
             }
             // The measured shelf: a faint tint over the compositor blur and
             // a 1 pt rim. macOS draws no shadow under the Dock.
-            rmac_shell_layer::set_corner_radius(window, tokens::dock_shelf_radius(self.tile_size));
-            div()
-                .size_full()
-                .rounded(px(tokens::dock_shelf_radius(self.tile_size)))
-                .bg(rgba(tokens::dock_tint()))
-                .border_1()
-                .border_color(rgba(tokens::dock_border()))
+            let radius = tokens::dock_shelf_radius(self.tile_size);
+            rmac_shell_layer::set_corner_radius(window, radius);
+            rmac_shell_layer::over_backdrop(
+                window,
+                cx,
+                radius,
+                div()
+                    .size_full()
+                    .rounded(px(radius))
+                    .bg(rgba(tokens::dock_tint()))
+                    .border_1()
+                    .border_color(rgba(tokens::dock_border())),
+            )
         }
     }
 

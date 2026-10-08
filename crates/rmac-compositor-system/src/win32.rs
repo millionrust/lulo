@@ -40,6 +40,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
     IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync, TranslateMessage,
     ASFW_ANY, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
+    EVENT_OBJECT_SHOW,
     EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
     EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT, GWL_EXSTYLE, GW_OWNER,
     MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
@@ -149,6 +150,7 @@ pub async fn snapshot() -> Result<domain::Snapshot, Error> {
 /// Publish a snapshot now and again whenever the windows change, until
 /// `sender` closes.
 pub async fn watch(sender: Sender<domain::Event>) -> Result<(), Error> {
+    rmac_apps::windows_apps::on_process_apps_changed(refresh);
     let changes = subscribe()?;
     if sender
         .send(domain::Event::ConnectionChanged {
@@ -273,7 +275,50 @@ unsafe extern "system" fn on_event(
     if event != EVENT_SYSTEM_FOREGROUND && unsafe { GetAncestor(hwnd, GA_ROOT) } != hwnd {
         return;
     }
+    if matches!(event, EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED) {
+        bring_launch_forward(hwnd);
+    }
     notify_watchers();
+}
+
+/// Apps the user just started (a Dock tile, Spotlight, a desktop icon),
+/// whose first window is brought to the front when it appears, and when.
+static LAUNCHES: std::sync::Mutex<Vec<(u32, std::time::Instant)>> =
+    std::sync::Mutex::new(Vec::new());
+/// How long a started app's first window may take to appear.
+const LAUNCH_WINDOW: std::time::Duration = std::time::Duration::from_secs(20);
+
+fn launched(pid: u32) {
+    if let Ok(mut launches) = LAUNCHES.lock() {
+        launches.retain(|(_, started)| started.elapsed() < LAUNCH_WINDOW);
+        launches.push((pid, std::time::Instant::now()));
+    }
+}
+
+/// The first window of an app the user just started comes to the front,
+/// as a launched Mac app's does, even over a window that held the
+/// foreground meanwhile (Windows' foreground lock would leave it behind:
+/// WIN-OS-45).
+fn bring_launch_forward(hwnd: HWND) {
+    let pid = process_id(hwnd);
+    let pending = LAUNCHES.lock().is_ok_and(|mut launches| {
+        launches.retain(|(_, started)| started.elapsed() < LAUNCH_WINDOW);
+        launches.iter().any(|(launched, _)| *launched == pid)
+    });
+    // SAFETY: no arguments.
+    if !pending || !is_app_window(hwnd, unsafe { GetCurrentProcessId() }) {
+        return;
+    }
+    if let Ok(mut launches) = LAUNCHES.lock() {
+        launches.retain(|(launched, _)| *launched != pid);
+    }
+    activate(hwnd);
+    if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
+        // SAFETY: no arguments.
+        let front = unsafe { GetForegroundWindow() } == hwnd;
+        let exe = rmac_apps::windows_apps::exe_key(&process_path(pid));
+        eprintln!("lulo-shell: launched {exe} in front: {front}");
+    }
 }
 
 fn start_hooks() -> Result<(), String> {
@@ -683,7 +728,11 @@ fn read_snapshot() -> domain::Snapshot {
         } else {
             window_aumid(hwnd)
         };
-        let app_id = rmac_apps::windows_apps::window_app_id(&exe_path, aumid.as_deref());
+        // A Lulo app that linked its menus says which app it is, whatever
+        // its executable is called.
+        let app_id = rmac_apps::windows_apps::process_app(pid).unwrap_or_else(|| {
+            rmac_apps::windows_apps::window_app_id(&exe_path, aumid.as_deref())
+        });
         if rmac_apps::windows_apps::app(&app_id).is_none()
             && rmac_apps::windows_apps::display_name_for(&app_id).is_none()
         {
@@ -991,6 +1040,7 @@ fn spawn(arguments: &[String]) -> Result<(), domain::ActionError> {
         .map_err(|error| rejected(format!("could not start {program}: {error}")))?;
     // SAFETY: no pointers.
     let _ = unsafe { AllowSetForegroundWindow(child.id()) };
+    launched(child.id());
     Ok(())
 }
 

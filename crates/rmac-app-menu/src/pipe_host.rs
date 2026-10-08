@@ -240,6 +240,7 @@ fn published(pid: u32, app_id: &'static str, menus: Vec<Menu>) {
         )
     });
     if first {
+        rmac_apps::windows_apps::register_process_app(pid, app_id);
         // For the Windows CI checks (`scripts/windows/shell_smoke.py`).
         if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
             eprintln!("lulo-shell: menus from {app_id}");
@@ -260,6 +261,7 @@ fn gone(pid: u32) {
         host.owner_watchers.retain(|watcher| !watcher.is_closed());
         (removed, host.owner_watchers.clone())
     });
+    rmac_apps::windows_apps::forget_process_app(pid);
     if let Some(app_id) = removed {
         for watcher in owners {
             let _ = watcher.try_send((app_id, false));

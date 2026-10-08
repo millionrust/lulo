@@ -856,6 +856,16 @@ def check_shell(
     environment["LULO_PANEL_RELEASE_SECONDS"] = "3"
     for folder in ("Roaming", "Local"):
         (profile / folder).mkdir(parents=True, exist_ok=True)
+    # Lulo OS's default Dock (Files, Notes, Text Editor, Terminal, System
+    # Settings) and Calculator, which the Dock check opens.
+    settings = profile / "Roaming" / "Lulo" / "Config" / "rmac"
+    settings.mkdir(parents=True, exist_ok=True)
+    pins = ",".join(
+        f'"org.rmac.{app}"' for app in ("Files", "Notes", "TextEditor", "Terminal", "SystemSettings", "Calculator")
+    )
+    (settings / "shell.json").write_text(
+        f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n', encoding="utf-8"
+    )
     log_path = profile / "shell.log"
     log = Log(log_path)
     started = time.monotonic()
@@ -913,18 +923,14 @@ def check_shell(
             print("shell: no desktop icon list view on this desktop; Explorer icon check skipped")
 
         # 1c. The bar is clear over the wallpaper, as on Lulo OS; the Dock's
-        # shelf material is DWM's plain blur (niri's blur on Lulo OS), or its
-        # tint alone with Windows' transparency effects off.
-        frosted_expected = transparency_effects()
+        # shelf material draws the wallpaper blurred as niri blurs it (DWM's
+        # blur painted a box on Windows Server and real PCs: WIN-OS-49).
         for surface, pattern, kind in (
             ("bar", r"^backdrop rmac-top-bar-\d+: (.+)$", "none"),
-            ("Dock shelf", r"^backdrop rmac-dock-material-\d+: (.+)$", "blur" if frosted_expected else "tint only"),
+            ("Dock shelf", r"^backdrop rmac-dock-material-\d+: (.+)$", "wallpaper blur"),
         ):
             traced = log.wait_for(pattern, 10.0)
-            print(
-                f"shell: {surface} backdrop: {traced.group(1) if traced else 'not reported'} "
-                f"(transparency effects {'on' if frosted_expected else 'off'})"
-            )
+            print(f"shell: {surface} backdrop: {traced.group(1) if traced else 'not reported'}")
             if traced is None:
                 failures.append(f"the {surface} reported no backdrop")
             elif traced.group(1) != kind:
@@ -939,7 +945,7 @@ def check_shell(
         if log.wait_for(r"^notice shown", 0.5) is not None:
             failures.append("a hotkey notice showed although Alt+Space was free")
         bin_tile = log.wait_for(r"^dock tile trash at (\d+),(\d+) (full|empty)", 10.0)
-        files_tile = log.last(r"^dock tile org\.rmac\.Files Files at (\d+),(\d+)")
+        files_tile = log.last(r"^dock tile org\.rmac\.Files(?:\.desktop)? Files at (\d+),(\d+)")
         print(
             f"shell: Dock: Recycle Bin tile {bin_tile.group(0) if bin_tile else 'missing'}; "
             f"Files tile {files_tile.group(0) if files_tile else 'missing'}"
@@ -1007,7 +1013,7 @@ def check_shell(
                 measurements[name]["peak_working_set_mb"] = memory["peak_working_set_mb"]
 
         # 3. The Dock opens Calculator.
-        tile = log.last(r"^dock tile org\.rmac\.Calculator Calculator at (\d+),(\d+)")
+        tile = log.last(r"^dock tile org\.rmac\.Calculator(?:\.desktop)? Calculator at (\d+),(\d+)")
         if tile is None:
             failures.append("the Dock has no Calculator tile")
         else:
@@ -1019,7 +1025,7 @@ def check_shell(
             else:
                 opened.append("rmac-calculator.exe")
                 print("shell: the Dock's Calculator tile opened Calculator")
-                if log.wait_for(r"^dock tile org\.rmac\.Calculator Calculator at \d+,\d+ running", after=before) is None:
+                if log.wait_for(r"^dock tile org\.rmac\.Calculator(?:\.desktop)? Calculator at \d+,\d+ running", after=before) is None:
                     failures.append("Calculator's Dock tile shows no running dot")
                 time.sleep(SETTLE_SECONDS)
                 save(screenshots, "dock-opened-calculator")
@@ -1061,7 +1067,7 @@ def check_shell(
             renamed_process = subprocess.Popen([str(renamed)], env=environment)
             try:
                 hello = log.wait_for(r"^menus from org\.rmac\.Files", after=before)
-                tile = log.wait_for(r"^dock tile org\.rmac\.Files Files at \d+,\d+ running", after=before)
+                tile = log.wait_for(r"^dock tile org\.rmac\.Files(?:\.desktop)? Files at \d+,\d+ running", after=before)
                 stray = log.wait_for(r"^dock tile \S*files-dev", 0.5, after=before)
                 time.sleep(1.0)
                 save(screenshots, "dock-files-icon")
@@ -1604,7 +1610,7 @@ def check_foreground(log: Log, profile: Path, screenshots: Path | None, opened: 
             failures.append(f"Text Editor opened from {how} stayed behind File Explorer")
 
     def from_dock(_mark: int) -> None:
-        tile = log.last(r"^dock tile org\.rmac\.TextEditor Text Editor at (\d+),(\d+)")
+        tile = log.last(r"^dock tile org\.rmac\.TextEditor(?:\.desktop)? Text Editor at (\d+),(\d+)")
         if tile is not None:
             click(int(tile.group(1)), int(tile.group(2)))
 

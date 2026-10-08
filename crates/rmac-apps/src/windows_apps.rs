@@ -157,6 +157,52 @@ pub fn window_app_id(exe_path: &str, aumid: Option<&str>) -> String {
 static DISPLAY_NAMES: std::sync::RwLock<Option<std::collections::HashMap<String, String>>> =
     std::sync::RwLock::new(None);
 
+static PROCESS_APPS: std::sync::RwLock<Option<std::collections::HashMap<u32, String>>> =
+    std::sync::RwLock::new(None);
+static PROCESS_APPS_CHANGED: std::sync::OnceLock<fn()> = std::sync::OnceLock::new();
+
+/// Process `pid` said which Lulo app it is (the app id it gave the menu
+/// bar), whatever its executable is called: a renamed or development build
+/// of Files is still Files in the Dock.
+pub fn register_process_app(pid: u32, app_id: &str) {
+    let changed = PROCESS_APPS.write().is_ok_and(|mut apps| {
+        apps.get_or_insert_with(std::collections::HashMap::new)
+            .insert(pid, app_id.to_owned())
+            .as_deref()
+            != Some(app_id)
+    });
+    if changed {
+        process_apps_changed();
+    }
+}
+
+/// Process `pid` is gone.
+pub fn forget_process_app(pid: u32) {
+    let removed = PROCESS_APPS
+        .write()
+        .is_ok_and(|mut apps| apps.as_mut().and_then(|apps| apps.remove(&pid)).is_some());
+    if removed {
+        process_apps_changed();
+    }
+}
+
+/// The app id process `pid` registered.
+pub fn process_app(pid: u32) -> Option<String> {
+    PROCESS_APPS.read().ok()?.as_ref()?.get(&pid).cloned()
+}
+
+/// Call `hook` whenever a process registers or loses its app id (the
+/// window list reads the windows again).
+pub fn on_process_apps_changed(hook: fn()) {
+    let _ = PROCESS_APPS_CHANGED.set(hook);
+}
+
+fn process_apps_changed() {
+    if let Some(hook) = PROCESS_APPS_CHANGED.get() {
+        hook();
+    }
+}
+
 /// Remember what an app id without a desktop entry is called (a Windows
 /// app's executable description, a Store app's title), so the menu bar and
 /// the Dock name it as Windows does. Lulo OS registers nothing here.

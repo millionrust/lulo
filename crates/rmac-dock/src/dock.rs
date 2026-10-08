@@ -720,8 +720,11 @@ pub(super) fn build_item(
         id: application
             .map(|application| application.id.clone())
             .unwrap_or_else(|| source_id.to_owned()),
+        // An app without a desktop entry: the name the platform gave it
+        // (a Windows app's own description), else one made from its id.
         name: application
             .map(|application| application.name.clone())
+            .or_else(|| rmac_apps::windows_apps::display_name_for(source_id))
             .unwrap_or_else(|| fallback_name(source_id)),
         icon: application.and_then(|application| application.icon.clone()),
         pinned,

@@ -117,52 +117,21 @@ fn icon_path(icons: &Path, file: &str) -> PathBuf {
     icons.join(format!("{safe}.png"))
 }
 
-/// Read the icons `chosen` lacks through the icon helper and keep them as
-/// PNGs in `icons`. Blocking.
-fn fetch_icons(icons: &Path, chosen: &BTreeMap<String, App>) {
-    let missing: BTreeMap<String, PathBuf> = chosen
-        .iter()
-        .filter(|(file, _)| !icon_path(icons, file).is_file())
-        .map(|(file, app)| {
-            (
-                format!("shell:AppsFolder\\{}", app.parsing),
-                icon_path(icons, file),
-            )
-        })
-        .collect();
-    if missing.is_empty() || std::fs::create_dir_all(icons).is_err() {
+/// The edge Windows apps' icons are kept at: the Dock's tile at up to
+/// 150 % scale.
+const ICON_PIXELS: u32 = 96;
+
+/// Keep the icons of `apps` that get entries and have none yet in `icons`
+/// (in the Apps folder helper process).
+pub fn save_icons(icons: &Path, apps: &[App]) {
+    if std::fs::create_dir_all(icons).is_err() {
         return;
     }
-    let (replies, received) = async_channel::unbounded();
-    super::icons::start(replies);
-    for source in missing.keys() {
-        super::icons::request(source);
-    }
-    let mut left = missing.len();
-    while left > 0 {
-        let Ok((source, image)) = received.recv_blocking() else {
-            break;
-        };
-        let Some(path) = missing.get(&source) else {
-            continue;
-        };
-        left -= 1;
-        let Some(image) = image else {
-            continue;
-        };
-        let size = image.size(0);
-        let Some(bytes) = image.as_bytes(0) else {
-            continue;
-        };
-        // The helper's pixels are BGRA; PNG wants RGBA.
-        let mut rgba = bytes.to_vec();
-        for pixel in rgba.chunks_exact_mut(4) {
-            pixel.swap(0, 2);
-        }
-        if let Some(buffer) =
-            image::RgbaImage::from_raw(size.width.0 as u32, size.height.0 as u32, rgba)
-        {
-            let _ = buffer.save_with_format(path, image::ImageFormat::Png);
+    for (file, app) in chosen(apps) {
+        let path = icon_path(icons, &file);
+        if !path.is_file() {
+            let source = format!("shell:AppsFolder\\{}", app.parsing);
+            let _ = super::icons::save_png(&source, ICON_PIXELS, &path);
         }
     }
 }
@@ -204,17 +173,16 @@ pub fn refresh() {
     let Some(applications) = applications() else {
         return;
     };
-    let Some(apps) = super::catalog::apps_folder_apps() else {
-        super::trace(|| "windows apps: the Apps folder could not be read".into());
-        return;
-    };
-    let chosen = chosen(&apps);
     // Beside the entries, not among them: the catalogue watches that folder.
     let icons = applications.parent().map_or_else(
         || applications.join("..").join("lulo-windows-icons"),
         |data| data.join("lulo-windows-icons"),
     );
-    fetch_icons(&icons, &chosen);
+    let Some(apps) = super::catalog::apps_folder_apps(&icons) else {
+        super::trace(|| "windows apps: the Apps folder could not be read".into());
+        return;
+    };
+    let chosen = chosen(&apps);
     let entries: BTreeMap<String, String> = chosen
         .iter()
         .map(|(file, app)| {

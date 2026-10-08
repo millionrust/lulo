@@ -146,13 +146,14 @@ fn apps_folder_from_helper() -> Option<Vec<Entry>> {
 
 /// The Apps folder's apps as the helper reads them (`None` if it cannot
 /// run), for Lulo's desktop entries (`app_entries`).
-pub fn apps_folder_apps() -> Option<Vec<super::app_entries::App>> {
+pub fn apps_folder_apps(icons: &Path) -> Option<Vec<super::app_entries::App>> {
     use std::os::windows::process::CommandExt as _;
     use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
     let exe = std::env::current_exe().ok()?;
     let output = std::process::Command::new(exe)
         .arg(APPS_HELPER_SWITCH)
+        .arg(icons)
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .creation_flags(CREATE_NO_WINDOW.0)
@@ -168,7 +169,7 @@ pub fn apps_folder_apps() -> Option<Vec<super::app_entries::App>> {
             .filter(|(name, parsing)| !name.is_empty() && !parsing.is_empty())
             .map(|(name, parsing)| super::app_entries::App {
                 name: name.to_owned(),
-                parsing: parsing.to_owned(),
+                parsing: parsing.split('\t').next().unwrap_or(parsing).to_owned(),
             })
             .collect(),
     )
@@ -190,14 +191,32 @@ fn parse_helper_apps(text: &str) -> Vec<Entry> {
         .collect()
 }
 
-/// `lulo-shell --apps-helper`: print the Apps folder, one
-/// `<name>\t<parsing name>` line per app, and exit.
+/// `lulo-shell --apps-helper [<icons folder>]`: print the Apps folder, one
+/// `<name>\t<parsing name>` line per app, and exit. With a folder, also
+/// keep each app's icon there as `<window app id>.png` (the shell's
+/// desktop entries for Windows apps), so the shell itself never holds the
+/// pixels or loads the shell libraries that read them (WIN-OS-53).
 pub fn run_apps_helper() -> i32 {
     use std::io::Write as _;
     init_com();
     let Some(found) = apps_folder() else {
         return 1;
     };
+    if let Some(icons) = std::env::args_os().nth(2).map(PathBuf::from) {
+        let apps = found
+            .iter()
+            .filter_map(|entry| {
+                let Target::Shell(target) = &entry.target else {
+                    return None;
+                };
+                Some(super::app_entries::App {
+                    name: entry.name.clone(),
+                    parsing: target.trim_start_matches("shell:AppsFolder\\").to_owned(),
+                })
+            })
+            .collect::<Vec<_>>();
+        super::app_entries::save_icons(&icons, &apps);
+    }
     let clean = |text: &str| text.replace(['\t', '\r', '\n'], " ");
     let mut output = std::io::BufWriter::new(std::io::stdout().lock());
     for entry in found {

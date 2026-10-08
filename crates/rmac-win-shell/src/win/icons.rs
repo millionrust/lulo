@@ -310,6 +310,28 @@ fn is_file_path(source: &str) -> bool {
     !source.starts_with("shell:") && !source.starts_with("::")
 }
 
+/// Read the icon of `source` (in this process: the Apps folder helper's)
+/// and keep it as a PNG at `path`, no larger than `pixels` square. True
+/// when it was written.
+pub(crate) fn save_png(source: &str, pixels: u32, path: &std::path::Path) -> bool {
+    let Some((width, height, mut bytes)) = load(source, pixels as i32, false) else {
+        return false;
+    };
+    // BGRA from Windows; PNG wants RGBA.
+    for pixel in bytes.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    let Some(image) = image::RgbaImage::from_raw(width, height, bytes) else {
+        return false;
+    };
+    let image = if width > pixels || height > pixels {
+        image::imageops::thumbnail(&image, pixels, pixels)
+    } else {
+        image
+    };
+    image.save_with_format(path, image::ImageFormat::Png).is_ok()
+}
+
 fn load(source: &str, pixels: i32, thumbnail: bool) -> Option<Pixels> {
     if !thumbnail && is_file_path(source) {
         if let Some(icon) = load_from_image_list(source, pixels) {

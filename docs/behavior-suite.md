@@ -54,7 +54,16 @@ outputs, Lulo Speakers (default) and Lulo HDMI Display. `wpctl set-default`,
 --monitor` through its own FIFO, so Control Centre's Sound view lists real
 outputs and switching one is checked end to end. It needs no package, so it
 also runs on the reference laptop; that runner also fakes the backlight there
-when python3-dbusmock is missing.
+when python3-dbusmock is missing. `fake_audio.py set-graph laptop|none|pair`
+swaps the graph live: "laptop" replays the reference laptop's real 67-object
+`pw-dump` (one sink, `crates/rmac-audio/src/fixtures/pw-dump-laptop-full.json`)
+and "none" removes its sink. `run_menu_dismiss.py --only control-centre-sound`
+walks Control Centre's Sound view through 1, 0 and 2 outputs with real
+pointer clicks (title, empty space, output button, slider). With `--audio
+real` it starts a private PipeWire and WirePlumber in the run's own
+XDG_RUNTIME_DIR instead (`scripts/behavior/real_audio.py`: hardware monitors
+off, null sinks added and removed with `pw-cli`), so rmac-audio parses what
+the real sound server publishes.
 
 ## Interaction probes
 

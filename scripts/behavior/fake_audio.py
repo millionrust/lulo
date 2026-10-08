@@ -7,16 +7,28 @@ a scratch PATH directory: rmac-audio runs those two programs by name, so
 the nested apps read and change a small graph kept in a JSON state file
 instead of a real sound server. Nothing outside `work` is touched.
 
-The graph has two outputs, "Lulo Speakers" (the default) and "Lulo HDMI
-Display". `wpctl set-default`, `set-volume` and `set-mute` change the state
-file and wake every `pw-dump --monitor` through its own FIFO (no polling),
-which then prints the changed graph the way PipeWire's monitor does.
+Three graphs, chosen with `install(work, graph=…)` or switched live with
+`fake_audio.py set-graph NAME` (with the state variable in the env):
+
+- "pair": two synthetic outputs, "Lulo Speakers" (the default) and "Lulo
+  HDMI Display";
+- "laptop": the reference laptop's real `pw-dump` (67 objects, exactly one
+  sink, "Built-in Audio Analog Stereo", with the real ALSA properties and
+  two-entry Props), from
+  `crates/rmac-audio/src/fixtures/pw-dump-laptop-full.json`;
+- "none": the same real graph with its sink removed and no
+  `default.audio.sink`, as WirePlumber leaves it with no output.
+
+`wpctl set-default`, `set-volume` and `set-mute` change the state file and
+wake every `pw-dump --monitor` through its own FIFO (no polling), which then
+prints the changed graph the way PipeWire's monitor does.
 
 Run as `fake_audio.py pw-dump|wpctl ARGS…` (the PATH wrappers do this).
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -25,9 +37,33 @@ from pathlib import Path
 SPEAKERS = {"id": 61, "name": "alsa_output.lulo-speakers", "description": "Lulo Speakers"}
 HDMI = {"id": 62, "name": "alsa_output.lulo-hdmi", "description": "Lulo HDMI Display"}
 STATE_VARIABLE = "LULO_FAKE_AUDIO_STATE"
+LAPTOP_FIXTURE = (Path(__file__).resolve().parents[2] / "crates" / "rmac-audio" / "src"
+                  / "fixtures" / "pw-dump-laptop-full.json")
+LAPTOP_SINK = {"id": 52, "name": "alsa_output.pci-0000_00_1b.0.analog-stereo",
+               "description": "Built-in Audio Analog Stereo"}
+GRAPHS = ("pair", "laptop", "none")
 
 
-def install(work: Path) -> dict[str, str]:
+def initial_state(graph_name: str) -> dict:
+    if graph_name not in GRAPHS:
+        raise ValueError(f"unknown fake audio graph {graph_name!r}")
+    if graph_name == "pair":
+        return {
+            "graph": graph_name,
+            "default": SPEAKERS["name"],
+            "volume": {SPEAKERS["name"]: 0.5, HDMI["name"]: 0.7},
+            "muted": {SPEAKERS["name"]: False, HDMI["name"]: False},
+        }
+    # The real sink's own level: linear 0.027001 is wpctl's 0.30.
+    return {
+        "graph": graph_name,
+        "default": LAPTOP_SINK["name"] if graph_name == "laptop" else None,
+        "volume": {LAPTOP_SINK["name"]: 0.3},
+        "muted": {LAPTOP_SINK["name"]: False},
+    }
+
+
+def install(work: Path, graph_name: str = "pair") -> dict[str, str]:
     """Write the state file and PATH wrappers under `work`; return the env
     entries that point the nested session at them."""
 
@@ -36,11 +72,7 @@ def install(work: Path) -> dict[str, str]:
     (root / "monitors").mkdir(parents=True, exist_ok=True)
     bin_dir.mkdir(parents=True, exist_ok=True)
     state = root / "state.json"
-    state.write_text(json.dumps({
-        "default": SPEAKERS["name"],
-        "volume": {SPEAKERS["name"]: 0.5, HDMI["name"]: 0.7},
-        "muted": {SPEAKERS["name"]: False, HDMI["name"]: False},
-    }))
+    state.write_text(json.dumps(initial_state(graph_name)))
     script = Path(__file__).resolve()
     for tool in ("pw-dump", "wpctl"):
         wrapper = bin_dir / tool
@@ -56,7 +88,46 @@ def read_state(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
+def sinks(state: dict) -> list[dict]:
+    graph_name = state.get("graph", "pair")
+    if graph_name == "pair":
+        return [SPEAKERS, HDMI]
+    if graph_name == "laptop":
+        return [LAPTOP_SINK]
+    return []
+
+
+def real_graph(state: dict) -> list[dict]:
+    """The laptop's real dump with the state's default, volume and mute
+    written into the objects PipeWire itself would change."""
+
+    keep_sink = state.get("graph") == "laptop"
+    result = []
+    for item in copy.deepcopy(json.loads(LAPTOP_FIXTURE.read_text())):
+        props = (item.get("info") or {}).get("props") or {}
+        if props.get("media.class") == "Audio/Sink":
+            if not keep_sink:
+                continue
+            name = props.get("node.name")
+            linear = round(state["volume"][name] ** 3, 6)
+            entry = item["info"]["params"]["Props"][0]
+            entry["channelVolumes"] = [linear] * len(entry["channelVolumes"])
+            entry["mute"] = state["muted"][name]
+        if (item.get("props") or {}).get("metadata.name") == "default":
+            entries = [entry for entry in item.get("metadata", [])
+                       if entry.get("key") != "default.audio.sink"]
+            if state.get("default"):
+                entries.insert(0, {"subject": 0, "key": "default.audio.sink",
+                                   "type": "Spa:String:JSON",
+                                   "value": {"name": state["default"]}})
+            item["metadata"] = entries
+        result.append(item)
+    return result
+
+
 def graph(state: dict) -> list[dict]:
+    if state.get("graph", "pair") != "pair":
+        return real_graph(state)
     objects: list[dict] = [{
         "id": 41,
         "type": "PipeWire:Interface:Metadata",
@@ -137,7 +208,7 @@ def wake_monitors(state_path: Path) -> None:
 def node_name(state: dict, target: str) -> str | None:
     if target in ("@DEFAULT_AUDIO_SINK@", "@DEFAULT_SINK@"):
         return state["default"]
-    for sink in (SPEAKERS, HDMI):
+    for sink in sinks(state):
         if target == str(sink["id"]):
             return sink["name"]
     return None
@@ -163,11 +234,22 @@ def wpctl(state_path: Path, args: list[str]) -> int:
     else:
         print(f"fake wpctl: unsupported {' '.join(args)}", file=sys.stderr)
         return 2
+    write_state(state_path, state)
+    return 0
+
+
+def write_state(state_path: Path, state: dict) -> None:
     temporary = state_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(state))
     temporary.replace(state_path)
     wake_monitors(state_path)
-    return 0
+
+
+def set_graph(state_path: Path, graph_name: str) -> None:
+    """Swap the whole graph (an output plugged in or removed) and tell every
+    running monitor, as PipeWire reports a device change."""
+
+    write_state(state_path, initial_state(graph_name))
 
 
 def main(argv: list[str]) -> int:
@@ -177,6 +259,9 @@ def main(argv: list[str]) -> int:
         return pw_dump(state_path, args)
     if tool == "wpctl":
         return wpctl(state_path, args)
+    if tool == "set-graph" and len(args) == 1 and args[0] in GRAPHS:
+        set_graph(state_path, args[0])
+        return 0
     print(f"fake_audio: unknown tool {tool}", file=sys.stderr)
     return 2
 

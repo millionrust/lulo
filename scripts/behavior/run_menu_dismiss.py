@@ -35,6 +35,10 @@ Scenarios, each starting from a clean (all-closed) state:
   - Control Centre's Display and Sound titles open their detail views
     (Display: brightness and Dark Mode; Sound: the fake outputs), choosing
     an output switches the default device, and Esc returns to the grid;
+  - Control Centre's Sound view with 1 (the reference laptop's real
+    `pw-dump`), 0 and 2 outputs, opened by real clicks on the title, the
+    empty space and the output button, with the slider, the Output list
+    and Sound Settings… (`--audio real`: a private PipeWire instead);
   - opening Control Center alongside an open app menu, then clicking the
     wallpaper, closes both (checked with `grim` + a pixel-difference crop
     over Control Center's corner, since it is a layer-shell popover with no
@@ -67,6 +71,7 @@ sys.path.insert(0, str(HERE))
 
 import fake_audio  # noqa: E402
 import fake_hardware  # noqa: E402
+import real_audio  # noqa: E402
 import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
 
@@ -82,6 +87,11 @@ MENU_SURFACE_HEIGHT = 680
 # Top-right corner big enough to contain Control Center's popover regardless
 # of its exact margins (`crates/rmac-quick-settings/src/surface.rs`).
 CONTROL_CENTER_BOX = (OUTPUT_W - 420, 0, OUTPUT_W, 420)
+# Control Centre's surface (crates/rmac-quick-settings/src/surface.rs): 316
+# wide, 8 from the right edge, 6 below the 29 pt menu bar.
+CONTROL_CENTRE_WIDTH, CONTROL_CENTRE_RIGHT, CONTROL_CENTRE_TOP = 316, 8, 35
+# `--audio real`'s null sinks: the first is the one-output case.
+REAL_SINKS = [("lulo_null_speakers", "Lulo Null Speakers"), ("lulo_null_hdmi", "Lulo Null HDMI")]
 
 
 class Run:
@@ -96,7 +106,7 @@ class Run:
         self.children: list[subprocess.Popen] = []
         self.results: list[tuple[str, bool, str]] = []
 
-    def check(self, name: str, ok, detail: str = "") -> None:
+    def check(self, name: str, ok, detail: str = "") -> bool:
         self.results.append((name, bool(ok), detail))
         print(
             f"{'PASS' if ok else 'FAIL'} {name} {detail if not ok else ''}".rstrip(),
@@ -111,6 +121,7 @@ class Run:
                 )
             except Exception as error:  # noqa: BLE001
                 print(f"debug capture failed: {error}", flush=True)
+        return bool(ok)
 
     def spawn(self, argv: list[str], name: str, extra: dict[str, str] | None = None) -> subprocess.Popen:
         env = {**self.env, **(extra or {})}
@@ -181,6 +192,14 @@ class Run:
             raise SystemExit("niri did not start")
         self.env.update({"WAYLAND_DISPLAY": display, "NIRI_SOCKET": str(socket)})
 
+        self.real_audio = None
+        if self.args.audio == "real":
+            # Before any Lulo process starts, so each one finds the private
+            # sound server the way a fresh login does.
+            self.real_audio = real_audio.RealAudio(self.env, self.work)
+            self.real_audio.start()
+            self.real_audio.set_sinks(REAL_SINKS[:1])
+
         self.dock = self.spawn([str(bins / "dock")], "dock", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.top_bar = self.spawn([str(bins / "top-bar")], "top-bar", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.wallpaper = self.spawn([str(bins / "wallpaper")], "wallpaper", {"VK_ICD_FILENAMES": LAVAPIPE})
@@ -246,6 +265,23 @@ class Run:
             except Exception:  # noqa: BLE001
                 continue
         return None
+
+    def dump_nodes(self, root_name: str) -> list[tuple[str, str]]:
+        """(role, name) of every node under the first node named
+        `root_name`, for a failing check's log."""
+        import pyatspi
+
+        root = self.find_node(("panel", "group", "filler", "frame"), lambda name: name == root_name)
+        found = []
+        stack = [root] if root is not None else []
+        while stack:
+            node = stack.pop()
+            try:
+                found.append((node.getRoleName(), node.name or ""))
+                stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+            except Exception:  # noqa: BLE001
+                continue
+        return found
 
     def find_button(self, label: str):
         return self.find_node(("push button", "button"), lambda name: name == label)
@@ -860,6 +896,187 @@ class Run:
         back_to_grid("Sound Settings\u2026", "Sound")
         self.close_everything()
 
+    def control_centre_sound_outputs(self) -> None:
+        """Control Centre's Sound view with 1, 0 and 2 outputs, opened with
+        real pointer clicks, as on macOS 26: the title, the module's empty
+        space and the output button each open it; it always shows the
+        volume slider, an "Output" heading with every output listed and the
+        current one selected (even when it is the only one), or "No Output
+        Device" when there is none, then "Sound Settings…"; clicking the
+        slider changes the volume. The 1-output graph is the reference
+        laptop's real `pw-dump` (fake_audio.py "laptop")."""
+
+        import pyatspi
+
+        namespace = "rmac-quick-settings"
+        items = ("push button", "button", "menu item", "list item", "label")
+        state_path = Path(self.env.get(fake_audio.STATE_VARIABLE, ""))
+        settings = "Sound Settings…"
+
+        def showing(roles, label: str):
+            return self.find_node(roles, lambda name: name == label)
+
+        def open_panel() -> bool:
+            if not self.has_layer(namespace):
+                self.dispatch("quick-settings")
+            return bool(self.wait_for(lambda: self.has_layer(namespace)
+                                      and showing(("push button", "button"), "Sound details"), 10))
+
+        def on_screen(box):
+            """GPUI reports a layer surface's AT-SPI extents from the
+            surface's own corner; Control Centre hangs CONTROL_CENTRE_TOP
+            below the screen top, CONTROL_CENTRE_RIGHT in from its right
+            edge."""
+            if box is None:
+                return None
+            x, y, w, h = box
+            return (x + OUTPUT_W - CONTROL_CENTRE_RIGHT - CONTROL_CENTRE_WIDTH,
+                    y + CONTROL_CENTRE_TOP, w, h)
+
+        def module_box():
+            node = showing(("push button", "button"), "Sound details")
+            return on_screen(self.extents(node)) if node is not None else None
+
+        def in_grid() -> bool:
+            return showing(items, settings) is None and showing(
+                ("push button", "button"), "Sound details") is not None
+
+        def back() -> None:
+            self.keys.key("escape")
+            self.wait_for(in_grid, 5)
+
+        def state() -> dict:
+            return json.loads(state_path.read_text())
+
+        audio = getattr(self, "real_audio", None)
+
+        def apply(graph_name: str) -> None:
+            if audio is None:
+                fake_audio.set_graph(state_path, graph_name)
+            else:
+                audio.set_sinks({"laptop": REAL_SINKS[:1], "none": [], "pair": REAL_SINKS}[graph_name])
+
+        def current_output() -> str | None:
+            if audio is None:
+                current = state()["default"]
+                return next((sink["description"] for sink in fake_audio.sinks(state())
+                             if sink["name"] == current), None)
+            current = audio.default_sink()
+            return next((description for name, description in REAL_SINKS if name == current), None)
+
+        def volume() -> float | None:
+            if audio is None:
+                current = state()["default"]
+                return state()["volume"].get(current) if current else None
+            return audio.volume()
+
+        if audio is None:
+            cases = (
+                ("laptop", "1 output (real laptop graph)", [fake_audio.LAPTOP_SINK["description"]]),
+                ("none", "0 outputs", []),
+                ("pair", "2 outputs", [fake_audio.SPEAKERS["description"],
+                                       fake_audio.HDMI["description"]]),
+            )
+        else:
+            cases = (
+                ("laptop", "1 output (real PipeWire)", [REAL_SINKS[0][1]]),
+                ("none", "0 outputs (real PipeWire)", []),
+                ("pair", "2 outputs (real PipeWire)", [description for _, description in REAL_SINKS]),
+            )
+        for graph_name, label, outputs in cases:
+            self.close_everything()
+            apply(graph_name)
+            time.sleep(1.0)
+            if not self.check(f"Control Centre Sound, {label}: Control Centre opens", open_panel()):
+                continue
+            # The module reflects the graph before anything is clicked.
+            expect_enabled = bool(outputs)
+            self.wait_for(lambda: (showing(("slider",), "Sound") is not None
+                                   and showing(("slider",), "Sound").getState().contains(
+                                       pyatspi.STATE_FOCUSABLE)), 5)
+            time.sleep(0.5)
+            grid = f"control-centre-sound-grid-{graph_name}{'-pipewire' if audio else ''}"
+            self.capture(grid)
+            self.keep_capture(grid)
+            box = module_box()
+            print(f"Sound module extents ({graph_name}): {box}", flush=True)
+            if box is None:
+                self.check(f"Control Centre Sound, {label}: the module has screen extents", False)
+                continue
+            x, y, w, h = box
+            outputs_button = showing(("push button", "button"), "Sound Outputs")
+            accessory = on_screen(self.extents(outputs_button)) if outputs_button is not None else None
+            targets = (
+                ("the title", (x + 30, y + 23)),
+                ("the empty space", (x + w * 0.55, y + 16)),
+                ("the output button", (accessory[0] + accessory[2] / 2, accessory[1] + accessory[3] / 2)
+                 if accessory else (x + 265, y + 42)),
+            )
+            for where, (cx, cy) in targets:
+                if not in_grid():
+                    self.close_everything()
+                    open_panel()
+                self.click_at(cx, cy)
+                opened = self.wait_for(lambda: showing(items, settings) is not None, 5)
+                self.check(f"Control Centre Sound, {label}: clicking {where} opens the Sound view",
+                           opened, f"at ({cx:.0f}, {cy:.0f})")
+                if opened and where != "the output button":
+                    back()
+            if showing(items, settings) is None:
+                # Carry on with the view's own checks after a failed click.
+                self.close_everything()
+                open_panel()
+                time.sleep(0.5)
+                self.click_at(x + 30, y + 23)
+                self.wait_for(lambda: showing(items, settings) is not None, 5)
+            if showing(items, settings) is None:
+                continue
+            time.sleep(0.5)
+            slider = showing(("slider",), "Sound")
+            self.check(f"Control Centre Sound, {label}: the view has the volume slider",
+                       slider is not None)
+            self.check(f"Control Centre Sound, {label}: the slider is "
+                       f"{'enabled' if expect_enabled else 'disabled without an output'}",
+                       slider is not None and slider.getState().contains(pyatspi.STATE_FOCUSABLE)
+                       == expect_enabled)
+            if outputs:
+                heading = showing(("heading", "label", "static"), "Output")
+                self.check(f"Control Centre Sound, {label}: the \"Output\" heading is shown",
+                           heading is not None)
+                rows = [showing(items, name) for name in outputs]
+                self.check(f"Control Centre Sound, {label}: every output is listed",
+                           all(row is not None for row in rows), str(outputs))
+                current_name = current_output()
+                selected = [row.name for row in rows
+                            if row is not None and row.getState().contains(pyatspi.STATE_SELECTED)]
+                self.check(f"Control Centre Sound, {label}: the current output is selected",
+                           current_name is not None and selected == [current_name],
+                           f"selected={selected}, current={current_name}")
+            else:
+                empty = showing(("label", "static", "heading"), "No Output Device")
+                if empty is None:
+                    print("DEBUG nodes:", self.dump_nodes("Sound"), flush=True)
+                self.check(f"Control Centre Sound, {label}: \"No Output Device\" is shown",
+                           empty is not None)
+                self.check(f"Control Centre Sound, {label}: no Output heading without an output",
+                           showing(("heading", "label", "static"), "Output") is None)
+            self.check(f"Control Centre Sound, {label}: \"Sound Settings…\" is shown",
+                       showing(items, settings) is not None)
+            capture = f"control-centre-sound-{graph_name}{'-pipewire' if audio else ''}"
+            self.capture(capture)
+            self.keep_capture(capture)
+            if expect_enabled and slider is not None:
+                sx, sy, sw, sh = on_screen(self.extents(slider)) or (0, 0, 0, 0)
+                # The hit box has 8 pt of padding on either end of the track.
+                self.click_at(sx + 8 + (sw - 16) * 0.75, sy + sh / 2)
+                changed = self.wait_for(lambda: abs((volume() or 0.0) - 0.75) <= 0.03, 5)
+                self.check(f"Control Centre Sound, {label}: clicking the slider sets the volume",
+                           changed, f"volume={volume()}")
+            back()
+            self.check(f"Control Centre Sound, {label}: Esc returns to the grid", in_grid())
+        self.close_everything()
+        apply("pair")
+
     def set_appearance(self, scheme: str) -> None:
         """Switch every nested Lulo surface to `scheme` ("light"/"dark")
         through the theme store they all watch."""
@@ -1217,6 +1434,8 @@ class Run:
                 self.control_centre_detail_escape()
             elif self.args.only == "control-centre-detail":
                 self.control_centre_detail_panels()
+            elif self.args.only == "control-centre-sound":
+                self.control_centre_sound_outputs()
             elif self.args.only == "appearance":
                 self.desktop_menu_appearance()
             elif self.args.only == "fake-hardware":
@@ -1258,6 +1477,7 @@ class Run:
             self.layer_popover_dismissal(shortcut, namespace)
         self.control_centre_detail_escape()
         self.control_centre_detail_panels()
+        self.control_centre_sound_outputs()
         self.desktop_menu_appearance()
         self.fake_hardware_shows_real_data()
         self.clock_popover_dismissal()
@@ -1280,6 +1500,8 @@ class Run:
                 process.wait(5)
             except subprocess.TimeoutExpired:
                 process.kill()
+        if getattr(self, "real_audio", None) is not None:
+            self.real_audio.stop()
         failed = [result for result in self.results if not result[1]]
         print(f"\n{len(self.results) - len(failed)}/{len(self.results)} checks passed", flush=True)
         return 1 if failed else 0
@@ -1303,7 +1525,10 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
             sys_root = work / "fake-sys"
             fake_hardware.fake_sysfs(sys_root)
             env["LULO_FAKE_SYS_ROOT"] = str(sys_root)
-        env.update(fake_audio.install(work))
+        if args.audio == "fake":
+            env.update(fake_audio.install(work))
+        elif not real_audio.available():
+            raise SystemExit("--audio real needs pipewire, wireplumber, pw-cli, pw-dump and wpctl")
         for key in ("WLR_BACKENDS", "WLR_HEADLESS_OUTPUTS", "WLR_LIBINPUT_NO_DEVICES", "WLR_RENDERER",
                     "LIBGL_ALWAYS_SOFTWARE", "VK_ICD_FILENAMES"):
             env.pop(key, None)
@@ -1359,8 +1584,14 @@ def main() -> int:
     parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
                                            "launcher", "app-drawer", "notification-center",
                                            "combined", "control-centre-list",
-                                           "control-centre-detail", "appearance", "fake-hardware",
+                                           "control-centre-detail", "control-centre-sound",
+                                           "appearance", "fake-hardware",
                                            "focus-return", "option-alternate"))
+    parser.add_argument(
+        "--audio", choices=("fake", "real"), default="fake",
+        help="fake: fake_audio.py's recorded graphs (default); real: a private PipeWire and "
+             "WirePlumber with null sinks (scripts/behavior/real_audio.py)",
+    )
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

@@ -86,7 +86,7 @@ impl SliderBulges {
 }
 
 pub(crate) struct QuickSettingsView {
-    token: u64,
+    pub(crate) token: u64,
     previous_window: Option<rmac_compositor::WindowId>,
     pub(crate) state: State,
     pub(crate) stream_error: Option<SharedString>,

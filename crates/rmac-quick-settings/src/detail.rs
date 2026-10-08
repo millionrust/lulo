@@ -853,6 +853,43 @@ mod tests {
     }
 
     #[test]
+    fn sound_always_lists_the_output_even_alone_and_says_when_there_is_none() {
+        // macOS 26 lists the Output section with a single device, selected.
+        let one = sound_panel(
+            true,
+            true,
+            [Output {
+                id: "52",
+                name: "Built-in Audio Analog Stereo",
+                current: true,
+            }],
+        );
+        assert!(one.slider);
+        assert_eq!(one.sections.len(), 1);
+        assert_eq!(one.sections[0].heading, "Output");
+        assert_eq!(one.sections[0].rows.len(), 1);
+        assert!(one.sections[0].rows[0].on);
+        assert_eq!(one.sections[0].rows[0].action, None);
+        assert_eq!(one.empty, None);
+        assert_eq!(
+            one.targets(),
+            [
+                Target::Slider,
+                Target::Row { section: 0, row: 0 },
+                Target::Settings
+            ]
+        );
+        assert_eq!(one.layout().1, 163.0);
+
+        let none = sound_panel(false, true, []);
+        assert!(none.slider);
+        assert!(none.sections.is_empty());
+        assert_eq!(none.empty, Some("No Output Device"));
+        assert_eq!(none.targets(), [Target::Slider, Target::Settings]);
+        assert_eq!(Module::Sound.detail(), Some(Detail::Sound));
+    }
+
+    #[test]
     fn layout_follows_the_measured_spacing() {
         // Sound with two outputs: slider header 63, heading 72, rows 91 and
         // 123, separator 161, settings 167, height 195.

@@ -374,42 +374,15 @@ fn open_outside_click_catcher_impl(
 ) -> Option<gpui::AnyWindowHandle> {
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
     use gpui::{
-        point, size, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
+        point, AnyWindowHandle, Bounds, WindowBackgroundAppearance, WindowBounds, WindowKind,
         WindowOptions,
     };
 
     let bounds = display.bounds();
-    let height = bounds.size.height;
-    if height <= reserved_top {
+    if bounds.size.height <= reserved_top {
         return None;
     }
-    let width = f32::from(bounds.size.width);
-    let height = f32::from(height);
-    let reserved = f32::from(reserved_top).clamp(0.0, height);
-    let region = |x: f32, y: f32, w: f32, h: f32| {
-        Bounds::new(
-            point(gpui::px(x), gpui::px(y)),
-            size(gpui::px(w), gpui::px(h)),
-        )
-    };
-    let mut input_regions = if let Some(excluded) = excluded {
-        let raw_left = f32::from(excluded.origin.x - bounds.origin.x);
-        let raw_top = f32::from(excluded.origin.y - bounds.origin.y);
-        let left = raw_left.clamp(0.0, width);
-        let top = raw_top.clamp(reserved, height);
-        let right = (raw_left + f32::from(excluded.size.width)).clamp(left, width);
-        let bottom = (raw_top + f32::from(excluded.size.height)).clamp(top, height);
-        vec![
-            region(0.0, reserved, width, top - reserved),
-            region(0.0, bottom, width, height - bottom),
-            region(0.0, top, left, bottom - top),
-            region(right, top, width - right, bottom - top),
-        ]
-    } else {
-        vec![region(0.0, reserved, width, height - reserved)]
-    };
-    input_regions
-        .retain(|region| region.size.width > gpui::px(0.0) && region.size.height > gpui::px(0.0));
+    let input_regions = catcher_input_regions(bounds, reserved_top, excluded);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds {
             origin: point(gpui::px(0.0), gpui::px(0.0)),
@@ -454,6 +427,8 @@ fn open_outside_click_catcher_impl(
                 escape: on_escape,
                 focus,
                 input_regions,
+                display_bounds: bounds,
+                reserved_top,
             }
         })
     }) {
@@ -465,6 +440,74 @@ fn open_outside_click_catcher_impl(
     }
 }
 
+/// The catcher's input rectangles: the display below `reserved_top`, less
+/// `excluded` (display coordinates), as up to four rectangles around it.
+#[cfg(any(target_os = "linux", test))]
+fn catcher_input_regions(
+    bounds: gpui::Bounds<gpui::Pixels>,
+    reserved_top: gpui::Pixels,
+    excluded: Option<gpui::Bounds<gpui::Pixels>>,
+) -> Vec<gpui::Bounds<gpui::Pixels>> {
+    use gpui::{point, size, Bounds};
+
+    let width = f32::from(bounds.size.width);
+    let height = f32::from(bounds.size.height);
+    let reserved = f32::from(reserved_top).clamp(0.0, height);
+    let region = |x: f32, y: f32, w: f32, h: f32| {
+        Bounds::new(
+            point(gpui::px(x), gpui::px(y)),
+            size(gpui::px(w), gpui::px(h)),
+        )
+    };
+    let mut input_regions = if let Some(excluded) = excluded {
+        let raw_left = f32::from(excluded.origin.x - bounds.origin.x);
+        let raw_top = f32::from(excluded.origin.y - bounds.origin.y);
+        let left = raw_left.clamp(0.0, width);
+        let top = raw_top.clamp(reserved, height);
+        let right = (raw_left + f32::from(excluded.size.width)).clamp(left, width);
+        let bottom = (raw_top + f32::from(excluded.size.height)).clamp(top, height);
+        vec![
+            region(0.0, reserved, width, top - reserved),
+            region(0.0, bottom, width, height - bottom),
+            region(0.0, top, left, bottom - top),
+            region(right, top, width - right, bottom - top),
+        ]
+    } else {
+        vec![region(0.0, reserved, width, height - reserved)]
+    };
+    input_regions
+        .retain(|region| region.size.width > gpui::px(0.0) && region.size.height > gpui::px(0.0));
+    input_regions
+}
+
+/// Move the click-through hole of a catcher opened by
+/// [`open_outside_click_catcher_around`] (or its `_with_escape` form) to
+/// `excluded`, in display coordinates. A popover that grows or shrinks
+/// after it opens (Control Centre adds its Display row once the backlight
+/// is read, and swaps the grid for taller or shorter detail views) calls
+/// this with its new rectangle; otherwise the catcher keeps covering the
+/// part of the popover outside its first size, and a press there closes
+/// the popover instead of reaching its controls.
+#[cfg(target_os = "linux")]
+pub fn set_outside_click_catcher_hole(
+    catcher: gpui::AnyWindowHandle,
+    excluded: gpui::Bounds<gpui::Pixels>,
+    cx: &mut App,
+) {
+    let Some(catcher) = catcher.downcast::<OutsideClickCatcher>() else {
+        return;
+    };
+    let _ = catcher.update(cx, |catcher, window, cx| {
+        let regions =
+            catcher_input_regions(catcher.display_bounds, catcher.reserved_top, Some(excluded));
+        if regions != catcher.input_regions {
+            catcher.input_regions = regions;
+            window.set_input_region(Some(&catcher.input_regions));
+            cx.notify();
+        }
+    });
+}
+
 #[cfg(target_os = "linux")]
 struct OutsideClickCatcher {
     left: OutsideClickCallback,
@@ -472,6 +515,8 @@ struct OutsideClickCatcher {
     escape: Option<OutsideClickCallback>,
     focus: gpui::FocusHandle,
     input_regions: Vec<gpui::Bounds<gpui::Pixels>>,
+    display_bounds: gpui::Bounds<gpui::Pixels>,
+    reserved_top: gpui::Pixels,
 }
 
 #[cfg(target_os = "linux")]
@@ -775,6 +820,33 @@ mod tests {
             rmac_appearance::ColorScheme::PreferLight
         );
         assert!(initial_host_appearance_from("unknown").is_none());
+    }
+
+    #[test]
+    fn catcher_hole_follows_the_popover_rectangle() {
+        use gpui::{point, size, Bounds};
+        let display = Bounds::new(point(px(0.0), px(0.0)), size(px(1440.0), px(900.0)));
+        let rect =
+            |x: f32, y: f32, w: f32, h: f32| Bounds::new(point(px(x), px(y)), size(px(w), px(h)));
+        // Control Centre's first size, then the taller grid with Display.
+        let first =
+            catcher_input_regions(display, px(29.0), Some(rect(1116.0, 35.0, 316.0, 240.0)));
+        let grown =
+            catcher_input_regions(display, px(29.0), Some(rect(1116.0, 35.0, 316.0, 316.0)));
+        let covers = |regions: &[Bounds<gpui::Pixels>], x: f32, y: f32| {
+            regions
+                .iter()
+                .any(|region| region.contains(&point(px(x), px(y))))
+        };
+        // The Sound module's title, 298 down: covered by the first hole's
+        // catcher, click-through once the hole follows the new height.
+        assert!(covers(&first, 1158.0, 298.0));
+        assert!(!covers(&grown, 1158.0, 298.0));
+        // Below the grown popover and beside it still close it.
+        assert!(covers(&grown, 1158.0, 360.0));
+        assert!(covers(&grown, 1000.0, 100.0));
+        // The menu-bar strip stays click-through.
+        assert!(!covers(&grown, 200.0, 10.0));
     }
 
     #[test]

@@ -100,6 +100,42 @@ pub fn stable_output_uuid(output: &rmac_compositor::OutputId) -> Uuid {
     Uuid::new_v5(&Uuid::NAMESPACE_DNS, output.0.as_bytes())
 }
 
+/// The surface's blurred material has rounded corners of `radius`: niri
+/// shapes the blur from the surface itself on Lulo OS (nothing to do); on
+/// Windows the window is cut to that shape.
+pub fn set_corner_radius(window: &Window, radius: f32) {
+    #[cfg(windows)]
+    if let Some(hwnd) = windows::surface::hwnd(window) {
+        let scale = window.scale_factor();
+        let size = window.bounds().size;
+        windows::material::shape(
+            hwnd,
+            (size.width.as_f32() * scale).round() as i32,
+            (size.height.as_f32() * scale).round() as i32,
+            (radius * scale).round() as i32,
+        );
+    }
+    #[cfg(not(windows))]
+    let _ = (window, radius);
+}
+
+/// A GPUI display's stable output id, as [`stable_output_uuid`] gives it for
+/// the compositor's output of the same screen.
+pub fn display_uuid(display: &dyn gpui::PlatformDisplay) -> Option<Uuid> {
+    #[cfg(windows)]
+    {
+        let monitor = ::windows::Win32::Graphics::Gdi::HMONITOR(
+            u64::from(display.id()) as isize as *mut core::ffi::c_void,
+        );
+        windows::monitor_device_name(monitor)
+            .map(|name| stable_output_uuid(&rmac_compositor::OutputId(name)))
+    }
+    #[cfg(not(windows))]
+    {
+        display.uuid().ok()
+    }
+}
+
 #[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
 pub mod output_surfaces {
     use std::collections::{BTreeMap, BTreeSet};

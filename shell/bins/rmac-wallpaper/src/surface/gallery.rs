@@ -94,21 +94,21 @@ pub(crate) fn open(
         display_id: Some(display.id()),
         app_id: Some("dev.rmac.Wallpaper".to_owned()),
         window_background: WindowBackgroundAppearance::Transparent,
-        kind: WindowKind::LayerShell(LayerShellOptions {
-            namespace: "rmac-widget-gallery".to_owned(),
-            layer: Layer::Top,
-            anchor: Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
-            exclusive_zone: Some(px(-1.0)),
-            keyboard_interactivity: KeyboardInteractivity::Exclusive,
-            ..Default::default()
-        }),
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
         ..Default::default()
     };
+    let layer = LayerShellOptions {
+        namespace: "rmac-widget-gallery".to_owned(),
+        layer: Layer::Top,
+        anchor: Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
+        exclusive_zone: Some(px(-1.0)),
+        keyboard_interactivity: KeyboardInteractivity::Exclusive,
+        ..Default::default()
+    };
     let view_status = status.clone();
-    match cx.open_window(options, move |window, cx| {
+    match rmac_shell_layer::open_layer_window(cx, options, layer, move |window, cx| {
         cx.new(|cx| Gallery::new(view_status, target, window, cx))
     }) {
         Ok(handle) => status.update(cx, |status, cx| {

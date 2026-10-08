@@ -38,7 +38,7 @@ struct Linked {
     app_id: &'static str,
     menus: Option<Vec<Menu>>,
     revision: u32,
-    commands: Option<Arc<Mutex<File>>>,
+    commands: Option<Commands>,
 }
 
 #[derive(Default)]
@@ -263,8 +263,11 @@ fn gone(pid: u32) {
     }
 }
 
+/// Where a linked app's commands go.
+type Commands = Arc<Mutex<File>>;
+
 /// The most recently linked process of `app_id` that has sent its menus.
-fn linked(app_id: &str) -> Option<(Vec<Menu>, u32, Option<Arc<Mutex<File>>>)> {
+fn linked(app_id: &str) -> Option<(Vec<Menu>, u32, Option<Commands>)> {
     with_host(|host| {
         host.apps
             .iter()
@@ -279,7 +282,7 @@ fn linked(app_id: &str) -> Option<(Vec<Menu>, u32, Option<Arc<Mutex<File>>>)> {
     })
 }
 
-fn send(writer: &Arc<Mutex<File>>, command: &Command) -> Result<(), Error> {
+fn send(writer: &Commands, command: &Command) -> Result<(), Error> {
     let line = pipe::encode_command(command)?;
     let mut writer = writer.lock().map_err(|_| Error::Protocol)?;
     writer

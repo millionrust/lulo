@@ -39,6 +39,8 @@ rmac-top-bar.workspace = true
 # and the link to the Lulo menu bar (`menubar_link`),
 # with the version and features GPUI's Windows backend already builds.
 [target.'cfg(windows)'.dependencies]
+# Lulo's UI font stands in for the system font (`fonts_windows`).
+gpui_windows.workspace = true
 raw-window-handle.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",

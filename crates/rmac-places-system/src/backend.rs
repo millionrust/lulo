@@ -16,9 +16,11 @@ pub struct SystemBackend;
 
 impl Backend for SystemBackend {
     fn home(&self) -> Option<PathBuf> {
-        std::env::var_os("HOME")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
+        let home = std::env::var_os("HOME").filter(|value| !value.is_empty());
+        // Windows names the home folder USERPROFILE.
+        #[cfg(windows)]
+        let home = home.or_else(|| std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()));
+        home.map(PathBuf::from)
     }
 
     fn config_home(&self) -> Option<PathBuf> {
@@ -55,11 +57,18 @@ impl Backend for SystemBackend {
                 .map(|items| items.len())
                 .map_err(|error| error.to_string())
         }
-        #[cfg(not(all(
-            unix,
-            not(target_os = "macos"),
-            not(target_os = "ios"),
-            not(target_os = "android")
+        #[cfg(windows)]
+        {
+            crate::recycle_bin::item_count()
+        }
+        #[cfg(not(any(
+            windows,
+            all(
+                unix,
+                not(target_os = "macos"),
+                not(target_os = "ios"),
+                not(target_os = "android")
+            )
         )))]
         {
             Err("Trash enumeration is not available on this development platform".into())
@@ -78,11 +87,24 @@ impl Backend for SystemBackend {
                 .map(|items| items.iter().map(|item| trash_entry_id(&item.id)).collect())
                 .map_err(|error| error.to_string())
         }
-        #[cfg(not(all(
-            unix,
-            not(target_os = "macos"),
-            not(target_os = "ios"),
-            not(target_os = "android")
+        // The Recycle Bin is emptied whole (`purge_trash`), so its review
+        // stands for the items by position.
+        #[cfg(windows)]
+        {
+            crate::recycle_bin::item_count().map(|count| {
+                (0..count as u64)
+                    .map(|index| TrashEntryId::from_authority_bytes(&index.to_le_bytes()))
+                    .collect()
+            })
+        }
+        #[cfg(not(any(
+            windows,
+            all(
+                unix,
+                not(target_os = "macos"),
+                not(target_os = "ios"),
+                not(target_os = "android")
+            )
         )))]
         {
             Err("Trash enumeration is not available on this development platform".into())
@@ -115,11 +137,19 @@ impl Backend for SystemBackend {
             }
             trash::os_limited::purge_all(selected).map_err(|error| error.to_string())
         }
-        #[cfg(not(all(
-            unix,
-            not(target_os = "macos"),
-            not(target_os = "ios"),
-            not(target_os = "android")
+        #[cfg(windows)]
+        {
+            let _ = reviewed;
+            crate::recycle_bin::empty()
+        }
+        #[cfg(not(any(
+            windows,
+            all(
+                unix,
+                not(target_os = "macos"),
+                not(target_os = "ios"),
+                not(target_os = "android")
+            )
         )))]
         {
             let _ = reviewed;

@@ -26,6 +26,7 @@
 pub mod appbar;
 pub mod desktop_layer;
 pub mod layer_types;
+pub mod material;
 pub mod power;
 pub mod surface;
 
@@ -61,6 +62,8 @@ struct LayerWindow {
     /// The monitor it was opened on (GPUI's display id is the `HMONITOR`).
     display: u64,
     requested: Size<Pixels>,
+    /// Asked for `WindowBackgroundAppearance::Blurred` (see `material`).
+    blurred: bool,
     styled: bool,
     /// The strip it holds as an AppBar.
     strip: Option<RECT>,
@@ -78,6 +81,29 @@ thread_local! {
     static WINDOWS: RefCell<Vec<LayerWindow>> = const { RefCell::new(Vec::new()) };
     static SIGNALS: RefCell<Option<async_channel::Sender<Signal>>> = const { RefCell::new(None) };
     static BACKGROUND_WATCH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static STRIP_HOOKS: RefCell<Vec<Rc<dyn Fn(isize, &str)>>> = const { RefCell::new(Vec::new()) };
+    static PLACED_HOOKS: RefCell<Vec<Rc<dyn Fn(isize, &str)>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Run `hook` with a surface's window and namespace when it first holds an
+/// AppBar strip (the Windows shell records them, so `lulo-session` can give
+/// the work area back after a crash, and watches the bar's window for the
+/// session ending).
+pub fn on_strip(hook: impl Fn(isize, &str) + 'static) {
+    STRIP_HOOKS.with(|hooks| hooks.borrow_mut().push(Rc::new(hook)));
+}
+
+/// Run `hook` with a surface's window and namespace each time it is
+/// placed (the Windows shell keeps its wallpaper layer under the desktop).
+pub fn on_placed(hook: impl Fn(isize, &str) + 'static) {
+    PLACED_HOOKS.with(|hooks| hooks.borrow_mut().push(Rc::new(hook)));
+}
+
+fn run_hooks(hooks: &'static std::thread::LocalKey<RefCell<Vec<Rc<dyn Fn(isize, &str)>>>>, raw: isize, namespace: &str) {
+    let hooks = hooks.with(|hooks| hooks.borrow().clone());
+    for hook in hooks {
+        hook(raw, namespace);
+    }
 }
 
 fn handle(raw: isize) -> HWND {
@@ -118,6 +144,7 @@ pub fn open_layer_window<V: 'static + Render>(
     options.is_resizable = false;
     options.is_minimizable = false;
     let background = matches!(layer.layer, Layer::Background | Layer::Bottom);
+    let blurred = options.window_background == gpui::WindowBackgroundAppearance::Blurred;
     let handle = cx.open_window(options, build)?;
     let any: AnyWindowHandle = handle.into();
     if let Some(hwnd) = any
@@ -132,6 +159,7 @@ pub fn open_layer_window<V: 'static + Render>(
                 layer,
                 display: display.map_or(0, |display| u64::from(display.id())),
                 requested,
+                blurred,
                 styled: false,
                 strip: None,
             })
@@ -292,9 +320,12 @@ pub fn newest_displays(cx: &App) -> BTreeMap<Uuid, Rc<dyn PlatformDisplay>> {
         .collect()
 }
 
-fn style(hwnd: HWND, layer: &LayerShellOptions) {
+fn style(hwnd: HWND, layer: &LayerShellOptions, blurred: bool) {
     surface::make_borderless(hwnd);
     surface::plain_without_shadow(hwnd);
+    if blurred {
+        material::apply(hwnd);
+    }
     let background = matches!(layer.layer, Layer::Background | Layer::Bottom);
     let never_active = layer.keyboard_interactivity == KeyboardInteractivity::None;
     // SAFETY: style bits on a window this process owns.
@@ -373,6 +404,7 @@ fn hook(hwnd: HWND, signals: async_channel::Sender<Signal>) {
 
 /// The window is going: give its strip back and stop tracking it.
 fn forget(raw: isize) {
+    material::forget(raw);
     let removed = WINDOWS.with(|windows| {
         let mut windows = windows.borrow_mut();
         let index = windows.iter().position(|window| window.hwnd == raw)?;
@@ -571,7 +603,7 @@ fn raise_overlays() {
 
 /// Style (once), size and place one surface, and hold its strip.
 fn place(raw: isize) {
-    let Some((layer, display, requested, styled, strip)) = WINDOWS.with(|windows| {
+    let Some((layer, display, requested, blurred, styled, strip)) = WINDOWS.with(|windows| {
         windows
             .borrow()
             .iter()
@@ -581,6 +613,7 @@ fn place(raw: isize) {
                     window.layer.clone(),
                     window.display,
                     window.requested,
+                    window.blurred,
                     window.styled,
                     window.strip,
                 )
@@ -590,7 +623,7 @@ fn place(raw: isize) {
     };
     let hwnd = handle(raw);
     if !styled {
-        style(hwnd, &layer);
+        style(hwnd, &layer, blurred);
         WINDOWS.with(|windows| {
             if let Some(window) = windows
                 .borrow_mut()
@@ -686,10 +719,14 @@ fn place(raw: isize) {
                 window.strip = Some(held);
             }
         });
+        if strip.is_none() {
+            run_hooks(&STRIP_HOOKS, raw, &layer.namespace);
+        }
     }
     if !styled && layer.keyboard_interactivity == KeyboardInteractivity::Exclusive {
         surface::take_foreground(hwnd);
     }
+    run_hooks(&PLACED_HOOKS, raw, &layer.namespace);
 }
 
 #[cfg(test)]

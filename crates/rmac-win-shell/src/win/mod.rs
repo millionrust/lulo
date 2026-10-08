@@ -1,24 +1,18 @@
-//! The Win32 side of the Lulo layer.
+//! The Win32 side of the Lulo layer that only Windows has.
 
 pub use rmac_shell_layer::windows::{appbar, power, surface};
-pub mod backdrop;
 pub mod catalog;
 pub mod desktop;
-pub mod desktop_files;
 pub mod events;
 pub mod folders;
 pub mod icons;
 pub mod launch;
 pub mod memory;
-pub mod menubar_server;
-pub mod recycle;
 pub mod registry;
 pub mod session;
-pub mod status;
 pub mod taskbar;
 pub mod wallpaper;
 pub mod wallpaper_layer;
-pub mod windows_list;
 
 use std::sync::OnceLock;
 
@@ -76,4 +70,38 @@ pub fn process_millis() -> f64 {
     let ticks =
         |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
     ticks(now).saturating_sub(ticks(created)) as f64 / 10_000.0
+}
+
+/// The window with handle `hwnd`.
+pub fn handle(hwnd: isize) -> windows::Win32::Foundation::HWND {
+    windows::Win32::Foundation::HWND(hwnd as *mut core::ffi::c_void)
+}
+
+/// The executable path of process `pid`, or empty when it cannot be read.
+pub fn process_path(pid: u32) -> String {
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: opens the process for a name query only, and closes it.
+    unsafe {
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+            .ok()
+            .and_then(|process| {
+                let mut buffer = vec![0u16; 1024];
+                let mut size = buffer.len() as u32;
+                let read = QueryFullProcessImageNameW(
+                    process,
+                    PROCESS_NAME_WIN32,
+                    PWSTR(buffer.as_mut_ptr()),
+                    &mut size,
+                );
+                let _ = CloseHandle(process);
+                read.ok()
+                    .map(|()| String::from_utf16_lossy(&buffer[..size as usize]))
+            })
+            .unwrap_or_default()
+    }
 }

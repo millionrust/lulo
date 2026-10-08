@@ -4,8 +4,10 @@
 
 mod desktop;
 mod gallery;
+#[cfg(target_os = "linux")]
 mod lock_picture;
 mod menu;
+#[cfg(target_os = "linux")]
 mod reveal;
 
 use std::borrow::Cow;
@@ -21,14 +23,17 @@ use std::time::Duration;
 
 use futures_util::FutureExt as _;
 use gpui::{
-    div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, svg,
-    AnyElement, AnyWindowHandle, App, AssetSource, Bounds, Context, DisplayId, Entity,
-    ExternalPaths, FocusHandle, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, PlatformDisplay, Point, QuitMode, RenderImage, Role,
-    SharedString, Size, Task, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
-    WindowOptions,
+    div, img, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, svg, AnyElement,
+    AnyWindowHandle, App, AssetSource, Bounds, Context, DisplayId, Entity, ExternalPaths,
+    FocusHandle, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, Pixels, PlatformDisplay, Point, RenderImage, Role, SharedString, Size, Task,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowOptions,
 };
+#[cfg(target_os = "linux")]
+use gpui::QuitMode;
+#[cfg(target_os = "linux")]
 use gpui_platform::application;
+use rmac_shell_layer::layer::*;
 use rmac_desktop::settings::{Arrangement, DesktopSettings, GalleryTarget};
 use rmac_desktop::widgets::{WidgetKind, WidgetLocation, WidgetSize};
 use rmac_desktop_widgets::WidgetData;
@@ -41,6 +46,7 @@ const RENDER_COUNT_DIR_ENV: &str = "RMAC_WALLPAPER_RENDER_COUNT_DIR";
 const WEATHER_REFRESH: Duration = Duration::from_secs(15 * 60);
 /// How long to wait before restarting `upcoming::watch` after it returns
 /// (no EDS, no enabled calendar, or a source added/removed/toggled).
+#[cfg(target_os = "linux")]
 const CALENDAR_RETRY_DELAY: Duration = Duration::from_secs(30);
 static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
 
@@ -93,6 +99,20 @@ pub(crate) const DOCUMENT_ICON: &str = "desktop/document.svg";
 
 struct WallpaperAssets;
 
+/// The desktop's own artwork, for a process that serves several shell
+/// surfaces' assets at once (`lulo-shell` on Windows).
+pub fn asset(path: &str) -> Option<Cow<'static, [u8]>> {
+    WallpaperAssets.load(path).ok().flatten()
+}
+
+/// Every path [`asset`] answers.
+pub fn asset_names() -> impl Iterator<Item = &'static str> {
+    MENU_ICON_NAMES
+        .iter()
+        .chain([FOLDER_ICON, DOCUMENT_ICON].iter())
+        .copied()
+}
+
 impl AssetSource for WallpaperAssets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
         if let Some(bytes) = menu_icon_bytes(path) {
@@ -134,6 +154,8 @@ enum PreparedUpdate {
     },
     Battery(Option<rmac_desktop_widgets::Battery>, bool),
     Weather(Result<rmac_weather::widget::WidgetWeather, rmac_weather::widget::Unavailable>),
+    // Evolution Data Server's events (Lulo OS).
+    #[cfg_attr(windows, allow(dead_code))]
     Calendar(Vec<rmac_calendar_agent::upcoming::UpcomingEvent>),
     Gallery(GalleryTarget),
 }
@@ -357,7 +379,7 @@ impl Wallpaper {
         };
         cx.background_executor()
             .spawn(async move {
-                let _ = rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+                let _ = rmac_compositor_system::execute(rmac_compositor::ActionRequest {
                     id: rmac_compositor::ActivationId(previous + 1),
                     action: rmac_compositor::Action::CloseWindow { window },
                 })
@@ -397,7 +419,9 @@ pub(crate) fn spawn_settings(pane: &'static str, cx: &mut App) {
     cx.background_executor()
         .spawn(async move {
             let result = blocking::unblock(move || {
-                std::process::Command::new("/usr/bin/rmac-system-settings")
+                std::process::Command::new(rmac_shell_layer::system::program(
+                    "/usr/bin/rmac-system-settings",
+                ))
                     .args(["--pane", pane])
                     .spawn()
                     .map(|_| ())
@@ -419,7 +443,9 @@ pub(crate) fn spawn_quick_look(paths: Vec<PathBuf>, cx: &mut App) {
     cx.background_executor()
         .spawn(async move {
             let result = blocking::unblock(move || {
-                std::process::Command::new("/usr/bin/rmac-quick-look")
+                std::process::Command::new(rmac_shell_layer::system::program(
+                    "/usr/bin/rmac-quick-look",
+                ))
                     .args(paths)
                     .spawn()
                     .map(|_| ())
@@ -677,6 +703,7 @@ fn start_status(cx: &mut App) -> Entity<WallpaperStatus> {
                                 // last surface prepared here wins, since the
                                 // lock screen shows one picture regardless
                                 // of output (S).
+                                #[cfg(target_os = "linux")]
                                 lock_picture::write_background(&surface.image);
                                 if let Some((output, surface)) = prepare_surface(surface) {
                                     prepared.insert(output, surface);
@@ -721,6 +748,8 @@ fn start_status(cx: &mut App) -> Entity<WallpaperStatus> {
     cx.background_executor()
         .spawn(watch_battery(prepared_tx.clone()))
         .detach();
+    // Evolution Data Server's calendars (Lulo OS).
+    #[cfg(target_os = "linux")]
     cx.background_executor()
         .spawn(watch_calendar(prepared_tx.clone()))
         .detach();
@@ -745,7 +774,7 @@ fn start_status(cx: &mut App) -> Entity<WallpaperStatus> {
     let (compositor_tx, compositor_rx) = async_channel::bounded(64);
     cx.background_executor()
         .spawn(async move {
-            if let Err(error) = rmac_compositor_niri::watch(compositor_tx).await {
+            if let Err(error) = rmac_compositor_system::watch(compositor_tx).await {
                 eprintln!("wallpaper compositor watcher stopped: {error}");
             }
         })
@@ -811,6 +840,7 @@ async fn watch_battery(updates: async_channel::Sender<PreparedUpdate>) {
 /// restart it -- the same shape systemd's `Restart=always` gives the
 /// reminders agent for the same reason (`upcoming::watch`'s own doc
 /// comment).
+#[cfg(target_os = "linux")]
 async fn watch_calendar(updates: async_channel::Sender<PreparedUpdate>) {
     const CALENDAR_EVENT_LIMIT: usize = 3;
     loop {
@@ -998,37 +1028,38 @@ fn open_wallpaper(
     cx: &mut App,
 ) -> AnyWindowHandle {
     let display_id = display.id();
-    let display_uuid = display.uuid().expect("wallpaper display UUID");
+    let display_uuid =
+        rmac_shell_layer::display_uuid(display.as_ref()).expect("wallpaper display UUID");
     let size = display.bounds().size;
-    let handle = cx
-        .open_window(
-            WindowOptions {
-                titlebar: None,
-                focus: false,
-                window_bounds: Some(WindowBounds::Windowed(Bounds {
-                    origin: point(px(0.0), px(0.0)),
-                    size: Size::new(size.width, size.height),
-                })),
-                display_id: Some(display_id),
-                app_id: Some("dev.rmac.Wallpaper".to_owned()),
-                window_background: WindowBackgroundAppearance::Opaque,
-                kind: WindowKind::LayerShell(LayerShellOptions {
-                    namespace: format!("rmac-wallpaper-{}", u64::from(display_id)),
-                    layer: Layer::Background,
-                    anchor: Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
-                    // The background takes keyboard focus when clicked, so
-                    // the desktop's selection shortcuts and menus work.
-                    keyboard_interactivity: KeyboardInteractivity::OnDemand,
-                    // The protocol's -1 zone extends behind bars without
-                    // changing the application work area.
-                    exclusive_zone: Some(px(-1.0)),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            move |_, cx| cx.new(|cx| Wallpaper::new(display_id, display_uuid, status, cx)),
-        )
-        .expect("open wallpaper layer surface");
+    let handle = rmac_shell_layer::open_layer_window(
+        cx,
+        WindowOptions {
+            titlebar: None,
+            focus: false,
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: Size::new(size.width, size.height),
+            })),
+            display_id: Some(display_id),
+            app_id: Some("dev.rmac.Wallpaper".to_owned()),
+            window_background: WindowBackgroundAppearance::Opaque,
+            ..Default::default()
+        },
+        LayerShellOptions {
+            namespace: format!("rmac-wallpaper-{}", u64::from(display_id)),
+            layer: Layer::Background,
+            anchor: Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
+            // The background takes keyboard focus when clicked, so
+            // the desktop's selection shortcuts and menus work.
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            // The protocol's -1 zone extends behind bars without
+            // changing the application work area.
+            exclusive_zone: Some(px(-1.0)),
+            ..Default::default()
+        },
+        move |_, cx| cx.new(|cx| Wallpaper::new(display_id, display_uuid, status, cx)),
+    )
+    .expect("open wallpaper layer surface");
     cx.spawn(async move |cx| {
         cx.background_executor()
             .timer(Duration::from_millis(250))
@@ -1041,6 +1072,8 @@ fn open_wallpaper(
     handle.into()
 }
 
+/// Lulo OS's `wallpaper`: its own process, with its own assets.
+#[cfg(target_os = "linux")]
 pub fn run() {
     let app = application()
         .with_assets(WallpaperAssets)
@@ -1054,6 +1087,16 @@ pub fn run() {
                 blocking::unblock(lock_picture::write_avatar_once).await;
             })
             .detach();
+        start(cx);
+    });
+}
+
+/// Open the desktop on every display and keep it there, in an app that is
+/// already running: Lulo OS's own `wallpaper` process ([`run`]), or the
+/// Windows shell, which runs every surface in one process and serves
+/// [`asset`] itself.
+pub fn start(cx: &mut App) {
+    {
         let status = start_status(cx);
         let (output_tx, output_rx) = async_channel::bounded(4);
         cx.background_executor()
@@ -1118,15 +1161,17 @@ pub fn run() {
             }
         })
         .detach();
-    });
+    }
 }
 
+/// A Wayland output that disappeared and came back needs a fresh registry,
+/// so `wallpaper` restarts; Windows keeps its displays.
 fn restart_for_reappeared_output(
     previous: &BTreeSet<Uuid>,
     current: &BTreeSet<Uuid>,
     removed: &mut BTreeSet<Uuid>,
 ) {
-    if rmac_shell_layer::output_reappeared(previous, current, removed) {
+    if cfg!(target_os = "linux") && rmac_shell_layer::output_reappeared(previous, current, removed) {
         std::process::exit(rmac_shell_layer::WAYLAND_OUTPUT_RESTART_EXIT_CODE);
     }
 }

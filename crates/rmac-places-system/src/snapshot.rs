@@ -141,11 +141,16 @@ fn system_watch_plan(report: &Report) -> (Vec<PathBuf>, Interests) {
     let trash_folders = trash::os_limited::trash_folders()
         .map(|folders| folders.into_iter().collect::<Vec<_>>())
         .unwrap_or_default();
-    #[cfg(not(all(
-        unix,
-        not(target_os = "macos"),
-        not(target_os = "ios"),
-        not(target_os = "android")
+    #[cfg(windows)]
+    let trash_folders = crate::recycle_bin::folders();
+    #[cfg(not(any(
+        windows,
+        all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        )
     )))]
     let trash_folders = Vec::new();
     let mounts_file = cfg!(target_os = "linux").then_some(Path::new("/proc/self/mounts"));

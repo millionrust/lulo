@@ -19,7 +19,11 @@ use std::sync::OnceLock;
 fn copy_drop_item(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
     let metadata = fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() {
+        #[cfg(unix)]
         std::os::unix::fs::symlink(fs::read_link(source)?, destination)?;
+        // Windows: a link is copied as what it points at.
+        #[cfg(windows)]
+        rmac_storage::copy_no_clobber(source, destination)?;
     } else if metadata.is_dir() {
         fs::create_dir(destination)?;
         let result: std::io::Result<()> = (|| {
@@ -44,24 +48,35 @@ fn transfer_drop_item(
     destination: &std::path::Path,
     copy: bool,
 ) -> std::io::Result<()> {
-    use std::os::unix::fs::MetadataExt as _;
-
     if fs::symlink_metadata(destination).is_ok() {
         return Err(std::io::ErrorKind::AlreadyExists.into());
     }
-    let source_device = fs::symlink_metadata(source)?.dev();
-    let destination_device = fs::metadata(
-        destination
-            .parent()
-            .ok_or(std::io::ErrorKind::InvalidInput)?,
-    )?
-    .dev();
-    if copy || source_device != destination_device {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        let source_device = fs::symlink_metadata(source)?.dev();
+        let destination_device = fs::metadata(
+            destination
+                .parent()
+                .ok_or(std::io::ErrorKind::InvalidInput)?,
+        )?
+        .dev();
+        if source_device != destination_device {
+            return copy_drop_item(source, destination);
+        }
+    }
+    if copy {
         return copy_drop_item(source, destination);
     }
+    // A move across devices cannot be a rename: copy, then remove.
+    #[cfg(unix)]
+    let cross_device = libc::EXDEV;
+    // ERROR_NOT_SAME_DEVICE.
+    #[cfg(windows)]
+    let cross_device = 17;
     match rmac_desktop::move_item_no_replace(source, destination) {
         Ok(()) => Ok(()),
-        Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {
+        Err(error) if error.raw_os_error() == Some(cross_device) => {
             copy_drop_item(source, destination)?;
             if fs::symlink_metadata(source)?.is_dir() {
                 fs::remove_dir_all(source)
@@ -530,7 +545,11 @@ impl Wallpaper {
             .map(|item| item.path.clone())
             .or_else(|| rmac_desktop::directory_from_environment().ok());
         let Some(directory) = directory else { return };
+        #[cfg(target_os = "linux")]
         let copy = gpui_linux::file_drop_should_copy();
+        // Windows: a drop from the same drive moves, as Explorer's does.
+        #[cfg(windows)]
+        let copy = false;
         cx.spawn(async move |this, cx| {
             let result = blocking::unblock(move || {
                 for source in paths {
@@ -928,11 +947,16 @@ impl Wallpaper {
             ..
         }) = &mut self.desk.drag
         {
+            // Dragging icons out to another app is Wayland's own drag on
+            // Lulo OS; Windows has none in GPUI yet.
+            #[cfg(target_os = "linux")]
             if !*external_started && near_target {
                 *external_started = gpui_linux::begin_external_file_drag(
                     self.desk.selection.iter().cloned().collect(),
                 );
             }
+            #[cfg(windows)]
+            let _ = (external_started, near_target);
         }
         cx.notify();
     }
@@ -956,7 +980,11 @@ impl Wallpaper {
                 rename_on_release,
                 ..
             } => {
-                if external_started || gpui_linux::external_file_drag_active() {
+                #[cfg(target_os = "linux")]
+                let external_drag = gpui_linux::external_file_drag_active();
+                #[cfg(windows)]
+                let external_drag = false;
+                if external_started || external_drag {
                     // Wayland's target owns the drop. The source receives a
                     // synthetic release when the compositor ends the drag.
                 } else if !moved {
@@ -1004,6 +1032,7 @@ impl Wallpaper {
                 let dx = f32::from(event.position.x - start.x);
                 let dy = f32::from(event.position.y - start.y);
                 if std::mem::take(&mut self.desk.reveal_click) && dx.hypot(dy) <= DRAG_THRESHOLD {
+                    #[cfg(target_os = "linux")]
                     super::reveal::wallpaper_clicked();
                 }
             }

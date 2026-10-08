@@ -1823,7 +1823,14 @@ fn get_system_subpixel_rendering() -> bool {
     }
 }
 
+/// rmac: see `crate::set_system_ui_font_family`.
+pub(crate) static SYSTEM_UI_FONT_OVERRIDE: std::sync::OnceLock<String> =
+    std::sync::OnceLock::new();
+
 fn get_system_ui_font_name() -> SharedString {
+    if let Some(family) = SYSTEM_UI_FONT_OVERRIDE.get() {
+        return family.clone().into();
+    }
     unsafe {
         let mut info: LOGFONTW = std::mem::zeroed();
         let font_family = if SystemParametersInfoW(

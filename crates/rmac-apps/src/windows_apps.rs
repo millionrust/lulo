@@ -65,6 +65,33 @@ pub const WINDOWS_APPS: [WindowsApp; 9] = [
     },
 ];
 
+/// Where the Windows shell keeps the Lulo apps' desktop entries and icons,
+/// laid out as Lulo OS's `/usr/share` (`applications/`,
+/// `icons/hicolor/scalable/apps/`, `rmac/dock/icons/`), so the Dock,
+/// Spotlight and the app catalogue read them exactly as on Lulo OS:
+/// `%LOCALAPPDATA%\Lulo\share`. `lulo-shell` writes it as it starts.
+pub fn data_home() -> Option<std::path::PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .map(|path| path.join("Lulo").join("share"))
+}
+
+/// The program a desktop entry starts (its `Exec`'s first word), for
+/// opening dropped files with that app.
+pub fn desktop_entry_program(entry: &std::path::Path) -> Option<std::path::PathBuf> {
+    let contents = std::fs::read_to_string(entry).ok()?;
+    let values = crate::desktop_group_named(&contents, "Desktop Entry");
+    let exec = values.get("Exec")?;
+    let exec = exec.trim();
+    let program = if let Some(quoted) = exec.strip_prefix('"') {
+        quoted.split('"').next()?
+    } else {
+        exec.split_whitespace().next()?
+    };
+    (!program.is_empty()).then(|| std::path::PathBuf::from(program))
+}
+
 /// The Lulo app whose executable is `file_name` (any case).
 pub fn app_for_exe(file_name: &str) -> Option<&'static WindowsApp> {
     WINDOWS_APPS

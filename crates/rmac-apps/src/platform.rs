@@ -78,18 +78,29 @@ pub(super) struct Environment {
 impl Environment {
     pub(super) fn current() -> Self {
         let home = std::env::var_os("HOME").map(PathBuf::from);
+        // Windows has no XDG data directories: the shell keeps the Lulo
+        // apps' desktop entries and icons in its own data home
+        // (`windows_apps::data_home`), laid out as on Lulo OS.
+        #[cfg(windows)]
+        let home_data = crate::windows_apps::data_home();
+        #[cfg(not(windows))]
+        let home_data = home.as_ref().map(|home| home.join(".local/share"));
         let data_home = std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
-            .or_else(|| home.as_ref().map(|home| home.join(".local/share")));
+            .or(home_data);
         let data_dirs = std::env::var_os("XDG_DATA_DIRS")
             .filter(|value| !value.is_empty())
             .map(|value| std::env::split_paths(&value).collect())
             .unwrap_or_else(|| {
-                vec![
-                    PathBuf::from("/usr/local/share"),
-                    PathBuf::from("/usr/share"),
-                ]
+                if cfg!(windows) {
+                    Vec::new()
+                } else {
+                    vec![
+                        PathBuf::from("/usr/local/share"),
+                        PathBuf::from("/usr/share"),
+                    ]
+                }
             });
         let desktops = std::env::var("XDG_CURRENT_DESKTOP")
             .unwrap_or_default()

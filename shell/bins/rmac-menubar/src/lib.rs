@@ -50,7 +50,9 @@ mod bar {
     use gpui_platform::application;
     use rmac_quick_settings_system::{Backend as _, SystemBackend};
     use rmac_shell_layer::layer::*;
-    use rmac_shell_layer::system::{self, PowerCommand};
+    use rmac_shell_layer::system;
+    #[cfg(windows)]
+    use rmac_shell_layer::system::PowerCommand;
     use rmac_shell_ui::tokens;
     use rmac_shell_ui::{
         app_display_name, delay_until_next_clock_tick, top_bar_active_app_name,
@@ -6257,7 +6259,8 @@ mod bar {
     }
 
     impl Render for MenuBackdrop {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            rmac_shell_layer::set_corner_radius(window, self.radius);
             div()
                 .size_full()
                 .rounded(px(self.radius))

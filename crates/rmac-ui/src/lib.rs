@@ -133,8 +133,13 @@ pub const MONO_FONT: &str = "JetBrains Mono";
 /// Wayland layer-shell integration (or, on Windows, Win32 and DirectX).
 pub fn application() -> gpui::Application {
     platform::prepare_environment();
+    #[cfg(windows)]
+    fonts_windows::prepare();
     gpui_platform::application()
 }
+
+#[cfg(windows)]
+mod fonts_windows;
 
 #[cfg(test)]
 mod tests;

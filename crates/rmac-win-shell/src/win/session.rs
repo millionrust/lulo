@@ -26,7 +26,7 @@ use windows::Win32::System::Threading::{
     SYNCHRONIZATION_SYNCHRONIZE,
 };
 
-use super::{appbar, desktop, folders, launch, registry, taskbar, user_name, windows_list};
+use super::{appbar, desktop, folders, handle, launch, registry, taskbar, user_name};
 
 /// What `lulo-shell` exits with when another Lulo layer already runs.
 const ALREADY_RUNNING: i32 = 3;
@@ -39,7 +39,7 @@ pub fn restore_windows_desktop() {
         if let Some(hwnd) = registry::get_dword(value) {
             // Windows looks the AppBar up by its handle, which is all a
             // dead window leaves behind.
-            appbar::remove(windows_list::handle(hwnd as isize));
+            appbar::remove(handle(hwnd as isize));
             registry::delete_value(value);
         }
     }

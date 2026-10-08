@@ -156,9 +156,7 @@ fn run(request: &Request) {
                 if pid != 0 {
                     // SAFETY: no pointers.
                     let _ = unsafe { AllowSetForegroundWindow(pid) };
-                    report(crate::model::apps::exe_key(
-                        &super::windows_list::process_path_uncached(pid),
-                    ));
+                    report(crate::model::apps::exe_key(&super::process_path(pid)));
                 }
             }
         }

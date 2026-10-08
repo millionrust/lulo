@@ -43,11 +43,34 @@ pub fn program(linux_path: &str) -> PathBuf {
     }
 }
 
+#[cfg(windows)]
+thread_local! {
+    static BEFORE_SESSION_END: std::cell::RefCell<Option<Box<dyn Fn()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `hook` just before a Restart, Shut Down or Log Out asks Windows to
+/// end the session (the Windows shell gives the taskbar back there).
+#[cfg(windows)]
+pub fn before_session_end(hook: impl Fn() + 'static) {
+    BEFORE_SESSION_END.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
 /// Carry out a power command. Lulo OS's views run their own session
 /// commands; this is Windows'.
 #[cfg(windows)]
 pub fn power(command: PowerCommand) {
     use crate::windows::power::{self, Command};
+    if matches!(
+        command,
+        PowerCommand::Restart | PowerCommand::ShutDown | PowerCommand::LogOut
+    ) {
+        BEFORE_SESSION_END.with(|slot| {
+            if let Some(hook) = slot.borrow().as_ref() {
+                hook();
+            }
+        });
+    }
     power::run(match command {
         PowerCommand::Sleep => Command::Sleep,
         PowerCommand::Restart => Command::Restart,

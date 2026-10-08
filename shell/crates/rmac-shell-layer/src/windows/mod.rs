@@ -105,11 +105,7 @@ pub fn on_placed(hook: impl Fn(isize, &str) + 'static) {
     PLACED_HOOKS.with(|hooks| hooks.borrow_mut().push(Rc::new(hook)));
 }
 
-fn run_hooks(
-    hooks: &'static std::thread::LocalKey<Hooks>,
-    raw: isize,
-    namespace: &str,
-) {
+fn run_hooks(hooks: &'static std::thread::LocalKey<Hooks>, raw: isize, namespace: &str) {
     let hooks = hooks.with(|hooks| hooks.borrow().clone());
     for hook in hooks {
         hook(raw, namespace);
@@ -652,23 +648,25 @@ fn usable_area(raw: isize, display: u64, mut area: Bounds<Pixels>) -> Bounds<Pix
 }
 
 fn place(raw: isize) {
-    let Some((layer, display, requested, blurred, focus, styled, strip)) = WINDOWS.with(|windows| {
-        windows
-            .borrow()
-            .iter()
-            .find(|window| window.hwnd == raw)
-            .map(|window| {
-                (
-                    window.layer.clone(),
-                    window.display,
-                    window.requested,
-                    window.blurred,
-                    window.focus,
-                    window.styled,
-                    window.strip,
-                )
-            })
-    }) else {
+    let Some((layer, display, requested, blurred, focus, styled, strip)) =
+        WINDOWS.with(|windows| {
+            windows
+                .borrow()
+                .iter()
+                .find(|window| window.hwnd == raw)
+                .map(|window| {
+                    (
+                        window.layer.clone(),
+                        window.display,
+                        window.requested,
+                        window.blurred,
+                        window.focus,
+                        window.styled,
+                        window.strip,
+                    )
+                })
+        })
+    else {
         return;
     };
     let hwnd = handle(raw);
@@ -700,10 +698,7 @@ fn place(raw: isize) {
     // As on wlr-layer-shell, a surface with no exclusive zone of its own
     // (0) keeps out of the others' zones: Spotlight's and Control Centre's
     // margins count from below the menu bar. A negative zone ignores them.
-    let display_bounds = if layer
-        .exclusive_zone
-        .is_none_or(|zone| zone.as_f32() == 0.0)
-    {
+    let display_bounds = if layer.exclusive_zone.is_none_or(|zone| zone.as_f32() == 0.0) {
         usable_area(raw, display, display_bounds)
     } else {
         display_bounds

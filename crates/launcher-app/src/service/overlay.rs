@@ -380,8 +380,7 @@ fn open_launcher(
         // (On Windows the layer takes the foreground once it is placed.)
         #[cfg(not(windows))]
         {
-            let active =
-                cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+            let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
             if let Some(active) = active {
                 let _ = active
                     .window

@@ -1,5 +1,9 @@
 //! rmac Finder — a functional macOS-style file manager. See SPEC.md.
 
+// A GUI app on Windows: no console window behind it (ADR 0023). Files had
+// none of this and opened a console window behind its own (WIN-OS-56).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod conflict;
 mod directory_state;
 mod file_ops;

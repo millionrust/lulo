@@ -909,15 +909,19 @@ def check_shell(
         else:
             print("shell: no desktop icon list view on this desktop; Explorer icon check skipped")
 
-        # 1c. The frosted backdrop behind the bar and the Dock.
+        # 1c. The frosted backdrop behind the bar, and none behind the Dock.
         frosted_expected = transparency_effects()
-        # The bar shows the wallpaper's colour through a plain blur; the
-        # Dock keeps acrylic.
+        # The bar shows the wallpaper's colour through a plain blur. In Lulo
+        # mode the Dock draws the wallpaper under its shelf itself and has
+        # no accent: acrylic ignored its rounded window region on a real
+        # Windows 11 PC and showed a dark box behind both ends (WIN-OS-49).
         for surface, name, kind, state in (
             ("Bar", "BarWindow", "blur", 3),
-            ("Dock", "DockWindow", "acrylic", ACCENT_ENABLE_ACRYLICBLURBEHIND),
+            ("Dock", "DockWindow", "none (Lulo mode)", None),
         ):
-            traced = log.wait_for(rf"^backdrop {surface}: (blur|acrylic|tint only)", 10.0)
+            traced = log.wait_for(
+                rf"^backdrop {surface}: (blur|acrylic|tint only|none \(Lulo mode\))", 10.0
+            )
             hwnd = shell_window(name)
             accent = accent_state(hwnd) if hwnd else None
             print(
@@ -926,14 +930,18 @@ def check_shell(
             )
             if traced is None:
                 failures.append(f"the {surface} reported no backdrop")
-            elif frosted_expected and traced.group(1) != kind:
-                failures.append(f"the {surface} has no {kind} backdrop although transparency effects are on")
-            if frosted_expected and accent is not None and accent != state:
+            elif (frosted_expected or state is None) and traced.group(1) != kind:
+                failures.append(f"the {surface} backdrop is {traced.group(1)}, not {kind}")
+            if state is not None and frosted_expected and accent is not None and accent != state:
                 failures.append(f"Windows reports accent {accent} behind the {surface}, not {kind}")
+            if state is None and accent in (3, ACCENT_ENABLE_ACRYLICBLURBEHIND):
+                failures.append(f"Windows still blurs behind the {surface} (accent {accent})")
         text = log.wait_for(r"^wallpaper (\d+)x(\d+) for (\d+)x(\d+), bar luminance ([\d.]+)", 15.0)
         print(f"shell: Lulo's wallpaper: {text.group(0) if text else 'not reported'}")
         if text is None:
             failures.append("the desktop reported no wallpaper")
+        else:
+            check_dock_corners(failures)
 
         # 1d. The Spotlight hotkey (free here) and the Dock's tiles.
         hotkey = log.wait_for(r"^spotlight hotkey (.+) \((first choice|fallback)\)", 5.0)
@@ -1221,6 +1229,10 @@ def check_shell(
         # 6d. Memory 30 s after one use of Spotlight and a menu.
         check_memory_after_use(log, shell_pid, measurements, failures)
 
+        # 6e. Every Lulo app opens inside the work area the bar and the
+        # Dock leave (WIN-OS-50).
+        check_app_placement(bin_dir, environment, screenshots, failures)
+
         # 7. Turning Lulo off gives the desktop back.
         stop_session(bin_dir, environment, session, failures)
         time.sleep(SETTLE_SECONDS)
@@ -1239,7 +1251,9 @@ def check_shell(
                 failures.append(
                     f"the desktop's icons are at {window_rect(list_view)} after Lulo, not {baseline_icons} as before"
                 )
-        if processes_named("lulo-shell.exe"):
+        # The icon helper (also lulo-shell.exe) ends when the shell's pipe
+        # to it closes, a moment after the shell itself.
+        if not wait_until(lambda: not processes_named("lulo-shell.exe"), 5.0):
             failures.append("lulo-shell kept running after --stop")
         after_stop = wait_until(lambda: not state_differences(baseline_state, desktop_state()), 5.0)
         if not after_stop:
@@ -1346,6 +1360,32 @@ def check_lulo_desktop(log: Log, shell_pid: int, failures: list[str]) -> int:
     if note is None or folder is None:
         failures.append("Lulo's desktop does not show the Desktop folder's items")
     return hwnd
+
+
+def check_dock_corners(failures: list[str]) -> None:
+    """Outside its rounded shelf the Dock's window must be clear: the
+    pixel in each corner of the window matches the wallpaper just beside
+    the window (WIN-OS-49: a dark box showed there on a real PC)."""
+    hwnd = shell_window("DockWindow")
+    if not hwnd:
+        failures.append("no Dock window recorded for the corner check")
+        return
+    time.sleep(1.0)
+    left, top, right, bottom = window_rect(hwnd)
+    corners = {
+        "top left": ((left + 1, top + 1), (left - 3, top + 1)),
+        "top right": ((right - 2, top + 1), (right + 2, top + 1)),
+        "bottom left": ((left + 1, bottom - 2), (left - 3, bottom - 2)),
+        "bottom right": ((right - 2, bottom - 2), (right + 2, bottom - 2)),
+    }
+    for name, (inside, outside) in corners.items():
+        corner, beside = pixel(*inside), pixel(*outside)
+        difference = max(abs(a - b) for a, b in zip(corner, beside))
+        print(f"shell: Dock {name} corner {corner}, wallpaper beside it {beside}")
+        if difference > 28:
+            failures.append(
+                f"the Dock's {name} corner is {corner}, not the wallpaper beside it {beside}"
+            )
 
 
 def check_window_shadow(hwnd: int, name: str, screenshots: Path | None, failures: list[str]) -> None:
@@ -1603,6 +1643,54 @@ def check_foreground(log: Log, profile: Path, screenshots: Path | None, opened: 
     time.sleep(1.0)
 
 
+PLACED_APPS = (
+    "rmac-system-settings",
+    "rmac-files",
+    "rmac-text-editor",
+    "rmac-notes",
+    "rmac-calculator",
+    "rmac-preview",
+    "rmac-clock",
+    "rmac-weather",
+    "rmac-terminal",
+)
+
+
+def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str]) -> None:
+    """Each Lulo app's first window lies inside the work area: below the
+    bar and above the Dock (System Settings once opened with its bottom
+    under the Dock on a 1366 × 768 PC)."""
+    area = work_area()
+    for app in PLACED_APPS:
+        exe = bin_dir / f"{app}.exe"
+        if not exe.is_file():
+            continue
+        for pid in processes_named(f"{app}.exe"):
+            terminate(pid)
+        process = subprocess.Popen([str(exe)], env=environment)
+        found = wait_until(lambda: app_window(f"{app}.exe"), 20.0)
+        time.sleep(1.5)
+        if found is None:
+            failures.append(f"{app} opened no window for the placement check")
+        else:
+            left, top, right, bottom = frame_bounds(found[1])
+            inside = left >= area[0] and top >= area[1] and right <= area[2] and bottom <= area[3]
+            print(
+                f"shell: {app} window {left},{top},{right},{bottom} in work area "
+                f"{area[0]},{area[1]},{area[2]},{area[3]}: {'inside' if inside else 'OUTSIDE'}"
+            )
+            if not inside:
+                save(screenshots, f"placement-{app}")
+                failures.append(f"{app} opened at {left},{top},{right},{bottom}, outside the work area {area}")
+        for pid in processes_named(f"{app}.exe"):
+            terminate(pid)
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        time.sleep(0.5)
+
+
 def check_memory_after_use(log: Log, shell_pid: int, measurements: dict, failures: list[str]) -> None:
     """lulo-shell's memory 30 s after one use of Spotlight and a menu, once
     both have let go of their windows (`LULO_PANEL_RELEASE_SECONDS`)."""
@@ -1776,7 +1864,9 @@ def check_exit_paths(
             session.wait(timeout=STEP_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             failures.append("lulo-session kept running after --uninstall")
-        if processes_named("lulo-shell.exe"):
+        # The icon helper (also lulo-shell.exe) ends when the shell's pipe
+        # to it closes, a moment after the shell itself.
+        if not wait_until(lambda: not processes_named("lulo-shell.exe"), 5.0):
             failures.append("lulo-shell kept running after --uninstall")
         print(f"shell: exit path uninstall: exit {result.returncode}, folder verb now {folder_verb()!r}")
         if folder_verb() == "LuloFiles" or lulo_record("FilesForFolders") is not None:

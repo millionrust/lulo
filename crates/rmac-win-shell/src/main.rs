@@ -7,6 +7,18 @@
 
 #[cfg(windows)]
 fn main() {
+    // The icon helper (`win::icons`): reads Windows icons for the shell in
+    // a process of its own, so the shell libraries never load into it.
+    // The Apps folder helper (`win::catalog`), for the same reason.
+    match std::env::args().nth(1).as_deref() {
+        Some(rmac_win_shell::win::icons::HELPER_SWITCH) => {
+            std::process::exit(rmac_win_shell::win::icons::run_helper())
+        }
+        Some(rmac_win_shell::win::catalog::APPS_HELPER_SWITCH) => {
+            std::process::exit(rmac_win_shell::win::catalog::run_apps_helper())
+        }
+        _ => {}
+    }
     std::process::exit(rmac_win_shell::run());
 }
 

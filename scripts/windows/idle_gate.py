@@ -123,6 +123,22 @@ def memory_failures(results: dict[str, dict], budget_mb: float) -> list[str]:
     return []
 
 
+def idle_private_failures(results: dict[str, dict], budget_mb: float | None) -> list[str]:
+    """lulo-shell's private bytes at idle over `budget_mb`. Private bytes,
+    not the working set, are what the owner's PC showed growing (107.8 MB
+    at start on a Radeon laptop while the working set read 9-20 MB after
+    the trims; WIN-OS-53). Only checked when the shell ran."""
+    shell = results.get("lulo-shell")
+    if shell is None or budget_mb is None:
+        return []
+    private = shell.get("idle_private_mb")
+    if private is None:
+        return ["lulo-shell: no idle private-memory reading"]
+    if private > budget_mb:
+        return [f"lulo-shell: {private:.1f} MB private at idle, over the budget of {budget_mb:g} MB"]
+    return []
+
+
 def after_use_failures(
     results: dict[str, dict], budget_mb: float | None, growth_mb: float | None
 ) -> list[str]:
@@ -188,6 +204,12 @@ def main() -> int:
         help="Also fail when lulo-shell's idle working set is over this many MB.",
     )
     parser.add_argument(
+        "--shell-idle-private-mb",
+        type=float,
+        default=None,
+        help="Fail when lulo-shell's private bytes at idle are over this many MB.",
+    )
+    parser.add_argument(
         "--shell-after-use-private-mb",
         type=float,
         default=None,
@@ -233,6 +255,7 @@ def main() -> int:
             f"after Spotlight: {shell.get('after_spotlight_working_set_mb')} MB"
         )
         failures += memory_failures(results, arguments.shell_memory_mb)
+    failures += idle_private_failures(results, arguments.shell_idle_private_mb)
     if (
         arguments.shell_after_use_private_mb is not None
         or arguments.shell_after_use_growth_mb is not None

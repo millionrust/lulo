@@ -137,8 +137,14 @@ jobs:
     outputs:
       filename: ${{ steps.build.outputs.filename }}
     steps:
+      # Full history (commits only, no trees or blobs beyond HEAD's): the
+      # MSI's version is <major>.<minor>.<commit count>
+      # (packaging/windows/msi_version.py, WIN-OS-54).
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          filter: tree:0
 
       - name: Download the built exes
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

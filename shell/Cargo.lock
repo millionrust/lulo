@@ -6489,6 +6489,7 @@ dependencies = [
  "gpui_linux",
  "gpui_platform",
  "libc",
+ "raw-window-handle",
  "rmac-app-menu",
  "rmac-appearance",
  "rmac-appearance-portal",

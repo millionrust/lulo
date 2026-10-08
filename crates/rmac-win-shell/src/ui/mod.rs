@@ -1,9 +1,11 @@
-//! The Lulo layer's surfaces: the menu bar, the Dock, Spotlight and the
-//! menu panels, all in one GPUI process (one Direct3D device and font
-//! collection for the lot, which keeps start-up and memory small).
+//! The Lulo layer's surfaces: the desktop, the menu bar, the Dock,
+//! Spotlight and the menu panels, all in one GPUI process (one Direct3D
+//! device and font collection for the lot, which keeps start-up and memory
+//! small).
 
 mod assets;
 mod bar;
+mod desktop;
 mod dock;
 mod menu;
 mod notice;
@@ -14,7 +16,7 @@ use std::fs::File;
 use std::io::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{
     point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, Entity, Global, RenderImage,
@@ -39,7 +41,8 @@ use crate::win::menubar_server::{self, MenuEvent, Server};
 use crate::win::status::{Battery, StatusEvent, Volume, Wifi};
 use crate::win::windows_list::{self, AppWindow};
 use crate::win::{
-    backdrop, catalog, desktop, icons, launch, memory, power, registry, surface, taskbar, trace,
+    backdrop, catalog, desktop as explorer_desktop, desktop_files, folders, icons, launch, memory,
+    power, registry, surface, taskbar, trace, wallpaper,
 };
 
 /// The menu bar's height, as the Mac's.
@@ -94,6 +97,20 @@ pub(crate) struct ShellState {
     pub bin_full: bool,
     /// Counts catalogue loads, so Spotlight searches again when one lands.
     pub catalog_generation: u64,
+    /// What the desktop's menus act on: how many icons are selected,
+    /// whether none of them is a folder, and the Sort By choice.
+    pub desktop_selected: usize,
+    pub desktop_only_files: bool,
+    pub desktop_sort: menus::DesktopSort,
+    /// Whether the bar's text is dark (over a light wallpaper), once the
+    /// wallpaper under it is known.
+    pub bar_dark_text: Option<bool>,
+    /// Whether folders everywhere open in Files (the Lulo menu's switch).
+    pub files_for_folders: bool,
+    /// The wallpaper under the bar and under the Dock's strip, blurred
+    /// (Lulo mode draws the Mac's materials over Lulo's own wallpaper).
+    pub bar_backdrop: Option<Arc<RenderImage>>,
+    pub dock_backdrop: Option<Arc<RenderImage>>,
 }
 
 impl ShellState {
@@ -120,6 +137,13 @@ impl ShellState {
             spotlight_open: false,
             bin_full: false,
             catalog_generation: 0,
+            desktop_selected: 0,
+            desktop_only_files: true,
+            desktop_sort: menus::DesktopSort::None,
+            bar_dark_text: None,
+            files_for_folders: folders::is_on(),
+            bar_backdrop: None,
+            dock_backdrop: None,
         }
     }
 
@@ -137,7 +161,7 @@ impl ShellState {
             })
             .collect::<std::collections::HashSet<_>>();
         self.icons
-            .retain(|source, _| shown.contains(source.as_str()));
+            .retain(|source, _| shown.contains(source.as_str()) || source.starts_with("desktop:"));
     }
 
     /// Read the window list again and rebuild the Dock's tiles.
@@ -210,7 +234,11 @@ impl ShellState {
                 Some((_, menus)) => menus.clone(),
                 None => menus::windows_app_menus(&front.name),
             },
-            None => menus::desktop_menus(),
+            None => menus::desktop_menus(
+                self.desktop_selected,
+                self.desktop_only_files,
+                self.desktop_sort,
+            ),
         }
     }
 
@@ -248,6 +276,15 @@ impl ShellState {
         if !self.icons.contains_key(source) {
             self.icons.insert(source.to_owned(), None);
             icons::request(source);
+        }
+    }
+
+    /// Ask, once, for a desktop item's icon at `pixels` (see
+    /// `icons::desktop_key`).
+    pub fn want_desktop_icon(&mut self, key: &str, path: &str, pixels: i32) {
+        if !self.icons.contains_key(key) {
+            self.icons.insert(key.to_owned(), None);
+            icons::request_desktop(key, path, pixels);
         }
     }
 
@@ -304,8 +341,23 @@ enum Signal {
     Stop,
 }
 
+/// An app the user just opened, whose next new window the shell brings to
+/// the front (WIN-OS-45): its executable's key, the windows it already had
+/// and how long to wait for a new one.
+struct PendingLaunch {
+    key: String,
+    known: Vec<isize>,
+    until: Instant,
+}
+
+/// How long a launch may take to show its first window and still be
+/// brought to the front.
+const LAUNCH_FRONT_WAIT: Duration = Duration::from_secs(15);
+
 pub(crate) struct Runtime {
     pub shell: Entity<ShellState>,
+    pub desktop: Option<Surface>,
+    pending_launch: Option<PendingLaunch>,
     pub bar: Option<Surface>,
     pub dock: Option<Surface>,
     pub spotlight: Option<Surface>,
@@ -410,7 +462,7 @@ fn restore_desktop(bar: Option<isize>, dock: Option<isize>, took_taskbar: bool) 
     if took_taskbar {
         taskbar::restore();
     }
-    desktop::restore();
+    explorer_desktop::restore();
     registry::delete_value("BarWindow");
     registry::delete_value("DockWindow");
 }
@@ -495,6 +547,96 @@ pub(crate) fn open_surface<V: gpui::Render + 'static>(
     })
 }
 
+/// Open Lulo mode's desktop window (hidden until it is placed): not
+/// topmost, out of Alt+Tab, kept just above Explorer's desktop.
+pub(crate) fn open_desktop_surface(bounds: Bounds<gpui::Pixels>, cx: &mut App) -> Option<Surface> {
+    let handle = cx
+        .open_window(options(bounds), move |window, cx| {
+            rmac_ui::prepare_surface_window(window, cx);
+            let view = cx.new(|cx| desktop::DesktopView::new(window, cx));
+            cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
+        })
+        .ok()?;
+    let any: AnyWindowHandle = handle.into();
+    let hwnd = any
+        .update(cx, |_, window, _| surface::hwnd(window))
+        .ok()
+        .flatten()?;
+    let raw = hwnd.0 as isize;
+    later(cx, move || {
+        surface::make_desktop_surface(windows_list::handle(raw))
+    });
+    Some(Surface {
+        handle: any,
+        hwnd: raw,
+    })
+}
+
+/// An app was just opened from the Dock, Spotlight or the desktop: bring
+/// its next new window to the front when it appears.
+fn expect_window(key: String, cx: &mut App) {
+    let known = shell(cx)
+        .read(cx)
+        .windows
+        .iter()
+        .filter(|window| apps::exe_key(&window.exe_path) == key)
+        .map(|window| window.hwnd)
+        .collect();
+    cx.global_mut::<Runtime>().pending_launch = Some(PendingLaunch {
+        key,
+        known,
+        until: Instant::now() + LAUNCH_FRONT_WAIT,
+    });
+    bring_launched_forward(cx);
+}
+
+/// If the app last opened has shown a new window, make sure it is in
+/// front: Windows leaves a new window behind the app in front when the
+/// app took too long to ask for the foreground itself (WIN-OS-45).
+fn bring_launched_forward(cx: &mut App) {
+    let Some(pending) = cx.global::<Runtime>().pending_launch.as_ref() else {
+        return;
+    };
+    if Instant::now() > pending.until {
+        cx.global_mut::<Runtime>().pending_launch = None;
+        return;
+    }
+    let found = shell(cx)
+        .read(cx)
+        .windows
+        .iter()
+        .find(|window| {
+            apps::exe_key(&window.exe_path) == pending.key && !pending.known.contains(&window.hwnd)
+        })
+        .map(|window| window.hwnd);
+    let Some(hwnd) = found else {
+        return;
+    };
+    let key = pending.key.clone();
+    cx.global_mut::<Runtime>().pending_launch = None;
+    later(cx, move || {
+        let before = windows_list::foreground();
+        if before != hwnd {
+            windows_list::activate(hwnd);
+        }
+        let front = windows_list::foreground() == hwnd;
+        trace(|| {
+            format!(
+                "launched {key} in front: {}",
+                if front {
+                    if before == hwnd {
+                        "by itself"
+                    } else {
+                        "brought forward"
+                    }
+                } else {
+                    "refused"
+                }
+            )
+        });
+    });
+}
+
 fn logical(rect: RECT, scale: f32) -> Bounds<gpui::Pixels> {
     Bounds {
         origin: point(px(rect.left as f32 / scale), px(rect.top as f32 / scale)),
@@ -530,7 +672,7 @@ fn hook_bar(hwnd: isize, signals: async_channel::Sender<Signal>, took_taskbar: b
                 if took_taskbar {
                     taskbar::restore();
                 }
-                desktop::restore();
+                explorer_desktop::restore();
             }
             None
         }),
@@ -564,18 +706,6 @@ fn place_bars(cx: &mut App) {
         if rect != current_bar {
             surface::show_at(windows_list::handle(bar.hwnd), rect);
             appbar::moved(windows_list::handle(bar.hwnd));
-            // The desktop's icons move clear of the bar, off the UI thread
-            // (Explorer answers in its own time), and once more a moment
-            // later, after Explorer has handled the new work area itself.
-            let bottom = rect.bottom;
-            blocking::unblock(move || desktop::make_room(bottom)).detach();
-            let executor = cx.background_executor().clone();
-            cx.background_executor()
-                .spawn(async move {
-                    executor.timer(Duration::from_secs(2)).await;
-                    desktop::make_room(bottom);
-                })
-                .detach();
         }
         let mut strip = RECT::default();
         if let Some(dock) = dock {
@@ -655,14 +785,27 @@ pub(crate) fn load_catalog(cx: &mut App) {
     if !load_apps && !load_files {
         return;
     }
-    let loaded = blocking::unblock(move || {
-        catalog::init_com();
-        let apps = load_apps.then(catalog::load_apps);
-        let files = load_files.then(catalog::load_files);
-        (apps, files)
-    });
+    // A thread of its own, which ends when the lists are read: the shell
+    // libraries the Apps folder enumeration pulls in keep per-thread COM
+    // state and caches, and those go with the thread instead of staying
+    // in a pool thread for good (WIN-OS-43).
+    let (sender, receiver) = async_channel::bounded(1);
+    let spawned = std::thread::Builder::new()
+        .name("lulo-catalog".into())
+        .spawn(move || {
+            catalog::init_com();
+            let apps = load_apps.then(catalog::load_apps);
+            let files = load_files.then(catalog::load_files);
+            let _ = sender.send_blocking((apps, files));
+            catalog::uninit_com();
+        });
+    if spawned.is_err() {
+        return;
+    }
     cx.spawn(async move |cx| {
-        let (apps, files) = loaded.await;
+        let Ok((apps, files)) = receiver.recv().await else {
+            return;
+        };
         shell.update(cx, |state, cx| {
             if let Some(apps) = apps {
                 trace(|| format!("catalog: {} apps", apps.len()));
@@ -730,6 +873,52 @@ pub(crate) fn run_shell_command(action: &str, cx: &mut App) {
             }
         }
         menus::TURN_OFF => quit(cx),
+        menus::FILES_FOR_FOLDERS => {
+            let on = !shell.read(cx).files_for_folders;
+            let files = launch::install_dir().join(launch::FILES_EXE);
+            let changed = if on {
+                files.is_file() && folders::turn_on(&files)
+            } else {
+                folders::turn_off();
+                true
+            };
+            trace(|| format!("files for folders {}", if on { "on" } else { "off" }));
+            if changed {
+                shell.update(cx, |state, cx| {
+                    state.files_for_folders = on;
+                    cx.notify();
+                });
+            }
+        }
+        menus::DESKTOP_NEW_WINDOW | menus::GO_RECENTS => launch::open(launch::Request::LuloWith(
+            launch::FILES_EXE.into(),
+            vec!["--recents".into()],
+        )),
+        menus::GO_DESKTOP | menus::GO_DOCUMENTS | menus::GO_DOWNLOADS | menus::GO_HOME => {
+            use windows::Win32::UI::Shell::{
+                FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, FOLDERID_Profile,
+            };
+            let id = match action {
+                menus::GO_DESKTOP => FOLDERID_Desktop,
+                menus::GO_DOCUMENTS => FOLDERID_Documents,
+                menus::GO_DOWNLOADS => FOLDERID_Downloads,
+                _ => FOLDERID_Profile,
+            };
+            if let Some(folder) = catalog::known_folder(&id) {
+                launch::open(launch::folder_request(&folder.to_string_lossy()));
+            }
+        }
+        menus::DESKTOP_CHANGE_WALLPAPER => launch::open(
+            if launch::install_dir().join(SYSTEM_SETTINGS_EXE).is_file() {
+                launch::Request::LuloWith(
+                    SYSTEM_SETTINGS_EXE.into(),
+                    vec!["--pane".into(), "wallpaper".into()],
+                )
+            } else {
+                launch::Request::Shell("ms-settings:personalization-background".into())
+            },
+        ),
+        action if menus::is_desktop_command(action) => desktop::command(action, cx),
         menus::OPEN_RECYCLE_BIN => {
             launch::open(launch::Request::Shell("shell:RecycleBinFolder".into()))
         }
@@ -840,6 +1029,9 @@ pub fn run() -> i32 {
     let (icon_tx, icon_rx) = async_channel::unbounded::<(String, Option<Arc<RenderImage>>)>();
     let (catalog_tx, catalog_rx) = async_channel::unbounded::<catalog::List>();
     let (signal_tx, signal_rx) = async_channel::unbounded::<Signal>();
+    let (launch_tx, launch_rx) = async_channel::unbounded::<launch::Launched>();
+    let (desktop_change_tx, desktop_change_rx) = async_channel::unbounded::<DesktopChange>();
+    launch::report_launches(launch_tx);
     let mut server = Some(server);
 
     rmac_ui::application()
@@ -855,6 +1047,8 @@ pub fn run() -> i32 {
             let took_taskbar = std::env::var_os("LULO_KEEP_TASKBAR").is_none();
             cx.set_global(Runtime {
                 shell: shell.clone(),
+                desktop: None,
+                pending_launch: None,
                 bar: None,
                 dock: None,
                 spotlight: None,
@@ -926,6 +1120,20 @@ pub fn run() -> i32 {
             }
             memory::report("bar and Dock opened");
             place_bars(cx);
+            // Lulo mode: Lulo's own desktop under every app window, with
+            // Explorer's desktop icons hidden while it shows.
+            desktop::open(cx);
+            {
+                let changes = desktop_change_tx.clone();
+                desktop_files::watch(move || {
+                    let _ = changes.try_send(DesktopChange::Items);
+                });
+                let changes = desktop_change_tx.clone();
+                wallpaper::watch(move || {
+                    let _ = changes.try_send(DesktopChange::Wallpaper);
+                });
+            }
+            memory::report("desktop opened");
             later(cx, || {
                 trace(|| format!("ready at {:.0} ms", crate::win::process_millis()));
                 memory::report("ready");
@@ -993,6 +1201,8 @@ pub fn run() -> i32 {
                     icons: icon_rx.clone(),
                     catalog: catalog_rx.clone(),
                     signals: signal_rx.clone(),
+                    launches: launch_rx.clone(),
+                    desktop_changes: desktop_change_rx.clone(),
                 },
             );
 
@@ -1012,12 +1222,23 @@ pub fn run() -> i32 {
     // Whatever stopped the loop, the desktop is the user's again.
     if !CLEANED_UP.load(Ordering::Acquire) {
         taskbar::restore();
-        desktop::restore();
+        explorer_desktop::restore();
     }
     0
 }
 
+/// A change the desktop must show.
+#[derive(Clone, Copy, Debug)]
+enum DesktopChange {
+    /// A name changed in a Desktop folder.
+    Items,
+    /// Lulo's settings file was written (perhaps a new wallpaper).
+    Wallpaper,
+}
+
 struct ReceiverSet {
+    launches: async_channel::Receiver<launch::Launched>,
+    desktop_changes: async_channel::Receiver<DesktopChange>,
     desktop: async_channel::Receiver<DesktopEvent>,
     menus: async_channel::Receiver<MenuEvent>,
     status: async_channel::Receiver<StatusEvent>,
@@ -1028,6 +1249,8 @@ struct ReceiverSet {
 
 fn spawn_receivers(cx: &mut App, shell: Entity<ShellState>, receivers: ReceiverSet) {
     let ReceiverSet {
+        launches,
+        desktop_changes,
         desktop,
         menus: menu_events,
         status,
@@ -1035,6 +1258,32 @@ fn spawn_receivers(cx: &mut App, shell: Entity<ShellState>, receivers: ReceiverS
         catalog: catalog_changes,
         signals,
     } = receivers;
+    cx.spawn(async move |cx| {
+        while let Ok(launched) = launches.recv().await {
+            cx.update(|cx| expect_window(launched.key, cx));
+        }
+    })
+    .detach();
+    cx.spawn(async move |cx| {
+        while let Ok(change) = desktop_changes.recv().await {
+            // Repeats that queued up meanwhile fold into this one.
+            let mut items = matches!(change, DesktopChange::Items);
+            let mut wallpaper = matches!(change, DesktopChange::Wallpaper);
+            while let Ok(change) = desktop_changes.try_recv() {
+                items |= matches!(change, DesktopChange::Items);
+                wallpaper |= matches!(change, DesktopChange::Wallpaper);
+            }
+            cx.update(|cx| {
+                if items {
+                    desktop::items_changed(cx);
+                }
+                if wallpaper {
+                    desktop::wallpaper_changed(cx);
+                }
+            });
+        }
+    })
+    .detach();
     {
         let shell = shell.clone();
         cx.spawn(async move |cx| {
@@ -1042,13 +1291,20 @@ fn spawn_receivers(cx: &mut App, shell: Entity<ShellState>, receivers: ReceiverS
                 match event {
                     // Surfaces redraw only when what they show changed: other
                     // apps' windows come and go all the time.
-                    DesktopEvent::Foreground(hwnd) => shell.update(cx, |state, cx| {
-                        let before = state.front_key();
-                        state.set_foreground(hwnd);
-                        if state.front_key() != before {
-                            cx.notify();
+                    DesktopEvent::Foreground(hwnd) => {
+                        if windows_list::is_desktop(hwnd) {
+                            // Explorer's desktop came forward (Win+D, a click
+                            // through): Lulo's goes back over it.
+                            cx.update(desktop::place);
                         }
-                    }),
+                        shell.update(cx, |state, cx| {
+                            let before = state.front_key();
+                            state.set_foreground(hwnd);
+                            if state.front_key() != before {
+                                cx.notify();
+                            }
+                        })
+                    }
                     DesktopEvent::WindowsChanged => {
                         let changed = shell.update(cx, |state, cx| {
                             let before = (state.tiles.clone(), state.front_key());
@@ -1062,6 +1318,7 @@ fn spawn_receivers(cx: &mut App, shell: Entity<ShellState>, receivers: ReceiverS
                         if changed {
                             cx.update(dock::place);
                         }
+                        cx.update(bring_launched_forward);
                     }
                     DesktopEvent::Hotkey => cx.update(spotlight::toggle),
                 }
@@ -1186,6 +1443,9 @@ fn spawn_receivers(cx: &mut App, shell: Entity<ShellState>, receivers: ReceiverS
                 });
             }
             cx.update(place_bars);
+            // The desktop follows the display, and a new Explorer's icons
+            // are hidden again.
+            cx.update(desktop::place);
         }
     })
     .detach();

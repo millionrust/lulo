@@ -9,6 +9,11 @@ publish = false
 [dependencies]
 notify.workspace = true
 rmac-storage.workspace = true
-rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+# The no-replace rename (renameat2's RENAME_NOREPLACE). Lulo mode's desktop
+# on Windows (rmac-win-shell) uses this crate's model too and renames with
+# MoveFileExW instead.
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true

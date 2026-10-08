@@ -1358,6 +1358,30 @@ fn set_viewport(device_context: &ID3D11DeviceContext, width: f32, height: f32) -
     viewport[0]
 }
 
+/// rmac: give back the GPU memory of windows that are gone (ADR 0023
+/// "Lulo mode", WIN-OS-43). Direct3D 11 destroys a released object only
+/// once nothing is bound to the pipeline that holds it and the immediate
+/// context has been flushed, and a renderer leaves its render target and
+/// atlas textures bound after it draws. When every remaining window is
+/// idle nothing draws again, so a closed window's swap chain and atlases
+/// stayed allocated for good: the Lulo layer's private memory grew with
+/// each panel it opened and let go of. Called after a window is
+/// destroyed, this unbinds everything, puts back the one piece of state
+/// renderers set only when they are made (the rasterizer state), flushes,
+/// and asks DXGI to trim what the driver kept for the device.
+pub(crate) fn release_unused_gpu_memory(devices: &DirectXDevices) {
+    unsafe {
+        devices.device_context.ClearState();
+    }
+    set_rasterizer_state(&devices.device, &devices.device_context).log_err();
+    unsafe {
+        devices.device_context.Flush();
+    }
+    if let Ok(dxgi_device) = devices.device.cast::<IDXGIDevice3>() {
+        unsafe { dxgi_device.Trim() };
+    }
+}
+
 #[inline]
 fn set_rasterizer_state(device: &ID3D11Device, device_context: &ID3D11DeviceContext) -> Result<()> {
     let desc = D3D11_RASTERIZER_DESC {

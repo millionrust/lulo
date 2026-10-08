@@ -13,14 +13,14 @@ use windows::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
 };
 use windows::Win32::System::Threading::{
-    GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
-    PROCESS_QUERY_LIMITED_INFORMATION,
+    AttachThreadInput, GetCurrentProcessId, GetCurrentThreadId, OpenProcess,
+    QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowLongPtrW,
-    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
-    IsZoomed, PostMessageW, SetForegroundWindow, ShowWindow, GA_ROOT, GWL_EXSTYLE, GW_OWNER,
-    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    BringWindowToTop, EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow, GetWindow,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
+    IsWindowVisible, IsZoomed, PostMessageW, SetForegroundWindow, ShowWindow, GA_ROOT, GWL_EXSTYLE,
+    GW_OWNER, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
 use crate::model::apps;
@@ -143,8 +143,15 @@ pub fn process_path(pid: u32) -> String {
     if let Some(path) = PROCESS_PATHS.with(|paths| paths.borrow().get(&pid).cloned()) {
         return path;
     }
+    let path = process_path_uncached(pid);
+    PROCESS_PATHS.with(|paths| paths.borrow_mut().insert(pid, path.clone()));
+    path
+}
+
+/// [`process_path`] without the UI thread's cache, for other threads.
+pub fn process_path_uncached(pid: u32) -> String {
     // SAFETY: opens the process for a name query only, and closes it.
-    let path = unsafe {
+    unsafe {
         OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
             .ok()
             .and_then(|process| {
@@ -161,9 +168,7 @@ pub fn process_path(pid: u32) -> String {
                     .map(|()| String::from_utf16_lossy(&buffer[..size as usize]))
             })
             .unwrap_or_default()
-    };
-    PROCESS_PATHS.with(|paths| paths.borrow_mut().insert(pid, path.clone()));
-    path
+    }
 }
 
 /// Every app window, front-most first.
@@ -382,7 +387,11 @@ pub fn foreground() -> isize {
     unsafe { GetForegroundWindow() }.0 as isize
 }
 
-/// Bring `hwnd` to the front, restoring it if it is minimised.
+/// Bring `hwnd` to the front, restoring it if it is minimised. The user
+/// asked for it (a click on the Dock, a key in Spotlight, a launch they
+/// started), so when Windows refuses the plain request because another
+/// app holds the foreground, the shell joins that app's input queue for
+/// the moment of the switch, as Alt+Tab does, and lets go at once.
 pub fn activate(hwnd: isize) {
     let hwnd = handle(hwnd);
     // SAFETY: acts on a window another app owns, as Alt+Tab does; the
@@ -391,7 +400,20 @@ pub fn activate(hwnd: isize) {
         if IsIconic(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
+        if SetForegroundWindow(hwnd).as_bool() && GetForegroundWindow() == hwnd {
+            return;
+        }
+        let front = GetForegroundWindow();
+        let front_thread = GetWindowThreadProcessId(front, None);
+        let own_thread = GetCurrentThreadId();
+        let attached = front_thread != 0
+            && front_thread != own_thread
+            && AttachThreadInput(own_thread, front_thread, true).as_bool();
+        let _ = BringWindowToTop(hwnd);
         let _ = SetForegroundWindow(hwnd);
+        if attached {
+            let _ = AttachThreadInput(own_thread, front_thread, false);
+        }
     }
 }
 

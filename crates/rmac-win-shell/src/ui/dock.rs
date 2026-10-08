@@ -9,8 +9,8 @@
 
 use gpui::{
     div, img, prelude::FluentBuilder as _, px, App, Context, Entity, InteractiveElement as _,
-    IntoElement, MouseButton, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Window,
+    IntoElement, MouseButton, ObjectFit, ParentElement as _, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Window,
 };
 use rmac_ui::{mac, IconSource};
 use windows::Win32::Foundation::RECT;
@@ -251,23 +251,44 @@ impl Render for DockView {
         );
         // Over Windows' blur the tint is light, as the Mac's Dock material;
         // without it (transparency effects off) it is nearly opaque.
+        // In Lulo mode the shelf draws the wallpaper under it, blurred, and
+        // its frosted tint over that, as the Mac's Dock.
+        let wallpaper = state.dock_backdrop.clone();
         let mut shelf_fill = mac::material_popover();
-        shelf_fill.a = if backdrop::frosted(Backdrop::Dock) {
+        shelf_fill.a = if backdrop::frosted(Backdrop::Dock) || wallpaper.is_some() {
             shelf_fill.a.min(0.45)
         } else {
             shelf_fill.a.max(0.85)
         };
+        let runtime = runtime(cx);
+        let (monitor, _) = surface::primary_monitor();
+        let scale = runtime.scale.max(0.5);
+        let shelf_left = (runtime.dock_rect.left - monitor.left) as f32 / scale;
+        let screen_width = (monitor.right - monitor.left) as f32 / scale;
         div()
             .id("lulo-dock")
             .role(Role::Toolbar)
             .aria_label("Dock")
             .size_full()
+            .relative()
+            .overflow_hidden()
             .px(px(PADDING))
             .flex()
             .items_center()
             .gap(px(GAP))
             .rounded(px(mac::radius_dock()))
-            .bg(shelf_fill)
+            .when_some(wallpaper, |shelf, image| {
+                shelf.child(
+                    img(image)
+                        .absolute()
+                        .left(px(-shelf_left))
+                        .top_0()
+                        .w(px(screen_width))
+                        .h(px(DOCK_HEIGHT))
+                        .object_fit(ObjectFit::Fill),
+                )
+            })
+            .child(div().absolute().inset_0().bg(shelf_fill))
             .border_1()
             .border_color(mac::separator())
             .children(children)

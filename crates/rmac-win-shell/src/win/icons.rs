@@ -1,6 +1,7 @@
-//! Windows apps' own icons for the Dock and Spotlight, as Explorer shows
-//! them (`IShellItemImageFactory`), read on a background thread and cached
-//! by the UI.
+//! Windows apps' own icons for the Dock, Spotlight and Lulo mode's
+//! desktop, as Explorer shows them (`IShellItemImageFactory`: a picture's
+//! thumbnail on the desktop, as the Finder shows one), read on a
+//! background thread and cached by the UI.
 
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -23,20 +24,29 @@ pub const ICON_PIXELS: i32 = 72;
 
 type Reply = async_channel::Sender<(String, Option<Arc<RenderImage>>)>;
 
-static WORKER: OnceLock<Mutex<Sender<String>>> = OnceLock::new();
+/// One icon to read: the key the reply carries, what to read, at what
+/// size, and whether a thumbnail of the contents may stand in.
+struct Ask {
+    key: String,
+    source: String,
+    pixels: i32,
+    thumbnail: bool,
+}
+
+static WORKER: OnceLock<Mutex<Sender<Ask>>> = OnceLock::new();
 
 /// Start the icon thread; each finished icon arrives on `replies` with
 /// the source it was asked for.
 pub fn start(replies: Reply) {
     let _ = WORKER.get_or_init(move || {
-        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        let (sender, receiver) = std::sync::mpsc::channel::<Ask>();
         let spawned = std::thread::Builder::new()
             .name("lulo-icons".into())
             .spawn(move || {
                 super::catalog::init_com();
-                while let Ok(source) = receiver.recv() {
-                    let image = load(&source).map(Arc::new);
-                    if replies.send_blocking((source, image)).is_err() {
+                while let Ok(ask) = receiver.recv() {
+                    let image = load(&ask.source, ask.pixels, ask.thumbnail).map(Arc::new);
+                    if replies.send_blocking((ask.key, image)).is_err() {
                         return;
                     }
                 }
@@ -52,8 +62,33 @@ pub fn start(replies: Reply) {
 /// looked for in the Windows folder) or a shell parsing name such as
 /// `shell:AppsFolder\…`.
 pub fn request(source: &str) {
+    send(Ask {
+        key: source.to_owned(),
+        source: source.to_owned(),
+        pixels: ICON_PIXELS,
+        thumbnail: false,
+    });
+}
+
+/// The cache key of a desktop item's icon at `pixels`.
+pub fn desktop_key(path: &std::path::Path, pixels: i32) -> String {
+    format!("desktop:{pixels}:{}", path.display())
+}
+
+/// Ask for a desktop item's icon (or its picture's thumbnail) at `pixels`;
+/// it arrives under `key` (see [`desktop_key`]).
+pub fn request_desktop(key: &str, path: &str, pixels: i32) {
+    send(Ask {
+        key: key.to_owned(),
+        source: path.to_owned(),
+        pixels,
+        thumbnail: true,
+    });
+}
+
+fn send(ask: Ask) {
     if let Some(worker) = WORKER.get().and_then(|worker| worker.lock().ok()) {
-        let _ = worker.send(source.to_owned());
+        let _ = worker.send(ask);
     }
 }
 
@@ -65,7 +100,7 @@ fn resolve(source: &str) -> String {
     format!(r"{windows}\{source}")
 }
 
-fn load(source: &str) -> Option<RenderImage> {
+fn load(source: &str, pixels: i32, thumbnail: bool) -> Option<RenderImage> {
     let path = HSTRING::from(resolve(source));
     // SAFETY: COM and GDI calls on objects this function creates and
     // releases; the pixel buffer is sized from the bitmap's own header.
@@ -75,10 +110,14 @@ fn load(source: &str) -> Option<RenderImage> {
         let bitmap = factory
             .GetImage(
                 SIZE {
-                    cx: ICON_PIXELS,
-                    cy: ICON_PIXELS,
+                    cx: pixels,
+                    cy: pixels,
                 },
-                SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
+                if thumbnail {
+                    SIIGBF_BIGGERSIZEOK
+                } else {
+                    SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK
+                },
             )
             .ok()?;
         let pixels = read_bitmap(bitmap);

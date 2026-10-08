@@ -5,9 +5,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, svg, Bounds, Context, Entity, InteractiveElement as _,
-    IntoElement, MouseButton, ParentElement as _, Pixels, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Window,
+    div, img, prelude::FluentBuilder as _, px, svg, Bounds, Context, Entity,
+    InteractiveElement as _, IntoElement, MouseButton, ObjectFit, ParentElement as _, Pixels,
+    Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
+    Subscription, Window,
 };
 use rmac_ui::mac;
 
@@ -26,17 +27,48 @@ pub(crate) struct BarView {
     _observe: Subscription,
 }
 
-/// The bar's tint: the regular material over Windows' blur, as the Mac's
-/// menu bar; without the blur (transparency effects off), opaque enough to
-/// read over any wallpaper.
-pub(crate) fn bar_fill() -> gpui::Hsla {
-    let mut fill = mac::material();
-    fill.a = if backdrop::frosted(Backdrop::Bar) {
-        fill.a.min(0.5)
-    } else {
-        fill.a.max(0.86)
-    };
-    fill
+/// The bar's tint. The Mac's menu bar shows the wallpaper's own colour
+/// through it with the text light or dark to suit (WIN-OS-47): over
+/// Windows' blur of Lulo's wallpaper the bar draws only a faint veil, dark
+/// under light text and light under dark text. Before the wallpaper is
+/// known it uses the material; without the blur (transparency effects
+/// off) it is opaque enough to read over anything.
+pub(crate) fn bar_fill(dark_text: Option<bool>, over_wallpaper: bool) -> gpui::Hsla {
+    let frosted = backdrop::frosted(Backdrop::Bar) || over_wallpaper;
+    match dark_text {
+        Some(dark_text) if frosted => {
+            let mut veil = if dark_text {
+                mac::white()
+            } else {
+                mac::black()
+            };
+            veil.a = if dark_text { 0.22 } else { 0.14 };
+            veil
+        }
+        _ => {
+            let mut fill = mac::material();
+            fill.a = if frosted {
+                fill.a.min(0.5)
+            } else {
+                fill.a.max(0.86)
+            };
+            fill
+        }
+    }
+}
+
+/// The bar's text and glyph colour: chosen from the wallpaper under the bar
+/// once it is known, else the appearance's text colour.
+pub(crate) fn bar_text(dark_text: Option<bool>) -> gpui::Hsla {
+    match dark_text {
+        Some(true) => {
+            let mut text = mac::black();
+            text.a = 0.85;
+            text
+        }
+        Some(false) => mac::white(),
+        None => mac::text(),
+    }
 }
 
 impl BarView {
@@ -70,7 +102,7 @@ impl BarView {
     }
 }
 
-fn status_glyph(path: &'static str, label: &'static str) -> impl IntoElement {
+fn status_glyph(path: &'static str, label: &'static str, colour: gpui::Hsla) -> impl IntoElement {
     div()
         .id(label)
         .h_full()
@@ -79,13 +111,17 @@ fn status_glyph(path: &'static str, label: &'static str) -> impl IntoElement {
         .items_center()
         .role(Role::Image)
         .aria_label(label)
-        .child(svg().path(path).size(px(15.0)).text_color(mac::text()))
+        .child(svg().path(path).size(px(15.0)).text_color(colour))
 }
 
 impl Render for BarView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.shell.read(cx);
         let open = state.open_menu;
+        let text = bar_text(state.bar_dark_text);
+        // The open title's highlight: the text colour, faint.
+        let mut highlight = text;
+        highlight.a = 0.2;
         let mut labels: Vec<SharedString> = vec!["Lulo".into()];
         labels.extend(
             state
@@ -105,7 +141,7 @@ impl Render for BarView {
                 .items_center()
                 .rounded(px(mac::radius_menu_item()))
                 .when(index == 1, |title| title.font_weight(mac::BOLD))
-                .when(open == Some(index), |title| title.bg(mac::hover()))
+                .when(open == Some(index), |title| title.bg(highlight))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |bar, _, _, cx| {
@@ -127,7 +163,7 @@ impl Render for BarView {
                     svg()
                         .path("status/rmac.svg")
                         .size(px(15.0))
-                        .text_color(mac::text()),
+                        .text_color(text),
                 )
             } else {
                 title.child(label)
@@ -188,18 +224,24 @@ impl Render for BarView {
                                 "status/battery.svg"
                             })
                             .size(px(18.0))
-                            .text_color(mac::text()),
+                            .text_color(text),
                     )
                     .into_any_element(),
             );
         }
         if let Some(wifi) = &state.wifi {
-            status.push(status_glyph(assets::wifi_glyph(wifi.bars), "Wi-Fi").into_any_element());
+            status.push(
+                status_glyph(assets::wifi_glyph(wifi.bars), "Wi-Fi", text).into_any_element(),
+            );
         }
         if let Some(volume) = state.volume {
             status.push(
-                status_glyph(assets::speaker_glyph(volume.level, volume.muted), "Sound")
-                    .into_any_element(),
+                status_glyph(
+                    assets::speaker_glyph(volume.level, volume.muted),
+                    "Sound",
+                    text,
+                )
+                .into_any_element(),
             );
         }
         status.push(
@@ -221,7 +263,7 @@ impl Render for BarView {
                     svg()
                         .path("status/spotlight.svg")
                         .size(px(14.0))
-                        .text_color(mac::text()),
+                        .text_color(text),
                 )
                 .into_any_element(),
         );
@@ -239,18 +281,40 @@ impl Render for BarView {
                 .into_any_element(),
         );
 
+        // In Lulo mode the bar draws the wallpaper under it, blurred, as the
+        // Mac's menu bar shows it, whatever Windows' own blur does.
+        let backdrop = state.bar_backdrop.clone();
+        let over_wallpaper = backdrop.is_some();
         div()
             .id("lulo-menu-bar")
             .role(Role::MenuBar)
             .aria_label("Menu bar")
             .size_full()
+            .relative()
             .flex()
             .items_center()
             .justify_between()
             .px(px(8.0))
-            .bg(bar_fill())
+            .when_some(backdrop, |bar, image| {
+                bar.child(
+                    img(image)
+                        .absolute()
+                        .inset_0()
+                        .size_full()
+                        .object_fit(ObjectFit::Fill),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .bg(bar_fill(state.bar_dark_text, true)),
+                )
+            })
+            .when(!over_wallpaper, |bar| {
+                bar.bg(bar_fill(state.bar_dark_text, false))
+            })
             .text_size(px(13.0))
-            .text_color(mac::text())
+            .text_color(text)
             .child(row)
             .child(
                 div()

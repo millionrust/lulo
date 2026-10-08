@@ -15,7 +15,9 @@
   app, file associations offered but not forced, version info resources, Files and the
   Lulo layer included alongside the seven apps, and an uninstaller that also clears
   Clock's scheduled tasks and restores the Windows desktop -- is on `op/win-installer`
-  (see "Installer" below). The rest of phases 2–5 needs owner approval and the hardware
+  (see "Installer" below). Lulo mode (Lulo's own desktop over Explorer's, Mac window
+  chrome, and every way out restoring Windows) is on `op/win-lulo-mode` (see "Lulo
+  mode"). The rest of phases 2–5 needs owner approval and the hardware
   and signing items under "What the owner must provide".
 - **Scope:** every crate under `crates/` and `shell/`, the workspace `Cargo.toml`,
   `deny.toml`, `.github/workflows/ci.yml`, `.github/workflows/windows-preview.yml`,
@@ -1334,6 +1336,204 @@ Proof, all in `scripts/windows/shell_smoke.py` on the `windows` job:
 - A second and third run with a helper process holding Alt+Space: the fallback, the
   one-time notice, Win+Space opening Spotlight in front, the magnifier opening Spotlight,
   Alt+Space still reaching the helper, and no notice on the next start.
+
+## Lulo mode (branch `op/win-lulo-mode`)
+
+### Decision
+
+The owner tried the Lulo layer on the Windows 11 laptop (1366×768, dark mode, a busy photo
+wallpaper) and called it "shit". The coordinator's re-test showed why: a thin layer over
+the Windows desktop always feels half-Windows. Explorer's photo wallpaper and its desktop
+icons showed between Lulo's bar and Dock, Lulo windows had no shadow or edge and looked
+flat, Spotlight opened as a large empty box, an app opened from Spotlight came up behind
+the Explorer window in front, and the menu bar read as a near-black strip.
+
+**Decision: Lulo mode.** When the user turns Lulo on, Lulo takes over the whole screen, so
+everything they see is Lulo's; turning it off gives Windows back exactly. Explorer stays the
+Windows shell (decision 1 still holds: Start, the tray, file associations, the sign-in and
+lock screens stay Explorer's and Windows'), but its desktop is covered:
+
+- **Lulo's desktop.** `lulo-shell` draws a desktop window over the whole primary screen,
+  just above Explorer's desktop layer and below every app window, with Lulo's wallpaper and
+  the user's Desktop folder as Lulo icons.
+- **Explorer's desktop icons hidden** while Lulo runs, recorded and restored like the
+  taskbar on every way out. The user's own wallpaper setting is never read or changed.
+- **Mac window chrome for every Lulo app**, in or out of Lulo mode: DWM's soft shadow,
+  rounded corners and a hairline edge in Lulo's own appearance.
+- **Folders open in Lulo's Files** from Lulo's own surfaces; making Files the folder
+  handler everywhere is a separate, opt-in, per-user switch.
+
+Rejected: parenting a Lulo window into Explorer's `WorkerW` (the "live wallpaper" trick).
+A child window of another process shares its input queue, so a busy Explorer would freeze
+Lulo's desktop, and the `WorkerW` layering changed in Windows 11 24H2. Hiding `Progman`
+itself was rejected too: Show Desktop and Explorer's own repaint logic expect it, and
+covering it costs nothing.
+
+### As built
+
+**The desktop window** (`ui/desktop.rs`, `win/desktop.rs`). A GPUI window of the shell's
+process, a tool window (out of Alt+Tab and the taskbar), not topmost. It is placed directly
+above the highest window of Explorer's desktop layer (`Progman`, or a top-level `WorkerW` of
+the shell's process) with `SetWindowPos(insert after the window above it)`, and its window
+procedure drops every other change of its z-order (`WM_WINDOWPOSCHANGING` gains
+`SWP_NOZORDER` unless the shell itself is placing it), so a click that activates it, or
+Windows bringing it forward, never lifts it over an app window. When Explorer's desktop
+comes to the foreground (Show Desktop, Win+D), on a display change and when Explorer
+restarts, the window is placed again. The bar and the Dock stay above it as AppBars.
+
+What it shows:
+
+- **The wallpaper** chosen in Lulo's System Settings ▸ Wallpaper, from the same store and
+  renderer Lulo OS uses (`rmac-shell-settings`, `rmac-wallpaper`, `rmac-wallpaper-image`):
+  the Lulo artwork, a gradient or the user's photo, in its light or dark form, decoded once
+  at the screen's size on a background thread (Fill as `ObjectFit::Cover`, Fit, Stretch,
+  Centre). A missing picture falls back to the file-free built-in. It is decoded again only
+  when the settings file changes (one thread parked on `FindFirstChangeNotification`), when
+  Lulo's appearance changes or when the screen's size does; the previous texture is given
+  back to the atlas.
+- **The Desktop folder** as Lulo icons, on Lulo OS's desktop model (`rmac-desktop`: the
+  Mac's grid from the top-right corner, saved places in `desktop.json`, Sort By, Clean Up,
+  the rename checks): the user's Desktop and the public Desktop (installers' shortcuts),
+  without hidden and system items, `.lnk`/`.url` names without their extension. Folders show
+  the Finder's folder artwork; everything else its Windows icon, a picture its thumbnail
+  (`IShellItemImageFactory`, on the icon thread). The folders are watched with change
+  notifications; nothing polls.
+- **The Mac's desktop behaviour:** click, Shift/Ctrl-click and the marquee select; a drag
+  leaves icons where they are dropped, or moves them into a folder they are dropped on;
+  a double-click or Ctrl+O opens (folders in Files, anything else with its Windows app);
+  Return or F2 renames in place (the stem selected, `MoveFileExW` without replace, the
+  Mac's alerts for a taken or invalid name); Delete or Ctrl+Backspace moves to the Recycle
+  Bin (`SHFileOperationW` with undo). Right-click opens the Finder's menus through the
+  shell's menu panel: Open, Move to Recycle Bin, Get Info (Windows' Properties), Rename,
+  Duplicate, Create Shortcut on icons; New Folder (named "untitled folder" and renamed at
+  once), Change Wallpaper… (Lulo Settings' Wallpaper pane), Sort By and Clean Up on the
+  wallpaper. With the desktop in front the bar shows Files' menus (Files, File, Edit, View,
+  Go) with the same commands, each enabled for what is selected.
+
+**Explorer's icons.** Explorer's desktop list view (`SHELLDLL_DefView` ▸ `SysListView32`) is
+hidden with `ShowWindowAsync` (never waiting on Explorer) after `DesktopIconsHidden` is
+recorded under `HKCU\Software\Lulo\Shell`, and shown again wherever the taskbar is
+restored. A user who already hides desktop icons is left alone. The list-view offset of
+WIN-OS-33 is no longer needed; a record of one from an older build is still undone.
+
+**Window chrome** (WIN-OS-42). GPUI draws app windows' title bars, so they have no caption
+and DWM gave them no shadow. `gpui_windows` extends the DWM frame one pixel into every
+non-popup window, which turns DWM's soft shadow on (the swap chain covers that pixel), and
+asks Windows 11 for rounded corners. `rmac-ui` sets the 1 px edge (`DWMWA_BORDER_COLOR`)
+from Lulo's appearance, the separator drawn 2.5× stronger over the window colour, when each
+window's root view is made and on every theme change; Lulo's appearance can differ from
+Windows', so `gpui_windows` cannot pick it. Shell surfaces get no DWM corner, border or (for
+panels and the desktop) shadow, since they draw their own shapes.
+
+**Spotlight** (WIN-OS-44). As on the Mac it opens as the search bar alone, a 640 × 56 pt
+pill, centred with its top at 20 % of the screen's height (the Mac's 190 of 956 pt), and the
+window grows with the results and shrinks back. The window is the panel plus a 24 pt clear
+margin for its shadow. Folders it finds open in Files.
+
+**The foreground** (WIN-OS-45). Before a launch the shell allows the foreground to any
+process (`ASFW_ANY`, at the click or key) and then to the new process itself; each launch
+is reported back to the UI with its executable (the spawned child, or `ShellExecuteExW`'s
+process). When that app's new window appears (the next window list read after a WinEvent),
+the shell brings it to the front itself if it is not already, joining the front window's
+input queue only for that call if Windows refuses the plain request: the user asked for
+this app. Dock clicks on running apps do the same. GPUI's own Alt-key trick in
+`activate_window` stays; it was not enough on its own when the app took longer than the
+grace period Windows gives a new process.
+
+**The menu bar** (WIN-OS-47). Over Lulo's wallpaper the bar uses a plain blur
+(`ACCENT_ENABLE_BLURBEHIND`) instead of acrylic, whose grey luminosity layer and noise made
+a dark photo near-black, and draws only a faint veil. The desktop measures the wallpaper
+strip under the bar when it decodes the picture (mean relative luminance, a bounded
+sample) and the bar's text, glyphs and open-title highlight are white over a dark strip and
+dark over a light one, as on the Mac. The Dock keeps acrylic. Height (24 pt), weights
+(regular titles, the app's name bold, 13 pt) and spacing are the Mac's as before.
+
+**Folders** (WIN-OS-46). The Dock, the desktop and Spotlight open folders in Files
+(`rmac-files --path`), Explorer only when Files is not installed beside the shell. The Lulo
+menu's Use Files for Folders (off by default) adds an "Open in Files" verb under the
+user's own `Software\Classes\Directory\shell` and `…\Drive\shell` and makes it the default,
+recording the default it replaced; turning it off removes the verb and puts that back.
+Nothing is written outside the user's hive.
+
+**Memory** (WIN-OS-43). The owner's release build grew from 49 MB private at start to 90 MB
+after one use of Spotlight and the menus, and CI showed that letting go of a panel's window
+gave back no private memory at all. Direct3D 11 destroys a released object only once
+nothing binds it and the immediate context has been flushed; a renderer leaves its render
+target, buffers and atlas textures bound after drawing, and with the bar and the Dock idle
+nothing drew or flushed again, so every closed panel's swap chain and atlases stayed. After
+each window is destroyed `gpui_windows` now clears the shared context's state, puts back
+the rasteriser state (the only state renderers set once rather than per draw), flushes and
+calls `IDXGIDevice3::Trim`. Spotlight's catalogue is read on a thread of its own that ends
+(with `CoUninitialize`) once the lists are read, so the shell libraries' per-thread state
+does not stay in a pool thread, and the trim after a release compacts every heap of the
+process, not only Rust's. CI measures lulo-shell 30 s after a second use of Spotlight and a
+menu (with the 3 s release delay) and gates the private bytes against the first-use
+reading (`idle_gate.py --shell-after-use-private-mb`, `--shell-after-use-growth-mb`).
+
+All shell surfaces are now plain popups (`WS_POPUP`): GPUI's pop-up windows are overlapped
+windows whose unpainted resize border showed as a black rim round the bar and the Dock and
+let Explorer's desktop show at the edges of Lulo's. In Lulo mode the bar and the Dock also
+draw the wallpaper strip under them themselves (shrunk 12× and drawn at full size, so it is
+the blurred picture), so their material shows Lulo's wallpaper whatever Windows' own blur
+does.
+
+**Every way out** (WIN-OS-48). Turn Off Lulo and `lulo-session --stop`; sign-out and
+shutdown (`WM_QUERYENDSESSION`/`WM_ENDSESSION` on the bar restore the taskbar and Explorer's
+icons before the session ends); a shell crash (`lulo-session` restores and starts it
+again); a crash of the whole layer (the next `lulo-session` restores before anything else);
+`lulo-session --restore-windows-desktop`, which now asks a running layer to turn off and
+waits for it first; and `lulo-session --uninstall`, which the MSI now runs before removing
+the files: the restore, plus turning off Use Files for Folders and Start Lulo at Sign-In so
+nothing points at a removed app.
+
+**Idle.** The desktop draws only when what it shows changes; it adds no timer, poll or
+frame to an idle shell.
+
+CI (`scripts/windows/shell_smoke.py`, the `windows` job) proves each part on the runner's
+desktop with real input:
+
+- **The desktop:** Lulo's desktop window covers the whole 1024×768 screen, is not
+  topmost, and sits above `Progman` in the z-order (18th of 72 top-level windows,
+  `Progman` 51st); after a click on the wallpaper it is active (the bar shows Files'
+  menus) and Notepad is still above it. Explorer's icon list view is hidden while Lulo
+  runs (`DesktopIconsHidden` recorded) and visible again after. The Desktop folder's items
+  appear (a folder, a note, and the runner's own shortcuts), a file added while Lulo runs
+  appears, a dragged icon stays where it is dropped, right-click opens the item menu,
+  Return/type/Return renames the file on disk, and a double-click on the folder opens it
+  in Files.
+- **Window chrome:** with Calculator over the desktop, the screen just outside its frame
+  darkens by 2 luminance steps (Windows Server's faint DWM shadow; window shadows are off
+  on the runner until the check turns them on), and DWM non-client rendering is on.
+- **Spotlight:** before typing its window is 104 px high (the 56 pt bar plus its shadow
+  margin), centred, its bar at y = 153 of 768; with results it grows to 175 px.
+- **The foreground:** Text Editor opened from the Dock and from Spotlight, each time with
+  a maximised File Explorer in front, is the foreground window and above Explorer.
+- **Memory** (debug build, WARP, which keeps swap chains and textures in the process's
+  own memory): lulo-shell 61.1 MB private at idle, 73.6 MB after the first use of
+  Spotlight (its catalogue and the shell libraries behind it load once), 70.6 MB 30 s
+  after a second use of Spotlight and a menu closed. Before the Direct3D release a closed
+  panel gave back nothing (48.4 → 48.2 MB in run 37729696352). `idle_gate.py` now fails
+  the job when the reading after use is more than 4 MB above the first-use reading or
+  over 80 MB.
+- **Every way out:** Turn Off, sign-out, a shell crash then Turn Off, a crash of the
+  whole layer then the next start, a crash then `--restore-windows-desktop`, and
+  `--uninstall` (after Use Files for Folders was turned on from the Lulo menu, which set
+  the folder verb to `LuloFiles`) each leave the work area, the taskbar's visibility and
+  state, Explorer's icons and the records exactly as before Lulo; after a crash of the
+  whole layer the records are there for the next start to undo.
+- **Idle:** lulo-shell 0 to 1 tick over the 20 s idle window with the desktop open (the
+  same gate as before).
+
+Screenshots are in the `windows-shell-screens` artifact (`shell-desktop-*`,
+`shell-spotlight-empty`, `shell-foreground-*`, `shell-window-shadow`, `shell-exit-*`).
+
+**Still open.** The owner's laptop numbers: the release build's private memory after use
+on the AMD GPU (where swap chains live in video memory rather than the process's), the
+look of the bar over the owner's own Lulo wallpaper, and the shadow at the laptop's real
+DWM settings are for the coordinator's re-test. Several monitors (Lulo's desktop covers
+the primary one only), Stacks, desktop widgets, View Options and dragging desktop items
+out to other apps are later slices. On Windows 10 the corners stay square and there is no
+hairline (the two attributes are Windows 11's).
 
 ## Phase plan
 

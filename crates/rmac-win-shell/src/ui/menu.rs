@@ -149,7 +149,11 @@ impl Render for MenuOverlay {
 fn items(index: usize, cx: &App) -> Option<(Vec<Item>, bool)> {
     let state = shell(cx).read(cx);
     if index == 0 {
-        let menu = menus::lulo_menu(&crate::win::user_name(), state.starts_at_sign_in);
+        let menu = menus::lulo_menu(
+            &crate::win::user_name(),
+            state.starts_at_sign_in,
+            state.files_for_folders,
+        );
         return Some((menu.items, false));
     }
     let app = state.front_is_lulo();
@@ -277,10 +281,13 @@ pub(crate) fn close(give_back: bool, cx: &mut App) {
             cx.notify();
         });
     }
+    // The app in front gets the keyboard back; with the desktop in front
+    // (Lulo mode), Lulo's desktop does.
+    let desktop = runtime(cx).desktop.map(|desktop| desktop.hwnd);
     let front = shell.update(cx, |state, cx| {
         state.open_menu = None;
         cx.notify();
-        state.front.as_ref().map(|front| front.hwnd)
+        state.front.as_ref().map(|front| front.hwnd).or(desktop)
     });
     super::later(cx, move || {
         if let Some(overlay) = overlay {

@@ -9,7 +9,11 @@ use std::rc::Rc;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+use windows::Win32::Graphics::Dwm::{
+    DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_BORDER_COLOR, DWMWA_CLOAK, DWMWA_COLOR_NONE,
+    DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+    DWMWINDOWATTRIBUTE,
+};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
 };
@@ -19,9 +23,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, CallWindowProcW, DefWindowProcW, GetForegroundWindow, GetWindowLongPtrW,
     GetWindowThreadProcessId, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, GWLP_WNDPROC,
-    GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
-    SWP_SHOWWINDOW, WM_MOUSEACTIVATE, WM_NCDESTROY, WNDPROC, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, WINDOWPOS, WM_MOUSEACTIVATE,
+    WM_NCDESTROY, WM_WINDOWPOSCHANGING, WNDPROC, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 
 /// The Win32 window behind a GPUI window.
@@ -33,10 +38,137 @@ pub fn hwnd(window: &gpui::Window) -> Option<HWND> {
     }
 }
 
+fn set_dword_attribute(hwnd: HWND, attribute: DWMWINDOWATTRIBUTE, value: u32) {
+    // SAFETY: a DWORD-sized attribute of a window this process owns;
+    // Windows 10 refuses the Windows 11 ones, which changes nothing.
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            attribute,
+            &value as *const u32 as *const core::ffi::c_void,
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+}
+
+/// No DWM frame at all: shell surfaces draw their own shapes, edges and
+/// shadows, so Windows 11's rounded corners, 1 px border and window shadow
+/// would outline their clear margins (Spotlight once showed a faint box
+/// round its whole window).
+pub fn plain(hwnd: HWND) {
+    set_dword_attribute(
+        hwnd,
+        DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_DONOTROUND.0 as u32,
+    );
+    set_dword_attribute(hwnd, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE);
+}
+
+/// [`plain`], and no DWM window shadow either (the panels and the desktop
+/// window; the bar and the Dock keep their blur set-up untouched).
+fn plain_without_shadow(hwnd: HWND) {
+    plain(hwnd);
+    set_dword_attribute(hwnd, DWMWA_NCRENDERING_POLICY, DWMNCRP_DISABLED.0 as u32);
+}
+
+/// Make `hwnd` a plain popup with no frame at all, so its client area is
+/// the whole window: GPUI's pop-up windows are overlapped windows, which
+/// keep a resize border the surface never paints (it showed as a black
+/// rim round the bar and the Dock, and Explorer's desktop at the edges of
+/// Lulo's).
+fn make_borderless(hwnd: HWND) {
+    // SAFETY: style bits on a window this process owns; the frame change is
+    // applied at once.
+    unsafe {
+        let kept = GetWindowLongPtrW(hwnd, GWL_STYLE)
+            & (WS_VISIBLE.0 | WS_CLIPCHILDREN.0 | WS_CLIPSIBLINGS.0) as isize;
+        SetWindowLongPtrW(hwnd, GWL_STYLE, kept | WS_POPUP.0 as isize);
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
+/// Lulo mode's desktop window: out of Alt+Tab and the taskbar like the
+/// other surfaces, but not topmost, and kept below every app window: any
+/// change of its place in the z-order it did not ask for itself (a click
+/// activating it, Windows bringing it forward) is dropped.
+pub fn make_desktop_surface(hwnd: HWND) {
+    // SAFETY: style bits on a window this process owns.
+    unsafe {
+        let mut style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        style |= WS_EX_TOOLWINDOW.0 as isize;
+        style &= !((WS_EX_APPWINDOW.0 | WS_EX_TOPMOST.0) as isize);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style);
+    }
+    make_borderless(hwnd);
+    plain_without_shadow(hwnd);
+    subclass(
+        hwnd,
+        Box::new(|_, message, _, lparam| {
+            if message == WM_WINDOWPOSCHANGING && lparam.0 != 0 && !super::desktop::own_placement()
+            {
+                // SAFETY: for WM_WINDOWPOSCHANGING, `lparam` points at the
+                // WINDOWPOS Windows is about to apply; changing its flags
+                // is how a window declines part of the change.
+                let position = unsafe { &mut *(lparam.0 as *mut WINDOWPOS) };
+                position.flags |= SWP_NOZORDER;
+            }
+            None
+        }),
+    );
+}
+
+/// Move and size `hwnd` (physical pixels) without changing its z-order or
+/// activating it (Spotlight growing with its results).
+pub fn set_bounds(hwnd: HWND, rect: RECT) {
+    // SAFETY: positions a window this process owns.
+    let _ = unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            rect.left,
+            rect.top,
+            rect.right - rect.left,
+            rect.bottom - rect.top,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+    };
+}
+
+/// Show `hwnd` at `rect` without activating it or changing its place in
+/// the z-order (the desktop window).
+pub fn show_in_place(hwnd: HWND, rect: RECT) {
+    // SAFETY: positions a window this process owns.
+    let _ = unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            rect.left,
+            rect.top,
+            rect.right - rect.left,
+            rect.bottom - rect.top,
+            SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW,
+        )
+    };
+}
+
 /// Keep `hwnd` above app windows and out of Alt+Tab and the taskbar. A
 /// surface that is not `activatable` never takes the foreground, so a
 /// click on the bar or the Dock leaves the app in front with the keyboard.
 pub fn make_shell_surface(hwnd: HWND, activatable: bool) {
+    make_borderless(hwnd);
+    if activatable {
+        plain_without_shadow(hwnd);
+    } else {
+        plain(hwnd);
+    }
     // SAFETY: style bits on a window this process owns.
     unsafe {
         let mut style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);

@@ -291,6 +291,12 @@ jobs:
     # bar's and the Dock's work-area strips, the Dock opening Calculator,
     # Calculator's menus in the bar, a maximised window between the two,
     # Spotlight on Alt+Space, and the taskbar and work area restored on exit.
+    # Lulo mode (ADR 0023 "Lulo mode"): Lulo's desktop under every window
+    # with Explorer's icons hidden, its icons opening, renaming and
+    # dragging, Lulo windows' shadow, Spotlight as the bar alone, apps
+    # opened in front of a maximised File Explorer, memory after use, and
+    # every way out (Turn Off, sign-out, crashes, uninstall) giving the
+    # desktop back.
     # Blocking. Each check step has `continue-on-error`, so one run reports
     # every kind of Windows breakage, and the last step ("Windows summary")
     # fails the job when any of them failed: a step's API conclusion reads
@@ -397,6 +403,10 @@ jobs:
       # 0025's parked frame loop; ADR 0023 phase 3), one World Clock minute
       # tick may cost Clock at most 3 (ADR 0023 phase 2e), and lulo-shell's
       # working set at idle must stay within 60 MB (8 GB PCs; WIN-OS-39).
+      # Lulo mode (ADR 0023 "Lulo mode", WIN-OS-43): 30 s after one use of
+      # Spotlight and a menu again, lulo-shell's private bytes must be
+      # within the budget and close to their reading after the first use
+      # (closed panels give their Direct3D memory back each time).
       # The runner's software GPU (WARP) is counted apart: idle_gate.py. A
       # missing results file or an expected app without a reading fails.
       - name: Idle gate
@@ -404,6 +414,7 @@ jobs:
         run: >-
           python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1
           --exempt rmac-terminal --max-world-tick-ticks 3 --shell-memory-mb 60
+          --shell-after-use-private-mb 80 --shell-after-use-growth-mb 4
           --expect rmac-calculator rmac-notes rmac-text-editor rmac-preview rmac-clock
           rmac-weather rmac-terminal rmac-files rmac-system-settings lulo-shell lulo-session
 

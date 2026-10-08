@@ -249,7 +249,9 @@ mod tests {
             pid: 42,
             error: "Permission denied (os error 13)".into(),
         };
-        assert!(unreadable.to_string().contains("/proc/42/exe: Permission denied"));
+        assert!(unreadable
+            .to_string()
+            .contains("/proc/42/exe: Permission denied"));
         let other = Refusal::NotLulo {
             pid: 7,
             executable: PathBuf::from("/usr/bin/python3"),
@@ -297,29 +299,45 @@ mod tests {
             let pidfd = pidfd_open(me);
             // This test binary is trusted only when listed.
             assert_eq!(
-                check(own, Some(me), Some(pidfd.as_fd()), std::slice::from_ref(&exe)),
+                check(
+                    own,
+                    Some(me),
+                    Some(pidfd.as_fd()),
+                    std::slice::from_ref(&exe)
+                ),
                 Ok(exe.clone())
             );
-            assert_eq!(check(own, None, Some(pidfd.as_fd()), std::slice::from_ref(&exe)), Ok(exe.clone()));
-            assert_eq!(check(own, Some(me), None, std::slice::from_ref(&exe)), Ok(exe.clone()));
+            assert_eq!(
+                check(own, None, Some(pidfd.as_fd()), std::slice::from_ref(&exe)),
+                Ok(exe.clone())
+            );
+            assert_eq!(
+                check(own, Some(me), None, std::slice::from_ref(&exe)),
+                Ok(exe.clone())
+            );
             assert!(matches!(
                 check(own, Some(me), Some(pidfd.as_fd()), &trusted_programs()),
                 Err(Refusal::NotLulo { .. })
             ));
             assert_eq!(
-                check(own.map(|uid| uid + 1), Some(me), Some(pidfd.as_fd()), &[exe.clone()]),
+                check(
+                    own.map(|uid| uid + 1),
+                    Some(me),
+                    Some(pidfd.as_fd()),
+                    std::slice::from_ref(&exe)
+                ),
                 Err(Refusal::OtherUser(own.unwrap_or(0) + 1))
             );
             assert!(matches!(
-                check(None, Some(me), None, &[exe.clone()]),
+                check(None, Some(me), None, std::slice::from_ref(&exe)),
                 Err(Refusal::NoCredentials(_))
             ));
             assert!(matches!(
-                check(own, None, None, &[exe.clone()]),
+                check(own, None, None, std::slice::from_ref(&exe)),
                 Err(Refusal::NoCredentials(_))
             ));
             assert_eq!(
-                check(own, Some(me + 1), Some(pidfd.as_fd()), &[exe.clone()]),
+                check(own, Some(me + 1), Some(pidfd.as_fd()), std::slice::from_ref(&exe)),
                 Err(Refusal::ProcessMismatch {
                     reported: me + 1,
                     pidfd: me

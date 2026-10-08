@@ -181,7 +181,11 @@ async fn authorize(header: &Header<'_>, connection: &Connection) -> Result<(), S
     let credentials = bus
         .get_connection_credentials(zbus::names::BusName::Unique(sender.clone()))
         .await
-        .map_err(|_| refuse(Refusal::NoCredentials("the bus did not give its credentials")))?;
+        .map_err(|_| {
+            refuse(Refusal::NoCredentials(
+                "the bus did not give its credentials",
+            ))
+        })?;
     crate::caller::check(
         credentials.unix_user_id(),
         credentials.process_id(),

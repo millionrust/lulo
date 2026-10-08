@@ -942,7 +942,9 @@ fn intelligence_starts_on_demand_capped_and_offline() {
         "IPCNamespacePath=",
     ] {
         assert!(
-            !unit.lines().any(|line| line.trim_start().starts_with(option)),
+            !unit
+                .lines()
+                .any(|line| line.trim_start().starts_with(option)),
             "{option} would hide the callers from the caller check"
         );
     }

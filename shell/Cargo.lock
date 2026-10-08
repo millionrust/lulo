@@ -5525,6 +5525,7 @@ dependencies = [
  "futures-util",
  "rmac-apps",
  "rmac-locale",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -5662,6 +5663,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-compositor-system"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "blocking",
+ "futures-util",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "windows 0.61.3",
+]
+
+[[package]]
 name = "rmac-dbus"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -5734,7 +5748,7 @@ dependencies = [
  "rmac-appearance-portal",
  "rmac-apps",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-display",
  "rmac-dock",
  "rmac-dock-system",
@@ -5756,7 +5770,7 @@ dependencies = [
  "rmac-app-launch",
  "rmac-apps",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-dock",
  "rmac-icon",
  "rmac-locale",
@@ -5946,6 +5960,7 @@ dependencies = [
  "rmac-places",
  "sha2 0.10.9",
  "trash",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6079,6 +6094,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-desktop",
  "rmac-dock",
  "rmac-dock-runtime",
@@ -6139,9 +6155,11 @@ dependencies = [
  "futures-util",
  "gpui",
  "gpui_platform",
+ "raw-window-handle",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6172,6 +6190,7 @@ dependencies = [
  "rmac-bluetooth",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-desktop",
  "rmac-dock",
  "rmac-dock-runtime",
@@ -6272,7 +6291,7 @@ dependencies = [
  "rmac-audio",
  "rmac-bluetooth",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-focus-linux",
  "rmac-focus-runtime",
  "rmac-network",
@@ -6284,6 +6303,8 @@ dependencies = [
  "rmac-shell-status",
  "rmac-shell-status-linux",
  "rmac-sound",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -6378,6 +6399,7 @@ dependencies = [
  "rmac-calendar-agent",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-desktop",
  "rmac-desktop-widgets",
  "rmac-dock",
@@ -6488,6 +6510,7 @@ dependencies = [
  "gpui-component-assets",
  "gpui_linux",
  "gpui_platform",
+ "gpui_windows",
  "libc",
  "raw-window-handle",
  "rmac-app-menu",
@@ -6544,7 +6567,7 @@ dependencies = [
  "rmac-appearance",
  "rmac-appearance-portal",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-shell-settings",
  "rmac-theme",
  "rmac-wallpaper",

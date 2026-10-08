@@ -705,6 +705,12 @@ fn workspace_for(index: usize) -> domain::WorkspaceId {
 }
 
 fn read_snapshot() -> domain::Snapshot {
+    // For the Windows CI checks: how often the window list is read.
+    static READS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let reads = READS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
+        eprintln!("lulo-shell: window list read {reads}");
+    }
     // SAFETY: no arguments.
     let own_pid = unsafe { GetCurrentProcessId() };
     let monitors = monitors();

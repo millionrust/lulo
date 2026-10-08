@@ -755,6 +755,10 @@ fn start_status(cx: &mut App) -> Entity<WallpaperStatus> {
                     rmac_wallpaper_runtime::Update::Render {
                         rasterized, health, ..
                     } => {
+                        #[cfg(windows)]
+                        rmac_shell_layer::windows::trace::trace(|| {
+                            format!("wallpaper rendered {} surfaces", rasterized.surfaces.len())
+                        });
                         let (surfaces, colors) = blocking::unblock(move || {
                             let mut prepared = BTreeMap::new();
                             let mut outputs = BTreeMap::new();

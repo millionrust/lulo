@@ -916,6 +916,12 @@ def check_shell(
             print(f"shell: Spotlight {'opened' if found else 'did not open'} Notepad from the Apps folder")
             if found:
                 opened.append("notepad.exe")
+            elif log.wait_for(r"^spotlight hidden", 0.5, after=before) is None:
+                # Nothing to open (the runner's Apps folder may have no
+                # Notepad): close Spotlight as the user would.
+                tap(VK_ESCAPE)
+        if log.wait_for(r"^spotlight hidden", 5.0, after=before) is None:
+            failures.append("Spotlight did not close")
         catalog = log.last(r"^catalog: (\d+) apps")
         print(f"shell: Spotlight's catalogue: {catalog.group(1) if catalog else '?'} apps")
 

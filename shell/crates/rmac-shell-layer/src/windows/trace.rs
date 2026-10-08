@@ -94,6 +94,8 @@ pub fn memory(phase: &str) {
         return;
     }
     if let Some((working_set, private)) = memory_mb() {
-        trace(|| format!("memory {phase}: working set {working_set:.1} MB, private {private:.1} MB"));
+        trace(|| {
+            format!("memory {phase}: working set {working_set:.1} MB, private {private:.1} MB")
+        });
     }
 }

@@ -8,9 +8,9 @@ mod service;
 mod view;
 
 pub use assets::{asset, asset_names};
-pub use service::{open_scene, start};
 #[cfg(not(target_os = "linux"))]
 pub use service::toggle;
+pub use service::{open_scene, start};
 
 /// Run the launcher as its own process, answering its shortcut endpoint.
 pub fn run() {

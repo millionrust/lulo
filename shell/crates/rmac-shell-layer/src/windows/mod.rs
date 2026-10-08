@@ -784,7 +784,11 @@ fn place(raw: isize) {
             // The first placement stacks the surface (newest on top, as
             // layer surfaces of one layer stack); placing it again (a
             // display change, a new size) keeps its place.
-            let order = if styled { SWP_NOZORDER } else { Default::default() };
+            let order = if styled {
+                SWP_NOZORDER
+            } else {
+                Default::default()
+            };
             // SAFETY: positions a window this process owns.
             let _ = unsafe {
                 SetWindowPos(

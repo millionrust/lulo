@@ -5348,10 +5348,12 @@ mod dock {
                     }
                 }
                 let kept = if cfg!(windows) {
-                    self.windows.get(&uuid).and_then(|(current, foreground, _)| {
-                        (!current.needs_new_surface(&surface))
-                            .then_some((current.overview_visible, *foreground))
-                    })
+                    self.windows
+                        .get(&uuid)
+                        .and_then(|(current, foreground, _)| {
+                            (!current.needs_new_surface(&surface))
+                                .then_some((current.overview_visible, *foreground))
+                        })
                 } else {
                     kept
                 };

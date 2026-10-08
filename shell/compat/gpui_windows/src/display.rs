@@ -122,6 +122,14 @@ impl WindowsDisplay {
             .collect()
     }
 
+    /// rmac: the monitor's whole area and its work area (less the taskbar
+    /// and any AppBars, such as Lulo's menu bar and Dock), in physical
+    /// pixels, read now rather than when this display was listed.
+    pub(crate) fn monitor_and_work_area(&self) -> Option<(RECT, RECT)> {
+        let info = get_monitor_info(self.handle).log_err()?;
+        Some((info.monitorInfo.rcMonitor, info.monitorInfo.rcWork))
+    }
+
     pub fn physical_bounds(&self) -> Bounds<DevicePixels> {
         self.physical_bounds
     }

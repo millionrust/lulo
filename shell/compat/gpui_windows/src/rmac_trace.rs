@@ -66,12 +66,40 @@ pub(crate) fn since_process_start_ms() -> f64 {
     now.saturating_sub(created) as f64 / 10_000.0
 }
 
-/// One start-up phase reached.
+/// This process's private bytes in MB, for the start-up trace: on a real
+/// GPU the driver's per-window objects land here (WIN-OS-53).
+fn private_mb() -> f64 {
+    use windows::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
+    };
+    let mut counters = PROCESS_MEMORY_COUNTERS_EX {
+        cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: the EX structure is passed with its own size, as the call
+    // allows; the pseudo handle needs no closing.
+    let ok = unsafe {
+        K32GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            &mut counters as *mut PROCESS_MEMORY_COUNTERS_EX as *mut PROCESS_MEMORY_COUNTERS,
+            counters.cb,
+        )
+    }
+    .as_bool();
+    if ok {
+        counters.PrivateUsage as f64 / 1_048_576.0
+    } else {
+        0.0
+    }
+}
+
+/// One start-up phase reached, with the private bytes at that moment.
 pub(crate) fn startup(phase: &str) {
     if startup_enabled() {
         eprintln!(
-            "gpui_windows startup: {phase} at {:.1} ms",
-            since_process_start_ms()
+            "gpui_windows startup: {phase} at {:.1} ms, private {:.1} MB",
+            since_process_start_ms(),
+            private_mb()
         );
     }
 }

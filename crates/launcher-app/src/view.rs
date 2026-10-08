@@ -102,7 +102,7 @@ impl BrowseMode {
     }
 }
 
-fn requested_browse_mode(event: &rmac_shortcuts::Event) -> Option<BrowseMode> {
+pub(crate) fn requested_browse_mode(event: &rmac_shortcuts::Event) -> Option<BrowseMode> {
     match event {
         rmac_shortcuts::Event::Activated { id, .. } if id.0 == "app-drawer" => {
             Some(BrowseMode::Applications)
@@ -184,8 +184,13 @@ impl LauncherView {
                     value.is_empty() && this.browse_mode.is_none() && this.panel.is_none();
                 if this.compact != compact {
                     this.compact = compact;
-                    let _ = cx.update_window(window_handle, |_, window, _| {
+                    let token = this.token;
+                    let _ = cx.update_window(window_handle, |_, window, cx| {
                         set_compact(window, compact);
+                        #[cfg(target_os = "linux")]
+                        service::follow_compact(token, compact, cx);
+                        #[cfg(not(target_os = "linux"))]
+                        let _ = cx;
                     });
                 }
                 if let Some(request) = this.coordinator.set_query(value) {
@@ -454,7 +459,7 @@ impl LauncherView {
         self.panel = None;
         self.application_options_open = false;
         self.compact = false;
-        set_compact(window, false);
+        self.update_compact(window, false, cx);
         self.ensure_browse_selection();
         cx.notify();
     }
@@ -569,7 +574,7 @@ impl LauncherView {
         let compact = text.is_empty() && self.browse_mode.is_none() && self.panel.is_none();
         if self.compact != compact {
             self.compact = compact;
-            set_compact(window, compact);
+            self.update_compact(window, compact, cx);
         }
         if let Some(request) = self.coordinator.set_query(text) {
             self.dispatch(request, cx);
@@ -633,6 +638,28 @@ impl LauncherView {
                 .detach();
             }
         }
+    }
+
+    /// [`set_compact`], and move the outside-click catcher's hole with it
+    /// (`service::follow_compact`), so it keeps matching the bar's real
+    /// rectangle instead of the wrong, vertically centred one
+    /// `route_activation` fixed alongside this (UIA catcher audit).
+    /// Spotlight's own window maps after the catcher and already claims
+    /// real presses inside its current input region first, so this has
+    /// not been shown to change what a click does today; it is still
+    /// worth keeping correct, the way a window order change elsewhere
+    /// could make it matter the way it already does for Control Centre.
+    pub(crate) fn update_compact(
+        &mut self,
+        window: &mut Window,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) {
+        set_compact(window, compact);
+        #[cfg(target_os = "linux")]
+        service::follow_compact(self.token, compact, cx);
+        #[cfg(not(target_os = "linux"))]
+        let _ = cx;
     }
 }
 

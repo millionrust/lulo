@@ -737,15 +737,21 @@ Writing Tools, voice and the Lulo panel stay in later phases.
     nothing polls. A request while turned off, unsupported, short of memory or without a model
     is answered with that error and the process exits a second later.
   - Re-reads the on/off setting on every request, so turning it off takes effect at once.
-  - Caller check: same uid (`GetConnectionUnixUser`), and the caller's `/proc/<pid>/exe` must
-    be an `rmac-*` program in `/usr/libexec/rmac`, `/usr/bin` or the service's own directory.
+  - Caller check (revised 2026-10-08, see "The caller-check fix" below): one
+    `GetConnectionCredentials` call gives the uid, pid and, where the bus has one, a pidfd;
+    same uid only. The caller's `/proc/<pid>/exe` must then be one of an explicit list:
+    `/usr/libexec/rmac/rmac-launcher` (Spotlight), `/usr/bin/rmac-system-settings`, or
+    `rmac-launcher`, `rmac-system-settings` and the unpackaged `rmac-intelligence-bench` beside
+    the service itself. No other `/usr/bin` program passes. Every refusal fails closed and
+    logs the sender and the reason.
   - Loads only a model whose size and SHA-256 match the manifest; a verified-stamp (size,
     mtime, inode) avoids re-hashing on every load.
   - Requires `MemAvailable` ≥ the tier's budget + 768 MiB before loading.
   - The unit sets `MemoryHigh=2G`, `MemoryMax=2560M`, `MemorySwapMax=0`,
     `RestrictAddressFamilies=AF_UNIX`, `NoNewPrivileges=yes`, `CPUWeight=50`,
     `IOSchedulingClass=idle`, plus `LockPersonality`, `RestrictRealtime`,
-    `SystemCallArchitectures=native`, `PrivateTmp` and `UMask=0077`. One static unit cannot
+    `SystemCallArchitectures=native` and `UMask=0077`, and no mount-namespace option (no
+    `PrivateTmp`; see the caller-check fix below). One static unit cannot
     follow the tier, so the caps are the Standard tier's; Tiny stays far below them, and the
     free-memory gate uses the chosen tier's own budget. A per-tier drop-in is phase 2.
   - llama.cpp is built from source by `llama-cpp-2` 0.1.158 (CPU only, no OpenMP, no "common"
@@ -890,6 +896,33 @@ Return switched it to Dark and closed Spotlight, and the service exited once idl
 instead of placing it beside the service, as installs do, and no row appeared then; the cause
 was not fully pinned down (the service and Spotlight now log why an answer is missing). It
 also runs in Lulo runtime CI as the `spotlight-intents` check.
+
+**The caller-check fix (2026-10-08).** The installed build (dev 952bb9ab) never answered: every
+request from Spotlight and System Settings was refused with "the caller cannot be checked".
+Cause: the unit's `PrivateTmp=yes`. In a user unit any mount-namespace option makes systemd
+run the service in its own user namespace (`PrivateUsers=self`; the kernel log shows
+`userns_create … comm="(rmac-intellig)"`, and on Ubuntu the process then runs under the
+`unprivileged_userns` AppArmor profile). Reading another process's `/proc/<pid>/exe` is a
+ptrace read, and the kernel grants it to a same-user reader only from the target's own user
+namespace or from an ancestor that owns it, so from the service's namespace every caller gave
+EACCES. AppArmor was not the cause: `unprivileged_userns` allows ptrace and logged no denial.
+Proven on the laptop with the installed binary on a private bus: started plainly it refuses
+`gdbus` as "not a Lulo program"; started in a `PrivateUsers=self`-style namespace (made the way
+systemd-executor makes it) it refuses everything as "cannot be checked", and a test reader in
+such a namespace gets `Permission denied` on an init-namespace process's exe. The phase 1 tests
+started the service directly, without the unit, so they never saw it. Fix: `PrivateTmp=` is
+gone, a unit test forbids every namespace-creating option, and the check itself was tightened
+as described above (pidfd re-checked after reading the exe, explicit program list, logged
+reasons). Spotlight may stay in its own namespace: a reader in the session's namespace owns it.
+Regression check: `scripts/behavior/run_intelligence_unit.py`, the `intelligence-unit` Lulo
+runtime check on GitHub's runners. It installs the real unit and activation file under a real
+`systemd --user` manager with Ubuntu's user-namespace AppArmor restriction on, and checks that
+`rmac-intelligence-bench` (a listed program) is answered both unconfined and in a transient
+unit with Spotlight's `PrivateTmp=yes`; that `gdbus` and a copy of the bench named
+`rmac-launcher` outside the list are refused; that the service shares the manager's user
+namespace; and that a `PrivateTmp=yes` drop-in brings back "cannot be checked". The laptop
+cannot run it: a nested `systemd --user` there has no delegated cgroup, and its own manager is
+the owner's live session.
 
 **Not done in phase 1**: a per-tier memory-cap drop-in; unloading on memory pressure (PSI);
 a metered-connection warning before the download; the `systemd-analyze security` review of

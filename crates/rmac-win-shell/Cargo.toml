@@ -27,7 +27,8 @@ rmac-app-menu.workspace = true
 async-channel.workspace = true
 blocking.workspace = true
 gpui.workspace = true
-image.workspace = true
+# Windows apps' icons are kept as PNGs for their desktop entries.
+image = { workspace = true, features = ["png"] }
 raw-window-handle.workspace = true
 rmac-apps.workspace = true
 rmac-ui.workspace = true

@@ -9,8 +9,10 @@
 //! window list gives the app's windows (its executable's file name, or a
 //! Store app's AUMID), so the Dock groups the app's windows under it. An
 //! entry opens the app through `explorer.exe shell:AppsFolder\…`, as the
-//! Start menu does. Entries Lulo wrote earlier for apps no longer there are
-//! removed; nothing else in the folder is touched.
+//! Start menu does, and shows the icon Explorer shows for it, read by the
+//! icon helper process and kept as a PNG beside the entries. Entries Lulo
+//! wrote earlier for apps no longer there are removed; nothing else in the
+//! folder is touched.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -50,6 +52,15 @@ fn value(text: &str) -> String {
     text.replace(['\r', '\n'], " ").trim().to_owned()
 }
 
+/// The entry for `app`, with `icon` (an absolute path) if it has one.
+pub fn entry_with_icon(app: &App, icon: Option<&Path>) -> String {
+    let mut entry = entry(app);
+    if let Some(icon) = icon {
+        entry.push_str(&format!("Icon={}\n", value(&icon.to_string_lossy())));
+    }
+    entry
+}
+
 /// The entry for `app`.
 pub fn entry(app: &App) -> String {
     // `Exec` quoting: a backslash escapes the next character.
@@ -62,10 +73,10 @@ pub fn entry(app: &App) -> String {
     )
 }
 
-/// The entries for `apps`, by file name. When two apps share an id (two
-/// shortcuts to one program), the first keeps it.
-pub fn entries(apps: &[App]) -> BTreeMap<String, String> {
-    let mut entries = BTreeMap::new();
+/// The apps that get entries, by entry file name. When two apps share an
+/// id (two shortcuts to one program), the first keeps it.
+pub fn chosen(apps: &[App]) -> BTreeMap<String, App> {
+    let mut chosen = BTreeMap::new();
     for app in apps {
         let Some(id) = window_app_id(app) else {
             continue;
@@ -77,9 +88,72 @@ pub fn entries(apps: &[App]) -> BTreeMap<String, String> {
         if file.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) {
             continue;
         }
-        entries.entry(file).or_insert_with(|| entry(app));
+        chosen.entry(file).or_insert_with(|| app.clone());
     }
-    entries
+    chosen
+}
+
+/// The entries for `apps`, by file name, without icons.
+pub fn entries(apps: &[App]) -> BTreeMap<String, String> {
+    chosen(apps)
+        .into_iter()
+        .map(|(file, app)| (file, entry(&app)))
+        .collect()
+}
+
+/// Where the icon of the entry `file` is kept.
+fn icon_path(icons: &Path, file: &str) -> PathBuf {
+    let stem = file.trim_end_matches(".desktop");
+    let safe: String = stem
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' })
+        .collect();
+    icons.join(format!("{safe}.png"))
+}
+
+/// Read the icons `chosen` lacks through the icon helper and keep them as
+/// PNGs in `icons`. Blocking.
+fn fetch_icons(icons: &Path, chosen: &BTreeMap<String, App>) {
+    let missing: BTreeMap<String, PathBuf> = chosen
+        .iter()
+        .filter(|(file, _)| !icon_path(icons, file).is_file())
+        .map(|(file, app)| (format!("shell:AppsFolder\\{}", app.parsing), icon_path(icons, file)))
+        .collect();
+    if missing.is_empty() || std::fs::create_dir_all(icons).is_err() {
+        return;
+    }
+    let (replies, received) = async_channel::unbounded();
+    super::icons::start(replies);
+    for source in missing.keys() {
+        super::icons::request(source);
+    }
+    let mut left = missing.len();
+    while left > 0 {
+        let Ok((source, image)) = received.recv_blocking() else {
+            break;
+        };
+        let Some(path) = missing.get(&source) else {
+            continue;
+        };
+        left -= 1;
+        let Some(image) = image else {
+            continue;
+        };
+        let size = image.size(0);
+        let Some(bytes) = image.as_bytes(0) else {
+            continue;
+        };
+        // The helper's pixels are BGRA; PNG wants RGBA.
+        let mut rgba = bytes.to_vec();
+        for pixel in rgba.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        if let Some(buffer) =
+            image::RgbaImage::from_raw(size.width.0 as u32, size.height.0 as u32, rgba)
+        {
+            let _ = buffer.save_with_format(path, image::ImageFormat::Png);
+        }
+    }
 }
 
 /// Write `entries` into `applications`, rewriting only those that changed,
@@ -123,7 +197,16 @@ pub fn refresh() {
         super::trace(|| "windows apps: the Apps folder could not be read".into());
         return;
     };
-    let entries = entries(&apps);
+    let chosen = chosen(&apps);
+    let icons = applications.join("lulo-windows-icons");
+    fetch_icons(&icons, &chosen);
+    let entries: BTreeMap<String, String> = chosen
+        .iter()
+        .map(|(file, app)| {
+            let icon = icon_path(&icons, file);
+            (file.clone(), entry_with_icon(app, icon.is_file().then_some(icon.as_path())))
+        })
+        .collect();
     match sync(&applications, &entries) {
         Ok(written) => super::trace(|| {
             format!(

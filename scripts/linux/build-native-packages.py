@@ -347,7 +347,7 @@ def build(
                 verify_by_name[spec.name].verify_tree(root)
             except Exception as error:
                 raise PackageBuildError(
-                    f"{spec.name} immutable payload staging failed"
+                    f"{spec.name} immutable payload staging failed: {error}"
                 ) from error
 
             staged_paths = []
@@ -373,7 +373,7 @@ def build(
                 verify_by_name[spec.name].verify_tree(root, exact_tree=False)
             except Exception as error:
                 raise PackageBuildError(
-                    f"{spec.name} staged payload verification failed"
+                    f"{spec.name} staged payload verification failed: {error}"
                 ) from error
 
             shared_dependencies = derive_shared_library_dependencies(
@@ -486,7 +486,9 @@ def build(
                 dpkg_deb=dpkg_deb,
             )
         except Exception as error:
-            raise PackageBuildError("built native package verification failed") from error
+            raise PackageBuildError(
+                f"built native package verification failed: {error}"
+            ) from error
 
         if output_directory.exists():
             output_directory.rmdir()

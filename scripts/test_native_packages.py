@@ -148,6 +148,73 @@ class NativePackageContractTests(unittest.TestCase):
             b"\x1f--remap-path-prefix=/build/cargo=/cargo",
         )
 
+    def test_native_build_remaps_c_and_cxx_source_paths(self):
+        # llama.cpp (rmac-intelligence-service) is C/C++ built by cc/CMake;
+        # its GGML_ASSERT/GGML_ABORT sites bake __FILE__ into .rodata, which
+        # survives stripping. Without -ffile-prefix-map the package carried
+        # the builder's $HOME and the build-host-home-path scan rejected it.
+        script = (LINUX_SCRIPTS / "build-native-inputs.sh").read_text(
+            encoding="utf-8"
+        )
+        start = 'cargo_home="${CARGO_HOME:-$HOME/.cargo}"'
+        end = 'export CXXFLAGS="'
+        block = start + script.split(start, 1)[1].split(end, 1)[0]
+        block += end + script.split(end, 1)[1].split("\n", 1)[0] + "\n"
+        environment = {**os.environ, "HOME": "/build/user", "CARGO_HOME": "/build/cargo"}
+        for name in ("CARGO_ENCODED_RUSTFLAGS", "RUSTFLAGS", "CFLAGS", "CXXFLAGS"):
+            environment.pop(name, None)
+        expected = (
+            "-ffile-prefix-map=/build/repo=/rmac "
+            "-ffile-prefix-map=/build/cargo=/cargo"
+        )
+        printed = 'printf "%s\\n%s" "$CFLAGS" "$CXXFLAGS"'
+        fresh = subprocess.run(
+            ["bash", "-c", f"repo_root=/build/repo\n{block}{printed}"],
+            env=environment, capture_output=True, check=True, text=True,
+        )
+        self.assertEqual(fresh.stdout, f"{expected}\n{expected}")
+        environment["CFLAGS"] = "-O2"
+        environment["CXXFLAGS"] = "-O3"
+        extended = subprocess.run(
+            ["bash", "-c", f"repo_root=/build/repo\n{block}{printed}"],
+            env=environment, capture_output=True, check=True, text=True,
+        )
+        self.assertEqual(extended.stdout, f"-O2 {expected}\n-O3 {expected}")
+
+    def test_package_scripts_never_drop_the_underlying_failure(self):
+        # CI run 37649465982 printed only "built native package verification
+        # failed": a broad handler replaced the verifier's specific reason.
+        # Every broad handler that re-raises must carry the caught error's
+        # text in its message.
+        import ast
+
+        for filename in ("build-native-packages.py", "verify-native-packages.py"):
+            tree = ast.parse((LINUX_SCRIPTS / filename).read_text(encoding="utf-8"))
+            handlers = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.ExceptHandler)
+                and isinstance(node.type, ast.Name)
+                and node.type.id == "Exception"
+            ]
+            self.assertTrue(handlers, filename)
+            for handler in handlers:
+                for statement in ast.walk(handler):
+                    if not isinstance(statement, ast.Raise) or statement.exc is None:
+                        continue
+                    with self.subTest(filename=filename, line=statement.lineno):
+                        self.assertIsInstance(statement.exc, ast.Call)
+                        message = statement.exc.args[0]
+                        self.assertIsInstance(message, ast.JoinedStr)
+                        self.assertTrue(
+                            any(
+                                isinstance(part, ast.FormattedValue)
+                                and isinstance(part.value, ast.Name)
+                                and part.value.id == handler.name
+                                for part in message.values
+                            )
+                        )
+
     def test_native_build_accepts_release_and_iterate_profiles_only(self):
         script = LINUX_SCRIPTS / "build-native-inputs.sh"
         with tempfile.TemporaryDirectory() as temporary:

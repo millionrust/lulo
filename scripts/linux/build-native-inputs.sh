@@ -129,6 +129,20 @@ if [[ ${CARGO_ENCODED_RUSTFLAGS+x} ]]; then
 else
   export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$repo_root=/rmac --remap-path-prefix=$cargo_home=/cargo"
 fi
+# rmac-intelligence-service links llama.cpp (ADR 0024), built from C/C++
+# sources under $cargo_home by llama-cpp-sys-2's CMake build. Unlike rustc,
+# clang/gcc bake the compiler's absolute source path into every `__FILE__`
+# expansion (ggml's GGML_ASSERT/GGML_ABORT use it on every assertion site),
+# so without this the built binary's .rodata carries this builder's home
+# directory and verify-native-packages.py's build-host-home-path scan
+# (SR-15) rejects the package. `-ffile-prefix-map` is the C/C++ equivalent
+# of rustc's --remap-path-prefix above, covering the macro, debug-info and
+# profile-info prefixes together. `cc` (used directly for llama-cpp-sys-2's
+# small wrapper, and indirectly by the `cmake` crate to compute its own
+# default CMAKE_C_FLAGS/CMAKE_CXX_FLAGS) reads CFLAGS/CXXFLAGS itself, so
+# this reaches both the CMake build and the plain `cc` one.
+export CFLAGS="${CFLAGS:+$CFLAGS }-ffile-prefix-map=$repo_root=/rmac -ffile-prefix-map=$cargo_home=/cargo"
+export CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }-ffile-prefix-map=$repo_root=/rmac -ffile-prefix-map=$cargo_home=/cargo"
 # llama.cpp's CPU kernels: a portable x86-64 baseline with AVX2, FMA and
 # F16C (Haswell, 2013, and later), never the build machine's own CPU. This
 # matches Lulo Intelligence's hardware gate, which offers the model only on

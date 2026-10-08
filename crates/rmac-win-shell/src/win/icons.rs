@@ -329,7 +329,9 @@ pub(crate) fn save_png(source: &str, pixels: u32, path: &std::path::Path) -> boo
     } else {
         image
     };
-    image.save_with_format(path, image::ImageFormat::Png).is_ok()
+    image
+        .save_with_format(path, image::ImageFormat::Png)
+        .is_ok()
 }
 
 fn load(source: &str, pixels: i32, thumbnail: bool) -> Option<Pixels> {

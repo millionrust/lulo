@@ -64,6 +64,9 @@ struct LayerWindow {
     requested: Size<Pixels>,
     /// Asked for `WindowBackgroundAppearance::Blurred` (see `material`).
     blurred: bool,
+    /// Asked for keyboard focus when it opens (`WindowOptions::focus` on a
+    /// surface that takes the keyboard on demand or exclusively).
+    focus: bool,
     styled: bool,
     /// The strip it holds as an AppBar.
     strip: Option<RECT>,
@@ -124,7 +127,7 @@ pub fn open_layer_window<V: 'static + Render>(
     cx: &mut App,
     mut options: WindowOptions,
     layer: LayerShellOptions,
-    build: impl FnOnce(&mut Window, &mut App) -> Entity<V> + 'static,
+    build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
 ) -> gpui::Result<WindowHandle<V>> {
     let signals = ensure_signals(cx);
     let display = options
@@ -144,6 +147,7 @@ pub fn open_layer_window<V: 'static + Render>(
         options.display_id = Some(display.id());
     }
     options.kind = WindowKind::PopUp;
+    let focus = options.focus && layer.keyboard_interactivity != KeyboardInteractivity::None;
     // Shown once placed and styled, so the first frame is where it belongs.
     options.show = false;
     options.focus = false;
@@ -167,6 +171,7 @@ pub fn open_layer_window<V: 'static + Render>(
                 display: display.map_or(0, |display| u64::from(display.id())),
                 requested,
                 blurred,
+                focus,
                 styled: false,
                 strip: None,
             })
@@ -613,8 +618,41 @@ fn raise_overlays() {
 }
 
 /// Style (once), size and place one surface, and hold its strip.
+/// `display` less the exclusive zones the other surfaces on it hold.
+fn usable_area(raw: isize, display: u64, mut area: Bounds<Pixels>) -> Bounds<Pixels> {
+    let zones: Vec<(appbar::Edge, Pixels)> = WINDOWS.with(|windows| {
+        windows
+            .borrow()
+            .iter()
+            .filter(|window| window.hwnd != raw && window.display == display)
+            .filter_map(|window| {
+                let zone = window
+                    .layer
+                    .exclusive_zone
+                    .filter(|zone| zone.as_f32() > 0.0)?;
+                Some((exclusive_edge(&window.layer)?, zone))
+            })
+            .collect()
+    });
+    for (edge, zone) in zones {
+        match edge {
+            appbar::Edge::Top => {
+                area.origin.y += zone;
+                area.size.height -= zone;
+            }
+            appbar::Edge::Bottom => area.size.height -= zone,
+            appbar::Edge::Left => {
+                area.origin.x += zone;
+                area.size.width -= zone;
+            }
+            appbar::Edge::Right => area.size.width -= zone,
+        }
+    }
+    area
+}
+
 fn place(raw: isize) {
-    let Some((layer, display, requested, blurred, styled, strip)) = WINDOWS.with(|windows| {
+    let Some((layer, display, requested, blurred, focus, styled, strip)) = WINDOWS.with(|windows| {
         windows
             .borrow()
             .iter()
@@ -625,6 +663,7 @@ fn place(raw: isize) {
                     window.display,
                     window.requested,
                     window.blurred,
+                    window.focus,
                     window.styled,
                     window.strip,
                 )
@@ -657,6 +696,17 @@ fn place(raw: isize) {
             px((monitor.right - monitor.left) as f32 / scale),
             px((monitor.bottom - monitor.top) as f32 / scale),
         ),
+    };
+    // As on wlr-layer-shell, a surface with no exclusive zone of its own
+    // (0) keeps out of the others' zones: Spotlight's and Control Centre's
+    // margins count from below the menu bar. A negative zone ignores them.
+    let display_bounds = if layer
+        .exclusive_zone
+        .is_none_or(|zone| zone.as_f32() == 0.0)
+    {
+        usable_area(raw, display, display_bounds)
+    } else {
+        display_bounds
     };
     let logical = logical_bounds(&layer, requested, display_bounds);
     let physical = |value: Pixels| (value.as_f32() * scale).round() as i32;
@@ -734,7 +784,7 @@ fn place(raw: isize) {
             run_hooks(&STRIP_HOOKS, raw, &layer.namespace);
         }
     }
-    if !styled && layer.keyboard_interactivity == KeyboardInteractivity::Exclusive {
+    if !styled && (focus || layer.keyboard_interactivity == KeyboardInteractivity::Exclusive) {
         surface::take_foreground(hwnd);
     }
     run_hooks(&PLACED_HOOKS, raw, &layer.namespace);

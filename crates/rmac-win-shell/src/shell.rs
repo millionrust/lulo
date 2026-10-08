@@ -61,15 +61,25 @@ struct ShellAssets;
 
 impl AssetSource for ShellAssets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
-        Ok(rmac_shell_menubar::asset(path).or_else(|| rmac_shell_wallpaper::asset(path)))
+        Ok(rmac_shell_menubar::asset(path)
+            .or_else(|| rmac_shell_wallpaper::asset(path))
+            .or_else(|| rmac_launcher_app::asset(path))
+            .or_else(|| rmac_quick_settings_app::asset(path)))
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
-        Ok(rmac_shell_menubar::asset_names()
+        let mut names: Vec<SharedString> = rmac_shell_menubar::asset_names()
             .chain(rmac_shell_wallpaper::asset_names())
             .filter(|name| name.starts_with(path))
             .map(SharedString::from)
-            .collect())
+            .collect();
+        names.extend(
+            rmac_launcher_app::asset_names(path)
+                .into_iter()
+                .chain(rmac_quick_settings_app::asset_names(path))
+                .map(SharedString::from),
+        );
+        Ok(names)
     }
 }
 
@@ -221,6 +231,7 @@ pub fn run() -> i32 {
         .run(move |cx: &mut App| {
             memory::report("GPUI started");
             rmac_ui::init_application(cx);
+            rmac_shell_ui::tokens::install_appearance_watch(cx);
             let Some(menu_host) = menu_host.take() else {
                 cx.quit();
                 return;
@@ -261,6 +272,12 @@ pub fn run() -> i32 {
             rmac_shell_wallpaper::start(cx);
             rmac_shell_menubar::start(cx);
             let _dock = rmac_shell_dock::start(cx);
+            // Spotlight and Control Centre open on demand: the hotkey and
+            // the bar's buttons ask for them by name.
+            rmac_launcher_app::start(cx);
+            rmac_quick_settings_app::start(cx);
+            requests::register("launcher", rmac_launcher_app::toggle);
+            requests::register("quick-settings", rmac_quick_settings_app::toggle);
             memory::report("surfaces started");
 
             {

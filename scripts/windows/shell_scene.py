@@ -11,6 +11,9 @@ Lulo wallpaper, the clock at Thursday 8 October 9:41 AM, the status items'
 fixed readings, the Dock pinning the nine Lulo apps that build for Windows,
 nothing running, the Recycle Bin empty and an empty Desktop folder.
 
+The runner's own windows (its console) are hidden for the capture and shown
+again afterwards: nothing runs in the Lulo OS scene either.
+
 `lulo-session.exe` starts the Lulo layer with private profile folders and
 `LULO_SHELL_TRACE=1`; once lulo-shell says it is ready and its surfaces had
 time to decode their pictures, the screen is captured and `lulo-session
@@ -44,11 +47,44 @@ READY_TIMEOUT_SECONDS = 90.0
 SHERB_NOCONFIRMATION = 0x1
 SHERB_NOPROGRESSUI = 0x2
 SHERB_NOSOUND = 0x4
+SW_HIDE = 0
+SW_SHOWNOACTIVATE = 4
 
 
 def empty_recycle_bin() -> None:
     shell32 = ctypes.windll.shell32
     shell32.SHEmptyRecycleBinW(None, None, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND)
+
+
+def hide_other_windows() -> list[int]:
+    """Hide every visible, titled top-level window and return them, so the
+    scene shows only the desktop, the bar and the Dock."""
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    hidden: list[int] = []
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def visit(hwnd, _lparam):
+        if user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd) > 0:
+            name = ctypes.create_unicode_buffer(64)
+            user32.GetClassNameW(hwnd, name, 64)
+            if name.value not in ("Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
+                hidden.append(int(hwnd))
+        return True
+
+    user32.EnumWindows(callback_type(visit), 0)
+    for hwnd in hidden:
+        user32.ShowWindow(wintypes.HWND(hwnd), SW_HIDE)
+    print(f"hid {len(hidden)} window(s) for the scene")
+    return hidden
+
+
+def show_windows(windows: list[int]) -> None:
+    from ctypes import wintypes
+
+    for hwnd in windows:
+        ctypes.windll.user32.ShowWindow(wintypes.HWND(hwnd), SW_SHOWNOACTIVATE)
 
 
 def scene_profile(root: Path) -> dict[str, str]:
@@ -102,6 +138,7 @@ def main() -> int:
         "LULO_SHELL_TRACE": "1",
     }
     log = work / "session.log"
+    hidden = hide_other_windows()
     session = subprocess.Popen(
         [str(bin_dir / "lulo-session.exe")],
         env=environment,
@@ -122,6 +159,7 @@ def main() -> int:
             session.wait(30)
         except subprocess.TimeoutExpired:
             session.kill()
+        show_windows(hidden)
         print(f"--- session log\n{log.read_text(errors='replace')[-4000:]}")
 
 

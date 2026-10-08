@@ -27,9 +27,9 @@ use overlay::route_activation;
 use overlay::route_shortcut;
 use registry::build_registry;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 const WIDTH: f32 = rmac_launcher::surface::LOGICAL_WIDTH as f32;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 const HEIGHT: f32 = rmac_launcher::surface::LOGICAL_HEIGHT as f32;
 #[cfg(target_os = "linux")]
 const LINUX_SHORTCUT_ENDPOINT: &str = "launcher";
@@ -132,7 +132,26 @@ pub(crate) fn run() {
         .with_quit_mode(gpui::QuitMode::Explicit)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
+            start(cx);
+            watch_endpoint(cx);
 
+            #[cfg(not(target_os = "linux"))]
+            if std::env::args().any(|argument| argument == "--show") {
+                route_shortcut(
+                    rmac_shortcuts::Event::Activated {
+                        id: rmac_shortcuts::ShortcutId("launcher".into()),
+                        timestamp_ms: 1,
+                    },
+                    cx,
+                );
+            }
+        });
+}
+
+/// Spotlight's service in a process that already runs GPUI: its providers,
+/// clipboard writer, catalogue and settings watchers. Opening it is up to
+/// the caller (`toggle`) or the shortcut endpoint (`run`).
+pub fn start(cx: &mut App) {
             let application_provider = rmac_launcher_providers::ApplicationProvider::default();
             let settings = rmac_shell_settings::ShellSettings::default();
             let registry = build_registry(&application_provider, &settings)
@@ -163,6 +182,36 @@ pub(crate) fn run() {
             })
             .detach();
 
+            let (catalog_tx, catalog_rx) = async_channel::bounded(8);
+            cx.background_executor()
+                .spawn(rmac_launcher_runtime::watch_application_catalog(
+                    application_provider,
+                    catalog_tx,
+                ))
+                .detach();
+            cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+                while let Ok(update) = catalog_rx.recv().await {
+                    cx.update(|cx| update_active_catalog(update, cx));
+                }
+            })
+            .detach();
+
+            let (settings_tx, settings_rx) = async_channel::bounded(8);
+            cx.background_executor()
+                .spawn(rmac_launcher_runtime::watch_shell_settings(settings_tx))
+                .detach();
+            cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+                while let Ok(update) = settings_rx.recv().await {
+                    cx.update(|cx| apply_settings_update(update, cx));
+                }
+            })
+            .detach();
+
+}
+
+/// The launcher's own shortcut endpoint: shell activation on Linux, the
+/// shortcut dispatcher elsewhere.
+fn watch_endpoint(cx: &mut App) {
             #[cfg(target_os = "linux")]
             let (activation_tx, activation_rx) = async_channel::bounded(16);
             #[cfg(target_os = "linux")]
@@ -239,40 +288,17 @@ pub(crate) fn run() {
                 .detach();
             }
 
-            let (catalog_tx, catalog_rx) = async_channel::bounded(8);
-            cx.background_executor()
-                .spawn(rmac_launcher_runtime::watch_application_catalog(
-                    application_provider,
-                    catalog_tx,
-                ))
-                .detach();
-            cx.spawn(async move |cx: &mut gpui::AsyncApp| {
-                while let Ok(update) = catalog_rx.recv().await {
-                    cx.update(|cx| update_active_catalog(update, cx));
-                }
-            })
-            .detach();
+}
 
-            let (settings_tx, settings_rx) = async_channel::bounded(8);
-            cx.background_executor()
-                .spawn(rmac_launcher_runtime::watch_shell_settings(settings_tx))
-                .detach();
-            cx.spawn(async move |cx: &mut gpui::AsyncApp| {
-                while let Ok(update) = settings_rx.recv().await {
-                    cx.update(|cx| apply_settings_update(update, cx));
-                }
-            })
-            .detach();
-
-            #[cfg(not(target_os = "linux"))]
-            if std::env::args().any(|argument| argument == "--show") {
-                route_shortcut(
-                    rmac_shortcuts::Event::Activated {
-                        id: rmac_shortcuts::ShortcutId("launcher".into()),
-                        timestamp_ms: 1,
-                    },
-                    cx,
-                );
-            }
-        });
+/// Open Spotlight, or hand the shortcut to the one already open (which
+/// closes it), as the shortcut does.
+#[cfg(not(target_os = "linux"))]
+pub fn toggle(cx: &mut App) {
+    route_shortcut(
+        rmac_shortcuts::Event::Activated {
+            id: rmac_shortcuts::ShortcutId("launcher".into()),
+            timestamp_ms: 1,
+        },
+        cx,
+    );
 }

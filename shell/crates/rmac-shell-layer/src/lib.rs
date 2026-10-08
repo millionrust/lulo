@@ -34,7 +34,7 @@ pub fn open_layer_window<V: 'static + gpui::Render>(
     cx: &mut gpui::App,
     mut options: gpui::WindowOptions,
     layer: layer::LayerShellOptions,
-    build: impl FnOnce(&mut Window, &mut gpui::App) -> gpui::Entity<V> + 'static,
+    build: impl FnOnce(&mut Window, &mut gpui::App) -> gpui::Entity<V>,
 ) -> gpui::Result<gpui::WindowHandle<V>> {
     options.kind = gpui::WindowKind::LayerShell(layer);
     cx.open_window(options, build)

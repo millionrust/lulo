@@ -126,9 +126,57 @@ fn overlay_options(bounds: WindowBounds, margin_top: f64) -> WindowOptions {
     }
 }
 
+/// On Windows the same layer surface, as a Win32 window that
+/// `rmac-shell-layer` places (ADR 0023, "Phase 3 revised: shared shell
+/// views"): its size here, its place from [`windows_layer`].
+#[cfg(windows)]
+fn overlay_options(bounds: WindowBounds, _margin_top: f64) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+            point(px(0.0), px(0.0)),
+            bounds.get_bounds().size,
+        ))),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::PopUp,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        window_background: WindowBackgroundAppearance::Transparent,
+        app_id: Some("org.rmac.Launcher".into()),
+        window_decorations: Some(WindowDecorations::Client),
+        ..Default::default()
+    }
+}
+
+/// Spotlight's layer on Windows: the Linux surface's anchor and margin,
+/// the bar's top where macOS draws it on `display`.
+#[cfg(windows)]
+fn windows_layer(cx: &App) -> rmac_shell_layer::layer::LayerShellOptions {
+    use rmac_shell_layer::layer::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
+
+    let height = cx
+        .primary_display()
+        .map_or(768.0, |display| display.bounds().size.height.as_f32());
+    LayerShellOptions {
+        namespace: rmac_launcher::surface::NAMESPACE.into(),
+        layer: Layer::Overlay,
+        anchor: Anchor::TOP,
+        margin: Some((
+            px(rmac_launcher::surface::top_margin(f64::from(height)) as f32),
+            px(0.0),
+            px(0.0),
+            px(0.0),
+        )),
+        keyboard_interactivity: KeyboardInteractivity::OnDemand,
+        ..Default::default()
+    }
+}
+
 /// Development hosts place the window from `bounds`; only the Linux layer
 /// surface takes a top margin.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn overlay_options(bounds: WindowBounds, _margin_top: f64) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(bounds),
@@ -146,9 +194,25 @@ fn overlay_options(bounds: WindowBounds, _margin_top: f64) -> WindowOptions {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn fallback_options(cx: &App) -> WindowOptions {
     overlay_options(WindowBounds::centered(size(px(WIDTH), px(HEIGHT)), cx), 0.0)
+}
+
+/// Windows opens the surface at its expanded size and keeps the input
+/// region to the bar while it is compact, as Linux does.
+#[cfg(windows)]
+fn fallback_options(cx: &App) -> WindowOptions {
+    overlay_options(
+        WindowBounds::centered(
+            size(
+                px(rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32),
+                px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32),
+            ),
+            cx,
+        ),
+        0.0,
+    )
 }
 
 fn route_existing(event: &rmac_shortcuts::Event, cx: &mut App) -> bool {
@@ -241,7 +305,9 @@ fn open_launcher(
         cx.update_global::<LauncherService, _>(|service, _| service.catcher = catcher);
     }
     let mut launcher = None;
-    let handle = cx.open_window(options, |window, cx| {
+    #[cfg(windows)]
+    let layer = windows_layer(cx);
+    let build = |window: &mut gpui::Window, cx: &mut App| {
         if let Some(directory) = std::env::var_os("RMAC_SPOTLIGHT_FRAME_DIR") {
             window.on_next_frame(move |_, _| {
                 let path = std::path::PathBuf::from(directory).join(format!("show-{token}.ready"));
@@ -271,7 +337,11 @@ fn open_launcher(
         });
         launcher = Some(view.downgrade());
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
-    });
+    };
+    #[cfg(windows)]
+    let handle = rmac_shell_layer::open_layer_window(cx, options, layer, build);
+    #[cfg(not(windows))]
+    let handle = cx.open_window(options, build);
     if let (Ok(handle), Some(view)) = (handle, launcher) {
         #[cfg(target_os = "linux")]
         let cancel = cx.update_global::<LauncherService, _>(|service, _| {
@@ -307,11 +377,16 @@ fn open_launcher(
         // A layer-shell popup opened from the shortcut endpoint does not
         // receive a pointer press. Request compositor keyboard focus so the
         // first Escape closes Spotlight even after other shell popovers.
-        let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
-        if let Some(active) = active {
-            let _ = active
-                .window
-                .update(cx, |_, window, _| window.activate_window());
+        // (On Windows the layer takes the foreground once it is placed.)
+        #[cfg(not(windows))]
+        {
+            let active =
+                cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+            if let Some(active) = active {
+                let _ = active
+                    .window
+                    .update(cx, |_, window, _| window.activate_window());
+            }
         }
     } else {
         #[cfg(target_os = "linux")]

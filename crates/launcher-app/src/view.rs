@@ -370,7 +370,7 @@ impl LauncherView {
         if let Some(window_id) = self.previous_window {
             cx.spawn(async move |_, _| {
                 let action = rmac_compositor::Action::FocusWindow { window: window_id };
-                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                     eprintln!("could not restore focus after Spotlight: {error:?}");
                 }
             })
@@ -643,7 +643,9 @@ impl LauncherView {
 /// surface on the first typed key made that key wait 26–33 ms for niri's
 /// configure and next frame callback.
 pub(crate) fn set_compact(window: &mut gpui::Window, compact: bool) {
-    #[cfg(target_os = "linux")]
+    // Windows keeps the input region the same way (`gpui_windows` clips the
+    // window to it, and the expanded area is transparent while compact).
+    #[cfg(any(target_os = "linux", windows))]
     {
         if compact {
             window.set_input_region(Some(&[gpui::Bounds::new(
@@ -657,7 +659,7 @@ pub(crate) fn set_compact(window: &mut gpui::Window, compact: bool) {
             window.set_input_region(None);
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let (width, height) = if compact {
             (

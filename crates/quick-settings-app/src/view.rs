@@ -186,6 +186,20 @@ impl QuickSettingsView {
         window.on_next_frame(move |window, cx| window.focus(&first_control, cx));
         // The outside catcher handles pointer dismissal. Compositor focus can
         // move back to an open menu-bar menu while this panel remains visible.
+        // Windows has no catcher: a press elsewhere takes the foreground away,
+        // which closes the panel.
+        #[cfg(windows)]
+        {
+            let mut was_active = false;
+            cx.observe_window_activation(window, move |this, window, cx| {
+                if window.is_window_active() {
+                    was_active = true;
+                } else if was_active {
+                    this.dismiss(window, cx);
+                }
+            })
+            .detach();
+        }
         cx.on_release(move |_, cx| {
             crate::clear_active_popover(token, cx);
         })
@@ -965,7 +979,7 @@ impl QuickSettingsView {
                 let action = rmac_compositor::Action::FocusWindow {
                     window: previous_window,
                 };
-                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                     eprintln!("could not return focus from Control Centre: {error:?}");
                 }
             })

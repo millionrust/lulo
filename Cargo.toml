@@ -111,6 +111,7 @@ rmac-input = { version = "=0.9.0-beta.1", path = "crates/rmac-input" }
 rmac-intelligence = { version = "=0.9.0-beta.1", path = "crates/rmac-intelligence", default-features = false }
 rmac-keyboard = { version = "=0.9.0-beta.1", path = "crates/rmac-keyboard" }
 rmac-launcher = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher" }
+rmac-launcher-app = { version = "=0.9.0-beta.1", path = "crates/launcher-app" }
 rmac-launcher-providers = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-providers" }
 rmac-launcher-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-runtime" }
 rmac-launcher-system = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-system" }
@@ -131,6 +132,7 @@ rmac-power = { version = "=0.9.0-beta.1", path = "crates/rmac-power" }
 rmac-privacy = { version = "=0.9.0-beta.1", path = "crates/rmac-privacy" }
 rmac-privacy-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-privacy-linux" }
 rmac-quick-settings = { version = "=0.9.0-beta.1", path = "crates/rmac-quick-settings" }
+rmac-quick-settings-app = { version = "=0.9.0-beta.1", path = "crates/quick-settings-app" }
 rmac-quick-settings-system = { version = "=0.9.0-beta.1", path = "crates/rmac-quick-settings-system" }
 rmac-quick-look = { version = "=0.9.0-beta.1", path = "crates/rmac-quick-look" }
 rmac-portal = { version = "=0.9.0-beta.1", path = "crates/rmac-portal" }

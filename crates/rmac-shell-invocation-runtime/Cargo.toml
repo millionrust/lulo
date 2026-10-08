@@ -11,5 +11,8 @@ async-channel.workspace = true
 async-io.workspace = true
 futures-util.workspace = true
 rmac-compositor.workspace = true
-rmac-compositor-niri.workspace = true
 rmac-shell-invocation.workspace = true
+
+# Only the Linux watcher reads niri.
+[target.'cfg(unix)'.dependencies]
+rmac-compositor-niri.workspace = true

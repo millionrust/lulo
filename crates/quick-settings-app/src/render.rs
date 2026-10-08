@@ -187,6 +187,11 @@ impl Render for QuickSettingsView {
             }
         }
 
+        // niri rounds the blur from the surface's own shape on Lulo OS; the
+        // Windows window is cut to it (and again after each resize lands).
+        #[cfg(windows)]
+        rmac_shell_layer::set_corner_radius(window, layout::SURFACE_RADIUS as f32);
+
         let view = self.state.view();
         let mut children: Vec<AnyElement> = Vec::new();
         for (index, (control, message)) in self

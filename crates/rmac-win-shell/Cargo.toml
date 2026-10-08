@@ -40,7 +40,14 @@ rmac-shell-layer.workspace = true
 rmac-shell-menubar.workspace = true
 rmac-shell-dock.workspace = true
 rmac-shell-wallpaper.workspace = true
+# Spotlight and Control Centre, the same views Lulo OS runs as their own
+# processes.
+rmac-launcher-app.workspace = true
+rmac-quick-settings-app.workspace = true
 rmac-shell-settings.workspace = true
+# The shell's live design tokens (light or dark, accent), as each Lulo OS
+# shell process installs them.
+rmac-shell-ui.workspace = true
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true
 rmac-wallpaper-system.workspace = true

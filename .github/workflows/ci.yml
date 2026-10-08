@@ -406,7 +406,9 @@ jobs:
       # Lulo mode (ADR 0023 "Lulo mode", WIN-OS-43): 30 s after one use of
       # Spotlight and a menu again, lulo-shell's private bytes must be
       # within the budget and close to their reading after the first use
-      # (closed panels give their Direct3D memory back each time).
+      # (closed panels give their Direct3D memory back each time), and
+      # within 60 MB at idle too (WIN-OS-53: the owner's Radeon laptop reads
+      # 55.8 MB at idle and 59.0 MB after use, ADR 0023).
       # The runner's software GPU (WARP) is counted apart: idle_gate.py. A
       # missing results file or an expected app without a reading fails.
       - name: Idle gate
@@ -414,9 +416,22 @@ jobs:
         run: >-
           python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1
           --exempt rmac-terminal --max-world-tick-ticks 3 --shell-memory-mb 60
-          --shell-after-use-private-mb 80 --shell-after-use-growth-mb 4
+          --shell-idle-private-mb 60 --shell-after-use-private-mb 60 --shell-after-use-growth-mb 4
           --expect rmac-calculator rmac-notes rmac-text-editor rmac-preview rmac-clock
           rmac-weather rmac-terminal rmac-files rmac-system-settings lulo-shell lulo-session
+
+      # A newer MSI must replace an older one's files (WIN-OS-54): build
+      # 100, then build 101, then 101 re-stamped, each installed over the
+      # one before, then uninstalled (scripts/windows/upgrade_smoke.py).
+      # WiX 5.0.2 as in windows-preview.yml (ADR 0023 "Installer").
+      - name: Installer upgrade
+        id: upgrade
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          export PATH="$HOME/.dotnet/tools:$PATH"
+          python scripts/windows/upgrade_smoke.py target/debug/lulo-session.exe "$RUNNER_TEMP/lulo-upgrade"
 
       - name: Upload app screenshots
         if: ${{ !cancelled() }}
@@ -462,9 +477,10 @@ jobs:
           TESTS: ${{ steps.tests.outcome }}
           BUILD: ${{ steps.build.outcome }}
           LAUNCH: ${{ steps.launch.outcome }}
+          UPGRADE: ${{ steps.upgrade.outcome }}
         run: |
           failed=0
-          for step in ICONS CLIPPY TESTS BUILD LAUNCH; do
+          for step in ICONS CLIPPY TESTS BUILD LAUNCH UPGRADE; do
             outcome=${!step}
             echo "Windows summary: $step: $outcome"
             if [ "$outcome" != "success" ]; then failed=1; fi

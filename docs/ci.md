@@ -297,9 +297,14 @@ failed. Since `gpui_windows` is vendored and parks idle windows (ADR 0025),
 `launch_smoke.py --results` records each app's idle CPU and `idle_gate.py`
 fails the job when any app but Terminal used more than one 15.6 ms tick
 over the 20 s idle window, naming the wake-ups and threads that did it,
-when lulo-shell's idle working set is over 60 MB (WIN-OS-39), when the
-results file is missing, or when an app named with `--expect` has no
-reading. No Windows check is non-blocking today: the launch and Lulo layer
+when lulo-shell's idle working set is over 60 MB (WIN-OS-39), when its
+private bytes are over 60 MB at idle or 30 s after Spotlight and a menu were
+used (WIN-OS-53; the GPU-backed reading on the owner's Radeon laptop is in
+ADR 0023, since the runner renders with WARP), when the results file is
+missing, or when an app named with `--expect` has no reading. The
+"Installer upgrade" step (`scripts/windows/upgrade_smoke.py`, WIN-OS-54)
+installs three MSIs over each other and fails the job, through the summary
+step, unless each newer or re-stamped one replaced the installed files. No Windows check is non-blocking today: the launch and Lulo layer
 checks (real input on the runner's desktop) have run clean, and one that
 turns out flaky is to be listed here with its reason before it is made
 non-blocking. The same run prints each app's start-up phases

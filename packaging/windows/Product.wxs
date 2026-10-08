@@ -12,7 +12,7 @@
   The app list is generated into Apps.wxs by generate_apps_wxs.py from
   apps.json — add an app there, not here. Build both together:
 
-      wix build Product.wxs Apps.wxs -arch x64 -d LuloVersion=<x.y.z> \
+      wix build Product.wxs Apps.wxs -arch x64 -d LuloVersion=<major.minor.build> \
           -o Lulo-Setup.msi
 
   (see build-installer.sh). No WiX extension is required: every element
@@ -39,7 +39,17 @@
          not found: cab1.cab", not by reading the schema). -->
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Every build has its own ProductVersion, <major>.<minor>.<build>
+         with the build number rising with each commit (msi_version.py,
+         WIN-OS-54), so a newer build always upgrades an older one.
+         AllowSameVersionUpgrades also replaces a build installed over one
+         with the same number (a rebuilt or re-stamped MSI): without it two
+         same-version products sat side by side and msiexec left the older
+         exes in place. The old product is removed before the new one's
+         files go in (the default schedule), so every file is the new
+         build's whatever its own file version. -->
     <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
       DowngradeErrorMessage="A newer version of Lulo is already installed. Uninstall it first to install this version." />
 
     <!-- Clock schedules each due alarm, snooze and running countdown as its

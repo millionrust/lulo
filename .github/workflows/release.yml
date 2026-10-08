@@ -775,10 +775,15 @@ jobs:
     outputs:
       filename: ${{ steps.build.outputs.filename }}
     steps:
+      # Full history (commits only, no trees or blobs beyond HEAD's): the
+      # MSI's version is <major>.<minor>.<commit count>
+      # (packaging/windows/msi_version.py, WIN-OS-54).
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+          filter: tree:0
 
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain

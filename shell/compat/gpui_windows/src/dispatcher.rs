@@ -182,8 +182,12 @@ unsafe extern "system" fn run_work_callback(
     work: PTP_WORK,
 ) {
     let runnable = unsafe { RunnableVariant::from_raw(NonNull::new_unchecked(context as *mut ())) };
-    crate::rmac_trace::wake("pool", runnable.metadata().location);
-    WindowsDispatcher::execute_runnable(runnable);
+    let location = runnable.metadata().location;
+    crate::rmac_trace::wake("pool", location);
+    // rmac: report the task's CPU time with the wake trace on.
+    crate::rmac_trace::pool_task("pool", location, || {
+        WindowsDispatcher::execute_runnable(runnable)
+    });
     unsafe { CloseThreadpoolWork(work) };
 }
 
@@ -193,7 +197,11 @@ unsafe extern "system" fn run_timer_callback(
     timer: PTP_TIMER,
 ) {
     let runnable = unsafe { RunnableVariant::from_raw(NonNull::new_unchecked(context as *mut ())) };
-    crate::rmac_trace::wake("timer", runnable.metadata().location);
-    WindowsDispatcher::execute_runnable(runnable);
+    let location = runnable.metadata().location;
+    crate::rmac_trace::wake("timer", location);
+    // rmac: report the task's CPU time with the wake trace on.
+    crate::rmac_trace::pool_task("timer", location, || {
+        WindowsDispatcher::execute_runnable(runnable)
+    });
     unsafe { CloseThreadpoolTimer(timer) };
 }

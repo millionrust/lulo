@@ -173,7 +173,12 @@ per call site when off:
   for each message the main loop retrieves (`message 0x....`), each
   main-thread task (`task <spawn site>`), each thread-pool task and timer
   (`pool`/`timer <spawn site>`), each vsync tick and each frame
-  (`frame drew`/`frame idle`).
+  (`frame drew`/`frame idle`). Since ADR 0023 phase 2e it also prints
+  `gpui_windows cpu: <pool|timer> <spawn site> <100 ns> at <ms> ms`, the
+  CPU each thread-pool task used: WARP, the software rasteriser on a
+  machine without a GPU, runs its workers on the same system thread pool,
+  and this is how `launch_smoke.py` tells the app's own pool work from
+  WARP's.
 
 `scripts/windows/launch_smoke.py` turns both on, prints each app's phases,
 groups the wake-ups inside its idle window by source and also names the

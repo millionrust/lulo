@@ -10,9 +10,9 @@ ticks) against the budget. With `gpui_windows`' parked frame loop
 so the budget is one tick. The Lulo layer's two processes (`lulo-shell`
 and `lulo-session`, ADR 0023 phase 3), measured by `launch_smoke.py
 --shell`, are gated the same way. Terminal is exempt by default: its live shell
-(ConPTY) has its own work. A missing results file passes with a note, so a
-build failure, which the Windows job reports elsewhere, does not also fail
-this gate.
+(ConPTY) has its own work. A missing results file fails, and so does any
+app named with `--expect` that has no reading: a build that never ran the
+apps must not pass this gate.
 """
 
 from __future__ import annotations
@@ -74,6 +74,11 @@ def idle_failures(
     return failures
 
 
+def missing_failures(results: dict[str, dict], expected: list[str]) -> list[str]:
+    """One message per expected app the results do not mention at all."""
+    return [f"{app}: not measured (it did not run)" for app in expected if app not in results]
+
+
 def memory_failures(results: dict[str, dict], budget_mb: float) -> list[str]:
     """The Lulo layer's shell over its idle working-set budget (an 8 GB PC
     runs it all day; ADR 0023). Only checked when the shell ran."""
@@ -102,17 +107,24 @@ def main() -> int:
         default=None,
         help="Also fail when lulo-shell's idle working set is over this many MB.",
     )
+    parser.add_argument(
+        "--expect",
+        nargs="*",
+        default=[],
+        help="Apps (and lulo-shell/lulo-session) that must have a reading.",
+    )
     arguments = parser.parse_args()
     if not arguments.results.exists():
-        print(f"idle gate: {arguments.results} is missing (the apps did not run); skipped")
-        return 0
+        print(f"idle gate: FAIL: {arguments.results} is missing (the apps did not run)")
+        return 1
     results = json.loads(arguments.results.read_text(encoding="utf-8"))
     for app, measurement in sorted(results.items()):
         print(
             f"idle gate: {app}: {measurement.get('idle_ticks')} ticks, "
             f"{measurement.get('idle_wakes')} wake-ups, launch {measurement.get('launch_ms')} ms"
         )
-    failures = idle_failures(
+    failures = missing_failures(results, arguments.expect)
+    failures += idle_failures(
         results, arguments.budget_ticks, tuple(arguments.exempt), PER_APP_BUDGET_TICKS
     )
     if arguments.shell_memory_mb is not None:

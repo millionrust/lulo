@@ -265,7 +265,7 @@ jobs:
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
   windows:
-    name: Windows apps (non-blocking)
+    name: Windows apps
     # ADR 0023 phases 1-2c: Calculator, Notes, Text Editor, Preview, Clock,
     # Weather and Terminal, with the shared crates they need (rmac-ui,
     # storage, editor, Notes' store, the print/portal/spelling/sound seams),
@@ -291,11 +291,13 @@ jobs:
     # bar's and the Dock's work-area strips, the Dock opening Calculator,
     # Calculator's menus in the bar, a maximised window between the two,
     # Spotlight on Alt+Space, and the taskbar and work area restored on exit.
-    # Non-blocking until it has run clean for a while (each step below has
-    # `continue-on-error`), except the idle gate: since gpui_windows parks
-    # idle windows (ADR 0025) every app but Terminal, and both Lulo layer
-    # processes, must stay within one tick of CPU over the 20 s idle window,
-    # and that step fails the job.
+    # Blocking. Each check step has `continue-on-error`, so one run reports
+    # every kind of Windows breakage, and the last step ("Windows summary")
+    # fails the job when any of them failed: a step's API conclusion reads
+    # "success" under continue-on-error, so nothing may rely on it. The
+    # idle gate fails the job directly: since gpui_windows parks idle
+    # windows (ADR 0025) every app but Terminal, and both Lulo layer
+    # processes, must stay within one tick of CPU over the 20 s idle window.
     # See docs/ci.md.
     runs-on: windows-latest
     timeout-minutes: 75
@@ -344,11 +346,13 @@ jobs:
       # packaging/windows/icons/<id>.ico when it exists), so the launch
       # check can prove Files, lulo-shell and lulo-session carry theirs.
       - name: Make the Windows icons
+        id: icons
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: bash scripts/windows/make_icons.sh
 
       - name: Run Clippy
+        id: clippy
         continue-on-error: true
         run: cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
 
@@ -357,11 +361,13 @@ jobs:
       # gpui_windows (ADR 0025) runs with the apps' packages so it builds
       # with the same features: its frame-loop tests and upstream's own.
       - name: Run tests
+        id: tests
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
 
       - name: Build the apps
+        id: build
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
@@ -370,6 +376,7 @@ jobs:
             -p rmac-finder -p rmac-win-shell --bins
 
       - name: Launch each app
+        id: launch
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
@@ -388,7 +395,10 @@ jobs:
       # working set at idle must stay within 60 MB (8 GB PCs; WIN-OS-37).
       - name: Idle gate
         if: ${{ !cancelled() }}
-        run: python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1 --exempt rmac-terminal --shell-memory-mb 60
+        run: |
+          python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1 --exempt rmac-terminal --shell-memory-mb 60 \
+            --expect rmac-calculator rmac-notes rmac-text-editor rmac-preview rmac-clock \
+            rmac-weather rmac-terminal rmac-files lulo-shell lulo-session
 
       - name: Upload app screenshots
         if: ${{ !cancelled() }}
@@ -422,6 +432,29 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      # Blocking: every check above ran (each with continue-on-error, so one
+      # run shows them all); the job fails if any of them did. `outcome` is
+      # the step's real result, before continue-on-error.
+      - name: Windows summary
+        if: always()
+        env:
+          ICONS: ${{ steps.icons.outcome }}
+          CLIPPY: ${{ steps.clippy.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          LAUNCH: ${{ steps.launch.outcome }}
+        run: |
+          failed=0
+          for step in ICONS CLIPPY TESTS BUILD LAUNCH; do
+            outcome=${!step}
+            echo "Windows summary: $step: $outcome"
+            if [ "$outcome" != "success" ]; then failed=1; fi
+          done
+          if [ "$failed" = 1 ]; then
+            echo "::error::a Windows check failed (see the step marked failure above)"
+            exit 1
+          fi
 
   upstream-gpui-linux:
     name: Current GPUI Linux runtime gate

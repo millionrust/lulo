@@ -97,6 +97,25 @@ class IdleGateTests(unittest.TestCase):
         self.assertIn("lulo-shell", failures[0])
 
 
+class MissingReadingTests(unittest.TestCase):
+    def test_an_expected_app_that_never_ran_fails(self) -> None:
+        results = {"rmac-calculator": {"idle_ticks": 0.0}}
+        self.assertEqual(
+            idle_gate.missing_failures(results, ["rmac-calculator", "lulo-shell"]),
+            ["lulo-shell: not measured (it did not run)"],
+        )
+
+    def test_a_missing_results_file_fails(self) -> None:
+        import sys
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "windows-results.json"
+            with mock.patch.object(sys, "argv", ["idle_gate.py", str(missing)]):
+                self.assertEqual(idle_gate.main(), 1)
+
+
 class ShellMemoryGateTests(unittest.TestCase):
     def test_the_shell_within_its_budget_passes(self) -> None:
         results = {"lulo-shell": {"idle_working_set_mb": 41.5, "idle_private_mb": 30.0}}

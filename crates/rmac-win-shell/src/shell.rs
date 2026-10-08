@@ -308,6 +308,26 @@ pub fn run() -> i32 {
                     trace(|| format!("dock window {hwnd}"));
                 }
             });
+            // A closed panel (Spotlight, Control Centre, a menu) leaves its
+            // frame buffers and search state in freed heap pages: give them
+            // back once it is gone.
+            {
+                let executor = cx.background_executor().clone();
+                rmac_shell_layer::windows::on_closed(move |_, namespace| {
+                    let panel = ["rmac-launcher", "rmac-quick-settings", "rmac-menu-material"]
+                        .iter()
+                        .any(|prefix| namespace.starts_with(prefix));
+                    if panel {
+                        let timer = executor.timer(Duration::from_secs(2));
+                        executor
+                            .spawn(async move {
+                                timer.await;
+                                memory::trim("panel closed");
+                            })
+                            .detach();
+                    }
+                });
+            }
             rmac_shell_layer::windows::on_placed(move |hwnd, namespace| {
                 if namespace.starts_with("rmac-top-bar") {
                     if took_taskbar {

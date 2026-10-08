@@ -92,6 +92,7 @@ thread_local! {
     static BACKGROUND_WATCH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static STRIP_HOOKS: Hooks = const { RefCell::new(Vec::new()) };
     static PLACED_HOOKS: Hooks = const { RefCell::new(Vec::new()) };
+    static CLOSED_HOOKS: Hooks = const { RefCell::new(Vec::new()) };
 }
 
 /// Run `hook` with a surface's window and namespace when it first holds an
@@ -106,6 +107,12 @@ pub fn on_strip(hook: impl Fn(isize, &str) + 'static) {
 /// placed (the Windows shell keeps its wallpaper layer under the desktop).
 pub fn on_placed(hook: impl Fn(isize, &str) + 'static) {
     PLACED_HOOKS.with(|hooks| hooks.borrow_mut().push(Rc::new(hook)));
+}
+
+/// Run `hook` with a surface's window and namespace when it closes (the
+/// Windows shell gives back what a closed panel used).
+pub fn on_closed(hook: impl Fn(isize, &str) + 'static) {
+    CLOSED_HOOKS.with(|hooks| hooks.borrow_mut().push(Rc::new(hook)));
 }
 
 fn run_hooks(hooks: &'static std::thread::LocalKey<Hooks>, raw: isize, namespace: &str) {
@@ -467,6 +474,7 @@ fn forget(raw: isize) {
     });
     if let Some(window) = &removed {
         trace::trace(|| format!("layer {} closed", window.layer.namespace));
+        run_hooks(&CLOSED_HOOKS, raw, &window.layer.namespace);
     }
     if removed.is_some_and(|window| window.strip.is_some()) {
         appbar::remove(handle(raw));

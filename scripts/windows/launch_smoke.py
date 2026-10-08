@@ -917,6 +917,10 @@ def check_foreground_order(
 
 
 def main() -> int:
+    # Menu labels carry "…" and other characters the runner's console code
+    # page cannot print.
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("bin_dir", type=Path)
     parser.add_argument("apps", nargs="+")

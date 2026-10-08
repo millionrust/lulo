@@ -75,7 +75,7 @@ impl FileVocabulary {
 
     /// `mac` as this platform says it: unchanged, except on Windows where
     /// [`WINDOWS_WORDS`] gives Explorer's term.
-    pub fn label<'a>(self, mac: &'a str) -> &'a str {
+    pub fn label(self, mac: &str) -> &str {
         if !self.windows {
             return mac;
         }

@@ -3908,7 +3908,12 @@ mod tests {
         assert_eq!(shortcut("Quit and Keep Windows").as_deref(), Some("⌥⌘Q"));
         assert_eq!(shortcut("Close All").as_deref(), Some("⌥⌘W"));
         assert_eq!(shortcut("Close Selected").as_deref(), Some("⇧⌘W"));
-        assert_eq!(shortcut("Move to Bin").as_deref(), Some("⌘⌫"));
+        let move_to_bin = if cfg!(windows) {
+            "Move to Recycle Bin"
+        } else {
+            "Move to Bin"
+        };
+        assert_eq!(shortcut(move_to_bin).as_deref(), Some("⌘⌫"));
         assert_eq!(shortcut("Actual Size").as_deref(), Some("⌘0"));
         assert_eq!(shortcut("Rotate Right").as_deref(), Some("⌘R"));
         assert_eq!(shortcut("Next Item").as_deref(), Some("⌥"));

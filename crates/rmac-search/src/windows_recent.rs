@@ -46,7 +46,7 @@ pub(crate) fn recent_files_in(folder: &Path, limit: usize) -> Vec<PathBuf> {
         })
         .take(4 * MAX_LINKS)
         .collect::<Vec<_>>();
-    links.sort_by(|left, right| right.0.cmp(&left.0));
+    links.sort_by_key(|link| std::cmp::Reverse(link.0));
     let mut seen = std::collections::HashSet::new();
     links
         .into_iter()

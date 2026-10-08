@@ -1021,7 +1021,9 @@ verify.
   judges each app on its own CPU, fails a World Clock tick over 2 own
   ticks (`--max-world-tick-ticks 2`), and Clock's special idle budget
   drops from 48 ticks to 2, room for the one minute boundary a 20 s window
-  can hold. Lulo OS runs the same code, so its minute tick sheds the same
+  can hold; the Lulo bar (`lulo-shell`), whose clock also redraws once a
+  minute, gets the same 2 (run 37713970007 caught it at 2.00). Lulo OS
+  runs the same Clock code, so its minute tick sheds the same
   rasterisation; its runtime `idle-cpu` soak keeps Clock's window
   inactive, where it does not tick (0.01 % before and after, runs
   37678917994 and 37711054692).

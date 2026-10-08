@@ -1051,6 +1051,7 @@ def main() -> int:
                 startup_phases,
                 WAKE_PREFIX,
                 TICK_100NS,
+                software_renderer_ticks,
             )
         for failure in shell_failures:
             failures += 1

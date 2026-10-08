@@ -46,8 +46,14 @@ DEFAULT_EXEMPT = ("rmac-terminal",)
 # boundary and nothing else. (Before, each tick re-rasterised the whole
 # map and drew two frames: 19 and 28 ticks in runs 37633070594 and
 # 37657567719, under a 48-tick allowance.)
+#
+# The Lulo layer's menu bar shows the time to the minute too, so its
+# window redraws once a minute, and the same one-in-three window catches
+# it: run 37713970007 charged lulo-shell 2.00 ticks of its own for that
+# one update (three frames: the clock and `gpui_windows`' settle).
 PER_APP_BUDGET_TICKS: dict[str, float] = {
     "rmac-clock": 2.0,
+    "lulo-shell": 2.0,
 }
 
 

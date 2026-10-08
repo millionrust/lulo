@@ -123,6 +123,14 @@ class IdleGateTests(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("lulo-shell", failures[0])
 
+    def test_the_lulo_bars_minute_clock_fits_its_budget(self) -> None:
+        # Run 37713970007: the bar's once-a-minute clock update.
+        results = {"lulo-shell": {"idle_ticks": 2.0, "idle_renderer_ticks": 0.0}}
+        self.assertEqual(
+            idle_gate.idle_failures(results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS),
+            [],
+        )
+
 
 class TraceParsingTests(unittest.TestCase):
     def test_wake_ups_are_grouped_by_source_most_frequent_first(self) -> None:

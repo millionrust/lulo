@@ -721,6 +721,63 @@ fn workspace_for(index: usize) -> domain::WorkspaceId {
     domain::WorkspaceId(index as u64 + 1)
 }
 
+/// What a window's app is never changes while the window lives: read once
+/// (its process's path, a Store app's AUMID, the executable's description
+/// are slow to read) and kept by window and process.
+static IDENTITIES: Mutex<Option<std::collections::HashMap<(isize, u32), String>>> =
+    Mutex::new(None);
+
+/// The app id of `hwnd` (of process `pid`).
+fn identity(hwnd: HWND, pid: u32) -> String {
+    // A Lulo app that linked its menus says which app it is, whatever its
+    // executable is called; that can come after the window does.
+    if let Some(app_id) = rmac_apps::windows_apps::process_app(pid) {
+        return app_id;
+    }
+    let key = (hwnd.0 as isize, pid);
+    if let Some(app_id) = IDENTITIES
+        .lock()
+        .ok()
+        .and_then(|cache| cache.as_ref()?.get(&key).cloned())
+    {
+        return app_id;
+    }
+    let exe_path = process_path(pid);
+    let exe_key = rmac_apps::windows_apps::exe_key(&exe_path);
+    let aumid = if rmac_apps::windows_apps::app_for_exe(&exe_key).is_some() {
+        None
+    } else {
+        window_aumid(hwnd)
+    };
+    let app_id = rmac_apps::windows_apps::window_app_id(&exe_path, aumid.as_deref());
+    if rmac_apps::windows_apps::app(&app_id).is_none()
+        && rmac_apps::windows_apps::display_name_for(&app_id).is_none()
+    {
+        let name = if app_id == exe_key || exe_key.is_empty() {
+            rmac_apps::windows_apps::display_name(&exe_key, file_description(&exe_path).as_deref())
+        } else {
+            // A Store app: its window's title is its name.
+            title(hwnd)
+        };
+        rmac_apps::windows_apps::register_display_name(&app_id, &name);
+    }
+    if let Ok(mut cache) = IDENTITIES.lock() {
+        cache
+            .get_or_insert_with(std::collections::HashMap::new)
+            .insert(key, app_id.clone());
+    }
+    app_id
+}
+
+/// Forget the identities of windows that are gone.
+fn prune_identities(alive: &[(isize, u32)]) {
+    if let Ok(mut cache) = IDENTITIES.lock() {
+        if let Some(cache) = cache.as_mut() {
+            cache.retain(|key, _| alive.contains(key));
+        }
+    }
+}
+
 fn read_snapshot() -> domain::Snapshot {
     // For the Windows CI checks: how often the window list is read.
     static READS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -737,37 +794,15 @@ fn read_snapshot() -> domain::Snapshot {
     let count = handles.len() as u64;
     let mut windows = Vec::new();
     let mut alive_pids = Vec::new();
+    let mut alive_windows = Vec::new();
     for (rank, hwnd) in handles.into_iter().enumerate() {
         if !is_app_window(hwnd, own_pid) {
             continue;
         }
         let pid = process_id(hwnd);
         alive_pids.push(pid);
-        let exe_path = process_path(pid);
-        let exe_key = rmac_apps::windows_apps::exe_key(&exe_path);
-        let aumid = if rmac_apps::windows_apps::app_for_exe(&exe_key).is_some() {
-            None
-        } else {
-            window_aumid(hwnd)
-        };
-        // A Lulo app that linked its menus says which app it is, whatever
-        // its executable is called.
-        let app_id = rmac_apps::windows_apps::process_app(pid)
-            .unwrap_or_else(|| rmac_apps::windows_apps::window_app_id(&exe_path, aumid.as_deref()));
-        if rmac_apps::windows_apps::app(&app_id).is_none()
-            && rmac_apps::windows_apps::display_name_for(&app_id).is_none()
-        {
-            let name = if app_id == exe_key || exe_key.is_empty() {
-                rmac_apps::windows_apps::display_name(
-                    &exe_key,
-                    file_description(&exe_path).as_deref(),
-                )
-            } else {
-                // A Store app: its window's title is its name.
-                title(hwnd)
-            };
-            rmac_apps::windows_apps::register_display_name(&app_id, &name);
-        }
+        alive_windows.push((hwnd.0 as isize, pid));
+        let app_id = identity(hwnd, pid);
         let monitor = monitor_of(hwnd, &monitors);
         // SAFETY: reads a property of a live window.
         let minimized = unsafe { IsIconic(hwnd) }.as_bool();
@@ -815,6 +850,7 @@ fn read_snapshot() -> domain::Snapshot {
         });
     }
     prune_caches(&alive_pids, &windows);
+    prune_identities(&alive_windows);
 
     let outputs = monitors
         .iter()

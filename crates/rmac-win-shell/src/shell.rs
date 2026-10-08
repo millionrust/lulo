@@ -406,6 +406,10 @@ pub fn run() -> i32 {
                         if ready_rx.recv().await.is_ok() {
                             executor.timer(Duration::from_secs(2)).await;
                             memory::trim("idle after start-up");
+                            // The catalogues, icons and status readers
+                            // settle a few seconds later.
+                            executor.timer(Duration::from_secs(6)).await;
+                            memory::trim("settled after start-up");
                         }
                     })
                     .detach();

@@ -9,6 +9,8 @@ use crate::runtime::ServiceReader;
 /// Whether the fixed scene is asked for.
 pub fn active() -> bool {
     std::env::var_os("RMAC_SHELL_SCENE").is_some_and(|value| value == "1")
+        // A memory probe of the scene reads the machine's own status.
+        && std::env::var_os("RMAC_SHELL_SCENE_STATUS").is_none_or(|value| value != "real")
 }
 
 /// Wi-Fi "Lulo" at full signal, the battery at 80 % on battery power,

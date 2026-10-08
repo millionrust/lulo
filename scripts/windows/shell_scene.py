@@ -121,6 +121,9 @@ def main() -> int:
     parser.add_argument("--bin-dir", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--settle", type=float, default=8.0)
+    parser.add_argument("--real-status", action="store_true",
+                        help="a memory probe: the machine's own Wi-Fi, sound and battery readings")
+    parser.add_argument("--desktop", default="", help="a memory probe: show this folder on the desktop")
     parser.add_argument("--open", default="",
                         help="spotlight:<query> or control-centre: open that panel in the scene")
     args = parser.parse_args()
@@ -141,6 +144,10 @@ def main() -> int:
     }
     if args.open:
         environment["RMAC_SHELL_SCENE_OPEN"] = args.open
+    if args.real_status:
+        environment["RMAC_SHELL_SCENE_STATUS"] = "real"
+    if args.desktop:
+        environment["RMAC_DESKTOP_DIR"] = args.desktop
     log = work / "session.log"
     hidden = hide_other_windows()
     session = subprocess.Popen(
@@ -164,7 +171,11 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             session.kill()
         show_windows(hidden)
-        print(f"--- session log\n{log.read_text(errors='replace')[-4000:]}")
+        text = log.read_text(errors='replace')
+        for line in text.splitlines():
+            if line.startswith("lulo-shell: memory"):
+                print(line)
+        print(f"--- session log\n{text[-4000:]}")
 
 
 if __name__ == "__main__":

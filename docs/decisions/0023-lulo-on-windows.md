@@ -1046,6 +1046,10 @@ names and terms.
 
 ## Phase 3 design: the Lulo layer
 
+> Revised: the surfaces are now Lulo OS's own views, not Windows-only rebuilds of them
+> (see "Phase 3 revised: shared shell views" below). The rest of this design (one
+> process, `lulo-session`, AppBars, the taskbar and the ways out) stands.
+
 Phase 3 puts Lulo's shell on top of the Windows desktop as a layer the user
 switches on: `lulo-session.exe` turns it on, the Lulo menu's Turn Off Lulo (or
 `lulo-session --stop`) turns it off, and the normal Windows desktop comes back
@@ -1661,6 +1665,116 @@ traced it: the bar's window is laid out at its opening size (1009 × 511) before
 placed in its strip, so title 0 was traced at y 244, the click landed on the desktop and
 the menu never opened. The bar now traces its titles and the Spotlight icon only once the
 window has the bar's height.
+
+## Phase 3 revised: shared shell views (branch `op/win-shared-shell`)
+
+### Why
+
+Phase 3 slice 1 rebuilt the menu bar, the Dock, Spotlight and the desktop for Windows in
+`rmac-win-shell/src/ui`, from the shared pieces under them ("Phase 3 design"). Every fix
+on Lulo OS then had to be made twice, and the two drifted: on the owner's PC the Windows
+layer read as a different, worse product than Lulo OS (other menus, other spacing, other
+fonts, its own Spotlight). The owner's call: one shell UI with two backends, Windows as
+close to Lulo OS pixel for pixel as the platform allows.
+
+### Decision
+
+Lulo OS's own views (`shell/bins/rmac-menubar`, `rmac-dock`, `rmac-wallpaper`, and
+`crates/launcher-app`, `crates/quick-settings-app` for Spotlight and Control Centre) run on
+Windows unchanged in what they draw. `lulo-shell` hosts them in one GPUI process, as
+before (one Direct3D device and font collection). Each view crate is a library with a
+`start(cx)` entry point (Lulo OS's binaries keep their `main`, which calls `run`), and
+reaches the platform only through a small seam:
+
+| Need | Lulo OS | Windows | Where |
+|---|---|---|---|
+| Surface placement and layering | wlr-layer-shell surfaces | `rmac_shell_layer::open_layer_window`: borderless Win32 windows placed from the same anchors, margins and size; `Overlay` over `Top` (topmost), `Background` just above Explorer's desktop; exclusive zones as AppBars; zone-0 surfaces keep out of the others' zones, as on wlr-layer-shell; input regions as window regions (`gpui_windows`) | `shell/crates/rmac-shell-layer` |
+| Window list, focus, window actions | niri IPC | `rmac-compositor-system`'s Win32 backend: WinEvent hooks, one parking workspace for minimised windows, `AttachThreadInput` activation, the first window of an app the user starts comes to the front (WIN-OS-45) | `crates/rmac-compositor-system` |
+| Status items | NetworkManager, UPower, PipeWire, BlueZ | WLAN API, `GetSystemPowerStatus`, Core Audio (Bluetooth off) | `crates/rmac-shell-runtime/src/windows.rs` |
+| Apps' menus | D-Bus `rmac-app-menu` | the same protocol over a named pipe; the pipe host also records which Lulo app each process is | `crates/rmac-app-menu/src/pipe_host.rs` |
+| App catalogue, icons | XDG desktop entries | the same entries and icons laid out under `%APPDATA%\Lulo\Data` by `lulo-shell` (`share.rs`), `Exec` rewritten to the installed `.exe` | `crates/rmac-win-shell/src/share.rs`, `rmac-apps::windows_apps` |
+| Launch, open, power, sign-in rows | `xdg-open`, systemd, logind | `ShellExecute`, `ExitWindowsEx`, the Lulo menu's Windows rows (`system::extra_menu`) | `rmac_shell_layer::system` |
+| Trash | freedesktop Trash | the Recycle Bin (`SHQueryRecycleBinW`, `SHEmptyRecycleBinW`, the user's `$Recycle.Bin` folders watched) | `crates/rmac-places-system/src/recycle_bin.rs` |
+| Blurred materials (Dock shelf, menus, Control Centre) | niri's blur | the wallpaper under the surface, shrunk, blurred and saturated as niri's `blur { passes 3 offset 3 saturation 1.5 }`, drawn by the view under its tint (`over_backdrop`); DWM's blur-behind painted a black box on Windows Server and acrylic a grey one on real PCs (WIN-OS-49) | `rmac_shell_layer::windows::backdrop` |
+| The desktop's picture | a GPUI image | the layered window under the desktop window (WIN-OS-53); the view draws only its icons | `rmac_shell_layer::windows::wallpaper_layer` |
+| Font | Inter (fonts-inter) | Inter 4.1 embedded in `rmac-ui` (OFL-1.1, `assets/fonts/inter`) and named as the system UI font to `gpui_windows` | `crates/rmac-ui/src/fonts_windows.rs` |
+| Shortcuts that open panels | `rmac-shortcuts` endpoints | the hotkey (Alt+Space, fallbacks) and the bar's buttons ask `system::requests` by name (`launcher`, `quick-settings`) | `crates/rmac-win-shell/src/shell.rs` |
+
+What stays Windows' own in `rmac-win-shell`: `lulo-session` (the watchdog), the taskbar
+and Explorer's desktop icons put away and given back on every way out, the hotkey and its
+fallbacks with the one-time notice, Use Files for Folders, Start Lulo at Sign-In, the icon
+and Apps-folder helper processes, the memory trims, the session-end hooks. Everything in
+`rmac-win-shell/src/ui` (4 420 lines), the old status, menu-bar server, Recycle Bin,
+desktop-files, backdrop and window-list modules, and the Windows-only menu, clock and Dock
+models are deleted: 7 650 lines out of `rmac-win-shell`, 695 in.
+
+### Platform-specific code in the shared views
+
+The views stay the same code; the few places they differ are `cfg(windows)` blocks that
+do not change what Lulo OS draws:
+
+- `rmac-dock`: drag-and-drop and the trash's file operations through `system`; the shelf's
+  material resized in place when only its length changes (Windows keeps the Dock's AppBar,
+  so maximised windows do not jump); names for Windows apps without desktop entries.
+- `rmac-menubar`: the Lulo menu's power rows through `system::power`; Mission Control's
+  window-sizing items through the compositor's actions; the Windows rows appended.
+- `rmac-wallpaper`: the picture handed to the wallpaper layer; folders open in Files.
+- Spotlight and Control Centre: their surfaces opened through `open_layer_window`; Control
+  Centre closes when it loses the foreground (Windows has no outside-click catcher).
+- `LULO_SHELL_TRACE=1` traces (layers placed and closed, strips, backdrops, Dock tiles, bar
+  titles and menu rows, desktop icons, Spotlight's results, memory after each first frame)
+  for the Windows CI checks, compiled only on Windows.
+
+### Proof: the same scene on both
+
+`.github/workflows/shell-scenes.yml` draws three fixed scenes on Lulo OS (headless sway,
+nested niri at scale 1, `scripts/behavior/run_shell_scene.py`) and on `windows-latest`
+(`scripts/windows/shell_scene.py`), both 1024 × 768 at 100 %: the built-in wallpaper, the
+clock at Thursday 8 October 9:41 AM, fixed status readings (`RMAC_SHELL_SCENE`), the nine
+Lulo apps that build for Windows pinned, nothing running, an empty Desktop and Recycle Bin;
+then the same with Spotlight open on "text editor", and with Control Centre open
+(`RMAC_SHELL_SCENE_OPEN`). `scripts/compare_shell_scenes.py` blurs both screens slightly
+(σ 1.5, so sub-pixel text rendering does not count), compares luminance per region (screen,
+menu bar, Dock, desktop) and fails above a mean difference of 6 or 3 % of pixels changed by
+more than 32; the `shell-scene-diff` artifact holds both screens, a marked diff image and a
+JSON report per scene.
+
+Run 37832354889 (commit 5d46bda4), mean difference of 255 and share of pixels changed:
+
+| Scene | Screen | Menu bar | Dock | Desktop |
+|---|---|---|---|---|
+| Desktop | 0.67, 0.003 % | 1.25, 0.07 % | 4.37, 0 % | 0.00, 0 % |
+| Spotlight, "text editor" | 0.93, 0.03 % | 1.25, 0.07 % | 4.37, 0 % | 0.31, 0.04 % |
+| Control Centre | 1.27, 0.003 % | 1.75, 0.07 % | 4.37, 0 % | 0.70, 0 % |
+
+The first run of the same comparison against the old Windows UI (run 37813901668) scored
+a screen mean of 63.0 with 77 % of pixels changed.
+
+`shell_smoke.py` (the CI `windows` job) drives the shared views with real input as it drove
+the old UI: the work area between the bar's and the Dock's strips, the taskbar and
+Explorer's icons put away and given back on Turn Off, sign-out, a shell crash, a crash of the
+whole layer and uninstall; the Dock's tiles opening apps in front of a maximised Explorer
+window (WIN-OS-45), the running dot, a renamed Files known by its menus, the Recycle Bin
+following the bin and its menu; the bar's app menus (Calculator ▸ About Calculator); the
+desktop's icons (open, rename, drag, menu, new files, folders opening in Files); Spotlight
+on the hotkey, its fallback and the bar's magnifier; Use Files for Folders from the Lulo
+menu. All of these pass ("every Lulo layer check passed", job of run 37832355013).
+
+### What is left
+
+- **Memory and idle on the runner.** `idle_gate.py`'s 60 MB private budget and 2-tick idle
+  budget are not met yet: LEFT_MEMORY.
+- **The hotkey notice** (WIN-OS-62): recorded once and traced, but Lulo OS's notification
+  banner does not run on Windows, so nothing shows it.
+- **Bluetooth** in the menu bar and Control Centre (WIN-OS-63).
+- **What the blur samples.** Blurred materials draw the wallpaper only; an app window under
+  an open menu is not blurred into it (niri samples it on Lulo OS).
+- **Full-screen surfaces.** The bar's and the Dock's surfaces are the screen's size, as on
+  Lulo OS (their menus and magnification draw inside them); each costs Windows a full-screen
+  swap chain.
+- **The real PC.** CI proves the runner (Windows Server, WARP, 1024 × 768 at 100 %); the
+  owner's laptop (Radeon, 1366 × 768) still needs the coordinator's tour: DPI other than
+  100 %, the blur's look on a real wallpaper, the Dock's corners on that GPU.
 
 ## Phase plan
 

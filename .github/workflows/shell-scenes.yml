@@ -122,6 +122,12 @@ jobs:
             --output scenes/windows-spotlight.png --open "spotlight:text editor"
           python scripts/windows/shell_scene.py --bin-dir target/debug \
             --output scenes/windows-control-centre.png --open control-centre
+          # Memory probes, not compared: the runner's own status readings,
+          # then also its own Desktop folder.
+          python scripts/windows/shell_scene.py --bin-dir target/debug \
+            --output probes/real-status.png --real-status
+          python scripts/windows/shell_scene.py --bin-dir target/debug \
+            --output probes/real-desktop.png --real-status --desktop "$USERPROFILE/Desktop"
       - name: Upload the scene
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

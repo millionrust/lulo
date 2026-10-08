@@ -107,11 +107,11 @@ impl MenuOverlay {
         &mut self,
         items: Vec<Item>,
         app: bool,
-        left: f32,
+        position: Point<Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let state = ContextMenuState::open(point(px(left), px(1.0)), &self.focus, window, cx);
+        let state = ContextMenuState::open(position, &self.focus, window, cx);
         self.menu = Some(OpenMenu { state, items, app });
         cx.notify();
     }
@@ -179,6 +179,26 @@ pub(crate) fn open(index: usize, left: f32, cx: &mut App) {
         // state replaces them a moment later, as `Layout` does on Linux.
         super::validate_front_menus(cx);
     }
+    show_overlay(index, items, app, point(px(left), px(1.0)), cx);
+}
+
+/// `open_menu`'s value while a Dock tile's menu is open.
+pub(crate) const DOCK_MENU: usize = usize::MAX;
+
+/// Open a Dock tile's menu with its top-left corner at `position` on the
+/// screen (physical pixels).
+pub(crate) fn open_dock_menu(items: Vec<Item>, position: (i32, i32), cx: &mut App) {
+    let rect = overlay_rect(cx);
+    let scale = runtime(cx).scale;
+    let at = point(
+        px((position.0 - rect.left) as f32 / scale),
+        px((position.1 - rect.top) as f32 / scale),
+    );
+    show_overlay(DOCK_MENU, items, false, at, cx);
+}
+
+fn show_overlay(index: usize, items: Vec<Item>, app: bool, at: Point<Pixels>, cx: &mut App) {
+    super::keep_panel(super::Panel::Menu, cx);
     let overlay = match runtime(cx).overlay {
         Some(overlay) => overlay,
         None => {
@@ -200,7 +220,7 @@ pub(crate) fn open(index: usize, left: f32, cx: &mut App) {
         return;
     };
     let _ = overlay.handle.update(cx, |_, window, cx| {
-        entity.update(cx, |view, cx| view.show(items, app, left, window, cx));
+        entity.update(cx, |view, cx| view.show(items, app, at, window, cx));
     });
     // Shown once it holds the new menu, so no frame of the last one shows.
     let rect = overlay_rect(cx);
@@ -211,7 +231,11 @@ pub(crate) fn open(index: usize, left: f32, cx: &mut App) {
         state.open_menu = Some(index);
         cx.notify();
     });
-    trace(|| format!("menu {index} open"));
+    if index == DOCK_MENU {
+        trace(|| "menu dock open".into());
+    } else {
+        trace(|| format!("menu {index} open"));
+    }
 }
 
 /// Show the front Lulo app's freshly validated items in its open menu.
@@ -269,4 +293,22 @@ pub(crate) fn close(give_back: bool, cx: &mut App) {
         }
     });
     trace(|| "menu closed".into());
+    super::release_later(super::Panel::Menu, cx);
+}
+
+/// Let go of the menu panel's window a while after the last menu closed.
+pub(crate) fn release(cx: &mut App) {
+    if shell(cx).read(cx).open_menu.is_some() {
+        return;
+    }
+    let Some(overlay) = cx.global_mut::<super::Runtime>().overlay.take() else {
+        return;
+    };
+    if cx.has_global::<OverlayEntity>() {
+        cx.remove_global::<OverlayEntity>();
+    }
+    let _ = overlay
+        .handle
+        .update(cx, |_, window, _| window.remove_window());
+    trace(|| "menu panel released".into());
 }

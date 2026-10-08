@@ -36,6 +36,9 @@ pub struct AppWindow {
     pub exe_path: String,
     pub title: String,
     pub minimized: bool,
+    /// The window's own AppUserModelID, when it has one and its
+    /// executable is not already a known Lulo app.
+    pub aumid: Option<String>,
 }
 
 /// Explorer's own desktop and taskbar windows are not app windows.
@@ -185,34 +188,112 @@ pub fn app_windows() -> Vec<AppWindow> {
         .filter(|&hwnd| is_app_window(hwnd, own_pid))
         .map(|hwnd| {
             let pid = process_id(hwnd);
+            let exe_path = process_path(pid);
+            let aumid = if apps::lulo_app_for_exe(&apps::exe_key(&exe_path)).is_some() {
+                None
+            } else {
+                window_aumid(hwnd)
+            };
             AppWindow {
                 hwnd: hwnd.0 as isize,
                 pid,
-                exe_path: process_path(pid),
+                exe_path,
                 title: title(hwnd),
                 // SAFETY: reads a property of a live window.
                 minimized: unsafe { IsIconic(hwnd) }.as_bool(),
+                aumid,
             }
         })
         .collect::<Vec<_>>();
-    // Forget processes that have no windows any more, so a reused id is
+    // Forget processes and windows that are gone, so a reused id is
     // looked up afresh.
     PROCESS_PATHS.with(|paths| {
         paths
             .borrow_mut()
             .retain(|pid, _| windows.iter().any(|window| window.pid == *pid))
     });
+    AUMIDS.with(|ids| {
+        ids.borrow_mut()
+            .retain(|hwnd, _| windows.iter().any(|window| window.hwnd == *hwnd))
+    });
     windows
+}
+
+thread_local! {
+    static AUMIDS: RefCell<HashMap<isize, Option<String>>> = RefCell::new(HashMap::new());
+}
+
+/// The AppUserModelID set on `hwnd` itself (`System.AppUserModel.ID` in
+/// its property store), as the taskbar reads it to group windows. Read
+/// once per window.
+fn window_aumid(hwnd: HWND) -> Option<String> {
+    use windows::Win32::Foundation::PROPERTYKEY;
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::System::Com::StructuredStorage::{
+        PropVariantClear, PropVariantToStringAlloc,
+    };
+    use windows::Win32::UI::Shell::PropertiesSystem::{
+        IPropertyStore, SHGetPropertyStoreForWindow,
+    };
+    // PKEY_AppUserModel_ID.
+    const KEY: PROPERTYKEY = PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+        pid: 5,
+    };
+    let key = hwnd.0 as isize;
+    if let Some(known) = AUMIDS.with(|ids| ids.borrow().get(&key).cloned()) {
+        return known;
+    }
+    // SAFETY: reads a property of a live window through the shell's own
+    // per-window property store; the string is freed after copying.
+    let aumid = unsafe {
+        SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd)
+            .ok()
+            .and_then(|store| store.GetValue(&KEY).ok())
+            .and_then(|mut value| {
+                let text = PropVariantToStringAlloc(&value).ok();
+                let _ = PropVariantClear(&mut value);
+                text
+            })
+            .map(|text| {
+                let copied = String::from_utf16_lossy(text.as_wide());
+                CoTaskMemFree(Some(text.0 as *const core::ffi::c_void));
+                copied
+            })
+            .filter(|text| !text.is_empty())
+    };
+    AUMIDS.with(|ids| ids.borrow_mut().insert(key, aumid.clone()));
+    aumid
 }
 
 /// The apps that have windows, in front-to-back order of their front-most
 /// window. Store apps all run in `ApplicationFrameHost.exe`, so each is
-/// told apart by its window title.
-pub fn running(windows: &[AppWindow]) -> Vec<Running> {
+/// told apart by its window title. `pipe_app_id` names the Lulo app a
+/// process said it is over the menu pipe.
+pub fn running<'a>(
+    windows: &[AppWindow],
+    pipe_app_id: impl Fn(u32) -> Option<&'a str>,
+) -> Vec<Running> {
     let mut running: Vec<Running> = Vec::new();
     for window in windows {
         let key = apps::exe_key(&window.exe_path);
         if key.is_empty() {
+            continue;
+        }
+        let lulo = apps::identify(&key, pipe_app_id(window.pid), window.aumid.as_deref());
+        if let Some(app) = lulo {
+            // A Lulo app is one tile whatever its executable is called.
+            let key = app.exe.to_owned();
+            match running.iter_mut().find(|known| known.key == key) {
+                Some(known) => known.windows.push(window.hwnd),
+                None => running.push(Running {
+                    key,
+                    exe_path: window.exe_path.clone(),
+                    name: app.name.to_owned(),
+                    windows: vec![window.hwnd],
+                    lulo: Some(app),
+                }),
+            }
             continue;
         }
         let (key, name) = if key == "applicationframehost.exe" {
@@ -230,6 +311,7 @@ pub fn running(windows: &[AppWindow]) -> Vec<Running> {
                 exe_path: window.exe_path.clone(),
                 name,
                 windows: vec![window.hwnd],
+                lulo: None,
             }),
         }
     }

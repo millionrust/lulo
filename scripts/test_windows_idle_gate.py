@@ -97,6 +97,25 @@ class IdleGateTests(unittest.TestCase):
         self.assertIn("lulo-shell", failures[0])
 
 
+class ShellMemoryGateTests(unittest.TestCase):
+    def test_the_shell_within_its_budget_passes(self) -> None:
+        results = {"lulo-shell": {"idle_working_set_mb": 41.5, "idle_private_mb": 30.0}}
+        self.assertEqual(idle_gate.memory_failures(results, 60.0), [])
+
+    def test_the_shell_over_its_budget_fails(self) -> None:
+        results = {"lulo-shell": {"idle_working_set_mb": 114.0, "idle_private_mb": 80.0}}
+        failures = idle_gate.memory_failures(results, 60.0)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("114.0 MB", failures[0])
+
+    def test_a_missing_reading_fails_only_when_the_shell_ran(self) -> None:
+        self.assertEqual(idle_gate.memory_failures({}, 60.0), [])
+        self.assertEqual(
+            idle_gate.memory_failures({"lulo-shell": {"idle_ticks": 0.0}}, 60.0),
+            ["lulo-shell: no idle memory reading"],
+        )
+
+
 class TraceParsingTests(unittest.TestCase):
     def test_wake_ups_are_grouped_by_source_most_frequent_first(self) -> None:
         trace = "\n".join(

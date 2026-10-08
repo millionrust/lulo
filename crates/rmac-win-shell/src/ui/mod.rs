@@ -6,6 +6,7 @@ mod assets;
 mod bar;
 mod dock;
 mod menu;
+mod notice;
 mod spotlight;
 
 use std::collections::HashMap;
@@ -29,6 +30,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::model::apps;
 use crate::model::clock::{self, ClockStyle};
 use crate::model::dock::{self as dock_model, Pinned, Tile, TileIcon};
+use crate::model::hotkey as model_hotkey;
 use crate::model::menus;
 use crate::model::search::Entry;
 use crate::win::appbar::{self, Edge};
@@ -36,10 +38,16 @@ use crate::win::events::{self, DesktopEvent, Hooks};
 use crate::win::menubar_server::{self, MenuEvent, Server};
 use crate::win::status::{Battery, StatusEvent, Volume, Wifi};
 use crate::win::windows_list::{self, AppWindow};
-use crate::win::{catalog, icons, launch, power, registry, surface, taskbar, trace};
+use crate::win::{
+    backdrop, catalog, desktop, icons, launch, memory, power, registry, surface, taskbar, trace,
+};
 
 /// The menu bar's height, as the Mac's.
 pub(crate) const BAR_HEIGHT: f32 = 24.0;
+
+/// The registry value recording the Spotlight hotkey the user was last
+/// told about (`model::hotkey::Hotkey::code`).
+const HOTKEY_NOTICE: &str = "SpotlightHotkeyNotice";
 
 /// The app in front, whose name and menus the bar shows.
 #[derive(Clone, Debug)]
@@ -82,6 +90,10 @@ pub(crate) struct ShellState {
     /// The bar title whose menu is open (0 is the Lulo menu).
     pub open_menu: Option<usize>,
     pub spotlight_open: bool,
+    /// Whether the Recycle Bin holds anything.
+    pub bin_full: bool,
+    /// Counts catalogue loads, so Spotlight searches again when one lands.
+    pub catalog_generation: u64,
 }
 
 impl ShellState {
@@ -106,14 +118,36 @@ impl ShellState {
             starts_at_sign_in: registry::starts_at_sign_in(),
             open_menu: None,
             spotlight_open: false,
+            bin_full: false,
+            catalog_generation: 0,
         }
+    }
+
+    /// Spotlight let go of its window: drop the file list (read again at
+    /// the next open) and the icons only its results showed.
+    fn release_catalog(&mut self) {
+        self.files = Vec::new();
+        self.files_state = ListState::Missing;
+        let shown = self
+            .tiles
+            .iter()
+            .filter_map(|tile| match &tile.icon {
+                TileIcon::Shell(source) => Some(source.as_str()),
+                TileIcon::Asset(_) => None,
+            })
+            .collect::<std::collections::HashSet<_>>();
+        self.icons
+            .retain(|source, _| shown.contains(source.as_str()));
     }
 
     /// Read the window list again and rebuild the Dock's tiles.
     fn refresh_windows(&mut self) {
         events::windows_read();
         self.windows = windows_list::app_windows();
-        let running = windows_list::running(&self.windows);
+        let lulo_menus = &self.lulo_menus;
+        let running = windows_list::running(&self.windows, |pid| {
+            lulo_menus.get(&pid).map(|(app_id, _)| app_id.as_str())
+        });
         self.tiles = dock_model::tiles(&self.pins, &running);
         let wanted = self
             .tiles
@@ -282,7 +316,74 @@ pub(crate) struct Runtime {
     /// The bar's and the Dock's strips in physical pixels.
     pub bar_rect: RECT,
     pub dock_strip: RECT,
+    /// The Dock's window (its shelf), in physical pixels.
+    pub dock_rect: RECT,
     pub scale: f32,
+    /// A notice to show once the bar is in place.
+    pending_notice: Option<(String, String)>,
+    /// Bumped whenever Spotlight or the menu panel opens or closes, so a
+    /// release planned at a close is called off by the next open.
+    spotlight_uses: u64,
+    menu_uses: u64,
+}
+
+/// A panel window made when first needed and let go of when unused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Panel {
+    Spotlight,
+    Menu,
+}
+
+/// How long a closed panel keeps its window, ready to show again at once,
+/// before its window and textures are let go of.
+/// `LULO_PANEL_RELEASE_SECONDS` shortens it for the CI memory check.
+fn release_delay() -> Duration {
+    std::env::var("LULO_PANEL_RELEASE_SECONDS")
+        .ok()
+        .and_then(|seconds| seconds.parse().ok())
+        .map_or(Duration::from_secs(30), Duration::from_secs)
+}
+
+fn bump_uses(panel: Panel, cx: &mut App) -> u64 {
+    let runtime = cx.global_mut::<Runtime>();
+    let uses = match panel {
+        Panel::Spotlight => &mut runtime.spotlight_uses,
+        Panel::Menu => &mut runtime.menu_uses,
+    };
+    *uses += 1;
+    *uses
+}
+
+/// `panel` is opening: call off its planned release.
+pub(crate) fn keep_panel(panel: Panel, cx: &mut App) {
+    bump_uses(panel, cx);
+}
+
+/// `panel` closed: let go of it after `release_delay` unless it opens
+/// again first. One timer, not a poll.
+pub(crate) fn release_later(panel: Panel, cx: &mut App) {
+    let planned = bump_uses(panel, cx);
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(release_delay()).await;
+        cx.update(|cx| {
+            let runtime = runtime(cx);
+            let uses = match panel {
+                Panel::Spotlight => runtime.spotlight_uses,
+                Panel::Menu => runtime.menu_uses,
+            };
+            if uses != planned {
+                return;
+            }
+            match panel {
+                Panel::Spotlight => spotlight::release(cx),
+                Panel::Menu => menu::release(cx),
+            }
+            cx.background_executor()
+                .spawn(async move { memory::trim(&format!("{panel:?} released")) })
+                .detach();
+        });
+    })
+    .detach();
 }
 
 impl Global for Runtime {}
@@ -309,6 +410,7 @@ fn restore_desktop(bar: Option<isize>, dock: Option<isize>, took_taskbar: bool) 
     if took_taskbar {
         taskbar::restore();
     }
+    desktop::restore();
     registry::delete_value("BarWindow");
     registry::delete_value("DockWindow");
 }
@@ -423,11 +525,12 @@ fn hook_bar(hwnd: isize, signals: async_channel::Sender<Signal>, took_taskbar: b
             } else if matches!(message, WM_DISPLAYCHANGE | WM_DPICHANGED) {
                 let _ = signals.try_send(Signal::Reposition);
             } else if message == WM_QUERYENDSESSION || (message == WM_ENDSESSION && wparam.0 != 0) {
-                // The user's own taskbar setting comes back before Windows
-                // ends the session.
+                // The user's own taskbar setting and desktop come back
+                // before Windows ends the session.
                 if took_taskbar {
                     taskbar::restore();
                 }
+                desktop::restore();
             }
             None
         }),
@@ -461,6 +564,18 @@ fn place_bars(cx: &mut App) {
         if rect != current_bar {
             surface::show_at(windows_list::handle(bar.hwnd), rect);
             appbar::moved(windows_list::handle(bar.hwnd));
+            // The desktop's icons move clear of the bar, off the UI thread
+            // (Explorer answers in its own time), and once more a moment
+            // later, after Explorer has handled the new work area itself.
+            let bottom = rect.bottom;
+            blocking::unblock(move || desktop::make_room(bottom)).detach();
+            let executor = cx.background_executor().clone();
+            cx.background_executor()
+                .spawn(async move {
+                    executor.timer(Duration::from_secs(2)).await;
+                    desktop::make_room(bottom);
+                })
+                .detach();
         }
         let mut strip = RECT::default();
         if let Some(dock) = dock {
@@ -497,7 +612,11 @@ fn place_bars(cx: &mut App) {
             runtime.scale = scale;
             runtime.bar_rect = rect;
             runtime.dock_strip = strip;
+            let pending = runtime.pending_notice.take();
             dock::place(cx);
+            if let Some((title, detail)) = pending {
+                notice::show(title, detail, cx);
+            }
         });
     })
     .detach();
@@ -559,6 +678,7 @@ pub(crate) fn load_catalog(cx: &mut App) {
                     state.files_state = ListState::Ready;
                 }
             }
+            state.catalog_generation += 1;
             cx.notify();
         });
     })
@@ -599,6 +719,10 @@ pub(crate) fn run_shell_command(action: &str, cx: &mut App) {
             }
         }
         menus::TURN_OFF => quit(cx),
+        menus::OPEN_RECYCLE_BIN => {
+            launch::open(launch::Request::Shell("shell:RecycleBinFolder".into()))
+        }
+        menus::EMPTY_RECYCLE_BIN => crate::win::recycle::empty(),
         menus::HIDE_APP => later(cx, move || {
             front_windows
                 .iter()
@@ -710,6 +834,7 @@ pub fn run() -> i32 {
     rmac_ui::application()
         .with_assets(rmac_ui::layered_assets(assets::ShellAssets))
         .run(move |cx: &mut App| {
+            memory::report("GPUI started");
             rmac_ui::init_application(cx);
             let Some(server) = server.take() else {
                 cx.quit();
@@ -728,7 +853,11 @@ pub fn run() -> i32 {
                 took_taskbar,
                 bar_rect: RECT::default(),
                 dock_strip: RECT::default(),
+                dock_rect: RECT::default(),
                 scale: 1.0,
+                pending_notice: None,
+                spotlight_uses: 0,
+                menu_uses: 0,
             });
             // The Dock asks for Windows apps' icons as soon as it lists them.
             icons::start(icon_tx.clone());
@@ -769,18 +898,26 @@ pub fn run() -> i32 {
             registry::set_dword("DockWindow", dock.hwnd as u32);
             {
                 let signals = signal_tx.clone();
-                later(cx, move || {
+                let shell = shell.clone();
+                cx.spawn(async move |cx| {
                     appbar::register(windows_list::handle(bar.hwnd));
                     appbar::register(windows_list::handle(dock.hwnd));
+                    backdrop::apply(windows_list::handle(bar.hwnd), backdrop::Surface::Bar);
+                    backdrop::apply(windows_list::handle(dock.hwnd), backdrop::Surface::Dock);
                     if took_taskbar {
                         taskbar::take_over();
                     }
                     hook_bar(bar.hwnd, signals, took_taskbar);
-                });
+                    // The tints follow whether Windows blurs behind them.
+                    shell.update(cx, |_, cx| cx.notify());
+                })
+                .detach();
             }
+            memory::report("bar and Dock opened");
             place_bars(cx);
             later(cx, || {
-                trace(|| format!("ready at {:.0} ms", crate::win::process_millis()))
+                trace(|| format!("ready at {:.0} ms", crate::win::process_millis()));
+                memory::report("ready");
             });
 
             {
@@ -790,28 +927,50 @@ pub fn run() -> i32 {
                 });
             }
             let hooks = events::start(desktop_tx.clone());
-            trace(|| {
-                format!(
-                    "spotlight hotkey Alt+Space {}",
-                    if hooks.as_ref().is_some_and(|hooks| hooks.hotkey) {
-                        "registered"
-                    } else {
-                        "unavailable"
-                    }
-                )
+            let hotkey = hooks.as_ref().and_then(|hooks| hooks.hotkey);
+            trace(|| match hotkey {
+                Some(hotkey) if hotkey.is_fallback() => {
+                    format!("spotlight hotkey {} (fallback)", hotkey.label())
+                }
+                Some(hotkey) => format!("spotlight hotkey {} (first choice)", hotkey.label()),
+                None => "spotlight hotkey none (the menu bar's icon opens Spotlight)".into(),
             });
+            // The first time a fallback is in effect, say which key it is.
+            if let Some(hotkey) = hotkey {
+                if model_hotkey::should_notice(hotkey, registry::get_dword(HOTKEY_NOTICE)) {
+                    registry::set_dword(HOTKEY_NOTICE, hotkey.code());
+                    let (title, detail) = model_hotkey::notice(hotkey);
+                    if runtime(cx).bar_rect.bottom > runtime(cx).bar_rect.top {
+                        notice::show(title, detail, cx);
+                    } else {
+                        cx.global_mut::<Runtime>().pending_notice = Some((title, detail));
+                    }
+                }
+            }
             cx.global_mut::<Runtime>().hooks = hooks;
             crate::win::status::start(status_tx.clone());
+            crate::win::recycle::watch(status_tx.clone());
             {
                 let catalog_tx = catalog_tx.clone();
                 catalog::watch(move |list| {
                     let _ = catalog_tx.try_send(list);
                 });
             }
-            load_catalog(cx);
-            // Spotlight opens on a hotkey and must be there at once: make
-            // its window now, after the bar and the Dock are on screen.
-            cx.defer(spotlight::prepare);
+            // Spotlight's window and catalogue (the Apps folder pulls in a
+            // good part of the Windows shell) are made the first time it
+            // opens, not at start: most of the time only the bar and the
+            // Dock are on screen, and they are all an 8 GB PC should pay
+            // for. Once the layer is up and idle, what setup touched is
+            // given back.
+            {
+                let executor = cx.background_executor().clone();
+                cx.background_executor()
+                    .spawn(async move {
+                        executor.timer(Duration::from_secs(1)).await;
+                        memory::trim("idle after start-up");
+                    })
+                    .detach();
+            }
 
             spawn_receivers(
                 cx,
@@ -842,6 +1001,7 @@ pub fn run() -> i32 {
     // Whatever stopped the loop, the desktop is the user's again.
     if !CLEANED_UP.load(Ordering::Acquire) {
         taskbar::restore();
+        desktop::restore();
     }
     0
 }
@@ -903,11 +1063,19 @@ fn spawn_receivers(cx: &mut App, shell: Entity<ShellState>, receivers: ReceiverS
         cx.spawn(async move |cx| {
             while let Ok(event) = menu_events.recv().await {
                 let menus_changed = matches!(event, MenuEvent::Menus { .. });
-                shell.update(cx, |state, cx| {
+                let tiles_changed = shell.update(cx, |state, cx| {
+                    let mut tiles_changed = false;
                     match event {
                         MenuEvent::Menus { pid, app_id, menus } => {
                             trace(|| format!("menus from {app_id} ({pid}): {}", menus.len()));
-                            state.lulo_menus.insert(pid, (app_id, menus));
+                            let new_app = state.lulo_menus.insert(pid, (app_id, menus)).is_none();
+                            if new_app {
+                                // The app id it gave names its Dock tile,
+                                // whatever its executable is called.
+                                let before = state.tiles.clone();
+                                state.refresh_windows();
+                                tiles_changed = before != state.tiles;
+                            }
                         }
                         MenuEvent::Commands { pid, writer } => {
                             state.commands.insert(pid, Arc::new(Mutex::new(writer)));
@@ -918,9 +1086,13 @@ fn spawn_receivers(cx: &mut App, shell: Entity<ShellState>, receivers: ReceiverS
                         }
                     }
                     cx.notify();
+                    tiles_changed
                 });
                 if menus_changed {
                     cx.update(menu::refresh);
+                }
+                if tiles_changed {
+                    cx.update(dock::place);
                 }
             }
         })
@@ -935,6 +1107,12 @@ fn spawn_receivers(cx: &mut App, shell: Entity<ShellState>, receivers: ReceiverS
                         StatusEvent::Battery(battery) => state.battery = battery,
                         StatusEvent::Volume(volume) => state.volume = volume,
                         StatusEvent::Wifi(wifi) => state.wifi = wifi,
+                        StatusEvent::RecycleBin(full) => {
+                            trace(|| {
+                                format!("recycle bin {}", if full { "full" } else { "empty" })
+                            });
+                            state.bin_full = full;
+                        }
                     }
                     cx.notify();
                 });

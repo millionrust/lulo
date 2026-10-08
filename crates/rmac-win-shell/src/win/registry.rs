@@ -15,13 +15,19 @@ const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "Lulo";
 
 pub fn get_dword(name: &str) -> Option<u32> {
+    get_user_dword(SHELL_KEY, name)
+}
+
+/// A DWORD value under `HKEY_CURRENT_USER\<path>`, read only (Windows'
+/// own settings Lulo follows, such as transparency effects).
+pub fn get_user_dword(path: &str, name: &str) -> Option<u32> {
     let mut value = 0u32;
     let mut size = std::mem::size_of::<u32>() as u32;
     // SAFETY: `value` and `size` are valid out-parameters for a DWORD.
     let status = unsafe {
         RegGetValueW(
             HKEY_CURRENT_USER,
-            &HSTRING::from(SHELL_KEY),
+            &HSTRING::from(path),
             &HSTRING::from(name),
             RRF_RT_REG_DWORD,
             None,

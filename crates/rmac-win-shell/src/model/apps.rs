@@ -13,9 +13,15 @@ pub struct LuloApp {
     pub icon: &'static str,
 }
 
-/// The Lulo apps that build for Windows (ADR 0023 phase 2), in the Dock's
-/// order.
-pub const LULO_APPS: [LuloApp; 7] = [
+/// The Lulo apps that build for Windows (ADR 0023 phases 2 and 4), in the
+/// Dock's order: Files first, where the Mac's Dock has the Finder.
+pub const LULO_APPS: [LuloApp; 8] = [
+    LuloApp {
+        app_id: "org.rmac.Files",
+        name: "Files",
+        exe: "rmac-files.exe",
+        icon: "apps/org.rmac.Files.svg",
+    },
     LuloApp {
         app_id: "org.rmac.Notes",
         name: "Notes",
@@ -71,6 +77,36 @@ pub fn lulo_app(app_id: &str) -> Option<&'static LuloApp> {
     LULO_APPS.iter().find(|app| app.app_id == app_id)
 }
 
+/// The Lulo app whose Windows AppUserModelID is `aumid` (`Lulo.Files` for
+/// `org.rmac.Files`, as `rmac_ui` sets it and the installer's shortcuts
+/// carry it; any case, as Windows compares them).
+pub fn lulo_app_for_aumid(aumid: &str) -> Option<&'static LuloApp> {
+    let aumid = aumid.trim();
+    let name = aumid
+        .get(..5)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("Lulo."))
+        .and_then(|_| aumid.get(5..))
+        .filter(|name| !name.is_empty())?;
+    LULO_APPS.iter().find(|app| {
+        app.app_id
+            .strip_prefix("org.rmac.")
+            .is_some_and(|short| short.eq_ignore_ascii_case(name))
+    })
+}
+
+/// The Lulo app a running process is, by what is known of it: its
+/// executable's file name, the app id it gave the menu bar over the menu
+/// pipe, or its window's AppUserModelID.
+pub fn identify(
+    exe_key: &str,
+    pipe_app_id: Option<&str>,
+    aumid: Option<&str>,
+) -> Option<&'static LuloApp> {
+    lulo_app_for_exe(exe_key)
+        .or_else(|| pipe_app_id.and_then(lulo_app))
+        .or_else(|| aumid.and_then(lulo_app_for_aumid))
+}
+
 /// The executable's file name from a full path, lower-cased: the key the
 /// Dock groups windows by.
 pub fn exe_key(path: &str) -> String {
@@ -120,6 +156,10 @@ mod tests {
         );
         assert!(lulo_app_for_exe("calc.exe").is_none());
         assert_eq!(
+            lulo_app_for_exe("rmac-files.exe").map(|app| app.icon),
+            Some("apps/org.rmac.Files.svg")
+        );
+        assert_eq!(
             lulo_app("org.rmac.Notes").map(|app| app.exe),
             Some("rmac-notes.exe")
         );
@@ -127,6 +167,35 @@ mod tests {
             assert!(app.icon.ends_with(".svg"));
             assert!(app.exe.starts_with("rmac-"));
         }
+    }
+
+    #[test]
+    fn lulo_apps_are_found_by_app_id_and_app_user_model_id() {
+        assert_eq!(
+            lulo_app_for_aumid("Lulo.Files").map(|app| app.exe),
+            Some("rmac-files.exe")
+        );
+        assert_eq!(
+            lulo_app_for_aumid("lulo.texteditor").map(|app| app.name),
+            Some("Text Editor")
+        );
+        assert!(lulo_app_for_aumid("Microsoft.WindowsCalculator").is_none());
+        assert!(lulo_app_for_aumid("Lulo.").is_none());
+        // Files renamed or run from elsewhere is still Files, by the id it
+        // gave the bar or by its AppUserModelID; never Preview.
+        assert_eq!(
+            identify("files-dev.exe", Some("org.rmac.Files"), None).map(|app| app.name),
+            Some("Files")
+        );
+        assert_eq!(
+            identify("files-dev.exe", None, Some("Lulo.Files")).map(|app| app.name),
+            Some("Files")
+        );
+        assert_eq!(
+            identify("rmac-files.exe", None, None).map(|app| app.name),
+            Some("Files")
+        );
+        assert!(identify("notepad.exe", None, None).is_none());
     }
 
     #[test]

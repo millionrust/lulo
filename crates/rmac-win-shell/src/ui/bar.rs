@@ -12,6 +12,7 @@ use gpui::{
 use rmac_ui::mac;
 
 use super::{assets, ShellState, BAR_HEIGHT};
+use crate::win::backdrop::{self, Surface as Backdrop};
 use crate::win::trace;
 
 /// The titles last reported to the CI trace, with where they were.
@@ -21,14 +22,20 @@ pub(crate) struct BarView {
     shell: Entity<ShellState>,
     title_bounds: Rc<RefCell<Vec<Bounds<Pixels>>>>,
     traced: TracedTitles,
+    traced_spotlight: Rc<RefCell<Option<Bounds<Pixels>>>>,
     _observe: Subscription,
 }
 
-/// The bar's tint: the regular material, opaque enough to read over any
-/// wallpaper without a compositor blur behind it.
+/// The bar's tint: the regular material over Windows' blur, as the Mac's
+/// menu bar; without the blur (transparency effects off), opaque enough to
+/// read over any wallpaper.
 pub(crate) fn bar_fill() -> gpui::Hsla {
     let mut fill = mac::material();
-    fill.a = fill.a.max(0.86);
+    fill.a = if backdrop::frosted(Backdrop::Bar) {
+        fill.a.min(0.5)
+    } else {
+        fill.a.max(0.86)
+    };
     fill
 }
 
@@ -40,6 +47,7 @@ impl BarView {
             shell,
             title_bounds: Rc::new(RefCell::new(Vec::new())),
             traced: Rc::new(RefCell::new(Vec::new())),
+            traced_spotlight: Rc::new(RefCell::new(None)),
             _observe: observe,
         }
     }
@@ -127,6 +135,7 @@ impl Render for BarView {
         });
         let bounds = self.title_bounds.clone();
         let traced = self.traced.clone();
+        let traced_spotlight = self.traced_spotlight.clone();
         let traced_labels = labels.clone();
         let row = div()
             .h_full()
@@ -202,8 +211,10 @@ impl Render for BarView {
                 .items_center()
                 .role(Role::Button)
                 .aria_label("Spotlight")
+                // Always there, whatever hotkey Spotlight got (or none).
                 .on_mouse_down(MouseButton::Left, |_, _, cx| {
                     cx.stop_propagation();
+                    trace(|| "spotlight icon clicked".into());
                     super::spotlight::toggle(cx);
                 })
                 .child(
@@ -241,6 +252,33 @@ impl Render for BarView {
             .text_size(px(13.0))
             .text_color(mac::text())
             .child(row)
-            .child(div().h_full().flex().items_center().children(status))
+            .child(
+                div()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .on_children_prepainted(move |children, window, _| {
+                        // The CI checks click the magnifier by its place on
+                        // screen: the next-to-last status item.
+                        let Some(icon) = children.len().checked_sub(2).map(|at| children[at])
+                        else {
+                            return;
+                        };
+                        if *traced_spotlight.borrow() != Some(icon) {
+                            let scale = window.scale_factor();
+                            trace(|| {
+                                format!(
+                                    "bar spotlight at {},{},{},{}",
+                                    (f32::from(icon.left()) * scale).round(),
+                                    (f32::from(icon.top()) * scale).round(),
+                                    (f32::from(icon.size.width) * scale).round(),
+                                    (f32::from(icon.size.height) * scale).round()
+                                )
+                            });
+                            *traced_spotlight.borrow_mut() = Some(icon);
+                        }
+                    })
+                    .children(status),
+            )
     }
 }

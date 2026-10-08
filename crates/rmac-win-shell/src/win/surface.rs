@@ -13,12 +13,15 @@ use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
 };
+use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, DefWindowProcW, GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, GWLP_WNDPROC, GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_NOACTIVATE,
-    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, WM_MOUSEACTIVATE, WM_NCDESTROY, WNDPROC,
-    WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    BringWindowToTop, CallWindowProcW, DefWindowProcW, GetForegroundWindow, GetWindowLongPtrW,
+    GetWindowThreadProcessId, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, GWLP_WNDPROC,
+    GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+    SWP_SHOWWINDOW, WM_MOUSEACTIVATE, WM_NCDESTROY, WNDPROC, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
 /// The Win32 window behind a GPUI window.
@@ -78,6 +81,30 @@ pub fn show_focused_at(hwnd: HWND, rect: RECT) {
     set_cloaked(hwnd, false);
     // SAFETY: as above.
     let _ = unsafe { SetForegroundWindow(hwnd) };
+    // SAFETY: reads the foreground window.
+    if unsafe { GetForegroundWindow() } == hwnd {
+        return;
+    }
+    // A key the low-level hook took (Win+Space) does not count as input
+    // this process received, so Windows may refuse the foreground. Joining
+    // the front app's input queue for the moment of the switch lets it
+    // through, as the user asked for this panel.
+    // SAFETY: attaches this thread's input to the foreground window's
+    // thread only for the calls below, and detaches it again.
+    unsafe {
+        let front = GetForegroundWindow();
+        let front_thread = GetWindowThreadProcessId(front, None);
+        let own_thread = GetCurrentThreadId();
+        let attached = front_thread != 0
+            && front_thread != own_thread
+            && AttachThreadInput(own_thread, front_thread, true).as_bool();
+        let _ = BringWindowToTop(hwnd);
+        let _ = SetForegroundWindow(hwnd);
+        let _ = SetFocus(Some(hwnd));
+        if attached {
+            let _ = AttachThreadInput(own_thread, front_thread, false);
+        }
+    }
 }
 
 fn set_cloaked(hwnd: HWND, cloaked: bool) {

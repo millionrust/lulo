@@ -19,7 +19,7 @@ use windows::Win32::System::Threading::{
     CreateEventW, CreateMutexW, SetEvent, WaitForSingleObject, INFINITE,
 };
 
-use super::{appbar, launch, registry, taskbar, user_name, windows_list};
+use super::{appbar, desktop, launch, registry, taskbar, user_name, windows_list};
 
 /// What `lulo-shell` exits with when another Lulo layer already runs.
 const ALREADY_RUNNING: i32 = 3;
@@ -37,6 +37,7 @@ pub fn restore_windows_desktop() {
         }
     }
     taskbar::restore();
+    desktop::restore();
 }
 
 /// The event `lulo-session --stop` sets to turn the Lulo layer off.

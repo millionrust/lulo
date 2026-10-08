@@ -55,6 +55,8 @@ pub enum StatusEvent {
     Battery(Option<Battery>),
     Volume(Option<Volume>),
     Wifi(Option<Wifi>),
+    /// Whether the Recycle Bin holds anything (`recycle::watch`).
+    RecycleBin(bool),
 }
 
 static SENDER: OnceLock<async_channel::Sender<StatusEvent>> = OnceLock::new();

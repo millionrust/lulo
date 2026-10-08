@@ -74,11 +74,34 @@ def idle_failures(
     return failures
 
 
+def memory_failures(results: dict[str, dict], budget_mb: float) -> list[str]:
+    """The Lulo layer's shell over its idle working-set budget (an 8 GB PC
+    runs it all day; ADR 0023). Only checked when the shell ran."""
+    shell = results.get("lulo-shell")
+    if shell is None:
+        return []
+    working_set = shell.get("idle_working_set_mb")
+    if working_set is None:
+        return ["lulo-shell: no idle memory reading"]
+    if working_set > budget_mb:
+        return [
+            f"lulo-shell: {working_set:.1f} MB working set at idle, over the budget of {budget_mb:g} MB "
+            f"(private {shell.get('idle_private_mb')} MB)"
+        ]
+    return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("results", type=Path)
     parser.add_argument("--budget-ticks", type=float, default=DEFAULT_BUDGET_TICKS)
     parser.add_argument("--exempt", nargs="*", default=list(DEFAULT_EXEMPT))
+    parser.add_argument(
+        "--shell-memory-mb",
+        type=float,
+        default=None,
+        help="Also fail when lulo-shell's idle working set is over this many MB.",
+    )
     arguments = parser.parse_args()
     if not arguments.results.exists():
         print(f"idle gate: {arguments.results} is missing (the apps did not run); skipped")
@@ -92,6 +115,14 @@ def main() -> int:
     failures = idle_failures(
         results, arguments.budget_ticks, tuple(arguments.exempt), PER_APP_BUDGET_TICKS
     )
+    if arguments.shell_memory_mb is not None:
+        shell = results.get("lulo-shell", {})
+        print(
+            f"idle gate: lulo-shell memory at idle: working set {shell.get('idle_working_set_mb')} MB, "
+            f"private {shell.get('idle_private_mb')} MB, peak {shell.get('peak_working_set_mb')} MB; "
+            f"after Spotlight: {shell.get('after_spotlight_working_set_mb')} MB"
+        )
+        failures += memory_failures(results, arguments.shell_memory_mb)
     for failure in failures:
         print(f"idle gate: FAIL: {failure}")
     return 1 if failures else 0

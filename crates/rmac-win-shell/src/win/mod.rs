@@ -1,12 +1,16 @@
 //! The Win32 side of the Lulo layer.
 
 pub mod appbar;
+pub mod backdrop;
 pub mod catalog;
+pub mod desktop;
 pub mod events;
 pub mod icons;
 pub mod launch;
+pub mod memory;
 pub mod menubar_server;
 pub mod power;
+pub mod recycle;
 pub mod registry;
 pub mod session;
 pub mod status;

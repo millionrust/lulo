@@ -4,5 +4,6 @@
 pub mod apps;
 pub mod clock;
 pub mod dock;
+pub mod hotkey;
 pub mod menus;
 pub mod search;

@@ -353,6 +353,14 @@ jobs:
         continue-on-error: true
         run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
 
+      # Each exe's own icon (rmac-windows-resource-build embeds
+      # packaging/windows/icons/<id>.ico when it exists), so the launch
+      # check can prove Files, lulo-shell and lulo-session carry theirs.
+      - name: Make the Windows icons
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: bash scripts/windows/make_icons.sh
+
       - name: Build the apps
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -366,6 +374,9 @@ jobs:
         continue-on-error: true
         run: |
           python -m pip install --disable-pip-version-check Pillow==12.1.1
+          if ls packaging/windows/icons/*.ico >/dev/null 2>&1; then
+            export LULO_EXPECT_EXE_ICONS=1
+          fi
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
             --foreground-check rmac-calculator --results windows-results.json --shell \
             target/debug rmac-calculator rmac-notes rmac-text-editor \
@@ -373,10 +384,11 @@ jobs:
 
       # Blocking: no app but Terminal, and neither Lulo layer process, may
       # use more than one 15.6 ms tick of CPU over 20 s with no input (ADR
-      # 0025's parked frame loop; ADR 0023 phase 3).
+      # 0025's parked frame loop; ADR 0023 phase 3), and lulo-shell's
+      # working set at idle must stay within 60 MB (8 GB PCs; WIN-OS-37).
       - name: Idle gate
         if: ${{ !cancelled() }}
-        run: python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1 --exempt rmac-terminal
+        run: python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1 --exempt rmac-terminal --shell-memory-mb 60
 
       - name: Upload app screenshots
         if: ${{ !cancelled() }}

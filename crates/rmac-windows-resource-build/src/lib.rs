@@ -64,7 +64,10 @@ pub fn embed(bin: &str, display_name: &str, icon_id: &str) {
     // (or overwrite) one compiled resource.
     let path = Path::new(&out_dir).join(format!("{bin}.rc"));
     if let Err(error) = std::fs::write(&path, script) {
-        println!("cargo:warning={icon_id}: could not write {}: {error}", path.display());
+        println!(
+            "cargo:warning={icon_id}: could not write {}: {error}",
+            path.display()
+        );
         return;
     }
     if let Err(error) =

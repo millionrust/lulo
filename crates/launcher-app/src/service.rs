@@ -18,13 +18,12 @@ use gpui::{
 };
 use rmac_launcher_runtime::{CatalogUpdate, Registry, SettingsUpdate};
 
-#[cfg(target_os = "linux")]
 use crate::view::requested_browse_mode;
 use crate::view::{LauncherView, OverlayEnvironment};
 pub(crate) use learning::learn;
-pub(crate) use overlay::release;
 #[cfg(target_os = "linux")]
 pub(crate) use overlay::follow_compact;
+pub(crate) use overlay::release;
 #[cfg(target_os = "linux")]
 use overlay::route_activation;
 #[cfg(not(target_os = "linux"))]

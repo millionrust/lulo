@@ -184,6 +184,7 @@ impl LauncherView {
                     value.is_empty() && this.browse_mode.is_none() && this.panel.is_none();
                 if this.compact != compact {
                     this.compact = compact;
+                    #[cfg(target_os = "linux")]
                     let token = this.token;
                     let _ = cx.update_window(window_handle, |_, window, cx| {
                         set_compact(window, compact);

@@ -3,6 +3,21 @@ use super::*;
 /// Finder's seven colour tags, in menu order.
 const TAG_NAMES: [&str; 7] = ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Grey"];
 
+/// Move to Bin's key: ⌘⌫ on the Mac, Delete in Explorer (Files binds both
+/// on Windows; see `startup/shortcuts.rs`).
+const MOVE_TO_BIN_KEY: rmac_ui::shortcuts::Shortcut = if rmac_ui::shortcuts::PRIMARY_IS_CONTROL {
+    rmac_ui::shortcuts::Shortcut::new("delete", "⌦")
+} else {
+    rmac_ui::shortcuts::DELETE
+};
+
+/// Rename's key: Return on the Mac, F2 in Explorer.
+const RENAME_KEY: rmac_ui::shortcuts::Shortcut = if rmac_ui::shortcuts::PRIMARY_IS_CONTROL {
+    rmac_ui::shortcuts::Shortcut::new("f2", "F2")
+} else {
+    rmac_ui::shortcuts::ENTER
+};
+
 /// The action that toggles colour tag `index` on the selection.
 fn tag_action(index: usize) -> Box<dyn gpui::Action> {
     match index {
@@ -223,15 +238,11 @@ impl FinderView {
             }
             m = m
                 .separator()
-                .command_item(
-                    move_to_bin,
-                    rmac_ui::shortcuts::DELETE,
-                    Box::new(MoveToTrash),
-                )
+                .command_item(move_to_bin, MOVE_TO_BIN_KEY, Box::new(MoveToTrash))
                 .separator()
                 .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo))
                 .item("Show Inspector", Box::new(ShowInspector))
-                .command_item("Rename", rmac_ui::shortcuts::ENTER, Box::new(RenameItem));
+                .command_item("Rename", RENAME_KEY, Box::new(RenameItem));
             if let Some(label) = compress_label {
                 m = m.item(label, Box::new(Compress));
             }
@@ -242,7 +253,7 @@ impl FinderView {
                     Box::new(Duplicate),
                 )
                 .item("Duplicate Exactly", Box::new(DuplicateExactly))
-                .item("Make Alias", Box::new(MakeAlias))
+                .item(file_words.label("Make Alias"), Box::new(MakeAlias))
                 .command_item("Quick Look", rmac_ui::shortcuts::SPACE, Box::new(QuickLook))
                 .item(slideshow_label, Box::new(Slideshow))
                 .separator()

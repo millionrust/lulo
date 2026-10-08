@@ -20,6 +20,17 @@ pub const MINIMIZE: &str = "lulo::Minimize";
 pub const ZOOM: &str = "lulo::Zoom";
 pub const CLOSE_WINDOW: &str = "lulo::CloseWindow";
 
+pub const OPEN_RECYCLE_BIN: &str = "lulo::OpenRecycleBin";
+pub const EMPTY_RECYCLE_BIN: &str = "lulo::EmptyRecycleBin";
+
+/// The Recycle Bin tile's menu, as the Mac's Trash tile has Open and
+/// Empty Trash. Windows asks before it empties the bin.
+pub fn recycle_bin_menu(full: bool) -> Vec<Item> {
+    let mut empty = Item::new("Empty Recycle Bin", EMPTY_RECYCLE_BIN, "").separated();
+    empty.enabled = full;
+    vec![Item::new("Open", OPEN_RECYCLE_BIN, ""), empty]
+}
+
 /// The Lulo menu, the Apple menu's place: the same rows as the Mac's, each
 /// doing the Windows equivalent, plus the Lulo layer's own switch.
 pub fn lulo_menu(user: &str, starts_at_sign_in: bool) -> Menu {
@@ -154,6 +165,16 @@ mod tests {
         assert_eq!(menus[1].label, "Window");
         rmac_app_menu::validate_menus(&menus).unwrap();
         assert_eq!(desktop_menus()[0].label, "File Explorer");
+    }
+
+    #[test]
+    fn the_recycle_bin_menu_empties_only_a_full_bin() {
+        let full = recycle_bin_menu(true);
+        assert_eq!(full[0].label, "Open");
+        assert_eq!(full[1].label, "Empty Recycle Bin");
+        assert!(full[1].enabled);
+        assert!(!recycle_bin_menu(false)[1].enabled);
+        assert_ne!(full[0].action, full[1].action);
     }
 
     #[test]

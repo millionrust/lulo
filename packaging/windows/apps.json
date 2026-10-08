@@ -74,6 +74,7 @@
     "display_name": "Lulo Shell",
     "bin": "lulo-shell",
     "extensions": [],
+    "icon_svg": "assets/icons/lulo.svg",
     "shortcut": false
   }
 ]

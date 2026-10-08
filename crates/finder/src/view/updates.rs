@@ -31,6 +31,17 @@ impl FinderView {
         if self.applications_view {
             return;
         }
+        // Recents shows no folder: a change in the folder under it (the
+        // home folder, where a new window opens on Windows) must not throw
+        // the window back to that folder, or redraw it while idle.
+        if self
+            .result_title
+            .as_ref()
+            .is_some_and(|title| title.as_ref() == "Recents")
+            && !hints.watch_error
+        {
+            return;
+        }
         if hints.watch_error {
             if let Some(watcher) = self.watcher.as_mut() {
                 if let Some(watched) = self.watched.take() {
@@ -308,6 +319,13 @@ impl FinderView {
                         if let Some(tab) = this.tabs.get_mut(this.active) {
                             tab.identity = Some(identity);
                         }
+                        super::files_trace(|| {
+                            format!(
+                                "listed {}: {}",
+                                read_path.display(),
+                                super::traced_names(&entries)
+                            )
+                        });
                         this.root_entries = entries;
                         this.child_entries = children;
                         // A full directory reload replaces every cached child

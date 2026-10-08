@@ -32,6 +32,8 @@ pub(crate) struct SpotlightView {
     query: Entity<InputState>,
     results: Vec<Entry>,
     selected: usize,
+    /// The catalogue's generation the results were found in.
+    catalog_seen: u64,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -51,14 +53,28 @@ impl SpotlightView {
                 cx.defer(|cx| hide(false, cx));
             }
         });
-        let observe = cx.observe(&shell, |_, _, cx| cx.notify());
+        // The catalogue loads the first time Spotlight opens: what was typed
+        // before it arrived is searched again when it does.
+        let observe = cx.observe(&shell, |this, shell, cx| {
+            let generation = shell.read(cx).catalog_generation;
+            if generation != this.catalog_seen {
+                this.catalog_seen = generation;
+                let text = this.query.read(cx).value().to_string();
+                if !text.is_empty() {
+                    this.search(&text, cx);
+                }
+            }
+            cx.notify();
+        });
         let entity = cx.entity();
         cx.set_global(SpotlightEntity(entity));
+        let catalog_seen = shell.read(cx).catalog_generation;
         Self {
             shell,
             query,
             results: Vec::new(),
             selected: 0,
+            catalog_seen,
             _subscriptions: vec![changed, activation, observe],
         }
     }
@@ -143,6 +159,7 @@ pub(crate) fn toggle(cx: &mut App) {
 }
 
 fn show(cx: &mut App) {
+    super::keep_panel(super::Panel::Spotlight, cx);
     prepare(cx);
     let Some(spotlight) = runtime(cx).spotlight else {
         return;
@@ -186,6 +203,27 @@ pub(crate) fn hide(give_back: bool, cx: &mut App) {
         }
     });
     trace(|| "spotlight hidden".into());
+    super::release_later(super::Panel::Spotlight, cx);
+}
+
+/// Let go of Spotlight's window, its textures and the file list a while
+/// after it closed; the next open makes them again.
+pub(crate) fn release(cx: &mut App) {
+    let shell = shell(cx);
+    if shell.read(cx).spotlight_open {
+        return;
+    }
+    let Some(spotlight) = cx.global_mut::<super::Runtime>().spotlight.take() else {
+        return;
+    };
+    if cx.has_global::<SpotlightEntity>() {
+        cx.remove_global::<SpotlightEntity>();
+    }
+    let _ = spotlight
+        .handle
+        .update(cx, |_, window, _| window.remove_window());
+    shell.update(cx, |state, _| state.release_catalog());
+    trace(|| "spotlight released".into());
 }
 
 struct SpotlightEntity(Entity<SpotlightView>);

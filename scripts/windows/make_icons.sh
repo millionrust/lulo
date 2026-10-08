@@ -32,9 +32,9 @@ for app in apps:
     # Most apps' artwork is their Linux .desktop icon
     # (packaging/rmac-apps/icons/<app_id>.svg); an entry can instead name
     # its own source (the Lulo layer's own mark is not a packaged Linux
-    # app icon). An entry with neither (a helper exe with no Start Menu
-    # shortcut of its own, e.g. lulo-shell) gets no icon here -- its exe
-    # still builds, with the platform's default icon.
+    # app icon; lulo-session and lulo-shell both use it). An entry with
+    # neither gets no icon here -- its exe still builds, with the
+    # platform's default icon.
     if app.get("icon_svg"):
         svg = root / app["icon_svg"]
     elif app.get("app_id"):

@@ -1,16 +1,10 @@
 fn main() {
-    // Deliberately no resource embedding here (contrast every other app
-    // crate's build.rs). A real `cargo build --release` of this package
-    // alongside the other Windows apps hit CVTRES error CVT1100
-    // ("duplicate resource. type:VERSION, name:1, language:0x0409") at
-    // link time -- `rmac-windows-resource-build`'s own output
-    // (resource.lib) listed twice in the linker command for reasons not
-    // pinned down in the time this pass had (gpui's own manifest resource,
-    // the only other embedded Windows resource in the graph, links once,
-    // correctly; winres's `compile()` only ever prints its
-    // `cargo:rustc-link-lib` once per run; nothing else in this package's
-    // dependency graph should request a native "resource" lib by name).
-    // Files still installs and runs correctly; it just keeps Explorer's
-    // default binary icon and has no FileDescription/CompanyName until
-    // this is understood. ADR 0023 "Installer" "What is left" records it.
+    // Files' own version info and icon, linked into `rmac-files` only. The
+    // CVTRES "duplicate resource. type:VERSION" link failure this once hit
+    // came from Preview's resources, which the old `winres` linked as a
+    // native library that Cargo passed on to Files through Quick Look;
+    // `rmac-windows-resource-build` now links each binary's own script
+    // into that binary alone.
+    #[cfg(windows)]
+    rmac_windows_resource_build::embed("rmac-files", "Files", "files");
 }

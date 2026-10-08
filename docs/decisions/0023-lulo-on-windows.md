@@ -674,9 +674,9 @@ and the OSMF Agreement above says the same of its own Fee ("does not limit User'
 to access, modify, or distribute the Software's source code or self-compiled binaries").
 Inno Setup's compiled installer stub, by contrast, is Inno Setup's own code, embedded by
 design -- permitted under its licence, but the comparison above is why WiX was still
-preferred. The one new build-time Cargo dependency this pass adds, `winres` (MIT, confirmed
-from its published crate metadata, so already on `deny.toml`'s allow list with no new
-exception needed), is gated `[target.'cfg(windows)'.build-dependencies]` in each app crate
+preferred. The one build-time Cargo dependency this needs, `embed-resource` (MIT, already
+in the graph through GPUI; it replaced the `winres` this pass first used, see "What the
+installer does"), is gated `[target.'cfg(windows)'.build-dependencies]` in each app crate
 (`crates/rmac-windows-resource-build`), so it is never resolved, let alone compiled, for the
 Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows`.
 
@@ -712,18 +712,19 @@ Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows
   when none is set explicitly) show the right artwork, with one thing embedding it rather
   than two copies to keep in sync. A build that skips the icon step (plain local
   `cargo build`) still succeeds, with the platform's default icon and a `cargo:warning`
-  naming why. **Files and the Lulo layer do not call `embed`** (`crates/finder/build.rs`,
-  `crates/rmac-win-shell/build.rs` are deliberately empty): a real `cargo build --release`
-  of all nine binaries together hit CVTRES error CVT1100, "duplicate resource.
-  type:VERSION, name:1, language:0x0409", linking `rmac-files.exe` -- `resource.lib`
-  (`rmac-windows-resource-build`'s own output) listed twice in the linker command for a
-  reason this pass could not pin down in the time it had (gpui's own embedded resource, the
-  only other one in the graph, links once, correctly, and nothing else should be requesting
-  a native `resource` lib by that name; adding a unique `package.links` key to every crate
-  that calls `embed`, Cargo's documented fix for a build script's native-link output being
-  applied more than once, made no difference). Files and the Lulo layer still install, get
-  their shortcuts (where due) and run correctly; they keep the platform's default icon and
-  no `FileDescription`/`CompanyName` until this is understood -- see "What is left".
+  naming why. Files and the Lulo layer (`lulo-session.exe` and `lulo-shell.exe`, both
+  with the Lulo mark) embed theirs too since `op/win-realpc`. They were first left out
+  because a release build of all nine binaries hit CVTRES error CVT1100, "duplicate
+  resource. type:VERSION, name:1", linking `rmac-files.exe`. The cause: `winres` linked
+  each app's resources as a native library (`cargo:rustc-link-lib=dylib=resource`), and
+  Cargo hands a library's native libraries on to every package that depends on it. Files
+  depends on `rmac-preview`'s library through Quick Look, so Preview's `resource.lib` was
+  already inside `rmac-files.exe` (which is why the Dock showed Files with Preview's icon on
+  the owner's PC), and Files' own block made two. `rmac-windows-resource-build` now writes
+  one `.rc` script per binary and links it with `embed_resource::compile_for`
+  (`cargo:rustc-link-arg-bin=<bin>=…`), which reaches that binary only; `embed-resource`
+  3.0 was already in the graph through GPUI, so `winres` and its `toml` 0.5 left the
+  lockfile.
 - **AppUserModelID**, so Clock's alarms (WIN-OS-14) and every app's taskbar grouping and
   jump lists can work: each Start Menu shortcut's `ShortcutProperty` sets
   `System.AppUserModel.ID` to `Lulo.<App>` (`generate_apps_wxs.py`'s `aumid()`), and each app
@@ -806,11 +807,6 @@ alongside the existing unsigned exe zip.
 - A real toast for Clock's alarms (`ToastNotificationManager`) now that an AUMID exists.
 - An `AppUserModelID` for `lulo-session.exe`'s own shortcut, once `rmac-win-shell` sets a
   matching one at process start (WIN-OS-28).
-- The CVT1100 duplicate-resource link failure that keeps Files and the Lulo layer from
-  embedding an icon or version info ("What the installer does" above). Worth real
-  investigation (`cargo build -v` to see every build script's exact output, trying
-  `embed-resource` in place of `winres`, or a minimal reproduction outside this workspace)
-  before trying another blind fix.
 - A standing "Restore Windows taskbar" Start Menu shortcut (WIN-OS-26); today's fix only
   runs that restore automatically during a real uninstall, not as an anytime escape hatch.
 - MSIX packaging as an additional distribution format, once signing exists -- this
@@ -1080,7 +1076,7 @@ binaries only say that they are for Windows. Nothing in `shell/` changes.
 | Menu bar: a `wlr-layer-shell` surface with an exclusive zone | A `WS_EX_TOOLWINDOW` + `WS_EX_TOPMOST` + `WS_EX_NOACTIVATE` window registered as a top AppBar (`SHAppBarMessage` `ABM_NEW`, `ABM_QUERYPOS`/`ABM_SETPOS` on `ABE_TOP`), so Windows takes its strip out of the work area and maximised windows stop below it. It never takes the keyboard from the app in front. |
 | Dock: a layer surface along the bottom | A bottom AppBar the Dock's height (67 pt); the window is the shelf alone, centred in the strip, so no clear area covers app windows. A floating, auto-hiding Dock comes with Desktop & Dock settings. |
 | Menus: layer pop-ups | A clear, activatable panel covering the screen below the bar: the menu draws at its title, the rest of the panel catches the click that closes it (as on the Mac, the click does not reach the window below), and the panel takes the keyboard (↑/↓, Return, Esc) while it is open. Closing gives the foreground back to the app in front, before a command is sent to it. |
-| Spotlight: ⌘Space through the portal shortcut | `RegisterHotKey(Alt+Space)`. Win+Space is Windows' input-language switch and cannot be registered; Alt+Space only opens a classic window's system menu, which the ⌘-key hook (next slice) will route. The hotkey lands on the hook thread's queue, which also gives Lulo the right to take the foreground. The window is made hidden at start-up, so it shows at once. |
+| Spotlight: ⌘Space through the portal shortcut | `RegisterHotKey(Alt+Space)`. Win+Space is Windows' input-language switch and cannot be registered; Alt+Space only opens a classic window's system menu, which the ⌘-key hook (next slice) will route. The hotkey lands on the hook thread's queue, which also gives Lulo the right to take the foreground. When another app already holds Alt+Space, Lulo falls back (see "Phase 3 on a real PC"). The window is made the first time Spotlight opens and let go of 30 s after it closes. |
 
 Every Win32 call that sends messages to Lulo's own windows (moving,
 showing, hiding, the foreground) runs from a GPUI task outside any app update,
@@ -1226,6 +1222,118 @@ contents and Spotlight's answers (calculator, conversions); Notification
 Centre on `UserNotificationListener`; several monitors and the menu bar on
 each; Lulo apps staying open without windows now that a bar can reach them
 (WIN-OS-04).
+
+## Phase 3 on a real PC (branch `op/win-realpc`)
+
+The owner installed the MSI on a Windows 11 Home laptop (1366×768, dark mode, Ryzen 3,
+8 GB) and found it "feels weird". The fixes (parity rows WIN-OS-32 to WIN-OS-40):
+
+**Spotlight's hotkey when another app holds it (WIN-OS-32).** The ChatGPT app had already
+registered Alt+Space (PowerToys Run does too), so `RegisterHotKey` failed and Spotlight
+never opened. Lulo never unregisters or takes another app's hotkey; it walks a fixed list
+instead (`model::hotkey`): Alt+Space, then Win+Space, then Ctrl+Alt+Space, then
+Alt+Shift+Space. Win+Space is not registrable, so it comes through a low-level keyboard
+hook (`WH_KEYBOARD_LL`) on the hook thread, installed only when Win+Space is the key in
+effect. The hook compares a few numbers for every key and acts only on Space while a Win
+key is down with no other modifier: it swallows that Space (and its repeats and release)
+and presses an unassigned key (0xE8, tagged as Lulo's own input) so Windows treats the
+Win key as part of a chord. A quick tap of Win alone still opens Start, and Win+Space
+never does. Win+Space is Windows' input-language switch, so it is used only on a PC with
+one keyboard layout. The first time a fallback is in effect, a small notice under the bar
+names the key ("Spotlight opens with Win+Space"); the key it named is recorded under
+`HKCU\Software\Lulo\Shell`, so the notice does not show again. The bar's magnifier always
+opens Spotlight. Because a key taken by the hook does not count as input this process
+received, Spotlight briefly attaches to the front window's input queue to take the
+foreground when `SetForegroundWindow` alone is refused.
+
+**Desktop icons under the bar (WIN-OS-33).** Explorer keeps hand-placed desktop icons where
+they are when an AppBar takes the top strip. While Lulo runs, Explorer's icon list view
+(`SHELLDLL_DefView` ▸ `SysListView32`, in `Progman` or a `WorkerW`) is moved down by the
+bar's depth and made as much shorter. Icon positions are stored relative to the list view,
+so nothing Explorer saves changes. With Auto arrange on, Explorer flows icons into the work
+area itself, and Lulo only sends `LVM_ARRANGE`. The move is recorded under
+`HKCU\Software\Lulo\Shell` and undone wherever the taskbar's state is restored (Turn Off,
+quit, session end, and `lulo-session` after a crash or at its next start). It is applied
+off the UI thread, and again 2 s later once Explorer has handled the new work area. A
+restarted Explorer makes a new list view, which gets moved again.
+
+**Looks (WIN-OS-38).** The bar and the Dock get an acrylic accent blur
+(`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND`) with the `mac`
+material tint drawn over it at a lighter alpha, so they follow light and dark like
+everything else. `DWMWA_SYSTEMBACKDROP_TYPE` was rejected: Windows 11's system backdrops
+fall back to a flat colour while their window is inactive, and these surfaces are never
+active. When transparency effects are off, the tints are nearly opaque. The Dock's window
+is now exactly its shelf, cut to the rounded shape with a window region (Windows' own
+corner rounding is turned off), so the blur has the shelf's shape on Windows 10 and 11.
+Running dots are 5 pt and opaque. The Recycle Bin ends the Dock after a separator. Its
+full or empty picture (Lulo's own Trash artwork) follows change notifications on each
+fixed drive's `$Recycle.Bin`, with no polling. A click opens `shell:RecycleBinFolder`; a
+right-click opens Open and Empty Recycle Bin, and `SHEmptyRecycleBinW` keeps Windows' own
+confirmation.
+
+**Dock icons and exe resources (WIN-OS-40).** Files ran with Preview's icon. Files was not
+a known Lulo app, so its running tile used its exe's icon, and that icon really was
+Preview's: `winres` linked resources as a native library, which Cargo passes on to
+dependents (see "What the installer does"). Resources are now per binary, so Files,
+`lulo-session` and `lulo-shell` carry their own. Files is a Lulo app in the shell, pinned
+first in the Dock where the Finder sits. A running Lulo app is identified by its
+executable, by the app id it gives the menu bar over the pipe, or by its window's
+AppUserModelID (`Lulo.<Name>`), and shows its own artwork whatever its exe is called.
+
+**Memory (WIN-OS-39).** The owner's PC showed `lulo-shell` at about 114 MB working set
+at idle (release build). Traced in CI (debug build, WARP): 22.6 MB once GPUI starts, 47.5
+MB with the bar and the Dock open, 51.1 MB when ready, and 58.8 MB after the first frames,
+of which 44.8 MB is private. The rest is shared images: the Direct3D, DirectWrite and
+shell DLLs. The cuts:
+
+- Spotlight's window and its catalogue (the Apps folder enumeration pulls in a large part
+  of the Windows shell) are made the first time Spotlight opens, not at start-up.
+- Spotlight and the menu panel let go of their windows (swap chain, atlas textures) 30 s
+  after they close; Spotlight also drops its file list and the icons only its results
+  used. One timer per close, cancelled by the next open.
+- One second after start-up, and after each release, the heap is compacted and the working
+  set emptied (`HeapCompact`, `SetProcessWorkingSetSizeEx(-1, -1)`). Pages an idle bar and
+  Dock really use come straight back. The rest go to the standby list, where Windows can
+  use them.
+
+CI gates the idle working set at 60 MB (`idle_gate.py --shell-memory-mb 60`, blocking). The
+owner's release build on real hardware is still to be measured.
+
+**Files and the keys (WIN-OS-34 to WIN-OS-37).**
+
+- Files hides hidden and protected items as Explorer does, following Explorer's `Hidden`
+  and `ShowSuperHidden` settings and Lulo's ⇧⌘. toggle.
+- New windows open on Recents, backed by Windows' own Recent shortcuts. Favourites list
+  the user's folders, and OneDrive when present.
+- One table, `rmac_locale::WINDOWS_WORDS`, gives Explorer's words on Windows only: Move to
+  Recycle Bin, Create Shortcut (a real `.lnk`), Open File Location, Copy as Path, This PC.
+- ⌃⌘ chords no longer become Win+Ctrl chords, which Windows keeps for itself:
+  `rmac_app_menu::windows_keys` maps them to Alt+Shift, with a tested table of reserved
+  Windows chords it never produces.
+- Files binds its keys through that mapping, plus Explorer's Delete, Shift+Delete, F2,
+  Enter, Alt+Up, Alt+←/→ and Backspace.
+- "New Finder Window" stays the Mac's label on every platform, as on Lulo OS.
+
+`launch_smoke.py` checks these on the runner.
+
+**CI.** A Windows run whose build had failed once looked green (run 37715212884): its
+steps are `continue-on-error`, whose API conclusion reads "success", and the idle gate
+passed a missing results file. A final "Windows summary" step now fails the job from each
+check step's real `outcome`. The idle gate fails on a missing results file or on an
+expected app with no reading. See `docs/ci.md`.
+
+Proof, all in `scripts/windows/shell_smoke.py` on the `windows` job:
+
+- The exes' `FileDescription` (Files is "Files") and icons.
+- The desktop list view below the bar while Lulo runs, and back after.
+- The acrylic backdrop on the bar and the Dock.
+- The Files and Recycle Bin tiles. Files run as `files-dev.exe` still shows as Files with
+  its own icon. The bin turns full when a file is recycled, and right-clicking it opens its
+  menu.
+- Memory, traced and gated.
+- A second and third run with a helper process holding Alt+Space: the fallback, the
+  one-time notice, Win+Space opening Spotlight in front, the magnifier opening Spotlight,
+  Alt+Space still reaching the helper, and no notice on the next start.
 
 ## Phase plan
 

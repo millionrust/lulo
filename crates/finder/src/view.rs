@@ -579,7 +579,18 @@ pub(crate) fn run(windows: Vec<Vec<String>>) {
             let restore_tabs = destination == crate::StartupDestination::Default;
             let mut finder = FinderView::new(window, cx, restore_tabs);
             match destination {
-                crate::StartupDestination::Default => {}
+                // A plain launch with no window to restore opens where
+                // "New Finder windows show:" says (Recents on Windows).
+                crate::StartupDestination::Default => {
+                    let fresh = finder.tabs.len() == 1 && finder.cwd == finder.home;
+                    if fresh
+                        && settings::current().general.new_window_target
+                            == settings::NewWindowTarget::Recents
+                    {
+                        finder.recents_click(cx);
+                    }
+                }
+                crate::StartupDestination::Recents => finder.recents_click(cx),
                 crate::StartupDestination::Trash => finder.trash_click(cx),
                 crate::StartupDestination::Directory(path) => finder.navigate(path, cx),
                 crate::StartupDestination::Reveal(path) => {
@@ -600,6 +611,25 @@ pub(crate) fn run(windows: Vec<Vec<String>>) {
             finder
         },
     );
+}
+
+/// With `RMAC_FILES_TRACE=1`, say on stderr what a window lists, for the
+/// Windows checks (`scripts/windows/launch_smoke.py`).
+fn files_trace(message: impl FnOnce() -> String) {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *ON.get_or_init(|| std::env::var_os("RMAC_FILES_TRACE").is_some_and(|value| value == "1")) {
+        eprintln!("files: {}", message());
+    }
+}
+
+/// Up to 64 names, for [`files_trace`].
+fn traced_names(entries: &[Entry]) -> String {
+    entries
+        .iter()
+        .take(64)
+        .map(|entry| &*entry.name)
+        .collect::<Vec<&str>>()
+        .join(" | ")
 }
 
 fn bin_copy(words: rmac_locale::FileVocabulary, message: &str) -> String {

@@ -12,39 +12,42 @@
 //! succeeds: the exe gets correct version info and falls back to the
 //! platform's default binary icon, with a `cargo:warning` naming why.
 //!
-//! Call this from a `build.rs` that does nothing else:
+//! The resources are linked into the named binary only
+//! (`embed_resource::compile_for`, which emits `cargo:rustc-link-arg-bin`).
+//! The crate this replaced, `winres`, linked them as a native library
+//! (`cargo:rustc-link-lib`), which Cargo hands on to every package that
+//! depends on the library: Preview's resources ended up inside Files
+//! (`rmac-finder` uses `rmac-preview` through Quick Look), so Files showed
+//! Preview's icon, and giving Files its own resources failed to link with
+//! CVTRES CVT1100 "duplicate resource. type:VERSION".
+//!
+//! Call this from a `build.rs`, once per binary:
 //!
 //! ```ignore
 //! fn main() {
 //!     #[cfg(windows)]
-//!     rmac_windows_resource_build::embed("Calculator", "calculator");
+//!     rmac_windows_resource_build::embed("rmac-calculator", "Calculator", "calculator");
 //! }
 //! ```
 
 use std::path::{Path, PathBuf};
 
-/// `display_name` is the app's name as users see it ("Calculator", "Text
-/// Editor", ...), used for the exe's `FileDescription`. `icon_id` is the
-/// short id `packaging/windows/apps.json` and `scripts/windows/
-/// make_icons.sh` use for this app ("calculator", "text-editor", ...),
-/// used only to find `packaging/windows/icons/<icon_id>.ico`.
-pub fn embed(display_name: &str, icon_id: &str) {
-    let mut resource = winres::WindowsResource::new();
-    resource.set("ProductName", "Lulo");
-    resource.set("CompanyName", "Lulo");
-    resource.set("FileDescription", display_name);
-    resource.set("LegalCopyright", "Copyright the Lulo contributors");
-
-    let full_version = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
-    resource.set("ProductVersion", &full_version);
-    resource.set("FileVersion", &full_version);
-    let packed = pack_numeric_version(&full_version);
-    resource.set_version_info(winres::VersionInfo::FILEVERSION, packed);
-    resource.set_version_info(winres::VersionInfo::PRODUCTVERSION, packed);
-
+/// Embed the version info and icon into binary `bin` of the calling
+/// package. `display_name` is the app's name as users see it
+/// ("Calculator", "Text Editor", ...), used for the exe's
+/// `FileDescription`. `icon_id` is the short id `packaging/windows/
+/// apps.json` and `scripts/windows/make_icons.sh` use for this app
+/// ("calculator", "text-editor", ...), used only to find
+/// `packaging/windows/icons/<icon_id>.ico`.
+pub fn embed(bin: &str, display_name: &str, icon_id: &str) {
+    let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
     let icon = icon_path(icon_id);
-    if icon.is_file() {
-        resource.set_icon(&icon.to_string_lossy());
+    // Watched whether or not it exists yet, so a build after
+    // `make_icons.sh` embeds the icon a build before it could not.
+    println!("cargo:rerun-if-changed={}", icon.display());
+    println!("cargo:rerun-if-changed=build.rs");
+    let icon = if icon.is_file() {
+        Some(icon)
     } else {
         println!(
             "cargo:warning={icon_id}: no Windows icon at {}; run \
@@ -52,25 +55,101 @@ pub fn embed(display_name: &str, icon_id: &str) {
              still gets Lulo's version info)",
             icon.display(),
         );
+        None
+    };
+    let script = resource_script(bin, display_name, &version, icon.as_deref());
+    let Ok(out_dir) = std::env::var("OUT_DIR") else {
+        println!("cargo:warning={icon_id}: no OUT_DIR; Windows resources not embedded");
+        return;
+    };
+    // One script per binary, named after it: `compile_for` names its
+    // output after the script, so two binaries of one package never share
+    // (or overwrite) one compiled resource.
+    let path = Path::new(&out_dir).join(format!("{bin}.rc"));
+    if let Err(error) = std::fs::write(&path, script) {
+        println!(
+            "cargo:warning={icon_id}: could not write {}: {error}",
+            path.display()
+        );
+        return;
     }
-
-    if let Err(error) = resource.compile() {
+    if let Err(error) =
+        embed_resource::compile_for(&path, [bin], embed_resource::NONE).manifest_optional()
+    {
         println!("cargo:warning={icon_id}: could not embed Windows resources: {error}");
     }
 }
 
-/// `"0.9.0-beta.1"` packs as `0.9.0.0`: Win32's `VS_FIXEDFILEINFO` has no
+/// The `.rc` script for one binary. Plain numbers rather than `winver.h`'s
+/// names, so the script needs no include path: `FILEOS` 0x40004 is
+/// `VOS_NT_WINDOWS32` and `FILETYPE` 1 is `VFT_APP`.
+fn resource_script(bin: &str, display_name: &str, version: &str, icon: Option<&Path>) -> String {
+    let packed = numeric_version(version);
+    let numbers = format!("{},{},{},0", packed[0], packed[1], packed[2]);
+    let mut script = String::from("#pragma code_page(65001)\n");
+    if let Some(icon) = icon {
+        // Forward slashes: an `.rc` string treats a backslash as an escape.
+        let icon = icon.to_string_lossy().replace('\\', "/");
+        script.push_str(&format!("1 ICON \"{}\"\n", rc_escape(&icon)));
+    }
+    let original_name = format!("{bin}.exe");
+    let strings = [
+        ("CompanyName", "Lulo"),
+        ("FileDescription", display_name),
+        ("FileVersion", version),
+        ("InternalName", bin),
+        ("LegalCopyright", "Copyright the Lulo contributors"),
+        ("OriginalFilename", original_name.as_str()),
+        ("ProductName", "Lulo"),
+        ("ProductVersion", version),
+    ]
+    .iter()
+    .map(|(key, value)| format!("      VALUE \"{key}\", \"{}\"\n", rc_escape(value)))
+    .collect::<String>();
+    script.push_str(&format!(
+        "1 VERSIONINFO\n\
+         FILEVERSION {numbers}\n\
+         PRODUCTVERSION {numbers}\n\
+         FILEFLAGSMASK 0x3F\n\
+         FILEFLAGS 0x0\n\
+         FILEOS 0x40004\n\
+         FILETYPE 0x1\n\
+         FILESUBTYPE 0x0\n\
+         BEGIN\n  \
+           BLOCK \"StringFileInfo\"\n  \
+           BEGIN\n    \
+             BLOCK \"040904B0\"\n    \
+             BEGIN\n\
+         {strings}    \
+             END\n  \
+           END\n  \
+           BLOCK \"VarFileInfo\"\n  \
+           BEGIN\n    \
+             VALUE \"Translation\", 0x409, 1200\n  \
+           END\n\
+         END\n"
+    ));
+    script
+}
+
+/// An `.rc` string literal's contents: `"` doubles, a backslash escapes.
+fn rc_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\"\"")
+}
+
+/// `"0.9.0-beta.1"` packs as `0,9,0,0`: Win32's `VS_FIXEDFILEINFO` has no
 /// room for a pre-release tag, so the free-text `FileVersion`/
-/// `ProductVersion` strings above carry the exact Cargo version instead.
-fn pack_numeric_version(version: &str) -> u64 {
+/// `ProductVersion` strings carry the exact Cargo version instead.
+fn numeric_version(version: &str) -> [u16; 3] {
     let numeric = version.split(['-', '+']).next().unwrap_or(version);
     let mut parts = numeric
         .split('.')
-        .map(|part| part.parse::<u64>().unwrap_or(0));
-    let major = parts.next().unwrap_or(0);
-    let minor = parts.next().unwrap_or(0);
-    let patch = parts.next().unwrap_or(0);
-    (major << 48) | (minor << 32) | (patch << 16)
+        .map(|part| part.parse::<u16>().unwrap_or(0));
+    [
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    ]
 }
 
 fn icon_path(icon_id: &str) -> PathBuf {
@@ -80,15 +159,35 @@ fn icon_path(icon_id: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::pack_numeric_version;
+    use super::{numeric_version, rc_escape, resource_script};
+    use std::path::Path;
 
     #[test]
     fn packs_a_prerelease_version_as_its_numeric_prefix() {
-        assert_eq!(pack_numeric_version("0.9.0-beta.1"), 9u64 << 32);
-        assert_eq!(
-            pack_numeric_version("1.2.3"),
-            (1u64 << 48) | (2u64 << 32) | (3u64 << 16)
+        assert_eq!(numeric_version("0.9.0-beta.1"), [0, 9, 0]);
+        assert_eq!(numeric_version("1.2.3"), [1, 2, 3]);
+        assert_eq!(numeric_version("2.0.0+build"), [2, 0, 0]);
+    }
+
+    #[test]
+    fn the_script_names_the_binary_and_its_icon() {
+        let script = resource_script(
+            "rmac-files",
+            "Files",
+            "0.9.0-beta.1",
+            Some(Path::new(r"C:\a\b\files.ico")),
         );
-        assert_eq!(pack_numeric_version("2.0.0+build"), 2u64 << 48);
+        assert!(script.contains("1 ICON \"C:/a/b/files.ico\""));
+        assert!(script.contains("FILEVERSION 0,9,0,0"));
+        assert!(script.contains("VALUE \"FileDescription\", \"Files\""));
+        assert!(script.contains("VALUE \"OriginalFilename\", \"rmac-files.exe\""));
+        assert!(script.contains("VALUE \"ProductVersion\", \"0.9.0-beta.1\""));
+        // Exactly one version block and one icon: the duplicate VERSION
+        // resource that broke Files' link cannot come from here.
+        assert_eq!(script.matches("VERSIONINFO").count(), 1);
+        assert_eq!(script.matches(" ICON ").count(), 1);
+        let without_icon = resource_script("lulo-shell", "Lulo", "1.0.0", None);
+        assert!(!without_icon.contains("ICON"));
+        assert_eq!(rc_escape(r#"a"b\c"#), r#"a""b\\c"#);
     }
 }

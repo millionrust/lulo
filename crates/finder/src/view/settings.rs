@@ -37,20 +37,44 @@ const MAX_FILE_BYTES: usize = 64 * 1024;
 /// Finder ▸ Settings… ▸ General ▸ "New Finder windows show:". Mac also
 /// offers Recents and Computer; those are special views rather than real
 /// folders Files can hand to a new window process today (see `resolve`),
-/// so this starts with the folder-backed choices only.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+/// so this starts with the folder-backed choices only. On Windows a new
+/// window opens on Recents, the Mac's own default, rather than the profile
+/// folder with its AppData and NTUSER files (ADR 0023).
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum NewWindowTarget {
-    #[default]
     Home,
     Desktop,
     Documents,
     Downloads,
     Computer,
+    /// The Recents view (`--recents`); offered on Windows.
+    Recents,
+}
+
+impl Default for NewWindowTarget {
+    fn default() -> Self {
+        if cfg!(windows) {
+            Self::Recents
+        } else {
+            Self::Home
+        }
+    }
 }
 
 impl NewWindowTarget {
+    #[cfg(not(windows))]
     pub(super) const ALL: [Self; 5] = [
+        Self::Home,
+        Self::Desktop,
+        Self::Documents,
+        Self::Downloads,
+        Self::Computer,
+    ];
+
+    #[cfg(windows)]
+    pub(super) const ALL: [Self; 6] = [
+        Self::Recents,
         Self::Home,
         Self::Desktop,
         Self::Documents,
@@ -60,6 +84,7 @@ impl NewWindowTarget {
 
     pub(super) fn label(self) -> &'static str {
         match self {
+            Self::Recents => "Recents",
             Self::Home => "Home",
             Self::Desktop => "Desktop",
             Self::Documents => "Documents",
@@ -70,7 +95,7 @@ impl NewWindowTarget {
 
     pub(super) fn resolve(self, home: &Path) -> PathBuf {
         match self {
-            Self::Home => home.to_path_buf(),
+            Self::Home | Self::Recents => home.to_path_buf(),
             Self::Desktop => home.join("Desktop"),
             Self::Documents => home.join("Documents"),
             Self::Downloads => home.join("Downloads"),
@@ -197,8 +222,12 @@ impl Default for SidebarSettings {
         Self {
             show_recents: true,
             show_applications: true,
-            show_desktop: false,
-            show_documents: false,
+            // Windows users expect Desktop and Documents in the sidebar,
+            // as Explorer shows them; the owner's Mac hides both.
+            // Explorer shows Desktop and Documents; the Mac these defaults
+            // were measured on hides both.
+            show_desktop: cfg!(windows),
+            show_documents: cfg!(windows),
             show_downloads: true,
             show_home: false,
             show_bin: true,
@@ -454,13 +483,18 @@ mod tests {
     #[test]
     fn default_settings_match_the_mac_defaults_this_was_measured_against() {
         let settings = FinderSettings::default();
-        assert_eq!(settings.general.new_window_target, NewWindowTarget::Home);
+        let home_or_recents = if cfg!(windows) {
+            NewWindowTarget::Recents
+        } else {
+            NewWindowTarget::Home
+        };
+        assert_eq!(settings.general.new_window_target, home_or_recents);
         assert!(!settings.general.open_folders_in_tabs);
         assert_eq!(settings.tags.len(), 7);
         assert_eq!(settings.tags[0].name, "red");
         assert!(settings.tags.iter().all(|tag| tag.show_in_sidebar));
         assert!(settings.sidebar.show_recents);
-        assert!(!settings.sidebar.show_desktop);
+        assert_eq!(settings.sidebar.show_desktop, cfg!(windows));
         assert!(settings.advanced.show_all_filename_extensions);
         assert!(settings.advanced.warn_before_emptying_bin);
         assert!(!settings.advanced.keep_folders_on_top_in_windows);

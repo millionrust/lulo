@@ -405,13 +405,33 @@ impl MenuStrip {
             .into();
         // The titles never change; only the items' state does, and that is
         // read fresh each time a menu opens.
-        let titles = strip_menus(
+        let menus = strip_menus(
             &app_name,
             rmac_app_menu::definition(app_id, cx.all_action_names()).unwrap_or_default(),
-        )
-        .into_iter()
-        .map(|menu| SharedString::from(menu.label))
-        .collect();
+        );
+        // Every row as the strip shows it, for the Windows checks
+        // (`scripts/windows/launch_smoke.py`: Windows wording and keys).
+        for menu in &menus {
+            trace(|| {
+                let rows = menu
+                    .items
+                    .iter()
+                    .map(|item| {
+                        let hint = crate::shortcuts::display_hint(&item.shortcut);
+                        if hint.is_empty() {
+                            item.label.clone()
+                        } else {
+                            format!("{} [{hint}]", item.label)
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                format!("menu {}: {}", menu.label, rows.join(" | "))
+            });
+        }
+        let titles = menus
+            .into_iter()
+            .map(|menu| SharedString::from(menu.label))
+            .collect();
         Self {
             app_name,
             titles,

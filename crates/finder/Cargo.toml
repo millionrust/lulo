@@ -56,6 +56,11 @@ rmac-dock-system.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
+    "Win32_System_Registry",
     "Win32_UI_Shell",
     "Win32_System_Com",
 ] }
+
+# Files' own exe version info and icon (ADR 0023 "Installer"); see build.rs.
+[target.'cfg(windows)'.build-dependencies]
+rmac-windows-resource-build.workspace = true

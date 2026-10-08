@@ -10,9 +10,9 @@ ticks) against the budget. With `gpui_windows`' parked frame loop
 so the budget is one tick. The Lulo layer's two processes (`lulo-shell`
 and `lulo-session`, ADR 0023 phase 3), measured by `launch_smoke.py
 --shell`, are gated the same way. Terminal is exempt by default: its live shell
-(ConPTY) has its own work. A missing results file passes with a note, so a
-build failure, which the Windows job reports elsewhere, does not also fail
-this gate.
+(ConPTY) has its own work. A missing results file fails, and so does any
+app named with `--expect` that has no reading: a build that never ran the
+apps must not pass this gate.
 """
 
 from __future__ import annotations
@@ -101,6 +101,28 @@ def idle_failures(
     return failures
 
 
+def missing_failures(results: dict[str, dict], expected: list[str]) -> list[str]:
+    """One message per expected app the results do not mention at all."""
+    return [f"{app}: not measured (it did not run)" for app in expected if app not in results]
+
+
+def memory_failures(results: dict[str, dict], budget_mb: float) -> list[str]:
+    """The Lulo layer's shell over its idle working-set budget (an 8 GB PC
+    runs it all day; ADR 0023). Only checked when the shell ran."""
+    shell = results.get("lulo-shell")
+    if shell is None:
+        return []
+    working_set = shell.get("idle_working_set_mb")
+    if working_set is None:
+        return ["lulo-shell: no idle memory reading"]
+    if working_set > budget_mb:
+        return [
+            f"lulo-shell: {working_set:.1f} MB working set at idle, over the budget of {budget_mb:g} MB "
+            f"(private {shell.get('idle_private_mb')} MB)"
+        ]
+    return []
+
+
 def world_tick_failures(results: dict[str, dict], max_ticks: float | None) -> list[str]:
     """Clock's World Clock redraw cost (`launch_smoke.py --world-tick-check`)
     against `max_ticks` per redraw; nothing to check when it was not run."""
@@ -126,14 +148,26 @@ def main() -> int:
     parser.add_argument("--budget-ticks", type=float, default=DEFAULT_BUDGET_TICKS)
     parser.add_argument("--exempt", nargs="*", default=list(DEFAULT_EXEMPT))
     parser.add_argument(
+        "--shell-memory-mb",
+        type=float,
+        default=None,
+        help="Also fail when lulo-shell's idle working set is over this many MB.",
+    )
+    parser.add_argument(
+        "--expect",
+        nargs="*",
+        default=[],
+        help="Apps (and lulo-shell/lulo-session) that must have a reading.",
+    )
+    parser.add_argument(
         "--max-world-tick-ticks",
         type=float,
         help="Fail when one World Clock redraw (launch_smoke.py --world-tick-check) costs more.",
     )
     arguments = parser.parse_args()
     if not arguments.results.exists():
-        print(f"idle gate: {arguments.results} is missing (the apps did not run); skipped")
-        return 0
+        print(f"idle gate: FAIL: {arguments.results} is missing (the apps did not run)")
+        return 1
     results = json.loads(arguments.results.read_text(encoding="utf-8"))
     for app, measurement in sorted(results.items()):
         print(
@@ -141,9 +175,18 @@ def main() -> int:
             f"({measurement.get('idle_renderer_ticks', 0)} in the software rasteriser), "
             f"{measurement.get('idle_wakes')} wake-ups, launch {measurement.get('launch_ms')} ms"
         )
-    failures = idle_failures(
+    failures = missing_failures(results, arguments.expect)
+    failures += idle_failures(
         results, arguments.budget_ticks, tuple(arguments.exempt), PER_APP_BUDGET_TICKS
     )
+    if arguments.shell_memory_mb is not None:
+        shell = results.get("lulo-shell", {})
+        print(
+            f"idle gate: lulo-shell memory at idle: working set {shell.get('idle_working_set_mb')} MB, "
+            f"private {shell.get('idle_private_mb')} MB, peak {shell.get('peak_working_set_mb')} MB; "
+            f"after Spotlight: {shell.get('after_spotlight_working_set_mb')} MB"
+        )
+        failures += memory_failures(results, arguments.shell_memory_mb)
     tick = results.get("rmac-clock", {}).get("world_tick")
     if tick is not None:
         print(

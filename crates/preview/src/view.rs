@@ -6723,7 +6723,11 @@ fn is_openable_document(path: &Path) -> bool {
 /// File ▸ Rename…'s (PRV-MENU-002) one validity rule: a non-empty, single
 /// path component. Matches `text_editor`'s own `is_valid_document_name`.
 fn is_valid_document_name(name: &str) -> bool {
-    !name.is_empty() && name != "." && name != ".." && !name.contains(std::path::MAIN_SEPARATOR)
+    // `/` separates folders on Windows too, beside its own `\`.
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', std::path::MAIN_SEPARATOR])
 }
 
 /// The documents Preview (and any other rmac app) has opened lately, newest

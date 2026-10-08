@@ -1,4 +1,4 @@
 fn main() {
     #[cfg(windows)]
-    rmac_windows_resource_build::embed("Preview", "preview");
+    rmac_windows_resource_build::embed("rmac-preview", "Preview", "preview");
 }

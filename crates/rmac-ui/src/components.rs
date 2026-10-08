@@ -46,17 +46,21 @@ pub(crate) fn init(cx: &mut App) {
     // app. niri hands ⌘-letter keys to the focused app, so each app answers
     // them; these context-free bindings are the fallback an app's own
     // binding for the same keys (System Settings' ⌘M and ⌘Q) still overrides.
-    cx.bind_keys([
-        KeyBinding::new(crate::shortcuts::QUIT.keystroke, QuitApplication, None),
-        KeyBinding::new(crate::shortcuts::MINIMIZE.keystroke, MinimizeWindow, None),
-        KeyBinding::new(crate::shortcuts::ZOOM_WINDOW.keystroke, ZoomWindow, None),
-        KeyBinding::new(crate::shortcuts::HIDE.keystroke, HideApplication, None),
-        KeyBinding::new(
-            crate::shortcuts::HIDE_OTHERS.keystroke,
-            HideOtherApplications,
-            None,
-        ),
-    ]);
+    // On Windows they are Ctrl+Q, Ctrl+M… as the menus show, not Win+M.
+    crate::shortcuts::bind_keys(
+        cx,
+        [
+            KeyBinding::new(crate::shortcuts::QUIT.keystroke, QuitApplication, None),
+            KeyBinding::new(crate::shortcuts::MINIMIZE.keystroke, MinimizeWindow, None),
+            KeyBinding::new(crate::shortcuts::ZOOM_WINDOW.keystroke, ZoomWindow, None),
+            KeyBinding::new(crate::shortcuts::HIDE.keystroke, HideApplication, None),
+            KeyBinding::new(
+                crate::shortcuts::HIDE_OTHERS.keystroke,
+                HideOtherApplications,
+                None,
+            ),
+        ],
+    );
     cx.on_action(|_: &MinimizeWindow, cx| crate::chrome::minimize_focused_window(cx));
     cx.on_action(|_: &ZoomWindow, cx| crate::chrome::zoom_focused_window(cx));
     cx.on_action(|_: &HideApplication, cx| crate::chrome::hide_application(false, cx));

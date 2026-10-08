@@ -12,8 +12,10 @@ path = "src/lib.rs"
 # This crate is only ever pulled in as a `[target.'cfg(windows)'.
 # build-dependencies]` entry of an app crate (see e.g. crates/calculator/
 # Cargo.toml and build.rs), so Cargo never resolves or builds it -- and so
-# never `winres` either -- for a Linux or macOS target. No `cfg` of its own
+# never `embed-resource` either -- for a Linux or macOS target. No `cfg` of its own
 # is needed here for that reason (ADR 0025 vendors `gpui_windows` the same
 # way: the gate lives at the consumer's dependency declaration).
+# `embed-resource` (already in the graph through GPUI) links each script
+# into one named binary only; see src/lib.rs for why not `winres`.
 [dependencies]
-winres = "0.1"
+embed-resource = "3.0"

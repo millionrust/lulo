@@ -279,6 +279,13 @@ impl FinderView {
                 this.search_cancel = None;
                 match result {
                     Ok(entries) => {
+                        super::files_trace(|| {
+                            format!(
+                                "recents {}: {}",
+                                entries.len(),
+                                super::traced_names(&entries)
+                            )
+                        });
                         this.entries = entries;
                         this.result_title = Some("Recents".into());
                         this.selected.clear();

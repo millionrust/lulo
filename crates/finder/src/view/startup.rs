@@ -185,7 +185,8 @@ impl FinderView {
             pasteboard_has_files: false,
             renaming: None,
             rename_click_generation: 0,
-            show_hidden: false,
+            // Explorer's "Show hidden files" on Windows; off elsewhere.
+            show_hidden: rmac_finder::listing::explorer_hidden_settings().0,
             view: presentation.view,
             sidebar_visible: presentation.sidebar_visible,
             show_all_tabs: false,

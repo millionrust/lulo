@@ -14,6 +14,9 @@ macro_rules! assets {
 }
 
 assets! {
+    "apps/org.rmac.Files.svg" => "../../../../packaging/rmac-apps/icons/org.rmac.Files.svg",
+    "dock/trash-empty.svg" => "../../../rmac-dock/assets/icons/trash-empty.svg",
+    "dock/trash-full.svg" => "../../../rmac-dock/assets/icons/trash-full.svg",
     "apps/org.rmac.Notes.svg" => "../../../../packaging/rmac-apps/icons/org.rmac.Notes.svg",
     "apps/org.rmac.Calculator.svg" => "../../../../packaging/rmac-apps/icons/org.rmac.Calculator.svg",
     "apps/org.rmac.Clock.svg" => "../../../../packaging/rmac-apps/icons/org.rmac.Clock.svg",

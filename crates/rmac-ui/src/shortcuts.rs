@@ -77,27 +77,44 @@ pub fn control_primary_binding(binding: &KeyBinding) -> Option<KeyBinding> {
     .ok()
 }
 
-/// One keystroke with Ctrl as the primary modifier:
+/// One keystroke with Ctrl as the primary modifier, by the Windows mapping
+/// in [`rmac_app_menu::windows_keys`]:
 ///
 /// - ⌘ becomes Ctrl (`cmd-s` → `ctrl-s`, `alt-cmd-c` → `ctrl-alt-c`).
-/// - ⌃⌘ keeps both, as Win+Ctrl: Ctrl alone already means ⌘.
+/// - ⌃⌘ and ⌃⌥⌘ become Alt+Shift (`ctrl-cmd-n` → `alt-shift-n`), ⌃⇧⌘
+///   Ctrl+Alt and ⌃⌥⇧⌘ Ctrl+Alt+Shift: never the Windows key, whose
+///   Win+Ctrl chords Windows keeps (new desktop, Narrator, on-screen
+///   keyboard…).
 /// - A ⌃-letter key without ⌘ or ⌥ (⌃A, ⌃⇧E: Cocoa's Emacs keys) is
 ///   dropped, since Ctrl+letter is now a command.
+/// - A chord Windows reserves (Ctrl+Esc, Alt+Tab, Alt+Space…) is dropped.
 /// - Anything else (arrows, ⌃Tab, plain keys) is unchanged.
 pub fn control_primary_keystroke(mut keystroke: Keystroke) -> Option<Keystroke> {
-    let modifiers = &mut keystroke.modifiers;
-    if modifiers.platform && !modifiers.control {
-        modifiers.platform = false;
-        modifiers.control = true;
-    } else if modifiers.control
-        && !modifiers.platform
-        && !modifiers.alt
-        && keystroke.key.len() == 1
-        && keystroke.key.chars().all(|c| c.is_ascii_alphabetic())
-    {
-        return None;
-    }
+    let modifiers = keystroke.modifiers;
+    let chord = rmac_app_menu::windows_keys::mac_to_windows(
+        modifiers.platform,
+        modifiers.control,
+        modifiers.alt,
+        modifiers.shift,
+        &keystroke.key,
+    )?;
+    keystroke.modifiers.platform = chord.win;
+    keystroke.modifiers.control = chord.ctrl;
+    keystroke.modifiers.alt = chord.alt;
+    keystroke.modifiers.shift = chord.shift;
     Some(keystroke)
+}
+
+/// Whether Windows keeps this keystroke for itself (see
+/// [`rmac_app_menu::windows_keys::WINDOWS_RESERVED`]).
+pub fn is_reserved_on_windows(keystroke: &Keystroke) -> bool {
+    rmac_app_menu::windows_keys::is_reserved(&rmac_app_menu::windows_keys::Chord {
+        win: keystroke.modifiers.platform,
+        ctrl: keystroke.modifiers.control,
+        alt: keystroke.modifiers.alt,
+        shift: keystroke.modifiers.shift,
+        key: keystroke.key.clone(),
+    })
 }
 
 /// A menu hint ("⇧⌘S") as this platform shows it: unchanged, or in the
@@ -119,66 +136,11 @@ fn display_hint_static(hint: &'static str) -> Cow<'static, str> {
 }
 
 /// The Windows spelling of a Mac hint, following [`control_primary_keystroke`]:
-/// modifiers in Windows' order (Win, Ctrl, Alt, Shift), joined with "+", and
-/// the key glyphs as Windows names them. A ⌃-letter hint, whose binding is
-/// dropped, shows nothing.
+/// modifiers in Windows' order (Ctrl, Alt, Shift), joined with "+", and the
+/// key glyphs as Windows names them. A hint whose binding is dropped (a
+/// ⌃-letter key, a reserved chord) shows nothing.
 pub fn windows_hint(hint: &str) -> String {
-    let (mut command, mut control, mut option, mut shift) = (false, false, false, false);
-    let mut rest = hint;
-    loop {
-        let mut characters = rest.chars();
-        match characters.next() {
-            Some('⌘') => command = true,
-            Some('⌃') => control = true,
-            Some('⌥') => option = true,
-            Some('⇧') => shift = true,
-            _ => break,
-        }
-        rest = characters.as_str();
-    }
-    if rest.is_empty() {
-        return hint.to_owned();
-    }
-    let key = match rest {
-        "⌫" => "Backspace",
-        "⌦" => "Delete",
-        "↩" | "⏎" | "⌅" => "Enter",
-        "⇥" => "Tab",
-        "⎋" | "Esc" => "Esc",
-        "←" => "Left",
-        "→" => "Right",
-        "↑" => "Up",
-        "↓" => "Down",
-        "−" => "-",
-        "⇞" => "Page Up",
-        "⇟" => "Page Down",
-        "↖" => "Home",
-        "↘" => "End",
-        other => other,
-    };
-    if control
-        && !command
-        && !option
-        && key.len() == 1
-        && key.chars().all(|c| c.is_ascii_alphabetic())
-    {
-        return String::new();
-    }
-    let mut parts = Vec::with_capacity(5);
-    if command && control {
-        parts.push("Win");
-    }
-    if command || control {
-        parts.push("Ctrl");
-    }
-    if option {
-        parts.push("Alt");
-    }
-    if shift {
-        parts.push("Shift");
-    }
-    parts.push(key);
-    parts.join("+")
+    rmac_app_menu::windows_keys::windows_hint(hint)
 }
 
 pub const NEW: Shortcut = Shortcut::new("cmd-n", "⌘N");
@@ -337,10 +299,31 @@ mod tests {
         assert_eq!(windows("ctrl-tab").as_deref(), Some("ctrl-tab"));
         assert_eq!(windows("alt-left").as_deref(), Some("alt-left"));
         assert_eq!(windows("escape").as_deref(), Some("escape"));
-        // ⌃⌘ keeps both modifiers (Win+Ctrl).
-        let both =
-            control_primary_keystroke(gpui::Keystroke::parse("ctrl-cmd-s").unwrap()).unwrap();
-        assert!(both.modifiers.control && both.modifiers.platform);
+        // ⌃⌘ becomes Alt+Shift, never the Windows key (Win+Ctrl+D is a
+        // new desktop, Win+Ctrl+O the on-screen keyboard).
+        assert_eq!(windows("ctrl-cmd-s").as_deref(), Some("alt-shift-s"));
+        assert_eq!(windows("ctrl-cmd-up").as_deref(), Some("alt-shift-up"));
+        assert_eq!(windows("ctrl-alt-cmd-1").as_deref(), Some("alt-shift-1"));
+        assert_eq!(windows("ctrl-shift-cmd-f").as_deref(), Some("ctrl-alt-f"));
+        for source in [
+            "ctrl-cmd-d",
+            "ctrl-cmd-o",
+            "ctrl-cmd-n",
+            "ctrl-cmd-f4",
+            "ctrl-cmd-left",
+        ] {
+            let keystroke =
+                control_primary_keystroke(gpui::Keystroke::parse(source).unwrap()).unwrap();
+            assert!(!keystroke.modifiers.platform, "{source}");
+            assert!(!is_reserved_on_windows(&keystroke), "{source}");
+        }
+        // Chords Windows keeps are not bound at all.
+        assert_eq!(windows("cmd-escape"), None);
+        assert_eq!(windows("alt-tab"), None);
+        assert_eq!(windows("alt-space"), None);
+        assert!(is_reserved_on_windows(
+            &gpui::Keystroke::parse("ctrl-shift-escape").unwrap()
+        ));
     }
 
     #[test]
@@ -364,7 +347,7 @@ mod tests {
         assert_eq!(windows_hint("⇧⌘N"), "Ctrl+Shift+N");
         assert_eq!(windows_hint("⌘⌫"), "Ctrl+Backspace");
         assert_eq!(windows_hint("⌘−"), "Ctrl+-");
-        assert_eq!(windows_hint("⌃⌘S"), "Win+Ctrl+S");
+        assert_eq!(windows_hint("⌃⌘S"), "Alt+Shift+S");
         assert_eq!(windows_hint("⌘↑"), "Ctrl+Up");
         assert_eq!(windows_hint("↩"), "Enter");
         assert_eq!(windows_hint("Space"), "Space");
@@ -372,6 +355,15 @@ mod tests {
         // Every shared shortcut has a Windows label.
         for shortcut in ALL {
             assert!(!windows_hint(shortcut.hint).is_empty(), "{}", shortcut.hint);
+            assert!(
+                !windows_hint(shortcut.hint).contains("Win"),
+                "{}",
+                shortcut.hint
+            );
+            let keystroke = gpui::Keystroke::parse(shortcut.keystroke).unwrap();
+            let windows = control_primary_keystroke(keystroke).unwrap();
+            assert!(!is_reserved_on_windows(&windows), "{}", shortcut.keystroke);
+            assert!(!windows.modifiers.platform, "{}", shortcut.keystroke);
         }
     }
 

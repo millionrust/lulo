@@ -69,13 +69,15 @@ fn trash_drop(paths: &[String]) -> std::io::Result<()> {
     Ok(())
 }
 
-const USAGE: &str = "usage: rmac-files [--trash | --path DIRECTORY | --reveal PATH | --search QUERY | PATH-OR-FILE-URI…]";
+const USAGE: &str = "usage: rmac-files [--trash | --recents | --path DIRECTORY | --reveal PATH | --search QUERY | PATH-OR-FILE-URI…]";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 enum StartupDestination {
     #[default]
     Default,
     Trash,
+    /// Go ▸ Recents, where a new window opens on Windows.
+    Recents,
     Directory(PathBuf),
     /// A file named on the command line: its folder opens with it selected,
     /// as `open -R` does.
@@ -91,6 +93,7 @@ impl StartupDestination {
         match (arguments.next(), arguments.next(), arguments.next()) {
             (None, None, None) => Ok(Self::Default),
             (Some(flag), None, None) if flag == "--trash" => Ok(Self::Trash),
+            (Some(flag), None, None) if flag == "--recents" => Ok(Self::Recents),
             (Some(flag), Some(path), None) if flag == "--path" => {
                 let path = PathBuf::from(path);
                 if path.is_absolute() && path.is_dir() {
@@ -176,6 +179,7 @@ impl StartupDestination {
         match self {
             Self::Default => Vec::new(),
             Self::Trash => vec!["--trash".to_owned()],
+            Self::Recents => vec!["--recents".to_owned()],
             Self::Directory(path) => path_argument("--path", path),
             Self::Reveal(path) => path_argument("--reveal", path),
             Self::Search(query) => vec!["--search".to_owned(), query.clone()],
@@ -222,6 +226,12 @@ fn item_path(item: &str, current_dir: Option<&Path>) -> Option<PathBuf> {
     let mut normal = PathBuf::from("/");
     for component in raw.components() {
         match component {
+            // A Windows path keeps its drive (`C:\…`); without the prefix
+            // it would name a folder on whichever drive is current.
+            std::path::Component::Prefix(prefix) => {
+                normal = PathBuf::from(prefix.as_os_str());
+                normal.push(std::path::MAIN_SEPARATOR_STR);
+            }
             std::path::Component::Normal(part) => normal.push(part),
             std::path::Component::ParentDir => {
                 normal.pop();
@@ -270,6 +280,14 @@ mod tests {
         assert_eq!(
             StartupDestination::parse(["--trash".to_owned()].into_iter()),
             Ok(StartupDestination::Trash)
+        );
+        assert_eq!(
+            StartupDestination::parse(["--recents".to_owned()].into_iter()),
+            Ok(StartupDestination::Recents)
+        );
+        assert_eq!(
+            StartupDestination::Recents.window_arguments(),
+            ["--recents".to_owned()]
         );
         assert_eq!(
             StartupDestination::parse(

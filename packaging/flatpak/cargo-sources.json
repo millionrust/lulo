@@ -11979,31 +11979,5 @@
         "contents": "[source.vendored-sources]\ndirectory = \"cargo/vendor\"\n\n[source.crates-io]\nreplace-with = \"vendored-sources\"\n\n[source.\"https://github.com/zed-industries/zed\"]\ngit = \"https://github.com/zed-industries/zed\"\nreplace-with = \"vendored-sources\"\n\n[source.\"https://github.com/zed-industries/font-kit\"]\ngit = \"https://github.com/zed-industries/font-kit\"\nreplace-with = \"vendored-sources\"\nrev = \"94b0f28166665e8fd2f53ff6d268a14955c82269\"\n\n[source.\"https://github.com/zed-industries/reqwest\"]\ngit = \"https://github.com/zed-industries/reqwest\"\nreplace-with = \"vendored-sources\"\nrev = \"c15662463bda39148ba154100dd44d3fba5873a4\"\n\n[source.\"https://github.com/zed-industries/scap\"]\ngit = \"https://github.com/zed-industries/scap\"\nreplace-with = \"vendored-sources\"\nrev = \"4afea48c3b002197176fb19cd0f9b180dd36eaac\"\n",
         "dest": "cargo",
         "dest-filename": "config"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/toml/toml-0.5.11.crate",
-        "sha256": "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234",
-        "dest": "cargo/vendor/toml-0.5.11"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234\", \"files\": {}}",
-        "dest": "cargo/vendor/toml-0.5.11",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/winres/winres-0.1.12.crate",
-        "sha256": "b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c",
-        "dest": "cargo/vendor/winres-0.1.12"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c\", \"files\": {}}",
-        "dest": "cargo/vendor/winres-0.1.12",
-        "dest-filename": ".cargo-checksum.json"
     }
 ]

@@ -1305,9 +1305,9 @@ def check_shell(
         trace = [
             line
             for line in log.text().splitlines()
-            if (line.startswith("lulo-") or line.startswith("gpui_windows startup")) and not line.startswith(wake_prefix)
+            if not line.startswith(wake_prefix) and not line.startswith("lulo-shell: window ")
         ]
-        for line in trace[:400]:
+        for line in trace[:600]:
             print(f"shell log: {line}")
     return failures
 

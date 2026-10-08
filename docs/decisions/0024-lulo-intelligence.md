@@ -920,8 +920,18 @@ runtime check on GitHub's runners. It installs the real unit and activation file
 `rmac-intelligence-bench` (a listed program) is answered both unconfined and in a transient
 unit with Spotlight's `PrivateTmp=yes`; that `gdbus` and a copy of the bench named
 `rmac-launcher` outside the list are refused; that the service shares the manager's user
-namespace; and that a `PrivateTmp=yes` drop-in brings back "cannot be checked". The laptop
-cannot run it: a nested `systemd --user` there has no delegated cgroup, and its own manager is
+namespace; and that a `PrivateTmp=yes` drop-in brings back "cannot be checked". Its first
+run (runtime run 37739008334, ubuntu-26.04, dbus 1.16.2, restriction on) passed: the shipped unit
+ran in the manager's namespace, unconfined, and answered both callers (the confined one in
+its own namespace under `unprivileged_userns`); gdbus was refused as "not a Lulo program
+(pid …, /usr/bin/gdbus)"; with the drop-in, the service ran under `unprivileged_userns` in its
+own namespace and refused with "/proc/<pid>/exe: Permission denied", as in production.
+End to end on the laptop (private nested session, the installed Lulo programs with this
+branch's service, Spotlight started in its own user namespace under `unprivileged_userns` as
+its unit puts it, the owner's verified Tiny model linked read-only): "turn on dark mode"
+showed "Turn On Dark Mode, Lulo can do this", two Returns switched the session to Dark, and
+the service exited once idle (cold first request 14.9 s, with the prefix evaluated for the first time). The laptop
+cannot run the unit check itself: a nested `systemd --user` there has no delegated cgroup, and its own manager is
 the owner's live session.
 
 **Not done in phase 1**: a per-tier memory-cap drop-in; unloading on memory pressure (PSI);

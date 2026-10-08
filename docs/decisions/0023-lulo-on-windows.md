@@ -1018,11 +1018,16 @@ verify.
   `gpui_windows`' wake trace now reports each pool task's CPU (ADR 0025)
   and `launch_smoke.py` counts the pool's remaining time as the
   rasteriser's; on a real PC that is the GPU's work. The idle gate now
-  judges each app on its own CPU, fails a World Clock tick over 2 own
-  ticks (`--max-world-tick-ticks 2`), and Clock's special idle budget
-  drops from 48 ticks to 2, room for the one minute boundary a 20 s window
-  can hold; the Lulo bar (`lulo-shell`), whose clock also redraws once a
-  minute, gets the same 2 (run 37713970007 caught it at 2.00). Lulo OS
+  judges each app on its own CPU, fails a World Clock tick over 3 own
+  ticks (`--max-world-tick-ticks 3`), and Clock's special idle budget
+  drops from 48 ticks to 3, room for the one minute boundary a 20 s window
+  can hold. 3 rather than 2 because a reading swings by about a tick:
+  thread times move a whole tick at a time and WARP's share is a
+  difference of two such sums (four runs read 0.90, 0.90, 1.10 and 2.00
+  per redraw); the old map re-rasterisation alone was 4 to 5 own ticks.
+  The Lulo bar (`lulo-shell`), whose clock also redraws once a minute,
+  gets 2 (run 37713970007 caught it at 2.00 before WARP was left out of
+  its reading too, 1.00 since). Lulo OS
   runs the same Clock code, so its minute tick sheds the same
   rasterisation; its runtime `idle-cpu` soak keeps Clock's window
   inactive, where it does not tick (0.01 % before and after, runs

@@ -377,13 +377,13 @@ jobs:
       # Blocking: no app but Terminal, and neither Lulo layer process, may
       # use more than one 15.6 ms tick of CPU over 20 s with no input (ADR
       # 0025's parked frame loop; ADR 0023 phase 3), and one World Clock
-      # minute tick may cost Clock at most 2 (ADR 0023 phase 2e). The
+      # minute tick may cost Clock at most 3 (ADR 0023 phase 2e). The
       # runner's software GPU (WARP) is counted apart: idle_gate.py.
       - name: Idle gate
         if: ${{ !cancelled() }}
         run: >-
           python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1
-          --exempt rmac-terminal --max-world-tick-ticks 2
+          --exempt rmac-terminal --max-world-tick-ticks 3
 
       - name: Upload app screenshots
         if: ${{ !cancelled() }}

@@ -42,17 +42,21 @@ DEFAULT_EXEMPT = ("rmac-terminal",)
 # redraw by `--max-world-tick-ticks` (`launch_smoke.py --world-tick-check`,
 # ten redraws in one window): since op/win-settings it is about one tick
 # in CI's debug build, the main thread's frame plus the next minute's map
-# painted ahead on a background thread. 2 here leaves room for that one
-# boundary and nothing else. (Before, each tick re-rasterised the whole
-# map and drew two frames: 19 and 28 ticks in runs 37633070594 and
-# 37657567719, under a 48-tick allowance.)
+# painted ahead on a background thread. Four runs read 0.90, 0.90, 1.10
+# and 2.00 ticks per redraw: thread times move a whole tick at a time, and
+# the rasteriser's share is the thread pool's time less the app's own
+# tasks', so one reading swings by about a tick. 3 (per redraw, and here
+# for the one boundary) holds that swing and still fails the old
+# behaviour, which re-rasterised the whole map on the CPU (4 to 5 ticks of
+# its own in a debug build) and drew two frames: 19 and 28 ticks in all in
+# runs 37633070594 and 37657567719, under a 48-tick allowance.
 #
 # The Lulo layer's menu bar shows the time to the minute too, so its
 # window redraws once a minute, and the same one-in-three window catches
 # it: run 37713970007 charged lulo-shell 2.00 ticks of its own for that
 # one update (three frames: the clock and `gpui_windows`' settle).
 PER_APP_BUDGET_TICKS: dict[str, float] = {
-    "rmac-clock": 2.0,
+    "rmac-clock": 3.0,
     "lulo-shell": 2.0,
 }
 

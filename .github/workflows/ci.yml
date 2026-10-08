@@ -340,6 +340,14 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
 
+      # Each exe's own icon (rmac-windows-resource-build embeds
+      # packaging/windows/icons/<id>.ico when it exists), so the launch
+      # check can prove Files, lulo-shell and lulo-session carry theirs.
+      - name: Make the Windows icons
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: bash scripts/windows/make_icons.sh
+
       - name: Run Clippy
         continue-on-error: true
         run: cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
@@ -352,14 +360,6 @@ jobs:
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
-
-      # Each exe's own icon (rmac-windows-resource-build embeds
-      # packaging/windows/icons/<id>.ico when it exists), so the launch
-      # check can prove Files, lulo-shell and lulo-session carry theirs.
-      - name: Make the Windows icons
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: bash scripts/windows/make_icons.sh
 
       - name: Build the apps
         if: ${{ !cancelled() }}

@@ -42,8 +42,11 @@ use std::path::{Path, PathBuf};
 pub fn embed(bin: &str, display_name: &str, icon_id: &str) {
     let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
     let icon = icon_path(icon_id);
+    // Watched whether or not it exists yet, so a build after
+    // `make_icons.sh` embeds the icon a build before it could not.
+    println!("cargo:rerun-if-changed={}", icon.display());
+    println!("cargo:rerun-if-changed=build.rs");
     let icon = if icon.is_file() {
-        println!("cargo:rerun-if-changed={}", icon.display());
         Some(icon)
     } else {
         println!(

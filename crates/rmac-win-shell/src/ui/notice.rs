@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use gpui::{
     div, px, App, Context, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
-    Render, Role, SharedString, Styled as _, Window,
+    Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_ui::mac;
 use windows::Win32::Foundation::RECT;

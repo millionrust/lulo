@@ -673,9 +673,9 @@ and the OSMF Agreement above says the same of its own Fee ("does not limit User'
 to access, modify, or distribute the Software's source code or self-compiled binaries").
 Inno Setup's compiled installer stub, by contrast, is Inno Setup's own code, embedded by
 design -- permitted under its licence, but the comparison above is why WiX was still
-preferred. The one new build-time Cargo dependency this pass adds, `winres` (MIT, confirmed
-from its published crate metadata, so already on `deny.toml`'s allow list with no new
-exception needed), is gated `[target.'cfg(windows)'.build-dependencies]` in each app crate
+preferred. The one build-time Cargo dependency this needs, `embed-resource` (MIT, already
+in the graph through GPUI; it replaced the `winres` this pass first used, see "What the
+installer does"), is gated `[target.'cfg(windows)'.build-dependencies]` in each app crate
 (`crates/rmac-windows-resource-build`), so it is never resolved, let alone compiled, for the
 Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows`.
 
@@ -711,18 +711,19 @@ Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows
   when none is set explicitly) show the right artwork, with one thing embedding it rather
   than two copies to keep in sync. A build that skips the icon step (plain local
   `cargo build`) still succeeds, with the platform's default icon and a `cargo:warning`
-  naming why. **Files and the Lulo layer do not call `embed`** (`crates/finder/build.rs`,
-  `crates/rmac-win-shell/build.rs` are deliberately empty): a real `cargo build --release`
-  of all nine binaries together hit CVTRES error CVT1100, "duplicate resource.
-  type:VERSION, name:1, language:0x0409", linking `rmac-files.exe` -- `resource.lib`
-  (`rmac-windows-resource-build`'s own output) listed twice in the linker command for a
-  reason this pass could not pin down in the time it had (gpui's own embedded resource, the
-  only other one in the graph, links once, correctly, and nothing else should be requesting
-  a native `resource` lib by that name; adding a unique `package.links` key to every crate
-  that calls `embed`, Cargo's documented fix for a build script's native-link output being
-  applied more than once, made no difference). Files and the Lulo layer still install, get
-  their shortcuts (where due) and run correctly; they keep the platform's default icon and
-  no `FileDescription`/`CompanyName` until this is understood -- see "What is left".
+  naming why. Files and the Lulo layer (`lulo-session.exe` and `lulo-shell.exe`, both
+  with the Lulo mark) embed theirs too since `op/win-realpc`. They were first left out
+  because a release build of all nine binaries hit CVTRES error CVT1100, "duplicate
+  resource. type:VERSION, name:1", linking `rmac-files.exe`. The cause: `winres` linked
+  each app's resources as a native library (`cargo:rustc-link-lib=dylib=resource`), and
+  Cargo hands a library's native libraries on to every package that depends on it. Files
+  depends on `rmac-preview`'s library through Quick Look, so Preview's `resource.lib` was
+  already inside `rmac-files.exe` (which is why the Dock showed Files with Preview's icon on
+  the owner's PC), and Files' own block made two. `rmac-windows-resource-build` now writes
+  one `.rc` script per binary and links it with `embed_resource::compile_for`
+  (`cargo:rustc-link-arg-bin=<bin>=…`), which reaches that binary only; `embed-resource`
+  3.0 was already in the graph through GPUI, so `winres` and its `toml` 0.5 left the
+  lockfile.
 - **AppUserModelID**, so Clock's alarms (WIN-OS-14) and every app's taskbar grouping and
   jump lists can work: each Start Menu shortcut's `ShortcutProperty` sets
   `System.AppUserModel.ID` to `Lulo.<App>` (`generate_apps_wxs.py`'s `aumid()`), and each app
@@ -805,11 +806,6 @@ alongside the existing unsigned exe zip.
 - A real toast for Clock's alarms (`ToastNotificationManager`) now that an AUMID exists.
 - An `AppUserModelID` for `lulo-session.exe`'s own shortcut, once `rmac-win-shell` sets a
   matching one at process start (WIN-OS-28).
-- The CVT1100 duplicate-resource link failure that keeps Files and the Lulo layer from
-  embedding an icon or version info ("What the installer does" above). Worth real
-  investigation (`cargo build -v` to see every build script's exact output, trying
-  `embed-resource` in place of `winres`, or a minimal reproduction outside this workspace)
-  before trying another blind fix.
 - A standing "Restore Windows taskbar" Start Menu shortcut (WIN-OS-26); today's fix only
   runs that restore automatically during a real uninstall, not as an anytime escape hatch.
 - MSIX packaging as an additional distribution format, once signing exists -- this
@@ -950,7 +946,7 @@ binaries only say that they are for Windows. Nothing in `shell/` changes.
 | Menu bar: a `wlr-layer-shell` surface with an exclusive zone | A `WS_EX_TOOLWINDOW` + `WS_EX_TOPMOST` + `WS_EX_NOACTIVATE` window registered as a top AppBar (`SHAppBarMessage` `ABM_NEW`, `ABM_QUERYPOS`/`ABM_SETPOS` on `ABE_TOP`), so Windows takes its strip out of the work area and maximised windows stop below it. It never takes the keyboard from the app in front. |
 | Dock: a layer surface along the bottom | A bottom AppBar the Dock's height (67 pt); the window is the shelf alone, centred in the strip, so no clear area covers app windows. A floating, auto-hiding Dock comes with Desktop & Dock settings. |
 | Menus: layer pop-ups | A clear, activatable panel covering the screen below the bar: the menu draws at its title, the rest of the panel catches the click that closes it (as on the Mac, the click does not reach the window below), and the panel takes the keyboard (↑/↓, Return, Esc) while it is open. Closing gives the foreground back to the app in front, before a command is sent to it. |
-| Spotlight: ⌘Space through the portal shortcut | `RegisterHotKey(Alt+Space)`. Win+Space is Windows' input-language switch and cannot be registered; Alt+Space only opens a classic window's system menu, which the ⌘-key hook (next slice) will route. The hotkey lands on the hook thread's queue, which also gives Lulo the right to take the foreground. The window is made hidden at start-up, so it shows at once. |
+| Spotlight: ⌘Space through the portal shortcut | `RegisterHotKey(Alt+Space)`. Win+Space is Windows' input-language switch and cannot be registered; Alt+Space only opens a classic window's system menu, which the ⌘-key hook (next slice) will route. The hotkey lands on the hook thread's queue, which also gives Lulo the right to take the foreground. When another app already holds Alt+Space, Lulo falls back (see "Phase 3 on a real PC"). The window is made the first time Spotlight opens and let go of 30 s after it closes. |
 
 Every Win32 call that sends messages to Lulo's own windows (moving,
 showing, hiding, the foreground) runs from a GPUI task outside any app update,

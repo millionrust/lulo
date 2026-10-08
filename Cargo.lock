@@ -6577,6 +6577,7 @@ dependencies = [
  "async-channel",
  "async-io",
  "futures-util",
+ "libc",
  "llama-cpp-2",
  "rmac-intelligence",
  "serde",

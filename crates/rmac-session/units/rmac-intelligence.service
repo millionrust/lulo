@@ -33,5 +33,10 @@ NoNewPrivileges=yes
 LockPersonality=yes
 RestrictRealtime=yes
 SystemCallArchitectures=native
-PrivateTmp=yes
 UMask=0077
+# No PrivateTmp=, PrivateUsers=, ProtectSystem=, ProtectHome=, ProtectProc=
+# or any other mount-namespace option: in a user unit each one makes systemd
+# put the service in its own user namespace, and from there the kernel will
+# not let it read /proc/<pid>/exe of its callers, so its caller check
+# refuses every request (2026-10-08). The service writes no files outside
+# its cache.

@@ -281,6 +281,23 @@ expectation because recording a new note on the owner's Mac could sync to
 iCloud. `run_lulo.py` plays them only inside its private compositor and
 temporary home, alongside the recorded Mac comparisons for other apps.
 
+## Lulo Intelligence under its systemd unit
+
+`scripts/behavior/run_intelligence_unit.py` (the `intelligence-unit` Lulo
+runtime check) runs `org.rmac.Intelligence1` the way an install does: the
+real `rmac-intelligence.service` and activation file under a real
+`systemd --user` manager, with Ubuntu's user-namespace AppArmor restriction
+on. A listed Lulo caller must be answered both unconfined and from a unit with
+Spotlight's `PrivateTmp=yes`. `gdbus`, and a copy of the caller outside the
+trusted paths, must be refused as "not a Lulo program". Putting
+`PrivateTmp=yes` back on the service must bring back the 2026-10-08 failure,
+"the caller cannot be checked" (ADR 0024, "The caller-check fix").
+It drives the user manager it runs under, so it runs only on GitHub's
+runners (`GITHUB_ACTIONS=true`, lingering enabled by the workflow). Never run
+it on the reference laptop: there that manager is the owner's live session,
+and a nested `systemd --user` has no delegated cgroup. `run_spotlight_intents.py`
+covers the Spotlight rows themselves in a private nested session.
+
 ## Cross-app file drag
 
 `scripts/behavior/run_file_drag.py` starts the shipped Dock and wallpaper in

@@ -902,8 +902,52 @@ fn intelligence_starts_on_demand_capped_and_offline() {
             "missing {directive}"
         );
     }
-    // Not relied on: Ubuntu's user-namespace policy breaks it in user units.
-    assert!(!unit.lines().any(|line| line.starts_with("PrivateNetwork=")));
+    // In a user unit every one of these makes systemd run the service in its
+    // own user namespace. From there it cannot read its callers'
+    // /proc/<pid>/exe, and the caller check refuses every request: the
+    // 2026-10-08 production bug (crates/rmac-intelligence-service/src/caller.rs).
+    for option in [
+        "PrivateTmp=",
+        "PrivateUsers=",
+        "PrivateDevices=",
+        "PrivateNetwork=",
+        "PrivateIPC=",
+        "PrivateMounts=",
+        "PrivatePIDs=",
+        "ProtectSystem=",
+        "ProtectHome=",
+        "ProtectProc=",
+        "ProcSubset=",
+        "ProtectKernelTunables=",
+        "ProtectKernelModules=",
+        "ProtectKernelLogs=",
+        "ProtectControlGroups=",
+        "ProtectClock=",
+        "ProtectHostname=",
+        "ReadOnlyPaths=",
+        "ReadWritePaths=",
+        "InaccessiblePaths=",
+        "ExecPaths=",
+        "NoExecPaths=",
+        "TemporaryFileSystem=",
+        "BindPaths=",
+        "BindReadOnlyPaths=",
+        "RootDirectory=",
+        "RootImage=",
+        "MountAPIVFS=",
+        "MountImages=",
+        "ExtensionImages=",
+        "ExtensionDirectories=",
+        "NetworkNamespacePath=",
+        "IPCNamespacePath=",
+    ] {
+        assert!(
+            !unit
+                .lines()
+                .any(|line| line.trim_start().starts_with(option)),
+            "{option} would hide the callers from the caller check"
+        );
+    }
     assert!(!unit.contains("/bin/sh"));
     // Nothing starts it at login, and the supervisor does not own it.
     let target = include_str!("../units/rmac-session.target");

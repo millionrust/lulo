@@ -141,9 +141,9 @@ pub fn over_backdrop(
     radius: f32,
     surface: impl gpui::IntoElement,
 ) -> gpui::AnyElement {
-    use gpui::{IntoElement as _, ParentElement as _, Styled as _};
     #[cfg(windows)]
     if let Some(backdrop) = windows::backdrop::element(window, cx, radius) {
+        use gpui::{IntoElement as _, ParentElement as _, Styled as _};
         return gpui::div()
             .size_full()
             .relative()
@@ -152,7 +152,7 @@ pub fn over_backdrop(
             .into_any_element();
     }
     let _ = (window, cx, radius);
-    surface.into_any_element()
+    gpui::IntoElement::into_any_element(surface)
 }
 
 /// A GPUI display's stable output id, as [`stable_output_uuid`] gives it for

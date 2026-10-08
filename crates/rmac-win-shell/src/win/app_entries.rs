@@ -106,7 +106,13 @@ fn icon_path(icons: &Path, file: &str) -> PathBuf {
     let stem = file.trim_end_matches(".desktop");
     let safe: String = stem
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     icons.join(format!("{safe}.png"))
 }
@@ -117,7 +123,12 @@ fn fetch_icons(icons: &Path, chosen: &BTreeMap<String, App>) {
     let missing: BTreeMap<String, PathBuf> = chosen
         .iter()
         .filter(|(file, _)| !icon_path(icons, file).is_file())
-        .map(|(file, app)| (format!("shell:AppsFolder\\{}", app.parsing), icon_path(icons, file)))
+        .map(|(file, app)| {
+            (
+                format!("shell:AppsFolder\\{}", app.parsing),
+                icon_path(icons, file),
+            )
+        })
         .collect();
     if missing.is_empty() || std::fs::create_dir_all(icons).is_err() {
         return;
@@ -204,7 +215,10 @@ pub fn refresh() {
         .iter()
         .map(|(file, app)| {
             let icon = icon_path(&icons, file);
-            (file.clone(), entry_with_icon(app, icon.is_file().then_some(icon.as_path())))
+            (
+                file.clone(),
+                entry_with_icon(app, icon.is_file().then_some(icon.as_path())),
+            )
         })
         .collect();
     match sync(&applications, &entries) {

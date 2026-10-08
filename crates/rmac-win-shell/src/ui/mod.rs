@@ -48,6 +48,16 @@ use crate::win::{
 /// The menu bar's height, as the Mac's.
 pub(crate) const BAR_HEIGHT: f32 = 24.0;
 
+/// One texel of a padded wallpaper strip (`wallpaper::pad`) drawn over
+/// `width` × `height` GPUI pixels, so the surface can draw the padding
+/// just outside itself.
+pub(crate) fn strip_cell(image: &RenderImage, width: f32, height: f32) -> (f32, f32) {
+    let size = image.size(0);
+    let columns = (size.width.0 - 2).max(1) as f32;
+    let rows = (size.height.0 - 2).max(1) as f32;
+    (width / columns, height / rows)
+}
+
 /// The registry value recording the Spotlight hotkey the user was last
 /// told about (`model::hotkey::Hotkey::code`).
 const HOTKEY_NOTICE: &str = "SpotlightHotkeyNotice";
@@ -1107,8 +1117,14 @@ pub fn run() -> i32 {
                 cx.spawn(async move |cx| {
                     appbar::register(windows_list::handle(bar.hwnd));
                     appbar::register(windows_list::handle(dock.hwnd));
-                    backdrop::apply(windows_list::handle(bar.hwnd), backdrop::Surface::Bar);
-                    backdrop::apply(windows_list::handle(dock.hwnd), backdrop::Surface::Dock);
+                    // Lulo mode (its desktop opens just below) draws the
+                    // wallpaper under the Dock's shelf itself.
+                    backdrop::apply(windows_list::handle(bar.hwnd), backdrop::Surface::Bar, true);
+                    backdrop::apply(
+                        windows_list::handle(dock.hwnd),
+                        backdrop::Surface::Dock,
+                        true,
+                    );
                     if took_taskbar {
                         taskbar::take_over();
                     }

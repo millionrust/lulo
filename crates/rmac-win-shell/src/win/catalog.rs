@@ -100,7 +100,7 @@ pub fn load_apps() -> Vec<Entry> {
         .iter()
         .map(|app| Entry::new(app.name, Target::Lulo(app.exe), "", Kind::Application))
         .collect::<Vec<_>>();
-    match apps_folder() {
+    match apps_folder_from_helper().or_else(apps_folder) {
         Some(found) if !found.is_empty() => {
             super::trace(|| format!("catalog: {} apps in the Apps folder", found.len()));
             apps.extend(found);
@@ -117,6 +117,72 @@ pub fn load_apps() -> Vec<Entry> {
         }
     }
     apps
+}
+
+/// `lulo-shell`'s switch that makes it the Apps folder helper.
+pub const APPS_HELPER_SWITCH: &str = "--apps-helper";
+
+/// The Apps folder read by a short-lived `lulo-shell --apps-helper`
+/// process: enumerating it loads a large part of the Windows shell, whose
+/// libraries and caches stayed in lulo-shell's private memory after
+/// Spotlight's first use (WIN-OS-53). `None` if the helper cannot run.
+fn apps_folder_from_helper() -> Option<Vec<Entry>> {
+    use std::os::windows::process::CommandExt as _;
+    use windows::Win32::System::Threading::CREATE_NO_WINDOW;
+
+    let exe = std::env::current_exe().ok()?;
+    let output = std::process::Command::new(exe)
+        .arg(APPS_HELPER_SWITCH)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW.0)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(parse_helper_apps(&String::from_utf8_lossy(&output.stdout)))
+}
+
+/// The helper's lines, `<name>\t<parsing name>`, as Spotlight entries.
+fn parse_helper_apps(text: &str) -> Vec<Entry> {
+    text.lines()
+        .filter_map(|line| line.split_once('\t'))
+        .filter(|(name, parsing)| !name.is_empty() && !parsing.is_empty())
+        .map(|(name, parsing)| {
+            Entry::new(
+                name,
+                Target::Shell(format!("shell:AppsFolder\\{parsing}")),
+                "",
+                Kind::Application,
+            )
+        })
+        .collect()
+}
+
+/// `lulo-shell --apps-helper`: print the Apps folder, one
+/// `<name>\t<parsing name>` line per app, and exit.
+pub fn run_apps_helper() -> i32 {
+    use std::io::Write as _;
+    init_com();
+    let Some(found) = apps_folder() else {
+        return 1;
+    };
+    let clean = |text: &str| text.replace(['\t', '\r', '\n'], " ");
+    let mut output = std::io::BufWriter::new(std::io::stdout().lock());
+    for entry in found {
+        let Target::Shell(target) = &entry.target else {
+            continue;
+        };
+        let parsing = target.trim_start_matches("shell:AppsFolder\\");
+        if writeln!(output, "{}\t{}", clean(&entry.name), clean(parsing)).is_err() {
+            return 1;
+        }
+    }
+    if output.flush().is_err() {
+        return 1;
+    }
+    0
 }
 
 /// Windows' Apps folder: the Start menu's shortcuts and the Store apps,
@@ -304,5 +370,23 @@ pub fn watch(on_change: impl Fn(List) + Send + 'static) {
         });
     if let Err(error) = spawned {
         eprintln!("lulo-shell: Spotlight will not notice new apps or files: {error}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_apps_helpers_lines_become_apps_folder_entries() {
+        let entries = super::parse_helper_apps(
+            "Calculator\tMicrosoft.WindowsCalculator_8wekyb3d8bbwe!App\nbroken line\n\t\n",
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "Calculator");
+        assert_eq!(
+            entries[0].target,
+            super::Target::Shell(
+                "shell:AppsFolder\\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App".into()
+            )
+        );
     }
 }

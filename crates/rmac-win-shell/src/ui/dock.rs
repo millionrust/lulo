@@ -278,13 +278,17 @@ impl Render for DockView {
             .gap(px(GAP))
             .rounded(px(mac::radius_dock()))
             .when_some(wallpaper, |shelf, image| {
+                // The strip carries a copied one-cell border
+                // (`wallpaper::pad`), drawn just outside the strip.
+                let (cell_width, cell_height) =
+                    super::strip_cell(&image, screen_width, DOCK_HEIGHT);
                 shelf.child(
                     img(image)
                         .absolute()
-                        .left(px(-shelf_left))
-                        .top_0()
-                        .w(px(screen_width))
-                        .h(px(DOCK_HEIGHT))
+                        .left(px(-shelf_left - cell_width))
+                        .top(px(-cell_height))
+                        .w(px(screen_width + 2.0 * cell_width))
+                        .h(px(DOCK_HEIGHT + 2.0 * cell_height))
                         .object_fit(ObjectFit::Fill),
                 )
             })

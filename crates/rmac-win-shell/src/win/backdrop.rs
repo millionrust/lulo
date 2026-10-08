@@ -106,8 +106,9 @@ fn set_accent(hwnd: HWND, state: u32, gradient: u32) -> bool {
     }
 }
 
-/// Give `hwnd` its backdrop. Returns whether it is frosted.
-pub fn apply(hwnd: HWND, surface: Surface) -> bool {
+/// Give `hwnd` its backdrop. Returns whether it is frosted. In
+/// `lulo_mode` the Dock draws Lulo's wallpaper itself and gets none.
+pub fn apply(hwnd: HWND, surface: Surface, lulo_mode: bool) -> bool {
     // Windows 11 would round a window's corners on its own; the bar is a
     // straight strip and the Dock is cut to its own shape. Windows 10
     // refuses the attribute and rounds nothing anyway.
@@ -123,15 +124,22 @@ pub fn apply(hwnd: HWND, surface: Surface) -> bool {
     };
     // The menu bar shows the wallpaper's own colour through it, as the
     // Mac's does: a plain blur, since acrylic's grey luminosity layer and
-    // noise turned a dark photo into a near-black strip. The Dock keeps
-    // acrylic, the Mac's frosted shelf. An acrylic tint's alpha must not
-    // be 0 (one with none draws black); the surface paints the real tint
-    // itself.
+    // noise turned a dark photo into a near-black strip.
+    //
+    // The Dock gets no accent at all in Lulo mode: it draws Lulo's
+    // wallpaper under its shelf itself (`ui::dock`), and Windows' acrylic
+    // ignored the window's rounded region on the owner's Windows 11 PC, so
+    // a dark rectangle showed behind both rounded ends (WIN-OS-49). With
+    // GPUI's own transparent accent the corners outside the shelf are
+    // clear.
     let (state, kind) = match surface {
         Surface::Bar => (ACCENT_ENABLE_BLURBEHIND, "blur"),
+        Surface::Dock if lulo_mode => (0, "none (Lulo mode)"),
         Surface::Dock => (ACCENT_ENABLE_ACRYLICBLURBEHIND, "acrylic"),
     };
-    let frosted = transparency_effects() && set_accent(hwnd, state, 0x0100_0000);
+    // An acrylic tint's alpha must not be 0 (one with none draws black);
+    // the surface paints the real tint itself.
+    let frosted = state != 0 && transparency_effects() && set_accent(hwnd, state, 0x0100_0000);
     match surface {
         Surface::Bar => BAR_FROSTED.store(frosted, Ordering::Release),
         Surface::Dock => DOCK_FROSTED.store(frosted, Ordering::Release),
@@ -139,7 +147,11 @@ pub fn apply(hwnd: HWND, surface: Surface) -> bool {
     trace(|| {
         format!(
             "backdrop {surface:?}: {}",
-            if frosted { kind } else { "tint only" }
+            if frosted || state == 0 {
+                kind
+            } else {
+                "tint only"
+            }
         )
     });
     frosted

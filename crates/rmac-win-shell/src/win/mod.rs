@@ -19,6 +19,7 @@ pub mod status;
 pub mod surface;
 pub mod taskbar;
 pub mod wallpaper;
+pub mod wallpaper_layer;
 pub mod windows_list;
 
 use std::sync::OnceLock;

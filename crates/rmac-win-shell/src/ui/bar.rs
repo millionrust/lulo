@@ -42,7 +42,9 @@ pub(crate) fn bar_fill(dark_text: Option<bool>, over_wallpaper: bool) -> gpui::H
             } else {
                 mac::black()
             };
-            veil.a = if dark_text { 0.22 } else { 0.14 };
+            // As light as the Mac's: macOS 26's bar is the wallpaper
+            // itself with the faintest veil (WIN-OS-55).
+            veil.a = if dark_text { 0.12 } else { 0.05 };
             veil
         }
         _ => {
@@ -69,6 +71,12 @@ pub(crate) fn bar_text(dark_text: Option<bool>) -> gpui::Hsla {
         Some(false) => mac::white(),
         None => mac::text(),
     }
+}
+
+/// Whether the bar's window has been placed in its strip (the bar's own
+/// height), rather than still at the size it was opened with.
+fn placed(window: &Window) -> bool {
+    f32::from(window.viewport_size().height) <= BAR_HEIGHT + 0.5
 }
 
 impl BarView {
@@ -115,7 +123,7 @@ fn status_glyph(path: &'static str, label: &'static str, colour: gpui::Hsla) -> 
 }
 
 impl Render for BarView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.shell.read(cx);
         let open = state.open_menu;
         let text = bar_text(state.bar_dark_text);
@@ -178,7 +186,14 @@ impl Render for BarView {
             .flex()
             .items_center()
             .on_children_prepainted(move |children, window, _| {
-                // The CI checks click titles by their place on screen.
+                // The CI checks click titles by their place on screen, so
+                // only once the bar has its strip: its first frame can be
+                // laid out at the window's size before it is placed, and a
+                // title traced there (y 244 of 511) was clicked on the
+                // desktop instead of the bar.
+                if !placed(window) {
+                    return;
+                }
                 let current = traced_labels
                     .iter()
                     .cloned()
@@ -285,6 +300,7 @@ impl Render for BarView {
         // Mac's menu bar shows it, whatever Windows' own blur does.
         let backdrop = state.bar_backdrop.clone();
         let over_wallpaper = backdrop.is_some();
+        let screen_width = f32::from(window.viewport_size().width);
         div()
             .id("lulo-menu-bar")
             .role(Role::MenuBar)
@@ -295,12 +311,18 @@ impl Render for BarView {
             .items_center()
             .justify_between()
             .px(px(8.0))
+            .overflow_hidden()
             .when_some(backdrop, |bar, image| {
+                // The strip carries a copied one-cell border
+                // (`wallpaper::pad`), drawn just outside the bar.
+                let (cell_width, cell_height) = super::strip_cell(&image, screen_width, BAR_HEIGHT);
                 bar.child(
                     img(image)
                         .absolute()
-                        .inset_0()
-                        .size_full()
+                        .left(px(-cell_width))
+                        .top(px(-cell_height))
+                        .w(px(screen_width + 2.0 * cell_width))
+                        .h(px(BAR_HEIGHT + 2.0 * cell_height))
                         .object_fit(ObjectFit::Fill),
                 )
                 .child(
@@ -324,6 +346,9 @@ impl Render for BarView {
                     .on_children_prepainted(move |children, window, _| {
                         // The CI checks click the magnifier by its place on
                         // screen: the next-to-last status item.
+                        if !placed(window) {
+                            return;
+                        }
                         let Some(icon) = children.len().checked_sub(2).map(|at| children[at])
                         else {
                             return;

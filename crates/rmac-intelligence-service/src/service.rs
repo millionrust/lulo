@@ -163,35 +163,33 @@ impl Interface {
     }
 }
 
-/// Same user, Lulo program (see [`crate::caller`]).
+/// Same user, Lulo program (see [`crate::caller`]). One bus round trip:
+/// `GetConnectionCredentials` gives the uid, the pid and, on buses that
+/// support it, a pidfd. Fails closed; the logged error names the caller
+/// and the reason.
 #[cfg(target_os = "linux")]
 async fn authorize(header: &Header<'_>, connection: &Connection) -> Result<(), ServiceError> {
-    let refused = |detail: &str| ServiceError::Refused(detail.to_owned());
+    use crate::caller::Refusal;
     let sender = header
         .sender()
-        .ok_or_else(|| refused("the caller is unknown"))?
+        .ok_or_else(|| ServiceError::Refused("the caller is unknown".into()))?
         .to_owned();
+    let refuse = |refusal: Refusal| ServiceError::Refused(format!("{sender}: {refusal}"));
     let bus = zbus::fdo::DBusProxy::new(connection)
         .await
-        .map_err(|_| refused("the caller cannot be checked"))?;
-    let name = zbus::names::BusName::Unique(sender);
-    let uid = bus
-        .get_connection_unix_user(name.clone())
+        .map_err(|_| refuse(Refusal::NoCredentials("the bus proxy is unavailable")))?;
+    let credentials = bus
+        .get_connection_credentials(zbus::names::BusName::Unique(sender.clone()))
         .await
-        .map_err(|_| refused("the caller cannot be checked"))?;
-    if Some(uid) != crate::caller::own_uid() {
-        return Err(refused("the caller is another user"));
-    }
-    let pid = bus
-        .get_connection_unix_process_id(name)
-        .await
-        .map_err(|_| refused("the caller cannot be checked"))?;
-    let executable =
-        crate::caller::executable_of(pid).ok_or_else(|| refused("the caller cannot be checked"))?;
-    if !crate::caller::executable_allowed(&executable, &crate::caller::trusted_directories()) {
-        return Err(refused("the caller is not a Lulo program"));
-    }
-    Ok(())
+        .map_err(|_| refuse(Refusal::NoCredentials("the bus did not give its credentials")))?;
+    crate::caller::check(
+        credentials.unix_user_id(),
+        credentials.process_id(),
+        credentials.process_fd().map(std::os::fd::AsFd::as_fd),
+        &crate::caller::trusted_programs(),
+    )
+    .map(|_| ())
+    .map_err(refuse)
 }
 
 #[cfg(not(target_os = "linux"))]

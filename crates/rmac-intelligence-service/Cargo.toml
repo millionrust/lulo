@@ -32,3 +32,7 @@ zbus.workspace = true
 # never compile it.
 [target.'cfg(target_os = "linux")'.dependencies]
 llama-cpp-2.workspace = true
+
+# The caller-check tests open pidfds (pidfd_open).
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+libc.workspace = true

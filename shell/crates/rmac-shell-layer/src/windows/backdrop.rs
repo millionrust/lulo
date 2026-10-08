@@ -180,8 +180,8 @@ pub fn element(window: &Window, cx: &App, radius: f32) -> Option<AnyElement> {
         }
         let width = rect[2].min(small_width).saturating_sub(rect[0]).max(1);
         let height = rect[3].min(small_height).saturating_sub(rect[1]).max(1);
-        let crop =
-            image::imageops::crop_imm(&wallpaper.pixels, rect[0], rect[1], width, height).to_image();
+        let crop = image::imageops::crop_imm(&wallpaper.pixels, rect[0], rect[1], width, height)
+            .to_image();
         let image = Arc::new(RenderImage::new(vec![image::Frame::new(crop)]));
         crops.retain(|((found_output, _, found_generation), _)| {
             *found_generation == generation && *found_output == output

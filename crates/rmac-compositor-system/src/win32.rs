@@ -40,8 +40,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
     IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync, TranslateMessage,
     ASFW_ANY, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
-    EVENT_OBJECT_SHOW,
-    EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
+    EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
     EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT, GWL_EXSTYLE, GW_OWNER,
     MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
     SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT, WM_CLOSE, WS_EX_APPWINDOW,
@@ -730,9 +729,8 @@ fn read_snapshot() -> domain::Snapshot {
         };
         // A Lulo app that linked its menus says which app it is, whatever
         // its executable is called.
-        let app_id = rmac_apps::windows_apps::process_app(pid).unwrap_or_else(|| {
-            rmac_apps::windows_apps::window_app_id(&exe_path, aumid.as_deref())
-        });
+        let app_id = rmac_apps::windows_apps::process_app(pid)
+            .unwrap_or_else(|| rmac_apps::windows_apps::window_app_id(&exe_path, aumid.as_deref()));
         if rmac_apps::windows_apps::app(&app_id).is_none()
             && rmac_apps::windows_apps::display_name_for(&app_id).is_none()
         {

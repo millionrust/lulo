@@ -288,12 +288,8 @@ impl Render for QuickSettingsView {
         // On Windows the blur under the tint is drawn here, not by the
         // compositor (`rmac_shell_layer::over_backdrop`).
         #[cfg(windows)]
-        let surface = rmac_shell_layer::over_backdrop(
-            window,
-            cx,
-            layout::SURFACE_RADIUS as f32,
-            surface,
-        );
+        let surface =
+            rmac_shell_layer::over_backdrop(window, cx, layout::SURFACE_RADIUS as f32, surface);
         surface
     }
 }

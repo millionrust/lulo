@@ -18,9 +18,12 @@ const FACES: [&[u8]; 4] = [
     include_bytes!("../../../assets/fonts/inter/Inter-Bold.otf"),
 ];
 
-/// Before the platform starts: `.SystemUIFont` is Inter.
+/// Before the platform starts: `.SystemUIFont` is Inter (the vendored
+/// `gpui_windows` reads `RMAC_SYSTEM_UI_FONT`).
 pub(crate) fn prepare() {
-    gpui_windows::set_system_ui_font_family(crate::UI_FONT);
+    if std::env::var_os("RMAC_SYSTEM_UI_FONT").is_none() {
+        std::env::set_var("RMAC_SYSTEM_UI_FONT", crate::UI_FONT);
+    }
 }
 
 /// Add Inter's faces to the app's text system.

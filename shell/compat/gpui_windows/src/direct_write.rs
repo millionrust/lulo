@@ -1823,13 +1823,18 @@ fn get_system_subpixel_rendering() -> bool {
     }
 }
 
-/// rmac: see `crate::set_system_ui_font_family`.
-pub(crate) static SYSTEM_UI_FONT_OVERRIDE: std::sync::OnceLock<String> =
-    std::sync::OnceLock::new();
+/// rmac: the family `.SystemUIFont` means, for an app that ships its own UI
+/// font and names it in `RMAC_SYSTEM_UI_FONT` before the platform starts:
+/// Lulo uses Inter on every platform (ADR 0023, "Phase 3 revised: shared
+/// shell views"), and adds its files with `TextSystem::add_fonts`.
+const SYSTEM_UI_FONT_VARIABLE: &str = "RMAC_SYSTEM_UI_FONT";
 
 fn get_system_ui_font_name() -> SharedString {
-    if let Some(family) = SYSTEM_UI_FONT_OVERRIDE.get() {
-        return family.clone().into();
+    if let Some(family) = std::env::var(SYSTEM_UI_FONT_VARIABLE)
+        .ok()
+        .filter(|family| !family.trim().is_empty())
+    {
+        return family.into();
     }
     unsafe {
         let mut info: LOGFONTW = std::mem::zeroed();

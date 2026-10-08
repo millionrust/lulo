@@ -40,13 +40,4 @@ pub(crate) use wrapper::*;
 
 pub use platform::WindowsPlatform;
 
-/// rmac: the family `.SystemUIFont` means, instead of Windows' message
-/// font (Segoe UI), for an app that ships its own UI font: Lulo uses Inter
-/// on every platform (ADR 0023, "Phase 3 revised: shared shell views").
-/// Call before the platform is created; the app then adds the font's files
-/// with `TextSystem::add_fonts`.
-pub fn set_system_ui_font_family(family: &str) {
-    let _ = direct_write::SYSTEM_UI_FONT_OVERRIDE.set(family.to_owned());
-}
-
 pub(crate) use windows::Win32::Foundation::HWND;

@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
     sender
         .send(WatchEvent::Unavailable)
@@ -10,7 +10,7 @@ pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> R
         .map_err(|_| Error::new("watch power changes", "the event consumer closed"))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
     let pmset = command("pmset", &["-g", "batt"], "read battery state")?;
     let ioreg = command(
@@ -25,7 +25,7 @@ pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
     })
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn system_set_profile(_: PowerProfile) -> Result<(), Error> {
     Err(Error::new(
         "change the power profile",
@@ -33,7 +33,7 @@ pub(super) fn system_set_profile(_: PowerProfile) -> Result<(), Error> {
     ))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn system_set_charge_threshold(_: &ChargeThreshold, _: bool) -> Result<Snapshot, Error> {
     Err(Error::new(
         "change optimized charging",
@@ -41,7 +41,7 @@ pub(super) fn system_set_charge_threshold(_: &ChargeThreshold, _: bool) -> Resul
     ))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn command(
     program: &'static str,
     arguments: &[&str],
@@ -60,7 +60,7 @@ pub(super) fn command(
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(not(target_os = "linux"), test))]
 pub(super) fn parse_macos_battery(pmset: &str, ioreg: &str) -> Option<Battery> {
     let on_battery = pmset
         .lines()
@@ -109,7 +109,7 @@ pub(super) fn parse_macos_battery(pmset: &str, ioreg: &str) -> Option<Battery> {
     })
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(not(target_os = "linux"), test))]
 pub(super) fn parse_macos_time(value: &str) -> Option<u64> {
     let time = value.replace("remaining", "");
     let time = time.split_whitespace().next()?;
@@ -117,7 +117,7 @@ pub(super) fn parse_macos_time(value: &str) -> Option<u64> {
     Some(hours.parse::<u64>().ok()? * 3600 + minutes.parse::<u64>().ok()? * 60)
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(not(target_os = "linux"), test))]
 pub(super) fn ioreg_field(contents: &str, key: &str) -> Option<String> {
     let needle = format!("{key} = ");
     contents

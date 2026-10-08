@@ -144,6 +144,9 @@ pub fn top_bar_active_app_name(snapshot: &rmac_shell_status::Snapshot) -> String
 pub fn app_display_name(app_id: &str) -> String {
     rmac_apps::identity::window_title(app_id)
         .map(str::to_owned)
+        // A Windows app (Lulo on Windows) has the name its compositor
+        // backend read from it; Lulo OS records none.
+        .or_else(|| rmac_apps::windows_apps::display_name_for(app_id))
         .unwrap_or_else(|| humanize_app_id(app_id))
 }
 

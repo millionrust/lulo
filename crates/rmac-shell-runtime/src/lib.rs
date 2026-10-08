@@ -3,6 +3,8 @@
 mod coordinator;
 mod model;
 mod runtime;
+#[cfg(windows)]
+mod windows;
 
 pub use coordinator::Coordinator;
 pub use model::*;

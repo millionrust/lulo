@@ -1,11 +1,12 @@
-//! The menu bar and the Dock as AppBars (`SHAppBarMessage`): Windows takes
-//! their strips out of the work area, so maximised windows stop below the
-//! bar and above the Dock, as on the Mac.
+//! Exclusive zones as AppBars (`SHAppBarMessage`): Windows takes the
+//! menu bar's and the Dock's strips out of the work area, so maximised
+//! windows stop below the bar and above the Dock, as on the Mac and on Lulo
+//! OS.
 
 use windows::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows::Win32::UI::Shell::{
-    SHAppBarMessage, ABE_BOTTOM, ABE_TOP, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS,
-    ABM_WINDOWPOSCHANGED, APPBARDATA,
+    SHAppBarMessage, ABE_BOTTOM, ABE_LEFT, ABE_RIGHT, ABE_TOP, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE,
+    ABM_SETPOS, ABM_WINDOWPOSCHANGED, APPBARDATA,
 };
 use windows::Win32::UI::WindowsAndMessaging::WM_APP;
 
@@ -16,6 +17,8 @@ pub const CALLBACK_MESSAGE: u32 = WM_APP + 0x4C;
 pub enum Edge {
     Top,
     Bottom,
+    Left,
+    Right,
 }
 
 impl Edge {
@@ -23,6 +26,17 @@ impl Edge {
         match self {
             Edge::Top => ABE_TOP,
             Edge::Bottom => ABE_BOTTOM,
+            Edge::Left => ABE_LEFT,
+            Edge::Right => ABE_RIGHT,
+        }
+    }
+
+    fn fit(self, rc: &mut RECT, thickness: i32) {
+        match self {
+            Edge::Top => rc.bottom = rc.top + thickness,
+            Edge::Bottom => rc.top = rc.bottom - thickness,
+            Edge::Left => rc.right = rc.left + thickness,
+            Edge::Right => rc.left = rc.right - thickness,
         }
     }
 }
@@ -53,16 +67,12 @@ pub fn reserve(hwnd: HWND, edge: Edge, thickness: i32, monitor: RECT, current: R
     let mut data = data(hwnd);
     data.uEdge = edge.code();
     data.rc = monitor;
-    let fit = |rc: &mut RECT| match edge {
-        Edge::Top => rc.bottom = rc.top + thickness,
-        Edge::Bottom => rc.top = rc.bottom - thickness,
-    };
-    fit(&mut data.rc);
+    edge.fit(&mut data.rc, thickness);
     // SAFETY: `data` is a valid, sized APPBARDATA. Windows moves the
     // proposed rectangle off any AppBar already on that edge (the
     // taskbar), then the depth is fixed again.
     unsafe { SHAppBarMessage(ABM_QUERYPOS, &mut data) };
-    fit(&mut data.rc);
+    edge.fit(&mut data.rc, thickness);
     if data.rc == current {
         return current;
     }

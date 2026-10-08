@@ -6,23 +6,23 @@ use std::process::Command;
 pub mod contract;
 #[cfg(any(test, feature = "test-support"))]
 pub mod fake;
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 mod linux;
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 mod macos;
 mod model;
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 mod monitor_filter;
 mod notification;
 #[cfg(test)]
 mod tests;
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 use linux::*;
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 use macos::*;
 pub use model::*;
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub use monitor_filter::MonitorChanges;
 pub use notification::*;
 

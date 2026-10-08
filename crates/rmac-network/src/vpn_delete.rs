@@ -1,16 +1,16 @@
 use std::fmt;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 type SettingsMap = std::collections::HashMap<
     String,
     std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
 >;
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 type SettingsMap = ();
 
 #[derive(Clone)]
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct VpnDeletePreviewId {
     profile: super::VpnProfileId,
     settings: SettingsMap,
@@ -35,11 +35,11 @@ pub struct VpnDeletePreview {
 }
 
 pub(super) fn prepare(id: &super::VpnProfileId) -> Result<VpnDeletePreview, super::Error> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         linux_prepare(id)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = id;
         Err(super::Error::new(
@@ -50,11 +50,11 @@ pub(super) fn prepare(id: &super::VpnProfileId) -> Result<VpnDeletePreview, supe
 }
 
 pub(super) fn delete(preview: &VpnDeletePreviewId) -> Result<super::VpnSnapshot, super::Error> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         linux_delete(preview)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = preview;
         Err(super::Error::new(
@@ -64,7 +64,7 @@ pub(super) fn delete(preview: &VpnDeletePreviewId) -> Result<super::VpnSnapshot,
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_prepare(id: &super::VpnProfileId) -> Result<VpnDeletePreview, super::Error> {
     let connection = super::system_connection("connect to NetworkManager for VPN deletion")?;
     let record = exact_record(&connection, id)?;
@@ -98,7 +98,7 @@ fn linux_prepare(id: &super::VpnProfileId) -> Result<VpnDeletePreview, super::Er
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_delete(preview: &VpnDeletePreviewId) -> Result<super::VpnSnapshot, super::Error> {
     let connection = super::system_connection("connect to NetworkManager for VPN deletion")?;
     let mut record = exact_record(&connection, &preview.profile)?;
@@ -157,7 +157,7 @@ fn linux_delete(preview: &VpnDeletePreviewId) -> Result<super::VpnSnapshot, supe
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn exact_record(
     connection: &zbus::blocking::Connection,
     id: &super::VpnProfileId,
@@ -168,7 +168,7 @@ fn exact_record(
         .ok_or_else(|| super::Error::new("find VPN profile", "the profile no longer exists"))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn require_unchanged_persistent_profile<'a>(
     connection: &'a zbus::blocking::Connection,
     preview: &'a VpnDeletePreviewId,
@@ -184,7 +184,7 @@ fn require_unchanged_persistent_profile<'a>(
     profile_proxy(connection, &preview.profile.object_path)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn stable_profile_settings(
     connection: &zbus::blocking::Connection,
     id: &super::VpnProfileId,
@@ -228,7 +228,7 @@ fn stable_profile_settings(
     ))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn validate_profile_type(
     id: &super::VpnProfileId,
     settings: &SettingsMap,
@@ -252,7 +252,7 @@ fn validate_profile_type(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn connection_paths(
     connection: &zbus::blocking::Connection,
 ) -> Result<Vec<zbus::zvariant::OwnedObjectPath>, super::Error> {
@@ -261,7 +261,7 @@ fn connection_paths(
         .map_err(|error| super::Error::new("list VPN profiles", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn settings_proxy(
     connection: &zbus::blocking::Connection,
 ) -> Result<zbus::blocking::Proxy<'_>, super::Error> {
@@ -274,7 +274,7 @@ fn settings_proxy(
     .map_err(|error| super::Error::new("open VPN profile inventory", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn profile_proxy<'a>(
     connection: &'a zbus::blocking::Connection,
     path: &'a str,

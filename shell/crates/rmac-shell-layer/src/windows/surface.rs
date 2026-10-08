@@ -66,7 +66,7 @@ pub fn plain(hwnd: HWND) {
 
 /// [`plain`], and no DWM window shadow either (the panels and the desktop
 /// window; the bar and the Dock keep their blur set-up untouched).
-fn plain_without_shadow(hwnd: HWND) {
+pub fn plain_without_shadow(hwnd: HWND) {
     plain(hwnd);
     set_dword_attribute(hwnd, DWMWA_NCRENDERING_POLICY, DWMNCRP_DISABLED.0 as u32);
 }
@@ -76,7 +76,7 @@ fn plain_without_shadow(hwnd: HWND) {
 /// keep a resize border the surface never paints (it showed as a black
 /// rim round the bar and the Dock, and Explorer's desktop at the edges of
 /// Lulo's).
-fn make_borderless(hwnd: HWND) {
+pub fn make_borderless(hwnd: HWND) {
     // SAFETY: style bits on a window this process owns; the frame change is
     // applied at once.
     unsafe {
@@ -112,7 +112,7 @@ pub fn make_desktop_surface(hwnd: HWND) {
     subclass(
         hwnd,
         Box::new(|_, message, _, lparam| {
-            if message == WM_WINDOWPOSCHANGING && lparam.0 != 0 && !super::desktop::own_placement()
+            if message == WM_WINDOWPOSCHANGING && lparam.0 != 0 && !super::desktop_layer::own_placement()
             {
                 // SAFETY: for WM_WINDOWPOSCHANGING, `lparam` points at the
                 // WINDOWPOS Windows is about to apply; changing its flags
@@ -211,6 +211,12 @@ pub fn show_at(hwnd: HWND, rect: RECT) {
 pub fn show_focused_at(hwnd: HWND, rect: RECT) {
     show_at(hwnd, rect);
     set_cloaked(hwnd, false);
+    take_foreground(hwnd);
+}
+
+/// Give `hwnd` the keyboard: the user's click or key just reached this
+/// process, so Windows lets it take the foreground.
+pub fn take_foreground(hwnd: HWND) {
     // SAFETY: as above.
     let _ = unsafe { SetForegroundWindow(hwnd) };
     // SAFETY: reads the foreground window.

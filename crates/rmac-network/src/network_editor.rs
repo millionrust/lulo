@@ -2,14 +2,14 @@ use std::fmt;
 use std::net::IpAddr;
 use std::str::FromStr as _;
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 use std::collections::HashMap;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use std::time::{Duration, Instant};
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use zbus::zvariant::OwnedObjectPath;
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 use zbus::zvariant::{OwnedValue, Str, Value};
 
 use super::{Error, NetworkSnapshot};
@@ -41,7 +41,7 @@ pub enum IpFamily {
 }
 
 impl IpFamily {
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(any(target_os = "linux", test))]
     fn setting(self) -> &'static str {
         match self {
             Self::V4 => "ipv4",
@@ -97,7 +97,7 @@ impl IpMethod {
         }
     }
 
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(any(target_os = "linux", test))]
     fn from_dbus(value: &str) -> Self {
         match value {
             "auto" => Self::Automatic,
@@ -558,29 +558,29 @@ fn deduplicate<T: PartialEq>(values: &mut Vec<T>) {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 type SettingsMap = HashMap<String, HashMap<String, OwnedValue>>;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const NETWORK_MANAGER: &str = "org.freedesktop.NetworkManager";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const SETTINGS_PATH: &str = "/org/freedesktop/NetworkManager/Settings";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const SETTINGS_INTERFACE: &str = "org.freedesktop.NetworkManager.Settings";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const PROFILE_INTERFACE: &str = "org.freedesktop.NetworkManager.Settings.Connection";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const DEVICE_INTERFACE: &str = "org.freedesktop.NetworkManager.Device";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const ACTIVE_INTERFACE: &str = "org.freedesktop.NetworkManager.Connection.Active";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const UPDATE_TO_DISK: u32 = 0x1;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const VERIFY_TIMEOUT: Duration = Duration::from_secs(10);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const VERIFY_INTERVAL: Duration = Duration::from_millis(100);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_active_configuration(
     connection: &zbus::blocking::Connection,
     device_path: &OwnedObjectPath,
@@ -635,7 +635,7 @@ pub(super) fn linux_active_configuration(
     }))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn parse_ip_setting(settings: &SettingsMap, family: IpFamily) -> Result<IpConfiguration, Error> {
     let setting = settings.get(family.setting());
     let method = setting
@@ -725,7 +725,7 @@ fn parse_ip_setting(settings: &SettingsMap, family: IpFamily) -> Result<IpConfig
     })
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn parse_proxy_setting(settings: &SettingsMap) -> Result<ProxyConfiguration, Error> {
     let setting = settings.get("proxy");
     let method = setting
@@ -749,12 +749,12 @@ fn parse_proxy_setting(settings: &SettingsMap) -> Result<ProxyConfiguration, Err
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_update(edit: &NetworkEdit) -> Result<NetworkSnapshot, Error> {
     linux_update(edit)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn system_update(_edit: &NetworkEdit) -> Result<NetworkSnapshot, Error> {
     Err(Error::new(
         "update network connection",
@@ -762,7 +762,7 @@ pub(super) fn system_update(_edit: &NetworkEdit) -> Result<NetworkSnapshot, Erro
     ))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_update(edit: &NetworkEdit) -> Result<NetworkSnapshot, Error> {
     validate_ip_configuration(IpFamily::V4, &edit.ipv4)
         .map_err(|error| Error::new("validate IPv4 settings", error.to_string()))?;
@@ -920,7 +920,7 @@ fn linux_update(edit: &NetworkEdit) -> Result<NetworkSnapshot, Error> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn recover_failed_update(
     connection: &zbus::blocking::Connection,
     profile: &zbus::blocking::Proxy<'_>,
@@ -987,7 +987,7 @@ fn recover_failed_update(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn verify_identity(
     connection: &zbus::blocking::Connection,
     device_path: &OwnedObjectPath,
@@ -1034,7 +1034,7 @@ fn verify_identity(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn rollback(
     connection: &zbus::blocking::Connection,
     profile_path: &OwnedObjectPath,
@@ -1067,7 +1067,7 @@ fn rollback(
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn restore_applied_settings(
     connection: &zbus::blocking::Connection,
     profile_path: &OwnedObjectPath,
@@ -1118,7 +1118,7 @@ fn restore_applied_settings(
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn wait_for_applied_edit(
     device: &zbus::blocking::Proxy<'_>,
     edit: &NetworkEdit,
@@ -1131,7 +1131,7 @@ fn wait_for_applied_edit(
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn wait_for_applied_configuration(
     device: &zbus::blocking::Proxy<'_>,
     expected_ipv4: &IpConfiguration,
@@ -1156,21 +1156,21 @@ fn wait_for_applied_configuration(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn configuration_matches_edit(configuration: &NetworkConfiguration, edit: &NetworkEdit) -> bool {
     configuration.ipv4 == edit.ipv4
         && configuration.ipv6 == edit.ipv6
         && proxy_matches(&configuration.proxy, &edit.proxy)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn proxy_matches(actual: &ProxyConfiguration, expected: &ProxyConfiguration) -> bool {
     actual.method == expected.method
         && actual.pac_url == expected.pac_url
         && actual.browser_only == expected.browser_only
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn apply_ip_setting(
     settings: &mut SettingsMap,
     family: IpFamily,
@@ -1265,14 +1265,14 @@ fn apply_ip_setting(
     Ok(())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn address_record_matches(record: &HashMap<String, OwnedValue>, address: &IpAddress) -> bool {
     let expected = address.address.to_string();
     super::property_string(record, "address").as_deref() == Some(expected.as_str())
         && super::property::<u32>(record, "prefix") == Some(u32::from(address.prefix))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn apply_proxy_setting(
     settings: &mut SettingsMap,
     current: &ProxyConfiguration,
@@ -1311,7 +1311,7 @@ fn apply_proxy_setting(
     Ok(())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn clone_settings(settings: &SettingsMap) -> Result<SettingsMap, Error> {
     settings
         .iter()
@@ -1330,7 +1330,7 @@ fn clone_settings(settings: &SettingsMap) -> Result<SettingsMap, Error> {
         .collect()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn stable_profile_settings(
     connection: &zbus::blocking::Connection,
     profile: &zbus::blocking::Proxy<'_>,
@@ -1349,7 +1349,7 @@ fn stable_profile_settings(
     ))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn persist_profile_candidate(
     connection: &zbus::blocking::Connection,
     profile: &zbus::blocking::Proxy<'_>,
@@ -1391,7 +1391,7 @@ fn persist_profile_candidate(
     Ok(())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn owned_value<T>(value: T) -> Result<OwnedValue, Error>
 where
     T: Into<Value<'static>> + zbus::zvariant::DynamicType,
@@ -1400,7 +1400,7 @@ where
         .map_err(|error| Error::new("encode network settings", error.to_string()))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn owned_property<T>(
     properties: &HashMap<String, OwnedValue>,
     key: &str,
@@ -1420,7 +1420,7 @@ where
         .map_err(|error| Error::new("decode network profile value", error.to_string()))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn legacy_ip_limitations(settings: &SettingsMap) -> Vec<String> {
     [IpFamily::V4, IpFamily::V6]
         .into_iter()
@@ -1438,7 +1438,7 @@ fn legacy_ip_limitations(settings: &SettingsMap) -> Vec<String> {
         .collect()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn profile_editing_limitations(
     settings: &SettingsMap,
     ipv4: &IpConfiguration,
@@ -1490,7 +1490,7 @@ fn profile_editing_limitations(
     limitations
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn settings_version(connection: &zbus::blocking::Connection) -> Result<u64, Error> {
     settings_proxy(connection)?
         .get_property::<u64>("VersionId")
@@ -1502,7 +1502,7 @@ fn settings_version(connection: &zbus::blocking::Connection) -> Result<u64, Erro
         })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn settings_proxy(
     connection: &zbus::blocking::Connection,
 ) -> Result<zbus::blocking::Proxy<'_>, Error> {
@@ -1515,7 +1515,7 @@ fn settings_proxy(
     .map_err(|error| Error::new("open NetworkManager settings", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn update_profile(
     profile: &zbus::blocking::Proxy<'_>,
     settings: SettingsMap,
@@ -1528,7 +1528,7 @@ fn update_profile(
         .map(|_| ())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn reapply(
     device: &zbus::blocking::Proxy<'_>,
     settings: SettingsMap,
@@ -1537,21 +1537,21 @@ fn reapply(
     device.call::<_, _, ()>("Reapply", &(settings, version, 0_u32))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn applied_connection(device: &zbus::blocking::Proxy<'_>) -> Result<(SettingsMap, u64), Error> {
     device
         .call::<_, _, (SettingsMap, u64)>("GetAppliedConnection", &(0_u32,))
         .map_err(|error| Error::new("read applied network settings", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn get_settings(profile: &zbus::blocking::Proxy<'_>) -> Result<SettingsMap, Error> {
     profile
         .call::<_, _, SettingsMap>("GetSettings", &())
         .map_err(|error| Error::new("read network profile", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn profile_proxy<'a>(
     connection: &'a zbus::blocking::Connection,
     path: &'a OwnedObjectPath,
@@ -1565,7 +1565,7 @@ fn profile_proxy<'a>(
     .map_err(|error| Error::new("open network profile", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn device_proxy<'a>(
     connection: &'a zbus::blocking::Connection,
     path: &'a OwnedObjectPath,
@@ -1574,7 +1574,7 @@ fn device_proxy<'a>(
         .map_err(|error| Error::new("open network device", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn object_path(value: &str, kind: &'static str) -> Result<OwnedObjectPath, Error> {
     OwnedObjectPath::try_from(value).map_err(|error| {
         Error::new(

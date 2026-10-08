@@ -601,6 +601,7 @@ impl Drop for WindowsWindow {
             .executor
             .spawn(async move {
                 let handle = this.hwnd;
+                crate::rmac_input_region::forget(handle);
                 unsafe {
                     RevokeDragDrop(handle).log_err();
                     DestroyWindow(handle).log_err();
@@ -658,6 +659,11 @@ impl PlatformWindow for WindowsWindow {
 
     fn scale_factor(&self) -> f32 {
         self.state.scale_factor.get()
+    }
+
+    // rmac: shell surfaces' input regions (rmac_input_region.rs).
+    fn set_input_region(&self, region: Option<&[Bounds<Pixels>]>) {
+        crate::rmac_input_region::set(self.0.hwnd, region, self.state.scale_factor.get());
     }
 
     fn appearance(&self) -> WindowAppearance {

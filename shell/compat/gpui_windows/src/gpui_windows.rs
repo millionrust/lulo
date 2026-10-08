@@ -13,6 +13,7 @@ mod events;
 mod keyboard;
 mod platform;
 mod rmac_frame_loop;
+mod rmac_input_region;
 mod rmac_trace;
 mod system_settings;
 mod util;

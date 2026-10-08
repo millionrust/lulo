@@ -156,6 +156,7 @@ pub(crate) fn encode_v1(menus: &[Menu]) -> WireMenus {
         .collect()
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn decode_v1(wire: WireMenus) -> Result<Vec<Menu>, Error> {
     let menus = wire
         .into_iter()

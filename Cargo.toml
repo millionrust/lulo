@@ -76,6 +76,7 @@ rmac-clipboard-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-clipboar
 rmac-clock = { version = "=0.9.0-beta.1", path = "crates/clock" }
 rmac-compositor = { version = "=0.9.0-beta.1", path = "crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.9.0-beta.1", path = "crates/rmac-compositor-niri" }
+rmac-compositor-system = { version = "=0.9.0-beta.1", path = "crates/rmac-compositor-system" }
 rmac-editor = { version = "=0.9.0-beta.1", path = "crates/rmac-editor" }
 rmac-finder = { version = "=0.9.0-beta.1", path = "crates/finder" }
 rmac-focus = { version = "=0.9.0-beta.1", path = "crates/rmac-focus" }
@@ -144,6 +145,14 @@ rmac-screen-reader = { version = "=0.9.0-beta.1", path = "crates/rmac-screen-rea
 rmac-search = { version = "=0.9.0-beta.1", path = "crates/rmac-search" }
 rmac-session = { version = "=0.9.0-beta.1", path = "crates/rmac-session" }
 rmac-shell-settings = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-settings" }
+# The shell's views, shared by Lulo OS (the `shell/` workspace's binaries)
+# and Windows (`rmac-win-shell`); ADR 0023, "Phase 3 revised: shared shell
+# views".
+rmac-shell-dock = { version = "=0.9.0-beta.1", path = "shell/bins/rmac-dock" }
+rmac-shell-layer = { version = "=0.9.0-beta.1", path = "shell/crates/rmac-shell-layer" }
+rmac-shell-menubar = { version = "=0.9.0-beta.1", path = "shell/bins/rmac-menubar" }
+rmac-shell-ui = { version = "=0.9.0-beta.1", path = "shell/crates/rmac-shell-ui" }
+rmac-shell-wallpaper = { version = "=0.9.0-beta.1", path = "shell/bins/rmac-wallpaper" }
 rmac-shell-activation-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-activation-runtime" }
 rmac-shell-invocation = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-invocation" }
 rmac-shell-invocation-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-invocation-runtime" }

@@ -12,3 +12,14 @@ futures-util.workspace = true
 rmac-apps.workspace = true
 rmac-locale.workspace = true
 zbus.workspace = true
+
+# The menu bar's pipe host on Windows (`pipe_host`).
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }

@@ -2,19 +2,19 @@
 
 use super::*;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const WATCH_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const WATCH_QUIET_PERIOD: std::time::Duration = std::time::Duration::from_millis(75);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const WATCH_MAX_COALESCE: std::time::Duration = std::time::Duration::from_millis(250);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const MUTATION_VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const MUTATION_VERIFY_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(100);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
     let mut unavailable_reported = false;
     loop {
@@ -39,7 +39,7 @@ pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> R
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn pipewire_socket_path() -> Option<std::path::PathBuf> {
     let remote = std::env::var_os("PIPEWIRE_REMOTE")
         .unwrap_or_else(|| std::ffi::OsString::from("pipewire-0"));
@@ -53,7 +53,7 @@ fn pipewire_socket_path() -> Option<std::path::PathBuf> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 async fn wait_for_pipewire_socket(
     sender: &async_channel::Sender<WatchEvent>,
     socket: &std::path::Path,
@@ -118,7 +118,7 @@ async fn wait_for_pipewire_socket(
 /// `tests::command_pipes_stdout_through_async_process` below
 /// regression-tests this by actually spawning a real child and reading its
 /// captured stdout back.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn build_monitor_command(program: &str, args: &[&str]) -> async_process::Command {
     use std::process::Stdio;
 
@@ -140,7 +140,7 @@ pub(super) fn build_monitor_command(program: &str, args: &[&str]) -> async_proce
     command
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn watch_once(
     sender: &async_channel::Sender<WatchEvent>,
     unavailable_reported: &mut bool,
@@ -212,7 +212,7 @@ pub(super) async fn watch_once(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn monitor_status_error(mut child: async_process::Child) -> Result<(), Error> {
     let status = child
         .status()
@@ -224,7 +224,7 @@ pub(super) async fn monitor_status_error(mut child: async_process::Child) -> Res
     ))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn publish_changed(
     sender: &async_channel::Sender<WatchEvent>,
     unavailable_reported: &mut bool,
@@ -241,7 +241,7 @@ pub(super) async fn publish_changed(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn publish_unavailable(
     sender: &async_channel::Sender<WatchEvent>,
     unavailable_reported: &mut bool,
@@ -256,17 +256,17 @@ pub(super) async fn publish_unavailable(
     Ok(())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum RouteDirection {
     Output,
     Input,
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 type ActiveRoutes = std::collections::HashMap<(RouteDirection, i32), i32>;
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Debug)]
 pub(super) struct GraphNode {
     pub(super) authority_name: String,
@@ -278,7 +278,7 @@ pub(super) struct GraphNode {
     pub(super) level: Option<Level>,
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Debug)]
 pub(super) struct GraphRoute {
     pub(super) route: Route,
@@ -287,7 +287,7 @@ pub(super) struct GraphRoute {
     pub(super) profile_indexes: Vec<i32>,
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Debug)]
 pub(super) struct GraphHardwareDevice {
     pub(super) device: HardwareDevice,
@@ -296,7 +296,7 @@ pub(super) struct GraphHardwareDevice {
     pub(super) active_routes: ActiveRoutes,
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Debug, Default)]
 pub(super) struct GraphMetadata {
     pub(super) nodes: std::collections::HashMap<String, GraphNode>,
@@ -310,7 +310,7 @@ pub(super) struct GraphMetadata {
     pub(super) default_source: Option<String>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
     let graph = read_graph_metadata("read PipeWire state")?;
     let mut outputs = graph_devices(&graph, DeviceKind::Output);
@@ -356,7 +356,7 @@ pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_default_device(kind: DeviceKind) -> Result<DefaultDevice, Error> {
     let operation = match kind {
         DeviceKind::Output => "read default output device",
@@ -379,7 +379,7 @@ pub(super) fn system_default_device(kind: DeviceKind) -> Result<DefaultDevice, E
 
 /// The graph node currently named by the PipeWire `default` metadata object
 /// for `kind`, if the default is set and points at a node that is present.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn default_node(graph: &GraphMetadata, kind: DeviceKind) -> Option<&GraphNode> {
     let default_name = match kind {
         DeviceKind::Output => graph.default_sink.as_deref(),
@@ -394,7 +394,7 @@ fn default_node(graph: &GraphMetadata, kind: DeviceKind) -> Option<&GraphNode> {
 /// The volume/mute level of the current default device for `kind`, read
 /// straight from its `pw-dump` node Props. No default device is not an
 /// error (`Level::default()`); a default device with unreadable Props is.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn default_level(
     graph: &GraphMetadata,
     kind: DeviceKind,
@@ -411,7 +411,7 @@ fn default_level(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn machine_devices(kind: DeviceKind) -> Result<Vec<Device>, Error> {
     let operation = match kind {
         DeviceKind::Output => "read PipeWire output devices",
@@ -428,7 +428,7 @@ pub(super) fn machine_devices(kind: DeviceKind) -> Result<Vec<Device>, Error> {
 /// only check the mutating command's exit status (never its text), so this
 /// is the one place callers get an actionable next step when that exit
 /// status is non-zero.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const PIPEWIRE_MUTATION_HINT: &str =
     "check that PipeWire and WirePlumber are running for this session (`wpctl status`)";
 
@@ -436,7 +436,7 @@ const PIPEWIRE_MUTATION_HINT: &str =
 /// On failure, the command's stderr detail is kept but annotated with
 /// [`PIPEWIRE_MUTATION_HINT`] so the caller has a next step, not just a raw
 /// tool error.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn pipewire_mutation(
     program: &'static str,
     arguments: &[&str],
@@ -452,12 +452,12 @@ fn pipewire_mutation(
         })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn wpctl_mutation(arguments: &[&str], operation: &'static str) -> Result<(), Error> {
     pipewire_mutation("wpctl", arguments, operation)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_set_volume(kind: DeviceKind, volume: u8) -> Result<(), Error> {
     let target = wpctl_default_target(kind);
     let value = format!("{:.2}", f32::from(volume) / 100.0);
@@ -470,7 +470,7 @@ pub(super) fn system_set_volume(kind: DeviceKind, volume: u8) -> Result<(), Erro
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_set_muted(kind: DeviceKind, muted: bool) -> Result<(), Error> {
     wpctl_mutation(
         &[
@@ -485,7 +485,7 @@ pub(super) fn system_set_muted(kind: DeviceKind, muted: bool) -> Result<(), Erro
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_set_default_device(
     kind: DeviceKind,
     expected: &Device,
@@ -565,7 +565,7 @@ pub(super) fn system_set_default_device(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_set_profile(
     expected_device: &HardwareDevice,
     expected_profile: &Profile,
@@ -667,7 +667,7 @@ pub(super) fn system_set_profile(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_set_route(
     kind: DeviceKind,
     expected_device: &Device,
@@ -746,7 +746,7 @@ pub(super) fn system_set_route(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_set_balance(expected_device: &Device, value: i8) -> Result<Snapshot, Error> {
     if expected_device.balance.is_none() {
         return Err(Error::new(
@@ -817,7 +817,7 @@ pub(super) fn system_set_balance(expected_device: &Device, value: i8) -> Result<
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn balance_channel_targets(current: &Balance, value: i8) -> (u32, u32) {
     let maximum = current.left_volume.max(current.right_volume);
     if value >= 0 {
@@ -833,23 +833,23 @@ pub(super) fn balance_channel_targets(current: &Balance, value: i8) -> (u32, u32
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn attenuated_channel_volume(maximum: u32, percent: u32) -> u32 {
     ((u64::from(maximum) * u64::from(percent) + 50) / 100) as u32
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn spa_channel_volume(value: u32) -> String {
     format!("{}.{:06}", value / 1_000_000, value % 1_000_000)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn read_graph_metadata(operation: &'static str) -> Result<GraphMetadata, Error> {
     let dump = command("pw-dump", &["--no-colors"], operation)?;
     parse_pw_dump_metadata(&dump).map_err(|error| Error::new(operation, error.detail()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn exact_hardware_device<'a>(
     graph: &'a GraphMetadata,
     expected: &HardwareDevice,
@@ -869,7 +869,7 @@ pub(super) fn exact_hardware_device<'a>(
     Ok(current)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn exact_routed_device(
     kind: DeviceKind,
     expected: &Device,
@@ -895,7 +895,7 @@ pub(super) fn exact_routed_device(
     Ok(current)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn exact_route<'a>(
     device: &'a Device,
     expected: &Route,
@@ -910,7 +910,7 @@ pub(super) fn exact_route<'a>(
         .ok_or_else(|| Error::new(operation, "the selected route is no longer advertised"))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn wpctl_default_target(kind: DeviceKind) -> &'static str {
     match kind {
         DeviceKind::Output => "@DEFAULT_AUDIO_SINK@",
@@ -918,15 +918,15 @@ pub(super) fn wpctl_default_target(kind: DeviceKind) -> &'static str {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) const MAX_AUDIO_DEVICES: usize = 256;
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) const MAX_AUTHORITY_NAME_BYTES: usize = 512;
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) const MAX_DEVICE_LABEL_CHARS: usize = 256;
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) const MAX_GRAPH_OBJECTS: usize = 4096;
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) const MAX_DEVICE_CAPABILITIES: usize = 128;
 
 /// Builds the machine-readable device list for `kind` straight from the
@@ -935,7 +935,7 @@ pub(super) const MAX_DEVICE_CAPABILITIES: usize = 128;
 /// [`GraphMetadata::default_sink`] / [`GraphMetadata::default_source`]).
 /// Ports, routes and balance are filled in separately by
 /// [`apply_graph_metadata`].
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn graph_devices(graph: &GraphMetadata, kind: DeviceKind) -> Vec<Device> {
     let default_name = match kind {
         DeviceKind::Output => graph.default_sink.as_deref(),
@@ -960,7 +960,7 @@ pub(super) fn graph_devices(graph: &GraphMetadata, kind: DeviceKind) -> Vec<Devi
     devices
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_pw_dump_metadata(output: &str) -> Result<GraphMetadata, Error> {
     use serde_json::Value;
 
@@ -1107,7 +1107,7 @@ pub(super) fn parse_pw_dump_metadata(output: &str) -> Result<GraphMetadata, Erro
     Ok(graph)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn bounded_label(value: &str) -> String {
     value
         .trim()
@@ -1117,7 +1117,7 @@ pub(super) fn bounded_label(value: &str) -> String {
         .collect()
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn bounded_authority_name(value: &str) -> Option<String> {
     (!value.is_empty()
         && value.len() <= MAX_AUTHORITY_NAME_BYTES
@@ -1125,7 +1125,7 @@ pub(super) fn bounded_authority_name(value: &str) -> Option<String> {
     .then(|| value.to_owned())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn json_u32(value: Option<&serde_json::Value>) -> Option<u32> {
     let value = value?;
     let parsed = value
@@ -1134,7 +1134,7 @@ pub(super) fn json_u32(value: Option<&serde_json::Value>) -> Option<u32> {
     (parsed > 0 && parsed <= u64::from(u32::MAX)).then_some(parsed as u32)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn json_i32(value: Option<&serde_json::Value>) -> Option<i32> {
     let value = value?;
     let parsed = value
@@ -1145,7 +1145,7 @@ pub(super) fn json_i32(value: Option<&serde_json::Value>) -> Option<i32> {
         .then_some(parsed as i32)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_availability(value: Option<&serde_json::Value>) -> Option<Availability> {
     match value.and_then(serde_json::Value::as_str) {
         Some("yes") => Some(Availability::Available),
@@ -1155,7 +1155,7 @@ pub(super) fn parse_availability(value: Option<&serde_json::Value>) -> Option<Av
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_i32_array(value: Option<&serde_json::Value>) -> Option<Vec<i32>> {
     let values = value?.as_array()?;
     if values.len() > MAX_DEVICE_CAPABILITIES {
@@ -1164,7 +1164,7 @@ pub(super) fn parse_i32_array(value: Option<&serde_json::Value>) -> Option<Vec<i
     values.iter().map(|value| json_i32(Some(value))).collect()
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_graph_hardware_device(
     id: u32,
     props: &serde_json::Value,
@@ -1208,7 +1208,7 @@ pub(super) fn parse_graph_hardware_device(
     })
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_profiles(params: &serde_json::Value) -> Option<(Vec<Profile>, i32)> {
     let enumerated = params.get("EnumProfile")?.as_array()?;
     let active = params.get("Profile")?.as_array()?;
@@ -1252,7 +1252,7 @@ pub(super) fn parse_profiles(params: &serde_json::Value) -> Option<(Vec<Profile>
         .then_some((profiles, active_index))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_routes(
     params: &serde_json::Value,
     active_profile: i32,
@@ -1324,7 +1324,7 @@ pub(super) fn parse_routes(
     Some((routes, active_routes))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_route_direction(value: Option<&serde_json::Value>) -> Option<RouteDirection> {
     match value.and_then(serde_json::Value::as_str) {
         Some("Output") => Some(RouteDirection::Output),
@@ -1340,7 +1340,7 @@ pub(super) fn parse_route_direction(value: Option<&serde_json::Value>) -> Option
 /// so this cannot assume the array has exactly one entry; it must instead
 /// find the one entry that advertises `channelVolumes`, and reject the node
 /// as unreadable if that is not exactly one entry.
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn volume_props(params: &serde_json::Value) -> Option<&serde_json::Value> {
     let mut matches = params.get("Props")?.as_array()?.iter().filter(|entry| {
         entry
@@ -1360,7 +1360,7 @@ fn volume_props(params: &serde_json::Value) -> Option<&serde_json::Value> {
 /// and cube-rooted to match the perceptual/cubic scale WirePlumber tools
 /// such as `wpctl` display (e.g. a raw `channelVolumes` of `8e-6` is the
 /// `wpctl`-displayed `0.02`, since `0.02.powi(3) == 8e-6`).
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_node_level(object: &serde_json::Value) -> Option<Level> {
     let params = object.get("info")?.get("params")?;
     let props = volume_props(params)?;
@@ -1389,7 +1389,7 @@ pub(super) fn parse_node_level(object: &serde_json::Value) -> Option<Level> {
 /// already a decoded `{"name": "..."}` object, but metadata values are
 /// generically typed as JSON-encoded strings, so a raw string is also
 /// accepted and decoded the same way.
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn default_node_name(entries: &[serde_json::Value], key: &str) -> Option<String> {
     let entry = entries
         .iter()
@@ -1406,7 +1406,7 @@ fn default_node_name(entries: &[serde_json::Value], key: &str) -> Option<String>
     bounded_authority_name(&name)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_node_balance(object: &serde_json::Value) -> Option<Balance> {
     let permissions = object.get("permissions")?.as_array()?;
     let writable = permissions
@@ -1461,14 +1461,14 @@ pub(super) fn parse_node_balance(object: &serde_json::Value) -> Option<Balance> 
     })
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn scaled_channel_volume(value: &serde_json::Value) -> Option<u32> {
     const SCALE: f64 = 1_000_000.0;
     let value = value.as_f64()?;
     (value.is_finite() && (0.0..=10.0).contains(&value)).then_some((value * SCALE).round() as u32)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn balance_percent(left: u32, right: u32) -> Option<i8> {
     const MIN_ADJUSTABLE_VOLUME: u32 = 10_000;
     let maximum = left.max(right);
@@ -1483,7 +1483,7 @@ pub(super) fn balance_percent(left: u32, right: u32) -> Option<i8> {
     )
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn apply_graph_metadata(
     devices: &mut [Device],
     graph: &GraphMetadata,
@@ -1550,7 +1550,7 @@ pub(super) fn apply_graph_metadata(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn default_device_id(devices: &[Device]) -> Option<&str> {
     devices
         .iter()

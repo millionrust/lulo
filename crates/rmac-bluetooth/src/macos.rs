@@ -1,13 +1,13 @@
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 use std::process::Command;
 
 use crate::Device;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(not(target_os = "linux"), test))]
 use crate::Snapshot;
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 use crate::{BluetoothService, Error, PairingSession, SystemBluetoothService};
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 impl BluetoothService for SystemBluetoothService {
     fn snapshot(&self) -> Result<Snapshot, Error> {
         let output = Command::new("system_profiler")
@@ -77,7 +77,7 @@ impl BluetoothService for SystemBluetoothService {
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(not(target_os = "linux"), test))]
 pub(crate) fn parse_macos_snapshot(output: &str) -> Snapshot {
     let powered = output
         .lines()

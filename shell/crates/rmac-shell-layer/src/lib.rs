@@ -1,6 +1,12 @@
 //! Layer-surface helpers shared by the rmac shell hosts: per-output
 //! reconciliation, compositor geometry projection, and the first-frame marker
 //! used by the nested-Wayland smoke harness.
+//!
+//! Every shell surface opens through [`open_layer_window`]: a
+//! wlr-layer-shell surface on Lulo OS, a Win32 window placed and layered the
+//! same way on Windows ([`windows`]; ADR 0023, "Phase 3 revised: shared
+//! shell views"). The views describe their surfaces once, in [`layer`]'s
+//! vocabulary, for both.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -8,6 +14,33 @@ use std::fs;
 
 use gpui::Window;
 use uuid::Uuid;
+
+#[cfg(windows)]
+pub mod windows;
+
+/// The layer-shell vocabulary: GPUI's own on Lulo OS, a mirror of it on
+/// Windows.
+pub mod layer {
+    #[cfg(all(target_os = "linux", feature = "wayland"))]
+    pub use gpui::layer_shell::*;
+    #[cfg(windows)]
+    pub use crate::windows::layer_types::*;
+}
+
+/// Open `build`'s view as the shell surface `layer` describes.
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+pub fn open_layer_window<V: 'static + gpui::Render>(
+    cx: &mut gpui::App,
+    mut options: gpui::WindowOptions,
+    layer: layer::LayerShellOptions,
+    build: impl FnOnce(&mut Window, &mut gpui::App) -> gpui::Entity<V> + 'static,
+) -> gpui::Result<gpui::WindowHandle<V>> {
+    options.kind = gpui::WindowKind::LayerShell(layer);
+    cx.open_window(options, build)
+}
+
+#[cfg(windows)]
+pub use windows::open_layer_window;
 
 const READY_FILE_ENV: &str = "RMAC_SMOKE_READY_FILE";
 pub const WAYLAND_OUTPUT_RESTART_EXIT_CODE: i32 = 75;
@@ -66,7 +99,7 @@ pub fn stable_output_uuid(output: &rmac_compositor::OutputId) -> Uuid {
     Uuid::new_v5(&Uuid::NAMESPACE_DNS, output.0.as_bytes())
 }
 
-#[cfg(all(target_os = "linux", feature = "wayland"))]
+#[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
 pub mod output_surfaces {
     use std::collections::{BTreeMap, BTreeSet};
     use std::rc::Rc;
@@ -74,6 +107,14 @@ pub mod output_surfaces {
     use gpui::{AnyWindowHandle, App, PlatformDisplay};
     use uuid::Uuid;
 
+    /// GPUI's displays by their stable output id (Windows names monitors
+    /// as `rmac-compositor-system` does).
+    #[cfg(windows)]
+    pub fn newest_displays(cx: &App) -> BTreeMap<Uuid, Rc<dyn PlatformDisplay>> {
+        crate::windows::newest_displays(cx)
+    }
+
+    #[cfg(not(windows))]
     pub fn newest_displays(cx: &App) -> BTreeMap<Uuid, Rc<dyn PlatformDisplay>> {
         let mut displays: BTreeMap<Uuid, Rc<dyn PlatformDisplay>> = BTreeMap::new();
         for display in cx.displays() {
@@ -146,7 +187,7 @@ pub mod output_surfaces {
     ) -> Result<(), String> {
         let (event_tx, event_rx) = async_channel::bounded(64);
         let watcher = async {
-            rmac_compositor_niri::watch(event_tx)
+            rmac_compositor_system::watch(event_tx)
                 .await
                 .map_err(|error| error.to_string())
         };
@@ -180,7 +221,7 @@ pub mod output_surfaces {
     ) -> Result<(), String> {
         let (event_tx, event_rx) = async_channel::bounded(64);
         let watcher = async {
-            rmac_compositor_niri::watch(event_tx)
+            rmac_compositor_system::watch(event_tx)
                 .await
                 .map_err(|error| error.to_string())
         };

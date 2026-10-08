@@ -4,7 +4,7 @@
 pub mod contract;
 #[cfg(any(test, feature = "test-support"))]
 pub mod fake;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 mod linux;
 mod macos;
 mod pairing_agent;

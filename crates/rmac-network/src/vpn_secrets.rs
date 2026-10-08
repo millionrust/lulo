@@ -1,16 +1,16 @@
 use std::fmt;
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 use std::collections::HashMap;
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 type SettingsMap = HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>;
 
-#[cfg(all(target_os = "macos", not(test)))]
+#[cfg(all(not(target_os = "linux"), not(test)))]
 type SettingsMap = ();
 
 #[derive(Clone)]
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct VpnSecretClearPreviewId {
     profile: super::VpnProfileId,
     settings: SettingsMap,
@@ -35,11 +35,11 @@ pub struct VpnSecretClearPreview {
 }
 
 pub(super) fn prepare(id: &super::VpnProfileId) -> Result<VpnSecretClearPreview, super::Error> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         linux_prepare(id)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = id;
         Err(super::Error::new(
@@ -50,11 +50,11 @@ pub(super) fn prepare(id: &super::VpnProfileId) -> Result<VpnSecretClearPreview,
 }
 
 pub(super) fn clear(preview: &VpnSecretClearPreviewId) -> Result<super::VpnSnapshot, super::Error> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         linux_clear(preview)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = preview;
         Err(super::Error::new(
@@ -64,7 +64,7 @@ pub(super) fn clear(preview: &VpnSecretClearPreviewId) -> Result<super::VpnSnaps
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_prepare(id: &super::VpnProfileId) -> Result<VpnSecretClearPreview, super::Error> {
     let connection = super::system_connection("connect to NetworkManager for VPN authentication")?;
     let record = exact_record(&connection, id)?;
@@ -99,7 +99,7 @@ fn linux_prepare(id: &super::VpnProfileId) -> Result<VpnSecretClearPreview, supe
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_clear(preview: &VpnSecretClearPreviewId) -> Result<super::VpnSnapshot, super::Error> {
     let connection = super::system_connection("connect to NetworkManager for VPN authentication")?;
     exact_record(&connection, &preview.profile)?;
@@ -131,7 +131,7 @@ fn linux_clear(preview: &VpnSecretClearPreviewId) -> Result<super::VpnSnapshot, 
     Ok(snapshot)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn exact_record(
     connection: &zbus::blocking::Connection,
     id: &super::VpnProfileId,
@@ -142,7 +142,7 @@ fn exact_record(
         .ok_or_else(|| super::Error::new("find VPN profile", "the profile no longer exists"))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn require_unchanged_plugin_profile<'a>(
     connection: &'a zbus::blocking::Connection,
     preview: &'a VpnSecretClearPreviewId,
@@ -158,7 +158,7 @@ fn require_unchanged_plugin_profile<'a>(
     profile_proxy(connection, &preview.profile.object_path)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn stable_profile_settings(
     connection: &zbus::blocking::Connection,
     id: &super::VpnProfileId,
@@ -204,7 +204,7 @@ fn stable_profile_settings(
     ))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn validate_plugin_profile(
     id: &super::VpnProfileId,
     settings: &SettingsMap,
@@ -229,7 +229,7 @@ fn validate_plugin_profile(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn settings_proxy(
     connection: &zbus::blocking::Connection,
 ) -> Result<zbus::blocking::Proxy<'_>, super::Error> {
@@ -242,7 +242,7 @@ fn settings_proxy(
     .map_err(|error| super::Error::new("open VPN profile inventory", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn profile_proxy<'a>(
     connection: &'a zbus::blocking::Connection,
     path: &'a str,

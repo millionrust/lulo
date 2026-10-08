@@ -7,6 +7,7 @@
 mod catalog;
 mod icons;
 pub mod identity;
+pub mod windows_apps;
 mod model;
 mod platform;
 mod superseded;

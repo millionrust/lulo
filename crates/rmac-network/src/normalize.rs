@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) struct RawNetwork {
     pub(super) id: WifiNetworkId,
     pub(super) strength: u8,
@@ -10,7 +10,7 @@ pub(super) struct RawNetwork {
     pub(super) connected: bool,
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn normalize_networks(network_data: Vec<RawNetwork>) -> Vec<WifiNetwork> {
     let mut networks = HashMap::<WifiNetworkId, WifiNetwork>::new();
     for raw in network_data {
@@ -49,7 +49,7 @@ pub(super) fn normalize_networks(network_data: Vec<RawNetwork>) -> Vec<WifiNetwo
     networks
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn normalize_saved_networks(
     profiles: impl IntoIterator<Item = (WifiNetworkId, u64)>,
 ) -> Vec<WifiSavedNetwork> {
@@ -81,7 +81,7 @@ pub(super) fn normalize_saved_networks(
     saved.into_iter().map(|(network, _)| network).collect()
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn display_ssid(ssid: &[u8]) -> String {
     let display = String::from_utf8_lossy(ssid)
         .chars()
@@ -100,7 +100,7 @@ pub(super) fn display_ssid(ssid: &[u8]) -> String {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn connectivity_from_network_manager(value: u32) -> Connectivity {
     match value {
         1 => Connectivity::None,
@@ -111,7 +111,7 @@ pub(super) fn connectivity_from_network_manager(value: u32) -> Connectivity {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn device_state_from_network_manager(value: u32) -> DeviceState {
     match value {
         20 | 30 => DeviceState::Unavailable,
@@ -124,7 +124,7 @@ pub(super) fn device_state_from_network_manager(value: u32) -> DeviceState {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn format_address(address: &str, prefix: Option<u32>) -> String {
     prefix.map_or_else(
         || address.to_string(),
@@ -132,7 +132,7 @@ pub(super) fn format_address(address: &str, prefix: Option<u32>) -> String {
     )
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn sort_devices(devices: &mut [NetworkDevice]) {
     devices.sort_by(|left, right| {
         right
@@ -144,7 +144,7 @@ pub(super) fn sort_devices(devices: &mut [NetworkDevice]) {
     });
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn device_kind_order(kind: DeviceKind) -> u8 {
     match kind {
         DeviceKind::Ethernet => 0,
@@ -153,12 +153,12 @@ pub(super) fn device_kind_order(kind: DeviceKind) -> u8 {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn is_vpn_connection_type(connection_type: &str) -> bool {
     matches!(connection_type, "vpn" | "wireguard")
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn vpn_state_from_network_manager(value: u32) -> VpnState {
     match value {
         1 => VpnState::Connecting,
@@ -169,7 +169,7 @@ pub(super) fn vpn_state_from_network_manager(value: u32) -> VpnState {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn vpn_state_from_vpn_connection(value: u32) -> VpnState {
     match value {
         1..=4 => VpnState::Connecting,
@@ -180,7 +180,7 @@ pub(super) fn vpn_state_from_vpn_connection(value: u32) -> VpnState {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn vpn_service_label(connection_type: &str, service_type: Option<&str>) -> String {
     if connection_type == "wireguard" {
         return "WireGuard".to_string();
@@ -207,7 +207,7 @@ pub(super) fn sort_vpn_profiles(profiles: &mut [VpnProfile]) {
     });
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(not(target_os = "linux"), test))]
 pub(super) fn parse_macos_vpn_profiles(output: &str) -> Vec<VpnProfile> {
     let mut profiles = output
         .lines()

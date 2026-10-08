@@ -1,4 +1,4 @@
-//! The Lulo menu's Sleep, Restart, Shut Down, Lock Screen and Log Out,
+//! The Lulo menu's Sleep, Restart, Shut Down, Lock Screen and Log Out on Windows,
 //! through the same Windows calls Start's power menu uses. Open apps get
 //! the usual end-of-session messages and may ask to save first.
 

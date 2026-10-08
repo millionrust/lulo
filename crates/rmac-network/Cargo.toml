@@ -16,7 +16,7 @@ url.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 
-[target.'cfg(not(target_os = "macos"))'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 async-io.workspace = true
 futures-util.workspace = true
 libloading.workspace = true

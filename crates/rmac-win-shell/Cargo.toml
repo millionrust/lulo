@@ -34,7 +34,9 @@ rmac-ui.workspace = true
 # Lulo mode's desktop (ADR 0023 "Lulo mode"): Lulo OS's desktop model
 # (icon grid, saved places, renaming) and its wallpaper store and renderer.
 rmac-compositor.workspace = true
+rmac-compositor-system.workspace = true
 rmac-desktop.workspace = true
+rmac-shell-layer.workspace = true
 rmac-shell-settings.workspace = true
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true

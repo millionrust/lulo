@@ -23,6 +23,7 @@ gpui_linux = { version = "0.1.0", path = "compat/gpui_linux", default-features =
 gpui_platform = { version = "=0.1.0", git = "https://github.com/zed-industries/zed.git", package = "gpui_platform", features = ["font-kit"] }
 image = { version = "0.25", default-features = false }
 libc = "=0.2.186"
+raw-window-handle = "=0.6.2"
 rmac-apps = { version = "=0.9.0-beta.1", path = "../crates/rmac-apps" }
 rmac-app-launch = { version = "=0.9.0-beta.1", path = "../crates/rmac-app-launch" }
 rmac-app-menu = { version = "=0.9.0-beta.1", path = "../crates/rmac-app-menu" }
@@ -34,6 +35,7 @@ rmac-bluetooth = { version = "=0.9.0-beta.1", path = "../crates/rmac-bluetooth" 
 rmac-calendar-agent = { version = "=0.9.0-beta.1", path = "../crates/calendar-agent" }
 rmac-compositor = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor-niri" }
+rmac-compositor-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor-system" }
 rmac-design = { version = "=0.9.0-beta.1", path = "../crates/rmac-design" }
 rmac-desktop = { version = "=0.9.0-beta.1", path = "../crates/rmac-desktop" }
 rmac-desktop-widgets = { version = "=0.9.0-beta.1", path = "../crates/rmac-desktop-widgets" }
@@ -74,6 +76,7 @@ trash = "5"
 unicode-segmentation = "1.13"
 uuid = { version = "1", features = ["v5"] }
 wayland-client = "0.31"
+windows = "0.61"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 # Optimised but quick to relink, for trying changes on the reference PC:

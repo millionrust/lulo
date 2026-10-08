@@ -29,9 +29,9 @@ async fn watch_compositor(
     sender: async_channel::Sender<rmac_compositor::Event>,
 ) -> Result<(), Error> {
     loop {
-        match rmac_compositor_niri::watch(sender.clone()).await {
+        match rmac_compositor_system::watch(sender.clone()).await {
             Ok(()) => return Ok(()),
-            Err(rmac_compositor_niri::Error::MissingSocketPath) => {
+            Err(error) if rmac_compositor_system::is_unavailable(&error) => {
                 if sender
                     .send(rmac_compositor::Event::ConnectionChanged {
                         state: rmac_compositor::ConnectionState::Disconnected,

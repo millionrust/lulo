@@ -64,7 +64,7 @@
          it runs. A real uninstall turns a running layer off and gives all
          of it back before lulo-session.exe itself is removed, and turns
          off the user's switches that point at Lulo's files (Use Files for
-         Folders, Start Lulo at Sign-In): `lulo-session --uninstall` is
+         Folders, Start Lulo at Sign-In): the session's uninstall switch is
          safe to run whether or not the layer is running, and waits at most
          ten seconds for a running one to stop. References Apps.wxs's File_lulo_session by
          its installed path; both files link into one output, so the

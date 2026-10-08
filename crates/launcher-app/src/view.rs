@@ -643,6 +643,10 @@ impl LauncherView {
 /// surface on the first typed key made that key wait 26–33 ms for niri's
 /// configure and next frame callback.
 pub(crate) fn set_compact(window: &mut gpui::Window, compact: bool) {
+    #[cfg(windows)]
+    rmac_shell_layer::windows::trace::trace(|| {
+        format!("spotlight {}", if compact { "compact" } else { "expanded" })
+    });
     // Windows keeps the input region the same way (`gpui_windows` clips the
     // window to it, and the expanded area is transparent while compact).
     #[cfg(any(target_os = "linux", windows))]

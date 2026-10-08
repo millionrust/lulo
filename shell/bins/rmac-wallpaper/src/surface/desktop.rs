@@ -1526,6 +1526,27 @@ impl Wallpaper {
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
         let layout = self.desk_layout(window, cx);
+        // The Windows CI checks open, rename and drag the icons where the
+        // desktop says they are (`scripts/windows/shell_smoke.py`).
+        #[cfg(windows)]
+        if rmac_shell_layer::windows::trace::enabled() {
+            let icon = layout.grid.options.icon_size;
+            let lines: Vec<String> = layout
+                .placed
+                .iter()
+                .filter_map(|placed| {
+                    let item = layout.item(placed)?;
+                    let name = item.path.file_name()?.to_string_lossy().into_owned();
+                    let (x, y) = rmac_shell_layer::windows::trace::screen_point(
+                        window,
+                        placed.left + icon / 2.0,
+                        placed.top + icon / 2.0,
+                    );
+                    Some(format!("desktop icon {name} at {x},{y}"))
+                })
+                .collect();
+            rmac_shell_layer::windows::trace::trace_changed("desktop icons", || lines.join("\n"));
+        }
         self.gen_desktop_thumbnails(&layout.items, cx);
         // New Folder: start renaming once the watcher has listed the folder.
         if let Some(path) = self.desk.rename_when_listed.clone() {
@@ -1550,6 +1571,21 @@ impl Wallpaper {
             )
         };
         let active = self.focus.contains_focused(window, cx);
+        #[cfg(windows)]
+        {
+            use rmac_shell_layer::windows::trace::trace_changed;
+            trace_changed("desktop active", || {
+                format!("desktop {}", if active { "active" } else { "inactive" })
+            });
+            let menu = self.desk.menu.is_some();
+            trace_changed("desktop menu", || {
+                format!("desktop menu {}", if menu { "open" } else { "closed" })
+            });
+            let renaming = self.desk.rename.is_some();
+            trace_changed("desktop rename", || {
+                format!("desktop rename {}", if renaming { "editing" } else { "idle" })
+            });
+        }
         let mut children = Vec::new();
         for widget in widgets {
             children.push(self.render_widget(widget, &data, cx));

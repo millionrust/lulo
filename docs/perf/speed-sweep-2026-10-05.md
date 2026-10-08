@@ -12,7 +12,7 @@ harness, and report a before/after table. Branch `op/speed-sweep`.
 GPUI's internal smoothing factor — regardless of the size it's actually
 drawn at. Lulo's master app icons are 1024×1024 artwork (some with an
 `feDropShadow` filter), so every one of them decoded as a 2048×2048 canvas
-even at a 16 pt menu glyph. `shell/bins/rmac-wallpaper/src/linux_wayland/desktop.rs`
+even at a 16 pt menu glyph. `shell/bins/rmac-wallpaper/src/surface/desktop.rs`
 (`ICON_SVG_SCALE`, `warm_desktop_icons`, DESK-12 in docs/parity.md) had
 already measured and fixed this for the desktop's own folder/document
 glyphs: **~1.4–1.75 s per icon on the loaded reference laptop, independent

@@ -12,7 +12,7 @@ Trash") from `rmac_locale::FileVocabulary`; we hardcode the Linux/English
 result since that is what ships.
 
 That published menu is not what actually shows in the menu bar, though:
-the menu bar (`shell/bins/rmac-menubar/src/main.rs`'s `bar_menus`) pulls
+the menu bar (`shell/bins/rmac-menubar/src/lib.rs`'s `bar_menus`) pulls
 the app's own "Application"/"Window"/"Help" rows out of what it exported
 and folds them into three standard menus synthesized for *every* app,
 first-party or not (`app_menu`/`window_menu`/`help_menu` in that file and
@@ -119,7 +119,7 @@ def _synthesize_app_menu(
     app_display_name: str, exported_items: list[rmp.MenuItem]
 ) -> rmp.Menu:
     """The bold-name Application menu every app gets, exported or not
-    (`app_menu` in shell/bins/rmac-menubar/src/main.rs, §3.3): About, the
+    (`app_menu` in shell/bins/rmac-menubar/src/lib.rs, §3.3): About, the
     app's own items (Settings…, Files' Empty Trash…), Services, Hide/Hide
     Others/Show All, then Quit (Files/Finder is never quit)."""
     menu_name = "Activity Monitor" if app_display_name == "System Monitor" else app_display_name
@@ -283,7 +283,7 @@ def read_menu_bar(app_display_name: str, table_name: str) -> list[dict]:
     for menu in menus:
         for item in menu.items:
             apply_label_overrides(item)
-    # Mirrors `bar_menus` in shell/bins/rmac-menubar/src/main.rs: the menu
+    # Mirrors `bar_menus` in shell/bins/rmac-menubar/src/lib.rs: the menu
     # bar pulls the app's own Application/Window/Help rows out of its
     # exported menus and folds them into the three standard menus every
     # app gets, rather than showing them as the app published them.

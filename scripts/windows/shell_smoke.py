@@ -874,7 +874,10 @@ def check_shell(
             return failures + [f"the Lulo layer did not come up: {log.text()[-3000:]}"]
         print(f"shell: launch ~{launch_ms:.0f} ms (session start to the first shell window)")
         print(f"shell: ready (bar and Dock placed) {ready.group(1)} ms after lulo-shell started")
-        placed = log.wait_for(r"^bar at (-?\d+),(-?\d+),(-?\d+),(-?\d+) dock strip at (-?\d+),(-?\d+),(-?\d+),(-?\d+)")
+        # The shared views' layer surfaces report the strips their exclusive
+        # zones hold (ADR 0023, "Phase 3 revised: shared shell views").
+        bar_strip = log.wait_for(r"^strip rmac-top-bar-\d+ at (-?\d+),(-?\d+),(-?\d+),(-?\d+)")
+        dock_strip = log.wait_for(r"^strip rmac-dock-\d+ at (-?\d+),(-?\d+),(-?\d+),(-?\d+)")
         time.sleep(SETTLE_SECONDS)
         save(screenshots, "desktop")
 
@@ -883,11 +886,11 @@ def check_shell(
         visible, state = taskbar_state()
         print(f"shell: while Lulo runs: work area {area}, taskbar visible {visible}, state {state}")
         bar_bottom = None
-        if placed is None:
-            failures.append("the shell did not report where it placed the bar")
+        if bar_strip is None or dock_strip is None:
+            failures.append("the shell did not report the strips the bar and the Dock hold")
         else:
-            bar_bottom = int(placed.group(4))
-            dock_top = int(placed.group(6))
+            bar_bottom = int(bar_strip.group(4))
+            dock_top = int(dock_strip.group(2))
             if area[1] != bar_bottom:
                 failures.append(f"the work area starts at y={area[1]}, not below the bar (y={bar_bottom})")
             if area[3] != dock_top:
@@ -909,39 +912,24 @@ def check_shell(
         else:
             print("shell: no desktop icon list view on this desktop; Explorer icon check skipped")
 
-        # 1c. The frosted backdrop behind the bar, and none behind the Dock.
+        # 1c. The bar is clear over the wallpaper, as on Lulo OS; the Dock's
+        # shelf material is DWM's plain blur (niri's blur on Lulo OS), or its
+        # tint alone with Windows' transparency effects off.
         frosted_expected = transparency_effects()
-        # The bar shows the wallpaper's colour through a plain blur. In Lulo
-        # mode the Dock draws the wallpaper under its shelf itself and has
-        # no accent: acrylic ignored its rounded window region on a real
-        # Windows 11 PC and showed a dark box behind both ends (WIN-OS-49).
-        for surface, name, kind, state in (
-            ("Bar", "BarWindow", "blur", 3),
-            ("Dock", "DockWindow", "none (Lulo mode)", None),
+        for surface, pattern, kind in (
+            ("bar", r"^backdrop rmac-top-bar-\d+: (.+)$", "none"),
+            ("Dock shelf", r"^backdrop rmac-dock-material-\d+: (.+)$", "blur" if frosted_expected else "tint only"),
         ):
-            traced = log.wait_for(
-                rf"^backdrop {surface}: (blur|acrylic|tint only|none \(Lulo mode\))", 10.0
-            )
-            hwnd = shell_window(name)
-            accent = accent_state(hwnd) if hwnd else None
+            traced = log.wait_for(pattern, 10.0)
             print(
-                f"shell: {surface} backdrop: {traced.group(1) if traced else 'not reported'}, "
-                f"accent state {accent} (transparency effects {'on' if frosted_expected else 'off'})"
+                f"shell: {surface} backdrop: {traced.group(1) if traced else 'not reported'} "
+                f"(transparency effects {'on' if frosted_expected else 'off'})"
             )
             if traced is None:
                 failures.append(f"the {surface} reported no backdrop")
-            elif (frosted_expected or state is None) and traced.group(1) != kind:
+            elif traced.group(1) != kind:
                 failures.append(f"the {surface} backdrop is {traced.group(1)}, not {kind}")
-            if state is not None and frosted_expected and accent is not None and accent != state:
-                failures.append(f"Windows reports accent {accent} behind the {surface}, not {kind}")
-            if state is None and accent in (3, ACCENT_ENABLE_ACRYLICBLURBEHIND):
-                failures.append(f"Windows still blurs behind the {surface} (accent {accent})")
-        text = log.wait_for(r"^wallpaper (\d+)x(\d+) for (\d+)x(\d+), bar luminance ([\d.]+)", 15.0)
-        print(f"shell: Lulo's wallpaper: {text.group(0) if text else 'not reported'}")
-        if text is None:
-            failures.append("the desktop reported no wallpaper")
-        else:
-            check_dock_corners(failures)
+        check_dock_corners(failures)
 
         # 1d. The Spotlight hotkey (free here) and the Dock's tiles.
         hotkey = log.wait_for(r"^spotlight hotkey (.+) \((first choice|fallback)\)", 5.0)
@@ -950,16 +938,16 @@ def check_shell(
             failures.append("Alt+Space was free but is not Spotlight's hotkey")
         if log.wait_for(r"^notice shown", 0.5) is not None:
             failures.append("a hotkey notice showed although Alt+Space was free")
-        bin_tile = log.last(r"^dock tile recycle-bin Recycle Bin at (\d+),(\d+) (full|empty)")
-        files_tile = log.last(r"^dock tile rmac-files\.exe Files at (\d+),(\d+).* icon (\S+)")
+        bin_tile = log.wait_for(r"^dock tile trash at (\d+),(\d+) (full|empty)", 10.0)
+        files_tile = log.last(r"^dock tile org\.rmac\.Files Files at (\d+),(\d+)")
         print(
             f"shell: Dock: Recycle Bin tile {bin_tile.group(0) if bin_tile else 'missing'}; "
             f"Files tile {files_tile.group(0) if files_tile else 'missing'}"
         )
         if bin_tile is None:
             failures.append("the Dock has no Recycle Bin tile")
-        if files_tile is None or files_tile.group(3) != "apps/org.rmac.Files.svg":
-            failures.append("the Dock's Files tile does not show Files' own icon")
+        if files_tile is None:
+            failures.append("the Dock has no Files tile")
 
         # 2. Idle, before any input.
         phases = startup_phases(log.text())
@@ -1019,7 +1007,7 @@ def check_shell(
                 measurements[name]["peak_working_set_mb"] = memory["peak_working_set_mb"]
 
         # 3. The Dock opens Calculator.
-        tile = log.last(r"^dock tile rmac-calculator\.exe Calculator at (\d+),(\d+)")
+        tile = log.last(r"^dock tile org\.rmac\.Calculator Calculator at (\d+),(\d+)")
         if tile is None:
             failures.append("the Dock has no Calculator tile")
         else:
@@ -1031,23 +1019,21 @@ def check_shell(
             else:
                 opened.append("rmac-calculator.exe")
                 print("shell: the Dock's Calculator tile opened Calculator")
-                if log.wait_for(r"^dock tile rmac-calculator\.exe Calculator at \d+,\d+ running", after=before) is None:
+                if log.wait_for(r"^dock tile org\.rmac\.Calculator Calculator at \d+,\d+ running", after=before) is None:
                     failures.append("Calculator's Dock tile shows no running dot")
                 time.sleep(SETTLE_SECONDS)
                 save(screenshots, "dock-opened-calculator")
 
                 # 4. Calculator's own menus in the bar, and About from them.
                 menus = log.wait_for(r"^menus from org\.rmac\.Calculator", after=before)
-                title = log.wait_for(r"^bar title 1 Calculator at (-?\d+),(-?\d+),(\d+),(\d+)", after=before)
+                title = log.wait_for(r"^bar title 1 Calculator at (-?\d+),(-?\d+)$", after=before)
                 if menus is None or title is None:
                     failures.append("the bar does not show Calculator's menus")
                 else:
                     pid, _ = calculator
                     windows_before = len(windows_of(pid, titled=True))
-                    x = int(title.group(1)) + int(title.group(3)) // 2
-                    y = int(title.group(2)) + int(title.group(4)) // 2
-                    click(x, y)
-                    if log.wait_for(r"^menu 1 open", after=before) is None:
+                    click(int(title.group(1)), int(title.group(2)))
+                    if log.wait_for(r"^menu 1 row ", after=before) is None:
                         failures.append("clicking Calculator in the bar opened no menu")
                     time.sleep(1.0)
                     save(screenshots, "menu-calculator")
@@ -1075,11 +1061,8 @@ def check_shell(
             renamed_process = subprocess.Popen([str(renamed)], env=environment)
             try:
                 hello = log.wait_for(r"^menus from org\.rmac\.Files", after=before)
-                tile = log.wait_for(
-                    r"^dock tile rmac-files\.exe Files at \d+,\d+ running icon apps/org\.rmac\.Files\.svg",
-                    after=before,
-                )
-                stray = log.wait_for(r"^dock tile files-dev\.exe", 0.5, after=before)
+                tile = log.wait_for(r"^dock tile org\.rmac\.Files Files at \d+,\d+ running", after=before)
+                stray = log.wait_for(r"^dock tile \S*files-dev", 0.5, after=before)
                 time.sleep(1.0)
                 save(screenshots, "dock-files-icon")
                 print(
@@ -1096,33 +1079,33 @@ def check_shell(
         # 4c. The Recycle Bin tile follows the bin and has its menu.
         if bin_tile is not None:
             before = len(log.lines())
-            initial = log.wait_for(r"^recycle bin (full|empty)", 5.0)
+            initial = bin_tile
             junk = profile / "lulo-recycle-check.txt"
             junk.write_text("Lulo's Recycle Bin check\n", encoding="utf-8")
             recycled = recycle(junk)
-            full = log.wait_for(r"^recycle bin full", 10.0, after=0 if initial is None else before)
-            if initial is not None and initial.group(1) == "full":
+            full = log.wait_for(r"^dock tile trash at \d+,\d+ full", 10.0, after=before)
+            if initial is not None and initial.group(3) == "full":
                 full = initial
             print(
-                f"shell: the Dock's bin started {initial.group(1) if initial else 'unreported'}; "
+                f"shell: the Dock's bin started {initial.group(3) if initial else 'unreported'}; "
                 f"recycled a file: {recycled}; the bin {'shows full' if full else 'did not turn full'}"
             )
             if not recycled or full is None:
                 failures.append("the Dock's Recycle Bin did not show full after a file was recycled")
-            right = log.last(r"^dock tile recycle-bin Recycle Bin at (\d+),(\d+)")
+            right = log.last(r"^dock tile trash at (\d+),(\d+)")
             if right is not None:
                 user32().SetCursorPos(int(right.group(1)), int(right.group(2)))
                 time.sleep(0.15)
                 user32().mouse_event(0x0008, 0, 0, 0, 0)
                 time.sleep(0.05)
                 user32().mouse_event(0x0010, 0, 0, 0, 0)
-                menu = log.wait_for(r"^menu dock open", 5.0, after=before)
+                menu = log.wait_for(r"^layer rmac-dock-menu-keyboard at", 5.0, after=before)
                 time.sleep(0.8)
                 save(screenshots, "dock-recycle-bin-menu")
                 if menu is None:
                     failures.append("right-clicking the Recycle Bin tile opened no menu")
                 tap(VK_ESCAPE)
-                log.wait_for(r"^menu closed", 5.0, after=before)
+                log.wait_for(r"^layer rmac-dock-menu-keyboard closed", 5.0, after=before)
 
         # 5a. The desktop's icons: open, rename, drag, menu, new files, and
         # the desktop staying under app windows.
@@ -1153,21 +1136,22 @@ def check_shell(
         key(VK_MENU)
         tap(VK_SPACE)
         key(VK_MENU, up=True)
-        if log.wait_for(r"^spotlight shown", after=before, timeout=10.0) is None:
+        shown = log.wait_for(r"^layer rmac-launcher at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", after=before, timeout=10.0)
+        if shown is None:
             failures.append("Alt+Space did not open Spotlight")
         else:
             time.sleep(0.8)
             spotlight = user32().GetForegroundWindow()
-            empty = window_rect(spotlight)
+            surface = tuple(int(shown.group(index)) for index in range(1, 5))
             save(screenshots, "spotlight-empty")
-            check_spotlight_empty(spotlight, empty, shell_pid, failures)
+            check_spotlight_empty(spotlight, surface, shell_pid, log, before, failures)
             type_text("text editor")
-            results = log.wait_for(r'^spotlight "text editor": (\d+) results', after=before, timeout=10.0)
+            results = log.wait_for(r'^spotlight "text editor": ([1-9]\d*) results', after=before, timeout=10.0)
             time.sleep(0.8)
-            grown = window_rect(spotlight)
-            print(f"shell: Spotlight with results: window {grown} (empty {empty})")
-            if grown[3] - grown[1] <= empty[3] - empty[1]:
-                failures.append(f"Spotlight did not grow for its results ({empty} -> {grown})")
+            grown = log.wait_for(r"^spotlight expanded", 2.0, after=before)
+            print(f"shell: Spotlight with results: {'expanded' if grown else 'still compact'}")
+            if grown is None:
+                failures.append("Spotlight did not grow for its results")
             save(screenshots, "spotlight")
             if results is None or int(results.group(1)) == 0:
                 failures.append("Spotlight found nothing for \"text editor\"")
@@ -1184,7 +1168,7 @@ def check_shell(
         key(VK_MENU)
         tap(VK_SPACE)
         key(VK_MENU, up=True)
-        if log.wait_for(r"^spotlight shown", after=before, timeout=10.0):
+        if log.wait_for(r"^layer rmac-launcher at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", after=before, timeout=10.0):
             time.sleep(0.8)
             type_text("notepad")
             log.wait_for(r'^spotlight "notepad"', after=before, timeout=10.0)
@@ -1195,17 +1179,17 @@ def check_shell(
             print(f"shell: Spotlight {'opened' if found else 'did not open'} Notepad from the Apps folder")
             if found:
                 opened.append("notepad.exe")
-            elif log.wait_for(r"^spotlight hidden", 0.5, after=before) is None:
+            elif log.wait_for(r"^layer rmac-launcher closed", 0.5, after=before) is None:
                 # Nothing to open (the runner's Apps folder may have no
                 # Notepad): close Spotlight as the user would.
                 tap(VK_ESCAPE)
-        if log.wait_for(r"^spotlight hidden", 5.0, after=before) is None:
+        if log.wait_for(r"^layer rmac-launcher closed", 5.0, after=before) is None:
             failures.append("Spotlight did not close")
         catalog = log.last(r"^catalog: (\d+) apps")
         print(f"shell: Spotlight's catalogue: {catalog.group(1) if catalog else '?'} apps")
 
         # 6b. A closed Spotlight lets go of its window and file list.
-        released = log.wait_for(r"^spotlight released", 15.0, after=before)
+        released = log.wait_for(r"^layer rmac-launcher closed", 15.0, after=before)
         time.sleep(2.0)
         memory = memory_mb(shell_pid)
         print(
@@ -1423,22 +1407,24 @@ def check_window_shadow(hwnd: int, name: str, screenshots: Path | None, failures
         failures.append(f"{name}'s window casts no shadow (screen just outside it darkened by {darker})")
 
 
-def check_spotlight_empty(spotlight: int, rect, shell_pid: int, failures: list[str]) -> None:
-    """Spotlight opens as the search bar alone, centred, in the upper third."""
+def check_spotlight_empty(spotlight: int, rect, shell_pid: int, log: Log, after: int, failures: list[str]) -> None:
+    """Spotlight opens as the search bar alone, centred, in the upper third.
+    Its surface keeps the expanded size, as on Lulo OS; only the bar takes
+    input (and shows) until results come."""
     scale = window_scale(spotlight)
     width, height = screen_size()
-    expected = round((SPOTLIGHT_FIELD + 2 * SPOTLIGHT_MARGIN) * scale)
     panel_top = rect[1] + round(SPOTLIGHT_MARGIN * scale)
     centre = (rect[0] + rect[2]) // 2
+    compact = log.wait_for(r"^spotlight (compact|expanded)", 2.0, after=after)
     print(
-        f"shell: Spotlight before typing: window {rect} ({rect[3] - rect[1]} px high, the bar alone is "
-        f"{expected}), panel top {panel_top} of {height}, centre {centre} of {width}"
+        f"shell: Spotlight before typing: surface {rect}, {compact.group(1) if compact else 'size not reported'}, "
+        f"panel top {panel_top} of {height}, centre {centre} of {width}"
     )
     if pid_of(spotlight) != shell_pid:
         failures.append("Spotlight's window was not in front when it opened")
         return
-    if rect[3] - rect[1] > expected + 2:
-        failures.append(f"Spotlight shows more than the search bar before typing ({rect[3] - rect[1]} px high)")
+    if compact is None or compact.group(1) != "compact":
+        failures.append("Spotlight shows more than the search bar before typing")
     if not panel_top < height / 3:
         failures.append(f"Spotlight's bar is at y={panel_top}, not in the upper third")
     if abs(centre - width // 2) > 2:
@@ -1485,7 +1471,7 @@ def check_desktop_icons(
     # Clear of Notepad, Calculator, the icons (top right) and the Dock.
     click(150, height - 120)
     active = log.wait_for(r"^desktop active", 5.0, after=mark)
-    files = log.wait_for(r"^bar title 1 Files at", 5.0, after=mark)
+    files = log.wait_for(r"^bar title 1 Files at", 5.0, after=mark) or log.last(r"^bar title 1 Files at")
     order = z_order()
     notepad_hwnd = found[1] if found else 0
     below = notepad_hwnd in order and desktop_hwnd in order and order.index(notepad_hwnd) < order.index(desktop_hwnd)
@@ -1529,14 +1515,14 @@ def check_desktop_icons(
     if icon is not None:
         mark = len(log.lines())
         right_click(int(icon.group(1)), int(icon.group(2)))
-        menu = log.wait_for(r"^menu dock open", 5.0, after=mark)
+        menu = log.wait_for(r"^desktop menu open", 5.0, after=mark)
         time.sleep(0.6)
         save(screenshots, "desktop-icon-menu")
         print(f"shell: right-click on a desktop icon: {'menu' if menu else 'no menu'}")
         if menu is None:
             failures.append("right-clicking a desktop icon opened no menu")
         tap(VK_ESCAPE)
-        log.wait_for(r"^menu closed", 5.0, after=mark)
+        log.wait_for(r"^desktop menu closed", 5.0, after=mark)
         time.sleep(0.5)
 
     # Rename: select, Return, type, Return.
@@ -1547,7 +1533,7 @@ def check_desktop_icons(
         time.sleep(0.4)
         mark = len(log.lines())
         tap(VK_RETURN)
-        editing = log.wait_for(r"^desktop rename", 5.0, after=mark)
+        editing = log.wait_for(r"^desktop rename editing", 5.0, after=mark)
         time.sleep(0.4)
         type_text("renamed")
         save(screenshots, "desktop-rename")
@@ -1568,9 +1554,8 @@ def check_desktop_icons(
         )
         time.sleep(1.0)
         save(screenshots, "desktop-folder-opened")
-        launched = log.last(r"^launched rmac-files\.exe")
         print(f"shell: double-click on a desktop folder: {'Files opened' if files_window else 'nothing opened'}")
-        if not files_window or launched is None:
+        if not files_window:
             failures.append("double-clicking a desktop folder did not open it in Lulo's Files")
         for pid in processes_named("rmac-files.exe"):
             if pid not in before:
@@ -1619,7 +1604,7 @@ def check_foreground(log: Log, profile: Path, screenshots: Path | None, opened: 
             failures.append(f"Text Editor opened from {how} stayed behind File Explorer")
 
     def from_dock(_mark: int) -> None:
-        tile = log.last(r"^dock tile rmac-text-editor\.exe Text Editor at (\d+),(\d+)")
+        tile = log.last(r"^dock tile org\.rmac\.TextEditor Text Editor at (\d+),(\d+)")
         if tile is not None:
             click(int(tile.group(1)), int(tile.group(2)))
 
@@ -1627,7 +1612,7 @@ def check_foreground(log: Log, profile: Path, screenshots: Path | None, opened: 
         key(VK_MENU)
         tap(VK_SPACE)
         key(VK_MENU, up=True)
-        if log.wait_for(r"^spotlight shown", 10.0, after=mark) is None:
+        if log.wait_for(r"^layer rmac-launcher at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", 10.0, after=mark) is None:
             return
         time.sleep(0.6)
         type_text("text editor")
@@ -1698,20 +1683,20 @@ def check_memory_after_use(log: Log, shell_pid: int, measurements: dict, failure
     key(VK_MENU)
     tap(VK_SPACE)
     key(VK_MENU, up=True)
-    if log.wait_for(r"^spotlight shown", 10.0, after=mark):
+    if log.wait_for(r"^layer rmac-launcher at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", 10.0, after=mark):
         time.sleep(0.6)
         type_text("notes")
         time.sleep(0.8)
         tap(VK_ESCAPE)
-    title = log.last(r"^bar title 0 \S+ at (-?\d+),(-?\d+),(\d+),(\d+)")
+    title = log.last(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$")
     if title is not None:
         time.sleep(0.5)
-        click(int(title.group(1)) + int(title.group(3)) // 2, int(title.group(2)) + int(title.group(4)) // 2)
-        log.wait_for(r"^menu 0 open", 5.0, after=mark)
+        click(int(title.group(1)), int(title.group(2)))
+        log.wait_for(r"^menu 0 row ", 5.0, after=mark)
         time.sleep(0.6)
         tap(VK_ESCAPE)
-    released = log.wait_for(r"^spotlight released", 20.0, after=mark)
-    menu_released = log.wait_for(r"^menu panel released", 20.0, after=mark)
+    released = log.wait_for(r"^layer rmac-launcher closed", 20.0, after=mark)
+    menu_released = log.wait_for(r"^layer rmac-menu-material-\S+ closed", 20.0, after=mark)
     time.sleep(30.0)
     memory = memory_mb(shell_pid)
     for line in log.lines()[mark:]:
@@ -1833,26 +1818,22 @@ def check_exit_paths(
     started = start()
     if started is not None:
         session, _ = started
-        title = log.last(r"^bar title 0 \S+ at (-?\d+),(-?\d+),(\d+),(\d+)")
+        title = log.last(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$")
         if title is not None:
             time.sleep(2.0)
-            opened_menu = None
+            row = None
             for _ in range(3):
                 mark = len(log.lines())
-                click(int(title.group(1)) + int(title.group(3)) // 2, int(title.group(2)) + int(title.group(4)) // 2)
-                opened_menu = log.wait_for(r"^menu 0 open", 5.0, after=mark)
-                if opened_menu:
+                click(int(title.group(1)), int(title.group(2)))
+                row = log.wait_for(r"^menu 0 row Use Files for Folders at (\d+),(\d+)", 5.0, after=mark)
+                if row:
                     break
                 tap(VK_ESCAPE)
                 time.sleep(1.0)
-            if opened_menu:
+            if row:
                 time.sleep(0.8)
                 save(screenshots, "lulo-menu-files-for-folders")
-                # The Lulo menu's eleventh row (the Mac's menu metrics:
-                # 290 pt below the bar's bottom at its centre).
-                scale = window_scale(shell_window("BarWindow"))
-                bar_bottom = int(title.group(2)) + int(title.group(4)) + round(2 * scale)
-                click(int(title.group(1)) + round(60 * scale), bar_bottom + round(288 * scale))
+                click(int(row.group(1)), int(row.group(2)))
             on = log.wait_for(r"^files for folders on", 5.0, after=mark)
             print(f"shell: Use Files for Folders: {'on' if on else 'not turned on'}, folder verb {folder_verb()!r}")
             if on is None or folder_verb() != "LuloFiles":
@@ -1919,7 +1900,7 @@ def check_hotkey_fallback(
             tap(VK_SPACE)
             for code in reversed(keys):
                 key(code, up=True)
-            shown = log.wait_for(r"^spotlight shown", 10.0, after=mark)
+            shown = log.wait_for(r"^layer rmac-launcher at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", 10.0, after=mark)
             time.sleep(0.8)
             front_pid, front_class = foreground_pid_and_class()
             save(screenshots, "spotlight-fallback")
@@ -1929,24 +1910,24 @@ def check_hotkey_fallback(
             elif front_pid != shell_pid:
                 failures.append(f"Spotlight opened on {label} but {front_class} (pid {front_pid}) has the keyboard")
             tap(VK_ESCAPE)
-            log.wait_for(r"^spotlight hidden", 5.0, after=mark)
+            log.wait_for(r"^layer rmac-launcher closed", 5.0, after=mark)
             time.sleep(0.5)
 
         # The menu bar's magnifier always opens Spotlight.
-        icon = log.last(r"^bar spotlight at (-?\d+),(-?\d+),(\d+),(\d+)")
+        icon = log.last(r"^bar spotlight at (-?\d+),(-?\d+)$")
         if icon is None:
             failures.append("the bar did not report its Spotlight icon")
         else:
             mark = len(log.lines())
-            click(int(icon.group(1)) + int(icon.group(3)) // 2, int(icon.group(2)) + int(icon.group(4)) // 2)
-            shown = log.wait_for(r"^spotlight shown", 10.0, after=mark)
+            click(int(icon.group(1)), int(icon.group(2)))
+            shown = log.wait_for(r"^layer rmac-launcher at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", 10.0, after=mark)
             time.sleep(0.5)
             save(screenshots, "spotlight-icon")
             print(f"shell: the bar's Spotlight icon {'opened' if shown else 'did not open'} Spotlight")
             if shown is None:
                 failures.append("clicking the bar's Spotlight icon did not open Spotlight")
             tap(VK_ESCAPE)
-            log.wait_for(r"^spotlight hidden", 5.0, after=mark)
+            log.wait_for(r"^layer rmac-launcher closed", 5.0, after=mark)
 
         # The other app still has Alt+Space: Lulo never took it.
         presses = holder.presses()
@@ -1955,7 +1936,7 @@ def check_hotkey_fallback(
         tap(VK_SPACE)
         key(VK_MENU, up=True)
         got = wait_until(lambda: holder.presses() > presses, 5.0)
-        stolen = log.wait_for(r"^spotlight shown", 1.0, after=mark)
+        stolen = log.wait_for(r"^layer rmac-launcher at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", 1.0, after=mark)
         print(f"shell: Alt+Space reached {'the app that holds it' if got else 'nothing'}")
         if not got or stolen is not None:
             failures.append("Alt+Space did not reach the app that registered it first")

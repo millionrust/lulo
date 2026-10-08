@@ -14,7 +14,6 @@ pub mod taskbar;
 pub mod wallpaper;
 pub mod wallpaper_layer;
 
-use std::sync::OnceLock;
 
 /// `s` as a NUL-terminated UTF-16 string.
 pub fn wide(s: &str) -> Vec<u16> {
@@ -34,10 +33,7 @@ pub fn user_name() -> String {
 /// With `LULO_SHELL_TRACE=1`, say what the shell does on stderr, for the
 /// Windows CI checks (`scripts/windows/launch_smoke.py --shell`).
 pub fn trace(message: impl FnOnce() -> String) {
-    static ON: OnceLock<bool> = OnceLock::new();
-    if *ON.get_or_init(|| std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1")) {
-        eprintln!("lulo-shell: {}", message());
-    }
+    rmac_shell_layer::windows::trace::trace(message);
 }
 
 /// Milliseconds since this process was created, for the start-up trace.

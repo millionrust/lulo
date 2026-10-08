@@ -8,7 +8,7 @@
 //! for the full story: GPUI's `img(path)` decodes an SVG at (its own
 //! `viewBox` size) × 2 regardless of display size, so Lulo's 1024×1024
 //! master icons cost ~1.4–1.75s each on the reference laptop even shown at
-//! a 16pt glyph. `shell/bins/rmac-wallpaper/src/linux_wayland/desktop.rs`
+//! a 16pt glyph. `shell/bins/rmac-wallpaper/src/surface/desktop.rs`
 //! (`ICON_SVG_SCALE`, `warm_desktop_icons`) proved the fix for the
 //! desktop's own folder/document glyphs; this generalizes it.
 //!

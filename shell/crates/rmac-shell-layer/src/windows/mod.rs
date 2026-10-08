@@ -29,6 +29,7 @@ pub mod layer_types;
 pub mod material;
 pub mod power;
 pub mod surface;
+pub mod trace;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -337,6 +338,14 @@ fn style(hwnd: HWND, layer: &LayerShellOptions, blurred: bool) {
     if blurred {
         material::apply(hwnd);
     }
+    trace::trace(|| {
+        let kind = match (blurred, material::transparency_effects()) {
+            (false, _) => "none",
+            (true, true) => "blur",
+            (true, false) => "tint only",
+        };
+        format!("backdrop {}: {kind}", layer.namespace)
+    });
     let background = matches!(layer.layer, Layer::Background | Layer::Bottom);
     let never_active = layer.keyboard_interactivity == KeyboardInteractivity::None;
     // SAFETY: style bits on a window this process owns.
@@ -420,6 +429,9 @@ fn forget(raw: isize) {
         let index = windows.iter().position(|window| window.hwnd == raw)?;
         Some(windows.remove(index))
     });
+    if let Some(window) = &removed {
+        trace::trace(|| format!("layer {} closed", window.layer.namespace));
+    }
     if removed.is_some_and(|window| window.strip.is_some()) {
         appbar::remove(handle(raw));
     }
@@ -763,6 +775,12 @@ fn place(raw: isize) {
         };
         let thickness = (zone.as_f32() * scale).round() as i32;
         let held = appbar::reserve(hwnd, edge, thickness, monitor, current);
+        trace::trace(|| {
+            format!(
+                "strip {} at {},{},{},{}",
+                layer.namespace, held.left, held.top, held.right, held.bottom
+            )
+        });
         if held != current {
             appbar::moved(hwnd);
         }
@@ -779,6 +797,12 @@ fn place(raw: isize) {
             run_hooks(&STRIP_HOOKS, raw, &layer.namespace);
         }
     }
+    trace::trace(|| {
+        format!(
+            "layer {} at {},{},{},{}",
+            layer.namespace, rect.left, rect.top, rect.right, rect.bottom
+        )
+    });
     if !styled && (focus || layer.keyboard_interactivity == KeyboardInteractivity::Exclusive) {
         surface::take_foreground(hwnd);
     }

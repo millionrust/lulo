@@ -542,7 +542,7 @@ mod bar {
     /// ⌃F2 keyboard mode (ACC-05, `docs/known-limitations.md`): the
     /// invisible focus surface holding the real keyboard, and the title
     /// highlighted while no menu is open. Mirrors the Dock's own ⌃F3
-    /// `KeyboardMode` (`shell/bins/rmac-dock/src/main.rs`).
+    /// `KeyboardMode` (`shell/bins/rmac-dock/src/lib.rs`).
     struct KeyboardMode {
         surface: WindowHandle<MenuKeyboard>,
         /// The window that had the keyboard before ⌃F2; Esc refocuses it.
@@ -581,7 +581,7 @@ mod bar {
 
     /// The invisible surface that holds the keyboard while the menu bar is
     /// focused through ⌃F2. It draws nothing and takes no pointer input;
-    /// see `shell/bins/rmac-dock/src/main.rs`'s `DockKeyboard`, which this
+    /// see `shell/bins/rmac-dock/src/lib.rs`'s `DockKeyboard`, which this
     /// mirrors.
     struct MenuKeyboard {
         top_bar: WindowHandle<TopBar>,
@@ -3606,7 +3606,7 @@ mod bar {
         /// `Ctrl+F2` (ACC-05, `docs/known-limitations.md`): highlight the
         /// first title and take the keyboard through the same invisible
         /// focus surface technique ⌃F3 uses for the Dock
-        /// (`shell/bins/rmac-dock/src/main.rs`'s `begin_keyboard`). The
+        /// (`shell/bins/rmac-dock/src/lib.rs`'s `begin_keyboard`). The
         /// bar's own layer surface only takes keyboard on a click, so a
         /// bare key bind can't reach it directly.
         fn begin_menu_keyboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -3887,6 +3887,8 @@ mod bar {
                 active_app,
                 active_app_id,
             } = self.bar_menus(cx);
+            #[cfg(windows)]
+            trace_titles(&active_app, &menus, window);
             if self.open_menu.is_some_and(|index| index >= menus.len()) {
                 self.open_menu = None;
                 self.open_app_id = None;
@@ -4009,6 +4011,32 @@ mod bar {
                 self.menu_scroll.clear();
             }
             let menu_height = main_scroll.map(|scroll| scroll.visible).or(menu_height);
+            // Where the open menu's rows are, for the Windows CI checks
+            // that choose them (`scripts/windows/shell_smoke.py`).
+            #[cfg(windows)]
+            if confirmation_frame_height.is_none() {
+                let rows = self
+                    .open_menu
+                    .and_then(|index| Some((index, menus.get(index)?, menu_left?)));
+                rmac_shell_layer::windows::trace::trace_changed("menu rows", || match rows {
+                    Some((index, menu, left)) => menu
+                        .items
+                        .iter()
+                        .enumerate()
+                        .map(|(row, item)| {
+                            let top = menu_model::app_menu_item_top(&menu.items, row);
+                            let (x, y) = rmac_shell_layer::windows::trace::screen_point(
+                                window,
+                                left + 40.0,
+                                panel_top + top + menu_model::APP_ROW_HEIGHT / 2.0,
+                            );
+                            format!("menu {index} row {} at {x},{y}", item.label)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    None => "menu closed".to_owned(),
+                });
+            }
             let recent_submenu_top = self.recent_submenu_open.then(|| {
                 menus
                     .first()
@@ -4873,6 +4901,7 @@ mod bar {
                                 .cursor_pointer()
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("launcher", cx))
+                                .children(trace_probe("bar spotlight"))
                                 .child(
                                     svg()
                                         .path(shell_icon_path("spotlight.svg"))
@@ -5011,6 +5040,62 @@ mod bar {
 
     /// Left edge of a menu, from the same slot geometry the bar is laid out
     /// with: macOS opens it 4 pt left of the title's item frame.
+    /// Where each title sits, for the Windows CI checks that click them
+    /// (`scripts/windows/shell_smoke.py`): the same slots
+    /// [`menu_anchor_x`] hangs the menus from.
+    #[cfg(windows)]
+    fn trace_titles(active_app: &str, menus: &[rmac_app_menu::Menu], window: &Window) {
+        use rmac_shell_layer::windows::trace;
+        if !trace::enabled() {
+            return;
+        }
+        let title_slot = |label: &str, weight| {
+            rmac_shell_ui::text_width(window, label, weight) + 2.0 * TITLE_PAD
+        };
+        let row = BAR_HEIGHT / 2.0;
+        let mut lines = Vec::new();
+        let (x, y) = trace::screen_point(window, BAR_LEAD + LOGO_SLOT / 2.0, row);
+        lines.push(format!("bar title 0 logo at {x},{y}"));
+        let mut left = BAR_LEAD + LOGO_SLOT;
+        for (index, menu) in menus.iter().enumerate().skip(1) {
+            let (label, slot) = if index == 1 {
+                (active_app, title_slot(active_app, FontWeight::BOLD))
+            } else {
+                (menu.label.as_str(), title_slot(&menu.label, FontWeight::MEDIUM))
+            };
+            let (x, y) = trace::screen_point(window, left + slot / 2.0, row);
+            lines.push(format!("bar title {index} {label} at {x},{y}"));
+            left += slot;
+        }
+        trace::trace_changed("bar titles", || lines.join("\n"));
+    }
+
+    /// An invisible probe that says, for the Windows CI checks, where its
+    /// parent was laid out (`{name} at x,y`, its centre on screen).
+    #[cfg(windows)]
+    fn trace_probe(name: &'static str) -> Option<AnyElement> {
+        use rmac_shell_layer::windows::trace;
+        trace::enabled().then(|| {
+            canvas(
+                move |bounds, window, _| {
+                    let centre = bounds.center();
+                    let (x, y) =
+                        trace::screen_point(window, centre.x.as_f32(), centre.y.as_f32());
+                    trace::trace_changed(name, || format!("{name} at {x},{y}"));
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full()
+            .into_any_element()
+        })
+    }
+
+    #[cfg(not(windows))]
+    fn trace_probe(_name: &'static str) -> Option<AnyElement> {
+        None
+    }
+
     fn menu_anchor_x(
         active_app: &str,
         menus: &[rmac_app_menu::Menu],

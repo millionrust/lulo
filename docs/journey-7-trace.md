@@ -14,7 +14,7 @@ since this task had no cargo and only read-only laptop access.
 
 Three UI surfaces share the four backend crates, matching a real macOS split:
 
-- **Top-bar status icons** (`shell/bins/rmac-menubar/src/main.rs`): clicking
+- **Top-bar status icons** (`shell/bins/rmac-menubar/src/lib.rs`): clicking
   Wi-Fi or Battery opens a dedicated dropdown (`StatusMenuKind::Wifi` /
   `::Battery`, `menu_model.rs:236-239`). Clicking Bluetooth or Sound opens
   Control Centre instead (`main.rs:2019-2025`, comment: "Wi-Fi and Battery

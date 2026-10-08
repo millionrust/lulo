@@ -191,7 +191,7 @@ fn start_hotkey(cx: &mut App) -> Option<Hooks> {
         if model_hotkey::should_notice(hotkey, registry::get_dword(HOTKEY_NOTICE)) {
             registry::set_dword(HOTKEY_NOTICE, hotkey.code());
             let (title, detail) = model_hotkey::notice(hotkey);
-            trace(|| format!("notice: {title}: {detail}"));
+            trace(|| format!("notice shown: {title}: {detail}"));
         }
     }
     cx.spawn(async move |cx| {

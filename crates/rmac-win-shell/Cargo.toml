@@ -51,9 +51,6 @@ rmac-shell-ui.workspace = true
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true
 rmac-wallpaper-system.workspace = true
-# `#[implement]` (the volume callback) names `windows_core` directly; the
-# version GPUI's Windows backend already builds.
-windows-core = "0.61"
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Globalization",

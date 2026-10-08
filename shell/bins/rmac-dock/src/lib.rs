@@ -2629,6 +2629,38 @@ mod dock {
             self.shelf_start = shelf_start;
             self.surface_size = (surface_width, surface_height);
             let trash_center = shelf_extent - metrics.shelf_padding - metrics.icon_size / 2.0;
+            // The Windows CI checks click the tiles where the Dock says
+            // they are (`scripts/windows/shell_smoke.py`).
+            #[cfg(windows)]
+            if horizontal && rmac_shell_layer::windows::trace::enabled() {
+                let row = surface_height - metrics.shelf_bottom_margin - metrics.shelf_thickness / 2.0;
+                let point = |along: f32| {
+                    rmac_shell_layer::windows::trace::screen_point(window, shelf_start + along, row)
+                };
+                let mut lines = Vec::new();
+                for (index, entry) in entries.iter().enumerate() {
+                    let rmac_dock::presentation::EntryId::Application(id) = &entry.id else {
+                        continue;
+                    };
+                    let mut along = metrics.shelf_padding
+                        + metrics.icon_size / 2.0
+                        + index as f32 * (metrics.icon_size + metrics.icon_gap);
+                    if separates_running && index >= pinned_count {
+                        along += metrics.separator_slot + metrics.icon_gap;
+                    }
+                    let (x, y) = point(along);
+                    let state = if running_apps.contains(id) {
+                        "running"
+                    } else {
+                        "idle"
+                    };
+                    lines.push(format!("dock tile {id} {} at {x},{y} {state}", entry.label));
+                }
+                let (x, y) = point(trash_center);
+                let state = if trash_full { "full" } else { "empty" };
+                lines.push(format!("dock tile trash at {x},{y} {state}"));
+                rmac_shell_layer::windows::trace::trace_changed("dock tiles", || lines.join("\n"));
+            }
             let menu_anchor = self.context_menu.as_ref().map(|menu| menu.anchor);
             // (menu start along the Dock axis, pointer tip from that start,
             // menu width)

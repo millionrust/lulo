@@ -240,6 +240,10 @@ fn published(pid: u32, app_id: &'static str, menus: Vec<Menu>) {
         )
     });
     if first {
+        // For the Windows CI checks (`scripts/windows/shell_smoke.py`).
+        if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
+            eprintln!("lulo-shell: menus from {app_id}");
+        }
         for watcher in owners {
             let _ = watcher.try_send((app_id, true));
         }

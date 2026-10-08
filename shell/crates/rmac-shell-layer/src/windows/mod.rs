@@ -77,12 +77,15 @@ enum Signal {
     ExplorerRestarted,
 }
 
+/// Callbacks with a surface's window and namespace.
+type Hooks = RefCell<Vec<Rc<dyn Fn(isize, &str)>>>;
+
 thread_local! {
     static WINDOWS: RefCell<Vec<LayerWindow>> = const { RefCell::new(Vec::new()) };
     static SIGNALS: RefCell<Option<async_channel::Sender<Signal>>> = const { RefCell::new(None) };
     static BACKGROUND_WATCH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static STRIP_HOOKS: RefCell<Vec<Rc<dyn Fn(isize, &str)>>> = const { RefCell::new(Vec::new()) };
-    static PLACED_HOOKS: RefCell<Vec<Rc<dyn Fn(isize, &str)>>> = const { RefCell::new(Vec::new()) };
+    static STRIP_HOOKS: Hooks = const { RefCell::new(Vec::new()) };
+    static PLACED_HOOKS: Hooks = const { RefCell::new(Vec::new()) };
 }
 
 /// Run `hook` with a surface's window and namespace when it first holds an
@@ -100,7 +103,7 @@ pub fn on_placed(hook: impl Fn(isize, &str) + 'static) {
 }
 
 fn run_hooks(
-    hooks: &'static std::thread::LocalKey<RefCell<Vec<Rc<dyn Fn(isize, &str)>>>>,
+    hooks: &'static std::thread::LocalKey<Hooks>,
     raw: isize,
     namespace: &str,
 ) {

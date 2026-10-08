@@ -125,7 +125,6 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(not(windows))]
 /// The shared-view checks' fixed scene (`RMAC_SHELL_SCENE=1`): the real
 /// window list and settings, with the status items' fixed readings
 /// (`crate::scene`), so Lulo OS and Windows draw the same bar.
@@ -162,6 +161,7 @@ async fn watch_scene(sender: Sender<Update>) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 async fn watch_notifications(
     sender: Sender<Result<rmac_notifications::Indicator, String>>,
 ) -> Result<(), Error> {

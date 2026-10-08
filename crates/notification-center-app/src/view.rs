@@ -12,7 +12,7 @@ use crate::model::{
 
 pub(crate) struct NotificationCenterView {
     pub(crate) focus: FocusHandle,
-    token: u64,
+    pub(crate) token: u64,
     previous_window: Option<rmac_compositor::WindowId>,
     pub(crate) snapshot: Option<Snapshot>,
     pub(crate) applications: ApplicationCatalog,

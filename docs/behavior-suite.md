@@ -428,6 +428,18 @@ checked through niri's layer list. `--bin-dir` must hold `top-bar`, `dock`,
 `wallpaper`, `rmac-quick-settings`, `rmac-launcher`, `rmac-app-drawer`,
 `rmac-notification-center-panel`, and `rmac-shortcut-dispatch`.
 
+`--only notification-center-shrink` real-clicks the wallpaper in the gap
+Notification Center's outside-click catcher used to leave between the
+panel (which opens at its tallest height and shrinks to one card) and the
+catcher's hole, stale at that first, tallest size: before NC-13 the press
+fell through both and did nothing instead of dismissing the panel.
+`--only launcher-expanded` presses and holds a Spotlight result row well
+below the compact bar's 88 pt hole, a regression guard for the catcher
+audit's SPOT finding (Spotlight's own window maps after the catcher and
+has always claimed a press in its current input region first, so no case
+of a wrong dismiss there was found, unlike Control Centre and Notification
+Center, whose popovers map before their catchers).
+
 ```sh
 python3 scripts/behavior/run_menu_dismiss.py \
   --niri /usr/bin/niri --bin-dir ~/rmac-wt/target/iterate

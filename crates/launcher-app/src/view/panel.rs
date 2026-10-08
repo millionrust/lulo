@@ -99,7 +99,7 @@ impl LauncherView {
         self.panel = Some(Panel::new(mode));
         self.query
             .update(cx, |state, cx| state.set_value("", window, cx));
-        super::set_compact(window, false);
+        self.update_compact(window, false, cx);
         match mode {
             PanelMode::Actions => self.load_actions(cx),
             PanelMode::Clipboard => self.load_clipboard(cx),
@@ -113,7 +113,7 @@ impl LauncherView {
         self.compact = true;
         self.query
             .update(cx, |state, cx| state.set_value("", window, cx));
-        super::set_compact(window, true);
+        self.update_compact(window, true, cx);
         cx.notify();
     }
 

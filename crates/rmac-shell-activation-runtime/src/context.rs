@@ -65,6 +65,38 @@ impl Context {
         )
     }
 
+    /// Horizontally centred, `top_margin` below the output's top edge --
+    /// Spotlight's bar, which never moves regardless of how tall the
+    /// surface below it grows (`rmac_launcher::surface::top_margin`).
+    /// `centered_bounds` instead centres both axes, which put the
+    /// outside-click catcher's hole opened around Spotlight's compact bar
+    /// roughly 260 pt below where the bar (and the window that holds it)
+    /// actually render on a 900 pt output. Real-click checks on the gap
+    /// this leaves, and on a result row below the bar once expanded,
+    /// found no case where it changed what a press did -- Spotlight's own
+    /// window claims its current input region first either way -- but the
+    /// hole is still worth keeping at the bar's real rectangle rather than
+    /// a provably wrong one (SPOT catcher audit).
+    pub fn top_centered_bounds(
+        &self,
+        width: f64,
+        height: f64,
+        top_margin: f64,
+    ) -> Result<LogicalBounds, PlacementError> {
+        let logical = self.logical_output()?;
+        validate_extent(width, height)?;
+        validate_margin(top_margin)?;
+        if logical.size.width < width || logical.size.height < height + top_margin {
+            return Err(PlacementError::DoesNotFit);
+        }
+        LogicalBounds::new(
+            logical.position.x + (logical.size.width - width) / 2.0,
+            logical.position.y + top_margin,
+            width,
+            height,
+        )
+    }
+
     fn logical_output(&self) -> Result<&rmac_compositor::LogicalOutput, PlacementError> {
         self.compositor
             .outputs

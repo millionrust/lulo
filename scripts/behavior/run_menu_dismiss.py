@@ -721,6 +721,105 @@ class Run:
                 self.dispatch(shortcut)
                 self.wait_for(lambda: self.popover_gone(namespace), 5)
 
+    def launcher_expanded_row_press(self) -> None:
+        """SPOT catcher audit: Spotlight's layer surface opens at its
+        expanded size from the start (`view.rs`'s `set_compact`), and
+        typing a query widens the window's own input region to match,
+        while the outside-click catcher opened around the *compact* 88 pt
+        bar only. Spotlight's own window maps after the catcher and so
+        far has always claimed a real press inside its current input
+        region first regardless of the catcher's hole, but this presses
+        and holds a result row well below that 88 pt anyway, as a
+        regression guard: releasing without moving confirms the row was
+        really hit, not just left alone by accident."""
+
+        import pyatspi
+
+        namespace = "rmac-launcher"
+        # GPUI reports a layer surface's AT-SPI extents from the surface's
+        # own corner, not the desktop's (the same quirk `on_screen()`
+        # works around for Control Centre): Spotlight's surface
+        # (`rmac_launcher::surface`) is 672 pt wide, centred, with its top
+        # `top_margin` below the output's own top edge.
+        launcher_left = (OUTPUT_W - 672) / 2
+        launcher_top = round((OUTPUT_H - 576) / 2 - 16)
+
+        def on_screen(box):
+            x, y, w, h = box
+            return (x + launcher_left, y + launcher_top, w, h)
+
+        self.close_everything()
+        self.dispatch("launcher")
+        opened = self.wait_for(
+            lambda: self.has_layer(namespace) and self.has_layer(f"{namespace}-click-catcher"), 10
+        )
+        self.check("Spotlight expanded: opens", opened)
+        if not opened:
+            return
+        self.keys.type_text("e")
+        roles = ("push button", "button", "menu item", "list item")
+
+        def rows():
+            desktop = pyatspi.Registry.getDesktop(0)
+            found = []
+            stack = [desktop.getChildAtIndex(i) for i in range(desktop.childCount)]
+            while stack:
+                node = stack.pop()
+                try:
+                    if node is None:
+                        continue
+                    if node.getRoleName() in roles and (node.name or "").strip():
+                        box = self.extents(node)
+                        if box is not None:
+                            x, y, w, h = on_screen(box)
+                            # A result row (measured ~56 pt tall), not the
+                            # top bar's items (22 pt, y < 30) or the Dock's
+                            # tiles and separators (64 pt, against the
+                            # bottom edge).
+                            if 45 <= h <= 60 and 60 <= y <= OUTPUT_H - 60:
+                                found.append((node, (x, y, w, h)))
+                    stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+                except Exception:  # noqa: BLE001
+                    continue
+            return found
+
+        candidates = self.wait_for(lambda: rows() or None, 5) or []
+        self.check("Spotlight expanded: typing \"e\" shows at least one result row",
+                   bool(candidates), f"{len(candidates)} candidates")
+        if not candidates:
+            self.close_everything()
+            return
+        # Three quarters down the expanded surface's own span
+        # (`launcher_top` to `launcher_top + 608`): clear of the compact
+        # bar's 88 pt hole, and clear too of a *vertically centred* 88 pt
+        # hole (`centered_bounds`, the output's own centre +/- 44 pt) --
+        # another plausible but wrong position for it -- so this cannot
+        # coincidentally land inside a stale hole by sheer luck, while
+        # still certain to be within the visible list rather than a row
+        # the accessibility tree lays out below what the (clipped,
+        # `max_h`) results card actually shows.
+        target = launcher_top + 608 * 0.75
+        ordered = sorted(candidates, key=lambda item: abs(item[1][1] - target))
+        row, (x, y, w, h) = ordered[0]
+        print(f"Spotlight result row on screen: name={row.name!r} box=({x}, {y}, {w}, {h})", flush=True)
+        self.capture("launcher-expanded-before-press")
+        cx, cy = x + w / 2, y + h / 2
+        self.keys.move(cx, cy, OUTPUT_W, OUTPUT_H)
+        time.sleep(0.3)
+        self.keys.button(True, "left")
+        time.sleep(0.3)
+        still_open = self.has_layer(namespace)
+        self.check(
+            "Spotlight expanded: pressing a result row does not dismiss Spotlight",
+            still_open, f"row={row.name!r} at ({cx:.0f}, {cy:.0f})",
+        )
+        self.keys.button(False, "left")
+        time.sleep(0.5)
+        # The release completes an ordinary click, which activates the
+        # row (launching whatever it names) and closes Spotlight on its
+        # own -- a legitimate dismiss, not the catcher's.
+        self.close_everything()
+
     def fake_hardware_shows_real_data(self) -> None:
         """With fake_hardware.py's NetworkManager/BlueZ/UPower mocks
         running (docs/behavior-suite.md), the top bar and Control Centre
@@ -1273,6 +1372,53 @@ class Run:
                 self.dispatch("notification-center")
                 self.wait_for(lambda: self.popover_gone(namespace), 5)
 
+    def notification_center_shrunk_wallpaper_click(self) -> None:
+        """Notification Center opens its layer surface at the tallest
+        height (720 pt, `rmac_notifications_linux::center_surface`) and
+        shrinks it to the column's natural height once it has laid out its
+        cards. With only one notification that is far less than 720 pt, so
+        the outside-click catcher's hole must shrink with it (NC-13):
+        before the fix it stayed at 720 pt, and a real press in the
+        wallpaper now showing through the gap between the shrunk panel and
+        the hole's still-tall bottom edge fell through both and did
+        nothing, instead of dismissing the panel the way any other
+        wallpaper click does (MENU-15)."""
+
+        namespace = "rmac-notification-center"
+        self.close_everything()
+        subprocess.run(
+            ["notify-send", "Lulo", "catcher audit probe"], env=self.env, check=False, timeout=5,
+        )
+        clock = self.wait_for(lambda: self.find_node(
+            ("push button", "button"), lambda name: name.startswith("Date and time:")), 5)
+        opened = clock is not None and self.click_node(clock) and self.wait_for(
+            lambda: self.has_layer(namespace) and self.has_layer(f"{namespace}-click-catcher"), 10
+        )
+        self.check("Notification Center shrink: opens with a notification showing", opened)
+        if not opened:
+            return
+        # The surface opens at 720 pt and shrinks to its content on the
+        # first render; give that resize (and the catcher's hole update)
+        # time to land before probing the gap it leaves behind.
+        time.sleep(1.0)
+        # Well inside the panel's 1020-1440 pt horizontal span, far below
+        # any realistic one-card height and well short of the 720 pt the
+        # stale hole used to sit at.
+        probe_x, probe_y = OUTPUT_W - 190, 500
+        closed = self.retry_until(
+            lambda: self.click_at(probe_x, probe_y),
+            lambda: self.popover_gone(namespace),
+            attempts=3,
+            step=1.0,
+        )
+        self.check(
+            "Notification Center shrink: a wallpaper click below the shrunk panel still dismisses it",
+            closed, f"at ({probe_x}, {probe_y})",
+        )
+        if not closed:
+            self.dispatch("notification-center")
+            self.wait_for(lambda: self.popover_gone(namespace), 5)
+
     def dock_context_menu_dismissal(self) -> None:
         tile = self.wait_for(lambda: self.find_node(
             ("push button", "button"),
@@ -1444,6 +1590,10 @@ class Run:
                 self.escape_returns_focus_to_window()
             elif self.args.only == "option-alternate":
                 self.option_alternate_swaps_in_open_app_menu()
+            elif self.args.only == "notification-center-shrink":
+                self.notification_center_shrunk_wallpaper_click()
+            elif self.args.only == "launcher-expanded":
+                self.launcher_expanded_row_press()
             else:
                 namespaces = {
                     "quick-settings": "rmac-quick-settings",
@@ -1481,6 +1631,8 @@ class Run:
         self.desktop_menu_appearance()
         self.fake_hardware_shows_real_data()
         self.clock_popover_dismissal()
+        self.notification_center_shrunk_wallpaper_click()
+        self.launcher_expanded_row_press()
         self.control_center_and_app_menu_close_on_wallpaper_click()
         # Log Out ends this run's own nested niri for real; nothing after
         # this point runs.
@@ -1586,7 +1738,8 @@ def main() -> int:
                                            "combined", "control-centre-list",
                                            "control-centre-detail", "control-centre-sound",
                                            "appearance", "fake-hardware",
-                                           "focus-return", "option-alternate"))
+                                           "focus-return", "option-alternate",
+                                           "notification-center-shrink", "launcher-expanded"))
     parser.add_argument(
         "--audio", choices=("fake", "real"), default="fake",
         help="fake: fake_audio.py's recorded graphs (default); real: a private PipeWire and "

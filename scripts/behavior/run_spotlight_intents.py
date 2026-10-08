@@ -221,25 +221,49 @@ def process_cpu_ticks(runtime_dir: Path) -> int:
     return total
 
 
-def frame_gaps_over(path: Path, micros: int) -> list[int]:
-    """`present` events in a `RMAC_FRAME_TRACE` CSV more than `micros` apart:
-    a dropped-frame / stutter signal while the model ran in the background.
+def input_to_present_latencies(path: Path) -> list[int]:
+    """Microseconds from each keystroke (`input`) to the next presented
+    frame (`present`), from a `RMAC_FRAME_TRACE` CSV: this scenario's
+    "typing never stutters" measurement, matching the input-to-visible-
+    response budget `docs/beta-checklist.md` already sets, while the model
+    loads and answers in the background.
+
+    A *gap* between `present` events is the wrong signal here: Spotlight
+    legitimately presents nothing for seconds while idle, waiting on a
+    cold model load with no keystroke to answer, and that silence is
+    correct behaviour, not a stutter. An `input` event only exists because
+    a key was actually pressed, so measuring input-to-present latency
+    instead counts only what the user can feel, and never a quiet window.
+    Several inputs typed before the next redraw (GPUI coalescing rapid
+    keystrokes into one frame, which is normal) are each measured against
+    that same next `present`, so an earlier key in the batch correctly
+    shows a longer wait than the last one.
+
     Empty (never a hard failure) if the trace was never written: some
-    builds or renderers may not emit it, and typing is still the scenario's
-    real test."""
+    builds or renderers may not emit it, and typing is still the
+    scenario's real test."""
 
     if not path.exists():
         return []
-    presents = []
+    events = []
     for line in path.read_text().splitlines()[1:]:
         parts = line.split(",")
-        if len(parts) != 2 or parts[0] != "present":
+        if len(parts) != 2 or parts[0] not in ("input", "present"):
             continue
         try:
-            presents.append(int(parts[1]))
+            events.append((int(parts[1]), parts[0]))
         except ValueError:
             continue
-    return [b - a for a, b in zip(presents, presents[1:]) if b - a > micros]
+    events.sort(key=lambda pair: pair[0])
+    latencies = []
+    pending: list[int] = []
+    for moment, event in events:
+        if event == "input":
+            pending.append(moment)
+        elif pending:
+            latencies.extend(moment - input_moment for input_moment in pending)
+            pending = []
+    return latencies
 
 
 def wait_until(predicate, timeout: float, interval: float = 0.2):
@@ -414,60 +438,68 @@ class RealModelScenario(BaseScenario):
     def probe(self, spec: dict, cold: bool) -> dict:
         text = str(spec["text"])
         record: dict[str, object] = {"text": text, "cold": cold}
-        if spec.get("skip"):
-            # A single word: `prompt::worth_asking` never lets this reach
-            # the model at all. Plain search already answers it.
+        try:
+            if spec.get("skip"):
+                # A single word: `prompt::worth_asking` never lets this reach
+                # the model at all. Plain search already answers it.
+                self.open_and_type(text)
+                time.sleep(1.5)
+                rows = self.assist_rows()
+                record.update(row=(rows[0] if rows else None), latency_ms=None, correct=not rows)
+                if rows:
+                    record["bug"] = f"a Lulo Intelligence row appeared for a plain single-word search: {rows}"
+                return record
+
+            # Whether a row is wanted at all: a request with neither a
+            # "want" (an exact title) nor a "want_prefix" (file search's
+            # query is free text, so only its prefix is pinned) expects no
+            # row, which is also true of the three explicit `want=None`
+            # "unsupported" requests below.
+            want = spec.get("want")
+            want_prefix = spec.get("want_prefix")
+            expect_row = want is not None or want_prefix is not None
+            timeout = 40.0 if cold else 8.0
             self.open_and_type(text)
-            time.sleep(1.5)
+            t_key = time.monotonic()
+            if not expect_row:
+                # Unsupported: give it the same wait a real row would need,
+                # then require that none ever showed.
+                wait_until(lambda: bool(self.assist_rows()), min(timeout, 6))
+                rows = self.assist_rows()
+                record.update(row=(rows[0] if rows else None), latency_ms=None, correct=not rows)
+                if rows:
+                    record["bug"] = f"a row appeared for an unsupported request: {rows}"
+                return record
+
+            shown = wait_until(lambda: bool(self.assist_rows()), timeout)
+            latency_ms = (time.monotonic() - t_key) * 1000 if shown else None
             rows = self.assist_rows()
-            record.update(row=(rows[0] if rows else None), latency_ms=None, correct=not rows)
-            if rows:
-                record["bug"] = f"a Lulo Intelligence row appeared for a plain single-word search: {rows}"
-            self.close()
+            row_text = rows[0] if rows else None
+            title = row_text[: -len(ASSIST_SUFFIX)] if row_text else None
+            if title is None:
+                correct = False
+            elif want is not None:
+                correct = title == want
+            else:
+                correct = title.startswith(str(want_prefix))
+            record.update(row=row_text, latency_ms=latency_ms, correct=correct)
+            lenient = bool(spec.get("lenient"))
+            if title is None:
+                if not lenient:
+                    record["bug"] = (
+                        f"expected a Lulo Intelligence row (wanted {want or want_prefix!r}); none appeared"
+                    )
+            elif not correct and not lenient:
+                record["bug"] = f"wrong row {title!r}, wanted {want or want_prefix!r}"
+
+            confirm = spec.get("confirm")
+            if title is not None and confirm == "dark":
+                self._confirm_dark(record)
+            elif title is not None and confirm == "timer":
+                self._confirm_timer(record)
             return record
-
-        want = spec.get("want")
-        want_prefix = spec.get("want_prefix")
-        timeout = 40.0 if cold else 8.0
-        self.open_and_type(text)
-        t_key = time.monotonic()
-        if want is None:
-            # Unsupported: give it the same wait a real row would need, then
-            # require that none ever showed.
-            wait_until(lambda: bool(self.assist_rows()), min(timeout, 6))
-            rows = self.assist_rows()
-            record.update(row=(rows[0] if rows else None), latency_ms=None, correct=not rows)
-            if rows:
-                record["bug"] = f"a row appeared for an unsupported request: {rows}"
+        finally:
             self.close()
-            return record
-
-        shown = wait_until(lambda: bool(self.assist_rows()), timeout)
-        latency_ms = (time.monotonic() - t_key) * 1000 if shown else None
-        rows = self.assist_rows()
-        row_text = rows[0] if rows else None
-        title = row_text[: -len(ASSIST_SUFFIX)] if row_text else None
-        if title is None:
-            correct = False
-        elif want is not None:
-            correct = title == want
-        else:
-            correct = title.startswith(str(want_prefix))
-        record.update(row=row_text, latency_ms=latency_ms, correct=correct)
-        lenient = bool(spec.get("lenient"))
-        if title is None:
-            if not lenient:
-                record["bug"] = f"expected a Lulo Intelligence row (wanted {want or want_prefix!r}); none appeared"
-        elif not correct and not lenient:
-            record["bug"] = f"wrong row {title!r}, wanted {want or want_prefix!r}"
-
-        confirm = spec.get("confirm")
-        if title is not None and confirm == "dark":
-            self._confirm_dark(record)
-        elif title is not None and confirm == "timer":
-            self._confirm_timer(record)
-        self.close()
-        return record
 
     def run(self) -> dict:
         errors: list[str] = []
@@ -501,13 +533,23 @@ class RealModelScenario(BaseScenario):
             "count": len(warm),
         }
 
-        gaps = frame_gaps_over(trace_path, 50_000)
+        latencies = input_to_present_latencies(trace_path)
         self.facts["frame_trace_present"] = trace_path.exists()
-        self.facts["frame_gaps_over_50ms_us"] = gaps[:10]
-        if gaps:
+        self.facts["input_to_present_us"] = {
+            "count": len(latencies),
+            "p50": sorted(latencies)[len(latencies) // 2] if latencies else None,
+            "p95": sorted(latencies)[int(len(latencies) * 0.95)] if latencies else None,
+            "max": max(latencies) if latencies else None,
+        }
+        # 100 ms, not the Beta budget's 50 ms: this path also carries
+        # AT-SPI/dbus-run-session overhead the real session does not have,
+        # so a looser bound still catches a genuine stutter without flagging
+        # test-harness noise as one.
+        stutter = [latency for latency in latencies if latency > 100_000]
+        if stutter:
             errors.append(
-                f"typing/drawing stuttered while Lulo Intelligence ran: {len(gaps)} frame gaps over 50 ms "
-                f"(max {max(gaps)} µs)"
+                f"typing stuttered while Lulo Intelligence ran: {len(stutter)} of {len(latencies)} "
+                f"keystrokes took over 100 ms to draw (max {max(stutter)} µs)"
             )
 
         self.close()

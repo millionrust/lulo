@@ -37,6 +37,11 @@ pub(crate) struct NotificationCenterService {
     /// open only while `active` is `Some`.
     #[cfg(target_os = "linux")]
     catcher: Option<AnyWindowHandle>,
+    /// The catcher's current click-through hole, in display coordinates.
+    /// `render.rs` moves it with `follow_panel_height` whenever the column
+    /// of cards grows or shrinks the surface.
+    #[cfg(target_os = "linux")]
+    hole: Option<Bounds<Pixels>>,
 }
 
 impl Global for NotificationCenterService {}
@@ -160,6 +165,32 @@ fn dismiss_active(cx: &mut App) -> bool {
     false
 }
 
+/// The panel `token` is now `height` tall: move the catcher's hole with it.
+/// Notification Center sizes its surface to the column's natural height
+/// (`render.rs`'s `panel_height`), which grows and shrinks as notifications
+/// arrive, are dismissed, or stacks expand and collapse, so a hole kept at
+/// the first size left the bottom of a taller column covered by the
+/// catcher: a press there closed Notification Center instead of reaching a
+/// card (the same bug as Control Centre's Sound module).
+#[cfg(target_os = "linux")]
+pub(crate) fn follow_panel_height(token: u64, height: f32, cx: &mut App) {
+    let update = cx.update_global::<NotificationCenterService, _>(|service, _| {
+        if service
+            .active
+            .as_ref()
+            .is_none_or(|active| active.token != token)
+        {
+            return None;
+        }
+        let hole = service.hole.as_mut()?;
+        hole.size.height = px(height);
+        Some((service.catcher?, *hole))
+    });
+    if let Some((catcher, hole)) = update {
+        rmac_ui::set_outside_click_catcher_hole(catcher, hole, cx);
+    }
+}
+
 pub(crate) fn clear_active_panel(token: u64, cx: &mut App) {
     if !cx.has_global::<NotificationCenterService>() {
         return;
@@ -241,6 +272,7 @@ fn open_panel(
             });
             cx.update_global::<NotificationCenterService, _>(|service, _| {
                 service.catcher = catcher;
+                service.hole = Some(bounds);
             });
         }
         cx.activate(true);
@@ -332,6 +364,8 @@ fn main() {
                 next_token: 0,
                 #[cfg(target_os = "linux")]
                 catcher: None,
+                #[cfg(target_os = "linux")]
+                hole: None,
             });
 
             #[cfg(target_os = "linux")]

@@ -229,10 +229,10 @@ pub(crate) fn clear_active_popover(token: u64, cx: &mut App) {
 #[cfg(target_os = "linux")]
 pub(crate) fn follow_popover_height(token: u64, height: f32, cx: &mut App) {
     let update = cx.update_global::<QuickSettingsService, _>(|service, _| {
-        if !service
+        if service
             .active
             .as_ref()
-            .is_some_and(|active| active.token == token)
+            .is_none_or(|active| active.token != token)
         {
             return None;
         }

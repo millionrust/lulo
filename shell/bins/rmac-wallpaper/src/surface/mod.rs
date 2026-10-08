@@ -540,28 +540,28 @@ impl Render for Wallpaper {
         let layered = surface.as_ref().is_some_and(|surface| surface.layered);
         if !layered {
             root = root
-            .bg(linear_gradient(
-                145.0,
-                linear_color_stop(rgba((palette[0] << 8) | 0xff), 0.0),
-                linear_color_stop(rgba((palette[1] << 8) | 0xff), 1.0),
-            )
-            .color_space(gpui::ColorSpace::Oklab))
-            .child(
-                div().absolute().inset_0().bg(linear_gradient(
-                    35.0,
-                    linear_color_stop(rgba((palette[2] << 8) | 0xc8), 0.0),
-                    linear_color_stop(rgba(palette[2] << 8), 0.72),
+                .bg(linear_gradient(
+                    145.0,
+                    linear_color_stop(rgba((palette[0] << 8) | 0xff), 0.0),
+                    linear_color_stop(rgba((palette[1] << 8) | 0xff), 1.0),
                 )
-                .color_space(gpui::ColorSpace::Oklab)),
-            )
-            .child(
-                div().absolute().inset_0().bg(linear_gradient(
-                    315.0,
-                    linear_color_stop(rgba(palette[3] << 8), 0.28),
-                    linear_color_stop(rgba((palette[3] << 8) | 0xb8), 1.0),
+                .color_space(gpui::ColorSpace::Oklab))
+                .child(
+                    div().absolute().inset_0().bg(linear_gradient(
+                        35.0,
+                        linear_color_stop(rgba((palette[2] << 8) | 0xc8), 0.0),
+                        linear_color_stop(rgba(palette[2] << 8), 0.72),
+                    )
+                    .color_space(gpui::ColorSpace::Oklab)),
                 )
-                .color_space(gpui::ColorSpace::Oklab)),
-            );
+                .child(
+                    div().absolute().inset_0().bg(linear_gradient(
+                        315.0,
+                        linear_color_stop(rgba(palette[3] << 8), 0.28),
+                        linear_color_stop(rgba((palette[3] << 8) | 0xb8), 1.0),
+                    )
+                    .color_space(gpui::ColorSpace::Oklab)),
+                );
         }
         if let Some(surface) = surface.filter(|surface| !surface.layered) {
             root = root
@@ -607,9 +607,8 @@ fn layer_surfaces(surfaces: BTreeMap<Uuid, PreparedSurface>) -> BTreeMap<Uuid, P
         .into_iter()
         .map(|(output, mut surface)| {
             let destination = surface.layout.destination;
-            let fills = !surface.layout.tiled
-                && destination.x.abs() < 0.5
-                && destination.y.abs() < 0.5;
+            let fills =
+                !surface.layout.tiled && destination.x.abs() < 0.5 && destination.y.abs() < 0.5;
             if fills
                 && rmac_shell_layer::windows::wallpaper_layer::show_picture(
                     output,

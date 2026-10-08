@@ -673,10 +673,12 @@ pub(crate) fn background_window(output: Uuid) -> Option<(HWND, RECT)> {
             .find(|window| {
                 window.styled
                     && matches!(window.layer.layer, Layer::Background)
-                    && monitor_device_name(HMONITOR(window.display as isize as *mut core::ffi::c_void))
-                        .is_some_and(|name| {
-                            crate::stable_output_uuid(&rmac_compositor::OutputId(name)) == output
-                        })
+                    && monitor_device_name(HMONITOR(
+                        window.display as isize as *mut core::ffi::c_void,
+                    ))
+                    .is_some_and(|name| {
+                        crate::stable_output_uuid(&rmac_compositor::OutputId(name)) == output
+                    })
             })
             .map(|window| (window.hwnd, window.display))
     })?;

@@ -279,9 +279,10 @@ pub(crate) fn flush() {
         return;
     };
     let shown = INSTANCE.with(|instance| {
-        instance.borrow().as_ref().is_some_and(|layer| {
-            layer.show(desktop, screen, 0, 0, width, height, bytes, [0, 0, 0])
-        })
+        instance
+            .borrow()
+            .as_ref()
+            .is_some_and(|layer| layer.show(desktop, screen, 0, 0, width, height, bytes, [0, 0, 0]))
     });
     if shown {
         // Windows keeps its own copy: the pixels go now.

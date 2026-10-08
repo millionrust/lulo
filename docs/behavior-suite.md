@@ -338,39 +338,46 @@ the service only reads it here, never recomputes or rewrites it.
 
 ```sh
 python3 scripts/behavior/run_spotlight_intents.py --real-model \
-  --bin-dir /usr/libexec/rmac
+  --bin-dir /usr/libexec/rmac [--override-bin-dir DIR] [--warm-first]
 ```
 
-Measured on the reference laptop (2026-10-08, idle otherwise confirmed —
-`ps -eo pcpu,comm | awk '$1+0>30'` empty, as ADR 0024's own phase 0
-methodology requires): cold (first-ever prefix evaluation) 15.1 s, matching
-the ADR's own phase 1 "16.5 s through the service" figure; warm end-to-end
-(last keystroke to the row showing) p50 1.3 s, min 1.1 s, max 1.6 s across
-15 rows. 20 of 22 requests showed the row the request actually calls for,
-including both typo'd ones that parsed correctly ("trun on drak mode",
-confirmed end to end to Dark) and the file search, which free-text-matched
-by prefix. Two were genuinely wrong, reproducibly across repeated clean
-runs — not this harness's own bug, and not CPU contention from another
-build on the shared laptop (checked and ruled out after one run was
-discarded for exactly that, following the ADR's own precedent): "opn
-notse" showed no row at all (the typo was too severe for the pre-fine-tuning
-0.8B model), and "remind me to call mum at 5" showed "Start a 5-Minute
-Timer" — the system prompt already says a reminder at a clock time is
-`none`, but the small model still read "5" as a duration. Both are inside
-the base-model accuracy ADR 0024 §6 documents and scopes to phase 2's
-fine-tuning, not a regression here. Keystroke-to-presented-frame latency
-while typing stayed fast (p50 20 ms, p95 44 ms over ~714 traced keystrokes);
-24 of them, clustering one per request roughly 2–3 s after that request's
-window focused (not while actively typing, and not scaling with the 15 s
-cold load, whose own slow frame was only 566 ms), took 400–620 ms to
-present — most likely the "Lulo Intelligence" results section being
-inserted once the row arrives, not the model blocking the UI thread. It is
-bounded and infrequent rather than a stutter while typing, but is noted
-here for whoever next touches the launcher's result-list layout. The
-service exited within its idle timeout every time, and the private
-session's own processes (by `XDG_RUNTIME_DIR`) cost a handful of clock
-ticks over the following 2 s — the idle compositor's own redraw, not a
-live intelligence worker.
+`--warm-first` first opens System Settings ▸ Lulo Intelligence, as a user
+does after the download: the pane must show "Getting ready…" (read from
+Settings' own frame trace, `intelligence_status:` marks), the service must
+save the prompt-prefix state 0600 in a 0700 cache directory, the text must
+go back to "Downloaded", and the service must exit before Spotlight is
+typed into, so the first request starts a fresh service that reads the
+state from disk.
+
+How it measures (ADR 0024 "Phase 1.1"): it waits for Spotlight's own
+`focus_in` before typing (keys sent earlier were lost), and for the
+launcher's `assist_reply` / `assist_row_applied` trace marks instead of
+polling the accessibility tree (which ran on the model's two cores and
+doubled its time); it reads the row's text from the tree once. Keystroke to
+row is taken on the trace clock, from the request's last `input` to the
+`present` after `assist_row_applied`. The typing-stutter check ignores a key
+followed by `open_window` (the Escape that closes Spotlight draws no frame;
+pairing it with the next request's first frame was the "400–620 ms hitch")
+and reports Return keys that carry out a row apart
+(`action_key_to_present_ms`). `assist_frame_ms` times the frame that inserts
+the row, and the run fails if its UI-thread work exceeds 16 ms.
+`service_timing_ms` is what the service reported for each answer (queue,
+state restore, prefill, decode).
+
+Measured on the reference laptop (2026-10-08, this branch, `--warm-first`,
+three runs): 21 of 22 requests right in every run (the miss is the lenient
+"turn of the wifi" → Wi-Fi On); "opn notse" → Open Notes (Spotlight's own
+typo pass, 0.2 s) and "remind me to call mum at 5" → no row. Warm keystroke
+to row p50 617–662 ms (min 144 ms, max 1,073 ms; it was 1,108 ms on the
+trace clock and 1.3 s by polling before), the first request after the
+warm-up 1.08–1.22 s, and a first-ever request without the warm-up 7.9 s
+(15.0 s before). Service time p50 403–425 ms; the nested niri composites in
+software and uses about two cores whenever Spotlight draws, so this runs
+above the bench's 220–348 ms. Row insertion: 2.5–3.0 ms of UI-thread work
+(max 9 ms). Typing p50 19 ms, p95 28 ms; one run of three had one or two
+isolated keystrokes at 230–280 ms, not tied to a row. The service exited
+within its idle timeout every time, with the session at 5–10 clock ticks
+over the following 2 s.
 
 This mode never exercises the real `rmac-intelligence.service` systemd
 unit: the private bus activates the service directly from its own

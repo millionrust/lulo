@@ -321,7 +321,7 @@ cheap iterations on 0.8B.
 ## 7. Spotlight, the Lulo panel and the design rule
 
 Spotlight stays a search field. Intents appear as ordinary result rows next to the
-deterministic ones, after a 250 ms typing pause, and only when the query reads like a sentence
+deterministic ones, after a short typing pause (250 ms; 150 ms since phase 1.1), and only when the query reads like a sentence
 (three or more words) with no strong deterministic hit. They never delay the deterministic
 results. Conversational requests (help questions, voice, agent tasks) go to a separate small
 **Lulo panel**, which works like Type to Siri: the same HUD as voice, with a text field.
@@ -803,7 +803,8 @@ llama.cpp's own GBNF sampler (`rmac-intelligence-bench --decoder gbnf`, grammar 
 
 - Asked only when Lulo Intelligence is on, every search provider has answered, none matched
   confidently (no answer card; no result whose name starts with the query or one of its
-  words), the query has two or more words with letters, and typing paused 250 ms. The model
+  words), the query has two or more words with letters, and typing paused 250 ms (150 ms since
+  phase 1.1). The model
   starts loading (`Prepare`) as soon as a query qualifies, so loading overlaps the rest of the
   typing. The request runs on the blocking pool; a newer keystroke drops it.
 - The answer is one ordinary result row in its own "Lulo Intelligence" section above the
@@ -938,6 +939,120 @@ the owner's live session.
 a metered-connection warning before the download; the `systemd-analyze security` review of
 the unit in a real user manager; streaming replies and the other tasks (Writing Tools, Help
 answers, Terminal explanations); fine-tuning (phase 2, needed for the §6 accuracy gates).
+
+## Phase 1.1 results (2026-10-08): the hitch, the cold start, latency and quality
+
+Built on `op/ai-phase1-1`. Measured on the reference laptop with the `iterate` build, the
+owner's verified Tiny model linked read-only into private nested sessions
+(`scripts/behavior/run_spotlight_intents.py --real-model`, 22 typed requests), and
+`rmac-intelligence-bench` under the shared build lock with a private state cache.
+
+**1. The "hitch" was the harness, not Spotlight.** Spotlight's frame trace now marks
+`assist_reply`, `assist_row_applied` and `launcher_render`, and every `draw_start` names its
+surface (`draw_window:<app id>`). The 400–620 ms "slow frames", one per request, were each
+request's closing Escape: that key closes the window, so it draws no frame, and the harness
+paired it with the first frame of the *next* request's new window, opened about 0.55 s later
+by the harness itself. All 22 such pairs crossed an `open_window`; the 690 same-window
+keystrokes had p50 20 ms, p95 32 ms. The frame that inserts the "Lulo Intelligence" section is
+ordinary: from the row being applied, p50 2.5–3.0 ms (max 9 ms) of UI-thread layout, shaping
+and paint, then 10–35 ms to present (the swapchain wait every frame has). No D-Bus reply, icon
+load or accessibility rebuild runs on the UI thread there. The harness now drops inputs
+followed by `open_window`, reports Return keys that carry out a row apart from typing
+(11–34 ms), adds `assist_frame_ms` and fails if a row insertion takes over 16 ms of UI-thread
+work (it never did). Two more harness faults were fixed: it typed before Spotlight had
+keyboard focus ("open notes" arrived as "en notes"; it now waits for the launcher's
+`focus_in`), and it walked the whole accessibility tree five times a second while the model
+ran (it now waits on the trace's `assist_reply`/`assist_row_applied` marks and reads the row
+once). The nested session itself is still pessimistic: its niri composites in software and
+used about two cores whenever Spotlight drew, so service times there run 1.2–2× the bench's.
+Found while tracing, not fixed: Spotlight redraws its window about 10 times a second while a
+request is in flight, with no view re-render; the source is not pinned down yet.
+
+**2. The cold start.** Settings ▸ Lulo Intelligence now warms the model up whenever the
+feature is on, the model is on disk and its saved prefix state is missing: after the
+download, after turning the feature on, after choosing another model, and on opening the pane
+after an update changed the prompt or the model. It calls `Calibrate` when this PC has no
+speed check yet (that also loads the model and saves the state) and `Prepare` otherwise, and
+the download row reads "Downloaded · 533 MB · Getting ready…" until the state is on disk.
+Spotlight also asks for `Prepare` as soon as it opens when the model is present but its state
+is not, so even an unwarmed first request overlaps the evaluation with typing. The state file
+name now lives in `rmac_intelligence::prefix_state`: a digest of the model's SHA-256 (not its
+path), the prompt version, style and text, the context size and the llama.cpp binding's
+version, which a unit test holds equal to `Cargo.lock`. Settings and Spotlight check it with one
+`stat`. The service creates the file 0600 before llama.cpp writes it (it was 0664 outside the
+unit's `UMask=0077`), in a 0700 `$XDG_CACHE_HOME/lulo/intelligence/`, and deletes older
+`prefix-*.state` files once a new one is in place, so an update leaves no stale 24–27 MB files.
+
+| | Before | After |
+|---|---|---|
+| First-ever request, no saved state | 15.0 s | 7.9 s (prefix 693 → 392 tokens) |
+| Settings warm-up after the download | — | 13.8–15.1 s in the background, "Getting ready…" shown and cleared; state 23.9 MB, 0600 |
+| First Spotlight request after warm-up (service started fresh, state read from disk) | — | 1.08–1.22 s keystroke to row |
+
+**3. Warm latency.** Profiling (bench `latency`, 20 runs) showed every token costs: the
+request's own tokens at about 21 ms each (43 tok/s), each decoding pass about 45 ms plus
+9 ms per token it feeds, and the state restore 9 ms. Thread counts 2, 3 and 4 measured the same.
+The JSON prompt spent six template tokens per request (`\nJSON: {"intent":"`) and fed a
+JSON fragment (`","mode":"`) on every pass. The new default prompt style, `compact`
+(`PROMPT_VERSION` 5), keeps the same instructions and 19 examples but writes each answer as a
+short action line — `switch to dark mode => appearance dark`, `timer for 5 mins => timer 5
+minutes` — and `rmac_intelligence::decode` (`Syntax::Compact`) reads that line under the same
+schema and still builds the strict wire JSON, so invalid output stays impossible (3,000-stream
+random-logit test, now in both syntaxes). A request costs its own words plus one template
+token (` =>`); a pass feeds one or two tokens. Decoding already stopped as soon as the answer
+was complete (the closing token is never fed). The service now also drops a stale request:
+each `Run` from a caller gets a ticket, and a newer one from the same caller makes the older
+answer `Cancelled` before it starts or at its next forward pass, so a pause mid-typing never
+makes the final request queue behind a dead one (`queued_ms` p50 1 ms). That bounds what a
+shorter pause costs, so Spotlight's debounce is now 150 ms instead of 250 ms. The model stays
+loaded across keystrokes as before (60 s idle exit).
+
+| | Before (list, JSON) | After (compact) |
+|---|---|---|
+| Bench, four brief requests × 5, warm | p50 490 ms, p90 663 ms | p50 348 ms, p90 422 ms |
+| — prefill / decode p50 | 251 ms (10 tokens) / 230 ms | 149 ms (5 tokens) / 189 ms |
+| Bench, dev set (70) end to end | p50 421 ms, p90 618 ms | p50 240 ms, p90 366 ms |
+| Bench, held-out set (38) end to end | p50 406 ms, p90 585 ms | p50 220 ms, p90 377 ms |
+| Real Spotlight, nested session, service time p50 | 737–815 ms (JSON prompt, this branch's marks, before the prompt change) | 403–425 ms |
+| Real Spotlight, nested session, keystroke to row p50 (trace clock) | 1,108 ms (1,344 ms by AT-SPI polling) | 617–662 ms (3 runs; min 144, max 1,073) |
+
+The 0.8 s keystroke-to-row target holds through the real Spotlight even in the nested
+session; the 0.4 s service target holds on the bench and is at 0.40–0.43 s in the nested
+session, whose software compositor competes for the same two cores.
+
+**4. Quality.** `rmac_intelligence::guard` applies deterministic checks to every answer (bench
+`--no-guard` turns them off to measure the model alone): a timer read out of a clock time
+("at 5", "5pm", "6:30", "tomorrow", "tonight", weekdays) or from a request with no number at
+all is dropped, since Lulo has no reminders or alarms, while a length ("remind me in 5
+minutes") stays a timer; a Settings change with a strict clock time ("at 7 pm") is dropped;
+an explicit "off"/"disable"/"disconnect" or "on"/"enable"/"connect" overrides a contradicting
+switch; a file search for "delete …"/"wipe …" is dropped. `rmac_intelligence::fuzzy` corrects
+light typos in app names (optimal string alignment distance: none up to 3 letters, one up to
+7, two beyond; ties are no answer): Spotlight answers "open verb + installed app name"
+requests itself, without the model ("opn notse" → Notes in 0.2 s), and corrects an app name
+the model got slightly wrong. The dev set gained "remind me to call mum at 5", "wake me up at
+6:30", "remind me tomorrow to pay the rent" (none) and "opn notse" (Notes; the eval scores the
+model alone, which still misses it — Spotlight's own pass does not). The held-out set is
+unchanged and was run only for these two final measurements.
+
+| | Dev (70, tuned on) | Wrong actions | Held-out (38, frozen) | Wrong actions |
+|---|---|---|---|---|
+| Before: list prompt, no guard | 62 (88.6 %) | 6 | 33 (86.8 %) | 2 |
+| List prompt + guard | 65 (92.9 %) | 3 | — | — |
+| Compact prompt, no guard | 64 (91.4 %) | 4 | — | — |
+| **After: compact prompt + guard** | **66 (94.3 %)** | **2** | **34 (89.5 %)** | **2** |
+
+Remaining misses after: dev "open bluetooth settings" → open "Bluetooth" (no such app, so
+Spotlight shows no row), "do one thing, open the files" → file search, "where is my passport
+scan" → none, "opn notse" (model only); held-out "can you launch preview", "start mail" (both
+none; Spotlight's own pass opens them when installed), "darken the display" → Dark Mode and
+"turn of the wifi" → Wi-Fi On (both Settings changes that still ask before running).
+
+Through the real Spotlight (22 requests): before 20/22 correct ("opn notse" no row, "remind me
+to call mum at 5" → a 5-minute timer); after 21/22 in every run, the one miss being "turn of
+the wifi" (the harness marks it lenient, a known base-model gap). A one-off "Getting ready…"
+check, the 0600 state and the idle exit (service gone within its timeout, the session at
+5–10 clock ticks over 2 s afterwards) passed in every run.
 
 ## 11. Open risks
 

@@ -169,6 +169,43 @@ class ShellMemoryGateTests(unittest.TestCase):
             ["lulo-shell: no idle memory reading"],
         )
 
+    def test_memory_given_back_after_use_passes(self) -> None:
+        results = {"lulo-shell": {"idle_private_mb": 38.0, "after_use_private_mb": 40.5}}
+        self.assertEqual(idle_gate.after_use_failures(results, 50.0, 5.0), [])
+
+    def test_memory_kept_by_closed_panels_fails(self) -> None:
+        # The owner's PC: 49 MB at start, 90 MB after one use of Spotlight
+        # and the menus (WIN-OS-43).
+        results = {"lulo-shell": {"idle_private_mb": 49.0, "after_use_private_mb": 90.0}}
+        failures = idle_gate.after_use_failures(results, 50.0, 5.0)
+        self.assertEqual(len(failures), 2)
+        self.assertIn("over the budget of 50 MB", failures[0])
+        self.assertIn("41.0 MB above", failures[1])
+
+    def test_growth_is_measured_from_the_first_use(self) -> None:
+        # CI run 37750709076: 61.1 MB idle, 73.6 after the first use (the
+        # catalogue loads once), 70.6 after the second: nothing kept per use.
+        results = {
+            "lulo-shell": {
+                "idle_private_mb": 61.1,
+                "after_spotlight_private_mb": 73.6,
+                "after_use_private_mb": 70.6,
+            }
+        }
+        self.assertEqual(idle_gate.after_use_failures(results, 80.0, 4.0), [])
+        results["lulo-shell"]["after_use_private_mb"] = 79.0
+        failures = idle_gate.after_use_failures(results, 80.0, 4.0)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("after the first use", failures[0])
+
+    def test_the_after_use_gate_needs_a_reading_once_asked_for(self) -> None:
+        self.assertEqual(idle_gate.after_use_failures({}, 50.0, 5.0), [])
+        self.assertEqual(idle_gate.after_use_failures({"lulo-shell": {}}, None, None), [])
+        self.assertEqual(
+            idle_gate.after_use_failures({"lulo-shell": {"idle_private_mb": 30.0}}, 50.0, None),
+            ["lulo-shell: no after-use memory reading"],
+        )
+
 
 class TraceParsingTests(unittest.TestCase):
     def test_wake_ups_are_grouped_by_source_most_frequent_first(self) -> None:

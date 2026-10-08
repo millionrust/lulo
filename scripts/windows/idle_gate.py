@@ -123,6 +123,40 @@ def memory_failures(results: dict[str, dict], budget_mb: float) -> list[str]:
     return []
 
 
+def after_use_failures(
+    results: dict[str, dict], budget_mb: float | None, growth_mb: float | None
+) -> list[str]:
+    """lulo-shell's private memory once Spotlight and a menu have been used
+    and let go of again (`after_use_private_mb`, 30 s after they closed):
+    over `budget_mb`, or more than `growth_mb` above its reading after the
+    first use (`after_spotlight_private_mb`; the idle reading when there is
+    none), which is memory each use of a closed panel kept (WIN-OS-43). The
+    first use itself loads Spotlight's catalogue and the shell libraries
+    behind it once. Only checked when the shell ran."""
+    shell = results.get("lulo-shell")
+    if shell is None or (budget_mb is None and growth_mb is None):
+        return []
+    after = shell.get("after_use_private_mb")
+    if after is None:
+        return ["lulo-shell: no after-use memory reading"]
+    failures = []
+    if budget_mb is not None and after > budget_mb:
+        failures.append(
+            f"lulo-shell: {after:.1f} MB private after use, over the budget of {budget_mb:g} MB"
+        )
+    first = shell.get("after_spotlight_private_mb")
+    if first is not None:
+        reference, what = first, "after the first use"
+    else:
+        reference, what = shell.get("idle_private_mb"), "at idle"
+    if growth_mb is not None and reference is not None and after - reference > growth_mb:
+        failures.append(
+            f"lulo-shell: {after:.1f} MB private after use, {after - reference:.1f} MB above its "
+            f"{reference:.1f} MB {what} (allowed {growth_mb:g} MB): closed panels kept memory"
+        )
+    return failures
+
+
 def world_tick_failures(results: dict[str, dict], max_ticks: float | None) -> list[str]:
     """Clock's World Clock redraw cost (`launch_smoke.py --world-tick-check`)
     against `max_ticks` per redraw; nothing to check when it was not run."""
@@ -152,6 +186,18 @@ def main() -> int:
         type=float,
         default=None,
         help="Also fail when lulo-shell's idle working set is over this many MB.",
+    )
+    parser.add_argument(
+        "--shell-after-use-private-mb",
+        type=float,
+        default=None,
+        help="Fail when lulo-shell's private bytes after Spotlight and a menu were used are over this.",
+    )
+    parser.add_argument(
+        "--shell-after-use-growth-mb",
+        type=float,
+        default=None,
+        help="Fail when lulo-shell's private bytes after use grew more than this over idle.",
     )
     parser.add_argument(
         "--expect",
@@ -187,6 +233,20 @@ def main() -> int:
             f"after Spotlight: {shell.get('after_spotlight_working_set_mb')} MB"
         )
         failures += memory_failures(results, arguments.shell_memory_mb)
+    if (
+        arguments.shell_after_use_private_mb is not None
+        or arguments.shell_after_use_growth_mb is not None
+    ):
+        shell = results.get("lulo-shell", {})
+        print(
+            f"idle gate: lulo-shell private memory: {shell.get('idle_private_mb')} MB at idle, "
+            f"{shell.get('after_spotlight_private_mb')} MB after the first use, "
+            f"{shell.get('after_use_private_mb')} MB 30 s after Spotlight and a menu closed again "
+            f"(working set {shell.get('after_use_working_set_mb')} MB)"
+        )
+        failures += after_use_failures(
+            results, arguments.shell_after_use_private_mb, arguments.shell_after_use_growth_mb
+        )
     tick = results.get("rmac-clock", {}).get("world_tick")
     if tick is not None:
         print(

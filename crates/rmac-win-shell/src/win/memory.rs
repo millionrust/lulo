@@ -9,8 +9,9 @@
 //! working set; the pages an idle shell does use come straight back, and
 //! the rest wait on the standby list, where Windows can use the memory.
 
+use windows::Win32::Foundation::HANDLE;
 use windows::Win32::System::Memory::{
-    GetProcessHeap, HeapCompact, SetProcessWorkingSetSizeEx, HEAP_FLAGS,
+    GetProcessHeaps, HeapCompact, SetProcessWorkingSetSizeEx, HEAP_FLAGS,
     SETPROCESSWORKINGSETSIZEEX_FLAGS,
 };
 use windows::Win32::System::ProcessStatus::{
@@ -52,13 +53,18 @@ pub fn report(phase: &str) {
     }
 }
 
-/// Compact the heap and empty the working set (see the module notes).
+/// Compact the heaps and empty the working set (see the module notes).
 pub fn trim(phase: &str) {
     report(&format!("before {phase}"));
     // SAFETY: the process heap and this process's pseudo-handle; (-1, -1)
     // is the documented request to empty the working set.
     unsafe {
-        if let Ok(heap) = GetProcessHeap() {
+        // Every heap, not only Rust's: the shell libraries behind
+        // Spotlight's catalogue and the graphics driver keep their own, and
+        // their freed blocks stay committed until compacted (WIN-OS-43).
+        let mut heaps = vec![HANDLE::default(); 64];
+        let count = (GetProcessHeaps(&mut heaps) as usize).min(heaps.len());
+        for &heap in &heaps[..count] {
             HeapCompact(heap, HEAP_FLAGS(0));
         }
         let _ = SetProcessWorkingSetSizeEx(

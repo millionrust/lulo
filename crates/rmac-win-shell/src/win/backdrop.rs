@@ -1,8 +1,9 @@
 //! A frosted backdrop behind the menu bar and the Dock, as the Mac's
-//! materials: Windows blurs whatever is behind the window (an acrylic
-//! accent, `SetWindowCompositionAttribute`), and the surface draws its
-//! light or dark tint over that with the `mac` tokens, so it follows the
-//! appearance like everything else Lulo draws.
+//! materials: Windows blurs whatever is behind the window (a blur or
+//! acrylic accent, `SetWindowCompositionAttribute`), and the surface draws
+//! its tint over that, so it follows the appearance like everything else
+//! Lulo draws. The bar's tint is a light veil chosen from the wallpaper
+//! under it (`ui::bar`).
 //!
 //! Not `DWMWA_SYSTEMBACKDROP_TYPE`: Windows 11's system backdrops turn into
 //! a flat colour while their window is inactive, and the bar and the Dock
@@ -70,6 +71,7 @@ struct CompositionData {
 }
 
 const WCA_ACCENT_POLICY: u32 = 19;
+const ACCENT_ENABLE_BLURBEHIND: u32 = 3;
 const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
 
 fn set_accent(hwnd: HWND, state: u32, gradient: u32) -> bool {
@@ -119,10 +121,17 @@ pub fn apply(hwnd: HWND, surface: Surface) -> bool {
             std::mem::size_of::<u32>() as u32,
         )
     };
-    // The tint's alpha must not be 0 (an acrylic accent with none draws
-    // black); the surface paints the real tint itself.
-    let frosted =
-        transparency_effects() && set_accent(hwnd, ACCENT_ENABLE_ACRYLICBLURBEHIND, 0x0100_0000);
+    // The menu bar shows the wallpaper's own colour through it, as the
+    // Mac's does: a plain blur, since acrylic's grey luminosity layer and
+    // noise turned a dark photo into a near-black strip. The Dock keeps
+    // acrylic, the Mac's frosted shelf. An acrylic tint's alpha must not
+    // be 0 (one with none draws black); the surface paints the real tint
+    // itself.
+    let (state, kind) = match surface {
+        Surface::Bar => (ACCENT_ENABLE_BLURBEHIND, "blur"),
+        Surface::Dock => (ACCENT_ENABLE_ACRYLICBLURBEHIND, "acrylic"),
+    };
+    let frosted = transparency_effects() && set_accent(hwnd, state, 0x0100_0000);
     match surface {
         Surface::Bar => BAR_FROSTED.store(frosted, Ordering::Release),
         Surface::Dock => DOCK_FROSTED.store(frosted, Ordering::Release),
@@ -130,7 +139,7 @@ pub fn apply(hwnd: HWND, surface: Surface) -> bool {
     trace(|| {
         format!(
             "backdrop {surface:?}: {}",
-            if frosted { "acrylic" } else { "tint only" }
+            if frosted { kind } else { "tint only" }
         )
     });
     frosted

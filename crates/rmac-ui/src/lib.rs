@@ -34,6 +34,8 @@ mod text_keys;
 mod text_transform;
 pub mod theme;
 mod window;
+#[cfg(windows)]
+mod window_frame_windows;
 
 pub use accessibility::AccessibleTextInput;
 pub use app_menu::{

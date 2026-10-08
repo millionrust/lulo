@@ -31,6 +31,14 @@ image.workspace = true
 raw-window-handle.workspace = true
 rmac-apps.workspace = true
 rmac-ui.workspace = true
+# Lulo mode's desktop (ADR 0023 "Lulo mode"): Lulo OS's desktop model
+# (icon grid, saved places, renaming) and its wallpaper store and renderer.
+rmac-compositor.workspace = true
+rmac-desktop.workspace = true
+rmac-shell-settings.workspace = true
+rmac-wallpaper.workspace = true
+rmac-wallpaper-image.workspace = true
+rmac-wallpaper-system.workspace = true
 # `#[implement]` (the volume callback) names `windows_core` directly; the
 # version GPUI's Windows backend already builds.
 windows-core = "0.61"

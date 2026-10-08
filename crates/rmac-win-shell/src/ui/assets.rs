@@ -15,6 +15,7 @@ macro_rules! assets {
 
 assets! {
     "apps/org.rmac.Files.svg" => "../../../../packaging/rmac-apps/icons/org.rmac.Files.svg",
+    "desktop/folder.svg" => "../../../../assets/icons/folder.svg",
     "dock/trash-empty.svg" => "../../../rmac-dock/assets/icons/trash-empty.svg",
     "dock/trash-full.svg" => "../../../rmac-dock/assets/icons/trash-full.svg",
     "apps/org.rmac.Notes.svg" => "../../../../packaging/rmac-apps/icons/org.rmac.Notes.svg",

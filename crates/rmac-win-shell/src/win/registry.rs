@@ -80,6 +80,59 @@ pub fn set_dword(name: &str, value: u32) -> bool {
     .unwrap_or(false)
 }
 
+/// A string value under `HKCU\Software\Lulo\Shell`.
+pub fn get_string(name: &str) -> Option<String> {
+    let path = HSTRING::from(SHELL_KEY);
+    let name = HSTRING::from(name);
+    let mut size = 0u32;
+    // SAFETY: asks for the size first, then reads into a buffer that size.
+    unsafe {
+        if RegGetValueW(
+            HKEY_CURRENT_USER,
+            &path,
+            &name,
+            RRF_RT_REG_SZ,
+            None,
+            None,
+            Some(&mut size),
+        ) != ERROR_SUCCESS
+        {
+            return None;
+        }
+        let mut buffer = vec![0u16; (size as usize).div_ceil(2) + 1];
+        let mut size = (buffer.len() * 2) as u32;
+        if RegGetValueW(
+            HKEY_CURRENT_USER,
+            &path,
+            &name,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buffer.as_mut_ptr().cast()),
+            Some(&mut size),
+        ) != ERROR_SUCCESS
+        {
+            return None;
+        }
+        Some(super::from_wide(&buffer))
+    }
+}
+
+/// Write a string value under `HKCU\Software\Lulo\Shell`.
+pub fn set_string(name: &str, value: &str) -> bool {
+    with_key(SHELL_KEY, |key| {
+        let data = value
+            .encode_utf16()
+            .chain(Some(0))
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<u8>>();
+        // SAFETY: a NUL-terminated UTF-16 string value.
+        let status =
+            unsafe { RegSetValueExW(key, &HSTRING::from(name), None, REG_SZ, Some(&data)) };
+        status == ERROR_SUCCESS
+    })
+    .unwrap_or(false)
+}
+
 fn delete_value_in(path: &str, name: &str) {
     let mut key = HKEY::default();
     // SAFETY: opens an existing key; a missing key means nothing to delete.

@@ -40,6 +40,9 @@ pub fn init_application(cx: &mut App) {
     apply_component_theme(cx);
     start_theme_runtime(cx);
     crate::session::install(cx);
+    // Windows: each app window's edge follows Lulo's appearance.
+    #[cfg(windows)]
+    crate::window_frame_windows::install(cx);
 }
 
 /// Release an on-demand shell renderer after its last window has been closed
@@ -732,6 +735,8 @@ fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {
         for handle in windows {
             let _ = app.update_window(handle, |_, window, _| {
                 apply_window_text_scale(window, tokens.text_scale);
+                #[cfg(windows)]
+                crate::window_frame_windows::apply(window);
             });
         }
         gpui_component::theme::Theme::change(mode, None, app);

@@ -551,6 +551,9 @@ impl WindowsWindow {
         register_drag_drop(&this)?;
         set_non_rude_hwnd(hwnd, true);
         configure_dwm_dark_mode(hwnd, appearance);
+        if params.kind != WindowKind::PopUp {
+            configure_mac_window_frame(hwnd);
+        }
         this.state.border_offset.update(hwnd)?;
         let placement = retrieve_window_placement(
             hwnd,
@@ -1586,6 +1589,34 @@ fn set_window_composition_attribute(hwnd: HWND, color: Option<Color>, state: u32
             let _ = set_window_composition_attribute(hwnd, &mut data as *mut _ as _);
         }
     }
+}
+
+/// rmac: a Mac window's frame for every app window (ADR 0023 "Lulo mode";
+/// docs/decisions/0025-vendor-gpui-windows.md). A window whose title bar
+/// GPUI draws has no caption, and DWM then gives it neither a shadow nor an
+/// edge, so it looked flat against whatever was behind it. Extending the
+/// frame one pixel into the client area turns DWM's own soft shadow back
+/// on (the swap chain covers that pixel, so nothing of the frame shows),
+/// and Windows 11 rounds the corners. The 1 px hairline's colour follows
+/// Lulo's appearance and is set by `rmac-ui`, which knows it; Windows 10
+/// refuses the two Windows 11 attributes and keeps square corners.
+fn configure_mac_window_frame(hwnd: HWND) {
+    let margins = MARGINS {
+        cxLeftWidth: 0,
+        cxRightWidth: 0,
+        cyTopHeight: 1,
+        cyBottomHeight: 0,
+    };
+    unsafe { DwmExtendFrameIntoClientArea(hwnd, &margins) }.log_err();
+    let corner = DWMWCP_ROUND;
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner as *const _ as *const _,
+            std::mem::size_of_val(&corner) as u32,
+        )
+    };
 }
 
 // When the platform title bar is hidden, Windows may think that our application is meant to appear 'fullscreen'

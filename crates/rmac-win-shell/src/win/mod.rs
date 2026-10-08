@@ -4,7 +4,9 @@ pub mod appbar;
 pub mod backdrop;
 pub mod catalog;
 pub mod desktop;
+pub mod desktop_files;
 pub mod events;
+pub mod folders;
 pub mod icons;
 pub mod launch;
 pub mod memory;
@@ -16,6 +18,7 @@ pub mod session;
 pub mod status;
 pub mod surface;
 pub mod taskbar;
+pub mod wallpaper;
 pub mod windows_list;
 
 use std::sync::OnceLock;

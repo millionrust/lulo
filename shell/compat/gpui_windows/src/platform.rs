@@ -989,6 +989,11 @@ impl WindowsPlatformInner {
         match message {
             WM_GPUI_CLOSE_ONE_WINDOW => {
                 self.close_one_window(HWND(lparam.0 as _));
+                // rmac: the window's renderer is gone by now; free what
+                // Direct3D would otherwise keep for it (WIN-OS-43).
+                if let Some(devices) = self.state.directx_devices.borrow().as_ref() {
+                    release_unused_gpu_memory(devices);
+                }
                 Some(0)
             }
             WM_GPUI_TASK_DISPATCHED_ON_MAIN_THREAD => self.run_foreground_task(),

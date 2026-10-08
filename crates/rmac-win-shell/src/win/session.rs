@@ -8,18 +8,25 @@
 //! waits on the shell's process handle, so it uses no CPU while Lulo runs.
 //!
 //! `lulo-session --stop` turns the Lulo layer off, as the Lulo menu's Turn
-//! Off Lulo does. `lulo-session --restore-windows-desktop` only gives the
-//! desktop back (the "Restore Windows taskbar" escape hatch).
+//! Off Lulo does. `lulo-session --restore-windows-desktop` gives the
+//! Windows desktop back (the "Restore Windows taskbar" escape hatch),
+//! turning a running Lulo off first. `lulo-session --uninstall`, which the
+//! installer runs before it removes Lulo, does that and also undoes the
+//! user's own Lulo switches that point at Lulo's files (Use Files for
+//! Folders, Start Lulo at Sign-In), so nothing is left pointing at a
+//! removed app.
 
 use std::time::{Duration, Instant};
 
 use windows::core::HSTRING;
+use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
 use windows::Win32::System::Threading::{
-    CreateEventW, CreateMutexW, SetEvent, WaitForSingleObject, INFINITE,
+    CreateEventW, CreateMutexW, OpenMutexW, ReleaseMutex, SetEvent, WaitForSingleObject, INFINITE,
+    SYNCHRONIZATION_SYNCHRONIZE,
 };
 
-use super::{appbar, desktop, launch, registry, taskbar, user_name, windows_list};
+use super::{appbar, desktop, folders, launch, registry, taskbar, user_name, windows_list};
 
 /// What `lulo-shell` exits with when another Lulo layer already runs.
 const ALREADY_RUNNING: i32 = 3;
@@ -71,8 +78,37 @@ fn request_stop() {
     }
 }
 
+fn session_mutex_name() -> HSTRING {
+    HSTRING::from(format!(r"Local\lulo-session-{}", user_name()))
+}
+
+/// Ask a running Lulo to turn off, and wait (at most `seconds`) until its
+/// session has stopped, so nothing hides the desktop again afterwards.
+fn stop_and_wait(seconds: u32) {
+    // SAFETY: opens the running session's mutex, if there is one, only to
+    // wait on it; it is closed again below.
+    let Ok(mutex) =
+        (unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, false, &session_mutex_name()) })
+    else {
+        // No Lulo running.
+        return;
+    };
+    request_stop();
+    // SAFETY: waits on the handle opened above. The session holds the
+    // mutex for its whole life, so the wait ends when it exits (the mutex
+    // is then abandoned or released) or after the time limit.
+    let waited = unsafe { WaitForSingleObject(mutex, seconds * 1000) };
+    // SAFETY: gives back the mutex if the wait took it, then closes it.
+    unsafe {
+        if waited.0 == 0 || waited.0 == 0x80 {
+            let _ = ReleaseMutex(mutex);
+        }
+        let _ = CloseHandle(mutex);
+    }
+}
+
 fn supervise() -> i32 {
-    let name = HSTRING::from(format!(r"Local\lulo-session-{}", user_name()));
+    let name = session_mutex_name();
     // SAFETY: a named mutex held for the life of the process.
     let mutex = unsafe { CreateMutexW(None, true, &name) };
     // SAFETY: reads this thread's last error, set by the call above.
@@ -103,7 +139,7 @@ fn supervise() -> i32 {
     }
 }
 
-/// `lulo-session [--stop | --restore-windows-desktop]`.
+/// `lulo-session [--stop | --restore-windows-desktop | --uninstall]`.
 pub fn run(arguments: &[String]) -> i32 {
     match arguments.first().map(String::as_str) {
         None => supervise(),
@@ -112,11 +148,19 @@ pub fn run(arguments: &[String]) -> i32 {
             0
         }
         Some("--restore-windows-desktop") => {
+            stop_and_wait(10);
             restore_windows_desktop();
             0
         }
+        Some("--uninstall") => {
+            stop_and_wait(10);
+            restore_windows_desktop();
+            folders::turn_off();
+            let _ = registry::set_starts_at_sign_in(None);
+            0
+        }
         Some(_) => {
-            eprintln!("usage: lulo-session [--stop | --restore-windows-desktop]");
+            eprintln!("usage: lulo-session [--stop | --restore-windows-desktop | --uninstall]");
             2
         }
     }

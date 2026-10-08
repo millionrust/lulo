@@ -58,19 +58,21 @@
       Execute="immediate"
       Return="ignore" />
 
-    <!-- The Lulo layer (crates/rmac-win-shell, ADR 0023 phase 3) hides the
-         Windows taskbar and claims part of the work area for its own
-         AppBars while it runs. A real uninstall gives both back before
-         lulo-session.exe itself is removed, whether or not the layer
-         happens to be running right now — restore_windows_desktop() is
-         documented safe to call unconditionally and returns at once (no
-         window to wait on). References Apps.wxs's File_lulo_session by
+    <!-- The Lulo layer (crates/rmac-win-shell, ADR 0023 phase 3 and
+         "Lulo mode") hides the Windows taskbar and Explorer's desktop
+         icons and claims part of the work area for its own AppBars while
+         it runs. A real uninstall turns a running layer off and gives all
+         of it back before lulo-session.exe itself is removed, and turns
+         off the user's switches that point at Lulo's files (Use Files for
+         Folders, Start Lulo at Sign-In): `lulo-session --uninstall` is
+         safe to run whether or not the layer is running, and waits at most
+         ten seconds for a running one to stop. References Apps.wxs's File_lulo_session by
          its installed path; both files link into one output, so the
          reference resolves regardless of which .wxs authors which. -->
     <CustomAction
       Id="RestoreWindowsDesktop"
       Directory="INSTALLFOLDER"
-      ExeCommand="&quot;[#File_lulo_session]&quot; --restore-windows-desktop"
+      ExeCommand="&quot;[#File_lulo_session]&quot; --uninstall"
       Execute="immediate"
       Return="ignore" />
 

@@ -45,6 +45,13 @@ pub fn init_com() {
     let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) };
 }
 
+/// Undo [`init_com`] on a thread that is about to end.
+pub fn uninit_com() {
+    // SAFETY: balances the CoInitializeEx of `init_com` on this thread;
+    // every COM object it made is dropped by now.
+    unsafe { windows::Win32::System::Com::CoUninitialize() };
+}
+
 /// A string Windows allocated with `CoTaskMemAlloc`, copied and freed.
 fn take_string(value: PWSTR) -> String {
     if value.is_null() {

@@ -220,16 +220,19 @@ fn read_shared() -> domain::Snapshot {
     if !matches!(HOOKS.get_or_init(start_hooks), Ok(())) {
         return read_snapshot();
     }
+    // One reader at a time: every watcher wakes on the same change, and
+    // the others take the first one's reading instead of reading again.
+    let Ok(mut last) = LAST_READ.lock() else {
+        return read_snapshot();
+    };
     let generation = CHANGES.load(Ordering::Acquire);
-    if let Some((read_at, snapshot)) = LAST_READ.lock().ok().and_then(|last| last.clone()) {
-        if read_at == generation {
-            return snapshot;
+    if let Some((read_at, snapshot)) = last.as_ref() {
+        if *read_at == generation {
+            return snapshot.clone();
         }
     }
     let snapshot = read_snapshot();
-    if let Ok(mut last) = LAST_READ.lock() {
-        *last = Some((generation, snapshot.clone()));
-    }
+    *last = Some((generation, snapshot.clone()));
     snapshot
 }
 static HOOKS: OnceLock<Result<(), String>> = OnceLock::new();
@@ -273,6 +276,20 @@ unsafe extern "system" fn on_event(
     // SAFETY: reads a property of the window the event names.
     if event != EVENT_SYSTEM_FOREGROUND && unsafe { GetAncestor(hwnd, GA_ROOT) } != hwnd {
         return;
+    }
+    // The shell's own surfaces opening and closing (menus, Spotlight, the
+    // Dock's keyboard surface) are not apps' windows; only the foreground
+    // coming to the shell matters.
+    // SAFETY: no arguments.
+    let own = process_id(hwnd) == unsafe { GetCurrentProcessId() };
+    if own && event != EVENT_SYSTEM_FOREGROUND {
+        return;
+    }
+    if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
+        eprintln!(
+            "lulo-shell: window event {event:#x} from pid {}",
+            process_id(hwnd)
+        );
     }
     if matches!(event, EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED) {
         bring_launch_forward(hwnd);

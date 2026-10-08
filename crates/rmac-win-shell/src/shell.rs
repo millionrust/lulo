@@ -353,11 +353,15 @@ pub fn run() -> i32 {
             // Lulo OS's views, as on Lulo OS: the desktop under every app
             // window, the menu bar, the Dock.
             rmac_shell_wallpaper::start(cx);
+            memory::report("desktop started");
             rmac_shell_menubar::start(cx);
+            memory::report("menu bar started");
             let _dock = rmac_shell_dock::start(cx);
+            memory::report("Dock started");
             // Spotlight and Control Centre open on demand: the hotkey and
             // the bar's buttons ask for them by name.
             rmac_launcher_app::start(cx);
+            memory::report("Spotlight started");
             rmac_quick_settings_app::start(cx);
             requests::register("launcher", rmac_launcher_app::toggle);
             requests::register("quick-settings", rmac_quick_settings_app::toggle);
@@ -374,6 +378,19 @@ pub fn run() -> i32 {
                     }
                 })
                 .detach();
+            }
+            // Start-up memory every 250 ms for three seconds, for the CI
+            // memory gate's breakdown.
+            if std::env::var_os("LULO_SHELL_TRACE").is_some() {
+                let executor = cx.background_executor().clone();
+                cx.background_executor()
+                    .spawn(async move {
+                        for step in 1..=12u32 {
+                            executor.timer(Duration::from_millis(250)).await;
+                            memory::report(&format!("at +{} ms", step * 250));
+                        }
+                    })
+                    .detach();
             }
             let hooks = start_hotkey(cx);
             cx.global_mut::<Runtime>().hooks = hooks;

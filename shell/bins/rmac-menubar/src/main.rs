@@ -5091,8 +5091,13 @@ mod linux_wayland {
     }
 
     /// The battery is drawn rather than loaded so its fill tracks the level,
-    /// turning red at 10% or below while discharging, as on macOS.
+    /// turning red at 10% or below while discharging, as on macOS. Like the
+    /// other status glyphs it takes the bar's label colour, so it is dark on
+    /// the Light bar and white on the Dark one; the outline and nub are that
+    /// colour at 55% opacity.
     fn battery_glyph(battery: Option<rmac_shell_status::BatteryIndicator>) -> impl IntoElement {
+        let label = tokens::primary_text();
+        let outline = (label & 0xFFFF_FF00) | 0x8C;
         const WIDTH: f32 = 25.0;
         const HEIGHT: f32 = 12.0;
         const INSET: f32 = 1.4;
@@ -5115,7 +5120,7 @@ mod linux_wayland {
                     .h(px(HEIGHT))
                     .rounded(px(3.6))
                     .border(px(1.2))
-                    .border_color(rgba(0xFFFFFF8C))
+                    .border_color(rgba(outline))
                     .child(
                         div()
                             .absolute()
@@ -5124,7 +5129,7 @@ mod linux_wayland {
                             .h(px(HEIGHT - 2.0 * INSET - 0.4))
                             .w(px(fill_width))
                             .rounded(px(1.8))
-                            .bg(rgba(if low { 0xFF453AFF } else { 0xFFFFFFFF })),
+                            .bg(rgba(if low { 0xFF453AFF } else { label })),
                     ),
             )
             .child(
@@ -5133,7 +5138,7 @@ mod linux_wayland {
                     .w(px(1.6))
                     .h(px(3.6))
                     .rounded_r(px(1.0))
-                    .bg(rgba(0xFFFFFF8C)),
+                    .bg(rgba(outline)),
             )
     }
 

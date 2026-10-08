@@ -20,7 +20,20 @@ const TRAILING: f32 = 47.0;
 const CHEVRON_RIGHT: f32 = 13.0;
 const CHEVRON: f32 = 9.0;
 const SUBMENU_OVERLAP: f32 = 3.0;
-const LABEL: u32 = 0xDCDCDEFF;
+/// Enabled item labels on the Dark menu, measured on macOS 26.
+const DARK_LABEL: u32 = 0xDCDCDEFF;
+
+/// Enabled item labels follow the appearance: the measured near-white on
+/// the Dark menu, the label token (near-black) on the Light one. A fixed
+/// near-white left Light's enabled items pale grey on pale glass, so they
+/// read as disabled (DESK-13).
+fn label() -> u32 {
+    if tokens::is_dark() {
+        DARK_LABEL
+    } else {
+        tokens::primary_text()
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum MenuTarget {
@@ -521,7 +534,7 @@ impl Wallpaper {
             } else if highlighted {
                 rgba(0xFFFFFFFF)
             } else {
-                rgba(LABEL)
+                rgba(label())
             };
             let leading = if row.checked {
                 Some("checkmark")
@@ -643,6 +656,55 @@ mod tests {
         // omitted): 9 × 24 + 2 × 11.
         assert_eq!(rows_height(&rows), 238.0);
         assert_eq!(next_enabled(&rows, Some(8), true), Some(0));
+    }
+
+    /// WCAG relative luminance of an opaque 0xRRGGBB colour.
+    fn luminance(rgb: u32) -> f64 {
+        let channel = |shift: u32| {
+            let value = f64::from((rgb >> shift) & 0xff) / 255.0;
+            if value <= 0.039_28 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+    }
+
+    /// 0xRRGGBBAA `top` over opaque 0xRRGGBB `bottom`.
+    fn over(top: u32, bottom: u32) -> u32 {
+        let alpha = f64::from(top & 0xff) / 255.0;
+        [24_u32, 16, 8].iter().fold(0, |rgb, shift| {
+            let a = f64::from((top >> shift) & 0xff);
+            let b = f64::from((bottom >> (shift - 8)) & 0xff);
+            (rgb << 8) | (a * alpha + b * (1.0 - alpha)).round() as u32
+        })
+    }
+
+    #[test]
+    fn enabled_labels_read_on_the_light_menu() {
+        // The shell starts on the Light tokens until the appearance watch
+        // resolves the real ones.
+        assert!(!tokens::is_dark());
+        assert_eq!(label(), tokens::primary_text());
+        // Over the palest wallpaper (white) and the darkest likely light
+        // glass backdrop, the label keeps WCAG AA contrast (4.5:1).
+        for backdrop in [0xFFFFFF, 0xC8C8C8] {
+            let panel = over(tokens::regular_dark_tint(), backdrop);
+            let text = over(label(), panel);
+            let (light, dark) = (luminance(panel), luminance(text));
+            let ratio = (light.max(dark) + 0.05) / (light.min(dark) + 0.05);
+            assert!(
+                ratio >= 4.5,
+                "label contrast {ratio:.2} over {backdrop:06x}"
+            );
+        }
+        // The old fixed near-white label failed this on the Light menu.
+        let panel = over(tokens::regular_dark_tint(), 0xFFFFFF);
+        let old = over(DARK_LABEL, panel);
+        let ratio = (luminance(panel).max(luminance(old)) + 0.05)
+            / (luminance(panel).min(luminance(old)) + 0.05);
+        assert!(ratio < 2.0, "old label contrast {ratio:.2}");
     }
 
     #[test]

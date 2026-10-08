@@ -164,7 +164,7 @@ jobs:
           mkdir -p "$result"
           set +e
           case "$SUITE" in
-            menu-dismiss) /usr/bin/python3 scripts/behavior/run_menu_dismiss.py --niri "$niri" --bin-dir runtime-bin ;;
+            menu-dismiss) /usr/bin/python3 scripts/behavior/run_menu_dismiss.py --niri "$niri" --bin-dir runtime-bin --capture-dir "$result/screenshots" ;;
             power-dialogs) /usr/bin/python3 scripts/behavior/run_power_dialogs.py --niri "$niri" --bin-dir runtime-bin --capture-dir "$result/screenshots" ;;
             window-move) /usr/bin/python3 scripts/behavior/run_window_move.py --niri "$niri" --bin-dir runtime-bin ;;
             # Desktop icons and img() loads paint on an idle, inactive surface with no input.

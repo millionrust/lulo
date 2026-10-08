@@ -46,6 +46,16 @@ private bus (`tests/dbusmock/private_bus.rs`); CI's Linux jobs install
 python3-dbusmock and set `RMAC_REQUIRE_DBUSMOCK=1`, so a missing mock fails
 there instead of skipping.
 
+`scripts/behavior/fake_audio.py` fakes the sound server the same way for
+`run_menu_dismiss.py`: it puts `pw-dump` and `wpctl` stand-ins on the nested
+session's PATH (rmac-audio runs both by name) over a JSON graph with two
+outputs, Lulo Speakers (default) and Lulo HDMI Display. `wpctl set-default`,
+`set-volume` and `set-mute` change the graph and wake every `pw-dump
+--monitor` through its own FIFO, so Control Centre's Sound view lists real
+outputs and switching one is checked end to end. It needs no package, so it
+also runs on the reference laptop; that runner also fakes the backlight there
+when python3-dbusmock is missing.
+
 ## Interaction probes
 
 `scripts/interaction/` is a sibling suite to `scripts/inventory` (which

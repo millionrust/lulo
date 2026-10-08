@@ -19,39 +19,69 @@ pub(crate) enum SliderKind {
     Volume,
     /// The volume slider at the top of the Sound detail view.
     DetailVolume,
+    /// The brightness slider at the top of the Display detail view.
+    DetailBrightness,
 }
 
-/// One pointer/touch "bulge" per slider (CC-13). The grid shows Display and
-/// Sound at once, so each gets its own; the detail view's slider replaces
-/// the grid, so it does not compete with either.
-#[derive(Clone, Copy, Debug, Default)]
+impl SliderKind {
+    const ALL: [Self; 4] = [
+        Self::Brightness,
+        Self::Volume,
+        Self::DetailVolume,
+        Self::DetailBrightness,
+    ];
+
+    fn index(self) -> usize {
+        match self {
+            Self::Brightness => 0,
+            Self::Volume => 1,
+            Self::DetailVolume => 2,
+            Self::DetailBrightness => 3,
+        }
+    }
+}
+
+/// Two "bulges" per slider (CC-13). `hover` thickens the track and shows
+/// the knob while the pointer is over the slider or it is held; `press`
+/// springs the whole module a little larger while it is held, as macOS 26
+/// does, and settles back on release. Each runs only while it changes, so
+/// an idle Control Centre draws no frames.
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct SliderBulges {
-    brightness: SliderBulge,
-    volume: SliderBulge,
-    detail_volume: SliderBulge,
+    hover: [SliderBulge; 4],
+    press: [SliderBulge; 4],
+}
+
+impl Default for SliderBulges {
+    fn default() -> Self {
+        Self {
+            hover: [SliderBulge::default(); 4],
+            press: [SliderBulge::spring(); 4],
+        }
+    }
 }
 
 impl SliderBulges {
     fn get(&self, kind: SliderKind) -> SliderBulge {
-        match kind {
-            SliderKind::Brightness => self.brightness,
-            SliderKind::Volume => self.volume,
-            SliderKind::DetailVolume => self.detail_volume,
-        }
+        self.hover[kind.index()]
     }
 
     fn get_mut(&mut self, kind: SliderKind) -> &mut SliderBulge {
-        match kind {
-            SliderKind::Brightness => &mut self.brightness,
-            SliderKind::Volume => &mut self.volume,
-            SliderKind::DetailVolume => &mut self.detail_volume,
-        }
+        &mut self.hover[kind.index()]
+    }
+
+    fn press(&self, kind: SliderKind) -> SliderBulge {
+        self.press[kind.index()]
+    }
+
+    fn press_mut(&mut self, kind: SliderKind) -> &mut SliderBulge {
+        &mut self.press[kind.index()]
     }
 
     fn is_animating(&self, now_ms: u64) -> bool {
-        self.brightness.is_animating(now_ms)
-            || self.volume.is_animating(now_ms)
-            || self.detail_volume.is_animating(now_ms)
+        SliderKind::ALL.iter().any(|kind| {
+            self.get(*kind).is_animating(now_ms) || self.press(*kind).is_animating(now_ms)
+        })
     }
 }
 
@@ -75,6 +105,16 @@ pub(crate) struct QuickSettingsView {
     pub(crate) wifi_toggle_focus: FocusHandle,
     pub(crate) bluetooth_toggle_focus: FocusHandle,
     pub(crate) focus_toggle_focus: FocusHandle,
+    /// Real Tab stops for the Display and Sound module titles, which open
+    /// their detail views.
+    pub(crate) display_title_focus: FocusHandle,
+    pub(crate) sound_title_focus: FocusHandle,
+    /// Dark Mode as just chosen in the Display view, shown until the theme
+    /// store's change arrives.
+    pub(crate) dark_mode_override: Option<bool>,
+    /// The Display or Sound module the pointer is over: its title shows
+    /// the › that opens its detail view.
+    pub(crate) hovered_module: Option<Module>,
     /// Backlight level in percent; `None` hides the Display module.
     pub(crate) brightness: Option<u8>,
     /// The player Now Playing shows; `None` hides the module.
@@ -139,6 +179,8 @@ impl QuickSettingsView {
         let wifi_toggle_focus = cx.focus_handle();
         let bluetooth_toggle_focus = cx.focus_handle();
         let focus_toggle_focus = cx.focus_handle();
+        let display_title_focus = cx.focus_handle();
+        let sound_title_focus = cx.focus_handle();
         focus.focus(window, cx);
         let first_control = initial_control_focus.clone();
         window.on_next_frame(move |window, cx| window.focus(&first_control, cx));
@@ -216,6 +258,10 @@ impl QuickSettingsView {
             wifi_toggle_focus,
             bluetooth_toggle_focus,
             focus_toggle_focus,
+            display_title_focus,
+            sound_title_focus,
+            dark_mode_override: None,
+            hovered_module: None,
             brightness: None,
             player: None,
             volume_preview: None,
@@ -238,7 +284,12 @@ impl QuickSettingsView {
     /// The open detail view, cut to fit the tallest surface.
     pub(crate) fn panel(&self) -> Option<Panel> {
         let detail = self.detail?;
-        let mut panel = detail::panel(detail, self.state.inputs(), self.others_expanded);
+        let mut panel = detail::panel(
+            detail,
+            self.state.inputs(),
+            self.others_expanded,
+            Some(self.dark_mode()),
+        );
         panel.fit(rmac_quick_settings::layout::MAX_SURFACE_HEIGHT as f32);
         Some(panel)
     }
@@ -260,7 +311,15 @@ impl QuickSettingsView {
         self.focus.focus(window, cx);
         self.detail = Some(detail);
         self.others_expanded = false;
-        self.detail_focus = None;
+        self.hovered_module = None;
+        // From the keyboard, the first control takes the focus ring, so the
+        // next key acts inside the view, as on the Mac.
+        self.detail_focus = if self.keyboard {
+            self.panel()
+                .and_then(|panel| panel.targets().first().copied())
+        } else {
+            None
+        };
         if detail == Detail::Wifi && self.state.view().wifi.value {
             cx.background_executor()
                 .spawn(async {
@@ -281,6 +340,7 @@ impl QuickSettingsView {
             self.module_focus = Some(match detail {
                 Detail::Wifi => Module::Wifi,
                 Detail::Bluetooth => Module::Bluetooth,
+                Detail::Display => Module::Display,
                 Detail::Sound => Module::Sound,
             });
             self.detail_focus = None;
@@ -383,9 +443,46 @@ impl QuickSettingsView {
         }
     }
 
+    /// Whether Lulo is in Dark Mode, including a choice still being saved.
+    pub(crate) fn dark_mode(&self) -> bool {
+        self.dark_mode_override
+            .unwrap_or_else(rmac_ui::mac::is_dark)
+    }
+
+    /// The Display view's Dark Mode toggle: save Light or Dark the way
+    /// System Settings ▸ Appearance does (leaving Auto, as the Mac's toggle
+    /// does), then tell third-party toolkits. The store write and the
+    /// toolkit sync run off the UI thread; every Lulo surface, this one
+    /// included, repaints from the theme store's change notification.
+    pub(crate) fn toggle_dark_mode(&mut self, cx: &mut Context<Self>) {
+        let dark = !self.dark_mode();
+        self.dark_mode_override = Some(dark);
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let host = cx
+                .background_executor()
+                .spawn(rmac_appearance_portal::snapshot())
+                .await
+                .unwrap_or_else(|_| {
+                    rmac_appearance::Snapshot::unavailable(
+                        "The desktop Settings portal is temporarily unavailable.",
+                    )
+                });
+            let result = blocking::unblock(move || save_color_scheme(dark, &host)).await;
+            let _ = this.update(cx, |this, cx| {
+                if let Err(error) = result {
+                    this.dark_mode_override = None;
+                    this.operation_error = Some(format!("Dark Mode: {error}").into());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn nudge_slider(&mut self, kind: SliderKind, up: bool, cx: &mut Context<Self>) {
         let current = match kind {
-            SliderKind::Brightness => match self.brightness {
+            SliderKind::Brightness | SliderKind::DetailBrightness => match self.brightness {
                 Some(level) => level,
                 None => return,
             },
@@ -409,6 +506,10 @@ impl QuickSettingsView {
             Target::Switch => self.toggle_detail_switch(cx),
             Target::Notice => self.open_settings(Some("wifi"), window, cx),
             Target::Slider => {}
+            Target::Toggle(index) => match panel.toggles.get(index).map(|toggle| toggle.kind) {
+                Some(detail::DisplayToggle::DarkMode) => self.toggle_dark_mode(cx),
+                None => {}
+            },
             Target::Row { .. } | Target::Other(_) => {
                 if let Some(action) = panel.row(target).and_then(|row| row.action.clone()) {
                     self.run_row(action, window, cx);
@@ -451,7 +552,12 @@ impl QuickSettingsView {
             let current = self.detail_focus.filter(|target| targets.contains(target));
             match (key, current) {
                 ("left" | "right", Some(Target::Slider)) => {
-                    self.nudge_slider(SliderKind::DetailVolume, key == "right", cx)
+                    let kind = if panel.detail == Detail::Display {
+                        SliderKind::DetailBrightness
+                    } else {
+                        SliderKind::DetailVolume
+                    };
+                    self.nudge_slider(kind, key == "right", cx)
                 }
                 ("up", _) => self.detail_focus = detail::step(&targets, current, false),
                 ("tab", _) if shift => self.detail_focus = detail::step(&targets, current, false),
@@ -484,6 +590,10 @@ impl QuickSettingsView {
             self.toggle_bluetooth(cx);
         } else if matches!(key, "enter" | "space") && self.focus_toggle_focus.is_focused(window) {
             self.toggle_focus_mode(cx);
+        } else if matches!(key, "enter" | "space") && self.display_title_focus.is_focused(window) {
+            self.open_detail(Detail::Display, window, cx);
+        } else if matches!(key, "enter" | "space") && self.sound_title_focus.is_focused(window) {
+            self.open_detail(Detail::Sound, window, cx);
         } else {
             let order = self.module_order();
             let current = self.module_focus.filter(|module| order.contains(module));
@@ -605,7 +715,9 @@ impl QuickSettingsView {
     pub(crate) fn slide(&mut self, kind: SliderKind, value: u8, cx: &mut Context<Self>) {
         match kind {
             SliderKind::Volume | SliderKind::DetailVolume => self.schedule_volume(value, cx),
-            SliderKind::Brightness => self.schedule_brightness(value, cx),
+            SliderKind::Brightness | SliderKind::DetailBrightness => {
+                self.schedule_brightness(value, cx)
+            }
         }
     }
 
@@ -687,6 +799,12 @@ impl QuickSettingsView {
         self.slider_bulges.get(kind).progress(self.now_ms())
     }
 
+    /// Spring progress of `kind`'s press, 0 (released) to 1 (held),
+    /// briefly past 1 as it grows: the module's grow factor.
+    pub(crate) fn slider_press(&self, kind: SliderKind) -> f32 {
+        self.slider_bulges.press(kind).progress(self.now_ms())
+    }
+
     /// A slider is "active" — bulged, per CC-13 — while the pointer is over
     /// it or it is being dragged (a drag can continue once the pointer
     /// strays off the hit rect; a touch press never hovers at all, but
@@ -706,7 +824,11 @@ impl QuickSettingsView {
         let now = self.now_ms();
         let active = self.is_slider_active(kind);
         self.slider_bulges.get_mut(kind).set_active(active, now);
-        if self.slider_bulges.get(kind).is_animating(now) {
+        let pressed = self.dragging == Some(kind);
+        self.slider_bulges.press_mut(kind).set_active(pressed, now);
+        if self.slider_bulges.get(kind).is_animating(now)
+            || self.slider_bulges.press(kind).is_animating(now)
+        {
             cx.notify();
         }
     }
@@ -727,6 +849,26 @@ impl QuickSettingsView {
         };
         self.sync_slider_bulge(kind, cx);
         cx.notify();
+    }
+
+    /// Pointer entered or left the Display or Sound module.
+    pub(crate) fn set_module_hovered(
+        &mut self,
+        module: Module,
+        hovered: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let next = if hovered {
+            Some(module)
+        } else if self.hovered_module == Some(module) {
+            None
+        } else {
+            self.hovered_module
+        };
+        if next != self.hovered_module {
+            self.hovered_module = next;
+            cx.notify();
+        }
     }
 
     pub(crate) fn toggle_low_power(&mut self, cx: &mut Context<Self>) {
@@ -832,6 +974,30 @@ impl QuickSettingsView {
     }
 }
 
+/// Save Light or Dark the way System Settings ▸ Appearance does, then tell
+/// third-party toolkits. Runs on the blocking pool.
+fn save_color_scheme(dark: bool, host: &rmac_appearance::Snapshot) -> Result<(), String> {
+    let store = rmac_theme::ThemeStore::from_environment()
+        .map_err(|_| "the appearance preferences are unavailable".to_owned())?;
+    let mut preferences = store
+        .load(host)
+        .map_err(|_| "the appearance preferences could not be read".to_owned())?
+        .preferences;
+    preferences.color_scheme = if dark {
+        rmac_theme::SchemePreference::Dark
+    } else {
+        rmac_theme::SchemePreference::Light
+    };
+    store
+        .save(&preferences, host)
+        .map_err(|_| "the appearance preference could not be saved".to_owned())?;
+    #[cfg(target_os = "linux")]
+    if let Err(error) = rmac_gtk_settings::sync_toolkit_appearance(&preferences) {
+        eprintln!("Control Centre could not update toolkit appearance: {error}");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -844,8 +1010,19 @@ mod tests {
         assert!(bulges.get(SliderKind::Brightness).progress(0) >= 0.0);
         assert_eq!(bulges.get(SliderKind::Volume).progress(0), 0.0);
         assert_eq!(bulges.get(SliderKind::DetailVolume).progress(0), 0.0);
+        assert_eq!(bulges.get(SliderKind::DetailBrightness).progress(0), 0.0);
         assert!(bulges.is_animating(0));
         assert!(!bulges.is_animating(SLIDER_BULGE_MS));
+        // A press springs the module only while it settles, then stops.
+        bulges.press_mut(SliderKind::Volume).set_active(true, 1_000);
+        assert!(bulges.is_animating(1_000));
+        assert!(!bulges.is_animating(1_000 + rmac_ui::SLIDER_PRESS_MS));
+        assert_eq!(
+            bulges
+                .press(SliderKind::Volume)
+                .progress(1_000 + rmac_ui::SLIDER_PRESS_MS),
+            1.0
+        );
     }
 
     #[test]

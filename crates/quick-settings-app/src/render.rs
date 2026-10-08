@@ -75,9 +75,10 @@ fn subtitle_text() -> Hsla {
 fn dim_glyph() -> Hsla {
     scheme(0xffff_ff66, 0x0000_0040)
 }
-/// Slider track, black 43 % (black 20 % under Light's white fill).
+/// Slider track, black 43 % (black 25 % under Light's white fill, so the
+/// white filled part still reads on light glass).
 fn slider_track() -> Hsla {
-    scheme(0x0000_006e, 0x0000_0033)
+    scheme(0x0000_006e, 0x0000_0040)
 }
 /// Now Playing artwork placeholder, white 13.5 %.
 fn artwork_fill() -> Hsla {
@@ -281,7 +282,9 @@ pub(super) fn track(kind: SliderKind) -> (f32, f32) {
     match kind {
         SliderKind::Brightness => (36.5, 183.0),
         SliderKind::Volume => (34.0, 179.5),
-        SliderKind::DetailVolume => (geometry::SLIDER_LEFT, geometry::SLIDER_WIDTH),
+        SliderKind::DetailVolume | SliderKind::DetailBrightness => {
+            (geometry::SLIDER_LEFT, geometry::SLIDER_WIDTH)
+        }
     }
 }
 
@@ -291,7 +294,9 @@ pub(super) fn track(kind: SliderKind) -> (f32, f32) {
 fn slider_value(kind: SliderKind, window_x: f32) -> u8 {
     let (left, width) = track(kind);
     let origin = match kind {
-        SliderKind::DetailVolume => rmac_quick_settings::detail::geometry::PANEL_LEFT,
+        SliderKind::DetailVolume | SliderKind::DetailBrightness => {
+            rmac_quick_settings::detail::geometry::PANEL_LEFT
+        }
         SliderKind::Brightness | SliderKind::Volume => PADDING,
     };
     let fraction = (window_x - origin - left) / width;

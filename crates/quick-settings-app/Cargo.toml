@@ -17,6 +17,10 @@ futures-util.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
+# Display ▸ Dark Mode saves the appearance the way System Settings does.
+rmac-appearance.workspace = true
+rmac-appearance-portal.workspace = true
+rmac-gtk-settings.workspace = true
 rmac-media.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
@@ -26,5 +30,6 @@ rmac-quick-settings-system.workspace = true
 rmac-shell-activation-runtime.workspace = true
 rmac-shell-runtime.workspace = true
 rmac-shortcuts.workspace = true
+rmac-theme.workspace = true
 rmac-ui.workspace = true
 rust-embed.workspace = true

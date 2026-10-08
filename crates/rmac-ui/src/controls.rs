@@ -1663,12 +1663,26 @@ impl RenderOnce for Slider {
 /// separately measured this pass (see docs/parity.md).
 pub const SLIDER_BULGE_MS: u64 = 120;
 
-fn slider_bulge_ease(elapsed_ms: u64, duration_ms: u64) -> f32 {
+/// Duration of a [`SliderBulge::spring`] press: Control Centre's module
+/// grows past its pressed size and settles back, a short spring.
+pub const SLIDER_PRESS_MS: u64 = 260;
+
+/// How far a spring press overshoots, as a fraction of its travel.
+const SLIDER_SPRING_OVERSHOOT: f32 = 1.2;
+
+fn slider_bulge_ease(elapsed_ms: u64, duration_ms: u64, spring: bool) -> f32 {
     if duration_ms == 0 || elapsed_ms >= duration_ms {
         return 1.0;
     }
     let t = elapsed_ms as f32 / duration_ms as f32;
-    1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
+    if spring {
+        // Back-out: rises past 1 and settles on it at `t == 1`.
+        let c = SLIDER_SPRING_OVERSHOOT;
+        let u = t - 1.0;
+        1.0 + (c + 1.0) * u * u * u + c * u * u
+    } else {
+        1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
+    }
 }
 
 /// Eases a slider's "bulge" progress toward 0 (resting) or 1 (pointer
@@ -1685,6 +1699,7 @@ pub struct SliderBulge {
     changed_ms: u64,
     duration_ms: u64,
     target: f32,
+    spring: bool,
 }
 
 impl Default for SliderBulge {
@@ -1694,11 +1709,23 @@ impl Default for SliderBulge {
             changed_ms: 0,
             duration_ms: 0,
             target: 0.0,
+            spring: false,
         }
     }
 }
 
 impl SliderBulge {
+    /// A press "bulge" that springs: it overshoots its pressed size, so
+    /// [`SliderBulge::progress`] briefly exceeds 1 while growing, then
+    /// settles; release eases back without overshoot. Lasts
+    /// [`SLIDER_PRESS_MS`], then costs nothing.
+    pub fn spring() -> Self {
+        Self {
+            spring: true,
+            ..Self::default()
+        }
+    }
+
     /// Sets whether the slider is active (pointer hovering, or a touch or
     /// mouse press down) at `now_ms`. A change of direction re-anchors the
     /// ease from the progress already reached, instead of restarting from 0.
@@ -1710,15 +1737,26 @@ impl SliderBulge {
             let spent = now_ms.saturating_sub(self.changed_ms).min(self.duration_ms);
             self.from = self.progress(now_ms);
             self.changed_ms = now_ms;
-            self.duration_ms = if spent > 0 { spent } else { SLIDER_BULGE_MS };
+            let full = if self.spring {
+                SLIDER_PRESS_MS
+            } else {
+                SLIDER_BULGE_MS
+            };
+            self.duration_ms = if spent > 0 { spent.min(full) } else { full };
+            if self.spring && active {
+                // A spring press always runs its whole overshoot.
+                self.duration_ms = full;
+            }
             self.target = target;
         }
     }
 
-    /// Current eased progress, 0 (resting) ..= 1 (fully bulged).
+    /// Current eased progress, 0 (resting) ..= 1 (fully bulged). A
+    /// [`SliderBulge::spring`] briefly overshoots 1 while growing.
     pub fn progress(&self, now_ms: u64) -> f32 {
         let elapsed = now_ms.saturating_sub(self.changed_ms);
-        let eased = slider_bulge_ease(elapsed, self.duration_ms);
+        let growing = self.target > self.from;
+        let eased = slider_bulge_ease(elapsed, self.duration_ms, self.spring && growing);
         self.from + (self.target - self.from) * eased
     }
 
@@ -2997,6 +3035,26 @@ mod tests {
         assert!(bulge.is_animating(settled - 1));
         assert!(!bulge.is_animating(settled));
         assert_eq!(bulge.progress(settled), 0.0);
+    }
+
+    #[test]
+    fn spring_press_overshoots_then_settles_and_stops_animating() {
+        let mut press = SliderBulge::spring();
+        press.set_active(true, 0);
+        let peak = (1..SLIDER_PRESS_MS)
+            .map(|ms| press.progress(ms))
+            .fold(0.0_f32, f32::max);
+        assert!(peak > 1.0, "a spring press overshoots, peak {peak}");
+        assert!(!press.is_animating(SLIDER_PRESS_MS));
+        assert_eq!(press.progress(SLIDER_PRESS_MS), 1.0);
+        // Release eases straight back without undershooting.
+        press.set_active(false, SLIDER_PRESS_MS * 2);
+        let low = (0..=SLIDER_PRESS_MS)
+            .map(|ms| press.progress(SLIDER_PRESS_MS * 2 + ms))
+            .fold(1.0_f32, f32::min);
+        assert!(low >= 0.0);
+        assert!(!press.is_animating(SLIDER_PRESS_MS * 3));
+        assert_eq!(press.progress(SLIDER_PRESS_MS * 3), 0.0);
     }
 
     #[test]

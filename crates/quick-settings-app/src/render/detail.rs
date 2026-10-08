@@ -1,9 +1,12 @@
 //! Control Center detail views: nearby and saved Wi-Fi networks, paired
-//! Bluetooth devices, and sound outputs, drawn in place of the grid at the
-//! measurements in `design-lab/control-center.html`.
+//! Bluetooth devices, the display's brightness and appearance, and sound
+//! outputs, drawn in place of the grid at the measurements in
+//! `design-lab/control-center.html`.
 
 use gpui::{ClickEvent, MouseDownEvent};
-use rmac_quick_settings::detail::{geometry as g, Panel, Part, Row, RowGlyph, Target};
+use rmac_quick_settings::detail::{
+    geometry as g, Detail, DisplayToggle, Panel, Part, Row, RowGlyph, Target, Toggle,
+};
 
 use super::*;
 
@@ -12,11 +15,6 @@ const LOCK: (&str, f32, f32) = ("cc/lock.svg", 9.0, 12.0);
 const KNOB_WIDTH: f32 = 32.0;
 const KNOB_HEIGHT: f32 = 20.0;
 const KNOB_INSET: f32 = 2.0;
-/// Detail slider track: 4 thick, centred in its 14 pt row.
-const TRACK_HEIGHT: f32 = 4.0;
-/// Hovered/pressed track thickness (CC-13); see `controls::TRACK_HEIGHT_BULGED`
-/// — same estimate, not separately measured.
-const TRACK_HEIGHT_BULGED: f32 = 8.0;
 
 /// Separators read #48494D over the #383A3F panel: white ≈ 8 %.
 fn separator() -> Hsla {
@@ -29,6 +27,11 @@ fn heading_text() -> Hsla {
 /// Row names, white ≈ 92 %.
 fn row_text() -> Hsla {
     scheme(0xffff_ffeb, 0x0000_00d9)
+}
+/// An "on" round toggle is white with a near-black glyph, in both
+/// appearances (Display ▸ Dark Mode, measured).
+fn toggle_on_glyph() -> Hsla {
+    color(0x1d1d_1fff)
 }
 /// Pointer-over row fill (S).
 fn row_hover() -> Hsla {
@@ -247,41 +250,58 @@ impl QuickSettingsView {
             .into_any_element()
     }
 
-    fn detail_slider(&self, cx: &Context<Self>) -> AnyElement {
-        let sound = self.state.view().sound;
-        let volume = self.volume_preview.unwrap_or(sound.value.volume);
-        let enabled = sound.available;
-        let fill = if sound.value.muted {
-            dim_glyph()
+    /// The slider at the top of the Display or Sound view. Its knob always
+    /// shows here, as on the Mac.
+    fn detail_slider(&self, display: bool, cx: &Context<Self>) -> AnyElement {
+        let (kind, value, fill, enabled, title) = if display {
+            (
+                SliderKind::DetailBrightness,
+                self.brightness.unwrap_or(0),
+                mac::white(),
+                self.brightness.is_some(),
+                "Display",
+            )
         } else {
-            mac::white()
+            let sound = self.state.view().sound;
+            let fill = if sound.value.muted {
+                dim_glyph()
+            } else {
+                mac::white()
+            };
+            (
+                SliderKind::DetailVolume,
+                self.volume_preview.unwrap_or(sound.value.volume),
+                fill,
+                sound.available,
+                "Sound",
+            )
         };
         let centre = g::SLIDER_TOP + g::SLIDER_HEIGHT / 2.0;
-        let filled = g::SLIDER_WIDTH * f32::from(volume.min(100)) / 100.0;
         let ring = self.target_ring(Target::Slider);
-        let track_height = rmac_ui::slider_bulge_lerp(
-            TRACK_HEIGHT,
-            TRACK_HEIGHT_BULGED,
-            self.slider_bulge(SliderKind::DetailVolume),
-        );
+        let bulge = self.slider_bulge(kind);
         let increment_view = cx.entity().downgrade();
         let decrement_view = cx.entity().downgrade();
+        let end_x = g::SLIDER_LEFT + g::SLIDER_WIDTH + 16.0;
+        let (start, end) = if display {
+            (
+                glyph_at("cc/sun-min.svg", 20.0, centre, 14.5, 14.5, ink()),
+                glyph_at("cc/sun-max.svg", end_x, centre, 16.0, 16.0, ink()),
+            )
+        } else {
+            (
+                glyph_at("cc/speaker.svg", 20.0, centre, 8.5, 12.5, ink()),
+                glyph_at("cc/speaker-wave.svg", end_x, centre, 20.0, 14.5, ink()),
+            )
+        };
         layer()
-            .child(glyph_at("cc/speaker.svg", 20.0, centre, 8.5, 12.5, ink()))
-            .child(glyph_at(
-                "cc/speaker-wave.svg",
-                g::SLIDER_LEFT + g::SLIDER_WIDTH + 16.0,
-                centre,
-                20.0,
-                14.5,
-                ink(),
-            ))
+            .child(start)
+            .child(end)
             .child(
                 div()
                     .id("control-center-detail-slider")
                     .role(Role::Slider)
-                    .aria_label("Sound")
-                    .aria_numeric_value(f64::from(volume))
+                    .aria_label(title)
+                    .aria_numeric_value(f64::from(value))
                     .aria_numeric_value_step(5.0)
                     .aria_min_numeric_value(0.0)
                     .aria_max_numeric_value(100.0)
@@ -291,28 +311,19 @@ impl QuickSettingsView {
                             .tab_stop(true)
                             .on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
                                 let _ = increment_view.update(cx, |this, cx| {
-                                    this.slide(
-                                        SliderKind::DetailVolume,
-                                        volume.saturating_add(5).min(100),
-                                        cx,
-                                    )
+                                    this.slide(kind, value.saturating_add(5).min(100), cx)
                                 });
                             })
                             .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
                                 let _ = decrement_view.update(cx, |this, cx| {
-                                    this.slide(
-                                        SliderKind::DetailVolume,
-                                        volume.saturating_sub(5),
-                                        cx,
-                                    )
+                                    this.slide(kind, value.saturating_sub(5), cx)
                                 });
                             })
                             .on_a11y_action(AccessibleAction::SetValue, move |data, _, cx| {
                                 if let Some(accesskit::ActionData::NumericValue(requested)) = data {
                                     let value = requested.round().clamp(0.0, 100.0) as u8;
-                                    let _ = set_value_view.update(cx, |this, cx| {
-                                        this.slide(SliderKind::DetailVolume, value, cx)
-                                    });
+                                    let _ = set_value_view
+                                        .update(cx, |this, cx| this.slide(kind, value, cx));
                                 }
                             })
                     })
@@ -326,37 +337,129 @@ impl QuickSettingsView {
                     .when(enabled, |hit| {
                         hit.on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(|this, event: &MouseDownEvent, _, cx| {
-                                this.dragging = Some(SliderKind::DetailVolume);
-                                this.sync_slider_bulge(SliderKind::DetailVolume, cx);
-                                let value = super::slider_value(
-                                    SliderKind::DetailVolume,
-                                    f32::from(event.position.x),
-                                );
-                                this.slide(SliderKind::DetailVolume, value, cx);
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                                this.dragging = Some(kind);
+                                this.sync_slider_bulge(kind, cx);
+                                let value = super::slider_value(kind, f32::from(event.position.x));
+                                this.slide(kind, value, cx);
                             }),
                         )
                         .on_hover(cx.listener(
-                            |this, hovered: &bool, _, cx| {
-                                this.set_slider_hovered(SliderKind::DetailVolume, *hovered, cx);
+                            move |this, hovered: &bool, _, cx| {
+                                this.set_slider_hovered(kind, *hovered, cx);
                             },
                         ))
                     })
-                    .child(
-                        div()
-                            .absolute()
-                            .left(px(8.0))
-                            .top(px(12.0 - track_height / 2.0))
-                            .w(px(g::SLIDER_WIDTH))
-                            .h(px(track_height))
-                            .rounded(px(track_height / 2.0))
-                            .overflow_hidden()
-                            .bg(slider_track())
-                            .child(div().h_full().w(px(filled)).bg(fill)),
-                    ),
+                    .child(super::controls::slider_bar(
+                        g::SLIDER_WIDTH,
+                        value,
+                        fill,
+                        bulge,
+                        1.0,
+                    )),
             )
             .when(!enabled, |slider| slider.opacity(0.5))
             .into_any_element()
+    }
+
+    /// Display's round toggles (Dark Mode), centred on the Mac's columns.
+    fn detail_toggles(&self, toggles: &[Toggle], cx: &Context<Self>) -> Vec<AnyElement> {
+        let count = toggles.len() as f32;
+        toggles
+            .iter()
+            .enumerate()
+            .map(|(index, toggle)| {
+                let centre_x =
+                    g::PANEL_WIDTH / 2.0 + (index as f32 - (count - 1.0) / 2.0) * g::TOGGLE_PITCH;
+                let target = Target::Toggle(index);
+                let ring = self.target_ring(target);
+                let label = toggle.kind.label();
+                let state = if toggle.on { "On" } else { "Off" };
+                let view = cx.entity().downgrade();
+                let glyph = match toggle.kind {
+                    DisplayToggle::DarkMode => "cc/dark-mode.svg",
+                };
+                let left = centre_x - g::TOGGLE_WIDTH / 2.0;
+                let circle_top = g::TOGGLE_CENTRE - g::TOGGLE_CIRCLE / 2.0;
+                div()
+                    .id(("control-center-detail-toggle", index))
+                    .role(Role::Switch)
+                    .aria_label(label)
+                    .aria_toggled(if toggle.on {
+                        Toggled::True
+                    } else {
+                        Toggled::False
+                    })
+                    .focusable()
+                    .tab_stop(true)
+                    .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                        let _ = view.update(cx, |this, cx| {
+                            this.detail_focus = Some(target);
+                            this.activate_detail_target(target, window, cx);
+                        });
+                    })
+                    .absolute()
+                    .left(px(left))
+                    .top(px(circle_top))
+                    .w(px(g::TOGGLE_WIDTH))
+                    .h(px(g::TOGGLE_STATE_CENTRE + 9.0 - circle_top))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.detail_focus = Some(target);
+                        this.activate_detail_target(target, window, cx)
+                    }))
+                    .child(
+                        div()
+                            .absolute()
+                            .left(px((g::TOGGLE_WIDTH - g::TOGGLE_CIRCLE) / 2.0))
+                            .top_0()
+                            .size(px(g::TOGGLE_CIRCLE))
+                            .rounded_full()
+                            .bg(if toggle.on {
+                                mac::white()
+                            } else {
+                                circle_off()
+                            })
+                            .when(ring, |circle| circle.shadow(mac::focus_ring_shadow()))
+                            .child(glyph_at(
+                                glyph,
+                                g::TOGGLE_CIRCLE / 2.0,
+                                g::TOGGLE_CIRCLE / 2.0,
+                                16.0,
+                                16.0,
+                                if toggle.on { toggle_on_glyph() } else { ink() },
+                            )),
+                    )
+                    .child(
+                        line(
+                            0.0,
+                            g::TOGGLE_NAME_CENTRE - circle_top - 8.0,
+                            16.0,
+                            13.0,
+                            mac::BOLD,
+                            title_text(),
+                        )
+                        .w_full()
+                        .flex()
+                        .justify_center()
+                        .child(label),
+                    )
+                    .child(
+                        line(
+                            0.0,
+                            g::TOGGLE_STATE_CENTRE - circle_top - 8.0,
+                            16.0,
+                            13.0,
+                            mac::REGULAR,
+                            subtitle_text(),
+                        )
+                        .w_full()
+                        .flex()
+                        .justify_center()
+                        .child(state),
+                    )
+                    .into_any_element()
+            })
+            .collect()
     }
 
     /// The whole detail view, `top` below the surface edge.
@@ -385,8 +488,9 @@ impl QuickSettingsView {
             ));
         }
         if panel.slider {
-            children.push(self.detail_slider(cx));
+            children.push(self.detail_slider(panel.detail == Detail::Display, cx));
         }
+        children.extend(self.detail_toggles(&panel.toggles, cx));
         let mut headings = panel.sections.iter().map(|section| section.heading);
         for (index, part) in placed.iter().enumerate() {
             match (part.kind, part.target) {

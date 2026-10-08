@@ -1101,6 +1101,10 @@
       },
       {
         "kind": "tab",
+        "label": "Recents"
+      },
+      {
+        "kind": "tab",
         "label": "Home"
       },
       {
@@ -1200,7 +1204,7 @@
       },
       {
         "type": "item",
-        "label": "Make Alias"
+        "label": "<file_words.label(\"Make Alias\")>"
       },
       {
         "type": "command_item",
@@ -1295,7 +1299,7 @@
       },
       {
         "type": "item",
-        "label": "Make Alias"
+        "label": "<file_words.label(\"Make Alias\")>"
       },
       {
         "type": "command_item",

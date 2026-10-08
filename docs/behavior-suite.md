@@ -298,6 +298,90 @@ it on the reference laptop: there that manager is the owner's live session,
 and a nested `systemd --user` has no delegated cgroup. `run_spotlight_intents.py`
 covers the Spotlight rows themselves in a private nested session.
 
+## Lulo Intelligence's Spotlight rows, with the real model
+
+`scripts/behavior/run_spotlight_intents.py` is the private nested-niri
+scenario for ADR 0024 phase 1's "Lulo can do this" rows. By default it
+stubs the model (`RMAC_INTELLIGENCE_ENGINE=fixture`, CI's only mode: there
+is no model file there) and checks the off/on, arm/confirm and idle-exit
+behaviour with one fixed query.
+
+`--real-model` instead runs the *installed* binaries (`--bin-dir
+/usr/libexec/rmac`) with `RMAC_INTELLIGENCE_ENGINE` unset, so
+`rmac-intelligence-service` loads the real `llama.cpp` engine and the
+owner's own downloaded, checksum-verified Qwen3.5-0.8B model. It types
+twenty-two realistic requests into Spotlight one at a time — correct
+phrasings, two typos, three requests the closed intent list cannot do, and
+two plain single-word searches that must never reach the model at all
+(`worth_asking` needs two or more words) — and records each row's exact
+text and the latency from the last keystroke to the row appearing. It
+confirms two actions end to end, in the nested session only: a second
+Return switching the nested theme store to Dark, and a Return starting a
+real 10-minute timer in the nested Clock store. With `RMAC_FRAME_TRACE` on
+the launcher process only (never the whole session: sharing one path would
+have each process's `File::create` truncate what an earlier one wrote), it
+also measures keystroke-to-presented-frame latency while the model answers
+in the background, and that the service leaves within its idle timeout
+with the session otherwise quiet.
+
+The owner's model is linked into the private session read-only, by a
+directory-level symlink from this run's own `$XDG_DATA_HOME/lulo/
+intelligence/models` to the owner's real one. `rmac_intelligence::verify`
+reads the `<sha256>.gguf` file with `symlink_metadata` and the `.verified`
+stamp with `O_NOFOLLOW`, both of which refuse a *leaf* symlink outright, so
+only the parent directory may be one; every other path component,
+including that one, is still resolved normally, so the owner's real files
+are seen exactly as the service already sees them. Nothing under the
+owner's `HOME` is ever written: the owner's own fetcher already wrote a
+`.verified` stamp that matches the file's (size, mtime, inode) identity, so
+the service only reads it here, never recomputes or rewrites it.
+
+```sh
+python3 scripts/behavior/run_spotlight_intents.py --real-model \
+  --bin-dir /usr/libexec/rmac
+```
+
+Measured on the reference laptop (2026-10-08, idle otherwise confirmed —
+`ps -eo pcpu,comm | awk '$1+0>30'` empty, as ADR 0024's own phase 0
+methodology requires): cold (first-ever prefix evaluation) 15.1 s, matching
+the ADR's own phase 1 "16.5 s through the service" figure; warm end-to-end
+(last keystroke to the row showing) p50 1.3 s, min 1.1 s, max 1.6 s across
+15 rows. 20 of 22 requests showed the row the request actually calls for,
+including both typo'd ones that parsed correctly ("trun on drak mode",
+confirmed end to end to Dark) and the file search, which free-text-matched
+by prefix. Two were genuinely wrong, reproducibly across repeated clean
+runs — not this harness's own bug, and not CPU contention from another
+build on the shared laptop (checked and ruled out after one run was
+discarded for exactly that, following the ADR's own precedent): "opn
+notse" showed no row at all (the typo was too severe for the pre-fine-tuning
+0.8B model), and "remind me to call mum at 5" showed "Start a 5-Minute
+Timer" — the system prompt already says a reminder at a clock time is
+`none`, but the small model still read "5" as a duration. Both are inside
+the base-model accuracy ADR 0024 §6 documents and scopes to phase 2's
+fine-tuning, not a regression here. Keystroke-to-presented-frame latency
+while typing stayed fast (p50 20 ms, p95 44 ms over ~714 traced keystrokes);
+24 of them, clustering one per request roughly 2–3 s after that request's
+window focused (not while actively typing, and not scaling with the 15 s
+cold load, whose own slow frame was only 566 ms), took 400–620 ms to
+present — most likely the "Lulo Intelligence" results section being
+inserted once the row arrives, not the model blocking the UI thread. It is
+bounded and infrequent rather than a stutter while typing, but is noted
+here for whoever next touches the launcher's result-list layout. The
+service exited within its idle timeout every time, and the private
+session's own processes (by `XDG_RUNTIME_DIR`) cost a handful of clock
+ticks over the following 2 s — the idle compositor's own redraw, not a
+live intelligence worker.
+
+This mode never exercises the real `rmac-intelligence.service` systemd
+unit: the private bus activates the service directly from its own
+`org.rmac.Intelligence1.service` (`Exec=`, no `SystemdService=`), the same
+way the fixture pass above always has. A caller-check failure that is
+specific to the unit's sandboxing (hardening directives, AppArmor) would
+not reproduce here even though the caller check's own logic — same uid,
+`/proc/<pid>/exe` under `/usr/libexec/rmac` — is exercised for real (the
+binaries run from their installed path, not copied into a private
+directory the way the fixture pass's own-directory bypass does it).
+
 ## Cross-app file drag
 
 `scripts/behavior/run_file_drag.py` starts the shipped Dock and wallpaper in

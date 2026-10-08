@@ -1,4 +1,4 @@
 fn main() {
     #[cfg(windows)]
-    rmac_windows_resource_build::embed("Clock", "clock");
+    rmac_windows_resource_build::embed("rmac-clock", "Clock", "clock");
 }

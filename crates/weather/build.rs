@@ -1,4 +1,4 @@
 fn main() {
     #[cfg(windows)]
-    rmac_windows_resource_build::embed("Weather", "weather");
+    rmac_windows_resource_build::embed("rmac-weather", "Weather", "weather");
 }

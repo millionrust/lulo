@@ -62,3 +62,7 @@ windows = { workspace = true, features = [
     "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+# The Lulo layer's exe version info and icons; see build.rs.
+[target.'cfg(windows)'.build-dependencies]
+rmac-windows-resource-build.workspace = true

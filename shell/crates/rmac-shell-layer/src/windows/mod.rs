@@ -26,6 +26,7 @@
 pub mod appbar;
 pub mod desktop_layer;
 pub mod layer_types;
+pub mod power;
 pub mod surface;
 
 use std::cell::RefCell;
@@ -455,6 +456,54 @@ pub fn replace_all() {
     for raw in windows {
         place(raw);
     }
+}
+
+/// Open `target` with its default handler, as a double-click in Explorer
+/// does (`ShellExecuteW`'s `open`).
+pub fn shell_open(target: &std::path::Path) -> std::io::Result<()> {
+    use windows::core::HSTRING;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let file = HSTRING::from(target.as_os_str());
+    // SAFETY: NUL-terminated strings that outlive the call.
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            windows::core::w!("open"),
+            &file,
+            None,
+            None,
+            SW_SHOWNORMAL,
+        )
+    };
+    // ShellExecute's documented success: a value above 32.
+    if result.0 as isize > 32 {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "could not open {} (error {})",
+            target.display(),
+            result.0 as isize
+        )))
+    }
+}
+
+/// The signed-in user's display name ("Jacob Samas"), else the account
+/// name.
+pub fn account_display_name() -> Option<String> {
+    use windows::core::PWSTR;
+    use windows::Win32::Security::Authentication::Identity::{GetUserNameExW, NameDisplay};
+    let mut buffer = vec![0u16; 256];
+    let mut size = buffer.len() as u32;
+    // SAFETY: the buffer and its length; the size is updated in place.
+    let read = unsafe { GetUserNameExW(NameDisplay, Some(PWSTR(buffer.as_mut_ptr())), &mut size) };
+    let name = if read {
+        String::from_utf16_lossy(&buffer[..size as usize])
+    } else {
+        std::env::var("USERNAME").unwrap_or_default()
+    };
+    let name = name.trim().to_owned();
+    (!name.is_empty()).then_some(name)
 }
 
 /// Every AppBar this process holds, for the paths that must give the work

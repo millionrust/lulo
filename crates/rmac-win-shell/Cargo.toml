@@ -37,6 +37,7 @@ rmac-compositor.workspace = true
 rmac-compositor-system.workspace = true
 rmac-desktop.workspace = true
 rmac-shell-layer.workspace = true
+rmac-shell-menubar.workspace = true
 rmac-shell-settings.workspace = true
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true

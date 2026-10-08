@@ -1,6 +1,6 @@
 //! The Win32 side of the Lulo layer.
 
-pub mod appbar;
+pub use rmac_shell_layer::windows::{appbar, power, surface};
 pub mod backdrop;
 pub mod catalog;
 pub mod desktop;
@@ -11,12 +11,10 @@ pub mod icons;
 pub mod launch;
 pub mod memory;
 pub mod menubar_server;
-pub mod power;
 pub mod recycle;
 pub mod registry;
 pub mod session;
 pub mod status;
-pub mod surface;
 pub mod taskbar;
 pub mod wallpaper;
 pub mod wallpaper_layer;

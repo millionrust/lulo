@@ -15,6 +15,7 @@ use std::fs;
 use gpui::Window;
 use uuid::Uuid;
 
+pub mod system;
 #[cfg(windows)]
 pub mod windows;
 

@@ -9,16 +9,16 @@
     allow(dead_code)
 )]
 mod menu_model;
-#[cfg_attr(
-    not(any(all(target_os = "linux", feature = "wayland"), windows)),
-    allow(dead_code)
-)]
+// The logind inhibitor that guards unsaved work at session end (Lulo OS).
+#[cfg_attr(not(all(target_os = "linux", feature = "wayland")), allow(dead_code))]
 mod session_guard;
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod unsaved_guard;
 
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+pub use bar::run;
 #[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
-pub use bar::{asset, asset_names, run, start};
+pub use bar::{asset, asset_names, start};
 
 #[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
 mod bar {
@@ -37,15 +37,20 @@ mod bar {
     use chrono::Local;
     use futures_util::FutureExt as _;
     use gpui::{
-        canvas, div, layer_shell::*, point, prelude::*, px, rgba, svg, AnyElement, AnyWindowHandle,
-        App, AssetSource, Bounds, BoxShadow, ClickEvent, Context, DisplayId, Entity, FocusHandle,
+        canvas, div, point, prelude::*, px, rgba, svg, AnyElement, AnyWindowHandle, App,
+        AssetSource, Bounds, BoxShadow, ClickEvent, Context, DisplayId, Entity, FocusHandle,
         FontWeight, KeyDownEvent, ModifiersChangedEvent, MouseButton, MouseDownEvent,
-        MouseMoveEvent, MouseUpEvent, PlatformDisplay, QuitMode, Role, ScrollWheelEvent,
-        SharedString, Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
-        WindowHandle, WindowKind, WindowOptions,
+        MouseMoveEvent, MouseUpEvent, PlatformDisplay, Role, ScrollWheelEvent, SharedString, Size,
+        Subscription, Window, WindowBackgroundAppearance, WindowBounds, WindowHandle,
+        WindowOptions,
     };
+    #[cfg(target_os = "linux")]
+    use gpui::QuitMode;
+    #[cfg(target_os = "linux")]
     use gpui_platform::application;
     use rmac_quick_settings_system::{Backend as _, SystemBackend};
+    use rmac_shell_layer::layer::*;
+    use rmac_shell_layer::system::{self, PowerCommand};
     use rmac_shell_ui::tokens;
     use rmac_shell_ui::{
         app_display_name, delay_until_next_clock_tick, top_bar_active_app_name,
@@ -198,6 +203,20 @@ mod bar {
     }
 
     struct MenuBarAssets;
+
+    /// The bar's own artwork, for a process that serves several shell
+    /// surfaces' assets at once (`lulo-shell` on Windows).
+    pub fn asset(path: &str) -> Option<Cow<'static, [u8]>> {
+        MenuBarAssets.load(path).ok().flatten()
+    }
+
+    /// Every path [`asset`] answers.
+    pub fn asset_names() -> impl Iterator<Item = &'static str> {
+        STATUS_ASSET_NAMES
+            .iter()
+            .chain(MENU_ICON_NAMES.iter())
+            .copied()
+    }
 
     impl AssetSource for MenuBarAssets {
         fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
@@ -1334,7 +1353,7 @@ mod bar {
                 // this behaviour suite) waits for Escape to give a window
                 // back its keyboard.
                 for attempt in 0..30 {
-                    let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+                    let Ok(snapshot) = rmac_compositor_system::snapshot().await else {
                         return;
                     };
                     // The window niri's layout still has active under the
@@ -1374,12 +1393,12 @@ mod bar {
                         .into_iter()
                         .chain([rmac_compositor::Action::FocusWindow { window: target }]);
                     for action in actions {
-                        if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                        if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                             eprintln!("could not return focus from the menu bar: {error:?}");
                             return;
                         }
                     }
-                    let Ok(check) = rmac_compositor_niri::snapshot().await else {
+                    let Ok(check) = rmac_compositor_system::snapshot().await else {
                         return;
                     };
                     let settled = check
@@ -1567,7 +1586,7 @@ mod bar {
                 return;
             }
             cx.spawn(async move |this, cx| {
-                let snapshot = match rmac_compositor_niri::snapshot().await {
+                let snapshot = match rmac_compositor_system::snapshot().await {
                     Ok(snapshot) => snapshot,
                     Err(error) => {
                         eprintln!("could not list {app_id} windows for the Window menu: {error:?}");
@@ -3623,20 +3642,23 @@ mod bar {
                 display_id: window.display(cx).map(|display| display.id()),
                 app_id: Some("dev.rmac.MenuBarKeyboard".to_owned()),
                 window_background: WindowBackgroundAppearance::Transparent,
-                kind: WindowKind::LayerShell(LayerShellOptions {
-                    namespace: "rmac-menubar-keyboard".to_owned(),
-                    layer: Layer::Overlay,
-                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
-                    ..Default::default()
-                }),
                 is_movable: false,
                 is_resizable: false,
                 is_minimizable: false,
                 ..Default::default()
             };
-            let surface = match cx.open_window(options, move |window, cx| {
-                cx.new(|cx| MenuKeyboard::new(top_bar, announcement, window, cx))
-            }) {
+            let layer = LayerShellOptions {
+                namespace: "rmac-menubar-keyboard".to_owned(),
+                layer: Layer::Overlay,
+                keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                ..Default::default()
+            };
+            let surface = match rmac_shell_layer::open_layer_window(
+                cx,
+                options,
+                layer,
+                move |window, cx| cx.new(|cx| MenuKeyboard::new(top_bar, announcement, window, cx)),
+            ) {
                 Ok(surface) => surface,
                 Err(error) => {
                     eprintln!("could not move keyboard focus to the menu bar: {error}");
@@ -3688,7 +3710,7 @@ mod bar {
             if let (true, Some(window)) = (restore, mode.previous_window) {
                 cx.spawn(async move |_, _| {
                     let action = rmac_compositor::Action::FocusWindow { window };
-                    if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                    if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                         eprintln!("could not return focus from the menu bar: {error:?}");
                     }
                 })
@@ -5177,7 +5199,17 @@ mod bar {
                 // (the ⌃F2 gap), so no hint is shown rather than one that
                 // does nothing.
                 Item::new(logout_label, "system::logout", ""),
-            ],
+            ]
+            .into_iter()
+            .chain(system::extra_menu::rows().into_iter().map(|row| {
+                let item = Item::new(row.label, row.action, "");
+                let item = if row.separated { item.separated() } else { item };
+                match row.checked {
+                    Some(checked) => item.checked(checked()),
+                    None => item,
+                }
+            }))
+            .collect(),
         }
     }
 
@@ -5250,6 +5282,12 @@ mod bar {
         }
     }
 
+    #[cfg(windows)]
+    fn account_display_name() -> Option<String> {
+        system::account_display_name()
+    }
+
+    #[cfg(target_os = "linux")]
     fn account_display_name() -> Option<String> {
         let username = env::var("USER").ok()?;
         let passwd = fs::read_to_string("/etc/passwd").ok()?;
@@ -5357,6 +5395,18 @@ mod bar {
     }
 
     fn dispatch_shortcut(shortcut: &'static str, cx: &mut App) {
+        // One process serves every shell surface on Windows: the surface
+        // that answers `shortcut` registered for it there.
+        #[cfg(windows)]
+        if !system::requests::run(shortcut, cx) {
+            eprintln!("nothing in this Lulo answers {shortcut}");
+        }
+        #[cfg(target_os = "linux")]
+        dispatch_shortcut_command(shortcut, cx);
+    }
+
+    #[cfg(target_os = "linux")]
+    fn dispatch_shortcut_command(shortcut: &'static str, cx: &mut App) {
         let local = env::var_os("HOME")
             .map(PathBuf::from)
             .map(|home| home.join(".local/libexec/rmac/rmac-shortcut-dispatch"));
@@ -5418,7 +5468,7 @@ mod bar {
                         id: rmac_compositor::ActivationId(id),
                         action: rmac_compositor::Action::FocusWindow { window },
                     };
-                    if rmac_compositor_niri::execute(request).await.result.is_err() {
+                    if rmac_compositor_system::execute(request).await.result.is_err() {
                         eprintln!("could not return focus to the application menu owner");
                     }
                 }
@@ -5452,10 +5502,11 @@ mod bar {
         let mut owners = rmac_app_menu::watch_menu_owners()
             .await
             .map_err(|error| error.to_string())?;
-        let mut child = Command::new("/usr/bin/rmac-files")
+        let files = system::program("/usr/bin/rmac-files");
+        let mut child = Command::new(&files)
             .stdin(Stdio::null())
             .spawn()
-            .map_err(|error| format!("could not run /usr/bin/rmac-files: {error}"))?;
+            .map_err(|error| format!("could not run {}: {error}", files.display()))?;
         // Reap Files whenever it exits, so it never lingers as a zombie.
         std::thread::spawn(move || match child.wait() {
             Ok(status) if !status.success() => eprintln!("Files exited: {status}"),
@@ -5521,14 +5572,24 @@ mod bar {
                     return;
                 };
                 let focus = Action::FocusWindow { window };
-                if let Err(error) = rmac_compositor_niri::execute_action(&focus).await {
+                if let Err(error) = rmac_compositor_system::execute_action(&focus).await {
                     eprintln!("could not focus the window to {word}: {error:?}");
                     return;
                 }
+                #[cfg(windows)]
+                {
+                    let _ = &cx;
+                    if let Some(action) = window_sizing_action(word, window) {
+                        if let Err(error) = rmac_compositor_system::execute_action(&action).await {
+                            eprintln!("could not {word} the window: {error:?}");
+                        }
+                    }
+                }
+                #[cfg(target_os = "linux")]
                 cx.update(|cx| run_mission_control(word, cx));
                 return;
             }
-            let snapshot = match rmac_compositor_niri::snapshot().await {
+            let snapshot = match rmac_compositor_system::snapshot().await {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
                     eprintln!("could not read windows for the Window menu: {error:?}");
@@ -5622,7 +5683,7 @@ mod bar {
                 }
             };
             for action in &actions {
-                if let Err(error) = rmac_compositor_niri::execute_action(action).await {
+                if let Err(error) = rmac_compositor_system::execute_action(action).await {
                     eprintln!("could not run the Window menu command: {error:?}");
                 }
             }
@@ -5635,8 +5696,34 @@ mod bar {
         .detach();
     }
 
+    /// Mission Control's one-word sizing commands as window actions: on
+    /// Windows the window list carries them out itself.
+    #[cfg(windows)]
+    fn window_sizing_action(
+        word: &str,
+        window: rmac_compositor::WindowId,
+    ) -> Option<rmac_compositor::Action> {
+        use rmac_compositor::{Action, TileRegion};
+        let tile = |region| Action::TileWindow { window, region };
+        Some(match word {
+            "fill" => Action::FillWindow { window },
+            "centre" => Action::CenterWindow { window },
+            "restore-size" => Action::FullscreenWindow { window, on: false },
+            "tile-left" => tile(TileRegion::Left),
+            "tile-right" => tile(TileRegion::Right),
+            "tile-top" => tile(TileRegion::Top),
+            "tile-bottom" => tile(TileRegion::Bottom),
+            "tile-top-left" => tile(TileRegion::TopLeft),
+            "tile-top-right" => tile(TileRegion::TopRight),
+            "tile-bottom-left" => tile(TileRegion::BottomLeft),
+            "tile-bottom-right" => tile(TileRegion::BottomRight),
+            _ => return None,
+        })
+    }
+
     /// Run one of Mission Control's one-word window commands, as its
     /// keyboard shortcuts do.
+    #[cfg(target_os = "linux")]
     fn run_mission_control(word: &'static str, cx: &mut App) {
         let local = env::var_os("HOME")
             .map(PathBuf::from)
@@ -5654,7 +5741,7 @@ mod bar {
     /// origin workspace is recorded so Show All can bring it back.
     fn dispatch_app_menu_action(app_id: String, action: String, cx: &mut App) {
         cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
-            let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+            let Ok(snapshot) = rmac_compositor_system::snapshot().await else {
                 eprintln!("could not read windows to {action}");
                 return;
             };
@@ -5702,7 +5789,7 @@ mod bar {
                 other => eprintln!("unknown app menu action: {other}"),
             }
             for action in &actions {
-                if let Err(error) = rmac_compositor_niri::execute_action(action).await {
+                if let Err(error) = rmac_compositor_system::execute_action(action).await {
                     eprintln!("could not run app menu action: {error:?}");
                 }
             }
@@ -5734,7 +5821,7 @@ mod bar {
                 eprintln!("could not write the help page: {error}");
                 return;
             }
-            if let Err(error) = Command::new("xdg-open").arg(&path).spawn() {
+            if let Err(error) = system::open(&path) {
                 eprintln!("could not open the help page: {error}");
             }
         })
@@ -5771,17 +5858,41 @@ mod bar {
                 "/usr/bin/rmac-system-settings",
                 cx,
             ),
+            #[cfg(target_os = "linux")]
             "system::software-center" => {
                 spawn_command("gtk-launch", &["snap-store_snap-store"], cx)
             }
+            // Windows' own store.
+            #[cfg(windows)]
+            "system::software-center" => {
+                if let Err(error) = system::open(std::path::Path::new("ms-windows-store://home")) {
+                    eprintln!("could not open the Microsoft Store: {error}");
+                }
+            }
             // The resident switcher owns Force Quit Applications and brings
             // an open one forward, so a second choice never opens another.
+            #[cfg(target_os = "linux")]
             "system::force-quit" => {
                 spawn_command("/usr/libexec/rmac/rmac-app-switcher", &["force-quit"], cx)
             }
+            // Windows' Task Manager ends apps that stopped answering.
+            #[cfg(windows)]
+            "system::force-quit" => {
+                if let Err(error) = Command::new("taskmgr.exe").spawn() {
+                    eprintln!("could not open Task Manager: {error}");
+                }
+            }
+            #[cfg(target_os = "linux")]
             "system::sleep" => spawn_command("systemctl", &["suspend"], cx),
+            #[cfg(windows)]
+            "system::sleep" => system::power(PowerCommand::Sleep),
             "system::restart" | "system::shutdown" | "system::logout" => quit_all_then(action, cx),
+            #[cfg(target_os = "linux")]
             "system::lock" => dispatch_shortcut("lock", cx),
+            #[cfg(windows)]
+            "system::lock" => system::power(PowerCommand::LockScreen),
+            // A row only this platform's Lulo menu has (`system::extra_menu`).
+            _ if system::requests::run(&action, cx) => {}
             _ => eprintln!("unknown rmac system menu action: {action}"),
         }
     }
@@ -5789,7 +5900,7 @@ mod bar {
     /// Bring `app_id`'s window forward if it has one, or start `program`.
     fn open_or_focus_app(app_id: &'static str, program: &'static str, cx: &mut App) {
         cx.spawn(async move |cx: &mut gpui::AsyncApp| {
-            let plan = match rmac_compositor_niri::snapshot().await {
+            let plan = match rmac_compositor_system::snapshot().await {
                 Ok(snapshot) => menu_model::open_or_focus(&snapshot, app_id),
                 Err(error) => {
                     eprintln!("could not read windows before opening {app_id}: {error:?}");
@@ -5815,7 +5926,7 @@ mod bar {
                 return;
             }
             for action in &actions {
-                if let Err(error) = rmac_compositor_niri::execute_action(action).await {
+                if let Err(error) = rmac_compositor_system::execute_action(action).await {
                     eprintln!("could not bring {app_id} forward: {error:?}");
                 }
             }
@@ -5834,7 +5945,7 @@ mod bar {
             let started = Instant::now();
             let mut asked = false;
             loop {
-                let snapshot = match rmac_compositor_niri::snapshot().await {
+                let snapshot = match rmac_compositor_system::snapshot().await {
                     Ok(snapshot) => snapshot,
                     Err(error) if menu_model::quit_all_gives_up_on_errors(started.elapsed()) => {
                         // Whether the first read or a later read failed, we
@@ -5862,7 +5973,7 @@ mod bar {
                     );
                     for window in &snapshot.windows {
                         let close = rmac_compositor::Action::CloseWindow { window: window.id };
-                        if let Err(error) = rmac_compositor_niri::execute_action(&close).await {
+                        if let Err(error) = rmac_compositor_system::execute_action(&close).await {
                             eprintln!("could not ask a window to close: {error:?}");
                         }
                     }
@@ -5891,6 +6002,16 @@ mod bar {
                 }
             }
             eprintln!("Lulo session action {action}: handing off to system command");
+            #[cfg(windows)]
+            {
+                let _ = &cx;
+                system::power(match action.as_str() {
+                    "system::restart" => PowerCommand::Restart,
+                    "system::shutdown" => PowerCommand::ShutDown,
+                    _ => PowerCommand::LogOut,
+                });
+            }
+            #[cfg(target_os = "linux")]
             cx.update(|cx| match action.as_str() {
                 // Bare names, resolved through this process's own `PATH`:
                 // checked live (`/proc/<top-bar-pid>/environ`) as part of
@@ -5933,6 +6054,14 @@ mod bar {
 
     /// A transient notice through the session's notification server.
     fn post_system_notice(summary: String, body: String, cx: &mut App) {
+        // Windows: no notification server of Lulo's own yet; the notice is
+        // logged (ADR 0023, "Phase 3 revised", what is left).
+        #[cfg(windows)]
+        {
+            let _ = cx;
+            eprintln!("{summary}: {body}");
+        }
+        #[cfg(target_os = "linux")]
         cx.background_executor()
             .spawn(async move {
                 let shown = summary.clone();
@@ -5966,6 +6095,7 @@ mod bar {
             .detach();
     }
 
+    #[cfg_attr(windows, allow(dead_code))]
     fn power_failure_copy(action: &str, reason: &str) -> (String, String) {
         let verb = match action {
             "system::restart" => "Restart",
@@ -5977,6 +6107,7 @@ mod bar {
         )
     }
 
+    #[cfg_attr(windows, allow(dead_code))]
     fn power_failure_detail(stderr: &[u8], fallback: &str) -> String {
         let detail = String::from_utf8_lossy(stderr)
             .split_whitespace()
@@ -5993,6 +6124,7 @@ mod bar {
     /// Run the final power command and tell the user if logind rejects it
     /// or the command cannot be started. A successful invocation remains
     /// quiet because the session is expected to end immediately.
+    #[cfg(target_os = "linux")]
     fn spawn_power_command(
         action: &'static str,
         program: &'static str,
@@ -6074,7 +6206,7 @@ mod bar {
     }
 
     fn spawn_command(program: &'static str, args: &'static [&'static str], cx: &mut App) {
-        let mut command = Command::new(program);
+        let mut command = Command::new(system::program(program));
         command.args(args);
         run_to_exit(command, program.to_owned(), cx);
     }
@@ -6178,7 +6310,8 @@ mod bar {
         cx: &mut App,
     ) -> AnyWindowHandle {
         let (radius, tint) = (panel.radius, panel.tint);
-        cx.open_window(
+        rmac_shell_layer::open_layer_window(
+            cx,
             WindowOptions {
                 titlebar: None,
                 focus: false,
@@ -6189,17 +6322,17 @@ mod bar {
                 display_id: Some(display.id()),
                 app_id: Some("dev.rmac.MenuMaterial".to_owned()),
                 window_background: WindowBackgroundAppearance::Blurred,
-                kind: WindowKind::LayerShell(LayerShellOptions {
-                    namespace: format!("rmac-menu-material-{output}-{index}"),
-                    layer: Layer::Top,
-                    anchor: Anchor::TOP | Anchor::LEFT,
-                    margin: Some((px(panel.top), px(0.0), px(0.0), px(panel.left))),
-                    keyboard_interactivity: KeyboardInteractivity::None,
-                    // -1 ignores the bar's reserved zone, so the margin is
-                    // measured from the screen top exactly like the menu.
-                    exclusive_zone: Some(px(-1.0)),
-                    ..Default::default()
-                }),
+                ..Default::default()
+            },
+            LayerShellOptions {
+                namespace: format!("rmac-menu-material-{output}-{index}"),
+                layer: Layer::Top,
+                anchor: Anchor::TOP | Anchor::LEFT,
+                margin: Some((px(panel.top), px(0.0), px(0.0), px(panel.left))),
+                keyboard_interactivity: KeyboardInteractivity::None,
+                // -1 ignores the bar's reserved zone, so the margin is
+                // measured from the screen top exactly like the menu.
+                exclusive_zone: Some(px(-1.0)),
                 ..Default::default()
             },
             move |_, cx| cx.new(move |_| MenuBackdrop { radius, tint }),
@@ -6285,8 +6418,8 @@ mod bar {
         let display_id = display.id();
         let width = display.bounds().size.width;
         let height = display.bounds().size.height;
-        let handle = cx
-            .open_window(
+        let handle = rmac_shell_layer::open_layer_window(
+                cx,
                 WindowOptions {
                     titlebar: None,
                     focus: false,
@@ -6300,14 +6433,14 @@ mod bar {
                     // region. Bounded companion surfaces request blur for the
                     // visible panels without softening the whole desktop.
                     window_background: WindowBackgroundAppearance::Transparent,
-                    kind: WindowKind::LayerShell(LayerShellOptions {
-                        namespace: format!("rmac-top-bar-{}", u64::from(display_id)),
-                        layer: Layer::Overlay,
-                        anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-                        keyboard_interactivity: KeyboardInteractivity::OnDemand,
-                        exclusive_zone: Some(px(if fullscreen { 0.0 } else { BAR_HEIGHT })),
-                        ..Default::default()
-                    }),
+                    ..Default::default()
+                },
+                LayerShellOptions {
+                    namespace: format!("rmac-top-bar-{}", u64::from(display_id)),
+                    layer: Layer::Overlay,
+                    anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
+                    keyboard_interactivity: KeyboardInteractivity::OnDemand,
+                    exclusive_zone: Some(px(if fullscreen { 0.0 } else { BAR_HEIGHT })),
                     ..Default::default()
                 },
                 {
@@ -6340,17 +6473,34 @@ mod bar {
         handle.into()
     }
 
+    /// Lulo OS's `top-bar`: its own process, with its own assets.
+    #[cfg(target_os = "linux")]
     pub fn run() {
         let app = application()
             .with_assets(MenuBarAssets)
             .with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
             rmac_shell_ui::tokens::install_appearance_watch(cx);
-            let status = start_status(cx);
             crate::unsaved_guard::start(cx);
             watch_power_dialog_requests(cx);
             watch_restart_to_update_requests(cx);
             watch_menu_focus_requests(cx);
+            start(cx);
+        });
+    }
+
+    /// Open the menu bar on every display and keep it there, in an app
+    /// that is already running: Lulo OS's own `top-bar` process ([`run`]),
+    /// or the Windows shell, which runs every surface in one process and
+    /// serves [`asset`] itself.
+    pub fn start(cx: &mut App) {
+        #[cfg(windows)]
+        {
+            system::requests::register("menu-bar-focus", begin_menu_keyboard_on_first_bar);
+            system::requests::register("shutdown-dialog", show_power_dialog);
+        }
+        {
+            let status = start_status(cx);
             let (backdrop_tx, backdrop_rx) = async_channel::bounded(16);
             cx.spawn(async move |cx| {
                 let mut tracker = MenuBackdropTracker::default();
@@ -6441,12 +6591,13 @@ mod bar {
                 }
             })
             .detach();
-        });
+        }
     }
 
     /// The lock coordinator asks for the shutdown dialog on a second press
     /// of the power button, through the `shutdown-dialog` dispatch socket.
     /// The watch waits on the socket; nothing polls.
+    #[cfg(target_os = "linux")]
     fn watch_power_dialog_requests(cx: &mut App) {
         let (sender, requests) = async_channel::bounded(4);
         cx.background_executor()
@@ -6473,6 +6624,7 @@ mod bar {
     /// `restart-to-update` dispatch socket: every app is asked to quit, as
     /// the Lulo menu's Restart does, and the restart lets
     /// `pk-offline-update` install the prepared update. Nothing polls.
+    #[cfg(target_os = "linux")]
     fn watch_restart_to_update_requests(cx: &mut App) {
         let (sender, requests) = async_channel::bounded(4);
         cx.background_executor()
@@ -6499,6 +6651,7 @@ mod bar {
     /// `rmac-shortcut-dispatch menu-bar-focus`, the same command-endpoint
     /// mechanism the power key uses, through the `menu-bar-focus` dispatch
     /// socket. The watch waits on the socket; nothing polls.
+    #[cfg(target_os = "linux")]
     fn watch_menu_focus_requests(cx: &mut App) {
         let (sender, requests) = async_channel::bounded(4);
         cx.background_executor()
@@ -6552,6 +6705,17 @@ mod bar {
         eprintln!("the power button's shutdown dialog has no menu bar to open in");
     }
 
+    /// A Wayland output that disappeared and came back needs a fresh
+    /// registry, so `top-bar` restarts; Windows keeps its displays.
+    #[cfg(windows)]
+    fn restart_for_reappeared_output(
+        _previous: &BTreeMap<Uuid, bool>,
+        _current: &BTreeMap<Uuid, bool>,
+        _removed: &mut BTreeSet<Uuid>,
+    ) {
+    }
+
+    #[cfg(target_os = "linux")]
     fn restart_for_reappeared_output(
         previous: &BTreeMap<Uuid, bool>,
         current: &BTreeMap<Uuid, bool>,

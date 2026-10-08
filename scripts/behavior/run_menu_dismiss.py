@@ -32,6 +32,9 @@ Scenarios, each starting from a clean (all-closed) state:
   - holding ⌥ while Finder's Application menu is open swaps Empty Bin…
     for its hidden alternate, Empty Bin, in the same row, reverting the
     instant ⌥ is released (UIA-22);
+  - Control Centre's Display and Sound titles open their detail views
+    (Display: brightness and Dark Mode; Sound: the fake outputs), choosing
+    an output switches the default device, and Esc returns to the grid;
   - opening Control Center alongside an open app menu, then clicking the
     wallpaper, closes both (checked with `grim` + a pixel-difference crop
     over Control Center's corner, since it is a layer-shell popover with no
@@ -62,6 +65,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 
+import fake_audio  # noqa: E402
 import fake_hardware  # noqa: E402
 import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
@@ -757,6 +761,222 @@ class Run:
         self.check("Control Centre: the Wi-Fi toggle switches without crashing", toggled)
         self.close_everything()
 
+    def control_centre_detail_panels(self) -> None:
+        """Display and Sound expand into detail views inside Control
+        Centre, as on macOS 26: each module's title opens its view, the
+        view is announced as a named group with its controls, choosing an
+        output in Sound switches the default device (fake_audio.py's
+        PipeWire stand-ins), and Esc returns to the grid."""
+
+        namespace = "rmac-quick-settings"
+        items = ("push button", "button", "menu item", "list item", "label")
+        switches = ("toggle button", "switch", "check box", "push button", "button")
+        state_path = Path(self.env.get(fake_audio.STATE_VARIABLE, ""))
+
+        def open_panel() -> bool:
+            if not self.has_layer(namespace):
+                self.dispatch("quick-settings")
+            return bool(self.wait_for(lambda: self.has_layer(namespace), 10))
+
+        def press(label: str) -> bool:
+            node = self.wait_for(lambda: self.find_node(("push button", "button"),
+                                                        lambda name: name == label), 10)
+            if node is None:
+                return False
+            try:
+                node.queryAction().doAction(0)
+            except Exception:  # noqa: BLE001
+                return False
+            return True
+
+        def showing(roles, label: str) -> bool:
+            return self.find_node(roles, lambda name: name == label) is not None
+
+        def back_to_grid(settings_label: str, title: str) -> None:
+            self.keys.key("escape")
+            back = self.wait_for(lambda: not showing(items, settings_label)
+                                 and showing(("push button", "button"), f"{title} details"), 5)
+            self.check(f"Control Centre {title}: Esc returns to the grid",
+                       back and self.has_layer(namespace))
+
+        self.close_everything()
+        self.check("Control Centre detail: opens", open_panel())
+        if os.environ.get("LULO_FAKE_SYS_ROOT"):
+            opened = press("Display details")
+            listed = opened and self.wait_for(lambda: showing(items, "Display Settings\u2026"), 10)
+            self.check("Control Centre Display: the title opens the Display view", listed)
+            if listed:
+                panel = self.find_node(("panel", "group", "filler"), lambda name: name == "Display")
+                self.check("Control Centre Display: the view is a named group", panel is not None)
+                self.check("Control Centre Display: the brightness slider is in the view",
+                           self.find_node(("slider",), lambda name: name == "Display") is not None)
+                self.check("Control Centre Display: Dark Mode is a switch",
+                           showing(switches, "Dark Mode"))
+                self.check("Control Centre Display: no Night Shift or True Tone without a backend",
+                           not showing(switches, "Night Shift") and not showing(switches, "True Tone"))
+                self.capture("control-centre-display-detail")
+                back_to_grid("Display Settings\u2026", "Display")
+        else:
+            print("SKIP Control Centre Display view: no fake backlight in this session", flush=True)
+
+        if not open_panel():
+            return
+        opened = press("Sound details")
+        listed = opened and self.wait_for(lambda: showing(items, "Sound Settings\u2026"), 10)
+        self.check("Control Centre Sound: the title opens the Sound view", listed)
+        if not listed:
+            self.close_everything()
+            return
+        speakers = self.wait_for(lambda: self.find_node(
+            items, lambda name: name == fake_audio.SPEAKERS["description"]), 10)
+        hdmi = self.find_node(items, lambda name: name == fake_audio.HDMI["description"])
+        self.check("Control Centre Sound: the Output list shows both fake devices",
+                   speakers is not None and hdmi is not None)
+        selected = False
+        try:
+            import pyatspi
+            selected = speakers is not None and speakers.getState().contains(pyatspi.STATE_SELECTED)
+        except Exception:  # noqa: BLE001
+            selected = False
+        self.check("Control Centre Sound: the default output is marked selected", selected)
+        self.capture("control-centre-sound-detail")
+        switched = False
+        if hdmi is not None:
+            try:
+                hdmi.queryAction().doAction(0)
+                switched = bool(self.wait_for(
+                    lambda: json.loads(state_path.read_text())["default"] == fake_audio.HDMI["name"],
+                    10))
+            except Exception:  # noqa: BLE001
+                switched = False
+        self.check("Control Centre Sound: choosing an output switches the default device", switched)
+        if switched:
+            def hdmi_selected() -> bool:
+                import pyatspi
+                node = self.find_node(items, lambda name: name == fake_audio.HDMI["description"])
+                return node is not None and node.getState().contains(pyatspi.STATE_SELECTED)
+            self.check("Control Centre Sound: the list follows the new default",
+                       self.wait_for(hdmi_selected, 10))
+        back_to_grid("Sound Settings\u2026", "Sound")
+        self.close_everything()
+
+    def set_appearance(self, scheme: str) -> None:
+        """Switch every nested Lulo surface to `scheme` ("light"/"dark")
+        through the theme store they all watch."""
+
+        theme = Path(self.env["XDG_CONFIG_HOME"]) / "rmac" / "theme.json"
+        theme.parent.mkdir(parents=True, exist_ok=True)
+        theme.write_text(json.dumps({"version": 1, "preferences": {"color_scheme": scheme}}),
+                         encoding="utf-8")
+        time.sleep(2.0)
+
+    def keep_capture(self, name: str) -> None:
+        if self.args.capture_dir:
+            target = Path(self.args.capture_dir)
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copy(self.work / f"{name}.png", target / f"{name}.png")
+
+    @staticmethod
+    def text_contrast(image: Image.Image, box: tuple[int, int, int, int], dark_text: bool) -> float:
+        """WCAG contrast between a menu row's text and its background: the
+        row's median luminance is the background, its 2nd (dark text) or
+        98th (light text) percentile is the text."""
+
+        def linear(value: int) -> float:
+            channel = value / 255.0
+            return channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4
+
+        x, y, w, h = box
+        pixels = image.crop((x, y, x + w, y + h)).getdata()
+        values = sorted(0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+                        for r, g, b in pixels)
+        if not values:
+            return 0.0
+        background = values[len(values) // 2]
+        text = values[len(values) * 2 // 100] if dark_text else values[len(values) * 98 // 100]
+        light, dark = max(background, text), min(background, text)
+        return (light + 0.05) / (dark + 0.05)
+
+    def desktop_menu_appearance(self) -> None:
+        """The desktop's context menu in Light and Dark (DESK-13): enabled
+        items must read as enabled, at least WCAG AA (4.5:1) text contrast,
+        and Control Centre, its Display and Sound views and Apps are
+        captured in both appearances for side-by-side review."""
+
+        for scheme in ("light", "dark"):
+            self.close_everything()
+            self.set_appearance(scheme)
+            baseline = self.capture(f"desktop-{scheme}")
+            box = None
+            shot = None
+            name = f"desktop-menu-{scheme}"
+            # The menu is painted by the wallpaper surface; wait until its
+            # row really shows on screen, not just in the AT-SPI tree.
+            for _ in range(3):
+                self.click_at(OUTPUT_W / 2 - 200, 420, "right")
+                row = self.wait_for(lambda: self.find_node(
+                    ("menu item",), lambda name: name.startswith("Change Wallpaper")), 10)
+                box = self.extents(row) if row is not None else None
+                if box is None:
+                    continue
+                x, y, w, h = box
+                crop = (x, y, x + w, y + h)
+
+                def painted():
+                    nonlocal shot
+                    shot = self.capture(name)
+                    # The label's glyphs change at least a tenth of the row,
+                    # even where the Light menu matches a pale wallpaper.
+                    return self.changed_pixels(baseline, shot, crop) > (w * h) // 10
+                if self.wait_for(painted, 5, 0.5):
+                    break
+                box = None
+                self.keys.key("escape")
+                time.sleep(0.5)
+            if shot is not None:
+                self.keep_capture(name)
+            self.check(f"desktop menu ({scheme}): opens with its items", box is not None)
+            if box is not None and shot is not None:
+                ratio = self.text_contrast(shot, box, dark_text=scheme == "light")
+                print(f"desktop menu ({scheme}): enabled item contrast {ratio:.2f}:1", flush=True)
+                self.check(f"desktop menu ({scheme}): enabled items have >= 4.5:1 contrast",
+                           ratio >= 4.5, f"{ratio:.2f}:1")
+            self.keys.key("escape")
+            time.sleep(0.4)
+
+            self.dispatch("quick-settings")
+            if self.wait_for(lambda: self.has_layer("rmac-quick-settings"), 10):
+                time.sleep(1.0)
+                self.capture(f"control-centre-{scheme}")
+                self.keep_capture(f"control-centre-{scheme}")
+                for title, settings in (("Display", "Display Settings\u2026"),
+                                        ("Sound", "Sound Settings\u2026")):
+                    node = self.find_node(("push button", "button"),
+                                          lambda name, title=title: name == f"{title} details")
+                    if node is None:
+                        continue
+                    try:
+                        node.queryAction().doAction(0)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    if self.wait_for(lambda settings=settings: self.find_node(
+                            ("push button", "button"), lambda name: name == settings), 5):
+                        time.sleep(0.6)
+                        name = f"control-centre-{title.lower()}-{scheme}"
+                        self.capture(name)
+                        self.keep_capture(name)
+                    self.keys.key("escape")
+                    time.sleep(0.5)
+            self.close_everything()
+
+            self.dispatch("app-drawer")
+            if self.wait_for(lambda: self.has_layer("rmac-app-drawer"), 15):
+                time.sleep(1.5)
+                self.capture(f"apps-{scheme}")
+                self.keep_capture(f"apps-{scheme}")
+            self.close_everything()
+        self.set_appearance("dark")
+
     def control_centre_detail_escape(self) -> None:
         """Esc inside a Control Centre list (Sound's outputs) backs out to
         the grid, and a second Esc closes Control Centre, as on the Mac.
@@ -995,6 +1215,10 @@ class Run:
                 self.control_center_and_app_menu_close_on_wallpaper_click()
             elif self.args.only == "control-centre-list":
                 self.control_centre_detail_escape()
+            elif self.args.only == "control-centre-detail":
+                self.control_centre_detail_panels()
+            elif self.args.only == "appearance":
+                self.desktop_menu_appearance()
             elif self.args.only == "fake-hardware":
                 self.fake_hardware_shows_real_data()
             elif self.args.only == "focus-return":
@@ -1033,6 +1257,8 @@ class Run:
                                     ("app-drawer", "rmac-app-drawer")):
             self.layer_popover_dismissal(shortcut, namespace)
         self.control_centre_detail_escape()
+        self.control_centre_detail_panels()
+        self.desktop_menu_appearance()
         self.fake_hardware_shows_real_data()
         self.clock_popover_dismissal()
         self.control_center_and_app_menu_close_on_wallpaper_click()
@@ -1071,6 +1297,13 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
         run_lulo.install_shortcut_dispatcher(env, Path(args.bin_dir))
         if hardware is not None:
             env.update(hardware.env)
+        else:
+            # Without python3-dbusmock the backlight is still faked, so
+            # Control Centre's Display module and view can be checked.
+            sys_root = work / "fake-sys"
+            fake_hardware.fake_sysfs(sys_root)
+            env["LULO_FAKE_SYS_ROOT"] = str(sys_root)
+        env.update(fake_audio.install(work))
         for key in ("WLR_BACKENDS", "WLR_HEADLESS_OUTPUTS", "WLR_LIBINPUT_NO_DEVICES", "WLR_RENDERER",
                     "LIBGL_ALWAYS_SOFTWARE", "VK_ICD_FILENAMES"):
             env.pop(key, None)
@@ -1117,13 +1350,16 @@ def main() -> int:
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, wallpaper, "
                                           "rmac-quick-settings and rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--capture-dir", type=Path,
+                        help="keep the Light/Dark desktop menu, Control Centre and Apps captures here")
     parser.add_argument(
         "--no-fake-hardware", dest="fake_hardware", action="store_false", default=True,
         help="skip the private NetworkManager/BlueZ/UPower mocks (docs/behavior-suite.md)",
     )
     parser.add_argument("--only", choices=("topbar", "status", "dock", "quick-settings",
                                            "launcher", "app-drawer", "notification-center",
-                                           "combined", "control-centre-list", "fake-hardware",
+                                           "combined", "control-centre-list",
+                                           "control-centre-detail", "appearance", "fake-hardware",
                                            "focus-return", "option-alternate"))
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

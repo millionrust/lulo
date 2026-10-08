@@ -1,9 +1,10 @@
 //! Control Center detail views and keyboard focus.
 //!
-//! Choosing the Wi-Fi or Bluetooth module, or the Sound module's output
-//! button, replaces the grid with a list in the same surface, as macOS 26
-//! does: nearby and saved networks, paired devices, or sound outputs, then a
-//! "… Settings…" row. Geometry is from `design-lab/control-center.html`
+//! Choosing the Wi-Fi or Bluetooth module, the Display or Sound module's
+//! title, or the Sound module's output button, replaces the grid with a list
+//! in the same surface, as macOS 26 does: nearby and saved networks, paired
+//! devices, the display's brightness and appearance, or sound outputs, then
+//! a "… Settings…" row. Geometry is from `design-lab/control-center.html`
 //! (measured 2026-09-24), in points from the detail panel's top-left.
 
 use crate::{Command, Inputs};
@@ -13,6 +14,7 @@ use crate::{Command, Inputs};
 pub enum Detail {
     Wifi,
     Bluetooth,
+    Display,
     Sound,
 }
 
@@ -21,6 +23,7 @@ impl Detail {
         match self {
             Self::Wifi => "Wi-Fi",
             Self::Bluetooth => "Bluetooth",
+            Self::Display => "Display",
             Self::Sound => "Sound",
         }
     }
@@ -30,6 +33,7 @@ impl Detail {
         match self {
             Self::Wifi => ("Wi-Fi Settings\u{2026}", "wifi"),
             Self::Bluetooth => ("Bluetooth Settings\u{2026}", "bluetooth"),
+            Self::Display => ("Display Settings\u{2026}", "displays"),
             Self::Sound => ("Sound Settings\u{2026}", "sound"),
         }
     }
@@ -69,6 +73,40 @@ pub mod geometry {
     pub const ITEM_GAP: f32 = 5.0;
     /// Separator → the settings row, and the settings row → the bottom.
     pub const FOOTER_GAP: f32 = 6.0;
+    /// Display's round toggles (Dark Mode, …): 36 pt circles centred 85
+    /// below the panel top on columns 98 apart, the name centred at 116
+    /// and its state at 130, and the first separator at 148 (measured on
+    /// macOS 26, 2026-10-08).
+    pub const TOGGLE_CIRCLE: f32 = 36.0;
+    pub const TOGGLE_CENTRE: f32 = 85.0;
+    pub const TOGGLE_PITCH: f32 = 98.0;
+    pub const TOGGLE_NAME_CENTRE: f32 = 116.0;
+    pub const TOGGLE_STATE_CENTRE: f32 = 130.0;
+    pub const TOGGLE_WIDTH: f32 = 96.0;
+    pub const TOGGLE_HEADER: f32 = 148.0;
+}
+
+/// A round toggle under the Display slider. Only what Lulo can really
+/// drive is listed: Dark Mode through the theme store. Night Shift needs a
+/// night-light service Lulo does not have yet, and True Tone has no Linux
+/// equivalent, so neither is shown.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DisplayToggle {
+    DarkMode,
+}
+
+impl DisplayToggle {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::DarkMode => "Dark Mode",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Toggle {
+    pub kind: DisplayToggle,
+    pub on: bool,
 }
 
 /// The circle glyph a row shows.
@@ -113,6 +151,8 @@ pub struct Panel {
     /// "Weak Security…" under the Wi-Fi title while on an open network.
     pub notice: Option<&'static str>,
     pub slider: bool,
+    /// Display's round toggles, left to right.
+    pub toggles: Vec<Toggle>,
     pub sections: Vec<Section>,
     /// Wi-Fi's "Other Networks" disclosure: `Some(expanded)`.
     pub disclosure: Option<bool>,
@@ -184,6 +224,7 @@ pub fn wifi_panel(wifi: &rmac_network::WifiSnapshot, others_expanded: bool) -> P
         switch: wifi.available.then_some(wifi.enabled),
         notice: None,
         slider: false,
+        toggles: Vec::new(),
         sections: Vec::new(),
         disclosure: None,
         others: Vec::new(),
@@ -240,6 +281,7 @@ pub fn bluetooth_panel(bluetooth: &rmac_bluetooth::Snapshot) -> Panel {
         switch: bluetooth.available.then_some(bluetooth.powered),
         notice: None,
         slider: false,
+        toggles: Vec::new(),
         sections: Vec::new(),
         disclosure: None,
         others: Vec::new(),
@@ -308,6 +350,7 @@ pub fn sound_panel<'a>(
         switch: None,
         notice: None,
         slider: true,
+        toggles: Vec::new(),
         sections: Vec::new(),
         disclosure: None,
         others: Vec::new(),
@@ -338,11 +381,40 @@ pub fn sound_panel<'a>(
     panel
 }
 
-/// The panel for `detail` from the live inputs.
-pub fn panel(detail: Detail, inputs: &Inputs, others_expanded: bool) -> Panel {
+/// Display: the brightness slider, then Dark Mode when the appearance can
+/// be read (`dark_mode` is `None` when it cannot).
+pub fn display_panel(dark_mode: Option<bool>) -> Panel {
+    Panel {
+        detail: Detail::Display,
+        switch: None,
+        notice: None,
+        slider: true,
+        toggles: dark_mode
+            .map(|on| Toggle {
+                kind: DisplayToggle::DarkMode,
+                on,
+            })
+            .into_iter()
+            .collect(),
+        sections: Vec::new(),
+        disclosure: None,
+        others: Vec::new(),
+        empty: None,
+    }
+}
+
+/// The panel for `detail` from the live inputs. `dark_mode` is the
+/// resolved appearance, for Display's Dark Mode toggle.
+pub fn panel(
+    detail: Detail,
+    inputs: &Inputs,
+    others_expanded: bool,
+    dark_mode: Option<bool>,
+) -> Panel {
     match detail {
         Detail::Wifi => wifi_panel(&inputs.wifi, others_expanded),
         Detail::Bluetooth => bluetooth_panel(&inputs.bluetooth),
+        Detail::Display => display_panel(dark_mode),
         Detail::Sound => sound_panel(
             inputs.audio.available && inputs.audio.has_output,
             inputs.audio.can_set_default,
@@ -361,6 +433,8 @@ pub enum Target {
     Switch,
     Notice,
     Slider,
+    /// Display's round toggle `index`.
+    Toggle(usize),
     /// Row `row` of section `section`.
     Row {
         section: usize,
@@ -390,7 +464,7 @@ pub enum Part {
 }
 
 impl Panel {
-    /// Keyboard order: the switch, the notice or slider, every row, the
+    /// Keyboard order: the switch, the notice or slider, the toggles, every row, the
     /// disclosure and what it shows, then the settings row.
     pub fn targets(&self) -> Vec<Target> {
         let mut targets = Vec::new();
@@ -403,6 +477,7 @@ impl Panel {
         if self.slider {
             targets.push(Target::Slider);
         }
+        targets.extend((0..self.toggles.len()).map(Target::Toggle));
         for (section, rows) in self.sections.iter().enumerate() {
             for row in 0..rows.rows.len() {
                 targets.push(Target::Row { section, row });
@@ -457,7 +532,9 @@ impl Panel {
     pub fn layout(&self) -> (Vec<Placed>, f32) {
         use geometry::*;
         let mut placed = Vec::new();
-        let mut y = if self.notice.is_some() || self.slider {
+        let mut y = if !self.toggles.is_empty() {
+            TOGGLE_HEADER
+        } else if self.notice.is_some() || self.slider {
             TALL_HEADER
         } else {
             SHORT_HEADER
@@ -574,6 +651,7 @@ impl Module {
         match self {
             Self::Wifi => Some(Detail::Wifi),
             Self::Bluetooth => Some(Detail::Bluetooth),
+            Self::Display => Some(Detail::Display),
             Self::Sound => Some(Detail::Sound),
             _ => None,
         }
@@ -914,6 +992,43 @@ mod tests {
         panel.fit(max);
         assert!(panel.layout().1 <= max);
         assert!(panel.sections[0].rows.iter().any(|row| row.on));
+    }
+
+    #[test]
+    fn display_lists_dark_mode_only_when_the_appearance_is_known() {
+        let panel = display_panel(Some(true));
+        assert!(panel.slider);
+        assert_eq!(
+            panel.toggles,
+            [Toggle {
+                kind: DisplayToggle::DarkMode,
+                on: true
+            }]
+        );
+        assert_eq!(
+            panel.targets(),
+            [Target::Slider, Target::Toggle(0), Target::Settings]
+        );
+        // Toggles row, separator at the measured 148, then Display
+        // Settings… 6 below it and 6 above the bottom.
+        let (placed, height) = panel.layout();
+        assert_eq!(
+            placed
+                .iter()
+                .map(|part| (part.kind, part.top))
+                .collect::<Vec<_>>(),
+            [(Part::Separator, 148.0), (Part::Item, 154.0)]
+        );
+        assert_eq!(height, 182.0);
+        assert_eq!(
+            panel.detail.settings(),
+            ("Display Settings\u{2026}", "displays")
+        );
+
+        let unknown = display_panel(None);
+        assert!(unknown.toggles.is_empty());
+        assert_eq!(unknown.targets(), [Target::Slider, Target::Settings]);
+        assert_eq!(Module::Display.detail(), Some(Detail::Display));
     }
 
     #[test]

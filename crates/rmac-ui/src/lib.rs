@@ -58,7 +58,7 @@ pub use controls::{
     PopUpButton, PopupMenuItem, Position, Radio, RadioGroup, Rope, RopeExt, ScrollPosition,
     SearchField, SegmentedControl, SelectAll, Slider, SliderAxis, SliderBulge, SliderEvent,
     SliderState, SwitchSize, Table, Tabs, TextField, Toggle, ToggleState, Tree, TreeRow,
-    SLIDER_BULGE_MS,
+    SLIDER_BULGE_MS, SLIDER_PRESS_MS,
 };
 pub use controls::{tooltip_view, Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{

@@ -18,17 +18,6 @@ use crate::{OpenApp, RevealInFinder};
 
 pub(crate) const DRAWER_WIDTH: f32 = 760.0;
 pub(crate) const DRAWER_HEIGHT: f32 = 520.0;
-/// Clear margin the layer-shell surface reserves around the visible panel so
-/// its `.shadow_lg()` (offset 0,10 blur 15 spread -3 dominant layer, a
-/// ~25 px reach) is not clipped by the surface's own bounds — the panel
-/// used to fill the surface exactly, with no room for the blur to fall off,
-/// which cut it to a hard-edged flat band (same class as the Restart/Shut
-/// Down dialog's clipped shadow; `docs/parity.md` SESSION-07/-08). The
-/// surface opens `DRAWER_WIDTH/HEIGHT + 2 * DRAWER_SHADOW_GUTTER`, the panel
-/// is inset by this on every side, and the window's input region is
-/// restricted to the inset panel so a click in the gutter still reaches the
-/// click-outside catcher behind it.
-pub(crate) const DRAWER_SHADOW_GUTTER: f32 = 28.0;
 const TILE_W: f32 = 88.0;
 const ICON: f32 = 54.0;
 const ROW_ICON: f32 = 32.0;

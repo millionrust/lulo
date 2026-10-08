@@ -107,7 +107,7 @@ def _write(path: Path, value: str) -> None:
     path.write_text(value)
 
 
-def _fake_sysfs(root: Path) -> None:
+def fake_sysfs(root: Path) -> None:
     """A scratch tree shaped like /sys: just enough for
     system-settings::hardware::scan() (battery/backlight/bluetooth/wifi
     class presence) and rmac-osd's backlight reader to see the same
@@ -283,7 +283,7 @@ def start(work: Path) -> Optional["FakeHardware"]:
         print(f"fake_hardware: accounts/printer mocks unavailable ({error})", file=sys.stderr)
 
     sys_root = work / "fake-sys"
-    _fake_sysfs(sys_root)
+    fake_sysfs(sys_root)
 
     env = {
         "DBUS_SYSTEM_BUS_ADDRESS": system_bus.address,

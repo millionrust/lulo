@@ -1,10 +1,10 @@
 mod content;
 
 use gpui::{
-    div, point, prelude::FluentBuilder as _, px, size, svg, AppContext as _, Bounds, Context, Div,
-    DragMoveEvent, InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent,
-    ObjectFit, ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement as _,
-    Styled, StyledImage as _, Window,
+    div, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, DragMoveEvent,
+    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
+    ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
+    StyledImage as _, Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_app_drawer::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
@@ -14,15 +14,12 @@ use crate::catalog::{App, Category};
 use crate::{ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp, OpenApp, RevealInFinder};
 
 use super::{
-    AppDrawer, LaunchDesktopAction, ViewMode, DRAWER_HEIGHT, DRAWER_SHADOW_GUTTER, DRAWER_WIDTH,
-    ICON, ROW_ICON, TILE_W,
+    AppDrawer, LaunchDesktopAction, ViewMode, DRAWER_HEIGHT, DRAWER_WIDTH, ICON, ROW_ICON, TILE_W,
 };
 
 impl Render for AppDrawer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // The panel's own content width never changes with the surface's
-        // shadow gutter (see `DRAWER_SHADOW_GUTTER`): it is always exactly
-        // `DRAWER_WIDTH`, not the live (gutter-inflated) window viewport.
+        // The panel is always exactly `DRAWER_WIDTH` wide.
         let viewport_width = DRAWER_WIDTH;
         let usable_width = (viewport_width - 48.0).max(TILE_W);
         self.cols = ((usable_width / (TILE_W + 8.0)).floor() as usize).max(1);
@@ -133,15 +130,7 @@ impl Render for AppDrawer {
                 .into_any_element()
         };
 
-        // Only the panel itself takes input; the surrounding shadow gutter
-        // passes clicks through to the click-outside catcher behind it
-        // (`crates/app-drawer/src/service.rs`'s `open_drawer`).
-        window.set_input_region(Some(&[Bounds::new(
-            point(px(DRAWER_SHADOW_GUTTER), px(DRAWER_SHADOW_GUTTER)),
-            size(px(DRAWER_WIDTH), px(DRAWER_HEIGHT)),
-        )]));
-
-        let panel = div()
+        div()
             .track_focus(&self.focus)
             .key_context("AppDrawer")
             .on_action(cx.listener(|this, _: &MoveLeft, _, cx| {
@@ -191,16 +180,12 @@ impl Render for AppDrawer {
             .on_drag_move(cx.listener(
                 |this, event: &DragMoveEvent<content::DraggedApp>, _window, cx| {
                     let app_id = event.drag(cx).app_id.clone();
-                    // Event positions are window-relative, so the panel's
-                    // own (gutter-inset) rectangle, not the live viewport,
-                    // is what "below the panel" and the drop fraction are
-                    // measured against (`DRAWER_SHADOW_GUTTER`).
-                    let below =
-                        f32::from(event.event.position.y) > DRAWER_SHADOW_GUTTER + DRAWER_HEIGHT;
+                    // Event positions are window-relative, and the window
+                    // is exactly the panel.
+                    let below = f32::from(event.event.position.y) > DRAWER_HEIGHT;
                     if below {
-                        let fraction = ((f32::from(event.event.position.x) - DRAWER_SHADOW_GUTTER)
-                            / DRAWER_WIDTH)
-                            .clamp(0.0, 1.0);
+                        let fraction =
+                            (f32::from(event.event.position.x) / DRAWER_WIDTH).clamp(0.0, 1.0);
                         crate::drag_endpoint::send(
                             &app_id,
                             crate::drag_endpoint::Phase::Hover(fraction),
@@ -221,27 +206,20 @@ impl Render for AppDrawer {
                     let Some(app_id) = this.dock_drag.take() else {
                         return;
                     };
-                    let fraction = ((f32::from(event.position.x) - DRAWER_SHADOW_GUTTER)
-                        / DRAWER_WIDTH)
-                        .clamp(0.0, 1.0);
+                    let fraction = (f32::from(event.position.x) / DRAWER_WIDTH).clamp(0.0, 1.0);
                     crate::drag_endpoint::send(
                         &app_id,
                         crate::drag_endpoint::Phase::Drop(fraction),
                     );
                 }),
             )
-            .absolute()
-            .top(px(DRAWER_SHADOW_GUTTER))
-            .left(px(DRAWER_SHADOW_GUTTER))
-            .w(px(DRAWER_WIDTH))
-            .h(px(DRAWER_HEIGHT))
+            .size_full()
             .v_flex()
             .bg(mac::material_popover())
             .rounded(px(mac::radius_large_surface()))
             .overflow_hidden()
             .border_1()
             .border_color(mac::separator())
-            .shadow_lg()
             .occlude()
             .text_color(mac::text())
             .child(
@@ -324,15 +302,6 @@ impl Render for AppDrawer {
             )
             .when_some(context_menu, |element: Div, (menu, state)| {
                 element.child(menu.render(&state))
-            });
-
-        // The surface is inflated by `DRAWER_SHADOW_GUTTER` beyond the
-        // panel on every side so the panel's own `.shadow_lg()` has room to
-        // fall off instead of being cut flat at the surface edge; this
-        // outer element establishes the positioning context the panel's
-        // `.absolute()` inset is measured from and stays fully transparent
-        // and click-through outside the panel (see the input-region call
-        // above).
-        div().relative().size_full().child(panel)
+            })
     }
 }

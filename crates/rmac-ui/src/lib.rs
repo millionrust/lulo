@@ -12,6 +12,8 @@ mod components;
 mod context_menu;
 mod controls;
 mod feedback;
+#[cfg(windows)]
+mod file_watch_windows;
 pub mod gallery;
 #[cfg(windows)]
 mod instance_windows;

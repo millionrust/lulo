@@ -46,6 +46,14 @@ creation, first frame, first present), timed from process creation, and
 idle window are grouped by source and printed, so a regression names its
 cause.
 
+With `--world-tick-check`, Clock is launched once more with its World Clock
+redraw period shortened to `WORLD_TICK_SECONDS` (`RMAC_CLOCK_WORLD_TICK_MS`,
+otherwise a minute) and left alone through the same settle and idle window,
+so the window holds many World Clock redraws instead of a one-in-three
+chance of one. Its CPU over the window, divided by the redraws in it, is
+what one minute tick costs (`world_tick` in `--results`, checked by
+`idle_gate.py --max-world-tick-ticks`).
+
 With `--foreground-check <app>`, after every app in `apps` has been tested
 and closed, one more pair is launched back to back and left running (not
 killed early like every other check): `<app>` first, then whichever of
@@ -99,6 +107,8 @@ LAUNCH_POLL_SECONDS = 0.02
 IDLE_SETTLE_SECONDS = 10.0
 # How long the idle-CPU measurement itself runs.
 IDLE_WINDOW_SECONDS = 20.0
+# `--world-tick-check`: the shortened World Clock redraw period.
+WORLD_TICK_SECONDS = 2.0
 # Windows' default scheduling quantum: a process doing nothing should not
 # show up as having used even one of these across the whole window.
 TICK_SECONDS = 0.0156
@@ -209,19 +219,119 @@ def thread_cpu_times_100ns(pid: int) -> dict[int, tuple[str, int]]:
     return threads
 
 
+class _MODULEINFO(ctypes.Structure):
+    _fields_ = [
+        ("lpBaseOfDll", ctypes.c_void_p),
+        ("SizeOfImage", wintypes.DWORD),
+        ("EntryPoint", ctypes.c_void_p),
+    ]
+
+
+def thread_start_modules(pid: int, tids) -> dict[int, str]:
+    """The module (lower-case file name) each of `tids` started in, from
+    its Win32 start address; threads that cannot be read are left out."""
+    kernel32 = ctypes.windll.kernel32
+    psapi = ctypes.windll.psapi
+    ntdll = ctypes.windll.ntdll
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenThread.restype = wintypes.HANDLE
+    process = kernel32.OpenProcess(0x0400 | 0x0010, False, pid)  # QUERY_INFORMATION | VM_READ
+    if not process:
+        return {}
+    ranges: list[tuple[int, int, str]] = []
+    try:
+        handles = (ctypes.c_void_p * 1024)()
+        needed = wintypes.DWORD()
+        if not psapi.EnumProcessModulesEx(
+            wintypes.HANDLE(process), handles, ctypes.sizeof(handles), ctypes.byref(needed), 3
+        ):
+            return {}
+        count = min(needed.value // ctypes.sizeof(ctypes.c_void_p), len(handles))
+        for module in handles[:count]:
+            info = _MODULEINFO()
+            if not psapi.GetModuleInformation(
+                wintypes.HANDLE(process),
+                ctypes.c_void_p(module),
+                ctypes.byref(info),
+                ctypes.sizeof(info),
+            ):
+                continue
+            name = ctypes.create_unicode_buffer(260)
+            psapi.GetModuleBaseNameW(wintypes.HANDLE(process), ctypes.c_void_p(module), name, 260)
+            ranges.append((info.lpBaseOfDll or 0, info.SizeOfImage, name.value.lower()))
+    finally:
+        kernel32.CloseHandle(wintypes.HANDLE(process))
+    modules: dict[int, str] = {}
+    for tid in tids:
+        handle = kernel32.OpenThread(0x0040, False, tid)  # THREAD_QUERY_INFORMATION
+        if not handle:
+            continue
+        try:
+            start = ctypes.c_void_p()
+            status = ntdll.NtQueryInformationThread(
+                wintypes.HANDLE(handle), 9, ctypes.byref(start), ctypes.sizeof(start), None
+            )  # ThreadQuerySetWin32StartAddress
+            if status != 0 or not start.value:
+                continue
+            for base, size, name in ranges:
+                if base <= start.value < base + size:
+                    modules[tid] = name
+                    break
+        finally:
+            kernel32.CloseHandle(wintypes.HANDLE(handle))
+    return modules
+
+
 def busy_threads(
-    before: dict[int, tuple[str, int]], after: dict[int, tuple[str, int]]
+    before: dict[int, tuple[str, int]],
+    after: dict[int, tuple[str, int]],
+    modules: dict[int, str] | None = None,
 ) -> list[tuple[str, float]]:
     """The threads that used CPU between two `thread_cpu_times_100ns`
-    snapshots, as ("name (tid)", ticks), busiest first. A thread that
-    started in between counts all its time."""
+    snapshots, as ("name (tid)", ticks), busiest first, with
+    " [module]" added where `modules` knows the thread's start module. A
+    thread that started in between counts all its time."""
+    modules = modules or {}
     busy = []
     for tid, (name, time_after) in after.items():
         time_before = before.get(tid, (name, 0))[1]
         delta = time_after - time_before
         if delta > 0:
-            busy.append((f"{name or 'unnamed'} ({tid})", delta / TICK_100NS))
+            label = f"{name or 'unnamed'} ({tid})"
+            if tid in modules:
+                label += f" [{modules[tid]}]"
+            busy.append((label, delta / TICK_100NS))
     return sorted(busy, key=lambda item: -item[1])
+
+
+CPU_PREFIX = "gpui_windows cpu: "
+# Threads of the Windows thread pool start in ntdll. GPUI's background
+# tasks run there, and so do the workers of WARP, Direct3D's software
+# rasteriser that stands in for a GPU on a machine without one (GitHub's
+# runners): on a real PC that work is the GPU's.
+THREAD_POOL_MODULE = "ntdll.dll"
+
+
+def pool_task_ticks(trace: str) -> float:
+    """The CPU the app's own thread-pool tasks used, from the
+    `gpui_windows cpu:` lines (`RMAC_GPUI_WAKE_TRACE`) in `trace`."""
+    total = 0
+    for line in trace.splitlines():
+        if not line.startswith(CPU_PREFIX):
+            continue
+        fields = line[len(CPU_PREFIX) :].rsplit(" at ", 1)[0].split()
+        if fields and fields[-1].isdigit():
+            total += int(fields[-1])
+    return total / TICK_100NS
+
+
+def software_renderer_ticks(threads: list[tuple[str, float]], trace: str) -> float:
+    """The part of `busy_threads` the software rasteriser used: the thread
+    pool's time less what the app's own pool tasks report using."""
+    pool = sum(
+        ticks for label, ticks in threads if label.endswith(f"[{THREAD_POOL_MODULE}]")
+    )
+    return max(pool - pool_task_ticks(trace), 0.0)
 
 
 def measure_idle_cpu(
@@ -245,7 +355,10 @@ def measure_idle_cpu(
     after = process_cpu_time_100ns(pid)
     if after is None:
         return None
-    threads = busy_threads(threads_before, thread_cpu_times_100ns(pid))
+    threads_after = thread_cpu_times_100ns(pid)
+    threads = busy_threads(
+        threads_before, threads_after, thread_start_modules(pid, threads_after.keys())
+    )
     trace = ""
     if log is not None and log.exists():
         with log.open("rb") as output:
@@ -646,6 +759,7 @@ def launch(
             wakes = summarize_wakes(trace)
             total = sum(1 for line in trace.splitlines() if line.startswith(WAKE_PREFIX))
             measurement["idle_ticks"] = round(ticks, 3)
+            measurement["idle_renderer_ticks"] = round(software_renderer_ticks(threads, trace), 3)
             measurement["idle_wakes"] = total
             measurement["idle_wake_sources"] = [
                 {"count": count, "source": source} for count, source in wakes
@@ -756,6 +870,78 @@ def check_foreground_order(
             directory.cleanup()
 
 
+def measure_world_tick(bin_dir: Path, screenshots: Path | None) -> str | None:
+    """Time Clock's World Clock redraw: launch it with the redraw period
+    shortened to `WORLD_TICK_SECONDS`, leave it alone for the usual settle,
+    then charge the CPU it used over the idle window to the redraws that
+    fell inside it. The software rasteriser's share (WARP, the runner's
+    stand-in for a GPU: about 9 ticks for any full frame of a 1024 x 768
+    window, whatever the window shows) is reported apart from Clock's own."""
+    app = "rmac-clock"
+    with tempfile.TemporaryDirectory(prefix=f"{app}-tick-") as directory:
+        profile = Path(directory)
+        environment = dict(os.environ)
+        environment["APPDATA"] = str(profile / "Roaming")
+        environment["LOCALAPPDATA"] = str(profile / "Local")
+        environment["RMAC_GPUI_WAKE_TRACE"] = "1"
+        environment["RMAC_CLOCK_WORLD_TICK_MS"] = str(int(WORLD_TICK_SECONDS * 1000))
+        for folder in ("Roaming", "Local"):
+            (profile / folder).mkdir(parents=True, exist_ok=True)
+        log = profile / "output.log"
+        with log.open("wb") as output:
+            process = subprocess.Popen(
+                [str(bin_dir / f"{app}.exe")],
+                env=environment,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+            )
+        try:
+            found = wait_for_window(process.pid)
+            if found is None:
+                return f"{app} opened no visible window within {WINDOW_TIMEOUT_SECONDS:.0f} s"
+            bring_forward(found[0])
+            idle = measure_idle_cpu(process.pid, log=log)
+            if idle is None:
+                return f"{app}: could not read its CPU time"
+            ticks, _percent, trace, threads = idle
+            if screenshots is not None:
+                save(grab(), screenshots / f"{app}-world-tick.png")
+            redraws = IDLE_WINDOW_SECONDS / WORLD_TICK_SECONDS
+            drawn = sum(
+                1 for line in trace.splitlines() if line.startswith(WAKE_PREFIX + "frame drew")
+            )
+            renderer = software_renderer_ticks(threads, trace)
+            own = max(ticks - renderer, 0.0)
+            print(
+                f"{app}: World Clock redraw every {WORLD_TICK_SECONDS:g} s: "
+                f"{ticks:.2f} ticks over {IDLE_WINDOW_SECONDS:.0f} s, {drawn} frames drawn; "
+                f"per minute tick {own / redraws:.2f} ticks of Clock's own and "
+                f"{renderer / redraws:.2f} in the software rasteriser"
+            )
+            for count, source in summarize_wakes(trace):
+                print(f"{app}:   {count:5d} x {source}")
+            for thread, thread_ticks in threads[:8]:
+                print(f"{app}:   thread {thread} used {thread_ticks:.2f} ticks")
+            MEASUREMENTS.setdefault(app, {})["world_tick"] = {
+                "period_ms": int(WORLD_TICK_SECONDS * 1000),
+                "redraws": redraws,
+                "frames_drawn": drawn,
+                "ticks": round(ticks, 3),
+                "ticks_per_redraw": round(ticks / redraws, 3),
+                "renderer_ticks_per_redraw": round(renderer / redraws, 3),
+                "own_ticks_per_redraw": round(own / redraws, 3),
+                "busy_threads": [
+                    {"thread": thread, "ticks": round(thread_ticks, 3)}
+                    for thread, thread_ticks in threads[:8]
+                ],
+            }
+            return None
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=30)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("bin_dir", type=Path)
@@ -768,6 +954,14 @@ def main() -> int:
             "Open APP, then whichever of rmac-weather/rmac-terminal is "
             "later in `apps`, without closing APP first, and check the "
             "second app's window becomes the foreground window."
+        ),
+    )
+    parser.add_argument(
+        "--world-tick-check",
+        action="store_true",
+        help=(
+            "Launch rmac-clock again with a shortened World Clock redraw "
+            "period and report what one redraw costs."
         ),
     )
     parser.add_argument(
@@ -837,6 +1031,11 @@ def main() -> int:
             if error is not None:
                 failures += 1
                 print(f"foreground order: FAIL: {error}")
+    if arguments.world_tick_check:
+        error = measure_world_tick(arguments.bin_dir, arguments.screenshots)
+        if error is not None:
+            failures += 1
+            print(f"world tick: FAIL: {error}")
     if arguments.shell:
         import shell_smoke  # this script's own folder is on sys.path
 
@@ -852,6 +1051,7 @@ def main() -> int:
                 startup_phases,
                 WAKE_PREFIX,
                 TICK_100NS,
+                software_renderer_ticks,
             )
         for failure in shell_failures:
             failures += 1

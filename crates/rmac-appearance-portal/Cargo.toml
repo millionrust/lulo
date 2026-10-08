@@ -9,6 +9,9 @@ authors.workspace = true
 async-channel.workspace = true
 rmac-appearance.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Win32_Foundation", "Win32_System_Registry"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd.workspace = true
 async-io.workspace = true

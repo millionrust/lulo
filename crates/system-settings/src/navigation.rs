@@ -455,7 +455,7 @@ fn color(hex: u32) -> Hsla {
     gpui::rgb(hex).into()
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

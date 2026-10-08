@@ -156,32 +156,12 @@ impl Land {
     }
 }
 
-/// Paint the map as BGRA pixels (GPUI's image layout), opaque.
-pub fn paint(
-    land: &[bool],
-    sun: &Subsolar,
-    map_width: f32,
-    width: usize,
-    height: usize,
-    scale: f32,
-) -> Vec<u8> {
-    let mut day = vec![false; width * height];
-    let columns: Vec<f64> = (0..width)
-        .map(|column| {
-            let longitude = (column as f64 + 0.5) / width as f64 * 360.0 - 180.0;
-            (longitude - sun.longitude).to_radians().cos()
-        })
-        .collect();
-    let (sin_decl, cos_decl) = sun.declination.sin_cos();
-    for row in 0..height {
-        let latitude = latitude_at(map_width, (row as f32 + 0.5) / scale).to_radians();
-        let (sin_lat, cos_lat) = latitude.sin_cos();
-        let base = sin_lat * sin_decl;
-        let factor = cos_lat * cos_decl;
-        for (column, cosine) in columns.iter().enumerate() {
-            day[row * width + column] = base + factor * cosine > 0.0;
-        }
-    }
+/// Paint the map's fixed layer as BGRA pixels (GPUI's image layout),
+/// opaque: ocean, the meridian lines and the land in its daylight colour.
+/// It depends only on the size, so it is painted once per size; each
+/// minute only darkens its night side ([`paint_night`]), so a minute tick
+/// never re-rasterises the land.
+pub fn paint_base(land: &[bool], width: usize, height: usize, scale: f32) -> Vec<u8> {
     let band = width as f32 / MERIDIAN_BANDS as f32;
     let line = scale.round().max(1.0) as usize;
     let is_meridian = |column: usize| {
@@ -195,19 +175,8 @@ pub fn paint(
     for row in 0..height {
         for (column, &meridian) in meridian_columns.iter().enumerate() {
             let index = row * width + column;
-            let lit = day[index];
-            let edge = (column + 1 < width && day[index + 1] != lit)
-                || (column > 0 && day[index - 1] != lit)
-                || (row + 1 < height && day[index + width] != lit)
-                || (row > 0 && day[index - width] != lit);
-            let colour = if edge {
-                TERMINATOR
-            } else if land[index] {
-                if lit {
-                    DAY_LAND
-                } else {
-                    NIGHT_LAND
-                }
+            let colour = if land[index] {
+                DAY_LAND
             } else if meridian {
                 MERIDIAN
             } else {
@@ -219,6 +188,100 @@ pub fn paint(
             out[2] = (colour >> 16) as u8;
             out[3] = 0xFF;
         }
+    }
+    pixels
+}
+
+/// The night side is the fixed layer under black at this opacity, which
+/// turns [`DAY_LAND`] into [`NIGHT_LAND`] and leaves the ocean black.
+pub fn night_shade() -> f32 {
+    let day = ((DAY_LAND >> 16) & 0xFF) as f32;
+    let night = ((NIGHT_LAND >> 16) & 0xFF) as f32;
+    1.0 - night / day
+}
+
+/// The day/night boundary across a map `map_width` points wide, split into
+/// `columns` equal columns (one per pixel when drawn): the boundary's y, in
+/// points from the map's top and clamped to the band, at each column's
+/// centre. Night lies below it when [`night_is_below`] says so, above it
+/// otherwise.
+pub fn terminator(sun: &Subsolar, map_width: f32, columns: usize) -> Vec<f32> {
+    let map_height = height_for(map_width);
+    // At an equinox the boundary runs pole to pole; keep the tangent finite.
+    let declination = if sun.declination.abs() < 1e-6 {
+        1e-6_f64.copysign(sun.declination)
+    } else {
+        sun.declination
+    };
+    let tangent = declination.tan();
+    (0..columns)
+        .map(|column| {
+            let longitude = (column as f64 + 0.5) / columns as f64 * 360.0 - 180.0;
+            let hour = (longitude - sun.longitude).to_radians();
+            let latitude = (-hour.cos() / tangent).atan().to_degrees();
+            project(map_width, longitude, latitude)
+                .1
+                .clamp(0.0, map_height)
+        })
+        .collect()
+}
+
+/// Whether the night side lies below the [`terminator`] (the south pole is
+/// dark, as through the northern summer) rather than above it.
+pub fn night_is_below(sun: &Subsolar) -> bool {
+    sun.declination >= 0.0
+}
+
+/// One minute's map: the fixed layer ([`paint_base`]) with the night side
+/// past the [`terminator`] darkened by [`night_shade`] and the boundary
+/// drawn as a one-pixel line, as the Mac draws it. One pass over the
+/// night side's pixels, with one arctangent per column.
+pub fn paint_night(
+    base: &[u8],
+    sun: &Subsolar,
+    map_width: f32,
+    width: usize,
+    height: usize,
+    scale: f32,
+) -> Vec<u8> {
+    let mut pixels = base.to_vec();
+    if width == 0 || height == 0 {
+        return pixels;
+    }
+    let keep = 1.0 - night_shade();
+    let darker: [u8; 256] = std::array::from_fn(|value| (value as f32 * keep).round() as u8);
+    let below = night_is_below(sun);
+    let line = [
+        TERMINATOR as u8,
+        (TERMINATOR >> 8) as u8,
+        (TERMINATOR >> 16) as u8,
+        0xFF,
+    ];
+    // The first pixel row past the boundary in each column.
+    let edges: Vec<usize> = terminator(sun, map_width, width)
+        .into_iter()
+        .map(|y| ((y * scale).round().max(0.0) as usize).min(height))
+        .collect();
+    let mut previous = edges[0];
+    for (column, &edge) in edges.iter().enumerate() {
+        let night = if below { edge..height } else { 0..edge };
+        for row in night {
+            let index = (row * width + column) * 4;
+            for channel in &mut pixels[index..index + 3] {
+                *channel = darker[usize::from(*channel)];
+            }
+        }
+        if edge > 0 && edge < height {
+            // Joined to the previous column's, so a steep stretch of the
+            // boundary stays one unbroken line.
+            let from = previous.min(edge).min(height - 1);
+            let to = previous.max(edge).max(from + 1).min(height);
+            for row in from..to {
+                let index = (row * width + column) * 4;
+                pixels[index..index + 4].copy_from_slice(&line);
+            }
+        }
+        previous = edge;
     }
     pixels
 }
@@ -273,13 +336,76 @@ mod tests {
     }
 
     #[test]
-    fn painted_map_lights_the_day_side() {
+    fn fixed_layer_paints_land_ocean_and_meridians() {
         let land = Land::parse(LAND).unwrap();
         let (width, height, scale) = (256usize, 125usize, 0.25f32);
         let mask = land.mask(1024.0, width, height, scale);
+        let pixels = paint_base(&mask, width, height, scale);
+        let at = |lon: f64, lat: f64| {
+            let (x, y) = project(1024.0, lon, lat);
+            let (column, row) = ((x * scale) as usize, (y * scale) as usize);
+            let index = (row * width + column) * 4;
+            u32::from(pixels[index + 2]) << 16
+                | u32::from(pixels[index + 1]) << 8
+                | u32::from(pixels[index])
+        };
+        assert_eq!(at(77.21, 23.0), DAY_LAND); // central India
+        assert_eq!(at(-100.0, 40.0), DAY_LAND); // central USA: land, shaded later
+        assert_eq!(at(-140.0, 10.0), OCEAN); // Pacific
+        assert!(pixels.chunks_exact(4).all(|pixel| pixel[3] == 0xFF));
+    }
+
+    #[test]
+    fn night_shade_turns_day_land_into_night_land() {
+        let shaded = |channel: u32| (channel as f32 * (1.0 - night_shade())).round() as u32;
+        for shift in [0, 8, 16] {
+            assert_eq!(
+                shaded((DAY_LAND >> shift) & 0xFF),
+                (NIGHT_LAND >> shift) & 0xFF
+            );
+        }
+    }
+
+    #[test]
+    fn terminator_separates_the_day_side_from_the_night_side() {
+        // Noon in New Delhi, 2026-09-23 06:45 UTC: just after the equinox.
+        let sun = subsolar(20_719.0 * 86_400.0 + 6.75 * 3600.0);
+        let curve = terminator(&sun, 1024.0, 256);
+        assert_eq!(curve.len(), 256);
+        let height = height_for(1024.0);
+        assert!(curve.iter().all(|y| (0.0..=height).contains(y)));
+        // Every column: a point a little to the night side of the boundary
+        // is dark and one a little to the day side is lit, wherever the
+        // boundary is inside the band.
+        let below = night_is_below(&sun);
+        for (column, &y) in curve.iter().enumerate() {
+            if y <= 2.0 || y >= height - 2.0 {
+                continue;
+            }
+            let x = column as f32 + 0.5;
+            let longitude = (column as f64 + 0.5) / 256.0 * 360.0 - 180.0;
+            let (night_y, day_y) = if below {
+                (y + 2.0, y - 2.0)
+            } else {
+                (y - 2.0, y + 2.0)
+            };
+            assert!(!sun.is_day(latitude_at(1024.0, night_y), longitude), "{x}");
+            assert!(sun.is_day(latitude_at(1024.0, day_y), longitude), "{x}");
+        }
+        // New Delhi is in daylight and the central USA at night.
+        assert!(sun.is_day(28.61, 77.21));
+        assert!(!sun.is_day(40.0, -100.0));
+    }
+
+    #[test]
+    fn a_minutes_map_darkens_the_night_side_and_draws_the_boundary() {
+        let land = Land::parse(LAND).unwrap();
+        let (width, height, scale) = (256usize, 125usize, 0.25f32);
+        let mask = land.mask(1024.0, width, height, scale);
+        let base = paint_base(&mask, width, height, scale);
         // Noon in New Delhi, 2026-09-23 06:45 UTC.
         let sun = subsolar(20_719.0 * 86_400.0 + 6.75 * 3600.0);
-        let pixels = paint(&mask, &sun, 1024.0, width, height, scale);
+        let pixels = paint_night(&base, &sun, 1024.0, width, height, scale);
         let at = |lon: f64, lat: f64| {
             let (x, y) = project(1024.0, lon, lat);
             let (column, row) = ((x * scale) as usize, (y * scale) as usize);
@@ -290,7 +416,23 @@ mod tests {
         };
         assert_eq!(at(77.21, 23.0), DAY_LAND); // central India, noon
         assert_eq!(at(-100.0, 40.0), NIGHT_LAND); // central USA, night
-        assert_eq!(at(-140.0, 10.0), OCEAN); // Pacific
+        assert_eq!(at(-140.0, 10.0), OCEAN); // Pacific, night: still black
+        assert!(pixels.chunks_exact(4).any(|pixel| pixel[..3]
+            == [
+                TERMINATOR as u8,
+                (TERMINATOR >> 8) as u8,
+                (TERMINATOR >> 16) as u8
+            ]));
         assert!(pixels.chunks_exact(4).all(|pixel| pixel[3] == 0xFF));
+    }
+
+    #[test]
+    fn equinox_boundary_stays_finite() {
+        let sun = Subsolar {
+            declination: 0.0,
+            longitude: 0.0,
+        };
+        let curve = terminator(&sun, 1024.0, 65);
+        assert!(curve.iter().all(|y| y.is_finite()));
     }
 }

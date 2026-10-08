@@ -48,7 +48,25 @@ pub async fn snapshot() -> Result<Snapshot, Error> {
     .await
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+mod win32;
+
+/// Windows: its own light or dark app mode, which Lulo's Automatic
+/// appearance follows there (ADR 0023 phase 2e).
+#[cfg(windows)]
+pub async fn snapshot() -> Result<Snapshot, Error> {
+    Ok(win32::current())
+}
+
+#[cfg(windows)]
+pub async fn watch(events: Sender<Event>) -> Result<(), Error> {
+    if events.send(Event::Snapshot(win32::current())).await.is_ok() {
+        win32::watch_changes(events);
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub async fn snapshot() -> Result<Snapshot, Error> {
     Ok(Snapshot::unavailable(
         "Desktop appearance preferences are read from the Settings portal on Linux.",
@@ -82,7 +100,7 @@ pub async fn watch(events: Sender<Event>) -> Result<(), Error> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub async fn watch(events: Sender<Event>) -> Result<(), Error> {
     let _ = events
         .send(Event::Snapshot(Snapshot::unavailable(

@@ -604,12 +604,40 @@ fn start_theme_runtime(cx: &mut App) {
     })
     .detach();
 
+    // Windows: System Settings writes the same theme file there (ADR 0023
+    // phase 2e). notify's Windows backend wakes its thread ten times a
+    // second for as long as a watcher lives (docs/decisions/0025, parity
+    // WIN-OS-15), so a thread parked in `ReadDirectoryChangesW` reports the
+    // file's changes instead.
+    #[cfg(windows)]
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        let (changed, changes) = async_channel::bounded(1);
+        let watching = cx
+            .background_executor()
+            .spawn(async move {
+                let store = rmac_theme::ThemeStore::from_environment()
+                    .map_err(|error| error.to_string())?;
+                crate::file_watch_windows::watch_file(store.path(), changed)
+                    .map_err(|error| error.to_string())
+            })
+            .await;
+        if watching.is_err() {
+            return;
+        }
+        while changes.recv().await.is_ok() {
+            let result = cx
+                .background_executor()
+                .spawn(async { load_resolved_tokens().await })
+                .await;
+            if let Ok(tokens) = result {
+                apply_resolved_tokens(tokens, cx);
+            }
+        }
+    })
+    .detach();
+
     // Preference writes from System Settings arrive through the bounded file
     // watcher. Re-read the host as well so automatic values cannot go stale.
-    // Not on Windows: no System Settings writes the file there (ThemeStore
-    // finds a path only when HOME is set, as in CI's Unix-style shell), and
-    // notify's Windows backend wakes its thread ten times a second for as
-    // long as a watcher lives (docs/decisions/0025, parity WIN-OS-15).
     #[cfg(not(windows))]
     cx.spawn(async move |cx: &mut gpui::AsyncApp| {
         let watcher = cx

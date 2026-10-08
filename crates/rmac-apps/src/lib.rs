@@ -7,12 +7,12 @@
 mod catalog;
 mod icons;
 pub mod identity;
-pub mod windows_apps;
 mod model;
 mod platform;
 mod superseded;
 #[cfg(test)]
 mod tests;
+pub mod windows_apps;
 
 pub use catalog::*;
 use icons::*;

@@ -38,11 +38,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, BringWindowToTop, DispatchMessageW, EnumWindows, GetAncestor,
     GetClassNameW, GetForegroundWindow, GetMessageW, GetWindow, GetWindowLongPtrW, GetWindowRect,
     GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
-    IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync, MONITORINFOF_PRIMARY,
-    TranslateMessage, ASFW_ANY, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY,
-    EVENT_OBJECT_HIDE, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND,
-    EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT,
-    GWL_EXSTYLE, GW_OWNER, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
+    IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync, TranslateMessage,
+    ASFW_ANY, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
+    EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
+    EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT, GWL_EXSTYLE, GW_OWNER,
+    MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
     SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT, WM_CLOSE, WS_EX_APPWINDOW,
     WS_EX_TOOLWINDOW,
 };
@@ -109,7 +109,11 @@ pub async fn minimize_window_in(
     snapshot: domain::Snapshot,
     window: domain::WindowId,
 ) -> Result<(), MinimizeError> {
-    if !snapshot.windows.iter().any(|candidate| candidate.id == window) {
+    if !snapshot
+        .windows
+        .iter()
+        .any(|candidate| candidate.id == window)
+    {
         return Ok(());
     }
     execute_action(&domain::Action::MinimizeWindow { window })
@@ -421,7 +425,9 @@ fn cached<K: std::hash::Hash + Eq, V: Clone>(
     }
     let value = read();
     if let Ok(mut cache) = cache.lock() {
-        cache.get_or_insert_with(HashMap::new).insert(key, value.clone());
+        cache
+            .get_or_insert_with(HashMap::new)
+            .insert(key, value.clone());
     }
     value
 }
@@ -578,27 +584,31 @@ fn monitors() -> Vec<Monitor> {
             let mut info = MONITORINFOEXW::default();
             info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
             // SAFETY: a MONITORINFOEXW whose size field says so.
-            unsafe { GetMonitorInfoW(monitor, &mut info as *mut MONITORINFOEXW as *mut MONITORINFO) }
-                .as_bool()
-                .then(|| {
-                    let (mut dpi_x, mut dpi_y) = (96u32, 96u32);
-                    // SAFETY: plain out-parameters.
-                    let _ = unsafe {
-                        GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y)
-                    };
-                    let end = info
-                        .szDevice
-                        .iter()
-                        .position(|&c| c == 0)
-                        .unwrap_or(info.szDevice.len());
-                    Monitor {
-                        handle: monitor.0 as isize,
-                        id: domain::OutputId(String::from_utf16_lossy(&info.szDevice[..end])),
-                        rect: info.monitorInfo.rcMonitor,
-                        scale: f64::from(dpi_x.max(1)) / 96.0,
-                        primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
-                    }
-                })
+            unsafe {
+                GetMonitorInfoW(
+                    monitor,
+                    &mut info as *mut MONITORINFOEXW as *mut MONITORINFO,
+                )
+            }
+            .as_bool()
+            .then(|| {
+                let (mut dpi_x, mut dpi_y) = (96u32, 96u32);
+                // SAFETY: plain out-parameters.
+                let _ =
+                    unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) };
+                let end = info
+                    .szDevice
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(info.szDevice.len());
+                Monitor {
+                    handle: monitor.0 as isize,
+                    id: domain::OutputId(String::from_utf16_lossy(&info.szDevice[..end])),
+                    rect: info.monitorInfo.rcMonitor,
+                    scale: f64::from(dpi_x.max(1)) / 96.0,
+                    primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
+                }
+            })
         })
         .collect()
 }
@@ -678,7 +688,10 @@ fn read_snapshot() -> domain::Snapshot {
             && rmac_apps::windows_apps::display_name_for(&app_id).is_none()
         {
             let name = if app_id == exe_key || exe_key.is_empty() {
-                rmac_apps::windows_apps::display_name(&exe_key, file_description(&exe_path).as_deref())
+                rmac_apps::windows_apps::display_name(
+                    &exe_key,
+                    file_description(&exe_path).as_deref(),
+                )
             } else {
                 // A Store app: its window's title is its name.
                 title(hwnd)
@@ -860,11 +873,7 @@ fn prune_caches(alive_pids: &[u32], windows: &[domain::Window]) {
     }
     if let Ok(mut ids) = AUMIDS.lock() {
         if let Some(ids) = ids.as_mut() {
-            ids.retain(|hwnd, _| {
-                windows
-                    .iter()
-                    .any(|window| window.id.0 == *hwnd as u64)
-            });
+            ids.retain(|hwnd, _| windows.iter().any(|window| window.id.0 == *hwnd as u64));
         }
     }
 }

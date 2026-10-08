@@ -6333,6 +6333,7 @@ dependencies = [
  "rustix 1.1.4",
  "serde",
  "serde_json",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -7913,7 +7914,6 @@ dependencies = [
  "gpui-component-assets",
  "gpui_linux",
  "gpui_platform",
- "gpui_windows",
  "libc",
  "raw-window-handle",
  "rmac-app-menu",

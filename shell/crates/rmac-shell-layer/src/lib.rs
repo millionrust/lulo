@@ -22,10 +22,10 @@ pub mod windows;
 /// The layer-shell vocabulary: GPUI's own on Lulo OS, a mirror of it on
 /// Windows.
 pub mod layer {
-    #[cfg(all(target_os = "linux", feature = "wayland"))]
-    pub use gpui::layer_shell::*;
     #[cfg(windows)]
     pub use crate::windows::layer_types::*;
+    #[cfg(all(target_os = "linux", feature = "wayland"))]
+    pub use gpui::layer_shell::*;
 }
 
 /// Open `build`'s view as the shell surface `layer` describes.
@@ -125,7 +125,7 @@ pub fn display_uuid(display: &dyn gpui::PlatformDisplay) -> Option<Uuid> {
     #[cfg(windows)]
     {
         let monitor = ::windows::Win32::Graphics::Gdi::HMONITOR(
-            u64::from(display.id()) as isize as *mut core::ffi::c_void,
+            u64::from(display.id()) as isize as *mut core::ffi::c_void
         );
         windows::monitor_device_name(monitor)
             .map(|name| stable_output_uuid(&rmac_compositor::OutputId(name)))

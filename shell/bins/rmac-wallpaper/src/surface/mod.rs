@@ -22,6 +22,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::FutureExt as _;
+#[cfg(target_os = "linux")]
+use gpui::QuitMode;
 use gpui::{
     div, img, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, svg, AnyElement,
     AnyWindowHandle, App, AssetSource, Bounds, Context, DisplayId, Entity, ExternalPaths,
@@ -30,13 +32,11 @@ use gpui::{
     Window, WindowBackgroundAppearance, WindowBounds, WindowOptions,
 };
 #[cfg(target_os = "linux")]
-use gpui::QuitMode;
-#[cfg(target_os = "linux")]
 use gpui_platform::application;
-use rmac_shell_layer::layer::*;
 use rmac_desktop::settings::{Arrangement, DesktopSettings, GalleryTarget};
 use rmac_desktop::widgets::{WidgetKind, WidgetLocation, WidgetSize};
 use rmac_desktop_widgets::WidgetData;
+use rmac_shell_layer::layer::*;
 use rmac_shell_ui::tokens;
 use uuid::Uuid;
 
@@ -422,9 +422,9 @@ pub(crate) fn spawn_settings(pane: &'static str, cx: &mut App) {
                 std::process::Command::new(rmac_shell_layer::system::program(
                     "/usr/bin/rmac-system-settings",
                 ))
-                    .args(["--pane", pane])
-                    .spawn()
-                    .map(|_| ())
+                .args(["--pane", pane])
+                .spawn()
+                .map(|_| ())
             })
             .await;
             if result.is_err() {
@@ -446,9 +446,9 @@ pub(crate) fn spawn_quick_look(paths: Vec<PathBuf>, cx: &mut App) {
                 std::process::Command::new(rmac_shell_layer::system::program(
                     "/usr/bin/rmac-quick-look",
                 ))
-                    .args(paths)
-                    .spawn()
-                    .map(|_| ())
+                .args(paths)
+                .spawn()
+                .map(|_| ())
             })
             .await;
             if result.is_err() {
@@ -1171,7 +1171,8 @@ fn restart_for_reappeared_output(
     current: &BTreeSet<Uuid>,
     removed: &mut BTreeSet<Uuid>,
 ) {
-    if cfg!(target_os = "linux") && rmac_shell_layer::output_reappeared(previous, current, removed) {
+    if cfg!(target_os = "linux") && rmac_shell_layer::output_reappeared(previous, current, removed)
+    {
         std::process::exit(rmac_shell_layer::WAYLAND_OUTPUT_RESTART_EXIT_CODE);
     }
 }

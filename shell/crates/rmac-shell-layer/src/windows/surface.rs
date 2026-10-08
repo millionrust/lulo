@@ -112,7 +112,9 @@ pub fn make_desktop_surface(hwnd: HWND) {
     subclass(
         hwnd,
         Box::new(|_, message, _, lparam| {
-            if message == WM_WINDOWPOSCHANGING && lparam.0 != 0 && !super::desktop_layer::own_placement()
+            if message == WM_WINDOWPOSCHANGING
+                && lparam.0 != 0
+                && !super::desktop_layer::own_placement()
             {
                 // SAFETY: for WM_WINDOWPOSCHANGING, `lparam` points at the
                 // WINDOWPOS Windows is about to apply; changing its flags

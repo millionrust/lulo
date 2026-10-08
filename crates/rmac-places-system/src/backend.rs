@@ -19,7 +19,8 @@ impl Backend for SystemBackend {
         let home = std::env::var_os("HOME").filter(|value| !value.is_empty());
         // Windows names the home folder USERPROFILE.
         #[cfg(windows)]
-        let home = home.or_else(|| std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()));
+        let home =
+            home.or_else(|| std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()));
         home.map(PathBuf::from)
     }
 

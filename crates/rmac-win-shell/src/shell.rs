@@ -33,9 +33,7 @@ use windows::Win32::UI::WindowsAndMessaging::{WM_ENDSESSION, WM_QUERYENDSESSION}
 use crate::model::hotkey as model_hotkey;
 use crate::share;
 use crate::win::events::{self, DesktopEvent, Hooks};
-use crate::win::{
-    desktop as explorer_desktop, folders, memory, registry, surface, taskbar, trace,
-};
+use crate::win::{desktop as explorer_desktop, folders, memory, registry, surface, taskbar, trace};
 
 /// The registry value recording the Spotlight hotkey the user was last
 /// told about (`model::hotkey::Hotkey::code`).

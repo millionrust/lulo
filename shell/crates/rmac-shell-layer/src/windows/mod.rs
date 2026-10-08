@@ -99,7 +99,11 @@ pub fn on_placed(hook: impl Fn(isize, &str) + 'static) {
     PLACED_HOOKS.with(|hooks| hooks.borrow_mut().push(Rc::new(hook)));
 }
 
-fn run_hooks(hooks: &'static std::thread::LocalKey<RefCell<Vec<Rc<dyn Fn(isize, &str)>>>>, raw: isize, namespace: &str) {
+fn run_hooks(
+    hooks: &'static std::thread::LocalKey<RefCell<Vec<Rc<dyn Fn(isize, &str)>>>>,
+    raw: isize,
+    namespace: &str,
+) {
     let hooks = hooks.with(|hooks| hooks.borrow().clone());
     for hook in hooks {
         hook(raw, namespace);
@@ -184,9 +188,7 @@ pub fn logical_bounds(
     requested: Size<Pixels>,
     display: Bounds<Pixels>,
 ) -> Bounds<Pixels> {
-    let (top, right, bottom, left) = layer
-        .margin
-        .unwrap_or((px(0.0), px(0.0), px(0.0), px(0.0)));
+    let (top, right, bottom, left) = layer.margin.unwrap_or((px(0.0), px(0.0), px(0.0), px(0.0)));
     let anchor = layer.anchor;
     let axis = |start: Pixels,
                 extent: Pixels,
@@ -292,8 +294,13 @@ pub fn monitor_device_name(monitor: HMONITOR) -> Option<String> {
     let mut info = MONITORINFOEXW::default();
     info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
     // SAFETY: a MONITORINFOEXW whose size field says so.
-    if !unsafe { GetMonitorInfoW(monitor, &mut info as *mut MONITORINFOEXW as *mut MONITORINFO) }
-        .as_bool()
+    if !unsafe {
+        GetMonitorInfoW(
+            monitor,
+            &mut info as *mut MONITORINFOEXW as *mut MONITORINFO,
+        )
+    }
+    .as_bool()
     {
         return None;
     }
@@ -376,8 +383,7 @@ fn style(hwnd: HWND, layer: &LayerShellOptions, blurred: bool) {
 /// own end.
 fn hook(hwnd: HWND, signals: async_channel::Sender<Signal>) {
     // SAFETY: registers (or looks up) a system-wide message name.
-    let taskbar_created =
-        unsafe { RegisterWindowMessageW(windows::core::w!("TaskbarCreated")) };
+    let taskbar_created = unsafe { RegisterWindowMessageW(windows::core::w!("TaskbarCreated")) };
     surface::subclass(
         hwnd,
         Box::new(move |hwnd, message, wparam, _| {
@@ -464,7 +470,9 @@ fn watch_desktop_foreground(cx: &mut App) {
                 windows
                     .borrow()
                     .iter()
-                    .filter(|window| matches!(window.layer.layer, Layer::Background | Layer::Bottom))
+                    .filter(|window| {
+                        matches!(window.layer.layer, Layer::Background | Layer::Bottom)
+                    })
                     .map(|window| window.hwnd)
                     .collect::<Vec<_>>()
             });

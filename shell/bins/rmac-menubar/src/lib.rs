@@ -36,6 +36,8 @@ mod bar {
 
     use chrono::Local;
     use futures_util::FutureExt as _;
+    #[cfg(target_os = "linux")]
+    use gpui::QuitMode;
     use gpui::{
         canvas, div, point, prelude::*, px, rgba, svg, AnyElement, AnyWindowHandle, App,
         AssetSource, Bounds, BoxShadow, ClickEvent, Context, DisplayId, Entity, FocusHandle,
@@ -44,8 +46,6 @@ mod bar {
         Subscription, Window, WindowBackgroundAppearance, WindowBounds, WindowHandle,
         WindowOptions,
     };
-    #[cfg(target_os = "linux")]
-    use gpui::QuitMode;
     #[cfg(target_os = "linux")]
     use gpui_platform::application;
     use rmac_quick_settings_system::{Backend as _, SystemBackend};
@@ -3655,18 +3655,16 @@ mod bar {
                 keyboard_interactivity: KeyboardInteractivity::Exclusive,
                 ..Default::default()
             };
-            let surface = match rmac_shell_layer::open_layer_window(
-                cx,
-                options,
-                layer,
-                move |window, cx| cx.new(|cx| MenuKeyboard::new(top_bar, announcement, window, cx)),
-            ) {
-                Ok(surface) => surface,
-                Err(error) => {
-                    eprintln!("could not move keyboard focus to the menu bar: {error}");
-                    return;
-                }
-            };
+            let surface =
+                match rmac_shell_layer::open_layer_window(cx, options, layer, move |window, cx| {
+                    cx.new(|cx| MenuKeyboard::new(top_bar, announcement, window, cx))
+                }) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        eprintln!("could not move keyboard focus to the menu bar: {error}");
+                        return;
+                    }
+                };
             self.keyboard = Some(KeyboardMode {
                 surface,
                 previous_window,
@@ -5216,7 +5214,11 @@ mod bar {
             .into_iter()
             .chain(system::extra_menu::rows().into_iter().map(|row| {
                 let item = Item::new(row.label, row.action, "");
-                let item = if row.separated { item.separated() } else { item };
+                let item = if row.separated {
+                    item.separated()
+                } else {
+                    item
+                };
                 match row.checked {
                     Some(checked) => item.checked(checked()),
                     None => item,
@@ -5481,7 +5483,11 @@ mod bar {
                         id: rmac_compositor::ActivationId(id),
                         action: rmac_compositor::Action::FocusWindow { window },
                     };
-                    if rmac_compositor_system::execute(request).await.result.is_err() {
+                    if rmac_compositor_system::execute(request)
+                        .await
+                        .result
+                        .is_err()
+                    {
                         eprintln!("could not return focus to the application menu owner");
                     }
                 }
@@ -6433,48 +6439,48 @@ mod bar {
         let width = display.bounds().size.width;
         let height = display.bounds().size.height;
         let handle = rmac_shell_layer::open_layer_window(
-                cx,
-                WindowOptions {
-                    titlebar: None,
-                    focus: false,
-                    window_bounds: Some(WindowBounds::Windowed(Bounds {
-                        origin: point(px(0.), px(0.)),
-                        size: Size::new(width, height),
-                    })),
-                    display_id: Some(display_id),
-                    app_id: Some("dev.rmac.TopBar".to_owned()),
-                    // This interaction layer includes the menu drop-down
-                    // region. Bounded companion surfaces request blur for the
-                    // visible panels without softening the whole desktop.
-                    window_background: WindowBackgroundAppearance::Transparent,
-                    ..Default::default()
-                },
-                LayerShellOptions {
-                    namespace: format!("rmac-top-bar-{}", u64::from(display_id)),
-                    layer: Layer::Overlay,
-                    anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-                    keyboard_interactivity: KeyboardInteractivity::OnDemand,
-                    exclusive_zone: Some(px(if fullscreen { 0.0 } else { BAR_HEIGHT })),
-                    ..Default::default()
-                },
-                {
-                    let status = status.clone();
-                    move |window, cx| {
-                        cx.new(|cx| {
-                            TopBar::new(
-                                display_id,
-                                output_uuid,
-                                status,
-                                fullscreen,
-                                backdrop_tx,
-                                window,
-                                cx,
-                            )
-                        })
-                    }
-                },
-            )
-            .expect("open top-bar layer surface");
+            cx,
+            WindowOptions {
+                titlebar: None,
+                focus: false,
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.), px(0.)),
+                    size: Size::new(width, height),
+                })),
+                display_id: Some(display_id),
+                app_id: Some("dev.rmac.TopBar".to_owned()),
+                // This interaction layer includes the menu drop-down
+                // region. Bounded companion surfaces request blur for the
+                // visible panels without softening the whole desktop.
+                window_background: WindowBackgroundAppearance::Transparent,
+                ..Default::default()
+            },
+            LayerShellOptions {
+                namespace: format!("rmac-top-bar-{}", u64::from(display_id)),
+                layer: Layer::Overlay,
+                anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
+                keyboard_interactivity: KeyboardInteractivity::OnDemand,
+                exclusive_zone: Some(px(if fullscreen { 0.0 } else { BAR_HEIGHT })),
+                ..Default::default()
+            },
+            {
+                let status = status.clone();
+                move |window, cx| {
+                    cx.new(|cx| {
+                        TopBar::new(
+                            display_id,
+                            output_uuid,
+                            status,
+                            fullscreen,
+                            backdrop_tx,
+                            window,
+                            cx,
+                        )
+                    })
+                }
+            },
+        )
+        .expect("open top-bar layer surface");
         cx.spawn(async move |cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(250))

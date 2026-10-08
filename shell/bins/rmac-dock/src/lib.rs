@@ -31,14 +31,14 @@ mod dock {
     }
 
     use futures_util::FutureExt as _;
+    #[cfg(target_os = "linux")]
+    use gpui::QuitMode;
     use gpui::{
         canvas, div, point, prelude::*, px, rgba, AccessibleAction, AnyWindowHandle, App, Bounds,
         Context, DisplayId, Entity, ExternalPaths, FocusHandle, FontWeight, KeyDownEvent,
         MouseButton, PathBuilder, PlatformDisplay, Role, SharedString, Size, WeakEntity, Window,
         WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowOptions,
     };
-    #[cfg(target_os = "linux")]
-    use gpui::QuitMode;
     #[cfg(target_os = "linux")]
     use gpui_platform::application;
     use rmac_shell_layer::layer::*;
@@ -1205,8 +1205,9 @@ mod dock {
                     // Windows: the entry's program with the files.
                     #[cfg(windows)]
                     let status = blocking::unblock(move || {
-                        let program = rmac_apps::windows_apps::desktop_entry_program(&desktop_entry)
-                            .ok_or_else(|| std::io::Error::other("the app has no program"))?;
+                        let program =
+                            rmac_apps::windows_apps::desktop_entry_program(&desktop_entry)
+                                .ok_or_else(|| std::io::Error::other("the app has no program"))?;
                         std::process::Command::new(program).args(&paths).status()
                     })
                     .await;
@@ -2043,18 +2044,16 @@ mod dock {
                 keyboard_interactivity: KeyboardInteractivity::Exclusive,
                 ..Default::default()
             };
-            let surface = match rmac_shell_layer::open_layer_window(
-                cx,
-                options,
-                layer,
-                move |window, cx| cx.new(|cx| DockKeyboard::new(dock, announcement, window, cx)),
-            ) {
-                Ok(surface) => surface,
-                Err(error) => {
-                    eprintln!("could not move keyboard focus to the Dock: {error}");
-                    return;
-                }
-            };
+            let surface =
+                match rmac_shell_layer::open_layer_window(cx, options, layer, move |window, cx| {
+                    cx.new(|cx| DockKeyboard::new(dock, announcement, window, cx))
+                }) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        eprintln!("could not move keyboard focus to the Dock: {error}");
+                        return;
+                    }
+                };
             self.keyboard = Some(KeyboardMode {
                 navigator,
                 surface,
@@ -5441,36 +5440,36 @@ mod dock {
         };
         let exclusive_zone = surface.reserve_space.then_some(px(metrics.exclusive_zone));
         let handle = rmac_shell_layer::open_layer_window(
-                cx,
-                WindowOptions {
-                    titlebar: None,
-                    focus: false,
-                    window_bounds: Some(WindowBounds::Windowed(Bounds {
-                        origin: point(px(0.0), px(0.0)),
-                        size: display_size,
-                    })),
-                    display_id: Some(display_id),
-                    app_id: Some("dev.rmac.Dock".to_owned()),
-                    // This interaction layer spans the output so menus can
-                    // escape the shelf. Blur belongs to the bounded backdrop
-                    // surface, never to this transparent host.
-                    window_background: WindowBackgroundAppearance::Transparent,
-                    ..Default::default()
-                },
-                LayerShellOptions {
-                    namespace: format!("rmac-dock-{}", u64::from(display_id)),
-                    layer: Layer::Top,
-                    anchor,
-                    keyboard_interactivity: KeyboardInteractivity::None,
-                    exclusive_zone,
-                    ..Default::default()
-                },
-                {
-                    let status = status.clone();
-                    move |_, cx| cx.new(|cx| Dock::new(display_id, surface, status, cx))
-                },
-            )
-            .expect("open Dock layer surface");
+            cx,
+            WindowOptions {
+                titlebar: None,
+                focus: false,
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: display_size,
+                })),
+                display_id: Some(display_id),
+                app_id: Some("dev.rmac.Dock".to_owned()),
+                // This interaction layer spans the output so menus can
+                // escape the shelf. Blur belongs to the bounded backdrop
+                // surface, never to this transparent host.
+                window_background: WindowBackgroundAppearance::Transparent,
+                ..Default::default()
+            },
+            LayerShellOptions {
+                namespace: format!("rmac-dock-{}", u64::from(display_id)),
+                layer: Layer::Top,
+                anchor,
+                keyboard_interactivity: KeyboardInteractivity::None,
+                exclusive_zone,
+                ..Default::default()
+            },
+            {
+                let status = status.clone();
+                move |_, cx| cx.new(|cx| Dock::new(display_id, surface, status, cx))
+            },
+        )
+        .expect("open Dock layer surface");
         cx.spawn(async move |cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(250))

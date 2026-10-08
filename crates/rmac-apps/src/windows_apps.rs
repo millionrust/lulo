@@ -174,12 +174,7 @@ pub fn register_display_name(app_id: &str, name: &str) {
 
 /// The name [`register_display_name`] recorded for `app_id`.
 pub fn display_name_for(app_id: &str) -> Option<String> {
-    DISPLAY_NAMES
-        .read()
-        .ok()?
-        .as_ref()?
-        .get(app_id)
-        .cloned()
+    DISPLAY_NAMES.read().ok()?.as_ref()?.get(app_id).cloned()
 }
 
 /// How a Windows app is named when its executable carries no description:
@@ -223,7 +218,10 @@ mod tests {
             Some("Calculator")
         );
         assert!(app_for_exe("calc.exe").is_none());
-        assert_eq!(app("org.rmac.Notes").map(|app| app.exe), Some("rmac-notes.exe"));
+        assert_eq!(
+            app("org.rmac.Notes").map(|app| app.exe),
+            Some("rmac-notes.exe")
+        );
         assert_eq!(
             app("org.rmac.Notes.desktop").map(|app| app.exe),
             Some("rmac-notes.exe")

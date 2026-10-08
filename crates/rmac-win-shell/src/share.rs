@@ -182,7 +182,11 @@ mod tests {
     #[test]
     fn every_windows_app_has_an_entry_and_an_icon() {
         for app in rmac_apps::windows_apps::WINDOWS_APPS {
-            assert!(ENTRIES.iter().any(|(id, _)| *id == app.app_id), "{}", app.app_id);
+            assert!(
+                ENTRIES.iter().any(|(id, _)| *id == app.app_id),
+                "{}",
+                app.app_id
+            );
             assert!(
                 APP_ICONS
                     .iter()

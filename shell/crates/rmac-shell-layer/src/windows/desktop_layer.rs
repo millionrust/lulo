@@ -6,8 +6,8 @@
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClassNameW, GetShellWindow, GetWindow, GetWindowThreadProcessId,
-    SetWindowPos, GW_HWNDPREV, HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    EnumWindows, GetClassNameW, GetShellWindow, GetWindow, GetWindowThreadProcessId, SetWindowPos,
+    GW_HWNDPREV, HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
 };
 
 fn class_name(hwnd: HWND) -> String {

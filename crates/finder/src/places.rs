@@ -255,9 +255,9 @@ mod tests {
             .map(|place| place.name)
             .collect();
         assert_eq!(names[..3], ["Downloads", "Documents", "Desktop"]);
-        // Windows adds the known folders that exist there.
+        // Windows adds the known folders that exist there; nothing else.
+        assert!(cfg!(windows) || names.len() == 3, "{names:?}");
         for name in &names[3..] {
-            assert!(cfg!(windows), "{name}");
             assert!(["Pictures", "Music", "Videos", "OneDrive"].contains(&name.as_str()));
         }
         let locations = standard_locations(home);

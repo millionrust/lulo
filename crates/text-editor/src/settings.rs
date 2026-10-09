@@ -363,10 +363,12 @@ mod tests {
 
     #[test]
     fn properties_defaults_round_trip_and_collapse_newlines() {
-        let mut settings = Settings::default();
-        settings.author_default = "A. Writer".to_string();
-        settings.organisation_default = "Acme, Inc.".to_string();
-        settings.copyright_default = "line one\nline two".to_string();
+        let settings = Settings {
+            author_default: "A. Writer".to_string(),
+            organisation_default: "Acme, Inc.".to_string(),
+            copyright_default: "line one\nline two".to_string(),
+            ..Settings::default()
+        };
         let serialized = serialize(&settings);
         let parsed = parse(&serialized);
         assert_eq!(parsed.author_default, "A. Writer");

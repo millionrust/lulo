@@ -125,6 +125,8 @@ def main() -> int:
                         help="a memory probe: start Lulo as a user would, not in the fixed scene")
     parser.add_argument("--no-windows-apps", action="store_true",
                         help="a memory probe: leave out Windows' own apps (LULO_NO_WINDOWS_APPS)")
+    parser.add_argument("--launch", default="",
+                        help="a probe: start this Lulo app (an exe in --bin-dir) once Lulo is ready")
     parser.add_argument("--drop-shadows", action="store_true",
                         help="a memory probe: Windows' window shadows on, as shell_smoke.py turns them")
     parser.add_argument("--desktop-items", action="store_true",
@@ -206,6 +208,9 @@ def main() -> int:
         if not wait_for_ready(log, READY_TIMEOUT_SECONDS):
             print(f"FAIL lulo-shell did not get ready:\n{log.read_text(errors='replace')[-4000:]}")
             return 1
+        launched = None
+        if args.launch:
+            launched = subprocess.Popen([str(bin_dir / args.launch)], env=environment)
         time.sleep(args.settle)
         ImageGrab.grab().save(output)
         print(f"PASS captured the Windows scene to {output}")
@@ -216,12 +221,15 @@ def main() -> int:
             session.wait(30)
         except subprocess.TimeoutExpired:
             session.kill()
+        if launched is not None:
+            launched.kill()
         show_windows(hidden)
         if shadows_were == 0:
             ctypes.windll.user32.SystemParametersInfoW(0x1025, 0, ctypes.c_void_p(0), 0)
         text = log.read_text(errors='replace')
         for line in text.splitlines():
-            if line.startswith("lulo-shell: memory"):
+            if line.startswith(("lulo-shell: memory", "lulo-shell: bar title", "lulo-shell: menus from",
+                                "lulo-shell: dock tile")):
                 print(line)
         print(f"--- session log\n{text[-4000:]}")
 

@@ -258,7 +258,10 @@ fn read_on_reader_thread() -> domain::Snapshot {
         return read_snapshot();
     };
     let (reply, answer) = std::sync::mpsc::channel();
-    if reader.lock().is_ok_and(|requests| requests.send(reply).is_ok()) {
+    if reader
+        .lock()
+        .is_ok_and(|requests| requests.send(reply).is_ok())
+    {
         if let Ok(snapshot) = answer.recv() {
             return snapshot;
         }

@@ -1012,6 +1012,7 @@ def check_shell(
                 measurements[name]["idle_private_mb"] = memory["private_mb"]
                 measurements[name]["peak_working_set_mb"] = memory["peak_working_set_mb"]
 
+        note_memory(shell_pid, "before the Dock opens Calculator")
         # 3. The Dock opens Calculator.
         tile = log.last(r"^dock tile org\.rmac\.Calculator(?:\.desktop)? Calculator at (\d+),(\d+)")
         if tile is None:
@@ -1055,6 +1056,7 @@ def check_shell(
                         print("shell: the bar's Calculator > About Calculator opened Calculator's About panel")
                 check_window_shadow(calculator[1], "Calculator", screenshots, failures)
 
+        note_memory(shell_pid, "after Calculator and its menu")
         # 4b. Files under another executable name is still Files in the
         # Dock (known by the app id it gives the menu bar), with Files' icon.
         files_exe = bin_dir / "rmac-files.exe"
@@ -1082,6 +1084,7 @@ def check_shell(
                 renamed_process.wait(timeout=10)
             time.sleep(1.0)
 
+        note_memory(shell_pid, "after Files as files-dev.exe")
         # 4c. The Recycle Bin tile follows the bin and has its menu.
         if bin_tile is not None:
             before = len(log.lines())
@@ -1113,11 +1116,13 @@ def check_shell(
                 tap(VK_ESCAPE)
                 log.wait_for(r"^layer rmac-dock-menu-keyboard closed", 5.0, after=before)
 
+        note_memory(shell_pid, "after the Recycle Bin")
         # 5a. The desktop's icons: open, rename, drag, menu, new files, and
         # the desktop staying under app windows.
         if desktop_hwnd:
             check_desktop_icons(log, desktop_hwnd, check_folder, check_note, screenshots, opened, failures)
 
+        note_memory(shell_pid, "after the desktop icons")
         # 5. A maximised window stays between the bar and the Dock.
         subprocess.Popen(["notepad.exe"])
         found = wait_until(lambda: app_window("notepad.exe"))
@@ -1137,6 +1142,7 @@ def check_shell(
             terminate(pid)
         time.sleep(1.0)
 
+        note_memory(shell_pid, "after maximised Notepad")
         # 6. Spotlight.
         before = len(log.lines())
         key(VK_MENU)
@@ -1194,6 +1200,7 @@ def check_shell(
         catalog = log.last(r"^catalog: (\d+) apps")
         print(f"shell: Spotlight's catalogue: {catalog.group(1) if catalog else '?'} apps")
 
+        note_memory(shell_pid, "after Spotlight opened Text Editor and Notepad")
         # 6b. A closed Spotlight lets go of its window and file list.
         released = log.wait_for(r"^layer rmac-launcher closed", 15.0, after=before)
         time.sleep(2.0)
@@ -1310,6 +1317,14 @@ def check_shell(
         for line in trace[:600]:
             print(f"shell log: {line}")
     return failures
+
+
+def note_memory(pid: int, step: str) -> None:
+    """lulo-shell's memory at a step of the check, to find what a use
+    keeps (WIN-OS-64); reported only."""
+    memory = memory_mb(pid)
+    if memory is not None:
+        print(f"shell: memory {step}: private {memory['private_mb']} MB, working set {memory['working_set_mb']} MB")
 
 
 def check_lulo_desktop(log: Log, shell_pid: int, failures: list[str]) -> int:

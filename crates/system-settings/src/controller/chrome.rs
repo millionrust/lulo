@@ -197,11 +197,10 @@ impl Settings {
         let query = self.search.read(cx).value().to_string();
         let searching = !query.trim().is_empty();
         // Ranking every category against the query is pointless when there
-        // is no query: every resize/activation/appearance refresh re-renders
-        // this cached view (GPUI's `window.refreshing` bypasses its own
-        // reuse check on any window-wide refresh, not just when this view's
-        // own bounds change), so skipping it here cuts real, avoidable work
-        // from the common (not searching) case's per-frame cost.
+        // is no query: every activation/appearance refresh re-renders this
+        // cached view (GPUI's `window.refreshing` bypasses its own reuse
+        // check on any window-wide refresh), so skipping it here cuts real,
+        // avoidable work from the common (not searching) case's cost.
         let search_matches = if searching {
             self.search_matches(cx)
         } else {

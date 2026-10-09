@@ -44,6 +44,7 @@ pub mod profiler;
 ))]
 #[expect(missing_docs)]
 pub mod queue;
+mod rmac_resize;
 mod scene;
 mod shared_uri;
 mod style;

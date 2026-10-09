@@ -286,6 +286,9 @@ struct ViewElementCacheKey {
     bounds: Bounds<Pixels>,
     content_mask: ContentMask<Pixels>,
     text_style: TextStyle,
+    /// rmac (ADR 0026): the window's `geometry_epoch` when the subtree read
+    /// the window's geometry while it rendered, `None` when it did not.
+    geometry_epoch: Option<u64>,
 }
 
 impl<V: View> Element for ViewElement<V> {
@@ -382,7 +385,17 @@ impl<V: View> Element for ViewElement<V> {
                             && element_state.cache_key.text_style == text_style
                             && !window.dirty_views.contains(&entity_id)
                             && !window.refreshing
+                            && element_state
+                                .cache_key
+                                .geometry_epoch
+                                .is_none_or(|epoch| epoch == window.geometry_epoch)
                         {
+                            // rmac (ADR 0026): a reused subtree that reads the
+                            // window's geometry makes the views around it
+                            // depend on it too.
+                            if element_state.cache_key.geometry_epoch.is_some() {
+                                window.note_geometry_read();
+                            }
                             let prepaint_start = window.prepaint_index();
                             window.reuse_prepaint(element_state.prepaint_range.clone());
                             cx.entities
@@ -394,6 +407,7 @@ impl<V: View> Element for ViewElement<V> {
                         }
 
                         let refreshing = mem::replace(&mut window.refreshing, true);
+                        let geometry_reads = window.geometry_reads.get();
                         let prepaint_start = window.prepaint_index();
                         let (mut element, accessed_entities) = cx.detect_accessed_entities(|cx| {
                             let mut element = self
@@ -409,6 +423,8 @@ impl<V: View> Element for ViewElement<V> {
 
                         let prepaint_end = window.prepaint_index();
                         window.refreshing = refreshing;
+                        let geometry_epoch = (window.geometry_reads.get() != geometry_reads)
+                            .then_some(window.geometry_epoch);
 
                         (
                             Some(element),
@@ -420,6 +436,7 @@ impl<V: View> Element for ViewElement<V> {
                                     bounds,
                                     content_mask,
                                     text_style,
+                                    geometry_epoch,
                                 },
                             },
                         )
@@ -462,8 +479,14 @@ impl<V: View> Element for ViewElement<V> {
 
                             if let Some(element) = element {
                                 let refreshing = mem::replace(&mut window.refreshing, true);
+                                let geometry_reads = window.geometry_reads.get();
                                 element.paint(window, cx);
                                 window.refreshing = refreshing;
+                                // rmac (ADR 0026): geometry read while painting.
+                                if window.geometry_reads.get() != geometry_reads {
+                                    element_state.cache_key.geometry_epoch =
+                                        Some(window.geometry_epoch);
+                                }
                             } else {
                                 window.reuse_paint(element_state.paint_range.clone());
                             }

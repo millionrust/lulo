@@ -35,6 +35,7 @@ impl Render for Settings {
             self.native_window_title = native_window_title;
         }
         let layout = self.layout(window);
+        self.rendered_layout = Some(layout);
         let entity = cx.entity();
         let child_views = self
             .views

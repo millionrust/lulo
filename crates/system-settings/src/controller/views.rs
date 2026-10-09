@@ -8,7 +8,10 @@
 //!
 //! Both views observe `Settings`, so every `cx.notify()` on it still repaints
 //! the whole window exactly as before. Window refreshes (focus, activation,
-//! resize, appearance) re-render cached views as well. Only
+//! appearance, scale) re-render cached views as well; a resize re-renders
+//! only a view whose own bounds changed or whose last render read the
+//! window's geometry (ADR 0026), so the fixed-width sidebar keeps its last
+//! frame through a live resize and takes its split from the root. Only
 //! `Settings::notify_pane` and `Settings::notify_if_showing`, which load
 //! completions use, leave the sidebar alone; the sidebar reads selection,
 //! navigation, search, hardware availability, compact layout and window
@@ -72,7 +75,11 @@ impl Render for SidebarView {
         rmac_ui::trace_mark("settings_sidebar_render");
         let sidebar = self.settings.upgrade().map(|settings| {
             settings.update(cx, |settings, cx| {
-                let layout = settings.layout(window);
+                // The root renders first and records its split; reading the
+                // window's width here would tie this view to every resize.
+                let layout = settings
+                    .rendered_layout
+                    .unwrap_or_else(|| settings.layout(window));
                 settings
                     .render_sidebar(layout, window, cx)
                     .into_any_element()

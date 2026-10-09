@@ -94,6 +94,21 @@ class FixtureTests(unittest.TestCase):
             self.assertEqual(len(list(folder.iterdir())), 25)
 
 
+class SwitchFlickerTests(unittest.TestCase):
+    def test_focus_path_folds_repeats(self) -> None:
+        self.assertEqual(si.focus_path([1, 1, 2, 2, None, None, 2]), [1, 2, None, 2])
+
+    def test_one_move_to_the_target_is_clean(self) -> None:
+        self.assertFalse(si.switch_flickered([2], original=1, target=2))
+        self.assertFalse(si.switch_flickered([2, None, 2], original=1, target=2))
+        self.assertFalse(si.switch_flickered([1, 2], original=1, target=2))
+
+    def test_any_detour_or_repeat_flickers(self) -> None:
+        self.assertTrue(si.switch_flickered([2, 1, 2], original=1, target=2))
+        self.assertTrue(si.switch_flickered([3, 2], original=1, target=2))
+        self.assertTrue(si.switch_flickered([], original=1, target=2))
+
+
 class SweepWiringTests(unittest.TestCase):
     def test_every_scenario_has_a_method(self) -> None:
         for name, method in si.SCENARIOS.items():

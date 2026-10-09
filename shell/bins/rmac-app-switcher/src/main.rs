@@ -1027,6 +1027,15 @@ pub(crate) mod linux_wayland {
         service.update(cx, |service, _| service.force_quit = handle);
     }
 
+    /// `RMAC_APP_SWITCHER_OPTIMISTIC=0` turns the optimistic switch off, so
+    /// one build can be measured both ways (docs/perf/speed-round-12).
+    fn optimistic_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var_os("RMAC_APP_SWITCHER_OPTIMISTIC").is_none_or(|value| value != "0")
+        })
+    }
+
     fn open_switcher(service: &Entity<Service>, backwards: bool, cx: &mut App) {
         let (session, items, output, plan) = {
             let state = service.read(cx);
@@ -1046,7 +1055,9 @@ pub(crate) mod linux_wayland {
         // SPEED-11: switch now, while the surface maps and learns whether ⌘
         // is still held. A quick tap then only closes the surface; a browse
         // shows the panel as before and focuses its final choice.
-        let mut optimistic = plan.map(|plan| Optimistic::start(plan, cx));
+        let mut optimistic = plan
+            .filter(|_| optimistic_enabled())
+            .map(|plan| Optimistic::start(plan, cx));
         let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
         let display = output
             .and_then(|uuid| displays.get(&uuid).cloned())

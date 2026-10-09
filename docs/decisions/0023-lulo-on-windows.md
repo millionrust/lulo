@@ -1763,7 +1763,18 @@ menu. All of these pass ("every Lulo layer check passed", job of run 37832355013
 ### What is left
 
 - **Memory and idle on the runner.** `idle_gate.py`'s 60 MB private budget and 2-tick idle
-  budget are not met yet: LEFT_MEMORY.
+  budget are partly met. Idle CPU passes since the window list is read once per
+  change on its own thread and the shell's own surfaces no longer count as changes (2–3
+  ticks over the window in the last runs; one run measured 150 while lulo-shell was still
+  writing Windows' apps' icons, which the Apps folder helper now does instead). Private memory does not: in
+  `shell_smoke.py` lulo-shell holds about 75 MB at idle and 105 MB after Spotlight and a
+  menu (the old Windows UI: 39 and 58 MB). The same binary started by
+  `shell_scene.py` settles at 36–40 MB in every configuration tried (the fixed scene, the
+  runner's own status readings, its own Desktop folder, a user's start with Windows' apps
+  as entries, the runner's windows left showing; the `Shell scenes` job's memory probes),
+  and Spotlight or Control Centre open adds 11–14 MB. The 35 MB difference arrives in one
+  step during start-up in the smoke run only (17 → 67 MB in 14 ms between the first two
+  windows opening) and is not found yet.
 - **The hotkey notice** (WIN-OS-62): recorded once and traced, but Lulo OS's notification
   banner does not run on Windows, so nothing shows it.
 - **Bluetooth** in the menu bar and Control Centre (WIN-OS-63).

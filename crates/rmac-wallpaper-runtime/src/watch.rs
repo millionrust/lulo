@@ -239,7 +239,13 @@ async fn consume(
     let mut coordinator = Coordinator::default();
     let mut dark: Option<bool> = None;
     let mut published: Option<Snapshot> = None;
-    let cache = std::sync::Arc::new(rmac_wallpaper_image::Cache::default());
+    // Windows hands the laid-out picture to the system's wallpaper layer
+    // and keeps no decoded copy (WIN-OS-53, WIN-OS-64): nothing is cached.
+    let cache = std::sync::Arc::new(if cfg!(windows) {
+        rmac_wallpaper_image::Cache::new(0)
+    } else {
+        rmac_wallpaper_image::Cache::default()
+    });
     let (file_tx, file_rx) = async_channel::bounded(1);
     let mut _file_watcher = None;
     let mut file_paths: Vec<PathBuf> = Vec::new();

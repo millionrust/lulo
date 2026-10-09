@@ -613,10 +613,8 @@ fn layer_surfaces(surfaces: BTreeMap<Uuid, PreparedSurface>) -> BTreeMap<Uuid, P
     surfaces
         .into_iter()
         .map(|(output, mut surface)| {
-            let destination = surface.layout.destination;
-            let fills =
-                !surface.layout.tiled && destination.x.abs() < 0.5 && destination.y.abs() < 0.5;
-            if fills
+            // `prepare_surface` laid the picture out on the screen.
+            if !surface.layout.tiled
                 && rmac_shell_layer::windows::wallpaper_layer::show_picture(
                     output,
                     surface.image.clone(),
@@ -706,25 +704,89 @@ fn prepare_surface(
         return None;
     }
     let uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, surface.output.0.as_bytes());
-    // Windows draws the blurred materials over this wallpaper itself
-    // (`rmac_shell_layer::windows::backdrop`).
+    #[cfg(not(windows))]
+    let (width, height, layout) = (surface.image.width, surface.image.height, surface.layout);
+    // Windows lays the picture out on the screen once, here: the wallpaper
+    // layer shows it as it is, and the blurred materials sample it by
+    // screen position (`rmac_shell_layer::windows::{wallpaper_layer,
+    // backdrop}`). The decoded artwork (1920 × 1080 for a 1366 × 768
+    // screen) is not kept.
     #[cfg(windows)]
-    rmac_shell_layer::windows::backdrop::set_wallpaper(
-        uuid,
-        surface.image.width,
-        surface.image.height,
-        &bgra,
-    );
-    let buffer = image::RgbaImage::from_raw(surface.image.width, surface.image.height, bgra)?;
+    let (width, height, bgra, layout) = match screen_aligned(&surface, bgra) {
+        Ok(aligned) => aligned,
+        Err(bgra) => (surface.image.width, surface.image.height, bgra, surface.layout),
+    };
+    #[cfg(windows)]
+    rmac_shell_layer::windows::backdrop::set_wallpaper(uuid, width, height, &bgra);
+    let buffer = image::RgbaImage::from_raw(width, height, bgra)?;
     let image = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
     Some((
         uuid,
         PreparedSurface {
             image,
-            layout: surface.layout,
+            layout,
             layered: false,
         },
     ))
+}
+
+/// `surface`'s picture (`bgra`) laid out on its screen: the screen's
+/// physical size, the picture scaled to its layout's destination and placed
+/// there, and a layout that draws it over the whole screen. A tiled
+/// layout, or an invalid size, keeps the picture as it is (`Err`).
+#[cfg(windows)]
+#[allow(clippy::type_complexity)]
+fn screen_aligned(
+    surface: &rmac_wallpaper_image::RasterSurface,
+    bgra: Vec<u8>,
+) -> Result<(u32, u32, Vec<u8>, rmac_wallpaper::Layout), Vec<u8>> {
+    let scale = surface.scale;
+    let screen_width = (surface.logical_size.width * scale).round();
+    let screen_height = (surface.logical_size.height * scale).round();
+    let destination = surface.layout.destination;
+    if surface.layout.tiled
+        || !(1.0..=16_384.0).contains(&screen_width)
+        || !(1.0..=16_384.0).contains(&screen_height)
+    {
+        return Err(bgra);
+    }
+    let (screen_width, screen_height) = (screen_width as u32, screen_height as u32);
+    let x = (destination.x * scale).round() as i64;
+    let y = (destination.y * scale).round() as i64;
+    let width = ((destination.width * scale).round().max(1.0) as u32).min(32_768);
+    let height = ((destination.height * scale).round().max(1.0) as u32).min(32_768);
+    let Some(source) = image::RgbaImage::from_raw(surface.image.width, surface.image.height, bgra)
+    else {
+        return Err(Vec::new());
+    };
+    let scaled = if source.dimensions() == (width, height) {
+        source
+    } else {
+        image::imageops::resize(&source, width, height, image::imageops::FilterType::Triangle)
+    };
+    let mut out = vec![0u8; screen_width as usize * screen_height as usize * 4];
+    let left = x.max(0) as u32;
+    let skip = (-x).max(0) as u32;
+    let copy = width.saturating_sub(skip).min(screen_width.saturating_sub(left)) as usize;
+    for row in 0..screen_height {
+        let source_row = row as i64 - y;
+        if source_row < 0 || source_row >= i64::from(height) || copy == 0 {
+            continue;
+        }
+        let from = (source_row as usize * width as usize + skip as usize) * 4;
+        let to = (row as usize * screen_width as usize + left as usize) * 4;
+        out[to..to + copy * 4].copy_from_slice(&scaled.as_raw()[from..from + copy * 4]);
+    }
+    let layout = rmac_wallpaper::Layout {
+        destination: rmac_wallpaper::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: surface.logical_size.width,
+            height: surface.logical_size.height,
+        },
+        tiled: false,
+    };
+    Ok((screen_width, screen_height, out, layout))
 }
 
 fn start_status(cx: &mut App) -> Entity<WallpaperStatus> {
